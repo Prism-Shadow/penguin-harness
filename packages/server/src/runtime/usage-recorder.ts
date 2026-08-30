@@ -18,7 +18,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import type { UsageRepo } from "../db/repos/usage.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Clock } from "../hmr/capabilities.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -41,12 +41,7 @@ export class UsageRecorder {
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
 
   @Use() private readonly usage!: UsageRepo;
-  @Use() private readonly overrides!: Overrides;
-  private now: () => Date = () => new Date();
-
-  setup(): void {
-    this.now = this.overrides.value().now ?? this.now;
-  }
+  @Use() private readonly clock!: Clock;
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
   async record(ctx: UsageContext, msg: OmniMessage): Promise<void> {
@@ -81,7 +76,7 @@ export class UsageRecorder {
             provider: ctx.provider,
             modelId: ctx.modelId,
           });
-    const now = this.now();
+    const now = this.clock.now();
     const base = {
       ts: now.toISOString(),
       date: formatLocalDate(now),

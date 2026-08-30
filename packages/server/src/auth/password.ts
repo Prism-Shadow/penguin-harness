@@ -1,3 +1,4 @@
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 /**
  * Password hashing (slow-hash storage).
  *
@@ -80,4 +81,17 @@ export async function verifyPassword(password: string, stored: string): Promise<
     return false;
   }
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+/** Hashes the passwords this server writes; a test stands in a cheap one. */
+export abstract class PasswordHasher extends Interface<{
+  hash(password: string): Promise<string>;
+}>() {}
+
+/** scrypt at full strength. */
+@Component()
+export class ScryptHasher implements PasswordHasher {
+  hash(password: string): Promise<string> {
+    return hashPassword(password, SCRYPT_COST);
+  }
 }

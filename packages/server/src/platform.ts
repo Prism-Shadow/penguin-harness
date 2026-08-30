@@ -1,8 +1,32 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
-import type { ManifestTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
 import type { RuntimeCapabilities } from "./hmr/capabilities.js";
-import { RuntimeModule } from "./hmr/capabilities.js";
+import {
+  ConfigPaths,
+  ConsoleLog,
+  RuntimeAuthState,
+  RuntimeChannels,
+  RuntimeLifecycle,
+  RuntimeConfig,
+  RuntimeDb,
+  RuntimeDesktop,
+  RuntimeHmr,
+  RuntimeProxy,
+  RuntimeResourceGroups,
+  SystemClock,
+} from "./hmr/capabilities.js";
+import { ScryptHasher } from "./auth/password.js";
+import { DefaultMessagingTuning } from "./runtime/messaging/bridge.js";
+import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
+import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
+import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
+import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
+import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
+import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
+import { UpdateJobService } from "./services/update-job.js";
+import { CoreSessionLoaders, DefaultTitleGenerators } from "./runtime/session-manager.js";
+import { GlobalFetch, UpdateCheckService } from "./services/update-check-service.js";
 import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -46,7 +70,7 @@ import { MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
-import { VersionModule } from "./services/update-check-service.js";
+import { VersionRoutes } from "./services/update-check-service.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
@@ -90,7 +114,33 @@ export class Startup {
 /** The root: provides nothing and requires nothing; it exists so the children have a scope to see each other in. */
 @Module({
   children: [
-    RuntimeModule,
+    // Runtime capabilities, one node each
+    RuntimeConfig,
+    RuntimeDb,
+    RuntimeChannels,
+    RuntimeProxy,
+    RuntimeHmr,
+    RuntimeDesktop,
+    RuntimeAuthState,
+    RuntimeLifecycle,
+    RuntimeResourceGroups,
+    ConsoleLog,
+    SystemClock,
+    ConfigPaths,
+    // Mechanisms a test stands in for
+    ScryptHasher,
+    DefaultMessagingTuning,
+    FeishuSdkProvider,
+    TelegramTransportProvider,
+    QQTransportProvider,
+    QQScanTransportProvider,
+    WeChatTransportProvider,
+    WeChatScanTransportProvider,
+    CoreSessionLoaders,
+    DefaultTitleGenerators,
+    GlobalFetch,
+    UpdateCheckService,
+    UpdateJobService,
     // Stores
     UsersRepo,
     AuthSessionsRepo,
@@ -137,7 +187,7 @@ export class Startup {
     ProjectAdminRoutes,
     AdminRoutes,
     MeRoutes,
-    VersionModule,
+    VersionRoutes,
     InstallRoutes,
     EventsRoutes,
     PluginRoutes,
@@ -150,15 +200,30 @@ export class Startup {
 })
 export class PlatformModule {}
 
-/** The platform tree as the booter takes it: the runtime adapter pre-built over the claimed capabilities, plugin modules appended under the root. */
+/**
+ * The platform tree as the booter takes it: the runtime nodes pre-built over the claimed
+ * capabilities, the claim's replacements standing in for the nodes a test names, and
+ * plugin modules appended under the root.
+ */
 export function platformDef(
   caps: RuntimeCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
 ): ModuleDef {
+  const instances = new Map<ModuleClass, object>([
+    [RuntimeConfig, new RuntimeConfig(caps)],
+    [RuntimeDb, new RuntimeDb(caps)],
+    [RuntimeChannels, new RuntimeChannels(caps)],
+    [RuntimeProxy, new RuntimeProxy(caps)],
+    [RuntimeHmr, new RuntimeHmr(caps)],
+    [RuntimeDesktop, new RuntimeDesktop(caps)],
+    [RuntimeAuthState, new RuntimeAuthState(caps)],
+    [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
+  ]);
+  for (const [cls, instance] of caps.replacements) instances.set(cls, instance);
   return moduleDefOf(PlatformModule, {
     manifests: table.modules as ManifestTable,
-    instances: new Map([[RuntimeModule, new RuntimeModule(caps, adoptable)]]),
+    instances,
     extra: plugins,
   });
 }

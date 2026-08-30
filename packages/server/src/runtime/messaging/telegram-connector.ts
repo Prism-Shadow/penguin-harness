@@ -59,11 +59,10 @@ import type {
   TelegramUpdate,
 } from "./telegram-api.js";
 import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { createTelegramTransport } from "./telegram-api.js";
+import type { MessagingTuning } from "./bridge.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */
 export interface TelegramBindingConfig extends Record<string, unknown> {
@@ -597,13 +596,26 @@ export class TelegramConnector implements MessagingChannelConnector {
   },
 })
 export class TelegramMessaging {
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use() private readonly telegram!: TelegramTransportHandle;
+  @Use() private readonly tuning!: MessagingTuning;
   @Bind("messaging-telegram.connector") connector!: MessagingChannelConnector;
   setup() {
-    const overrides = this.overrides.value();
+    const { retryDelayMs } = this.tuning;
     this.connector = new TelegramConnector(
-      overrides.telegramTransport ?? createTelegramTransport(),
-      overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
+      this.telegram.transport,
+      retryDelayMs !== undefined ? { retryDelayMs } : {},
     );
+  }
+}
+
+/** The Bot API transport as a node, so a test stands in a fake for the network. */
+export abstract class TelegramTransportHandle extends Interface<{
+  transport: Opaque<"TelegramTransport", TelegramTransport>;
+}>() {}
+@Module()
+export class TelegramTransportProvider {
+  @Provide() telegramTransport!: TelegramTransportHandle;
+  setup() {
+    this.telegramTransport = { transport: createTelegramTransport() };
   }
 }

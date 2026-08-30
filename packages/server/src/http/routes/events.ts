@@ -9,7 +9,6 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface EventsRouteDeps {
@@ -45,7 +44,7 @@ export function eventsRoutes(deps: EventsRouteDeps): Hono<AppEnv> {
   },
 })
 export class EventsRoutes {
-  @Use(RuntimeModule) private readonly channels!: Channels;
+  @Use() private readonly channels!: Channels;
   @Bind("EventsRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = eventsRoutes({ channels: this.channels as ChannelHub });

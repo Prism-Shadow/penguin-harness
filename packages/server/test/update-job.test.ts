@@ -3,6 +3,7 @@
  * over a scripted runner (nothing is ever spawned here).
  */
 import { describe, expect, it } from "vitest";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import {
   INITIAL_PROGRESS,
   UpdateJobService,
@@ -97,7 +98,7 @@ function scriptedRunner(): {
 describe("UpdateJobService", () => {
   it("starts idle, runs the CLI entry with progress, and ends updated with needsRestart", async () => {
     const script = scriptedRunner();
-    const job = new UpdateJobService(script.runner);
+    const job = wire(UpdateJobService, { runner: script.runner });
     expect(job.status()).toEqual({ state: "idle", targetVersion: null, output: "" });
 
     const started = job.start("/opt/penguin/cli.js", "0.3.0");
@@ -128,14 +129,14 @@ describe("UpdateJobService", () => {
 
   it("classifies a refusal, a failure, a timeout and a spawn error", async () => {
     const refused = scriptedRunner();
-    const a = new UpdateJobService(refused.runner);
+    const a = wire(UpdateJobService, { runner: refused.runner });
     a.start("/e", null);
     refused.emit("This penguin runs from a source checkout, so there is nothing to download.");
     await refused.finish({ exitCode: 0, timedOut: false });
     expect(a.status().result).toMatchObject({ status: "unsupported", needsRestart: false });
 
     const failed = scriptedRunner();
-    const b = new UpdateJobService(failed.runner);
+    const b = wire(UpdateJobService, { runner: failed.runner });
     b.start("/e", "0.3.0");
     await failed.finish({ exitCode: 1, timedOut: false });
     expect(b.status().result).toMatchObject({ status: "failed" });
@@ -143,14 +144,14 @@ describe("UpdateJobService", () => {
     expect(b.start("/e", "0.3.0").state).toBe("running");
 
     const timedOut = scriptedRunner();
-    const c = new UpdateJobService(timedOut.runner);
+    const c = wire(UpdateJobService, { runner: timedOut.runner });
     c.start("/e", null);
     await timedOut.finish({ exitCode: -1, timedOut: true });
     expect(c.status().result?.status).toBe("failed");
     expect(c.status().output).toContain("killed after 10 minutes");
 
     const broken = scriptedRunner();
-    const d = new UpdateJobService(broken.runner);
+    const d = wire(UpdateJobService, { runner: broken.runner });
     d.start("/e", null);
     await broken.finish({ exitCode: -1, timedOut: false, spawnError: "ENOENT" });
     expect(d.status().result?.status).toBe("failed");
@@ -159,7 +160,7 @@ describe("UpdateJobService", () => {
 
   it("ends at once as unsupported when there is no CLI to run", () => {
     const script = scriptedRunner();
-    const job = new UpdateJobService(script.runner);
+    const job = wire(UpdateJobService, { runner: script.runner });
     expect(job.start(null, "0.3.0")).toMatchObject({
       state: "done",
       result: { status: "unsupported", reason: "not_launched_via_cli", needsRestart: false },

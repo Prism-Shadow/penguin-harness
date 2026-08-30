@@ -289,8 +289,25 @@ export function moduleDefOf(
   if (manifest === undefined) {
     throw new ModuleBootError(`${meta.name}: not in the generated manifest table — run gen:ifaces`);
   }
-  const instance = (opts.instances?.get(cls) ??
-    new (cls as unknown as new () => object)()) as Record<string, unknown> & {
+  // The field decorators record a class's @Use / @Provide / @Bind fields when an instance
+  // is constructed. A replacement (a test double standing in for the class) is not one,
+  // so the class is probed once to learn its fields before the double is checked against
+  // them; the node classes' constructors only store what they are given.
+  const supplied = opts.instances?.get(cls);
+  if (
+    supplied !== undefined &&
+    fieldsOf(cls).use.size + fieldsOf(cls).provide.size + fieldsOf(cls).bind.size === 0
+  ) {
+    try {
+      new (cls as unknown as new () => object)();
+    } catch {
+      // A class that cannot be built without arguments keeps whatever was recorded.
+    }
+  }
+  const instance = (supplied ?? new (cls as unknown as new () => object)()) as Record<
+    string,
+    unknown
+  > & {
     setup?: (ctx: ClassCtx, context: Json) => void | Promise<void>;
     park?: () => Json;
     migrations?: Record<number, (old: Json) => Json>;
@@ -314,15 +331,17 @@ export function moduleDefOf(
   for (const field of Object.keys(manifest.requires)) {
     if (!f.use.has(field)) throw stale(`requirement '${field}' in the table has no @Use field`);
   }
-  const selfAlias = meta.kind === "component" ? meta.name : null;
-  if (selfAlias !== null && manifest.provides[selfAlias] === undefined)
-    throw stale(`component '${meta.name}' does not provide itself in the table`);
+  // A component's provisions are all the instance: itself, and every interface it
+  // `implements` (the generator records both).
+  const selfAliases = meta.kind === "component" ? Object.keys(manifest.provides) : [];
+  if (meta.kind === "component" && manifest.provides[cls.name] === undefined)
+    throw stale(`component '${cls.name}' does not provide itself in the table`);
   for (const field of f.provide) {
     if (manifest.provides[field] === undefined)
       throw stale(`@Provide field '${field}' is not a provision in the table`);
   }
   for (const field of Object.keys(manifest.provides)) {
-    if (field === selfAlias) continue;
+    if (selfAliases.includes(field)) continue;
     if (!f.provide.has(field))
       throw stale(`provision '${field}' in the table has no @Provide field`);
   }
@@ -342,11 +361,14 @@ export function moduleDefOf(
       children: [...manifest.children.filter((c) => c !== "*"), ...(extra.length > 0 ? ["*"] : [])],
     },
     async create(ctx, context) {
+      // A supplied instance (a double) keeps the fields it came with; the tree fills the
+      // rest, so a double may be partial.
       for (const field of f.use.keys())
-        instance[field] = (ctx.use as Record<string, unknown>)[field];
+        if (supplied === undefined || instance[field] === undefined)
+          instance[field] = (ctx.use as Record<string, unknown>)[field];
       if (typeof instance.setup === "function") await instance.setup(ctx, context);
       const api: Record<string, unknown> = {};
-      if (selfAlias !== null) api[selfAlias] = instance;
+      for (const alias of selfAliases) api[alias] = instance;
       for (const field of f.provide) {
         if (instance[field] === undefined) {
           throw new ModuleBootError(
@@ -437,14 +459,18 @@ function wiring(
         need.iface.includes("#") ? need.iface : `${manifest.name}#${need.iface}`
       ]!;
     const candidates = need.from !== undefined ? [need.from] : Object.keys(provides);
-    for (const from of candidates) {
-      if (from === manifest.name) continue;
-      for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
-        // checkTree already established satisfaction; pick the first satisfying alias.
-        if (satisfiesQuick(decl, required, ifaces)) {
-          out[alias] = { from, alias: pAlias };
-          break;
+    // checkTree already established a unique satisfier — a provision DECLARING the very
+    // interface (the same table entry) wins over one that merely has the shape.
+    for (const exact of [true, false]) {
+      for (const from of candidates) {
+        if (from === manifest.name) continue;
+        for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
+          if (exact ? decl === required : satisfiesQuick(decl, required, ifaces)) {
+            out[alias] = { from, alias: pAlias };
+            break;
+          }
         }
+        if (out[alias] !== undefined) break;
       }
       if (out[alias] !== undefined) break;
     }
