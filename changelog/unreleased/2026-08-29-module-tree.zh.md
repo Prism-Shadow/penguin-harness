@@ -38,6 +38,10 @@
 
 根下面是十四个 child 而不是七十四个：`RuntimeModule`、`SettingsModule`、`IdentityModule`、`ProjectsModule`、`SessionRuntimeModule`、`ObservabilityModule`、`TracesModule`、`AgentsModule`、`WorkspaceModule`、`MessagingHubModule`、`ApiModule`，加上沙箱、终端、machines 三个模块和 `Startup`。组是 `@Module({ children, exports })`：`exports` 是它的 children 向树的其余部分提供的接口，由声明该接口的那个 child 转出；组里其余的一切——repo、测试要顶替的接缝、路由组件——只在组内可见（kernel 的可见性是词法的：兄弟与祖先的兄弟，从不包括祖先）。整个组可以替换，组里的任何节点也可以。启动顺序跟随被导出的 child 而不是组，所以两个组可以互相需要对方的 child 而不成环。生成器把每个 requires 解析到将要提供它的模块并记为 `from`——表现在写明一个节点依赖哪个*模块*，页面也就显示出谁依赖谁。
 
+## 扩展可以替换任意节点
+
+`package.json#penguin.replaces` 以被顶替节点的名字列出 manifest——组件、模块、乃至带自己 `children` 与 `exports` 的整个组——默认导出的 `replaces` 提供代码。放入时对替身不做任何检查：平台把替身放在原 class 的位置上组装整棵树，然后在任何节点运行之前把树当作一个整体校验——每个 requires 按签名解析、每个导出别名解析到某个 child、每个 provides 在实例上确实存在。替身提供的少于消费者所需，就按名字拒绝（`ServerSettingsRepo: api 'Settings' does not satisfy 'Settings': missing [getAttachmentLimitsMb]`、`SettingsModule: exports 'Settings' but no child provides it`），App 不启动；两个扩展替换同一节点在加载期就冲突。生产代码与测试 helper 都经由组的导出读树，从不按实现节点的名字，所以被替换的节点就是所有人拿到的那个。
+
 ## 表就是一个页面
 
 `pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，按 commit sha 发布到 `ifaces-pages` 分支，并从 job summary 与一条 PR 评论链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。

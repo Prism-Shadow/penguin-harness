@@ -54,6 +54,7 @@ import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
+import type { PluginHost } from "../src/plugin/host.js";
 import type { Replacements } from "../src/hmr/capabilities.js";
 import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
@@ -164,6 +165,8 @@ export interface TestDeps {
 
 export function flattenForTests(boot: ServerBoot): TestDeps {
   const { tree } = boot;
+  // Read through the groups' exports, never an implementation node by name: a test that
+  // replaces a node (or a whole group) still gets what the tree actually serves.
   const api = <T>(module: string, alias: string): T => tree.api<T>(module, alias);
   return {
     config: boot.config,
@@ -172,36 +175,36 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     channels: boot.channels,
     desktop: boot.desktop,
     tree,
-    sessionsRepo: api("SessionsRepo", "SessionsRepo"),
-    prefsRepo: api("UiPrefsRepo", "UiPrefsRepo"),
-    serverSettingsRepo: api("ServerSettingsRepo", "ServerSettingsRepo"),
-    authService: api("AuthService", "AuthService"),
-    adminService: api("AdminService", "AdminService"),
-    projectService: api("ProjectService", "ProjectService"),
-    access: api("ProjectAccess", "ProjectAccess"),
-    projectConfigService: api("ProjectConfigService", "ProjectConfigService"),
-    modelOAuth: api("ModelOAuthService", "ModelOAuthService"),
-    agentService: api("AgentService", "AgentService"),
-    agentConfigService: api("AgentConfigService", "AgentConfigService"),
-    memoryService: api("MemoryService", "MemoryService"),
-    sessionService: api("SessionsModule", "sessionService"),
-    traceService: api("TraceService", "TraceService"),
-    traceIndex: api("TraceIndexService", "TraceIndexService"),
-    usageService: api("UsageService", "UsageService"),
-    updateCheck: api("UpdateCheckService", "UpdateCheckService"),
-    workspaceFiles: api("WorkspaceFilesService", "WorkspaceFilesService"),
-    previewTokens: api("WorkspaceModule", "previewTokens"),
-    benchmarks: api("BenchmarkService", "BenchmarkService"),
-    snapshots: api("SnapshotService", "SnapshotService"),
-    schedulesRepo: api("SchedulesRepo", "SchedulesRepo"),
-    errorsRepo: api("ErrorsRepo", "ErrorsRepo"),
-    messagingRepo: api("MessagingBindingsRepo", "MessagingBindingsRepo"),
-    messaging: api("MessagingModule", "messaging"),
-    qqScan: api("MessagingModule", "qqScan"),
-    scheduler: api("Scheduler", "Scheduler"),
-    manager: api("SessionsModule", "manager"),
-    sessionSources: api("SessionSources", "SessionSources"),
-    errors: api("ErrorRecorder", "ErrorRecorder"),
+    sessionsRepo: api("SessionRuntimeModule", "SessionIndex"),
+    prefsRepo: api("SettingsModule", "UiPrefsStore"),
+    serverSettingsRepo: api("SettingsModule", "Settings"),
+    authService: api("IdentityModule", "Auth"),
+    adminService: api("IdentityModule", "Admin"),
+    projectService: api("ProjectsModule", "ProjectLifecycle"),
+    access: api("ProjectsModule", "Access"),
+    projectConfigService: api("ProjectsModule", "ProjectConfigStore"),
+    modelOAuth: api("ProjectsModule", "ModelOAuth"),
+    agentService: api("AgentsModule", "AgentLifecycle"),
+    agentConfigService: api("AgentsModule", "AgentConfig"),
+    memoryService: api("AgentsModule", "Memory"),
+    sessionService: api("SessionRuntimeModule", "SessionServiceIface"),
+    traceService: api("TracesModule", "Traces"),
+    traceIndex: api("TracesModule", "TraceIndex"),
+    usageService: api("ObservabilityModule", "UsageQueries"),
+    updateCheck: api("ApiModule", "UpdateCheck"),
+    workspaceFiles: api("WorkspaceModule", "WorkspaceFiles"),
+    previewTokens: api("WorkspaceModule", "PreviewTokens"),
+    benchmarks: api("AgentsModule", "Benchmarks"),
+    snapshots: api("AgentsModule", "Snapshots"),
+    schedulesRepo: api("SessionRuntimeModule", "Schedules"),
+    errorsRepo: api("ObservabilityModule", "ErrorLog"),
+    messagingRepo: api("MessagingHubModule", "MessagingBindings"),
+    messaging: api("MessagingHubModule", "Messaging"),
+    qqScan: api("MessagingHubModule", "QQScan"),
+    scheduler: api("SessionRuntimeModule", "Scheduling"),
+    manager: api("SessionRuntimeModule", "Sessions"),
+    sessionSources: api("SessionRuntimeModule", "SessionOrigins"),
+    errors: api("ObservabilityModule", "Errors"),
     machines: api("MachinesModule", "machines"),
   };
 }
@@ -254,6 +257,8 @@ export interface TestAppOptions {
   passwordHashCost?: number;
   log?: (line: string) => void;
   now?: () => Date;
+  /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
+  plugins?: PluginHost;
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
@@ -310,7 +315,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const { beforeSeed, config, ...overrides } = options;
+  const { beforeSeed, config, plugins, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
   const finalConfig = { ...testConfig(root), ...config };
@@ -324,6 +329,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       messagingLineDelayMs: 0,
       ...overrides,
     }),
+    plugins,
   );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
   const deps = flattenForTests(boot);

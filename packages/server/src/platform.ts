@@ -372,6 +372,7 @@ export function platformDef(
   caps: RuntimeCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -389,5 +390,6 @@ export function platformDef(
     manifests: table.modules as ManifestTable,
     instances,
     extra: plugins,
+    replace,
   });
 }

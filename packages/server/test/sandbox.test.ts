@@ -176,6 +176,7 @@ describe("sandbox settings ride the parked context across a swap", () => {
     const host = new PluginHost();
     host.use({
       specifier: "observer",
+      replaces: [],
       modules: [
         {
           manifest: parseManifest({

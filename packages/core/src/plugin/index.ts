@@ -38,7 +38,19 @@ export interface PluginModule {
   create(ctx: ModuleCtx, context: Json): ModuleInstance | Promise<ModuleInstance>;
 }
 
-/** What a plugin package's default export is. */
+/**
+ * What a plugin package's default export is.
+ *
+ * `modules` ADD nodes under the host's root. `replaces` STAND IN for nodes the host
+ * already has, by name — any node: a component, a module, a whole group with its
+ * children — its manifest (`package.json#penguin.replaces`) keeping the replaced node's
+ * name and declaring its own requires / provides / contributes / children / exports.
+ * Nothing about a replacement is checked when it is put in place; the tree it results
+ * in is checked as one, before any node runs — every requirement resolved at signature
+ * level, every provision present on the instance — so a replacement that offers less
+ * than its consumers need is refused by name, and the App does not boot.
+ */
 export interface Plugin {
-  modules: Record<string, PluginModule>;
+  modules?: Record<string, PluginModule>;
+  replaces?: Record<string, PluginModule>;
 }
