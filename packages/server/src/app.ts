@@ -113,6 +113,7 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { PullRequestService } from "./services/pull-request-service.js";
 import { HmrHost } from "./hmr/host.js";
 import { hmrRoutes } from "./hmr/routes.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
@@ -194,6 +195,7 @@ export interface AppDeps {
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
   workspaceFiles: WorkspaceFilesService;
+  pullRequests: PullRequestService;
   /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
   previewTokens: PreviewTokenSigner;
   benchmarks: BenchmarkService;
@@ -872,6 +874,7 @@ export function buildAppDeps(
     sources: sessionSources,
   });
   const workspaceFiles = new WorkspaceFilesService();
+  const pullRequests = new PullRequestService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate. (Per-App is the same trade at a
   // smaller scale: a push invalidates open previews, and a preview is one reload away.)
@@ -1076,6 +1079,7 @@ export function buildAppDeps(
     usageService,
     updateCheck,
     workspaceFiles,
+    pullRequests,
     previewTokens,
     benchmarks,
     snapshots,

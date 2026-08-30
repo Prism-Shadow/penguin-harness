@@ -102,6 +102,7 @@ import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { WorkspaceBrowser } from "./workspace-browser";
+import { useWorkspacePullRequest } from "./use-workspace-pr";
 import { ChatMemoryView } from "./memory-view";
 import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
@@ -878,6 +879,8 @@ export function ChatPage() {
   // details popover shows the list. Otherwise no timer runs: an idle session with no
   // processes has nothing to poll for. Fail-soft — a failed poll keeps the last list.
   const runningProcessCount = processes.filter((p) => p.running).length;
+  // The Workspace's open pull request, for the chip at the end of the header row.
+  const workspacePr = useWorkspacePullRequest(selected?.sessionId ?? null);
   const processesCanChange =
     stream.taskState !== "idle" || runningProcessCount > 0 || (infoOpen && processes.length > 0);
   useEffect(() => {
@@ -1824,6 +1827,20 @@ export function ChatPage() {
                       <GlyphIcon d={STAT_ICONS.services} />
                       {runningProcessCount}
                     </span>
+                  )}
+                  {/* The Workspace's open pull request: the number is the chip, the title is
+                      the hover, and the whole thing is the link. Absent whenever there is
+                      none to show — which includes every way asking could have failed. */}
+                  {workspacePr !== null && (
+                    <a
+                      href={workspacePr.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={S.chat.statPullRequest(workspacePr.title)}
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200`}
+                    >
+                      <GlyphIcon d={STAT_ICONS.pullRequest} />#{workspacePr.number}
+                    </a>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}

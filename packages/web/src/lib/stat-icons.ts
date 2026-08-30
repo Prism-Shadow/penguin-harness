@@ -32,6 +32,9 @@ export const STAT_ICONS = {
   cost: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-15v12m2.6-9.3c-.5-.8-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.7 5.4 1.3 5.4 4 0 1.2-1.2 2-2.7 2-1.2 0-2.2-.5-2.7-1.4",
   /** Copy */
   copy: "M9 9h9v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9zM7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1",
+  /** Pull request: the branch line, its two nodes, and the arm that joins them. */
+  pullRequest:
+    "M6 9v12M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6M13 6h3a2 2 0 0 1 2 2v7",
   /** Copied (checkmark) */
   check: "M5 13l4 4L19 7",
 } as const;

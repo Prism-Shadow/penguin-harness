@@ -1211,6 +1211,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(await deps.workspaceFiles.list(row.workspace, rel));
   });
 
+  /**
+   * The open pull request the Session's Workspace is on, for the header chip. Answers
+   * `{ pullRequest: null }` for every reason there could be none (see the service): the chip
+   * simply does not appear, and nothing here is an error the reader has to act on.
+   */
+  app.get("/:sessionId/pull-request", async (c) => {
+    const row = resolveSession(c);
+    return c.json({ pullRequest: await deps.pullRequests.forWorkspace(row.workspace) });
+  });
+
   app.get("/:sessionId/files/content", async (c) => {
     const row = resolveSession(c);
     const rel = c.req.query("path") ?? "";
