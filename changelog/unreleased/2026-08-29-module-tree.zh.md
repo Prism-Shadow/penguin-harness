@@ -14,7 +14,7 @@
 
 组件的接口就是它的 class 的投影；其余接口是 `extends Interface<…>()` 的抽象类，声明在哪里都可以。`pnpm gen:ifaces` 把每个这样的 interface 投影进 `packages/server/src/ifaces.json`——包含参数和返回类型，而不只是方法名；具名数据类型只输出一次、按引用使用，因此递归类型就是对自身的引用。这张表是生成物，不进版本库：`typecheck`、`build`、`test` 和部署脚本都会重新生成它。一个 requires 按 Go 的规则判定满足：消费者列出的每个方法都存在于提供者上且签名可赋值（参数逆变，返回协变）。模块可以在消费处声明自己需要的窄接口；scheduler 的 `ScheduleTaskRunner` 就是一例，由 session 运行时更宽的 `SessionManager` 满足。
 
-宿主对象（`AbortSignal`、`Request`，以及本包里写成 `Opaque<"Name">` 的 class）只按名字比较，生成器会明说而不是猜。
+宿主对象（`AbortSignal`、`Request`，以及本包里写成 `Opaque<"Name">` 的 class）只按名字比较，生成器会明说而不是猜——而且名字总是带着声明它的包（`@types/node#Request`、`@prismshadow/penguin-core#Resources`），同一个词在两个包里是两个身份。映射类型（`Pick<…>`、`Record<…>`）按它们本来的形状投影，带方法的别名以别名为名成为接口。
 
 ## contribution 是 manifest 数据
 
