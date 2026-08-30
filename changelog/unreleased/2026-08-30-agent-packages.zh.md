@@ -1,0 +1,27 @@
+# Agent 的定义可发布为 GitHub gist，也可从 gist 安装
+
+- **Date:** 2026-08-30
+- **Type:** feature
+- **Scope:** `server`, `web`
+
+[English](2026-08-30-agent-packages.md)
+
+Agent 现在可以作为*包*分享：它的定义——`agent_state/`（系统配置、提示词、技能、工具）和 `workflows/`（它为自己写的代码与页面）——以一组可读文本文件的形式发布到 GitHub gist，并可在任何一台 harness 上从这样的 gist 安装为一个新 Agent。Agent "经历过的东西"留在原地：记忆、工作区、scratchpad、评测结果、工作流的 `state.json`、版本历史和密钥库都不会被打包，所以装出来的是同一个 Agent，但什么都还没经历。
+
+## 格式
+
+gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SKILL.md` → `agent_state--skills--x--SKILL.md`），由 `penguin-agent.json` 携带清单（格式 `1`、Agent 的 id / 名称 / 描述、打包它的 harness 版本、每个文件的路径与编码）。文本原样存放，gist 页面上可读可 diff；二进制文件用 base64。一个包上限 5 MB；含 `--` 的路径无法打包（无法往返还原）。
+
+安装前逐项校验，任何字节都不会提前写入：清单格式、每条路径必须是相对路径、不能越界、必须落在可打包前缀之下、文件名必须与路径一致、GitHub 未截断文件。Agent 先按正常生命周期创建，文件随后写入；失败则删掉半成品。
+
+## 路由
+
+`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布，或就地更新指定 gist，让重新发布的 Agent 保持同一个链接。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
+
+## Token
+
+发布使用一个 GitHub token（`gist` 权限），存为服务器设置 `github_token`——与消息通道凭据、代理地址一样明文落盘，且在所有 API 表面只写不读：`GET /api/admin/settings` 返回 `githubTokenSet`，`PUT` 接受 `githubToken`（空串即清除）。读取公开 gist 不需要 token，未配置时安装照常可用。
+
+## Web App
+
+设置新增 **分享** 页（管理员）用于配置 token。Agent 概览页在快照导出 / 导入旁多了 **发布到 gist**：对话框列出将要发送的内容与不包含的内容，提供上次发布的 gist（按 Agent 记忆）以便就地更新，并展示结果链接。Agent 列表页多了 **从 gist 安装**：粘贴链接，读取（名称、描述、文件数、大小、打包版本），选择新 Agent 的 id，安装。
