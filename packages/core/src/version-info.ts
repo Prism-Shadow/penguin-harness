@@ -124,6 +124,10 @@ export interface IfacesSummary {
  * pushed code itself, so the record is complete on any runtime that can boot it.
  */
 export interface HarnessHistoryEntry {
+  /** The version's identity in the history: derived from its bundles (or its table, for a packaged boot). */
+  id: string;
+  /** Whether the platform kept this version's artifacts, so it can be pushed back. */
+  rollbackable: boolean;
   source: HarnessSource | null;
   /** When the version was committed (ISO 8601); null for a commit that predates the record. */
   pushedAt: string | null;

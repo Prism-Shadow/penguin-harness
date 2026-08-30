@@ -128,6 +128,15 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [diff, setDiff] = useState<DiffLoad>({ state: "idle" });
+  // Rollback: armed by the first click, sent by the second; then the history is polled
+  // until the runtime's current commit is the target (the swap happens under us).
+  const [rollback, setRollback] = useState<
+    | { state: "idle" }
+    | { state: "armed"; id: string }
+    | { state: "pushing"; id: string }
+    | { state: "done"; id: string }
+    | { state: "error"; message: string }
+  >({ state: "idle" });
 
   useEffect(() => {
     if (!open) return;
@@ -162,6 +171,38 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
       popEscLayer(id);
     };
   }, [open, onClose]);
+
+  const reload = () =>
+    api
+      .getVersionHistory()
+      .then((data) => setHistory(data))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+
+  const startRollback = async (id: string) => {
+    setRollback({ state: "pushing", id });
+    try {
+      await api.rollbackVersion(id);
+      // The swap replaces this platform; the runtime answers /history again once the new one is up.
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const h = await api.getVersionHistory();
+          const cur = h.entries.find((e) => isCurrent(e, h.current));
+          if (cur?.id === id) {
+            setHistory(h);
+            setRollback({ state: "done", id });
+            return;
+          }
+        } catch {
+          // mid-swap: the seam queues or refuses; keep polling
+        }
+      }
+      setRollback({ state: "error", message: S.harnessHistory.rollbackTimeout });
+      await reload();
+    } catch (err) {
+      setRollback({ state: "error", message: err instanceof Error ? err.message : String(err) });
+    }
+  };
 
   const entries = useMemo(() => history?.entries ?? [], [history]);
   const entry = entries[selected] ?? null;
@@ -294,6 +335,53 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                           : t.noTable}
                       </dd>
                     </dl>
+
+                    {!isCurrent(entry, history.current) ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                        {!entry.rollbackable ? (
+                          <span className="text-gray-500 dark:text-gray-400">{t.notKept}</span>
+                        ) : rollback.state === "armed" && rollback.id === entry.id ? (
+                          <>
+                            <span className="text-gray-700 dark:text-gray-300">
+                              {t.rollbackConfirm}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void startRollback(entry.id)}
+                              className="rounded-md bg-red-600 px-3 py-1 text-white hover:bg-red-700"
+                            >
+                              {t.rollbackYes}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRollback({ state: "idle" })}
+                              className="rounded-md border border-gray-300 px-3 py-1 dark:border-gray-700"
+                            >
+                              {S.common.cancel}
+                            </button>
+                          </>
+                        ) : rollback.state === "pushing" && rollback.id === entry.id ? (
+                          <span className="text-gray-700 dark:text-gray-300">
+                            {t.rollbackPushing}
+                          </span>
+                        ) : rollback.state === "done" && rollback.id === entry.id ? (
+                          <span className="text-green-700 dark:text-green-400">
+                            {t.rollbackDone}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRollback({ state: "armed", id: entry.id })}
+                            className="rounded-md border border-gray-300 px-3 py-1 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                          >
+                            {t.rollback}
+                          </button>
+                        )}
+                        {rollback.state === "error" ? (
+                          <span className="text-red-600 dark:text-red-400">{rollback.message}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       {previous
