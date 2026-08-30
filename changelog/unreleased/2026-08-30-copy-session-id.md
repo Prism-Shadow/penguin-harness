@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#550](https://github.com/Prism-Shadow/penguin-harness/pull/550)
 
 [中文版](2026-08-30-copy-session-id.zh.md)
 
