@@ -287,6 +287,7 @@ export interface Messages {
     noOpen: string;
     /** Printed by the supervising process as it relaunches the service on a restart request (the web UI's "restart to update"). */
     restarting: string;
+    app: string;
   };
   /** `penguin server reset-admin-password`: help text and every line the command can print. */
   auth: {
@@ -814,6 +815,7 @@ const en: Messages = {
     host: "Listen address (falls back to the HOST env var, default 127.0.0.1)",
     noOpen: "Do not open a browser automatically",
     restarting: "Restarting the service to apply the update…",
+    app: "Open one workflow's page as the whole app: <project>/<agent>/<workflow> (Ctrl+P or Ctrl+Shift+P in the page opens the command palette to leave)",
   },
   auth: {
     desc: "Sign in to a PenguinHarness server from the terminal",
@@ -1329,6 +1331,7 @@ const zh: Messages = {
     host: "监听地址（其次取环境变量 HOST，缺省 127.0.0.1）",
     noOpen: "不自动打开浏览器",
     restarting: "正在重启服务以应用更新…",
+    app: "以某个 workflow 页面占满整个应用打开：<project>/<agent>/<workflow>（页面内按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可退出）",
   },
   auth: {
     desc: "在终端里登录 PenguinHarness 服务",
