@@ -1,16 +1,22 @@
 /**
- * Install an Agent from a gist. Two steps in one dialog: read the gist (nothing is written;
- * the package's name, description, file count and size come back for the user to look at),
- * then choose the new Agent's id and install. Errors from the read — not a package, an
- * unsafe path, no such gist — render inline where the URL was typed.
+ * Install an Agent from a source — a gist, npm, a GitHub repository or release, a git URL,
+ * or a tarball URL. Two steps in one dialog: read the source (nothing is written; the
+ * package's name, description, file count, size and resolved origin come back for the user
+ * to look at), then choose the new Agent's id and install. The kind is detected from the
+ * shape of what was typed; the select forces one when the shape is ambiguous. Errors from
+ * the read — not a package, an unsafe path, nothing there — render inline under the input.
  */
 import { useEffect, useState } from "react";
-import type { AgentPackagePreviewResponse } from "@prismshadow/penguin-server/api";
+import type {
+  AgentPackagePreviewResponse,
+  AgentPackageSourceKind,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
+import { Select } from "../../components/ui/select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
@@ -29,6 +35,7 @@ export function InstallFromGistDialog({
   onInstalled: (agentId: string) => void;
 }) {
   const [gist, setGist] = useState("");
+  const [kind, setKind] = useState<AgentPackageSourceKind | "">("");
   const [gistError, setGistError] = useState<string | undefined>(undefined);
   const [preview, setPreview] = useState<AgentPackagePreviewResponse | null>(null);
   const [agentId, setAgentId] = useState("");
@@ -38,6 +45,7 @@ export function InstallFromGistDialog({
   useEffect(() => {
     if (!open) return;
     setGist("");
+    setKind("");
     setGistError(undefined);
     setPreview(null);
     setAgentId("");
@@ -49,9 +57,9 @@ export function InstallFromGistDialog({
     setBusy(true);
     setGistError(undefined);
     try {
-      const res = await api.previewAgentPackage(gist.trim());
+      const res = await api.previewAgentPackage(gist.trim(), kind === "" ? undefined : kind);
       setPreview(res);
-      setAgentId(res.manifest.agentId);
+      setAgentId(res.suggestedId);
     } catch (e) {
       setPreview(null);
       if (e instanceof ApiError) setGistError(apiErrorText(e));
@@ -69,7 +77,12 @@ export function InstallFromGistDialog({
     }
     setBusy(true);
     try {
-      const res = await api.installAgentPackage({ gist: gist.trim(), projectId, agentId });
+      const res = await api.installAgentPackage({
+        source: gist.trim(),
+        ...(kind === "" ? {} : { kind }),
+        projectId,
+        agentId,
+      });
       toastSuccess(S.agent.installed(res.agentId));
       onInstalled(res.agentId);
       onClose();
@@ -112,7 +125,8 @@ export function InstallFromGistDialog({
           label={S.agent.installGist}
           size="sm"
           value={gist}
-          placeholder="https://gist.github.com/…"
+          hint={S.agent.installSourceHint}
+          placeholder="https://github.com/… · npm:… · https://gist.github.com/…"
           error={gistError}
           disabled={preview !== null}
           onChange={(e) => {
@@ -123,10 +137,27 @@ export function InstallFromGistDialog({
             if (e.key === "Enter" && preview === null) void read();
           }}
         />
+        {preview === null && (
+          <Select
+            label={S.agent.installKind}
+            size="sm"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as AgentPackageSourceKind | "")}
+          >
+            <option value="">{S.agent.installKindAuto}</option>
+            <option value="gist">gist</option>
+            <option value="npm">npm</option>
+            <option value="github">{S.agent.installKindGithub}</option>
+            <option value="github-release">{S.agent.installKindRelease}</option>
+            <option value="git">git</option>
+            <option value="url">{S.agent.installKindUrl}</option>
+          </Select>
+        )}
         {preview !== null && (
           <>
             <div className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
               <p className="font-medium">{preview.manifest.name}</p>
+              <p className="mt-0.5 break-all font-mono text-xs text-gray-500">{preview.source}</p>
               {preview.manifest.description !== "" && (
                 <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
                   {preview.manifest.description}

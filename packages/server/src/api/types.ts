@@ -3592,11 +3592,18 @@ export interface AgentPackagePublishResponse {
   bytes: number;
 }
 
-/** POST /api/agent-packages/preview — a gist read and validated, nothing written. */
+/** How an Agent package source is read (see the server's packages/sources.ts). */
+export type AgentPackageSourceKind = "gist" | "npm" | "github-release" | "github" | "git" | "url";
+
+/** POST /api/agent-packages/preview — a source read and validated, nothing written. */
 export interface AgentPackagePreviewResponse {
   manifest: PackageManifestType;
   bytes: number;
+  /** The resolved origin, for display: `npm:<name>@<version>`, `github:o/r#ref`, a gist URL, … */
   source: string;
+  kind: AgentPackageSourceKind;
+  /** The manifest's Agent id, or the source's name when the source carries no manifest. */
+  suggestedId: string;
 
 /**
  * One field of a plugin's declared configuration (`package.json#penguin.configuration
