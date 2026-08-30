@@ -38,8 +38,10 @@ import {
   manifestOf,
   MAX_PACKAGE_BYTES,
   PackageFormatError,
+  packageFromTree,
   parsePackage,
 } from "./format.js";
+import { fetchSource, parseSource, type SourceKind } from "./sources.js";
 
 /** Server setting holding the GitHub token used to publish (never returned to a client). */
 export const GITHUB_TOKEN_KEY = "github_token";
@@ -162,13 +164,24 @@ export class AgentPackageService implements AgentPackages {
     return { gistId: id, url, files: pkg.files.length, bytes: pkg.bytes };
   }
 
-  async preview(gist: string): Promise<PackagePreview> {
-    const { parsed, url } = await this.read(gist);
-    return { manifest: parsed.manifest, bytes: parsed.bytes, source: url };
+  async preview(source: string, kind?: string): Promise<PackagePreview> {
+    const read = await this.read(source, kind);
+    return {
+      manifest: read.parsed.manifest,
+      bytes: read.parsed.bytes,
+      source: read.origin,
+      kind: read.kind,
+      suggestedId: read.suggestedId,
+    };
   }
 
-  async install(projectId: string, gist: string, agentId: string): Promise<{ agentId: string }> {
-    const { parsed } = await this.read(gist);
+  async install(
+    projectId: string,
+    source: string,
+    agentId: string,
+    kind?: string,
+  ): Promise<{ agentId: string }> {
+    const { parsed } = await this.read(source, kind);
     await this.agents.createAgent(
       projectId,
       agentId,
@@ -213,16 +226,53 @@ export class AgentPackageService implements AgentPackages {
     }
   }
 
-  /** Reads a gist (public gists need no token; a token is used when configured). */
+  /**
+   * Reads any source into a validated package. A gist is a flat set of text files and is
+   * read here; every other kind is fetched as a tree (sources.ts) and read by format.ts —
+   * with its manifest when it has one, as a bare Agent directory when it does not.
+   */
   private async read(
-    gist: string,
-  ): Promise<{ parsed: ReturnType<typeof parsePackage>; url: string }> {
-    let id: string;
+    spec: string,
+    kind?: string,
+  ): Promise<{
+    parsed: ReturnType<typeof parsePackage>;
+    origin: string;
+    kind: SourceKind;
+    suggestedId: string;
+  }> {
+    let source;
     try {
-      id = gistIdOf(gist);
+      source = parseSource(spec, kind === undefined ? undefined : (kind as SourceKind));
     } catch (err) {
-      throw new HttpError(400, "invalid_gist", (err as Error).message);
+      throw new HttpError(400, "invalid_source", (err as Error).message);
     }
+    if (source.kind !== "gist") {
+      const tree = await fetchSource(source, {
+        fetch: (input, init) => this.http.fetch(input, init),
+        githubToken: this.token(),
+      });
+      try {
+        const parsed = packageFromTree(tree.files, {
+          agentId: tree.suggestedId,
+          name: tree.suggestedId,
+          packagedBy: "unknown",
+        });
+        return {
+          parsed,
+          origin: tree.origin,
+          kind: source.kind,
+          suggestedId: tree.files.has("penguin-agent.json")
+            ? parsed.manifest.agentId
+            : tree.suggestedId,
+        };
+      } catch (err) {
+        if (err instanceof PackageFormatError) {
+          throw new HttpError(400, "invalid_package", err.message);
+        }
+        throw err;
+      }
+    }
+    const id = source.id;
     const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
     const body = (await res.json()) as GistResponse;
     const files = body.files;
@@ -243,7 +293,7 @@ export class AgentPackageService implements AgentPackages {
       );
       const url =
         typeof body.html_url === "string" ? body.html_url : `https://gist.github.com/${id}`;
-      return { parsed, url };
+      return { parsed, origin: url, kind: "gist", suggestedId: parsed.manifest.agentId };
     } catch (err) {
       if (err instanceof PackageFormatError)
         throw new HttpError(400, "invalid_package", err.message);
