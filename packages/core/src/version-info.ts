@@ -109,6 +109,24 @@ export interface HarnessInfo {
  * `harness` describes the data root's store, so only a caller that knows which root is in
  * play can fill it.
  */
+/** One version the HMR store committed, as the history remembers it: what {@link HarnessInfo} said at the time. */
+export interface HarnessHistoryEntry {
+  source: HarnessSource | null;
+  /** When the version was committed (ISO 8601). */
+  pushedAt: string;
+  bundles: HarnessInfo["bundles"];
+}
+
+/**
+ * The harness versions this data root has committed, newest first, and the one currently
+ * committed. The store keeps only a rollback copy of each artifact; the history is the
+ * record of what was pushed, kept apart from the bundles it names.
+ */
+export interface HarnessHistory {
+  current: HarnessInfo | null;
+  entries: HarnessHistoryEntry[];
+}
+
 export interface VersionReport extends BuildInfo {
   harness: HarnessInfo | null;
 }
