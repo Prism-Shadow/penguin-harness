@@ -32,6 +32,14 @@ export interface Iface<A extends Park = Park, C extends Json = Json> {
   children: Record<string, ChildDecl>;
   /** Ships with the code, keyed by fromVersion; chained automatically (1→2→3). */
   migrations: Record<number, (old: Json) => Json>;
+  /**
+   * Document versions NEWER than this iface's that it reads as its own: a later
+   * generation that only added fields leaves a document this generation still
+   * understands, and saying so is what lets an older platform be pushed back onto a data
+   * root a newer one parked on — a rollback. The document is validated against this
+   * iface's schema like any other; nothing is migrated.
+   */
+  accepts: readonly number[];
   /** Phantom marker carrying the api type (covariant so Instance<Derived> is an Instance<Park>); never a runtime value. */
   api?: A;
 }
@@ -49,6 +57,7 @@ export function defineIface<A extends Park, C extends Json>(def: {
   methods: readonly string[];
   children?: Record<string, ChildDecl>;
   migrations?: Record<number, (old: Json) => Json>;
+  accepts?: readonly number[];
 }): Iface<A, C> {
   return {
     kind: "iface",
@@ -58,6 +67,7 @@ export function defineIface<A extends Park, C extends Json>(def: {
     methods: def.methods,
     children: def.children ?? {},
     migrations: def.migrations ?? {},
+    accepts: def.accepts ?? [],
   };
 }
 

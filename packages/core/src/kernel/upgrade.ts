@@ -74,8 +74,12 @@ function reconcileNode(iface: AnyIface, doc: Json, path: string, state: Reconcil
   let version = doc.v;
   let self = doc.self;
   if (version > iface.version) {
-    state.invalid.push(`${path}.v: parked under v${version}, newer than iface v${iface.version}`);
-    return doc;
+    if (!iface.accepts.includes(version)) {
+      state.invalid.push(`${path}.v: parked under v${version}, newer than iface v${iface.version}`);
+      return doc;
+    }
+    // A newer document this iface declares it reads: taken as its own, no chain to run.
+    version = iface.version;
   }
   // Migrator chain ships with the code (iface.migrations), auto-chained 1→2→3.
   // MVP scope: migrations transform the node's own `self` document; reshaping
