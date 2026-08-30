@@ -22,7 +22,6 @@ import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
-import { HarnessHistoryPage } from "./features/harness/harness-history-page";
 import { PAGES, mergePages } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 
@@ -38,7 +37,6 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   ModelsPage,
   PluginDetailPage,
   MachinesPage,
-  HarnessHistoryPage,
   UsagePage,
   BenchmarkPage,
 };
