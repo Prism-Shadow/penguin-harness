@@ -1215,6 +1215,9 @@ export const rollbackVersion = (id: string) =>
     method: "POST",
     body: { id },
   });
+/** A recorded interface table by hash — the module tree a version was built from. */
+export const getVersionIfacesTable = (hash: string) =>
+  apiFetch<unknown>(`/api/version/history/ifaces/${encodeURIComponent(hash)}`);
 /** What changed between two stored interface tables; either hash may be "none". */
 export const getVersionHistoryDiff = (from: string, to: string) =>
   apiFetch<VersionHistoryDiffResponse>(
