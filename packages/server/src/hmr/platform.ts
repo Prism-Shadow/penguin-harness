@@ -113,10 +113,6 @@ export type PlatformCtx = {
 export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
-  // Two earlier generations of this harness stamped the document v2 and v3 while only
-  // adding to it (`modules`, and node names); they read as v1 here, so a data root they
-  // parked on takes this platform back.
-  accepts: [2, 3],
   context: schema<PlatformCtx>(
     // arktype infers `unknown` for the index signature where the context says Json; the
     // runtime shape is the same, so the one cast lives here. Undeclared keys pass, so a
