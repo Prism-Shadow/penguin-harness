@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#557](https://github.com/Prism-Shadow/penguin-harness/pull/557)
 
 [English](2026-08-30-sessions-list-live.md)
 
