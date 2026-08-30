@@ -74,7 +74,7 @@ import type { Instance, Json, AnyIface, AnyImpl } from "@prismshadow/penguin-cor
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
-import { MATERIALIZED } from "./manifest.js";
+import { MATERIALIZED, appendHarnessHistory } from "./manifest.js";
 import type { PlatformApi } from "./platform.js";
 import { packagedPlatform } from "./platform.js";
 
@@ -622,6 +622,21 @@ export class HmrHost {
         ...(source === null ? {} : { source }),
         pushedAt: new Date().toISOString(),
       }));
+      // The history is a record beside the store, not part of the commit: a version is
+      // committed whether or not its line could be written.
+      try {
+        await appendHarnessHistory(this.root, {
+          source,
+          pushedAt: new Date().toISOString(),
+          bundles: {
+            platform: `store/platform/${platformSha}.mjs`,
+            cli: `store/cli/${cliSha}.mjs`,
+            web: `store/web/${webSha}.webz`,
+          },
+        });
+      } catch (err) {
+        this.warn(`harness history not recorded: ${errMsg(err)}`);
+      }
       return true;
     } catch (err) {
       this.warn(`update not persisted (filesystem unavailable?): ${errMsg(err)}`);

@@ -191,6 +191,20 @@ export const zh = {
     } as Record<string, string>,
   },
 
+  commandPalette: {
+    title: "命令面板",
+    placeholder: "输入以筛选命令…",
+    noResults: "没有匹配的命令",
+    hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
+    harnessHistory: "Harness 历史",
+  },
+  harnessHistory: {
+    title: "Harness 历史",
+    loading: "加载中…",
+    empty: "还没有向这台服务器推送过 harness。",
+    current: "当前",
+    noProvenance: "（未记录来源）",
+  },
   /**
    * The software-update flow (lib/update-flow.ts): the one modal for both the server release
    * and the desktop client, the account-menu row, the version-line badge, and the toasts for
