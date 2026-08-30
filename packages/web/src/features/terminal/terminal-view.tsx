@@ -31,6 +31,7 @@ function loadXterm() {
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
     import("@xterm/addon-web-links"),
+    import("@xterm/addon-clipboard"),
   ]);
 }
 
@@ -227,7 +228,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
     };
 
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await loadXterm();
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
       let socket: WebSocket | null = null;
       let exited = false;
@@ -268,6 +269,18 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         new WebLinksAddon(() => {}, {
           hover: (_event, text, range) => links.hover(text, range),
           leave: () => links.leave(),
+        }),
+      );
+      // OSC 52: a program's own copy reaches the system clipboard — what tmux's copy mode
+      // does on every copy, and what makes a selection inside tmux land where a person
+      // expects it. WRITE only. The addon's default provider also answers a program's
+      // request to READ the clipboard, and terminal output is not something to hand the
+      // clipboard's contents to.
+      term.loadAddon(
+        new ClipboardAddon({
+          readText: () => Promise.resolve(""),
+          writeText: (_selection, text) =>
+            navigator.clipboard?.writeText(text).catch(() => {}) ?? Promise.resolve(),
         }),
       );
       termRef.current = term;
