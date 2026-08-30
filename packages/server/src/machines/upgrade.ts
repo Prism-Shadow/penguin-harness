@@ -103,7 +103,11 @@ function readAssets(dir: string): { files: Record<string, string>; exec: string[
     const abs = path.join(entry.parentPath, entry.name);
     const rel = path.relative(dir, abs).split(path.sep).join("/");
     files[rel] = fs.readFileSync(abs).toString("base64");
-    if ((fs.statSync(abs).mode & 0o111) !== 0) exec.push(rel);
+    // The mode where the filesystem keeps one; by name where it cannot. A Windows machine has
+    // no exec bit to read, and a hand-over from it would otherwise strip the bit off
+    // node-pty's darwin spawn-helper — the one file whose bit decides whether a terminal
+    // starts on the macOS machine receiving it. deploy.mjs applies the same rule on push.
+    if (rel.endsWith("/spawn-helper") || (fs.statSync(abs).mode & 0o111) !== 0) exec.push(rel);
   }
   return { files, exec };
 }
