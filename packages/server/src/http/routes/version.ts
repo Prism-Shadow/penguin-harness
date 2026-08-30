@@ -22,7 +22,14 @@
 import { versionReport } from "../../version-report.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { RestartResponse, UpdateJobStatus, VersionResponse } from "../../api/types.js";
+import type {
+  RestartResponse,
+  UpdateJobStatus,
+  UpdateRunResponse,
+  VersionHistoryResponse,
+  VersionResponse,
+} from "../../api/types.js";
+import { readHarnessHistory, readHarnessInfo } from "../../hmr/manifest.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
@@ -57,6 +64,13 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
 
   app.get("/", async (c) => {
     return c.json((await versionReport(deps.config.root)) satisfies VersionResponse);
+  });
+
+  /** The versions committed to this root, newest first, and the current one (see hmr/manifest.ts). */
+  app.get("/history", async (c) => {
+    const root = deps.config.root;
+    const [current, entries] = await Promise.all([readHarnessInfo(root), readHarnessHistory(root)]);
+    return c.json({ current, entries } satisfies VersionHistoryResponse);
   });
 
   app.get("/update-check", async (c) => {

@@ -184,6 +184,20 @@ export const en: Strings = {
     } as Record<string, string>,
   },
 
+  commandPalette: {
+    title: "Command Palette",
+    placeholder: "Type to filter commands…",
+    noResults: "No matching commands",
+    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
+    harnessHistory: "Harness history",
+  },
+  harnessHistory: {
+    title: "Harness history",
+    loading: "Loading…",
+    empty: "No harness has been pushed to this server yet.",
+    current: "current",
+    noProvenance: "(no provenance recorded)",
+  },
   /**
    * The software-update flow (lib/update-flow.ts): the one modal for both the server release
    * and the desktop client, the account-menu row, the version-line badge, and the toasts for
