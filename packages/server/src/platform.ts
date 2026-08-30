@@ -119,6 +119,9 @@ import {
   Projects,
 } from "./mechanisms/projects.js";
 import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
+import { Workflows } from "./mechanisms/workflows.js";
+import { WorkflowService } from "./workflows/service.js";
+import { WorkflowPrompt, WorkflowRoutes } from "./workflows/routes.js";
 import {
   ErrorLog,
   Errors,
@@ -382,6 +385,12 @@ export class MessagingHubModule {}
 })
 export class ApiModule {}
 
+@Module({
+  children: [WorkflowPrompt, WorkflowService, WorkflowRoutes],
+  exports: [Workflows],
+})
+export class WorkflowsModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
@@ -400,6 +409,7 @@ export class ApiModule {}
     SandboxModule,
     TerminalModule,
     MachinesModule,
+    WorkflowsModule,
     Startup,
   ],
 })
