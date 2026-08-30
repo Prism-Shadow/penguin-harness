@@ -4,11 +4,18 @@
  * with no live forward answers 503. The tunnel is plumbing — raising it is not a decision a
  * person has to make, so the page raises it and tries again on a widening schedule.
  *
- * ONCE per machine per page load: the first need starts the attempt, every later need joins
- * it, and a settled outcome is kept — a machine that could not be reached after the whole
+ * ONE attempt at a time per machine: the first need starts it and every later need joins it.
+ * A FAILED outcome is then kept — a machine that could not be reached after the whole
  * schedule is not re-tried by every keystroke that names it; the Machines page is where a
  * person takes over. The schedule lives here, on the page, for the reason the probe schedule
  * does: a retry loop on the server would keep spawning ssh after the last tab closed.
+ *
+ * A SUCCESSFUL one is not kept, because it is not a fact about the machine — it is a fact
+ * about a forward, and a forward dies: ssh drops, the network moves, the machine reboots.
+ * Remembering it made the drop permanent for the life of the page — every later need, the
+ * `not_connected` retry in api/client.ts included, was answered "already connected" by the
+ * cache and nothing ever raised the tunnel again. Each need after a drop therefore starts a
+ * fresh attempt, which costs one machine-list call when the machine is in fact still up.
  *
  * Whether the machine is CONNECTED is read from the machine list after the job settles, not
  * from the job's verdict: a connect whose build hand-over failed still leaves the forward up
@@ -68,6 +75,16 @@ export function ensureMachineConnected(
   if (running !== undefined) return running;
   const attempt = runAttempt(projectId, machineId, deps);
   attempts.set(key, attempt);
+  void attempt.then(
+    (outcome) => {
+      // Only the outcomes that are about the MACHINE are remembered; "connected" is about a
+      // forward that can die under us (see the module header).
+      if (outcome === "connected") attempts.delete(key);
+    },
+    // A throw is not an answer either: keeping a rejected promise would reject every later
+    // need with the one error that happened here.
+    () => attempts.delete(key),
+  );
   return attempt;
 }
 

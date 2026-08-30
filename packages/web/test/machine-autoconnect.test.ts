@@ -186,6 +186,23 @@ describe("once per machine", () => {
     expect(calls.filter((c) => c.startsWith("connect:"))).toHaveLength(1);
   });
 
+  it("a machine that dropped is connected again by the next need — the drop is not final", async () => {
+    // The regression this guards: "connected" used to be remembered like a failure, so a
+    // forward that died (ssh, the network, a reboot) was never raised again for the life of
+    // the page. Every later need — the not_connected retry in api/client.ts above all — was
+    // answered "already connected" by the cache while nothing was listening on the far end.
+    const { api, calls } = fakeApi();
+    await expect(ensureMachineConnected("p", REMOTE, { api, sleep })).resolves.toBe("connected");
+    const connects = () => calls.filter((c) => c.startsWith("connect:")).length;
+    expect(connects()).toBe(1);
+    // The forward dies: the machine lists itself unconnected again.
+    const dropped = fakeApi();
+    await expect(ensureMachineConnected("p", REMOTE, { api: dropped.api, sleep })).resolves.toBe(
+      "connected",
+    );
+    expect(dropped.calls.filter((c) => c.startsWith("connect:"))).toHaveLength(1);
+  });
+
   it("a settled outcome is kept: a machine that gave up is not re-tried by the next pick", async () => {
     const { api, calls } = fakeApi({ connects: "fail" });
     await ensureMachineConnected("p", REMOTE, { api, sleep });
