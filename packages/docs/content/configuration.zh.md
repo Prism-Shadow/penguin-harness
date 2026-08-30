@@ -161,8 +161,6 @@ enabled = false
 | `skills.prompt` | 内置模板 | `{{SKILLS}}` 区块内容，可在技能标签页编辑——含 `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
-| `hooks.skill_summary.enabled` | `true` | 是否在 Agent 的顶层 Session 上注册 skill_summary stop hook：由后台子 Session 把长会话的发现沉淀进 Agent 的 Skill（见[运行循环](/agent-loop#stop-hook)） |
-| `hooks.skill_summary.min_turns` | `20` | 一个摘要窗口须累积多少个完成的 LLM 轮次才触发（Session 累计轮次也须达到该值） |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
 

@@ -1,0 +1,7 @@
+{
+  "description": "Fine-tune LLMs with LlamaFactory — register datasets, train via YAML configs, merge LoRA adapters and serve the result.",
+  "short_description": "Fine-tune models with LlamaFactory.",
+  "short_description_zh": "用 LlamaFactory 微调模型。",
+  "version": "2026-07-22.1",
+  "category": "ai-app-development"
+}

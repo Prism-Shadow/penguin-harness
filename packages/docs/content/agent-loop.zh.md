@@ -84,31 +84,30 @@ Task 由若干连续的 Request(轮)组成，每轮：
 
 ## Stop hook
 
-hook 是 Session 在循环固定点上执行的函数。目前只有一个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）。hook 注册在 Session 上（`SessionConfig.hooks.stop`，一组由组装层按 Agent 的 `system_config.yaml` 构造的列表）；目标运行会把自己的 goal hook 排在它们前面，仅该次运行有效。
+hook 是 Session 在循环固定点上执行的函数。目前只有一个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` 注册进程内函数。
 
-每个 hook 拿到一份 `StopHookInput`：
+已安装的 hook 是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行：只告诉它去哪里看，其余一切——token 用量、轮次、Task 的结束方式、它自己的状态文件——都由它从 Trace 推导。
 
-```ts
-interface StopHookInput {
-  sessionId: string;
-  tracePath?: string;      // 正在写入的 Trace 文件（当前分段；无 Trace 时缺省）
-  stopReason: StopReason;  // Task 的结束方式：completed / aborted / fatal（max_turns 截断计 fatal）
-  tasks: number;           // 本次 run 调用已驱动的 Task 数
-  tokensUsed: number;      // 本次 run 累计的非缓存 input + output，含子 Session
-  turns: number;           // Session 累计 LLM 轮次
-  approve?: ApproveFn;     // 本次运行的审批回调（hook 派生的子 Session 继承它）
-  signal?: AbortSignal;
-}
+```text
+stdin   { "hook": "stop", "session_id": "…", "trace_path": "/abs/…/<session>_001.jsonl" }
+stdout  空 = 无意见；否则
+        { "decision": "continue" | "stop",   // continue：`input` 作为下一个 Task 的 user 消息
+          "input": "…",
+          "reason": "一行给人看的说明",
+          "output": { "…": 标量 },           // hook 自己的记录
+          "subagent": { "prompt": "…", "agent_id": "…" } }   // 请求一个游离的后台子会话
+exit    非零 = 失败（stderr 末尾成为 reason）；超时（缺省 60 秒）即被杀
 ```
 
-并返回一份 `StopHookResult`，或什么都不返回（无意见）：`decision`——`continue` 让运行继续、`input` 作为下一个 Task 的 user 文本，`stop` 让它结束；`reason`——一行给人看的说明；`output`——hook 自己的结构化记录（标量）。规则：
+`trace_path` 是正在写入的 Trace 文件——当前上下文分段；压缩会换新文件——无 Trace 的 Session 缺省。规则：
 
-- 每个 Task 结束后按注册顺序逐个执行；每个非空回答都记为一条 [`hook` 事件](/omni-message#event_msg)，推到流上并写入 Trace——注入的输入不在事件里，它是紧随其后的那条 user 消息；
+- 每个 Task 结束后按注册顺序逐个执行；每个非空回答都记为一条 [`hook` 事件](/omni-message#event_msg)——`hook`、`name`（钩子包名）、`decision`、`reason`、`output`——推到流上并写入 Trace；注入的输入不在事件里，它是紧随其后的那条 user 消息；
 - 第一个 `continue` 生效：其输入先 yield 到流上（普通运行从不 yield 自己的输入，宿主据此渲染注入的那条），再在同一次 `run` 调用内驱动下一个 Task；无人 `continue` 则调用返回；
 - 被掐断之后、或 signal 已中止时，`continue` 只记录、不执行——用户的中断压过一切 hook；
-- hook 抛错时以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
+- `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的那个），以该 prompt 为第一条 user 消息；它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上；
+- hook 失败——崩溃、打印的不是 JSON、或超时——以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
 
-随 harness 内置两个 hook。[目标模式](/goal-mode)是其一：读目标文件、判定、交回下一轮的 `[goal]` 消息。**skill_summary hook** 是另一个：由 `system_config.yaml` 的 `hooks.skill_summary` 配置（`enabled` 缺省 true；`min_turns` 缺省 20，见[配置](/configuration#agent-配置)），只注册在顶层 Session 上。当 Session 已运行 `min_turns` 个 LLM 轮次、*且*当前 Trace 文件里自上一条它记下的摘要事件以来又累积了这么多完成的轮次时触发（Trace 就是它唯一的状态：重启不影响，压缩换文件则从新文件重新计窗）。它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——交给同一 Agent 的一个后台子 Session（直接经 subagent runner 派生：不占 `run_subagent` 的槽位、不进面板、不回报完成通知，但有自己的 Trace），prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请它把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。hook 在自己的 `hook` 事件里记下子 Session id 与窗口轮数，从不要求继续。没有安装任何 Skill 的 Agent 不会触发。
+插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的 `[goal]` 消息。**`skill-summary`** 插件是另一个（不预装）：当前 Trace 文件里自上一条它记下的摘要事件以来累积了 20 个完成的轮次时（Trace 就是它唯一的状态——重启不影响，压缩换文件则从新文件重新计窗），它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 运行中插话(Steering)
 

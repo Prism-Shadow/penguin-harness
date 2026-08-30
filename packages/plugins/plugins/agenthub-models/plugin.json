@@ -1,0 +1,7 @@
+{
+  "description": "Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.",
+  "short_description": "Call model APIs with one AgentHub client.",
+  "short_description_zh": "用一个 AgentHub 客户端调用模型 API。",
+  "version": "2026-08-26.1",
+  "category": "ai-app-development"
+}

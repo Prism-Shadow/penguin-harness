@@ -54,12 +54,12 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
+      '@prismshadow/penguin-plugins':
+        specifier: workspace:*
+        version: link:../plugins
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(supports-color@10.2.2)(zod@4.4.3)
-      '@prismshadow/penguin-skills':
-        specifier: workspace:*
-        version: link:../skills
       commander:
         specifier: ^13.0.0
         version: 13.1.0
@@ -97,9 +97,9 @@ importers:
       '@prismshadow/agenthub':
         specifier: ^0.4.8
         version: 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills':
+      '@prismshadow/penguin-plugins':
         specifier: workspace:*
-        version: link:../skills
+        version: link:../plugins
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -269,6 +269,21 @@ importers:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
+  packages/plugins:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
   packages/server:
     dependencies:
       '@hono/node-server':
@@ -280,9 +295,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills':
+      '@prismshadow/penguin-plugins':
         specifier: workspace:*
-        version: link:../skills
+        version: link:../plugins
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -338,21 +353,6 @@ importers:
       tsx:
         specifier: ^4.20.0
         version: 4.22.4
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  packages/skills:
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -993,12 +993,12 @@ packages:
     resolution: {directory: packages/core, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/penguin-server@file:packages/server':
-    resolution: {directory: packages/server, type: directory}
+  '@prismshadow/penguin-plugins@file:packages/plugins':
+    resolution: {directory: packages/plugins, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/penguin-skills@file:packages/skills':
-    resolution: {directory: packages/skills, type: directory}
+  '@prismshadow/penguin-server@file:packages/server':
+    resolution: {directory: packages/server, type: directory}
     engines: {node: '>=24'}
 
   '@protobufjs/aspromise@1.1.2':
@@ -4665,8 +4665,8 @@ snapshots:
       '@modelcontextprotocol/client': 2.0.0
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-plugins': file:packages/plugins
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
-      '@prismshadow/penguin-skills': file:packages/skills
       commander: 13.1.0
       dotenv: 17.4.2
       smol-toml: 1.6.1
@@ -4684,7 +4684,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills': file:packages/skills
+      '@prismshadow/penguin-plugins': file:packages/plugins
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -4700,7 +4700,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills': file:packages/skills
+      '@prismshadow/penguin-plugins': file:packages/plugins
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -4712,12 +4712,14 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-plugins@file:packages/plugins': {}
+
   '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills': file:packages/skills
+      '@prismshadow/penguin-plugins': file:packages/plugins
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -4744,7 +4746,7 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills': file:packages/skills
+      '@prismshadow/penguin-plugins': file:packages/plugins
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -4765,8 +4767,6 @@ snapshots:
       - supports-color
       - utf-8-validate
       - zod
-
-  '@prismshadow/penguin-skills@file:packages/skills': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 

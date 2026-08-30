@@ -15,11 +15,14 @@ import { S } from "./strings";
  */
 export function apiErrorText(err: unknown, ctx?: { modelId?: string }): string {
   if (!(err instanceof ApiError)) return S.common.unknownError;
-  // These two need context the error body doesn't carry (the model id) / their own phrasing.
+  // These need context the error body doesn't carry (the model id) / their own phrasing.
   if (err.code === "model_credential_missing") {
     return ctx?.modelId ? S.errors.modelCredentialMissing(ctx.modelId) : err.message;
   }
   if (err.code === "no_default_model") return S.errors.noDefaultModel;
+  // The one 409 a goal-mode send can hit that the composer cannot prevent: goal mode is a
+  // plugin, and the remedy (install it from the plugin library) belongs in the sentence.
+  if (err.code === "goal_plugin_not_installed") return S.chat.goalPluginMissing;
   // Code → localized text; the map is a plain object, indexed by the runtime code string.
   const byCode = S.errors.byCode as Record<string, string | undefined>;
   return byCode[err.code] ?? err.message;

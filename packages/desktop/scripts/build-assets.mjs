@@ -5,9 +5,9 @@
  * only produces this package's own artifacts, in the one layout that serves both a source run
  * and a packaged app:
  *
- * - `skills/` — the shipped skill library. @prismshadow/penguin-skills reads its SKILL.md
- *   files from `<its package root>/skills`, and bundling puts the reader in `dist/`, so the
- *   copy lands where that same package-relative lookup finds it. (The server's web-dist
+ * - `plugins/` — the shipped plugin library. @prismshadow/penguin-plugins reads its plugin
+ *   directories from `<its package root>/plugins`, and bundling puts the reader in `dist/`,
+ *   so the copy lands where that same package-relative lookup finds it. (The server's web-dist
  *   lookup works the same way and is satisfied by electron-builder's file mapping when
  *   packaging; a source run falls back to packages/web/dist on its own.)
  * - `dist/node_modules/node-pty` — the one dependency the bundler cannot absorb, because the
@@ -44,10 +44,10 @@ for (const required of [launcherModule, path.join(distDir, "pty-payload.js")]) {
   }
 }
 
-const skillsSrc = path.resolve(pkgDir, "..", "skills", "skills");
-const skillsDest = path.join(pkgDir, "skills");
-fs.rmSync(skillsDest, { recursive: true, force: true });
-fs.cpSync(skillsSrc, skillsDest, { recursive: true });
+const pluginsSrc = path.resolve(pkgDir, "..", "plugins", "plugins");
+const pluginsDest = path.join(pkgDir, "plugins");
+fs.rmSync(pluginsDest, { recursive: true, force: true });
+fs.cpSync(pluginsSrc, pluginsDest, { recursive: true });
 
 const repoRoot = path.resolve(pkgDir, "..", "..");
 for (const name of ["install.sh", "install.ps1"]) {
@@ -102,5 +102,5 @@ fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 
 console.log(
-  `[build-assets] done: skills/, dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
+  `[build-assets] done: plugins/, dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
 );

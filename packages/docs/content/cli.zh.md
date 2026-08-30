@@ -154,7 +154,7 @@ penguin logs 402a2e24 -f
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --skills web-search,pdf
+penguin agent create --agent-id helper --name "Helper" --plugins web-design,goal
 ```
 
 `agent ls` 列出 Project 的 Agent（id、名称、会话数、描述）。`agent create` 创建一个：
@@ -163,7 +163,7 @@ penguin agent create --agent-id helper --name "Helper" --skills web-search,pdf
 | --- | --- |
 | `--agent-id <id>` | 必填，Agent id（即目录名） |
 | `--name <s>` / `--description <s>` | 显示名与描述 |
-| `--skills <a,b>` | 逗号分隔的技能库 Skill 名，预装进新 Agent；未知名称在创建任何东西之前即被拒绝 |
+| `--plugins <a,b>` | 逗号分隔的插件库插件名，预装进新 Agent（各自的 Skill 与钩子包）；未知名称在创建任何东西之前即被拒绝 |
 | `--project-id <id>` / `--json` / `--server <url>` | 同各处约定 |
 
 ## penguin project

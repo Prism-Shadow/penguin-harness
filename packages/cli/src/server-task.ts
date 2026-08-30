@@ -14,18 +14,8 @@
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
  * notice — the messages endpoint still holds the full history for `penguin logs`.
  */
-import {
-  goalOutcomeOf,
-  isEventMessage,
-  isGoalRoundInput,
-  isModelMessage,
-} from "@prismshadow/penguin-core";
-import type {
-  ApprovalDecision,
-  GoalOutcome,
-  OmniMessage,
-  ToolCallPayload,
-} from "@prismshadow/penguin-core";
+import { isEventMessage, isGoalRoundInput, isModelMessage } from "@prismshadow/penguin-core";
+import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import { ServerClient } from "./client.js";
 import type { SseFrame } from "./client.js";
 import { dim, humanizeTokens } from "./render.js";
@@ -38,6 +28,18 @@ interface ServerEventFrame {
   state?: "idle" | "running" | "compacting";
   toolCall?: OmniMessage<ToolCallPayload>;
   origin?: string[];
+  /** goal_finished: how the goal ended and its counters (the server maps the goal hook's stop event to this). */
+  outcome?: GoalOutcome["outcome"];
+  rounds?: number;
+  used?: number;
+}
+
+/** How a goal ended plus its counters, as the server's goal_finished event reports them. */
+export interface GoalOutcome {
+  outcome: "complete" | "blocked" | "budget_limited" | "aborted";
+  /** Rounds actually run (the wrap-up round counts). */
+  rounds: number;
+  tokensUsed: number;
 }
 
 /**
@@ -237,6 +239,9 @@ export async function watchTask(
       const ev = JSON.parse(frame.data) as ServerEventFrame;
       if (ev.type === "task_state" && ev.state === "idle") break;
       if (ev.type === "approval_request") answerApproval(ev);
+      if (ev.type === "goal_finished" && ev.outcome !== undefined) {
+        outcome = { outcome: ev.outcome, rounds: ev.rounds ?? 0, tokensUsed: ev.used ?? 0 };
+      }
       if (ev.type === "resync_required") {
         renderer?.printLine(dim(t.client.streamResynced()));
       }
@@ -254,7 +259,6 @@ export async function watchTask(
         segmentStartedAt = Date.now();
         opts.goal.out.write(`${dim(t.goalRound(round))}\n`);
       }
-      outcome = goalOutcomeOf(msg) ?? outcome;
     }
     if (opts.onAssistantText && (msg.origin?.length ?? 0) === 0 && isModelMessage(msg)) {
       const p = msg.payload as { type?: string; role?: string; text?: string };

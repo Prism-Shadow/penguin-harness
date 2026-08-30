@@ -142,7 +142,12 @@ import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
-import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
+import { agentSkillsRoutes } from "./http/routes/skills.js";
+import {
+  agentHooksRoutes,
+  agentPluginsRoutes,
+  pluginLibraryRoutes,
+} from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -1076,8 +1081,8 @@ export function createApp(
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
   app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
-  // Skill library listing: readable once logged in, not nested under a Project prefix.
-  app.route("/api/skills", skillLibraryRoutes());
+  // Plugin library listing: readable once logged in, not nested under a Project prefix.
+  app.route("/api/plugins", pluginLibraryRoutes());
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
@@ -1093,6 +1098,8 @@ export function createApp(
   app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/plugins", agentPluginsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/hooks", agentHooksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId", agentTransferRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/traces", agentTracesRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));

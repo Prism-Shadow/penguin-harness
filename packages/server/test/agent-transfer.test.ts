@@ -196,16 +196,16 @@ describe("agent export/import", () => {
     ).toBe(201);
   });
 
-  it("snapshot initialization and skill seeding are mutually exclusive", async () => {
+  it("snapshot initialization and seeding are mutually exclusive", async () => {
     const archive = Buffer.from(await (await owner.get(`${base}/export`)).arrayBuffer());
     const res = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "mixed_agent",
-      skills: ["anything"],
+      plugins: ["anything"],
       dataBase64: archive.toString("base64"),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-      "snapshot_with_skills",
+      "snapshot_with_plugins",
     );
   });
 });

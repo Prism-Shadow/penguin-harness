@@ -5,32 +5,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Session,
   assistantText,
-  buildSkillsMessage,
-  condenseTrace,
-  createSkillSummaryHook,
-  hookEvent,
-  invokedSkills,
   isEventMessage,
+  parseStopHookResult,
+  runHookScript,
   runStopHooks,
-  summaryWindow,
+  scriptStopHook,
   tokenUsage,
-  toolCall,
-  toolCallOutput,
-  userSteeringText,
   userText,
-  withOrigin,
 } from "../src/index.js";
 import type {
   EnvironmentInterface,
   HookPayload,
+  HookSubagentRequest,
   LLMInterface,
   LLMOutcome,
   OmniMessage,
   SessionMetaPayload,
   StopHook,
   StopHookInput,
-  SubagentHandle,
-  SubagentRunner,
   TokenCounts,
   TraceSink,
 } from "../src/index.js";
@@ -40,15 +32,24 @@ function usage(total: number, cacheRead = 0): TokenCounts {
 }
 
 function stopInput(over: Partial<StopHookInput> = {}): StopHookInput {
-  return { sessionId: "s1", stopReason: "completed", tasks: 1, tokensUsed: 0, turns: 1, ...over };
+  return { sessionId: "s1", ...over };
 }
+
+/** A script that reads the hook input from stdin and answers with `body` (a JS expression over `input`). */
+const answering = (body: string): string =>
+  'const raw = await new Promise((r) => { let s = ""; process.stdin.setEncoding("utf8").on("data", (c) => (s += c)).on("end", () => r(s)); });\n' +
+  "const input = JSON.parse(raw);\n" +
+  `process.stdout.write(JSON.stringify(${body}));\n`;
 
 describe("runStopHooks", () => {
   it("records every answer, honors the first continue, and keeps a throwing hook from taking the run down", async () => {
     const hooks: StopHook[] = [
       { name: "quiet", run: async () => undefined },
       { name: "broken", run: async () => Promise.reject(new Error("boom")) },
-      { name: "first", run: async () => ({ decision: "continue", input: "again", reason: "one" }) },
+      {
+        name: "first",
+        run: async () => ({ decision: "continue", input: "again", reason: "one" }),
+      },
       {
         name: "second",
         run: async () => ({ decision: "continue", input: "later", output: { n: 2 } }),
@@ -70,6 +71,112 @@ describe("runStopHooks", () => {
     });
     expect(events[2]!.payload.output).toEqual({ n: 2 });
     expect(JSON.stringify(events)).not.toContain("again");
+  });
+
+  it("hands a subagent request to the spawner and records the child's session id; a missing or failing spawner is recorded", async () => {
+    const asks: HookSubagentRequest[] = [];
+    const hook: StopHook = {
+      name: "review",
+      run: async () => ({
+        reason: "delegated",
+        output: { turns: 20 },
+        subagent: { prompt: "review this", agentId: "b" },
+      }),
+    };
+    const spawned = await runStopHooks([hook], stopInput(), async (req) => {
+      asks.push(req);
+      return "child-1";
+    });
+    expect(asks).toEqual([{ prompt: "review this", agentId: "b" }]);
+    expect(spawned.events[0]!.payload).toMatchObject({
+      reason: "delegated",
+      output: { turns: 20, session_id: "child-1" },
+    });
+    const unspawned = await runStopHooks([hook], stopInput());
+    expect(unspawned.events[0]!.payload.reason).toBe(
+      "delegated · subagent not spawned: no spawner",
+    );
+    const failed = await runStopHooks([hook], stopInput(), async () => {
+      throw new Error("depth limit");
+    });
+    expect(failed.events[0]!.payload.reason).toBe("delegated · subagent not spawned: depth limit");
+    expect(failed.events[0]!.payload.output).toEqual({ turns: 20 });
+  });
+});
+
+describe("script hooks", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-script-hook-"));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  const write = async (name: string, body: string): Promise<string> => {
+    const file = path.join(dir, name);
+    await fs.writeFile(file, body, "utf8");
+    return file;
+  };
+
+  it("runHookScript feeds the input on stdin and returns the parsed stdout; empty stdout is no opinion", async () => {
+    const echo = await write("echo.mjs", answering("{ got: input, cwd: process.cwd() }"));
+    const out = (await runHookScript(echo, { hook: "stop", session_id: "s1" })) as Record<
+      string,
+      unknown
+    >;
+    expect(out.got).toEqual({ hook: "stop", session_id: "s1" });
+    expect(out.cwd).toBe(dir);
+    const quiet = await write("quiet.mjs", "process.exit(0);\n");
+    expect(await runHookScript(quiet, {})).toBeUndefined();
+  });
+
+  it("a non-zero exit, non-JSON stdout, and a timeout each fail with a reason", async () => {
+    const crash = await write("crash.mjs", 'process.stderr.write("kaboom\\n"); process.exit(3);\n');
+    await expect(runHookScript(crash, {})).rejects.toThrow(/exit 3: kaboom/);
+    const garbage = await write("garbage.mjs", 'process.stdout.write("not json");\n');
+    await expect(runHookScript(garbage, {})).rejects.toThrow(/stdout is not JSON/);
+    const hang = await write("hang.mjs", "setInterval(() => {}, 1000);\n");
+    await expect(runHookScript(hang, {}, { timeoutS: 0.2 })).rejects.toThrow(/timed out/);
+  });
+
+  it("parseStopHookResult keeps the contract's fields only, and scalars only in output", () => {
+    expect(
+      parseStopHookResult({
+        decision: "continue",
+        input: "next",
+        reason: "r",
+        output: { a: 1, b: "x", c: true, d: { nested: 1 }, e: null },
+        subagent: { prompt: "p", agent_id: "b", extra: 1 },
+        unknown: "dropped",
+      }),
+    ).toEqual({
+      decision: "continue",
+      input: "next",
+      reason: "r",
+      output: { a: 1, b: "x", c: true },
+      subagent: { prompt: "p", agentId: "b" },
+    });
+    expect(parseStopHookResult({ decision: "maybe", input: 5, subagent: { prompt: " " } })).toEqual(
+      {},
+    );
+    expect(parseStopHookResult("nope")).toBeUndefined();
+    expect(parseStopHookResult(null)).toBeUndefined();
+  });
+
+  it("scriptStopHook adapts one installed command: the hook input on stdin, the answer parsed", async () => {
+    await write(
+      "stop.mjs",
+      answering(
+        '{ decision: "stop", reason: `${input.hook} ${input.session_id} ${input.trace_path}` }',
+      ),
+    );
+    const hook = scriptStopHook("demo", dir, "stop.mjs", 5);
+    expect(hook.name).toBe("demo");
+    expect(await hook.run({ sessionId: "s1", tracePath: "/t/s1_001.jsonl" })).toEqual({
+      decision: "stop",
+      reason: "stop s1 /t/s1_001.jsonl",
+    });
   });
 });
 
@@ -106,7 +213,14 @@ describe("Session stop hooks", () => {
     };
   }
 
-  function makeSession(hooks: StopHook[], llm: LLMInterface, trace?: TraceSink): Session {
+  function makeSession(
+    hooks: StopHook[],
+    llm: LLMInterface,
+    extra: {
+      trace?: TraceSink;
+      spawnSubagent?: (request: HookSubagentRequest, approve?: unknown) => Promise<string>;
+    } = {},
+  ): Session {
     const meta: SessionMetaPayload = {
       session_id: "session-1",
       provider: "custom",
@@ -123,8 +237,11 @@ describe("Session stop hooks", () => {
       environment: fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,
-      hooks: { stop: hooks },
-      ...(trace ? { trace } : {}),
+      hooks: {
+        stop: hooks,
+        ...(extra.spawnSubagent ? { spawnSubagent: extra.spawnSubagent } : {}),
+      },
+      ...(extra.trace ? { trace: extra.trace } : {}),
     });
   }
 
@@ -134,7 +251,7 @@ describe("Session stop hooks", () => {
       name: "once",
       run: async (input) => {
         seen.push(input);
-        return input.tasks === 1
+        return seen.length === 1
           ? { decision: "continue", input: "again", output: { k: true } }
           : { decision: "stop" };
       },
@@ -147,16 +264,15 @@ describe("Session stop hooks", () => {
       currentPath: () => "/traces/session-1_001.jsonl",
     };
     const llm = echoLLM();
-    const session = makeSession([hook], llm, trace);
+    const session = makeSession([hook], llm, { trace });
     const stream: OmniMessage[] = [];
     for await (const msg of session.run([userText("hello")])) stream.push(msg);
     // Two Tasks ran: the second on the hook's input.
     expect(llm.inputs).toEqual(["hello", "again"]);
-    // The hook saw the run's counters: uncached tokens (70 per request), one Task then two,
-    // the Session's turn count, and the Trace path.
-    expect(seen.map((i) => [i.tasks, i.tokensUsed, i.turns, i.stopReason, i.tracePath])).toEqual([
-      [1, 70, 1, "completed", "/traces/session-1_001.jsonl"],
-      [2, 140, 2, "completed", "/traces/session-1_001.jsonl"],
+    // The hook is told where to look, nothing more.
+    expect(seen).toEqual([
+      { sessionId: "session-1", tracePath: "/traces/session-1_001.jsonl" },
+      { sessionId: "session-1", tracePath: "/traces/session-1_001.jsonl" },
     ]);
     // The stream: the hook event, then the injected user input, then the second Task.
     const kinds = stream.map((m) =>
@@ -194,133 +310,28 @@ describe("Session stop hooks", () => {
     // The answer is still on record.
     expect(stream.some((m) => isEventMessage(m) && m.payload.type === "hook")).toBe(true);
   });
-});
 
-describe("skill-summary hook", () => {
-  const user = (text: string) => userText(text);
-  const tu = () => tokenUsage(usage(100), usage(100));
-
-  it("condenses main-session records into clipped lines, stripping marker blocks and dropping the oldest past the cap", () => {
-    const records: OmniMessage[] = [
-      user(buildSkillsMessage(["web-design"], "make the page pretty")),
-      assistantText("I will look."),
-      toolCall({
-        name: "exec_command",
-        arguments: JSON.stringify({ cmd: "ls" }),
-        toolCallId: "c1",
-      }),
-      toolCallOutput({ output: "a.txt\nb.txt", toolCallId: "c1", stopReason: "completed" }),
-      toolCallOutput({ output: "boom", toolCallId: "c2", stopReason: "fatal" }),
-      user(userSteeringText("skip the tests")),
-      withOrigin(assistantText("child talk"), "child"),
-      assistantText("x".repeat(2000)),
-    ];
-    const text = condenseTrace(records);
-    const lines = text.split("\n");
-    expect(lines[0]).toBe("[user] make the page pretty");
-    expect(lines[1]).toBe("[assistant] I will look.");
-    expect(lines[2]).toBe('[tool_call exec_command] {"cmd":"ls"}');
-    expect(lines[3]).toBe("[tool_output exec_command] a.txt b.txt");
-    expect(lines[4]).toBe("[tool_output c2 · fatal] boom");
-    expect(lines[5]).toBe("[user] skip the tests");
-    expect(text).not.toContain("child talk");
-    expect(lines[6]!.length).toBe("[assistant] ".length + 1200 + 1);
-    // The cap keeps the newest lines.
-    const capped = condenseTrace(records, 200);
-    expect(capped.startsWith("[… ")).toBe(true);
-    expect(capped).toContain("[assistant] xxx");
-  });
-
-  it("windows from the last summary event and lists the skills invoked in it", () => {
-    const records: OmniMessage[] = [
-      user(buildSkillsMessage(["old-skill"], "before")),
-      hookEvent({ hook: "stop", name: "skill_summary", output: { turns: 20 } }),
-      user(buildSkillsMessage(["web-design", "penguin-cli"], "after")),
-      user(
-        "[goal]\nround: 2\nx\n[/goal]\n\n[use_skills]\nskills: web-design\n[/use_skills]\n\nobjective",
-      ),
-      hookEvent({ hook: "stop", name: "goal", decision: "continue" }),
-    ];
-    const window = summaryWindow(records);
-    expect(window).toHaveLength(3);
-    expect(invokedSkills(window)).toEqual(["web-design", "penguin-cli"]);
-    expect(summaryWindow(records.slice(2))).toHaveLength(3);
-  });
-
-  it("fires once a window holds min_turns completed turns, delegating the excerpt to a detached child", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-summary-"));
-    const tracePath = path.join(dir, "s1_001.jsonl");
-    const write = (records: OmniMessage[]) =>
-      fs.appendFile(tracePath, records.map((r) => `${JSON.stringify(r)}\n`).join(""), "utf8");
-    const prompts: string[] = [];
-    let disposed = 0;
-    const runner: SubagentRunner = {
-      async spawn() {
-        const handle: SubagentHandle = {
-          sessionId: "child-1",
-          // eslint-disable-next-line require-yield
-          async *run(input) {
-            prompts.push((input.messages[0]!.payload as { text: string }).text);
-            return null;
-          },
-          dispose: () => {
-            disposed += 1;
-          },
-        };
-        return handle;
-      },
+  it("honors a subagent answer through the Session's spawner, passing the run's approval callback", async () => {
+    const asks: Array<{ prompt: string; approved: boolean }> = [];
+    const hook: StopHook = {
+      name: "review",
+      run: async () => ({ reason: "delegated", subagent: { prompt: "look" } }),
     };
-    const hook = createSkillSummaryHook({
-      root: dir,
-      projectId: "p",
-      agentId: "a",
-      sessionId: "s1",
-      minTurns: 3,
-      runner,
-      listSkills: async () => ["web-design", "penguin-cli"],
+    const llm = echoLLM();
+    const session = makeSession([hook], llm, {
+      spawnSubagent: async (request, approve) => {
+        asks.push({ prompt: request.prompt, approved: approve !== undefined });
+        return "child-9";
+      },
     });
-    const turn = (i: number) => [user(`ask ${i}`), assistantText(`answer ${i}`), tu()];
-    await write([...turn(1), ...turn(2)]);
-    // Below the session-turn gate: not even a read.
-    expect(await hook.run(stopInput({ turns: 2, tracePath }))).toBeUndefined();
-    await write(turn(3));
-    const res = await hook.run(stopInput({ turns: 3, tracePath }));
-    expect(res).toMatchObject({ output: { session_id: "child-1", turns: 3 } });
-    expect(res!.decision).toBeUndefined();
-    // Let the detached run settle.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("Installed skills: web-design, penguin-cli");
-    expect(prompts[0]).toContain("Skills invoked in this window: none");
-    expect(prompts[0]).toContain("[user] ask 3");
-    // The skills directory is spelled the model-visible way: forward slashes on every platform.
-    expect(prompts[0]).toContain("agent_state/skills");
-    expect(disposed).toBe(1);
-    // The Session records the event in the Trace; from there on the window restarts.
-    await write([
-      hookEvent({
-        hook: "stop",
-        name: "skill_summary",
-        output: { session_id: "child-1", turns: 3 },
-      }),
-    ]);
-    await write([...turn(4), ...turn(5)]);
-    expect(await hook.run(stopInput({ turns: 5, tracePath }))).toBeUndefined();
-    await write(turn(6));
-    expect(await hook.run(stopInput({ turns: 6, tracePath }))).toMatchObject({
-      output: { turns: 3 },
-    });
-    // An Agent without skills has nowhere to record a finding.
-    const bare = createSkillSummaryHook({
-      root: dir,
-      projectId: "p",
-      agentId: "a",
-      sessionId: "s1",
-      minTurns: 1,
-      runner,
-      listSkills: async () => [],
-    });
-    expect(await bare.run(stopInput({ turns: 6, tracePath }))).toBeUndefined();
-    await fs.rm(dir, { recursive: true, force: true });
+    const stream: OmniMessage[] = [];
+    for await (const msg of session.run([userText("hello")], { approve: async () => "allow" })) {
+      stream.push(msg);
+    }
+    expect(asks).toEqual([{ prompt: "look", approved: true }]);
+    const event = stream.find((m) => isEventMessage(m) && m.payload.type === "hook")!
+      .payload as HookPayload;
+    expect(event.output).toEqual({ session_id: "child-9" });
+    expect(llm.inputs).toEqual(["hello"]);
   });
 });

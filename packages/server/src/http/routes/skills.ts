@@ -1,46 +1,38 @@
 /**
- * Skill library & Agent-installed-Skills routes:
- *   GET /api/skills                                       # library groups & metadata (any logged-in user)
- *   GET|POST /api/projects/:p/agents/:a/skills            # installed list / install from library (any member)
+ * An Agent's installed Skills:
+ *   GET      /api/projects/:p/agents/:a/skills            # installed list (any member)
  *   POST     /api/projects/:p/agents/:a/skills/template-placeholder  # insert/migrate the {{SKILLS}} placeholder (any member)
  *   POST     /api/projects/:p/agents/:a/skills/archive    # install one skill from an uploaded zip (any member)
  *   GET      /api/projects/:p/agents/:a/skills/:name/archive  # export one installed skill as a zip (any member)
  *   DELETE   /api/projects/:p/agents/:a/skills/:name      # uninstall (any member)
- * Installing writes the library's SKILL.md verbatim to agent_state/skills/<name>/;
- * reinstalling overwrites with the library content (i.e. an update). The archive routes
- * are symmetric: POST writes every zip file under skills/<name>/ (replace semantics with
- * `overwrite`), GET packs the whole directory back under a single top-level <name>/ so
- * the download round-trips through the POST unchanged. The scope is small enough to skip
- * a service layer — routes call core's disk-writing functions directly.
+ * Installing from the library goes through the plugin routes (plugins.ts), which write each
+ * of a plugin's skills to agent_state/skills/<name>/. The archive routes are symmetric: POST
+ * writes every zip file under skills/<name>/ (replace semantics with `overwrite`), GET packs
+ * the whole directory back under a single top-level <name>/ so the download round-trips
+ * through the POST unchanged. The scope is small enough to skip a service layer — routes
+ * call core's disk-writing functions directly.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { unzipSync, strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
-  installSkill,
   listInstalledSkills,
   removeSkill,
   replaceSkillDirectory,
   skillsDir,
 } from "@prismshadow/penguin-core";
 import {
-  loadSkillGroups,
   parseSkillFrontmatter,
+  PLUGIN_VERSION_PATTERN,
   SKILL_NAME_PATTERN,
-} from "@prismshadow/penguin-skills";
-import type { AgentSkillsResponse, SkillLibraryResponse } from "../../api/types.js";
+} from "@prismshadow/penguin-plugins";
+import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
-import {
-  badRequest,
-  optionalStringArray,
-  readJson,
-  requireString,
-  requireValidId,
-} from "../validate.js";
-import { resolveLibrarySkills, toMetadataItem } from "../../services/skill-library.js";
+import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { toSkillItem } from "../../services/plugin-library.js";
 import {
   MAX_ARCHIVE_FILES,
   MAX_FILE_BYTES,
@@ -50,18 +42,6 @@ import {
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
-
-/** Library listing response: the files are the source of truth — read and parse the library directory fresh on every request (files are small, requests infrequent, no caching needed). */
-function libraryResponse(): SkillLibraryResponse {
-  return {
-    groups: loadSkillGroups().map((group) => ({
-      id: group.id,
-      title: group.title,
-      ...(group.titleZh !== undefined ? { titleZh: group.titleZh } : {}),
-      skills: group.skills.map(toMetadataItem),
-    })),
-  };
-}
 
 /**
  * Validates one zip entry path (zip-slip guard): rejects absolute paths (leading "/" or a
@@ -180,41 +160,16 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
 }
 
 /**
- * Version for the export filename: only an explicit frontmatter `version:` field that
- * parses as a natural number yields a `-v<version>` filename suffix — parseSkillFrontmatter
- * defaults a missing field to 1, which must not be baked into a filename as if declared.
- * Mirrors the parser's frontmatter rules (first `---` block, `key: value` split on the
- * first colon, BOM/CRLF tolerated).
+ * Version for the export filename: only a frontmatter `version:` that is a real
+ * `YYYY-MM-DD.N` yields a `-v<version>` filename suffix — a missing or malformed field must not
+ * be baked into a filename as if declared. Uses the parser's own frontmatter rules.
  */
-function explicitSkillVersion(skillMd: string): number | null {
-  const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skillMd.replace(/^\uFEFF/, ""))?.[1];
-  if (block === undefined) return null;
-  for (const line of block.split(/\r?\n/)) {
-    const idx = line.indexOf(":");
-    if (idx <= 0 || line.slice(0, idx).trim() !== "version") continue;
-    const version = Number.parseInt(line.slice(idx + 1).trim(), 10);
-    return Number.isInteger(version) && version >= 1 ? version : null;
-  }
-  return null;
+function explicitSkillVersion(skillMd: string): string | null {
+  const version = parseSkillFrontmatter(skillMd)?.version ?? "";
+  return PLUGIN_VERSION_PATTERN.test(version) ? version : null;
 }
 
-/** Validate the POST request body: names must be a non-empty array of strings. */
-function parseInstallNames(body: Record<string, unknown>): string[] {
-  // The shape and the per-entry check are the shared validator's; install additionally requires
-  // at least one name, unlike the optional field on Agent creation.
-  const names = optionalStringArray(body, "names") ?? [];
-  if (names.length === 0) throw badRequest("names must be a non-empty array.");
-  return names;
-}
-
-/** GET /api/skills: Skill library groups & metadata (any logged-in user; no Project check). */
-export function skillLibraryRoutes(): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-  app.get("/", (c) => c.json(libraryResponse()));
-  return app;
-}
-
-/** /api/projects/:p/agents/:a/skills: read, install, and uninstall are all Project-member operations. */
+/** /api/projects/:p/agents/:a/skills: read, import/export and uninstall are all Project-member operations. */
 export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -222,7 +177,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     projectId: string,
     agentId: string,
   ): Promise<AgentSkillsResponse> => ({
-    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map(toMetadataItem),
+    skills: (await listInstalledSkills(deps.config.root, projectId, agentId)).map(toSkillItem),
   });
 
   app.get("/", async (c) => {
@@ -249,21 +204,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(view.config.skills);
   });
 
-  app.post("/", async (c) => {
-    const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
-    const names = parseInstallNames(await readJson(c));
-    // Verify all names up front before writing anything: if any name isn't in the library, reject the whole request rather than leaving a half-installed state.
-    const skills = resolveLibrarySkills(names);
-    for (const skill of skills) {
-      await installSkill(deps.config.root, projectId, agentId, skill);
-    }
-    return c.json(await listResponse(projectId, agentId), 201);
-  });
-
-  // Install one skill from an uploaded zip. Like the library POST this touches only the
+  // Install one skill from an uploaded zip. Like a library install this touches only the
   // files (no runtime invalidation): skills are read from disk on demand, so the next
   // prompt assembly already sees the new content.
   app.post("/archive", async (c) => {

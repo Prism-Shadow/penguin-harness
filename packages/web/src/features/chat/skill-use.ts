@@ -47,15 +47,17 @@ export function localizedShortText(locale: "zh" | "en", s: SkillDescLike): strin
 }
 
 /**
- * Search filter for the skills dropdown (pure function, shared by chat-input's SkillSelect and
- * unit tests): case-insensitive substring match against the skill name and localized
- * description; an empty query (including whitespace-only) returns the full list.
+ * Search filter for the skills dropdown (pure function, shared by chat-input's SkillSelect, the
+ * pick list and unit tests): case-insensitive substring match against the skill name and
+ * localized description; an empty query (including whitespace-only) returns the full list.
+ * Generic over the row type so a list of rows carrying extra fields (the create dialog's plugin
+ * rows) keeps them through the filter.
  */
-export function filterSkills(
-  skills: SkillMetadataItem[],
+export function filterSkills<T extends SkillMetadataItem>(
+  skills: T[],
   locale: "zh" | "en",
   query: string,
-): SkillMetadataItem[] {
+): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return skills;
   // Match target matches what's displayed: name + localized short text (zh can match the Chinese short description, en is always English).

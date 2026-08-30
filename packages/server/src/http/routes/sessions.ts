@@ -11,10 +11,12 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
-  goalFilePath,
+  hooksDir,
   imageUrlMessage,
-  readGoalFile,
+  runHookScript,
   scratchpadDir,
+  sessionScratchpadDir,
+  stripLeadingMarkerBlocks,
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
@@ -22,6 +24,7 @@ import type {
   ApprovalMode,
   FilesStatResponse,
   GoalResponse,
+  GoalStateView,
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
@@ -902,10 +905,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (goal) {
       // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
       // objective that every round re-injects and an image on its own doesn't say what the
-      // goal is. Images can come along — core folds them into `[attached image: <path>]` lines
-      // inside the objective (whatever the model's vision) so they survive the rounds. File
-      // attachments cannot: nothing folds them into the objective, so they are turned away
-      // here, before any upload is written to disk.
+      // goal is. Images ride round 1 as ordinary input. File attachments cannot: nothing
+      // folds them into the objective, so they are turned away here, before any upload is
+      // written to disk.
       const { messages, attachments } = parseTaskInput(body, limits);
       const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
@@ -918,8 +920,45 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (attachments.length > 0) {
         throw badRequest("goal mode accepts text and images only (no file attachments).");
       }
+      // The goal plugin owns the protocol: its start script (installed with the hook package)
+      // writes the Session's goal file and composes the round-1 message; its stop hook then
+      // drives every later round. Without the plugin there is nothing to drive the rounds.
+      const hookDir = path.join(hooksDir(deps.config.root, row.projectId, row.agentId), "goal");
+      const installed = await fs.access(path.join(hookDir, "hooks.json")).then(
+        () => true,
+        () => false,
+      );
+      if (!installed) {
+        throw new HttpError(
+          409,
+          "goal_plugin_not_installed",
+          "Goal mode needs the goal plugin installed on this agent.",
+        );
+      }
+      const objective = stripLeadingMarkerBlocks(text).trim() || text;
+      const started = (await runHookScript(path.join(hookDir, "start.mjs"), {
+        session_id: row.sessionId,
+        scratchpad_dir: sessionScratchpadDir(
+          deps.config.root,
+          row.projectId,
+          row.agentId,
+          row.sessionId,
+        ),
+        objective,
+        body: text,
+        budget: goal.budget,
+      })) as { input?: unknown } | undefined;
+      if (typeof started?.input !== "string" || !started.input) {
+        throw new HttpError(
+          500,
+          "goal_start_failed",
+          "The goal plugin's start script gave no round-1 message.",
+        );
+      }
+      const images = messages.filter((m) => (m.payload as { type?: string }).type !== "text");
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input: messages,
+        input: [userText(started.input), ...images],
+        objective,
         budget: goal.budget,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
@@ -1081,33 +1120,53 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     );
   });
 
-  // The Session's most recent goal run, read from its GOAL.yaml (for restoring the chat
-  // page's goal banner on load). A goal lives only inside its run: a file still `active`
-  // (or in its wrap-up round) while the Session is not running was left behind by a crash
+  // The Session's most recent goal run, read from the goal plugin's file in its scratchpad
+  // (for restoring the chat page's goal banner on load). A goal lives only inside its run: a
+  // file the hook has not ended while the Session is not running was left behind by a crash
   // or a kill, and reads as `aborted`.
   app.get("/:sessionId/goal", async (c) => {
     const row = resolveSession(c);
-    const file = goalFilePath(deps.config.root, row.projectId, row.agentId, row.sessionId);
-    const g = await readGoalFile(file);
-    if (!g) return c.json({ goal: null } satisfies GoalResponse);
+    const file = path.join(
+      sessionScratchpadDir(deps.config.root, row.projectId, row.agentId, row.sessionId),
+      "GOAL.json",
+    );
+    let g: {
+      objective?: unknown;
+      status?: unknown;
+      budget?: unknown;
+      round?: unknown;
+      tokens_used?: unknown;
+      ended?: unknown;
+    };
+    let updatedAt: string;
+    try {
+      const [raw, stat] = await Promise.all([fs.readFile(file, "utf8"), fs.stat(file)]);
+      g = JSON.parse(raw) as typeof g;
+      updatedAt = stat.mtime.toISOString();
+    } catch {
+      return c.json({ goal: null } satisfies GoalResponse);
+    }
+    if (g === null || typeof g !== "object") return c.json({ goal: null } satisfies GoalResponse);
+    const outcomes = ["complete", "blocked", "budget_limited", "aborted"];
+    const status = typeof g.status === "string" ? g.status : "blocked";
     const running = deps.manager.statusOf(row.sessionId) === "running";
-    const status =
-      g.status === "active" || g.status === "wrapping_up"
-        ? running
-          ? "active"
-          : "aborted"
-        : g.status;
-    const updatedAt = await fs
-      .stat(file)
-      .then((s) => s.mtime.toISOString())
-      .catch(() => new Date().toISOString());
+    const view: GoalStateView["status"] =
+      g.ended === true && outcomes.includes(status)
+        ? (status as GoalStateView["status"])
+        : status === "active" || status === "wrapping_up"
+          ? running
+            ? "active"
+            : "aborted"
+          : outcomes.includes(status)
+            ? (status as GoalStateView["status"])
+            : "blocked";
     return c.json({
       goal: {
-        objective: g.objective,
-        status,
-        budget: g.budget,
-        used: g.tokens_used,
-        rounds: g.round,
+        objective: typeof g.objective === "string" ? g.objective : "",
+        status: view,
+        budget: typeof g.budget === "number" ? g.budget : -1,
+        used: typeof g.tokens_used === "number" ? g.tokens_used : 0,
+        rounds: typeof g.round === "number" ? g.round : 0,
         updatedAt,
       },
     } satisfies GoalResponse);

@@ -162,7 +162,7 @@ export interface Messages {
     createName: string;
     createDescription: string;
     /** --skills: comma-separated library skill names to seed the new agent with. */
-    createSkills: string;
+    createPlugins: string;
     created(agentId: string, projectId: string): string;
     colId(): string;
     colName(): string;
@@ -700,7 +700,7 @@ const en: Messages = {
     createId: "Agent id (directory name; letters, digits, underscores)",
     createName: "Display name (defaults to the id)",
     createDescription: "Description",
-    createSkills: "Library skills to preinstall, comma-separated (e.g. web-search,pdf)",
+    createPlugins: "Library plugins to preinstall, comma-separated (e.g. web-design,goal)",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
@@ -1212,7 +1212,7 @@ const zh: Messages = {
     createId: "Agent id（即目录名；字母、数字、下划线）",
     createName: "显示名（缺省同 id）",
     createDescription: "描述",
-    createSkills: "预装的技能库 Skill，逗号分隔（如 web-search,pdf）",
+    createPlugins: "预装的插件库插件，逗号分隔（如 web-design,goal）",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",

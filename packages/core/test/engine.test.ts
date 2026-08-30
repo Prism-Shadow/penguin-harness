@@ -37,7 +37,11 @@ import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessa
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
-import { goalRoundMessage } from "../src/goal/goal-prompts.js";
+
+/** A goal round's input as the goal plugin composes it: the protocol block, then the objective. */
+function goalRoundText(round: number, objective: string): string {
+  return `[goal]\nround: ${round}\nThis message was sent automatically by goal mode.\nDo not modify the goal file unless the goal is complete or the blocked audit is satisfied.\n[/goal]\n\n${objective}`;
+}
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
@@ -726,11 +730,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     // An aborted/failed goal round's input rides into the next task via flatten carry-over;
     // its [goal] protocol ("the system sends the next round automatically", the file rules)
     // is stale the moment the goal ends and must not re-enter the model as live instructions.
-    const goalInput = goalRoundMessage({
-      goal: { objective: "fix the tests", status: "active", budget: -1, round: 1, tokens_used: 0 },
-      goalFilePath: "/tmp/GOAL.yaml",
-      body: "fix the tests",
-    });
+    const goalInput = goalRoundText(1, "fix the tests");
     const received: OmniMessage[][] = [];
     let calls = 0;
     const llm: LLMInterface = {
@@ -776,11 +776,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   it("downgrades a goal round held raw in carry-over (pre-dispatch abort path)", async () => {
     // Aborted before the Request went out: the input is held AS-IS (not flattened) — without
     // the downgrade, the full [goal] block would be re-sent verbatim as current input.
-    const goalInput = goalRoundMessage({
-      goal: { objective: "fix the tests", status: "active", budget: -1, round: 2, tokens_used: 0 },
-      goalFilePath: "/tmp/GOAL.yaml",
-      body: "fix the tests",
-    });
+    const goalInput = goalRoundText(2, "fix the tests");
     const received: OmniMessage[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {

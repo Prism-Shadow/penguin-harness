@@ -1,7 +1,33 @@
 ---
-title: Skills
-description: Skills package reusable instructions as directories with a SKILL.md — metadata up front, body on demand, editable by the Agent itself.
+title: Skills & Plugins
+description: Plugins package skills (SKILL.md directories, metadata up front, body on demand) and session hooks (scripts the loop consults) — installed into an Agent's state from one library, versioned by date.
 ---
+
+## Plugins
+
+The built-in library is a set of **plugins**. A plugin is a directory with a `plugin.json` manifest and the content it ships: **skills** — reusable instructions the model reads on demand — and/or a **hook package** — scripts the harness runs at the loop's hook points (see [The Agent Loop](/agent-loop#stop-hooks)). Installing a plugin puts its skills under `agent_state/skills/` and its hook package under `agent_state/hooks/`, two first-class parts of the Agent State that the rest of this page describes.
+
+```text
+plugins/<plugin>/
+├── plugin.json                # manifest
+├── skills/<name>/SKILL.md     # zero or more skills (icon.svg, reference/… alongside)
+└── hooks/*.mjs                # at most one hook package: plain Node scripts
+```
+
+`plugin.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `description` / `description_zh` | One-line description (English required for a hook-only plugin; a skill plugin falls back to its first skill's) |
+| `short_description` / `short_description_zh` | Card labels (fall back to the first skill's) |
+| `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
+| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-tuning`, `session-hooks`; missing or unknown lands in "Other" |
+| `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
+| `hooks.stop` | The hook package's stop-hook commands: `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
+
+The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; a plugin's manifest and every skill it ships carry the same string. There is no other version scheme.
+
+The library ships as the npm package `@prismshadow/penguin-plugins`, carrying the raw `plugins/` directory in the tarball; at runtime the package's files are the source of truth for library content, read on every call.
 
 ## Anatomy of a Skill
 
@@ -14,9 +40,7 @@ Frontmatter fields:
 | `name` | Skill name, matching the directory name |
 | `description` | English one-liner injected into the system prompt |
 | `short_description` / `short_description_zh` | UI labels for compact spots such as cards; not injected into the prompt |
-| `preinstall` | Optional; `false` keeps the Skill out of default_agent's preinstalled set — install it manually from the library |
-| `version` | Natural-number version, default 1 |
-| `updated` | Update timestamp, ISO 8601 UTC (`2026-07-17T09:00:00Z`) |
+| `version` | `YYYY-MM-DD.N`, the same string as the plugin that ships it |
 
 ```md
 ---
@@ -24,8 +48,7 @@ name: my-skill
 description: One-line English description injected into the system prompt.
 short_description: Short UI label.
 short_description_zh: 简短的中文标签。
-version: 1
-updated: 2026-07-17T09:00:00Z
+version: 2026-08-29.1
 ---
 
 # My Skill
@@ -33,7 +56,7 @@ updated: 2026-07-17T09:00:00Z
 Concrete steps, boundaries and acceptance criteria...
 ```
 
-Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized; a `version` that is not a natural number falls back to 1, and a missing `updated` defaults to empty. For `preinstall`, only the literal `false` is recognized. `updated` is stored as written and never parsed — the UI renders it as a relative date — but the built-in library writes ISO 8601 UTC throughout, so a Skill written for it should too.
+Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized, and a `version` that is not `YYYY-MM-DD.N` reads as empty — older than any library version, so the library's copy counts as an update.
 
 ## Progressive loading
 
@@ -43,21 +66,34 @@ Chat can also pin skills explicitly: the message then starts with a `[use_skills
 
 If a message only names a skill without a concrete task, the model is instructed to ask what is needed before starting.
 
+## Hook packages
+
+A hook package is the plugin's `hooks/` directory installed as `agent_state/hooks/<plugin>/`, with a generated `hooks.json` beside the scripts — the manifest's identity fields (`name`, `description`, `description_zh`, `version`) plus the commands per hook point:
+
+```json
+{
+  "name": "goal",
+  "description": "Goal mode: …",
+  "version": "2026-08-29.1",
+  "stop": [{ "command": "stop.mjs", "timeout": 60 }]
+}
+```
+
+Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points. The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
+
 ## Installation and storage
 
-Installed Skills live under `agent_state/skills/<name>/` inside the Agent State. The files are the source of truth: every read goes straight to disk with no cache, which makes Skills naturally editable.
+Installed Skills live under `agent_state/skills/<name>/`, hook packages under `agent_state/hooks/<name>/`. The files are the source of truth: every read goes straight to disk with no cache, which makes Skills naturally editable.
 
-- The built-in Agent `default_agent` gets the whole library installed at initialization, except Skills marked `preinstall: false` — those are only ever installed manually;
-- other Agents install on demand — through the Web UI's Skill library page, or via the SDK;
-- installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` and other files in the skill directory (subdirectories preserved) alongside it; each install replaces the whole directory, so reinstalling drops files a newer version no longer ships.
-
-The library ships as the npm package `@prismshadow/penguin-skills`, carrying the raw `skills/` directory in the tarball; at runtime the package's `skills/<name>/SKILL.md` files are likewise the source of truth for library content.
+- The built-in Agent `default_agent` gets the whole library installed at initialization, except plugins marked `preinstall: false` — those are only ever installed manually;
+- other Agents install on demand — through the Web UI's plugin library page, or via the SDK;
+- installing a skill writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` and other files in the skill directory (subdirectories preserved) alongside it; installing a hook package writes `hooks.json` and every file under the plugin's `hooks/`. Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships — reinstalling is how an installed copy is updated, and the Agents page flags a plugin whose installed skill or hook package is behind the library.
 
 ## Built-in library
 
-The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages/skills/src/index.ts`; the library directory is the source of truth as Skills are added):
+The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/plugins/src/index.ts`; the library directory is the source of truth as plugins are added):
 
-| Group | Skill | Purpose |
+| Category | Plugin | Purpose |
 | --- | --- | --- |
 | Office Productivity | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
@@ -78,10 +114,12 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
 | | `agent-optimization` | Improve a specified Agent from a complete current baseline on a frozen Benchmark |
+| Session Hooks | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the session working toward an objective until it is complete, blocked, or out of token budget (preinstalled) |
+| | `skill-summary` | Every 20 completed turns, hands a condensed excerpt of the session to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
 
 ## Writing and optimizing Skills
 
 - Manual install: create a directory under `agent_state/skills/<name>/` and write a `SKILL.md`; the system scans `skills/` when assembling the system prompt and injects the metadata. A directory without a `SKILL.md` does not count as a Skill.
-- Uninstalling deletes the whole `skills/<name>/` directory and is idempotent.
-- An Agent can rewrite its own SKILL.md as part of a task — combined with Benchmark evaluation and optimization this closes the improvement loop, see [Self-Improvement](/self-improvement).
-- Long sessions feed back on their own: every 20 completed turns (configurable) the skill-summary stop hook hands a condensed excerpt of the session to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).
+- Uninstalling deletes the whole `skills/<name>/` (or `hooks/<name>/`) directory and is idempotent.
+- An Agent can rewrite its own SKILL.md as part of a task — combined with Benchmark evaluation and optimization this closes the improvement loop, see [Self-Improvement](/self-improvement). Bump `version` to today's date with the next sequence number when you do.
+- Long sessions can feed back on their own: with the `skill-summary` plugin installed, every 20 completed turns its stop hook hands a condensed excerpt of the session to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).

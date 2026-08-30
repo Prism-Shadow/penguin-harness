@@ -22,8 +22,8 @@ import {
   loadAgentVault,
   loadOrInitAgentState,
   loadProjectConfig,
+  listInstalledHooks,
   projectDir,
-  goalFilePath,
   resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
@@ -43,9 +43,8 @@ import {
   resumeTrace,
 } from "./trace/index.js";
 import { Session } from "./session.js";
-import { createSkillSummaryHook } from "./hooks/skill-summary-hook.js";
-import type { SessionHooks } from "./hooks/stop-hook.js";
-import { DEFAULT_SKILL_SUMMARY_MIN_TURNS } from "./state/default-config.js";
+import { scriptStopHook } from "./hooks/script-hook.js";
+import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import {
   createTempWorkspace,
   formatSessionId,
@@ -63,6 +62,7 @@ import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
 import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
+  ApproveFn,
   GenerativeModelConfig,
   ProxyEnvPolicy,
   SubagentHandle,
@@ -338,9 +338,8 @@ export class Agent {
       vault,
     });
 
-    const hooks = this.sessionHooks(
+    const hooks = await this.sessionHooks(
       rt.subagentRunner,
-      sessionId,
       subagentDepth > 0 || opts.source === "subagent",
     );
 
@@ -380,14 +379,6 @@ export class Agent {
         sessionId,
       ),
       modelHasVision: modelEntry.vision !== false,
-      // Goal mode's control file lives in the session scratchpad; the path is fixed per
-      // Session, so it is wired here rather than passed per-run.
-      goalFilePath: goalFilePath(
-        this.state.root,
-        this.state.projectId,
-        this.state.agentId,
-        sessionId,
-      ),
       ...(hooks ? { hooks } : {}),
       // Max turns comes from the Agent's system_config (runtime parameters belong to the Agent config).
       ...(this.state.systemConfig.max_turns !== undefined
@@ -514,7 +505,7 @@ export class Agent {
       return r;
     };
 
-    const hooks = this.sessionHooks(rt.subagentRunner, sessionId, meta.source === "subagent");
+    const hooks = await this.sessionHooks(rt.subagentRunner, meta.source === "subagent");
 
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
@@ -576,14 +567,6 @@ export class Agent {
         sessionId,
       ),
       modelHasVision: modelEntry.vision !== false,
-      // Goal mode's control file lives in the session scratchpad; the path is fixed per
-      // Session, so it is wired here rather than passed per-run.
-      goalFilePath: goalFilePath(
-        this.state.root,
-        this.state.projectId,
-        this.state.agentId,
-        sessionId,
-      ),
       ...(hooks ? { hooks } : {}),
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
@@ -1040,30 +1023,55 @@ export class Agent {
   }
 
   /**
-   * The stop hooks of a top-level Session (see hooks/): today the skill-summary hook,
-   * registered unless `hooks.skill_summary.enabled` is false. Child Sessions — spawned or
-   * revived subagents — carry none: a subagent's work belongs to its parent's window, and
-   * a child could not spawn the summarizer anyway.
+   * The stop hooks of a top-level Session: every hook package installed in the Agent's
+   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a
+   * script (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
+   * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
+   * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
+   * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
+   * Trace, and a child could not spawn a subagent anyway.
    */
-  private sessionHooks(
+  private async sessionHooks(
     runner: SubagentRunner,
-    sessionId: string,
     child: boolean,
-  ): SessionHooks | undefined {
+  ): Promise<SessionHooks | undefined> {
     if (child) return undefined;
-    const cfg = this.state.systemConfig.hooks?.skill_summary;
-    if (cfg?.enabled === false) return undefined;
+    const installed = await listInstalledHooks(
+      this.state.root,
+      this.state.projectId,
+      this.state.agentId,
+    );
+    const stop = installed.flatMap((hook) =>
+      hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
+    );
+    if (stop.length === 0) return undefined;
     return {
-      stop: [
-        createSkillSummaryHook({
-          root: this.state.root,
-          projectId: this.state.projectId,
-          agentId: this.state.agentId,
-          sessionId,
-          minTurns: cfg?.min_turns ?? DEFAULT_SKILL_SUMMARY_MIN_TURNS,
-          runner,
-        }),
-      ],
+      stop,
+      spawnSubagent: async (request: HookSubagentRequest, approve?: ApproveFn) => {
+        const handle = await runner.spawn({
+          ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),
+        });
+        runDetached(handle, [userText(request.prompt, "harness")], approve);
+        return handle.sessionId;
+      },
     };
   }
+}
+
+/** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */
+function runDetached(handle: SubagentHandle, messages: OmniMessage[], approve?: ApproveFn): void {
+  void (async () => {
+    try {
+      const it = handle.run({ messages, ...(approve ? { approve } : {}) });
+      for (;;) {
+        const res = await it.next();
+        if (res.done) break;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[hooks] subagent ${handle.sessionId} failed: ${message}\n`);
+    } finally {
+      handle.dispose();
+    }
+  })();
 }

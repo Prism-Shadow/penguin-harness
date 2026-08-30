@@ -154,7 +154,7 @@ penguin logs 402a2e24 -f
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --skills web-search,pdf
+penguin agent create --agent-id helper --name "Helper" --plugins web-design,goal
 ```
 
 `agent ls` lists the project's agents (id, name, session count, description). `agent create` creates one:
@@ -163,7 +163,7 @@ penguin agent create --agent-id helper --name "Helper" --skills web-search,pdf
 | --- | --- |
 | `--agent-id <id>` | Required; the agent id (directory name) |
 | `--name <s>` / `--description <s>` | Display name and description |
-| `--skills <a,b>` | Comma-separated library skill names to preinstall; unknown names are rejected before anything is created |
+| `--plugins <a,b>` | Comma-separated library plugin names to preinstall (each one's skills and hook package); unknown names are rejected before anything is created |
 | `--project-id <id>` / `--json` / `--server <url>` | As everywhere |
 
 ## penguin project

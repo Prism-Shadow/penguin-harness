@@ -1,12 +1,12 @@
 /**
- * End-to-end test for the skill library (locale zh-CN):
- * - the sidebar nav shows "技能库" ("Skill Library"), and the page renders the library's skill
- *   cards across group sections (a collapsible group header: group name + skill count,
+ * End-to-end test for the plugin library (locale zh-CN):
+ * - the sidebar nav shows "插件库" ("Plugin library"), and the page renders the library's plugin
+ *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
- *   English by default); cards carry a custom icon (icon.svg sanitized then inlined, not the book
- *   fallback), with metadata showing version and usage count (worded semantically, not a bare
- *   number badge);
+ *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
+ *   sanitized then inlined, not the book fallback), with metadata showing the `YYYY-MM-DD.N`
+ *   version and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -36,13 +36,14 @@ const P = "password123";
 
 // Group names follow the UI language: Chinese when the server dist ships titleZh, otherwise
 // falling back to English (both states are asserted).
-// The group header is a collapsible button (group name + skill count); matched by a substring of its accessible name.
+// The group header is a collapsible button (category name + plugin count); matched by a substring of its accessible name.
 const GROUPS = [
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
   /Agent Tuning|Agent 调优/,
 ];
+// Library plugins, each shipping the same-named skill (what the composer's dropdown then lists).
 const SKILLS = [
   "agent-initialization",
   "benchmark-design",
@@ -92,12 +93,12 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Skill library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
+  // —— Plugin library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "技能库" });
+  const navLink = page.getByRole("link", { name: "插件库" });
   await expect(navLink).toBeVisible();
   await navLink.click();
-  await expect(page).toHaveURL(/\/skills$/);
+  await expect(page).toHaveURL(/\/plugins$/);
   for (const g of GROUPS) {
     const header = page.getByRole("button", { name: g });
     await expect(header).toBeVisible();
@@ -108,18 +109,18 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   for (const s of SKILLS) {
     await expect(page.getByText(s, { exact: true })).toBeVisible();
   }
-  // Card metadata is worded semantically: version + usage count (default_agent has all skills preinstalled -> at least 1 in use).
-  await expect(page.getByText(/v\d+ · .*Agent 在用/).first()).toBeVisible();
+  // Card metadata is worded semantically: the `YYYY-MM-DD.N` version + usage count (default_agent has every preinstalled plugin -> at least 1 in use).
+  await expect(page.getByText(/\d{4}-\d{2}-\d{2}\.\d+ · .*Agent 在用/).first()).toBeVisible();
 
   // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
-  // gated on that Agent having the skill: default_agent ships every preinstalled skill
-  // (agent-initialization is enabled), while remote-claude-code is preinstall:false and absent from it,
-  // so its button is disabled.
+  // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
+  // plugin (agent-initialization is enabled), while remote-claude-code is preinstall:false and
+  // absent from it, so its button is disabled.
   await expect(page.getByRole("button", { name: "快捷调用 agent-initialization" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "快捷调用 remote-claude-code" })).toBeDisabled();
 
-  // Card icon: the DTO icon (icon.svg in the skill's directory) is sanitized and rendered
-  // inline (an aria-hidden wrapper + svg); builtin skills each carry a custom icon, not the book
+  // Card icon: the DTO icon (icon.svg in the plugin's skill directory) is sanitized and rendered
+  // inline (an aria-hidden wrapper + svg); builtin plugins each carry a custom icon, not the book
   // fallback. The card root = the nearest rounded-md ancestor of the name element (the new card
   // layout has the icon spanning two rows on the left, with the name and short description as
   // separate text columns, so it can no longer be located by "the innermost div containing the name").
@@ -158,7 +159,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   const uninstallHelper = page.getByRole("button", { name: "卸载 agent_helper" });
   await expect(uninstallHelper).toBeVisible();
   await expect(uninstallHelper).toContainText("已安装");
-  // Server-side truth converges: agent-initialization really does appear in helper's installed list.
+  // Server-side truth converges: the plugin's skill really does appear in helper's installed skills.
   await expect
     .poll(async () => {
       const res = await (

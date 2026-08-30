@@ -1,37 +1,44 @@
-# Stop hooks replace the goal loop, and a second hook feeds long sessions back into skills
+# Hooks in core, goal mode and skill summaries as plugins, and the skill library becomes a plugin library
 
 - **Date:** 2026-08-29
 - **Type:** feature
-- **Scope:** `core`, `server`, `web`, `cli`, `docs`
-- **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
+- **Scope:** `core`, `plugins`, `server`, `web`, `cli`, `desktop`, `docs`
 - **Breaking:** yes
 
 [中文版](2026-08-29-stop-hook-goal-mode.zh.md)
 
-The Session gained a hook mechanism — functions it runs at fixed points of the agent loop, with one point so far: **stop**, the moment a Task ends. Goal mode was rebuilt on it as one hook, in the shape of a ralph loop: the goal file is the state, the hook reads it after every Task and either injects the next round or ends the goal. The dedicated goal loop and its `goal_finished` message are gone; what a hook answers is recorded as a generic `hook` event. A second built-in hook uses the same point to hand a long session's findings to a background subagent that folds them into the Agent's skills.
+The Session gained a generic hook mechanism: core codes the hook _points_ — one so far, **stop**, the moment a Task ends — and the hooks themselves come from plugins as **hook packages**, plain Node scripts installed into `agent_state/hooks/` beside `agent_state/skills/`. Goal mode moved out of core entirely and became the `goal` plugin's stop hook, ralph-loop style: a state file the hook reads and rewrites after every Task. A second hook package, `skill-summary`, hands a long session's findings to a background subagent. The skill library was reshaped into a plugin library — one manifest per plugin, skills and hook packages inside, versions by date — and `@prismshadow/penguin-skills` is deprecated in favour of `@prismshadow/penguin-plugins`.
 
 ## Stop hooks
 
-- `SessionConfig.hooks.stop` takes a list of named hooks. After every Task of a `run` call each one receives the Trace file being written, how the Task ended (`completed` / `aborted` / `fatal`), the run's Task count and uncached-token spend (subagent sessions included), the Session's cumulative turn count, and the run's approval callback.
-- A hook answers `continue` (with the next Task's user text as `input`), `stop`, or nothing. Every answer becomes one `hook` event message — `hook`, `name`, `decision`, `reason`, and the hook's own scalar `output` — streamed and written to the Trace; the injected input is not in the event, it is the user message that follows it. The first `continue` drives another Task inside the same `run` call; after a cutoff, or once the signal is aborted, a `continue` is recorded but never run. A throwing hook is recorded with the error as its reason and cannot take the run down.
-- The trace page renders `hook` events with their name, decision, reason and record; the CLI prints one dim line per hook answer (the goal hook's excluded — its own round and summary lines already say what it decided).
+- After every Task of a `run` call the Session consults the Agent's installed hook packages (top-level Sessions only), running each `stop` command as a subprocess with `{ hook, session_id, trace_path }` on stdin — nothing more. Token usage, turn counts, how the Task ended and any state file are the script's to derive from the Trace.
+- A script answers `continue` (with the next Task's user text as `input`), `stop`, a `subagent` request (`{ prompt, agent_id? }` — the Session spawns a detached background child Session, inherits the run's approval callback, records its session id), or nothing. Every non-empty answer becomes one generic `hook` event message — `hook`, `name` (the package), `decision`, `reason`, scalar `output` — streamed and written to the Trace; the injected input is the user message that follows it. The first `continue` drives the next Task inside the same `run`; after a cutoff or an aborted signal a `continue` is recorded but never run. A script that crashes, prints non-JSON or times out (default 60 s) is recorded and treated as no opinion.
+- SDK embedders can still register in-process hooks (`SessionConfig.hooks.stop`); the subprocess runner (`runHookScript`) is exported for hosts that call a package's other scripts.
+- The trace page renders `hook` events; the CLI prints one dim line per non-goal hook answer.
+
+## Goal mode as the `goal` plugin
+
+- Core knows nothing about goals any more — `session.run`'s `goal` option, the goal file helpers and `goalOutcomeOf` are gone; only the `[goal]` marker parsing remains, as for every host-composed marker. The plugin (preinstalled on `default_agent`) ships `start.mjs`, which writes `GOAL.json` (`objective`, `status`, `budget`, `round`, `tokens_used`, and `ended` once the hook has acted on a terminal status) and composes round 1, and `stop.mjs`, which after every Task reads the round's usage off the Trace, applies the same decision order as before (model verdict → cutoff → wrap-up → 100-round cap → budget → next round) and rewrites the file.
+- The server gates `goal: { budget }` on the package being installed (`409 goal_plugin_not_installed`), runs `agent_state/hooks/goal/start.mjs`, and submits the round-1 message it prints as an ordinary Task; `GET /goal` reads `GOAL.json` (a file the hook has not ended reads as `aborted` while the Session is idle). The `goal_*` server events, the chat banner, the `/goal` command and `penguin run --goal` behave as before; the CLI reads the outcome from the `goal_finished` server event. Attached images ride round 1 as ordinary input; file attachments are refused.
+- The Web App shows a toast when a goal is started on an Agent without the plugin.
+
+## The `skill-summary` plugin
+
+- Not preinstalled. Its stop script windows the current Trace from the last summary it recorded, and once the window holds 20 completed turns condenses it (clipped user/assistant text, tool calls and outputs) and answers with a `subagent` request whose prompt asks the child to fold durable findings into the relevant `SKILL.md` files and bump their version. An Agent with no installed skill never fires it.
+
+## The plugin library
+
+- `packages/plugins` (npm `@prismshadow/penguin-plugins`) replaces `packages/skills`: `plugins/<plugin>/plugin.json` + `skills/<name>/` + `hooks/`. Every existing skill became a single-skill plugin; the two hook packages joined a new **Session Hooks** category. Versions are `YYYY-MM-DD.N` everywhere — plugin manifests and SKILL.md frontmatter alike; the natural-number `version` and the `updated` timestamp are gone.
+- Agent State: `agent_state/hooks/<plugin>/` holds a hook package (`hooks.json` generated from the manifest, plus the scripts) beside `agent_state/skills/`; `installPlugin`, `installHook`, `removeHook` and `listInstalledHooks` join the state layer. `default_agent` preinstalls every plugin not marked `preinstall: false`.
+- API: `GET /api/plugins` (categories → plugins with their skills' metadata and hook points), `POST …/agents/:a/plugins { names }` (whole-plugin install; reinstall = update), `GET|DELETE …/agents/:a/hooks[/:name]`. `GET /api/skills` and `POST …/skills { names }` are gone; the installed-skill routes (list, archive import/export, uninstall) stay. Agent creation takes `plugins` instead of `skills`; `AgentSummary` reports `hookCount` and `pluginUpdates` (was `skillUpdates`); `SkillMetadataItem.version` is a string and `updated` is gone.
+- Web App: the skill library page is the **plugin library** (`/plugins`) — cards show a plugin's skills and hook points, install and update whole plugins; the Agent settings page gained a **Hooks** tab; the create dialog seeds plugins. CLI: `penguin agent create --plugins`.
 - The design spec was updated to match ([penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)).
-
-## Goal mode as a hook
-
-- `session.run(input, { goal: { budget } })` writes `GOAL.yaml`, yields and runs the round-1 `[goal]` message, and puts the goal hook ahead of the run's stop hooks. The file now holds the whole state — `objective`, `status`, `budget`, `round`, `tokens_used` — and the hook rewrites it after every round; the model still owns `status` alone (`complete` / `blocked`), and `objective` / `budget` are re-asserted from the hook's own copy on every write. The `[goal]` block embeds that file, numbers included, in place of its separate budget line.
-- The decision order: the model's verdict wins; a cut-off Task ends the goal as `aborted`; the wrap-up round ends it as `budget_limited`; 100 rounds are the runaway backstop; a reached budget buys one wrap-up round; otherwise the next round. Terminal statuses are written to the file too, so the file and the last event always agree. A broken file stops the goal as `blocked` and is left untouched.
-- Hosts read the outcome from the hook's `stop` event: `goalOutcomeOf` replaces `goalFinishedOf`, `goalProgressOf` reads every goal hook event, and `isGoalRoundInput` is unchanged. `GoalRunOptions.maxRounds` is gone (the backstop is a constant, never a host knob).
-- The Web server keeps no goal table: `GET /api/sessions/:id/goal` reads the Session's `GOAL.yaml`, and a file still active while the Session is not running reads as `aborted` — a goal lives only inside its run, so the startup reconciliation went with the table. The `goal_started` / `goal_round` / `goal_finished` server events and the chat page's banner are unchanged; `goal_round`'s `used` is now what the hook recorded rather than a second count.
-
-## The skill-summary hook
-
-- Configured by `hooks.skill_summary` in `system_config.yaml` — `enabled` (default true) and `min_turns` (default 20) — and registered on top-level Sessions only. Once the Session has run `min_turns` LLM turns, the hook reads the current Trace file after every Task, takes the records since the last summary it recorded there, and fires when that window holds `min_turns` completed turns. The Trace is its only state: a restart changes nothing, and a compaction (which rotates the file) starts a fresh window.
-- It condenses the window into an excerpt — user and assistant text, tool calls with arguments, tool outputs, each clipped, the oldest lines dropped past 60k characters, no thinking or images — and spawns a background child Session of the same Agent through the subagent runner (no `run_subagent` slot, no panel entry, no completion notice; the child has its own Trace and inherits the run's approval callback). The prompt names the skills directory and the skills the window invoked and asks the child to fold durable findings into the relevant `SKILL.md` files, bumping their version, or to change nothing. The hook records the child's session id and the window's turn count in its `hook` event. An Agent with no installed skill never fires it.
 
 ## Compatibility
 
-- **`goal_finished` no longer exists**: the `GoalFinishedPayload` type, the `goalFinished` builder and `goalFinishedOf` / `goalTokenDelta` are removed. Consumers read the goal hook's `hook` event (`name: goal`, `decision: stop`) with `goalOutcomeOf`; the run's accounting rule is `uncachedTokens`. Traces written by earlier versions still carry `goal_finished` records; readers that switch on the payload type treat them as an unknown event (the trace page shows them without a summary line).
-- **`GOAL.yaml` has a new shape**: `budget`, `round` and `tokens_used` join `objective` and `status`, and system-side endings are written to `status`. A file left by an earlier version is read tolerantly (missing counters read as zero) and matters only to `GET /goal`, which reports it as `aborted` unless the Session is running.
-- **The `goal_state` table is no longer created, written or read.** An existing `web.db` keeps its rows; nothing depends on them, and the table can be dropped by hand.
-- **The skill-summary hook is on by default**, for existing Agents too — an Agent whose `system_config.yaml` predates the `hooks` section runs it at the defaults. Each firing spends one background subagent run on the session's excerpt; set `hooks.skill_summary.enabled: false` to turn it off, or raise `min_turns`.
+- **`@prismshadow/penguin-skills` is deprecated**; nothing new is published under that name. The release chain publishes `@prismshadow/penguin-plugins` instead.
+- **Installed skills carry natural-number versions** from before this change; they read as an empty version, so the plugin library reports every one of them as updatable once. Reinstalling from the library brings the dated version.
+- **Existing Agents have no hook packages installed** — nothing is auto-installed into an Agent that already exists. Goal mode on such an Agent answers `409 goal_plugin_not_installed` until the `goal` plugin is installed from the plugin library; `default_agent`s created from now on have it.
+- **`goal_finished` and the `goal` run option no longer exist** (removed with the previous iteration's `goal_state` table); the `goal_*` server events are unchanged. Traces from earlier versions still carry `goal_finished` records, which readers treat as an unknown event.
+- **`hooks.skill_summary` in `system_config.yaml`** is no longer read: installing the `skill-summary` plugin is the switch.
+- The `skills: string[]` field of agent creation and the CLI's `--skills` are `plugins` / `--plugins` now.

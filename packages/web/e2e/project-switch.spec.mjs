@@ -83,10 +83,10 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await expect(generalAgent).toBeVisible();
   await expect(draftTitle).toBeVisible();
 
-  // —— Regression (#74 comment): switching Project on the skill library page must not leave
+  // —— Regression (#74 comment): switching Project on the plugin library page must not leave
   // installation state from the previous Project —— both Projects' default_agent share the same
   // name (agentId is the page state table's key): first uninstall agent-initialization from the current
-  // (target) Project via the API, then switch over from the initial Project's skill library page
+  // (target) Project via the API, then switch over from the initial Project's plugin library page
   // — before the fix, the old Project's snapshot would overwrite the freshly fetched data, so
   // "Manage installation" would always show "Installed."
   const del = await page.request.delete(
@@ -94,17 +94,17 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   );
   expect(del.ok(), "uninstall agent-initialization on target project").toBeTruthy();
 
-  // Switch back to the initial Project, populating the skill library page's snapshot (default_agent has everything preinstalled -> Installed).
+  // Switch back to the initial Project, populating the plugin library page's snapshot (default_agent has everything preinstalled -> Installed).
   await byName.first().click();
   await page.getByRole("button", { name: U }).first().click();
   await expect(generalAgent).toBeVisible();
-  await page.getByRole("link", { name: "技能库" }).click();
-  await expect(page).toHaveURL(/\/skills$/);
+  await page.getByRole("link", { name: "插件库" }).click();
+  await expect(page).toHaveURL(/\/plugins$/);
   await page.getByRole("button", { name: "管理安装 agent-initialization" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // Staying on the skill library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).
+  // Staying on the plugin library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).
   await page.getByRole("button", { name: U }).first().click();
   await byName.first().click();
   await page.getByRole("button", { name: "管理安装 agent-initialization" }).click();

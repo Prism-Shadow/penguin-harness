@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
+import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-plugins";
 import {
   agentsMdPath,
   assembleSystemPrompt,
@@ -21,6 +21,12 @@ import {
   provisionProjectAgents,
   skillsDir,
 } from "../src/state/index.js";
+/** The skill names the preinstalled plugins ship, sorted — what default_agent's skills/ holds after initialization. */
+function preinstalledSkillNames(): string[] {
+  return loadPreinstalledPlugins()
+    .flatMap((p) => p.skills.map((s) => s.name))
+    .sort();
+}
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -64,10 +70,10 @@ describe("Skill installation policy", () => {
     const names = (await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).map(
       (s) => s.name,
     );
-    expect(names).toEqual(loadPreinstalledSkills().map((s) => s.name));
+    expect(names).toEqual(preinstalledSkillNames());
     // `preinstall: false` library skills stay out of the preinstalled set (manual install only).
     for (const name of ["remote-claude-code", "humanizer"]) {
-      expect(librarySkill(name)?.preinstall, name).toBe(false);
+      expect(libraryPlugin(name)?.preinstall, name).toBe(false);
       expect(names, name).not.toContain(name);
     }
   });
@@ -86,12 +92,10 @@ describe("provisionProjectAgents", () => {
     expect(state.agentsMd).toBe("");
 
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    expect(installed.map((s) => s.name).sort()).toEqual(
-      loadPreinstalledSkills().map((s) => s.name),
-    );
+    expect(installed.map((s) => s.name).sort()).toEqual(preinstalledSkillNames());
     // On-disk content matches the library's SKILL.md verbatim (install copies the full text).
     const sdkMd = await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, "penguin-sdk"), "utf8");
-    expect(sdkMd).toBe(librarySkill("penguin-sdk")!.content);
+    expect(sdkMd).toBe(librarySkill("penguin-sdk")!.skill.content);
   });
 
   it("provision is idempotent: running it again does not change the result", async () => {
@@ -104,9 +108,7 @@ describe("provisionProjectAgents", () => {
     );
     expect(md).toBe("");
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    expect(installed.map((s) => s.name).sort()).toEqual(
-      loadPreinstalledSkills().map((s) => s.name),
-    );
+    expect(installed.map((s) => s.name).sort()).toEqual(preinstalledSkillNames());
   });
 
   it("an existing Agent is not overwritten (the preset only applies at initialization)", async () => {

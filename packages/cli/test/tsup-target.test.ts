@@ -68,8 +68,8 @@ describe("tsup build target", () => {
       "cli",
       "core",
       "desktop",
+      "plugins",
       "server",
-      "skills",
     ]);
   });
 

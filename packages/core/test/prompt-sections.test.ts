@@ -59,7 +59,7 @@ function withConfig(state: AgentState, patch: Partial<SystemConfig>): AgentState
   return { ...state, systemConfig: { ...state.systemConfig, ...patch } };
 }
 
-const DEMO_SKILL = { name: "demo", description: "Demo skill.", version: 1, updated: "2026-08-01" };
+const DEMO_SKILL = { name: "demo", description: "Demo skill.", version: "2026-08-01.1" };
 
 /** A complete Environment section, so the rendered prompt carries every `- Label: value` line. */
 const SESSION_ENVIRONMENT = {

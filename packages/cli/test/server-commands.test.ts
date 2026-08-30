@@ -187,7 +187,7 @@ describe("penguin logs", () => {
 });
 
 describe("penguin agent / project", () => {
-  it("agent ls prints the table; agent create posts id/name/skills", async () => {
+  it("agent ls prints the table; agent create posts id/name/plugins", async () => {
     await cli(["agent", "ls"]);
     expect(out()).toContain("default_agent");
 
@@ -199,15 +199,15 @@ describe("penguin agent / project", () => {
       "helper",
       "--name",
       "Helper",
-      "--skills",
-      "web-search, pdf",
+      "--plugins",
+      "web-design, goal",
     ]);
     expect(code).toBe(0);
     const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/agents"));
     expect(create?.body).toMatchObject({
       agentId: "helper",
       name: "Helper",
-      skills: ["web-search", "pdf"],
+      plugins: ["web-design", "goal"],
     });
     expect(out()).toContain(t.agent.created("helper", "default_project"));
   });

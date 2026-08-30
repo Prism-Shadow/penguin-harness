@@ -1,0 +1,7 @@
+{
+  "description": "Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads.",
+  "short_description": "Serve models locally with vLLM.",
+  "short_description_zh": "用 vLLM 部署本地模型服务。",
+  "version": "2026-08-23.1",
+  "category": "ai-app-development"
+}

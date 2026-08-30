@@ -439,7 +439,7 @@ export type HookDecision = "continue" | "stop";
  * Hook result event: one per non-void answer a hook gave at a hook point — today only
  * `stop`, consulted after every Task of a `run` call (see hooks/stop-hook.ts). Produced by
  * the Session, streamed live and written to the Trace best-effort. `name` is the hook's
- * registered name (`goal`, `skill_summary`, …); `decision` is absent when the hook only
+ * registered name (`goal`, `skill-summary`, …); `decision` is absent when the hook only
  * left a record; `output` is the hook's own structured record, scalars only — the goal hook
  * writes `status` / `round` / `tokens_used` / `budget`, the skill-summary hook `session_id`
  * / `turns`. A `continue`'s injected input is not here: it is the user message that

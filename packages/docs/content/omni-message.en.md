@@ -297,7 +297,7 @@ interface SubagentPayload {
 interface HookPayload {
   type: "hook";
   hook: "stop";               // the hook point that fired (see the agent loop's stop hooks)
-  name: string;               // the hook's name: "goal", "skill_summary", …
+  name: string;               // the hook's name: "goal", "skill-summary", …
   decision?: "continue" | "stop";   // absent when the hook only left a record
   reason?: string;            // one line for people
   output?: Record<string, string | number | boolean>;

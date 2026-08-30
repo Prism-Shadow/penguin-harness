@@ -1,8 +1,10 @@
 /**
- * Skill icon component (shared by Skill library cards and the input area's Skill dropdown):
- * DTO icon (raw icon.svg from the Skill directory) is rendered inline once it passes
- * sanitizeSkillIcon (stroke uses currentColor, following text color); falls back to the
- * default book icon if missing or if validation fails (e.g. user-created Skills).
+ * Skill icon component (shared by the plugin library cards, the settings Skills tab and the
+ * input area's Skill dropdown): DTO icon (raw icon.svg from the Skill directory) is rendered
+ * inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text color);
+ * falls back to the default book icon if missing or if validation fails (e.g. user-created
+ * Skills) — or to the caller's `fallback` path where the book would be wrong, as it is for a
+ * plugin that ships no skill at all.
  */
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { BOOK_ICON } from "../chat/skill-use";
@@ -44,15 +46,18 @@ export function skillTileColor(name: string): string {
 
 export function SkillIcon({
   icon,
+  fallback = BOOK_ICON,
   size = 20,
   className = "",
 }: {
   icon?: string;
+  /** 24×24 line path drawn when there is no usable `icon`; the book unless the subject is not a skill. */
+  fallback?: string;
   size?: number;
   className?: string;
 }) {
   const safe = sanitizeSkillIcon(icon);
-  if (!safe) return <GlyphIcon d={BOOK_ICON} size={size} className={className} />;
+  if (!safe) return <GlyphIcon d={fallback} size={size} className={className} />;
   return (
     <span
       aria-hidden

@@ -79,12 +79,12 @@ describe("SessionManager.startGoal", () => {
     db.close();
   });
 
-  type RunOpts = { thinkingLevel?: string; goal?: { budget?: number } };
+  type RunOpts = { thinkingLevel?: string };
 
   /**
-   * Fake session: `run` asserts it was called in goal mode and emits the whole goal stream
-   * the way core would — per-round `[goal]` inputs and work, the goal hook's answers after
-   * each round (the hook loop itself is core's and is tested in core).
+   * Fake session: `run` emits the whole goal stream the way core would — per-round `[goal]`
+   * inputs and work, the goal hook's answers after each round (the hook loop is core's and
+   * the decisions are the goal plugin's; both are tested where they live).
    */
   function goalFakeSession(
     stream: (input: OmniMessage[]) => OmniMessage[],
@@ -104,7 +104,6 @@ describe("SessionManager.startGoal", () => {
         runs.push(input);
         runOpts.push({
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-          ...(opts.goal !== undefined ? { goal: opts.goal } : {}),
         });
         yield* stream(input);
       },
@@ -147,17 +146,18 @@ describe("SessionManager.startGoal", () => {
 
     await manager.startGoal(ROW.sessionId, {
       input: [userText(text)],
+      objective: "make it work",
       budget: -1,
       thinkingLevel: "high",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // One run call carries the whole goal: the input verbatim, the per-goal thinking
-    // level, and the goal option (core's hook loop drives the rounds).
-    expect(session.runOpts).toEqual([{ thinkingLevel: "high", goal: { budget: -1 } }]);
+    // One run call carries the whole goal: the input verbatim and the per-goal thinking
+    // level (the plugin's stop hook drives the rounds inside it).
+    expect(session.runOpts).toEqual([{ thinkingLevel: "high" }]);
 
     const server = serverEvents(events);
-    // The recorded objective is the user's own text: the [use_skills] prefix is stripped.
+    // The published objective is the one the route passed (the user's own text, markers stripped).
     expect(server.find((e) => e.type === "goal_started")).toMatchObject({
       objective: "make it work",
       budget: -1,
@@ -199,6 +199,7 @@ describe("SessionManager.startGoal", () => {
 
     await manager.startGoal(ROW.sessionId, {
       input: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
+      objective: "Match this mockup",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
@@ -225,7 +226,11 @@ describe("SessionManager.startGoal", () => {
       await gate;
     };
     const manager = makeManager(session);
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
     await expect(manager.startTask(ROW.sessionId, [userText("x")])).rejects.toMatchObject({
       status: 409,
     });
@@ -244,7 +249,11 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
     const finished = serverEvents(events).filter((e) => e.type === "goal_finished");
@@ -262,7 +271,11 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: 1000 });
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      objective: "obj",
+      budget: 1000,
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
     expect(serverEvents(events).find((e) => e.type === "goal_finished")).toMatchObject({

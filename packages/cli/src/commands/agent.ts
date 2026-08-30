@@ -3,10 +3,10 @@
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
- *                        [--skills <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
  *
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
- * and library skills to seed (comma-separated names; unknown names are rejected by the
+ * and library plugins to seed (comma-separated names; unknown names are rejected by the
  * server before anything is created).
  * Docs: /docs/cli § "penguin agent".
  */
@@ -53,16 +53,16 @@ export function registerAgentCommand(program: Command, t: Messages): void {
     .requiredOption("--agent-id <id>", t.agent.createId)
     .option("--name <name>", t.agent.createName)
     .option("--description <text>", t.agent.createDescription)
-    .option("--skills <names>", t.agent.createSkills)
+    .option("--plugins <names>", t.agent.createPlugins)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (opts) => {
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
-      const skills =
-        typeof opts.skills === "string"
-          ? opts.skills
+      const plugins =
+        typeof opts.plugins === "string"
+          ? opts.plugins
               .split(",")
               .map((s: string) => s.trim())
               .filter((s: string) => s.length > 0)
@@ -74,7 +74,7 @@ export function registerAgentCommand(program: Command, t: Messages): void {
           agentId: String(opts.agentId),
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
           ...(opts.description !== undefined ? { description: String(opts.description) } : {}),
-          ...(skills !== undefined && skills.length > 0 ? { skills } : {}),
+          ...(plugins !== undefined && plugins.length > 0 ? { plugins } : {}),
         },
       );
       if (opts.json === true) {

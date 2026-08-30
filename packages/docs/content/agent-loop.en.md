@@ -91,31 +91,30 @@ Carry-over enters the model context only — it is never written to the Trace, w
 
 ## Stop hooks
 
-A hook is a function the Session runs at a fixed point of the loop. One point exists today, **stop**: the moment a Task ends — the model's final reply with no tool call, or a cutoff (user abort, LLM failure, the `max_turns` cap). The hooks are registered on the Session (`SessionConfig.hooks.stop`, a list the composition layer builds from the Agent's `system_config.yaml`); a goal run puts its own goal hook ahead of them for that run.
+A hook is a function the Session runs at a fixed point of the loop. One point exists today, **stop**: the moment a Task ends — the model's final reply with no tool call, or a cutoff (user abort, LLM failure, the `max_turns` cap). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop`.
 
-Each hook receives a `StopHookInput`:
+An installed hook is a plain Node script, run as a subprocess the way Claude Code runs its command hooks: it is told only where to look, and derives everything else — token usage, turn counts, how the Task ended, its own state file — from the Trace.
 
-```ts
-interface StopHookInput {
-  sessionId: string;
-  tracePath?: string;      // the Trace file being written (the current segment; absent without a Trace)
-  stopReason: StopReason;  // how the Task ended: completed / aborted / fatal (max_turns counts as fatal)
-  tasks: number;           // Tasks this run call has driven so far
-  tokensUsed: number;      // this run's uncached input + output so far, subagent sessions included
-  turns: number;           // Session cumulative LLM turns
-  approve?: ApproveFn;     // the run's approval callback (a child Session a hook spawns inherits it)
-  signal?: AbortSignal;
-}
+```text
+stdin   { "hook": "stop", "session_id": "…", "trace_path": "/abs/…/<session>_001.jsonl" }
+stdout  nothing = no opinion; otherwise
+        { "decision": "continue" | "stop",   // continue: `input` becomes the next Task's user message
+          "input": "…",
+          "reason": "one line for people",
+          "output": { "…": scalars },        // the hook's own record
+          "subagent": { "prompt": "…", "agent_id": "…" } }   // ask for a detached background subagent
+exit    non-zero = failure (stderr's tail becomes the reason); a timeout (default 60 s) kills it
 ```
 
-and answers with a `StopHookResult`, or nothing at all (no opinion): `decision` — `continue` keeps the run going with `input` as the next Task's user text, `stop` lets it end; `reason` — one line for people; `output` — the hook's own structured record (scalars). The rules:
+`trace_path` is the Trace file being written — the current context segment; a compaction rotates to a new file — and is absent for a Trace-less Session. The rules:
 
-- hooks run in registration order after every Task; every non-void answer is recorded as one [`hook` event](/omni-message#event_msg), streamed and written to the Trace — the injected input is not in the event, it is the user message that follows it;
+- hooks run in registration order after every Task; every non-empty answer is recorded as one [`hook` event](/omni-message#event_msg) — `hook`, `name` (the package name), `decision`, `reason`, `output` — streamed and written to the Trace; the injected input is not in the event, it is the user message that follows it;
 - the first `continue` wins: its input is yielded onto the stream (a plain run never yields its own input; hosts render the injected one from the stream) and drives the next Task inside the same `run` call; no `continue` means the call returns;
 - after a cutoff, or once the signal is aborted, a `continue` is recorded but never run — a user's interruption outranks every hook;
-- a hook that throws is recorded with the error as its `reason` and treated as having no opinion; it never takes the run down.
+- a `subagent` answer makes the Session spawn a detached background child Session (the same Agent, or `agent_id`) whose first user message is the prompt; it inherits the run's approval callback, its stream is dropped (its own Trace is the record), and its session id is recorded on the event as `output.session_id`;
+- a hook that fails — crashes, prints something that is not JSON, or times out — is recorded with the error as its `reason` and treated as having no opinion; it never takes the run down.
 
-Two hooks ship with the harness. [Goal mode](/goal-mode) is one: it reads the goal file, decides, and hands back the next round's `[goal]` message. The **skill-summary hook** is the other: configured by `hooks.skill_summary` in `system_config.yaml` (`enabled`, default true; `min_turns`, default 20 — see [Configuration](/configuration#agent-config)) and registered on top-level Sessions only, it fires once the Session has run `min_turns` LLM turns *and* the current Trace file holds that many completed turns since the last summary it recorded there (the Trace is its only state: a restart changes nothing, and a compaction, which rotates the file, starts a fresh window). It condenses that window — user and assistant text, tool calls with their arguments, tool outputs, each clipped, no thinking or images — into an excerpt and hands it to a background child Session of the same Agent (spawned straight through the subagent runner: no `run_subagent` slot, no panel entry, no completion notice, but its own Trace), whose prompt names the skills directory and the skills the window invoked and asks it to fold the durable findings into the relevant `SKILL.md` files, or change nothing. The hook records the child's session id and the window's turn count in its `hook` event and never asks to continue. An Agent with no installed skill never fires it.
+Two hook packages ship in the plugin library. [Goal mode](/goal-mode) is one: its stop hook reads the goal file, decides, and hands back the next round's `[goal]` message. The **`skill-summary`** plugin is the other (not preinstalled): once the current Trace file holds 20 completed turns since the last summary it recorded there (the Trace is its only state — a restart changes nothing, and a compaction, which rotates the file, starts a fresh window), it condenses that window — user and assistant text, tool calls with their arguments, tool outputs, each clipped, no thinking or images — into an excerpt and answers with a `subagent` request whose prompt names the skills directory and the skills the window invoked and asks the child to fold the durable findings into the relevant `SKILL.md` files, or change nothing. An Agent with no installed skill never fires it.
 
 ## Mid-run steering
 

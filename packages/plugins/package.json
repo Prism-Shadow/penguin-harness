@@ -1,0 +1,42 @@
+{
+  "name": "@prismshadow/penguin-plugins",
+  "version": "0.2.9",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "PenguinHarness plugin library: built-in skills and session hooks, decoupled from core.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/plugins"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  },
+  "files": [
+    "dist",
+    "plugins",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

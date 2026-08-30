@@ -18,5 +18,13 @@ export * from "./agent-vault.js";
 export * from "./memory.js";
 export * from "./example-benchmark.js";
 
-// Skill library types and frontmatter parser (from the skills package; server reuses the same implementation via core).
-export { parseSkillFrontmatter, type SkillMetadata } from "@prismshadow/penguin-skills";
+// Plugin library types, the frontmatter parser and the version order (from the plugins package; the server reuses the same implementation via core).
+export {
+  compareVersions,
+  parseSkillFrontmatter,
+  PLUGIN_VERSION_PATTERN,
+  type HookCommand,
+  type HookManifest,
+  type LibraryPlugin,
+  type SkillMetadata,
+} from "@prismshadow/penguin-plugins";

@@ -185,10 +185,18 @@ export const GEAR_ICON =
  * trace" — share them; living here keeps chat-page free of a sidebar import cycle,
  * sidebar.tsx importing DRAFT_SESSION_ID from chat-page).
  */
+/**
+ * Hook package (a fishing hook: eye, shank, bend and a barbed tip). The mark of a plugin's hook
+ * package wherever skills are marked by the book: a hook-only plugin's card tile, the agents
+ * page's hook count and the settings Hooks tab.
+ */
+export const HOOK_ICON =
+  "M16 4a2 2 0 1 0-4 0 2 2 0 0 0 4 0zM14 6v8a5 5 0 0 1-10 0v-2m0 0l-2 2m2-2l2 2";
+
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
-  /** Skill library (an open book: two pages + spine). */
-  skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
+  /** Plugin library (an open book: two pages + spine — the library is still read like one). */
+  plugins: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
   models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",

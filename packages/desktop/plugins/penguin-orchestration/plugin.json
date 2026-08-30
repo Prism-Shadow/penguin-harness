@@ -1,0 +1,7 @@
+{
+  "description": "Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI over the local server.",
+  "short_description": "Orchestrate agents, sessions, costs and schedules with the penguin CLI.",
+  "short_description_zh": "用 penguin CLI 编排智能体、会话、成本与定时任务。",
+  "version": "2026-08-27.1",
+  "category": "ai-app-development"
+}

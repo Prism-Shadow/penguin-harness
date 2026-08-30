@@ -84,7 +84,7 @@ The files panel browses the Workspace tree, previews files (Markdown / HTML rend
 
 ## Agent Management (/agents)
 
-The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and skill picking is unavailable then, since the package carries its own skills) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
+The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
 
 | Tab | Contents |
 | --- | --- |
@@ -93,6 +93,7 @@ The list page creates and deletes Agents — the create dialog can initialize th
 | Memory | The Agent-level switch, then every memory grouped by scope — user memory first, then one group per Workspace, each group collapsible with add, export and import entries — with view / delete / edit-via-chat actions per row |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
 | Tools | Built-in tool table (incl. per-tool call_description switches) and MCP Server management: a table plus an add/edit form whose fields follow the transport (http by default; changes save immediately; full transport validation server-side; a permission control fixes the approval level of that server's tools at `auto` / `r` / `rw`, and the table shows each server's effective level); connectivity testing mirrors the models page — a standalone button in the form probes the current entry (toast with tool count and latency), and a section-level button tests every server in turn with a result badge on each row |
+| Hooks | Installed hook packages (agent_state/hooks/): name, description, version and the hook points each answers at; uninstall. Installing happens on the plugin library page |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 
@@ -100,9 +101,9 @@ The Memory tab's switch writes immediately rather than joining the tab-level Sav
 
 Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while the service is running.
 
-## Skill Library (/skills)
+## Plugin Library (/plugins)
 
-Browse the Skill library by group, install Skills onto an Agent, or quick-invoke one into a chat draft.
+Browse the plugin library by category — skills and session hooks alike — install a plugin onto an Agent (its skills and hook package together), update installs the library has moved past, or quick-invoke a skill into a chat draft.
 
 ## Model Configuration (/models)
 

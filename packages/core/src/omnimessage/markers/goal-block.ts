@@ -1,6 +1,7 @@
 /**
  * [goal] — the goal-mode round protocol block, prefixed to each round's user message by the
- * goal hook (see goal/goal-prompts.ts for the block's composition).
+ * goal plugin's hook scripts (the block's composition lives in that plugin; core only parses
+ * it, the way it parses the other host-composed markers).
  *
  * Unlike the other markers, the closing tag is matched **line-anchored** (`\n[/goal]`),
  * because the block embeds the current GOAL.yaml verbatim and its `objective` value is user
@@ -19,6 +20,8 @@
  * No legacy angle form: the tag postdates the square-marker convention, and the pre-release
  * `<goal_task>` spelling was dropped rather than carried.
  */
+
+import type { OmniMessage } from "../types.js";
 
 /** A goal round's parsed input: the 1-based round number and the body after the block. */
 export interface GoalRoundMessage {
@@ -39,6 +42,18 @@ export function parseGoalMessage(text: string): GoalRoundMessage | null {
   const round = Number(m[1]);
   if (!Number.isInteger(round) || round <= 0) return null;
   return { round, rest: text.slice(m[0].length).replace(/^\n+/, "") };
+}
+
+/**
+ * Whether this message is a goal round's injected input: the main-session user text carrying
+ * the `[goal]` block. Hosts use it as the round boundary (the CLI's round line, the Web
+ * server's goal_round event).
+ */
+export function isGoalRoundInput(msg: OmniMessage): boolean {
+  if (msg.origin && msg.origin.length > 0) return false;
+  if (msg.type !== "model_msg") return false;
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  return p.type === "text" && p.role === "user" && parseGoalMessage(p.text ?? "") !== null;
 }
 
 /**

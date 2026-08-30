@@ -1,37 +1,44 @@
-# Stop hook 取代 goal 循环，第二个 hook 把长会话的发现回流进 Skill
+# Hook 进核心，目标模式与技能沉淀成插件，技能库改为插件库
 
 - **Date:** 2026-08-29
 - **Type:** feature
-- **Scope:** `core`, `server`, `web`, `cli`, `docs`
-- **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
+- **Scope:** `core`, `plugins`, `server`, `web`, `cli`, `desktop`, `docs`
 - **Breaking:** yes
 
 [English](2026-08-29-stop-hook-goal-mode.md)
 
-Session 新增了 hook 机制——在 agent loop 的固定点上执行的函数，目前只有一个点：**stop**，即一个 Task 结束的那一刻。目标模式以 ralph loop 的形态重建为其中一个 hook：目标文件就是状态，hook 在每个 Task 结束后读它，要么注入下一轮，要么结束目标。专属的 goal 循环与它的 `goal_finished` 消息都不在了；hook 的回答以通用的 `hook` 事件记录。第二个内置 hook 挂在同一个点上，把长会话的发现交给一个后台子 Session 沉淀进 Agent 的 Skill。
+Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前一个，**stop**，即一个 Task 结束的那一刻——钩子本身来自插件的**钩子包**：装进 `agent_state/hooks/`（与 `agent_state/skills/` 并列）的纯 Node 脚本。目标模式整个搬出核心，成为 `goal` 插件的 stop hook，ralph loop 式：一份状态文件，钩子在每个 Task 结束后读它、重写它。第二个钩子包 `skill-summary` 把长会话的发现交给后台子会话。技能库重整为插件库——每个插件一份清单、Skill 与钩子包放在其中、版本按日期编号——`@prismshadow/penguin-skills` 弃用，改为 `@prismshadow/penguin-plugins`。
 
 ## Stop hook
 
-- `SessionConfig.hooks.stop` 接收一组具名 hook。一次 `run` 调用的每个 Task 结束后，每个 hook 都拿到：正在写入的 Trace 文件、Task 的结束方式（`completed` / `aborted` / `fatal`）、本次运行的 Task 数与非缓存 token 花费（含子 Session）、Session 累计轮次，以及本次运行的审批回调。
-- hook 回答 `continue`（附下一个 Task 的 user 文本 `input`）、`stop`，或什么都不答。每个回答都成为一条 `hook` 事件消息——`hook`、`name`、`decision`、`reason` 与 hook 自己的标量 `output`——推到流上并写入 Trace；注入的输入不在事件里，它是紧随其后的那条 user 消息。第一个 `continue` 在同一次 `run` 调用内驱动下一个 Task；被掐断之后、或 signal 已中止时，`continue` 只记录、不执行。hook 抛错以错误信息为 reason 记录，拖不垮运行。
-- Trace 页把 `hook` 事件渲染为名称、决定、说明与记录；CLI 为每个 hook 回答打印一行暗色文字（goal hook 除外——它自己的轮次行与摘要行已经说明了决定）。
+- 一次 `run` 调用的每个 Task 结束后，Session 咨询 Agent 已安装的钩子包（仅顶层 Session），把各自的 `stop` 命令作为子进程运行，stdin 只给 `{ hook, session_id, trace_path }`。token 用量、轮次、Task 的结束方式、状态文件都由脚本从 Trace 推导。
+- 脚本回答 `continue`（附下一个 Task 的 user 文本 `input`）、`stop`、`subagent` 请求（`{ prompt, agent_id? }`——Session 派生一个游离的后台子会话，继承本次运行的审批回调，记下其 Session id），或什么都不答。每个非空回答成为一条通用的 `hook` 事件消息——`hook`、`name`（钩子包名）、`decision`、`reason`、标量 `output`——推到流上并写入 Trace；注入的输入是紧随其后的那条 user 消息。第一个 `continue` 在同一次 `run` 内驱动下一个 Task；被掐断或 signal 已中止时，`continue` 只记录、不执行。崩溃、打印非 JSON 或超时（缺省 60 秒）的脚本只记录、按无意见处理。
+- SDK 嵌入方仍可注册进程内 hook（`SessionConfig.hooks.stop`）；子进程运行器（`runHookScript`）导出给要调用钩子包其它脚本的宿主。
+- Trace 页渲染 `hook` 事件；CLI 为每个非 goal 的 hook 回答打印一行暗色文字。
+
+## 作为 `goal` 插件的目标模式
+
+- 核心不再知道目标是什么——`session.run` 的 `goal` 选项、目标文件辅助函数与 `goalOutcomeOf` 都不在了；只留下 `[goal]` 标记解析，与其它宿主组装的标记同等对待。插件（`default_agent` 预装）带 `start.mjs`（写下 `GOAL.json`——`objective`、`status`、`budget`、`round`、`tokens_used`，钩子对终态动过手后再加 `ended`——并组装第一轮）与 `stop.mjs`（每个 Task 结束后从 Trace 读本轮用量，沿用原判定顺序——模型裁决 → 掐断 → 收尾轮 → 100 轮兜底 → 预算 → 下一轮——并重写文件）。
+- 服务端对 `goal: { budget }` 先查钩子包是否已装（未装 `409 goal_plugin_not_installed`），运行 `agent_state/hooks/goal/start.mjs`，把它打印的第一轮消息当普通 Task 提交；`GET /goal` 读 `GOAL.json`（钩子尚未结束的文件在 Session 空闲时读作 `aborted`）。`goal_*` 服务端事件、聊天页 banner、`/goal` 命令与 `penguin run --goal` 行为不变；CLI 从 `goal_finished` 服务端事件读结局。附图随第一轮作为普通输入发出；文件附件被拒绝。
+- 在没装插件的 Agent 上发起目标时，Web App 弹出提示。
+
+## `skill-summary` 插件
+
+- 不预装。它的 stop 脚本从上一条它记下的摘要事件起截取当前 Trace 的窗口，窗口累积 20 个完成的轮次后把它浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。没有安装任何 Skill 的 Agent 不会触发。
+
+## 插件库
+
+- `packages/plugins`（npm `@prismshadow/penguin-plugins`）取代 `packages/skills`：`plugins/<plugin>/plugin.json` + `skills/<name>/` + `hooks/`。既有 Skill 各自成为单 Skill 插件；两个钩子包归入新的 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`——插件清单与 SKILL.md frontmatter 皆然；自然数 `version` 与 `updated` 时间戳退场。
+- Agent State：`agent_state/hooks/<plugin>/` 存放钩子包（由清单生成的 `hooks.json` 加脚本），与 `agent_state/skills/` 并列；状态层新增 `installPlugin`、`installHook`、`removeHook`、`listInstalledHooks`。`default_agent` 预装全部未标 `preinstall: false` 的插件。
+- API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
+- Web App：技能库页改为**插件库**（`/plugins`）——卡片显示插件的 Skill 与钩子点，按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
 - 设计规格已同步改写（[penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)）。
-
-## 作为 hook 的目标模式
-
-- `session.run(input, { goal: { budget } })` 写下 `GOAL.yaml`，yield 并运行第一轮 `[goal]` 消息，再把 goal hook 排在这次运行 stop hook 的最前面。文件现在承载全部状态——`objective`、`status`、`budget`、`round`、`tokens_used`——由 hook 每轮重写；模型仍只拥有 `status`（`complete` / `blocked`），`objective` / `budget` 每次写回时都以 hook 自己的副本重申。`[goal]` 块内嵌这份文件（含数字），取代原先单独的预算行。
-- 判定顺序：模型的裁决优先；被掐断的 Task 以 `aborted` 结束目标；收尾轮以 `budget_limited` 结束；100 轮是失控兜底；预算到达换来一轮收尾轮；否则进入下一轮。终态同样写进文件，文件与最后一条事件永远一致。文件损坏时目标以 `blocked` 停下、文件保持原样。
-- 宿主从 hook 的 `stop` 事件读结局：`goalOutcomeOf` 取代 `goalFinishedOf`，`goalProgressOf` 读每一条 goal hook 事件，`isGoalRoundInput` 不变。`GoalRunOptions.maxRounds` 移除（兜底是常量，从不是宿主旋钮）。
-- Web 服务端不再有目标表：`GET /api/sessions/:id/goal` 直接读该 Session 的 `GOAL.yaml`，Session 未运行而文件仍 active 时读作 `aborted`——目标只在它的运行跨度内活着，启动时的孤儿回收随表一起移除。`goal_started` / `goal_round` / `goal_finished` 服务端事件与聊天页 banner 不变；`goal_round` 的 `used` 现在取自 hook 的记录，而非第二套计数。
-
-## skill_summary hook
-
-- 由 `system_config.yaml` 的 `hooks.skill_summary` 配置——`enabled`（缺省 true）与 `min_turns`（缺省 20）——只注册在顶层 Session 上。Session 累计运行满 `min_turns` 个 LLM 轮次后，hook 在每个 Task 结束时读当前 Trace 文件，取上一条它记下的摘要事件之后的记录，当该窗口累积 `min_turns` 个完成的轮次时触发。Trace 就是它唯一的状态：重启不影响，压缩换文件则从新文件重新计窗。
-- 它把窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，超过 6 万字符时丢弃最早的行，不含思考与图片——再经 subagent runner 派生同一 Agent 的一个后台子 Session（不占 `run_subagent` 的槽位、不进面板、不回报完成通知；子 Session 有自己的 Trace，并继承本次运行的审批回调）。prompt 给出 Skill 目录与窗口内调用过的 Skill 名，请子 Session 把值得沉淀的发现写进相关 `SKILL.md` 并 bump 版本，或什么都不改。hook 在自己的 `hook` 事件里记下子 Session id 与窗口轮数。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 兼容性
 
-- **`goal_finished` 不复存在**：`GoalFinishedPayload` 类型、`goalFinished` 构造器与 `goalFinishedOf` / `goalTokenDelta` 均已移除。消费方改用 `goalOutcomeOf` 读 goal hook 的 `hook` 事件（`name: goal`、`decision: stop`）；运行的计数规则是 `uncachedTokens`。早期版本写下的 Trace 仍带 `goal_finished` 记录；按 payload 类型分支的读取方把它当作未知事件（Trace 页显示该行但没有摘要）。
-- **`GOAL.yaml` 换了形状**：`budget`、`round`、`tokens_used` 加入 `objective` 与 `status`，系统侧的结局写进 `status`。早期版本留下的文件按宽容规则读取（缺失的计数读作零），只影响 `GET /goal`——Session 未运行时报 `aborted`。
-- **`goal_state` 表不再创建、写入或读取。** 既有 `web.db` 里的行原样保留；没有任何东西依赖它们，可手工删表。
-- **skill_summary hook 缺省开启**，既有 Agent 亦然——`system_config.yaml` 早于 `hooks` 节的 Agent 按缺省值运行它。每次触发花费一次后台子 Session 对会话摘录的运行；设 `hooks.skill_summary.enabled: false` 关闭，或调高 `min_turns`。
+- **`@prismshadow/penguin-skills` 弃用**，该名下不再发布新版本；发布链改发 `@prismshadow/penguin-plugins`。
+- **既有已装 Skill 带的是自然数版本**，会读作空版本，因此插件库会把它们各报一次可更新；从库重装即带上日期版本。
+- **既有 Agent 没有任何钩子包**——不会向已存在的 Agent 自动安装。这样的 Agent 上发起目标会收到 `409 goal_plugin_not_installed`，直到从插件库装上 `goal` 插件；此后新建的 `default_agent` 自带。
+- **`goal_finished` 与 `goal` 运行选项不复存在**（连同上一轮迭代的 `goal_state` 表一起移除）；`goal_*` 服务端事件不变。早期版本的 Trace 仍带 `goal_finished` 记录，读取方把它当作未知事件。
+- **`system_config.yaml` 的 `hooks.skill_summary`** 不再读取：装上 `skill-summary` 插件就是开关。
+- Agent 创建的 `skills: string[]` 字段与 CLI 的 `--skills` 改为 `plugins` / `--plugins`。

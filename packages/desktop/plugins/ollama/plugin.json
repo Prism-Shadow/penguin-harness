@@ -1,0 +1,7 @@
+{
+  "description": "Deploy and serve local models with Ollama — pull and run them, then expose the OpenAI-compatible endpoint to apps and agents.",
+  "short_description": "Run local models with Ollama.",
+  "short_description_zh": "用 Ollama 运行本地模型。",
+  "version": "2026-08-23.1",
+  "category": "ai-app-development"
+}

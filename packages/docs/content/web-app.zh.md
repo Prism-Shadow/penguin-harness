@@ -92,6 +92,7 @@ penguin web
 | Memory | Agent 级开关，以及按作用域分组的全部记忆——用户记忆在前、每个 Workspace 一组，分组可折叠并带添加、导出与导入入口——每行提供查看 / 删除 / 对话编辑 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 管理：表格 + 添加/编辑表单（默认 http，字段随 transport 切换，改动即时保存，服务端按 transport 完整校验；permission 控件把该 Server 工具的审批等级固定为 `auto` / `r` / `rw`，表格列出各 Server 的生效等级）；测试连接与模型页同款——表单内独立按钮测当前条目（toast 报工具数与耗时），区块级按钮逐一测试全部 Server 并在各行显示结果徽标 |
+| Hooks | 已安装的钩子包（agent_state/hooks/）：名称、描述、版本与各自应答的钩子点；可卸载。安装在插件库页完成 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 
@@ -99,9 +100,9 @@ Memory 标签页的开关拨动即写入，不参与标签页的保存按钮，�
 
 定时任务按固定周期触发（最短 5 分钟），且仅在服务运行期间执行。
 
-## Skill 库（/skills）
+## 插件库（/plugins）
 
-按分组浏览 Skill 库，可将 Skill 安装到指定 Agent，或一键带入 Chat 草稿快速调用。
+按分类浏览插件库——Skill 与会话钩子都在这里——把插件安装到指定 Agent（Skill 与钩子包一并装入）、更新落后于库的已装副本，或把某个 Skill 一键带入 Chat 草稿快速调用。
 
 ## 模型配置（/models）
 

@@ -166,7 +166,7 @@ The data directory defaults to `~/.penguin/data` (`%USERPROFILE%\.penguin\data` 
 | `@prismshadow/penguin-cli` | Command-line tool providing the `penguin` command |
 | `@prismshadow/penguin-core` | SDK for creating Agents and Sessions programmatically |
 | `@prismshadow/penguin-server` | Web service, including the Web UI assets |
-| `@prismshadow/penguin-skills` | Skill collection |
+| `@prismshadow/penguin-plugins` | Plugin library: skills and session hooks |
 
 All packages are published under the Apache-2.0 license.
 

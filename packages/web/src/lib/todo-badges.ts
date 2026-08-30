@@ -8,7 +8,8 @@
  * the catalog, a Skill deliberately pinned to an older copy, an Agent deliberately left on the
  * defaults generation it was tuned against, an error already read and understood — none of
  * those should keep a red dot lit forever, and none of them changes any state a gate could
- * read.
+ * read. (The library is a plugin library now — a Skill pinned to an older copy reads as a
+ * plugin pinned, and the trail is the plugins one; nothing else about the argument moved.)
  *
  * So each trail produces a **signature**: a string naming exactly WHAT is waiting. Dismissing
  * stores that string (`todo-dismissals.ts`); the badge is raised again only when what is
@@ -16,7 +17,7 @@
  * signature becomes null), and so does dismissing — but something *new* arriving raises it
  * again, which a plain "hidden forever" flag could not do.
  *
- * Containment, never equality: the user dismisses two Skill updates, installs one of them, and
+ * Containment, never equality: the user dismisses two plugin updates, installs one of them, and
  * the remaining one must stay dismissed — it is the thing they already waved away. What
  * "beyond" means differs by the shape of what is waiting, which is what {@link TodoMatch}
  * names.
@@ -28,12 +29,12 @@ import type { AgentSummary, UsageErrorsPage } from "@prismshadow/penguin-server/
 import type { CatalogDelta } from "../features/models/catalog-sync";
 
 /** The four trails, in sidebar order. Also the key each dismissal is stored under. */
-export type TodoKey = "agents" | "skills" | "models" | "errors";
+export type TodoKey = "agents" | "plugins" | "models" | "errors";
 
 /**
  * How a dismissal is compared against what is waiting now.
  *
- * - `set` — the items are independent things (a Skill, a model reference). One of them absent
+ * - `set` — the items are independent things (a plugin, a model reference). One of them absent
  *   from what was dismissed raises the badge; a smaller set never does.
  * - `watermark` — the signature is an ordered high-water mark (the newest error's timestamp),
  *   and only a HIGHER one raises the badge. Rows leave the window from either end — the row cap
@@ -47,7 +48,7 @@ export type TodoMatch = "set" | "watermark";
  * Models trail can: the catalog is a list of entries, so an entry the table lacks is genuinely
  * NEW and one whose fields have moved is an upgrade, and `catalogDelta` already separates them
  * for the sync action itself. The other three cannot, and say so by leaving this absent rather
- * than reporting a zero — a Skill nobody has installed is not waiting for anyone, and an
+ * than reporting a zero — a plugin nobody has installed is not waiting for anyone, and an
  * Agent's kernel is never new, so "0 added" on those pages would be an answer to a question
  * that was never asked.
  */
@@ -86,7 +87,7 @@ export interface Todo {
  *
  * **The signature is the set of outdated Agent ids, not id-plus-generation**, which makes this
  * the one trail whose dismissal is coarser than the others: a later defaults generation does
- * NOT raise the dot again for an Agent already waved away, the way a later Skill version or a
+ * NOT raise the dot again for an Agent already waved away, the way a later plugin version or a
  * different catalog entry does. That is a deliberate limit rather than an oversight — the
  * generation stamp a signature would need (`KERNEL_VERSION`) lives in core's `state/`
  * alongside `node:crypto`, and pulling it into the browser bundle to sharpen a dismissal is a
@@ -109,24 +110,26 @@ export function kernelUpdateTodo(
 }
 
 /**
- * Library Skills some Agent in this Project has fallen behind on. The flag rides along on the
+ * Library plugins some Agent in this Project has fallen behind on. The list rides along on the
  * Project's Agent list, so this costs no request of its own — the same trick `kernelOutdated`
- * plays for the kernel trail.
+ * plays for the kernel trail — and it is the SERVER's verdict: the web never compares versions
+ * itself (they are `YYYY-MM-DD.N` strings, and only the library knows what it carries).
  *
- * Counted by distinct Skill, not per Agent: the trail ends on the Skills page, which lists the
- * library once, so "3 Skills can be updated" is what the user will see there even if the three
- * are spread over five Agents. The signature carries the library VERSION alongside each name,
- * so a Skill dismissed at v2 raises the badge again when the library reaches v3 — dismissing
- * answers "not this update", not "never tell me about this Skill".
+ * Counted by distinct plugin, not per Agent: the trail ends on the plugin library page, which
+ * lists the library once, so "3 plugins can be updated" is what the user will see there even if
+ * the three are spread over five Agents. The signature carries the library VERSION alongside each
+ * name, so a plugin dismissed at one version raises the badge again when the library moves on —
+ * dismissing answers "not this update", not "never tell me about this plugin". Every Agent reads
+ * the same library, so the version a name carries is the same wherever it appears; the first
+ * occurrence is kept.
  */
-export function skillUpdateTodo(
-  agents: ReadonlyArray<Pick<AgentSummary, "skillUpdates">>,
+export function pluginUpdateTodo(
+  agents: ReadonlyArray<Pick<AgentSummary, "pluginUpdates">>,
 ): Todo | null {
-  const latest = new Map<string, number>();
+  const latest = new Map<string, string>();
   for (const agent of agents) {
-    for (const update of agent.skillUpdates ?? []) {
-      const known = latest.get(update.name);
-      if (known === undefined || update.version > known) latest.set(update.name, update.version);
+    for (const update of agent.pluginUpdates ?? []) {
+      if (!latest.has(update.name)) latest.set(update.name, update.version);
     }
   }
   if (latest.size === 0) return null;

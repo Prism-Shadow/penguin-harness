@@ -31,8 +31,6 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
-  goalOutcomeOf,
-  goalProgressOf,
   isGoalRoundInput,
   isSessionMeta,
   parseUserSteeringText,
@@ -64,6 +62,7 @@ import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
+import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -114,8 +113,6 @@ export interface RuntimeSession {
       approve: ApproveFn;
       signal: AbortSignal;
       thinkingLevel?: ThinkingLevelName;
-      /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
-      goal?: { budget?: number };
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
@@ -861,19 +858,21 @@ export class SessionManager {
   }
 
   /**
-   * Start a goal run: like startTask, but the run is core goal mode — one
-   * `session.run(input, { goal })` call loops rounds until a terminal state, and the
-   * Session stays `running` for the whole goal (every round), so the existing abort
-   * endpoint interrupts the entire loop and schedules queue behind it as usual. Round
-   * inputs are yielded by core and published like any streamed message; progress
-   * additionally goes out as goal_* server events (the run state itself lives in the
-   * Session's GOAL.yaml, which core's goal hook maintains).
+   * Start a goal run: like startTask, but the input is the round-1 message the goal plugin's
+   * start script composed (the route ran it and wrote the Session's goal file), and the
+   * plugin's stop hook drives every later round inside this one `session.run` call — so the
+   * Session stays `running` for the whole goal (every round), the existing abort endpoint
+   * interrupts the entire loop and schedules queue behind it as usual. Round inputs are
+   * yielded by core and published like any streamed message; progress additionally goes out
+   * as goal_* server events (the run state itself is the goal file the plugin maintains).
    */
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
+      /** Round-1 input: the plugin's composed `[goal]` message (images may ride along). */
       input: OmniMessage[];
+      /** The user's own objective text (leading marker blocks stripped): the goal_started event and the title material. */
+      objective: string;
       budget: number;
       /** Optional per-goal thinking level: rides every round's Task (route-validated). */
       thinkingLevel?: ThinkingLevelName;
@@ -885,18 +884,7 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
-      // The objective is the user's own text (leading skill-invocation blocks stripped) —
-      // the same derivation core records in GOAL.yaml; used for the run-state row, the
-      // goal_started event, and as title material.
-      // `isPlainText` leaves attached images out, so this copy carries no
-      // `[attached image: <path>]` lines — which suits its readers, since a status card and a
-      // generated title read better without absolute scratchpad paths. Core keeps its own
-      // folded copy (Session.goalObjectiveText) for what the rounds actually re-inject.
-      const text = args.input
-        .filter(isPlainText("user"))
-        .map((m) => m.payload.text)
-        .join("\n");
-      const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
+      const objective = args.objective;
       const ac = new AbortController();
       entry.status = "running";
       entry.abort = ac;
@@ -930,8 +918,8 @@ export class SessionManager {
   }
 
   /**
-   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
-   * inputs) become goal_round events, and the goal hook's `stop` event becomes the
+   * Taps a goal run's stream for `drive`: round boundaries (the `[goal]` inputs the plugin
+   * composed) become goal_round events, and the goal hook's `stop` event becomes the
    * goal_finished server event. `used` is what the hook last recorded in its event's
    * `output` — the same number its budget check used — so the UI never shows a different
    * figure. A stream that ends without the hook's terminal event (a cut-off run, an
@@ -951,7 +939,6 @@ export class SessionManager {
       approve: args.approve,
       signal: args.signal,
       ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
-      goal: { budget: args.budget },
     });
     let round = 0;
     let used = 0;

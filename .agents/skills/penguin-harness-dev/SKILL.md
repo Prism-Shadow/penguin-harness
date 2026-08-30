@@ -5,7 +5,7 @@ description: Use when developing PenguinHarness itself — changing packages/{co
 
 # Developing PenguinHarness
 
-PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell (`packages/desktop`), the landing and docs sites, and the shipped skill library (`packages/skills`). It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider clients of its own.
+PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell (`packages/desktop`), the landing and docs sites, and the shipped plugin library (`packages/plugins`). It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider clients of its own.
 
 ## Repo shape — read before your first edit
 
@@ -38,7 +38,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | --- | --- |
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
-| `packages/skills/skills/**` | the `skills` package test + `docs`'s `skills-sync.test.ts` |
+| `packages/plugins/plugins/**` | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
 | The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
@@ -159,4 +159,4 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such convention.
 - **`knip`, `pnpm run doc-sync`, `pnpm run lint`.** None exist; the real chain is the one above.
 - **Coverage-scoped verification** (`--coverage.include`, per-file thresholds). No coverage gate is configured here, so narrowing means choosing test files, not proving coverage over a source scope.
-- **Adding a skill to `packages/skills/skills/`** because it is "a skill". That directory is the shipped, user-facing library — a docs-sync test requires every entry to have a row in the bilingual skill tables, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.
+- **Adding a skill to `packages/plugins/plugins/`** because it is "a skill". That directory is the shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the bilingual skills pages, the README tables are test-checked, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.

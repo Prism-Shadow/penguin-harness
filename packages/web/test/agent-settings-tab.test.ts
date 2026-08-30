@@ -24,5 +24,7 @@ describe("resolveTabKey", () => {
 
   it("validates against the supplied keys, not a hardcoded list", () => {
     expect(resolveTabKey("skills", [...TABS, { key: "skills" }], "overview")).toBe("skills");
+    expect(resolveTabKey("hooks", TABS, "overview")).toBe("overview");
+    expect(resolveTabKey("hooks", [...TABS, { key: "hooks" }], "overview")).toBe("hooks");
   });
 });

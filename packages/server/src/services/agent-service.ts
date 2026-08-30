@@ -19,7 +19,9 @@ import {
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  installPlugin,
   installSkill,
+  listInstalledHooks,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -27,14 +29,19 @@ import {
   skillsDir,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
-import { librarySkill, parseSkillFrontmatter } from "@prismshadow/penguin-skills";
+import {
+  compareVersions,
+  libraryPlugin,
+  librarySkill,
+  parseSkillFrontmatter,
+} from "@prismshadow/penguin-plugins";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import type { SnapshotService } from "./snapshot-service.js";
 import { isTopicFileName } from "./memory-service.js";
-import type { SkillUpdateRef } from "../api/types.js";
-import { resolveLibrarySkills } from "./skill-library.js";
+import type { PluginUpdateRef } from "../api/types.js";
+import { resolveLibraryPlugins } from "./plugin-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 
 /**
@@ -78,8 +85,10 @@ export interface AgentListItem {
   scheduleCount: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
-  /** Installed Skills the library has a newer version of, each carrying that library version. */
-  skillUpdates: SkillUpdateRef[];
+  /** Number of installed hook packages (hooks/<name>/ directories with a hooks.json). */
+  hookCount: number;
+  /** Installed skills and hook packages the library has a newer version of, by plugin, each carrying that library version. */
+  pluginUpdates: PluginUpdateRef[];
   /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
   memoryCount: number;
 }
@@ -128,13 +137,13 @@ export class AgentService {
     );
     return Promise.all(
       sorted.map(async (row) => {
-        const [meta, updatedAt, vaultKeyCount, scheduleCount, skills, memoryCount] =
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, installed, memoryCount] =
           await Promise.all([
             this.agentConfig.readCardMeta(projectId, row.agentId),
             this.configUpdatedAt(projectId, row.agentId),
             this.vaultKeyCount(projectId, row.agentId),
             this.scheduleCount(projectId, row.agentId),
-            this.installedSkills(projectId, row.agentId),
+            this.installedPlugins(projectId, row.agentId),
             this.memoryCount(projectId, row.agentId),
           ]);
         return {
@@ -144,8 +153,9 @@ export class AgentService {
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
           scheduleCount,
-          skillCount: skills.count,
-          skillUpdates: skills.updates,
+          skillCount: installed.skillCount,
+          hookCount: installed.hookCount,
+          pluginUpdates: installed.updates,
           memoryCount,
         };
       }),
@@ -172,63 +182,75 @@ export class AgentService {
   }
 
   /**
-   * One pass over `skills/`, answering both card questions: how many Skills are installed
-   * (directories containing a SKILL.md) and which of them the library has moved past.
-   *
-   * The two are read together because the second needs what the first was already opening:
-   * counting only asked whether SKILL.md exists, and the version lives in its frontmatter.
-   * Splitting them into two passes would walk the same directories twice.
+   * One pass over `skills/` and one over `hooks/`, answering the card's questions: how many
+   * skills and hook packages are installed, and which of them the plugin library has moved
+   * past — by plugin, since a plugin is what gets reinstalled to catch up.
    *
    * Only the HEAD of each SKILL.md is read, and that bound is load-bearing rather than a
    * micro-optimization: a preinstalled library is ~180 KB of SKILL.md across seventeen files
    * per Agent, so a Project of ten Agents would move ~2 MB through every `GET /agents` — and
-   * the Skills page reloads that list after each update. The frontmatter block is at the head
+   * the plugin page reloads that list after each update. The frontmatter block is at the head
    * by definition (the parser's regex is anchored there) and the largest one in the library is
    * under 1 KB, so {@link SKILL_HEAD_BYTES} covers it many times over; a block that somehow
-   * overran it would be truncated, fail to parse, and read as version 1 — the same fallback an
-   * unparseable file already takes.
+   * overran it would be truncated, fail to parse, and read as an empty version — the same
+   * fallback an unparseable file already takes, and one that sorts before every real version.
    *
-   * The directory name is the Skill's identity (core's `listInstalledSkills` says so, and
-   * install/uninstall address by it), so that — not the frontmatter's `name` — is what the
-   * library is looked up by. A Skill the library does not carry (installed from a zip or from a
-   * picked directory) has no library version to be behind and is never an update; an
-   * unparseable or version-less SKILL.md reads as version 1, the same fallback the parser
-   * applies everywhere else. Every failure degrades to "not installed" / "no update": a card
-   * hint must not be the thing that makes the Agent list fail.
+   * The directory name is the identity (core's listings say so, and install/uninstall address
+   * by it), so that — not a frontmatter `name` — is what the library is looked up by: a skill
+   * by the plugin that ships it, a hook package by the plugin of the same name. A skill the
+   * library does not carry (installed from a zip or a picked directory) has no library version
+   * to be behind and is never an update. Every failure degrades to "not installed" / "no
+   * update": a card hint must not be the thing that makes the Agent list fail.
    */
-  private async installedSkills(
+  private async installedPlugins(
     projectId: string,
     agentId: string,
-  ): Promise<{ count: number; updates: SkillUpdateRef[] }> {
+  ): Promise<{ skillCount: number; hookCount: number; updates: PluginUpdateRef[] }> {
     const base = skillsDir(this.root, projectId, agentId);
-    let dirents: Dirent[];
+    let dirents: Dirent[] = [];
     try {
       dirents = await fs.readdir(base, { withFileTypes: true });
     } catch {
-      return { count: 0, updates: [] };
+      // No skills/ directory: nothing installed.
     }
-    const installed = await Promise.all(
+    const skills = await Promise.all(
       dirents
         // Dot-prefixed directories are install staging, never a Skill (a Skill name has no dot).
         .filter((d) => d.isDirectory() && !d.name.startsWith("."))
         .map(async (d) => {
           try {
             const head = await readHead(path.join(base, d.name, "SKILL.md"), SKILL_HEAD_BYTES);
-            return { name: d.name, version: parseSkillFrontmatter(head)?.version ?? 1 };
+            return { name: d.name, version: parseSkillFrontmatter(head)?.version ?? "" };
           } catch {
             return null;
           }
         }),
     );
-    const updates: SkillUpdateRef[] = [];
-    for (const skill of installed) {
+    let hooks: Array<{ name: string; version: string }> = [];
+    try {
+      hooks = await listInstalledHooks(this.root, projectId, agentId);
+    } catch {
+      // Unreadable hooks/: counts as none installed.
+    }
+    const updates = new Map<string, string>();
+    for (const skill of skills) {
       if (skill === null) continue;
-      const version = librarySkill(skill.name)?.version;
-      if (version !== undefined && version > skill.version) {
-        updates.push({ name: skill.name, version });
+      const plugin = librarySkill(skill.name)?.plugin;
+      if (plugin && compareVersions(plugin.version, skill.version) > 0) {
+        updates.set(plugin.name, plugin.version);
       }
     }
-    return { count: installed.filter((s) => s !== null).length, updates };
+    for (const hook of hooks) {
+      const plugin = libraryPlugin(hook.name);
+      if (plugin && compareVersions(plugin.version, hook.version) > 0) {
+        updates.set(plugin.name, plugin.version);
+      }
+    }
+    return {
+      skillCount: skills.filter((s) => s !== null).length,
+      hookCount: hooks.length,
+      updates: [...updates].map(([name, version]) => ({ name, version })),
+    };
   }
 
   /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
@@ -298,25 +320,25 @@ export class AgentService {
    * Create an Agent: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory within the Project — a 409
    * if taken, which naturally also blocks built-in Agent ids) → initialize State →
-   * write name/description (name defaults to the id) → install the seed Skills.
+   * write name/description (name defaults to the id) → install the seed plugins.
    *
-   * `skillNames` are library Skill names picked at creation; they go through the same
-   * `installSkill` writer the Skills tab uses, inside the same cleanup window as the rest of
-   * initialization, so an Agent never survives with only part of its picked set. They are
+   * `pluginNames` are library plugin names picked at creation; they go through the same
+   * `installPlugin` writer the plugin routes use, inside the same cleanup window as the rest
+   * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all.
    *
    * `archive` is an exported Agent State snapshot package: the fresh Agent is seeded from
    * it instead of the default template (explicit name/description override the package's
-   * values, absent ones keep them — no id fallback). Mutually exclusive with skill seeding:
-   * the package carries its own skills. An invalid package fails the whole creation inside
-   * the same cleanup window, leaving no empty Agent behind.
+   * values, absent ones keep them — no id fallback). Mutually exclusive with seeding: the
+   * package carries its own skills and hooks. An invalid package fails the whole creation
+   * inside the same cleanup window, leaving no empty Agent behind.
    */
   async createAgent(
     projectId: string,
     agentId: string,
     name?: string,
     description?: string,
-    skillNames?: readonly string[],
+    pluginNames?: readonly string[],
     directory?: { path: string; names: readonly string[] },
     archive?: Buffer,
   ): Promise<AgentListItem> {
@@ -327,11 +349,11 @@ export class AgentService {
         `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
       );
     }
-    if (archive !== undefined && (skillNames?.length || directory)) {
+    if (archive !== undefined && (pluginNames?.length || directory)) {
       throw new HttpError(
         400,
-        "snapshot_with_skills",
-        "Snapshot initialization and skill seeding are mutually exclusive: the package carries its own skills.",
+        "snapshot_with_plugins",
+        "Snapshot initialization and seeding are mutually exclusive: the package carries its own skills and hooks.",
       );
     }
     const taken =
@@ -346,13 +368,13 @@ export class AgentService {
     const displayName = name ?? agentId;
     // Both sources are resolved before a single file is written, so a name that has since left the
     // library or the directory fails while the Agent still does not exist. Directory Skills are
-    // installed after the library ones and so win a name collision: the user picked that directory
-    // for this Agent specifically, which is a narrower intent than "install the built-in one".
-    const librarySeed = resolveLibrarySkills(skillNames ?? []);
+    // installed after the library plugins and so win a name collision: the user picked that
+    // directory for this Agent specifically, which is a narrower intent than "install the
+    // built-in one".
+    const librarySeed = resolveLibraryPlugins(pluginNames ?? []);
     const directorySeed = directory
       ? await resolveDirectorySkills(directory.path, directory.names)
       : [];
-    const seedSkills = [...librarySeed, ...directorySeed];
     await coreCreateAgent({ root: this.root, projectId, agentId });
     try {
       if (archive !== undefined) {
@@ -378,7 +400,10 @@ export class AgentService {
           config: { name: displayName, ...(description !== undefined ? { description } : {}) },
         });
       }
-      for (const skill of seedSkills) {
+      for (const plugin of librarySeed) {
+        await installPlugin(this.root, projectId, agentId, plugin);
+      }
+      for (const skill of directorySeed) {
         await installSkill(this.root, projectId, agentId, skill);
       }
     } catch (err) {
@@ -397,7 +422,7 @@ export class AgentService {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const skills = await this.installedSkills(projectId, agentId);
+    const installed = await this.installedPlugins(projectId, agentId);
     return {
       agentId,
       name: cardName,
@@ -411,8 +436,9 @@ export class AgentService {
       // are real reads because a package may carry any of them.
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
-      skillCount: skills.count,
-      skillUpdates: skills.updates,
+      skillCount: installed.skillCount,
+      hookCount: installed.hookCount,
+      pluginUpdates: installed.updates,
       memoryCount: await this.memoryCount(projectId, agentId),
     };
   }
