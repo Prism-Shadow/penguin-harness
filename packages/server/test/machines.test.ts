@@ -501,7 +501,9 @@ describe("readPushedBuild", () => {
         "node_modules/node-pty/package.json",
         "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
       ]);
-      // The marker is the host's bookkeeping, not an asset; the exec bit travels as a list.
+      // The marker is the host's bookkeeping, not an asset; the exec bit travels as a list —
+      // and the spawn-helper is on it by NAME, so a Windows sender, which has no exec bit to
+      // read, hands it over runnable too (the chmod above is a no-op there).
       expect(payload.assets?.exec).toEqual([
         "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
       ]);
