@@ -191,6 +191,20 @@ export const en: Strings = {
     hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
     harnessHistory: "Harness history",
   },
+  workflows: {
+    tabsLabel: "Chat and workflows",
+    chatTab: "Chat",
+    brokenMark: "The current files failed to load",
+    reload: "Reload",
+    reloading: "Reloading…",
+    history: "History",
+    loadError: "Load error",
+    loadingHistory: "Loading history…",
+    noHistory: "No versions recorded yet.",
+    current: "current",
+    restore: "Restore",
+    fileCount: (n: number) => `${n} files`,
+  },
   harnessHistory: {
     title: "Harness history",
     pageDesc:

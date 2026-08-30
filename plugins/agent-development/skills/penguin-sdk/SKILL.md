@@ -344,6 +344,61 @@ http.createServer(async (req, res) => {
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
+## Workflows: a page and server code the Agent keeps for itself
+
+Inside PenguinHarness an Agent can hold *workflows*: small extension packages in its own directory that the server boots as module trees, serves as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, interfaces checked before any code runs — so a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem while the previous version keeps serving.
+
+Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/`:
+
+```
+package.json    { "name": "…", "version": "…", "penguin": { "modules": [ …manifests ] } }
+index.mjs       default export { modules: { <Name>: { create(ctx) } } } — code for each manifest, by name
+ui/index.html   optional; served as the workflow's tab (any assets beside it)
+state.json      the workflow's own document, kept by the server across reloads and rollbacks
+```
+
+The root manifest is named `Workflow`; it requires the host and provides the handler:
+
+```json
+{
+  "name": "Workflow",
+  "requires": { "host": { "iface": "@prismshadow/penguin-server#WorkflowHost", "from": "Host" } },
+  "provides": { "main": "@prismshadow/penguin-server#WorkflowMain" },
+  "contributes": {},
+  "children": []
+}
+```
+
+```js
+export default {
+  modules: {
+    Workflow: {
+      create({ use }) {
+        const host = use.host;
+        return {
+          api: {
+            main: {
+              async handle(req) {
+                // req = { method, path, query, body }; path is below the workflow's api/ mount
+                if (req.path === "/ask" && req.method === "POST") {
+                  const { sessionId } = await host.runAgent({ text: req.body.question });
+                  return { body: { sessionId } };
+                }
+                return { status: 404, body: { error: "no such route" } };
+              },
+            },
+          },
+        };
+      },
+    },
+  },
+};
+```
+
+`WorkflowHost` (published as module `Host`): `runAgent({ text, sessionId? })` sends text to this Agent — into that Session, or a new one — and returns `{ sessionId }`; `sessionStatus(sessionId)`; `getState()` / `setState(doc)` over `state.json`; `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
+
+HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev` and current load `error`; `GET /:id/ui/*` serves the page (`index.html` for the bare path); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. From the page, call your handler with a relative `fetch("api/…")`; the Web App shows the page in a tab and reloads it when `uiRev` changes.
+
 ## Verify before you hand over
 
 Never declare the app done without running it:
