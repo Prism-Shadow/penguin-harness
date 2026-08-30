@@ -18,7 +18,6 @@ import { WebSocketServer } from "ws";
 import type { AuthService } from "../auth/service.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import type { HmrHost } from "../hmr/host.js";
-import { refuseUpgrade, type UpgradeRoute } from "../http-upgrade.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -44,31 +43,21 @@ export interface TerminalWebSocketDeps {
   log: (line: string) => void;
 }
 
-/**
- * The terminal's upgrade route (http-upgrade.ts): false for a path that is not a terminal
- * stream, true once this has taken the socket — refusals included, since answering 401 is
- * handling it.
- */
-export function terminalUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute {
+export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSocketDeps): void {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
-  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const match = STREAM_PATH.exec(url.pathname);
-    // Not ours. Declining is all this says — the router decides what an unclaimed path gets.
-    if (!match) return false;
+    // Not ours: leave the socket alone so another upgrade handler (or the default
+    // "no handler -> destroy" behaviour) can deal with it.
+    if (!match) return;
 
-    if (!isAllowedOrigin(req)) {
-      refuse(socket, 403, "Forbidden");
-      return true;
-    }
+    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
 
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
     const authed = token ? deps.authService.authenticateWithMeta(token) : null;
-    if (!authed) {
-      refuse(socket, 401, "Unauthorized");
-      return true;
-    }
+    if (!authed) return refuse(socket, 401, "Unauthorized");
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
     // terminals right now, which is also the one whose protocol should serve this socket.
@@ -88,51 +77,7 @@ export function terminalUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute 
         deps.log(`[terminal] stream upgrade failed: ${err instanceof Error ? err.message : err}`);
         refuse(socket, 500, "Internal Server Error");
       });
-    return true;
-  };
-}
-
-/**
- * The socket seam: an authenticated handshake this runtime does not own is offered to the
- * booted platform, which claims it or declines (hmr/platform.ts's `upgrade`).
- *
- * The upgrade counterpart of the HTTP seam, and there for the same reason: WHICH sockets go
- * where, and what is done with one, is policy — a pushed platform decides it, and no route of
- * its own is added here. What stays is what only the runtime can do. The handshake is
- * authenticated FIRST and here: a WebSocket handshake bypasses CORS entirely while the
- * session cookie rides along, so a socket must be known to be this user's before it is handed
- * anywhere at all.
- *
- * A platform too old to have the member declines by not having it — the socket falls through
- * to the router's 404, which is the honest answer for a build that cannot serve it.
- */
-export function platformUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute {
-  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    if (!isAllowedOrigin(req)) {
-      refuse(socket, 403, "Forbidden");
-      return true;
-    }
-    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    if (token === null || deps.authService.authenticateWithMeta(token) === null) {
-      refuse(socket, 401, "Unauthorized");
-      return true;
-    }
-    void deps.hmr
-      .ensure()
-      .then(async (platform) => {
-        // Declined, or a platform without the member: nobody claimed the socket, and a
-        // socket nobody claimed must be closed rather than left to hang.
-        if ((await platform.api.upgrade?.(req, socket, head, url)) !== true) {
-          refuse(socket, 404, "Not Found");
-        }
-      })
-      .catch((err: unknown) => {
-        deps.log(`[upgrade] platform seam failed: ${err instanceof Error ? err.message : err}`);
-        refuse(socket, 500, "Internal Server Error");
-      });
-    return true;
-  };
+  });
 }
 
 /**
@@ -143,7 +88,7 @@ export function platformUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute 
  * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
  * browser's own Host survives the proxy and this comparison holds in development too.
  */
-export function isAllowedOrigin(req: IncomingMessage): boolean {
+function isAllowedOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
   let parsed: URL;
@@ -156,7 +101,7 @@ export function isAllowedOrigin(req: IncomingMessage): boolean {
   return parsed.host === (req.headers.host ?? "");
 }
 
-export function readCookie(header: string | undefined, name: string): string | null {
+function readCookie(header: string | undefined, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
@@ -173,5 +118,7 @@ export function readCookie(header: string | undefined, name: string): string | n
   return null;
 }
 
-/** Answering a handshake with a status is the router's, so both routes answer alike. */
-export const refuse = refuseUpgrade;
+function refuse(socket: Duplex, status: number, text: string): void {
+  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
+  socket.destroy();
+}

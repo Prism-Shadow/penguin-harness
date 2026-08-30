@@ -222,6 +222,11 @@ export class AuthService {
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
   }
 
+  /** Whether this user is an admin — for checks that hold only a user id, not a request. */
+  isAdmin(userId: string): boolean {
+    return this.deps.users.findById(userId)?.isAdmin === true;
+  }
+
   /** Self password change (user settings): validates the old password first; the current session stays valid. */
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
     const row = this.deps.users.findById(userId);

@@ -13,8 +13,7 @@ import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
 import { createTestApp, loginAdmin, provisionUser, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { terminalUpgradeRoute } from "../src/terminal/ws.js";
-import { attachUpgradeRoutes } from "../src/http-upgrade.js";
+import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import {
   TerminalStreamOpcode,
   decodeTerminalFrame,
@@ -51,15 +50,13 @@ beforeAll(async () => {
       resolve();
     });
   });
-  attachUpgradeRoutes(server as unknown as HttpServer, [
-    terminalUpgradeRoute({
-      hmr: t.deps.hmr,
-      authService: t.deps.authService,
-      // Kept, not discarded: the backpressure test's precondition (the server deciding a
-      // viewer is too far behind) is only observable through this line.
-      log: (line: string) => serverLogs.push(line),
-    }),
-  ]);
+  attachTerminalWebSocket(server as unknown as HttpServer, {
+    hmr: t.deps.hmr,
+    authService: t.deps.authService,
+    // Kept, not discarded: the backpressure test's precondition (the server deciding a
+    // viewer is too far behind) is only observable through this line.
+    log: (line) => serverLogs.push(line),
+  });
 });
 
 afterAll(async () => {

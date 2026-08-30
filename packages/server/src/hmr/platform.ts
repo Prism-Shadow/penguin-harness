@@ -27,12 +27,14 @@ import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
 import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { PlatformBundle } from "../hmr/host.js";
 import { TerminalManager } from "../terminal/manager.js";
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import { proxyUpgradeToMachine } from "../machines/proxy-ws.js";
+import {
+  TerminalsAcrossMachines,
+  isRemoteTerminalRef,
+  relayTerminalStream,
+} from "../machines/terminal-relay.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
@@ -61,20 +63,6 @@ export interface PlatformApi extends Park {
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
   /**
-   * The socket seam, the upgrade counterpart of `http` above: an authenticated handshake the
-   * runtime does not itself own is offered here first, and false declines it back.
-   *
-   * Same reason the route table is not a runtime asset. WHICH sockets go where, and what is
-   * done with one — proxying it to a machine over that machine's forward, say — is policy,
-   * and policy that lived in the runtime would make every change to it a reinstall of every
-   * installation. The runtime keeps only what it must: authenticating the handshake before
-   * anything is handed over, and closing a socket nobody claimed.
-   *
-   * The socket is raw and pre-framing on purpose. A proxy has to relay BYTES, and anything
-   * that decoded them into messages first would have to re-encode them identically.
-   */
-  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, url: URL): Promise<boolean>;
-  /**
    * The business deps this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
    * "current App" pointer in the registry would be a duplicate channel.
@@ -101,7 +89,7 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
   context: schema<PlatformCtx>(type({ motd: "string", "terminals?": "string[]" })),
-  methods: ["park", "info", "http", "terminals", "attachStream", "upgrade"],
+  methods: ["park", "info", "http", "terminals", "attachStream"],
 });
 
 /**
@@ -195,7 +183,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       })
       .map(([group]) => group);
 
-    const terminals = new TerminalManager(ctx.resources, {
+    // Answers `get` for a pty on a machine too (machines/terminal-relay.ts).
+    const terminals = new TerminalsAcrossMachines(ctx.resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => caps?.hmr.assetsDir() ?? null,
     });
@@ -359,9 +348,26 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       }),
       http,
       terminals: () => terminals,
-      attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
-      upgrade: (req, socket, head, url) =>
-        proxyUpgradeToMachine(req, socket, head, url, business?.machines ?? null),
+      attachStream: (ws, session, url, log) => {
+        // A pty on a machine: relay to that machine's own stream over the forward this
+        // server holds. The runtime handed the socket over exactly as for a local pty.
+        if (isRemoteTerminalRef(session)) {
+          const business = deps;
+          void relayTerminalStream(
+            ws,
+            session,
+            url,
+            {
+              proxyTarget: (id) =>
+                business === null ? Promise.resolve(null) : business.machines.proxyTarget(id),
+              isAdmin: (userId) => business?.authService.isAdmin(userId) === true,
+            },
+            log,
+          );
+          return;
+        }
+        bindTerminalStream(ws, session, url, log);
+      },
       business: () => business,
       // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.
