@@ -98,12 +98,6 @@ export interface HarnessInfo {
     cli: string | null;
     web: string | null;
   };
-  /**
-   * The interface table (`ifaces.json`) the pushed platform was built from, when the push
-   * carried it: its sha256 — the identity of every interface and manifest in the tree —
-   * and the size of what it describes. Null for a push without a table.
-   */
-  ifaces: IfacesSummary | null;
 }
 
 /** What a stored interface table says about itself, without reading it. */
@@ -123,7 +117,12 @@ export interface IfacesSummary {
  * `harness` describes the data root's store, so only a caller that knows which root is in
  * play can fill it.
  */
-/** One version the HMR store committed, as the history remembers it: what {@link HarnessInfo} said at the time. */
+/**
+ * One harness version, as the platform that WAS that version recorded it at its boot: the
+ * runtime's commit record (provenance, commit time, bundles) plus the interface table the
+ * platform was built from. The runtime only commits; what was pushed is written by the
+ * pushed code itself, so the record is complete on any runtime that can boot it.
+ */
 export interface HarnessHistoryEntry {
   source: HarnessSource | null;
   /** When the version was committed (ISO 8601); null for a commit that predates the record. */
@@ -133,9 +132,9 @@ export interface HarnessHistoryEntry {
 }
 
 /**
- * The harness versions this data root has committed, newest first, and the one currently
- * committed. The store keeps only a rollback copy of each artifact; the history is the
- * record of what was pushed, kept apart from the bundles it names.
+ * The harness versions that have booted on this data root, newest first, and the one the
+ * runtime currently has committed. Kept by the platform under `<root>/harness-history/`,
+ * apart from the runtime's store.
  */
 export interface HarnessHistory {
   current: HarnessInfo | null;

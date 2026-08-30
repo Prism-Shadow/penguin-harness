@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { HmrHost } from "../src/hmr/host.js";
-import { readHarnessHistory, readHarnessInfo } from "../src/hmr/manifest.js";
+import { readHarnessInfo } from "../src/hmr/manifest.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -208,10 +208,6 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
     const push = await pushPlatform(t.app, cookie, platformServing(["/api/demo/ping"], "pushed"));
     expect(push.status).toBe(200);
     expect(((await push.json()) as { persisted: boolean }).persisted).toBe(true);
-    // The commit is also a line of the harness history, naming the same bundles.
-    const history = await readHarnessHistory(t.root);
-    expect(history).toHaveLength(1);
-    expect(history[0]!.bundles).toEqual((await readHarnessInfo(t.root))!.bundles);
 
     const root = t.root;
     freshRoot = root;
