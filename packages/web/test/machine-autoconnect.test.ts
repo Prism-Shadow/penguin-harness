@@ -22,7 +22,8 @@ const nas = (over: Partial<MachineInfo> = {}): MachineInfo => ({
   installed: { version: "1.0.0", at: "2026-08-01T00:00:00.000Z" },
   machineId: REMOTE,
   local: false,
-  connected: false,
+  forward: null,
+  api: null,
   status: null,
   ...over,
 });
@@ -38,14 +39,14 @@ function fakeApi(
   opts: { connects: "ok" | "fail" | "throw"; listed?: boolean } = { connects: "ok" },
 ) {
   const calls: string[] = [];
-  let connected = false;
+  let forwarded = false;
   let running = false;
   const api = {
     async getMachines() {
       calls.push("list");
       const wasRunning = running;
       running = false;
-      const machine = nas({ connected });
+      const machine = nas(forwarded ? { forward: { localPort: 53000 } } : {});
       return response(
         opts.listed === false ? [] : [machine],
         wasRunning
@@ -64,7 +65,7 @@ function fakeApi(
       calls.push(`connect:${address}`);
       if (opts.connects === "throw") throw new Error("409 connect_running");
       running = true;
-      if (opts.connects === "ok") connected = true;
+      if (opts.connects === "ok") forwarded = true;
       return response([nas()], {
         kind: "connect",
         machineId: address,
@@ -108,7 +109,7 @@ describe("connecting on first need", () => {
   it("does nothing to a machine that is already connected", async () => {
     const api = {
       async getMachines() {
-        return response([nas({ connected: true })]);
+        return response([nas({ forward: { localPort: 53000 } })]);
       },
       async connectMachine(): Promise<MachinesResponse> {
         throw new Error("must not be called");
@@ -138,7 +139,7 @@ describe("connecting on first need", () => {
       async getMachines() {
         polls += 1;
         return response(
-          [nas({ connected: polls > 2 })],
+          [nas(polls > 2 ? { forward: { localPort: 53000 } } : {})],
           polls <= 2
             ? {
                 kind: "install",
@@ -184,6 +185,23 @@ describe("once per machine", () => {
     expect(second).toBe(first);
     await first;
     expect(calls.filter((c) => c.startsWith("connect:"))).toHaveLength(1);
+  });
+
+  it("a machine that dropped is connected again by the next need — the drop is not final", async () => {
+    // The regression this guards: "connected" used to be remembered like a failure, so a
+    // forward that died (ssh, the network, a reboot) was never raised again for the life of
+    // the page. Every later need — the not_connected retry in api/client.ts above all — was
+    // answered "already connected" by the cache while nothing was listening on the far end.
+    const { api, calls } = fakeApi();
+    await expect(ensureMachineConnected("p", REMOTE, { api, sleep })).resolves.toBe("connected");
+    const connects = () => calls.filter((c) => c.startsWith("connect:")).length;
+    expect(connects()).toBe(1);
+    // The forward dies: the machine lists itself unconnected again.
+    const dropped = fakeApi();
+    await expect(ensureMachineConnected("p", REMOTE, { api: dropped.api, sleep })).resolves.toBe(
+      "connected",
+    );
+    expect(dropped.calls.filter((c) => c.startsWith("connect:"))).toHaveLength(1);
   });
 
   it("a settled outcome is kept: a machine that gave up is not re-tried by the next pick", async () => {
