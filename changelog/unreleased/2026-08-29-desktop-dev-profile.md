@@ -3,6 +3,7 @@
 - **Date:** 2026-08-29
 - **Type:** feature
 - **Scope:** `desktop`, `docs`
+- **PR:** [#544](https://github.com/Prism-Shadow/penguin-harness/pull/544)
 
 [中文版](2026-08-29-desktop-dev-profile.zh.md)
 
