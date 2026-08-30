@@ -65,5 +65,20 @@ export const PLUGINS_RESOURCE_ID = "runtime:plugins";
  * on the first hot push.
  */
 export function pluginHostFrom(resources: Resources): PluginHost {
-  return resources.claim<PluginHost>(PLUGINS_RESOURCE_ID) ?? new PluginHost();
+  const claimed = resources.claim<Partial<PluginHost> | null>(PLUGINS_RESOURCE_ID);
+  // A runtime older than this contract publishes a host of another shape (the activate-era
+  // one, or one without replacements). A pushed platform must still boot on it, so an
+  // unrecognized host reads as "no plugins": what it registered belongs to a generation this
+  // platform cannot honor, and the seam says so rather than crashing.
+  if (claimed === null || claimed === undefined || typeof claimed.modules !== "function") {
+    return new PluginHost();
+  }
+  if (typeof claimed.replacements !== "function") {
+    const host = new PluginHost();
+    for (const m of claimed.modules()) {
+      host.use({ specifier: m.manifest.name, modules: [m], replaces: [] });
+    }
+    return host;
+  }
+  return claimed as PluginHost;
 }

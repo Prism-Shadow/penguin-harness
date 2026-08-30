@@ -290,7 +290,12 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
-  const replacements = resources.claim<Replacements>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? [];
+  // The slot's older occupant is the overrides bag ({}), not a list: a platform pushed onto
+  // an older runtime reads that as "no replacements" rather than tripping over it.
+  const claimedReplacements = resources.claim<unknown>(RUNTIME_OVERRIDES_RESOURCE_ID);
+  const replacements: Replacements = Array.isArray(claimedReplacements)
+    ? (claimedReplacements as Replacements)
+    : [];
   // Optional by design (see the resource's own note): an older runtime published no such
   // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
   // than this platform may also publish a holder missing the fields added since; they are
