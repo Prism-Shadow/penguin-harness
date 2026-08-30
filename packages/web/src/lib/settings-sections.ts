@@ -35,6 +35,7 @@ export type SettingsSectionKey =
   | "uploads"
   | "company"
   | "chromeExtension"
+  | "sharing"
   | "plugins"
   | "users";
 
@@ -77,6 +78,7 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "company", group: "server", visible: (v) => v.isAdmin },
     // Whether users may connect their own Chrome at all: server-global, like company mode.
     { key: "chromeExtension", group: "server", visible: (v) => v.isAdmin },
+    { key: "sharing", group: "server", visible: (v) => v.isAdmin },
     // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
     { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.

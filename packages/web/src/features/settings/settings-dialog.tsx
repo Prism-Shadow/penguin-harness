@@ -28,6 +28,7 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { BrowserSection } from "./browser-section";
 import { ChromeExtensionSection } from "./chrome-extension-section";
+import { SharingSection } from "./sharing-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -50,6 +51,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   uploads: ICONS.arrowUpFromLine,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
+  /** Two links of a chain: sharing, which hands out an address. */
+  sharing: ICONS.chainLink,
   /** Plug: whether users may connect their Chrome. */
   chromeExtension: ICONS.plug,
   /** Puzzle piece: plugins, the plugin library's own mark. */
@@ -103,6 +106,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
     chromeExtension: S.settings.chromeExtensionTitle,
+    sharing: S.settings.sharingTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -118,6 +122,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
     chromeExtension: S.settings.chromeExtensionInfo,
+    sharing: S.settings.sharingInfo,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -155,6 +160,7 @@ export function SettingsDialog({
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
       {current === "chromeExtension" && <ChromeExtensionSection />}
+      {current === "sharing" && <SharingSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}
