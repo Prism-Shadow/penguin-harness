@@ -1,5 +1,5 @@
 {
- "hash": "a2b2976f564e2830ad0f87fb260e0a037b47f589447fdadecf71e042cbf2e11a",
+ "hash": "088fd63a913cf62a63b134cbd79cb057f55c3df289afcdaab8897bb1629ba583",
  "ifaces": {
   "@prismshadow/penguin-server#Access": {
    "name": "Access",
@@ -13293,16 +13293,20 @@
    "name": "AdminRoutes",
    "requires": {
     "admin": {
-     "iface": "@prismshadow/penguin-server#Admin"
+     "iface": "@prismshadow/penguin-server#Admin",
+     "from": "AdminService"
     },
     "desktop": {
-     "iface": "@prismshadow/penguin-server#Desktop"
+     "iface": "@prismshadow/penguin-server#Desktop",
+     "from": "RuntimeModule"
     },
     "proxy": {
-     "iface": "@prismshadow/penguin-server#Proxy"
+     "iface": "@prismshadow/penguin-server#Proxy",
+     "from": "RuntimeModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     }
    },
    "provides": {
@@ -13330,22 +13334,28 @@
    "name": "AdminService",
    "requires": {
     "users": {
-     "iface": "@prismshadow/penguin-server#Users"
+     "iface": "@prismshadow/penguin-server#Users",
+     "from": "UsersRepo"
     },
     "authSessions": {
-     "iface": "@prismshadow/penguin-server#AuthSessions"
+     "iface": "@prismshadow/penguin-server#AuthSessions",
+     "from": "AuthSessionsRepo"
     },
     "projects": {
-     "iface": "@prismshadow/penguin-server#Projects"
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsModule"
     },
     "projectService": {
-     "iface": "@prismshadow/penguin-server#ProjectLifecycle"
+     "iface": "@prismshadow/penguin-server#ProjectLifecycle",
+     "from": "ProjectsModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     },
     "hasher": {
-     "iface": "@prismshadow/penguin-server#PasswordHasher"
+     "iface": "@prismshadow/penguin-server#PasswordHasher",
+     "from": "ScryptHasher"
     }
    },
    "provides": {
@@ -13359,7 +13369,8 @@
    "name": "AgentConfigService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13373,16 +13384,20 @@
    "name": "AgentService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "agents": {
-     "iface": "@prismshadow/penguin-server#AgentIndex"
+     "iface": "@prismshadow/penguin-server#AgentIndex",
+     "from": "ProjectsModule"
     },
     "agentConfig": {
-     "iface": "@prismshadow/penguin-server#AgentConfig"
+     "iface": "@prismshadow/penguin-server#AgentConfig",
+     "from": "AgentConfigService"
     },
     "snapshots": {
-     "iface": "@prismshadow/penguin-server#Snapshots"
+     "iface": "@prismshadow/penguin-server#Snapshots",
+     "from": "SnapshotService"
     }
    },
    "provides": {
@@ -13392,11 +13407,41 @@
    "contributes": {},
    "children": []
   },
+  "AgentsModule": {
+   "name": "AgentsModule",
+   "requires": {},
+   "provides": {
+    "AgentConfig": "@prismshadow/penguin-server#AgentConfig",
+    "Snapshots": "@prismshadow/penguin-server#Snapshots",
+    "AgentLifecycle": "@prismshadow/penguin-server#AgentLifecycle",
+    "Memory": "@prismshadow/penguin-server#Memory",
+    "Benchmarks": "@prismshadow/penguin-server#Benchmarks",
+    "Assembly": "@prismshadow/penguin-server#Assembly"
+   },
+   "contributes": {},
+   "children": [
+    "AgentConfigService",
+    "SnapshotService",
+    "AgentService",
+    "MemoryService",
+    "BenchmarkService",
+    "HostAssembly"
+   ],
+   "exports": [
+    "AgentConfig",
+    "Snapshots",
+    "AgentLifecycle",
+    "Memory",
+    "Benchmarks",
+    "Assembly"
+   ]
+  },
   "AgentsRepo": {
    "name": "AgentsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13406,29 +13451,60 @@
    "contributes": {},
    "children": []
   },
+  "ApiModule": {
+   "name": "ApiModule",
+   "requires": {},
+   "provides": {
+    "Http": "@prismshadow/penguin-server#Http",
+    "WebShell": "@prismshadow/penguin-server#WebShell",
+    "UpdateCheck": "@prismshadow/penguin-server#UpdateCheck"
+   },
+   "contributes": {},
+   "children": [
+    "GlobalFetch",
+    "UpdateCheckService",
+    "HttpModule",
+    "WebModule",
+    "InstallRoutes",
+    "VersionRoutes",
+    "SkillLibraryRoutes"
+   ],
+   "exports": [
+    "Http",
+    "WebShell",
+    "UpdateCheck"
+   ]
+  },
   "AuthService": {
    "name": "AuthService",
    "requires": {
     "users": {
-     "iface": "@prismshadow/penguin-server#Users"
+     "iface": "@prismshadow/penguin-server#Users",
+     "from": "UsersRepo"
     },
     "authSessions": {
-     "iface": "@prismshadow/penguin-server#AuthSessions"
+     "iface": "@prismshadow/penguin-server#AuthSessions",
+     "from": "AuthSessionsRepo"
     },
     "state": {
-     "iface": "@prismshadow/penguin-server#AuthState"
+     "iface": "@prismshadow/penguin-server#AuthState",
+     "from": "RuntimeModule"
     },
     "provisioner": {
-     "iface": "@prismshadow/penguin-server#InitialProjectProvisioner"
+     "iface": "@prismshadow/penguin-server#InitialProjectProvisioner",
+     "from": "ProjectsModule"
     },
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     },
     "hasher": {
-     "iface": "@prismshadow/penguin-server#PasswordHasher"
+     "iface": "@prismshadow/penguin-server#PasswordHasher",
+     "from": "ScryptHasher"
     }
    },
    "provides": {
@@ -13442,7 +13518,8 @@
    "name": "AuthSessionsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13456,10 +13533,12 @@
    "name": "BenchmarkService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "workspaceFiles": {
-     "iface": "@prismshadow/penguin-server#WorkspaceFiles"
+     "iface": "@prismshadow/penguin-server#WorkspaceFiles",
+     "from": "WorkspaceModule"
     }
    },
    "provides": {
@@ -13473,7 +13552,8 @@
    "name": "ConfigPaths",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeConfig"
     }
    },
    "provides": {
@@ -13527,10 +13607,12 @@
    "name": "ErrorRecorder",
    "requires": {
     "errors": {
-     "iface": "@prismshadow/penguin-server#ErrorLog"
+     "iface": "@prismshadow/penguin-server#ErrorLog",
+     "from": "ErrorsRepo"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13544,7 +13626,8 @@
    "name": "ErrorsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13558,7 +13641,8 @@
    "name": "EventsRoutes",
    "requires": {
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels"
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13580,7 +13664,8 @@
    "name": "FeishuMessaging",
    "requires": {
     "feishu": {
-     "iface": "@prismshadow/penguin-server#FeishuSdkHandle"
+     "iface": "@prismshadow/penguin-server#FeishuSdkHandle",
+     "from": "FeishuSdkProvider"
     }
    },
    "provides": {
@@ -13619,7 +13704,8 @@
    "name": "GoalsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13633,25 +13719,32 @@
    "name": "HostAssembly",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectsModule"
     },
     "agentConfig": {
-     "iface": "@prismshadow/penguin-server#AgentConfig"
+     "iface": "@prismshadow/penguin-server#AgentConfig",
+     "from": "AgentConfigService"
     },
     "memory": {
-     "iface": "@prismshadow/penguin-server#Memory"
+     "iface": "@prismshadow/penguin-server#Memory",
+     "from": "MemoryService"
     },
     "snapshots": {
-     "iface": "@prismshadow/penguin-server#Snapshots"
+     "iface": "@prismshadow/penguin-server#Snapshots",
+     "from": "SnapshotService"
     },
     "benchmarks": {
-     "iface": "@prismshadow/penguin-server#Benchmarks"
+     "iface": "@prismshadow/penguin-server#Benchmarks",
+     "from": "BenchmarkService"
     },
     "traces": {
-     "iface": "@prismshadow/penguin-server#Traces"
+     "iface": "@prismshadow/penguin-server#Traces",
+     "from": "TracesModule"
     }
    },
    "provides": {
@@ -13698,22 +13791,28 @@
    "name": "HttpModule",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log"
+     "iface": "@prismshadow/penguin-server#Log",
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "@prismshadow/penguin-server#Auth"
+     "iface": "@prismshadow/penguin-server#Auth",
+     "from": "IdentityModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#Errors"
+     "iface": "@prismshadow/penguin-server#Errors",
+     "from": "ObservabilityModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectsModule"
     }
    },
    "provides": {
@@ -13722,11 +13821,40 @@
    "contributes": {},
    "children": []
   },
+  "IdentityModule": {
+   "name": "IdentityModule",
+   "requires": {},
+   "provides": {
+    "Users": "@prismshadow/penguin-server#Users",
+    "AuthSessions": "@prismshadow/penguin-server#AuthSessions",
+    "Auth": "@prismshadow/penguin-server#Auth",
+    "Admin": "@prismshadow/penguin-server#Admin",
+    "PasswordHasher": "@prismshadow/penguin-server#PasswordHasher"
+   },
+   "contributes": {},
+   "children": [
+    "UsersRepo",
+    "AuthSessionsRepo",
+    "ScryptHasher",
+    "AuthService",
+    "AdminService",
+    "AdminRoutes",
+    "MeRoutes"
+   ],
+   "exports": [
+    "Users",
+    "AuthSessions",
+    "Auth",
+    "Admin",
+    "PasswordHasher"
+   ]
+  },
   "InstallRoutes": {
    "name": "InstallRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13748,10 +13876,12 @@
    "name": "MachinesModule",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "hmr": {
-     "iface": "@prismshadow/penguin-server#Hmr"
+     "iface": "@prismshadow/penguin-server#Hmr",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13773,19 +13903,24 @@
    "name": "MeRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "desktop": {
-     "iface": "@prismshadow/penguin-server#Desktop"
+     "iface": "@prismshadow/penguin-server#Desktop",
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "@prismshadow/penguin-server#Auth"
+     "iface": "@prismshadow/penguin-server#Auth",
+     "from": "AuthService"
     },
     "prefs": {
-     "iface": "@prismshadow/penguin-server#UiPrefsStore"
+     "iface": "@prismshadow/penguin-server#UiPrefsStore",
+     "from": "SettingsModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     }
    },
    "provides": {
@@ -13807,7 +13942,8 @@
    "name": "MembersRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13821,10 +13957,12 @@
    "name": "MemoryService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "agentConfigService": {
-     "iface": "@prismshadow/penguin-server#AgentConfig"
+     "iface": "@prismshadow/penguin-server#AgentConfig",
+     "from": "AgentConfigService"
     }
    },
    "provides": {
@@ -13838,7 +13976,8 @@
    "name": "MessagingBindingsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -13848,48 +13987,84 @@
    "contributes": {},
    "children": []
   },
+  "MessagingHubModule": {
+   "name": "MessagingHubModule",
+   "requires": {},
+   "provides": {
+    "Messaging": "@prismshadow/penguin-server#Messaging",
+    "QQScan": "@prismshadow/penguin-server#QQScan",
+    "MessagingBindings": "@prismshadow/penguin-server#MessagingBindings"
+   },
+   "contributes": {},
+   "children": [
+    "FeishuSdkProvider",
+    "TelegramTransportProvider",
+    "QQTransportProvider",
+    "QQScanTransportProvider",
+    "DefaultMessagingTuning",
+    "MessagingBindingsRepo",
+    "MessagingModule"
+   ],
+   "exports": [
+    "Messaging",
+    "QQScan",
+    "MessagingBindings"
+   ]
+  },
   "MessagingModule": {
    "name": "MessagingModule",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels"
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     },
     "tuning": {
-     "iface": "@prismshadow/penguin-server#MessagingTuning"
+     "iface": "@prismshadow/penguin-server#MessagingTuning",
+     "from": "DefaultMessagingTuning"
     },
     "qqScanTransport": {
-     "iface": "@prismshadow/penguin-server#QQScanTransportHandle"
+     "iface": "@prismshadow/penguin-server#QQScanTransportHandle",
+     "from": "QQScanTransportProvider"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log"
+     "iface": "@prismshadow/penguin-server#Log",
+     "from": "RuntimeModule"
     },
     "messagingRepo": {
-     "iface": "@prismshadow/penguin-server#MessagingBindings"
+     "iface": "@prismshadow/penguin-server#MessagingBindings",
+     "from": "MessagingBindingsRepo"
     },
     "sessionsRepo": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionRuntimeModule"
     },
     "workspaceFiles": {
-     "iface": "@prismshadow/penguin-server#WorkspaceFiles"
+     "iface": "@prismshadow/penguin-server#WorkspaceFiles",
+     "from": "WorkspaceModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     },
     "runner": {
      "iface": "@prismshadow/penguin-server#MessagingTaskRunner",
-     "from": "SessionsModule"
+     "from": "SessionRuntimeModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#Errors"
+     "iface": "@prismshadow/penguin-server#Errors",
+     "from": "ObservabilityModule"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectsModule"
     }
    },
    "provides": {
@@ -13916,7 +14091,8 @@
    "name": "ModelOAuthService",
    "requires": {
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectConfigService"
     }
    },
    "provides": {
@@ -13926,99 +14102,96 @@
    "contributes": {},
    "children": []
   },
+  "ObservabilityModule": {
+   "name": "ObservabilityModule",
+   "requires": {},
+   "provides": {
+    "ErrorLog": "@prismshadow/penguin-server#ErrorLog",
+    "Errors": "@prismshadow/penguin-server#Errors",
+    "UsageStore": "@prismshadow/penguin-server#UsageStore",
+    "UsageRecording": "@prismshadow/penguin-server#UsageRecording",
+    "UsageQueries": "@prismshadow/penguin-server#UsageQueries"
+   },
+   "contributes": {},
+   "children": [
+    "ErrorsRepo",
+    "ErrorRecorder",
+    "UsageRepo",
+    "UsageRecorder",
+    "UsageService"
+   ],
+   "exports": [
+    "ErrorLog",
+    "Errors",
+    "UsageStore",
+    "UsageRecording",
+    "UsageQueries"
+   ]
+  },
   "PlatformModule": {
    "name": "PlatformModule",
    "requires": {},
    "provides": {},
    "contributes": {},
    "children": [
-    "RuntimeConfig",
-    "RuntimeDb",
-    "RuntimeChannels",
-    "RuntimeProxy",
-    "RuntimeHmr",
-    "RuntimeDesktop",
-    "RuntimeAuthState",
-    "RuntimeResourceGroups",
-    "ConsoleLog",
-    "SystemClock",
-    "ConfigPaths",
-    "ScryptHasher",
-    "DefaultMessagingTuning",
-    "FeishuSdkProvider",
-    "TelegramTransportProvider",
-    "QQTransportProvider",
-    "QQScanTransportProvider",
-    "CoreSessionLoaders",
-    "DefaultTitleGenerators",
-    "GlobalFetch",
-    "UpdateCheckService",
-    "UsersRepo",
-    "AuthSessionsRepo",
-    "ServerSettingsRepo",
-    "UiPrefsRepo",
-    "SessionsRepo",
-    "GoalsRepo",
-    "ProjectsRepo",
-    "MembersRepo",
-    "AgentsRepo",
-    "UsageRepo",
-    "SchedulesRepo",
-    "TraceIndexRepo",
-    "MessagingBindingsRepo",
-    "ErrorsRepo",
-    "SessionSources",
-    "ErrorRecorder",
-    "UsageRecorder",
-    "UsageService",
-    "ProjectConfigService",
-    "ModelOAuthService",
-    "TraceIndexService",
-    "TraceService",
-    "WorkspaceFilesService",
-    "ProjectAccess",
-    "ProjectService",
-    "AuthService",
-    "AdminService",
-    "Scheduler",
-    "AgentConfigService",
-    "SnapshotService",
-    "AgentService",
-    "MemoryService",
-    "BenchmarkService",
-    "HostAssembly",
+    "RuntimeModule",
+    "SettingsModule",
+    "IdentityModule",
+    "ProjectsModule",
+    "SessionRuntimeModule",
+    "ObservabilityModule",
+    "TracesModule",
+    "AgentsModule",
     "WorkspaceModule",
+    "MessagingHubModule",
+    "ApiModule",
     "SandboxModule",
-    "SessionsModule",
-    "MessagingModule",
-    "MachinesModule",
-    "ProjectsRoutes",
-    "SchedulerRoutes",
-    "ProjectAdminRoutes",
-    "AdminRoutes",
-    "MeRoutes",
-    "VersionRoutes",
-    "InstallRoutes",
-    "EventsRoutes",
-    "SkillLibraryRoutes",
     "TerminalModule",
-    "SessionApiRoutes",
-    "WebModule",
-    "HttpModule",
+    "MachinesModule",
     "Startup"
    ]
+  },
+  "PreviewModule": {
+   "name": "PreviewModule",
+   "requires": {
+    "workspaceFiles": {
+     "iface": "@prismshadow/penguin-server#WorkspaceFiles",
+     "from": "WorkspaceFilesService"
+    },
+    "sessionsRepo": {
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionRuntimeModule"
+    }
+   },
+   "provides": {
+    "previewTokens": "@prismshadow/penguin-server#PreviewTokens"
+   },
+   "contributes": {
+    "HttpModule.routes": [
+     {
+      "id": "workspace.preview",
+      "prefix": "/preview",
+      "auth": "none",
+      "order": 900
+     }
+    ]
+   },
+   "children": []
   },
   "ProjectAccess": {
    "name": "ProjectAccess",
    "requires": {
     "projects": {
-     "iface": "@prismshadow/penguin-server#Projects"
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsRepo"
     },
     "members": {
-     "iface": "@prismshadow/penguin-server#Members"
+     "iface": "@prismshadow/penguin-server#Members",
+     "from": "MembersRepo"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectConfigService"
     }
    },
    "provides": {
@@ -14032,10 +14205,12 @@
    "name": "ProjectAdminRoutes",
    "requires": {
     "projectService": {
-     "iface": "@prismshadow/penguin-server#ProjectLifecycle"
+     "iface": "@prismshadow/penguin-server#ProjectLifecycle",
+     "from": "ProjectService"
     },
     "desktop": {
-     "iface": "@prismshadow/penguin-server#Desktop"
+     "iface": "@prismshadow/penguin-server#Desktop",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14063,7 +14238,8 @@
    "name": "ProjectConfigService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14077,46 +14253,60 @@
    "name": "ProjectService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectAccess"
     },
     "users": {
-     "iface": "@prismshadow/penguin-server#Users"
+     "iface": "@prismshadow/penguin-server#Users",
+     "from": "IdentityModule"
     },
     "projects": {
-     "iface": "@prismshadow/penguin-server#Projects"
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsRepo"
     },
     "members": {
-     "iface": "@prismshadow/penguin-server#Members"
+     "iface": "@prismshadow/penguin-server#Members",
+     "from": "MembersRepo"
     },
     "agents": {
-     "iface": "@prismshadow/penguin-server#AgentIndex"
+     "iface": "@prismshadow/penguin-server#AgentIndex",
+     "from": "AgentsRepo"
     },
     "sessions": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionRuntimeModule"
     },
     "usage": {
-     "iface": "@prismshadow/penguin-server#UsageStore"
+     "iface": "@prismshadow/penguin-server#UsageStore",
+     "from": "ObservabilityModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#ErrorLog"
+     "iface": "@prismshadow/penguin-server#ErrorLog",
+     "from": "ObservabilityModule"
     },
     "schedules": {
-     "iface": "@prismshadow/penguin-server#Schedules"
+     "iface": "@prismshadow/penguin-server#Schedules",
+     "from": "SessionRuntimeModule"
     },
     "goals": {
-     "iface": "@prismshadow/penguin-server#Goals"
+     "iface": "@prismshadow/penguin-server#Goals",
+     "from": "SessionRuntimeModule"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectConfigService"
     },
     "manager": {
-     "iface": "@prismshadow/penguin-server#ProjectRuns"
+     "iface": "@prismshadow/penguin-server#ProjectRuns",
+     "from": "SessionRuntimeModule"
     },
     "traceIndex": {
-     "iface": "@prismshadow/penguin-server#TraceIndex"
+     "iface": "@prismshadow/penguin-server#TraceIndex",
+     "from": "TracesModule"
     }
    },
    "provides": {
@@ -14126,11 +14316,48 @@
    "contributes": {},
    "children": []
   },
+  "ProjectsModule": {
+   "name": "ProjectsModule",
+   "requires": {},
+   "provides": {
+    "Projects": "@prismshadow/penguin-server#Projects",
+    "Members": "@prismshadow/penguin-server#Members",
+    "AgentIndex": "@prismshadow/penguin-server#AgentIndex",
+    "Access": "@prismshadow/penguin-server#Access",
+    "ProjectLifecycle": "@prismshadow/penguin-server#ProjectLifecycle",
+    "ProjectConfigStore": "@prismshadow/penguin-server#ProjectConfigStore",
+    "ModelOAuth": "@prismshadow/penguin-server#ModelOAuth",
+    "InitialProjectProvisioner": "@prismshadow/penguin-server#InitialProjectProvisioner"
+   },
+   "contributes": {},
+   "children": [
+    "ProjectsRepo",
+    "MembersRepo",
+    "AgentsRepo",
+    "ProjectAccess",
+    "ProjectService",
+    "ProjectConfigService",
+    "ModelOAuthService",
+    "ProjectsRoutes",
+    "ProjectAdminRoutes"
+   ],
+   "exports": [
+    "Projects",
+    "Members",
+    "AgentIndex",
+    "Access",
+    "ProjectLifecycle",
+    "ProjectConfigStore",
+    "ModelOAuth",
+    "InitialProjectProvisioner"
+   ]
+  },
   "ProjectsRepo": {
    "name": "ProjectsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14144,7 +14371,8 @@
    "name": "ProjectsRoutes",
    "requires": {
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectAccess"
     }
    },
    "provides": {
@@ -14190,13 +14418,16 @@
    "name": "QqMessaging",
    "requires": {
     "qq": {
-     "iface": "@prismshadow/penguin-server#QQTransportHandle"
+     "iface": "@prismshadow/penguin-server#QQTransportHandle",
+     "from": "QQTransportProvider"
     },
     "tuning": {
-     "iface": "@prismshadow/penguin-server#MessagingTuning"
+     "iface": "@prismshadow/penguin-server#MessagingTuning",
+     "from": "DefaultMessagingTuning"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14266,6 +14497,50 @@
    "contributes": {},
    "children": []
   },
+  "RuntimeModule": {
+   "name": "RuntimeModule",
+   "requires": {},
+   "provides": {
+    "Config": "@prismshadow/penguin-server#Config",
+    "Db": "@prismshadow/penguin-server#Db",
+    "Channels": "@prismshadow/penguin-server#Channels",
+    "Proxy": "@prismshadow/penguin-server#Proxy",
+    "Hmr": "@prismshadow/penguin-server#Hmr",
+    "Desktop": "@prismshadow/penguin-server#Desktop",
+    "AuthState": "@prismshadow/penguin-server#AuthState",
+    "ResourceGroups": "@prismshadow/penguin-server#ResourceGroups",
+    "Log": "@prismshadow/penguin-server#Log",
+    "Clock": "@prismshadow/penguin-server#Clock",
+    "Paths": "@prismshadow/penguin-server#Paths"
+   },
+   "contributes": {},
+   "children": [
+    "RuntimeConfig",
+    "RuntimeDb",
+    "RuntimeChannels",
+    "RuntimeProxy",
+    "RuntimeHmr",
+    "RuntimeDesktop",
+    "RuntimeAuthState",
+    "RuntimeResourceGroups",
+    "ConsoleLog",
+    "SystemClock",
+    "ConfigPaths"
+   ],
+   "exports": [
+    "Config",
+    "Db",
+    "Channels",
+    "Proxy",
+    "Hmr",
+    "Desktop",
+    "AuthState",
+    "ResourceGroups",
+    "Log",
+    "Clock",
+    "Paths"
+   ]
+  },
   "RuntimeProxy": {
    "name": "RuntimeProxy",
    "requires": {},
@@ -14307,16 +14582,20 @@
    "name": "Scheduler",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "repo": {
-     "iface": "@prismshadow/penguin-server#Schedules"
+     "iface": "@prismshadow/penguin-server#Schedules",
+     "from": "SchedulesRepo"
     },
     "projects": {
-     "iface": "@prismshadow/penguin-server#Projects"
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsModule"
     },
     "sessions": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionsRepo"
     },
     "runner": {
      "iface": "@prismshadow/penguin-server#ScheduleTaskRunner"
@@ -14325,16 +14604,20 @@
      "iface": "@prismshadow/penguin-server#ScheduleSessionCreator"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectsModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#Errors"
+     "iface": "@prismshadow/penguin-server#Errors",
+     "from": "ObservabilityModule"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels"
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14348,22 +14631,28 @@
    "name": "SchedulerRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "agentConfig": {
-     "iface": "@prismshadow/penguin-server#AgentConfig"
+     "iface": "@prismshadow/penguin-server#AgentConfig",
+     "from": "AgentsModule"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectsModule"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectsModule"
     },
     "scheduler": {
-     "iface": "@prismshadow/penguin-server#Scheduling"
+     "iface": "@prismshadow/penguin-server#Scheduling",
+     "from": "Scheduler"
     },
     "schedulesRepo": {
-     "iface": "@prismshadow/penguin-server#Schedules"
+     "iface": "@prismshadow/penguin-server#Schedules",
+     "from": "SchedulesRepo"
     }
    },
    "provides": {
@@ -14385,7 +14674,8 @@
    "name": "SchedulesRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14409,7 +14699,8 @@
    "name": "ServerSettingsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14423,10 +14714,12 @@
    "name": "SessionApiRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels"
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
     },
     "manager": {
      "iface": "@prismshadow/penguin-server#Sessions",
@@ -14437,57 +14730,72 @@
      "from": "SessionsModule"
     },
     "agentConfig": {
-     "iface": "@prismshadow/penguin-server#AgentConfig"
+     "iface": "@prismshadow/penguin-server#AgentConfig",
+     "from": "AgentsModule"
     },
     "agents": {
-     "iface": "@prismshadow/penguin-server#AgentLifecycle"
+     "iface": "@prismshadow/penguin-server#AgentLifecycle",
+     "from": "AgentsModule"
     },
     "messaging": {
      "iface": "@prismshadow/penguin-server#Messaging",
-     "from": "MessagingModule"
+     "from": "MessagingHubModule"
     },
     "schedulesRepo": {
-     "iface": "@prismshadow/penguin-server#Schedules"
+     "iface": "@prismshadow/penguin-server#Schedules",
+     "from": "SchedulesRepo"
     },
     "access": {
-     "iface": "@prismshadow/penguin-server#Access"
+     "iface": "@prismshadow/penguin-server#Access",
+     "from": "ProjectsModule"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectsModule"
     },
     "modelOAuth": {
-     "iface": "@prismshadow/penguin-server#ModelOAuth"
+     "iface": "@prismshadow/penguin-server#ModelOAuth",
+     "from": "ProjectsModule"
     },
     "traceIndex": {
-     "iface": "@prismshadow/penguin-server#TraceIndex"
+     "iface": "@prismshadow/penguin-server#TraceIndex",
+     "from": "TracesModule"
     },
     "traces": {
-     "iface": "@prismshadow/penguin-server#Traces"
+     "iface": "@prismshadow/penguin-server#Traces",
+     "from": "TracesModule"
     },
     "workspaceFiles": {
-     "iface": "@prismshadow/penguin-server#WorkspaceFiles"
+     "iface": "@prismshadow/penguin-server#WorkspaceFiles",
+     "from": "WorkspaceModule"
     },
     "previewTokens": {
      "iface": "@prismshadow/penguin-server#PreviewTokens",
      "from": "WorkspaceModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     },
     "sessionsRepo": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionsRepo"
     },
     "goalsRepo": {
-     "iface": "@prismshadow/penguin-server#Goals"
+     "iface": "@prismshadow/penguin-server#Goals",
+     "from": "GoalsRepo"
     },
     "sources": {
-     "iface": "@prismshadow/penguin-server#SessionOrigins"
+     "iface": "@prismshadow/penguin-server#SessionOrigins",
+     "from": "SessionSources"
     },
     "errorsRepo": {
-     "iface": "@prismshadow/penguin-server#ErrorLog"
+     "iface": "@prismshadow/penguin-server#ErrorLog",
+     "from": "ObservabilityModule"
     },
     "usage": {
-     "iface": "@prismshadow/penguin-server#UsageQueries"
+     "iface": "@prismshadow/penguin-server#UsageQueries",
+     "from": "ObservabilityModule"
     }
    },
    "provides": {
@@ -14565,6 +14873,52 @@
    },
    "children": []
   },
+  "SessionRuntimeModule": {
+   "name": "SessionRuntimeModule",
+   "requires": {},
+   "provides": {
+    "SessionIndex": "@prismshadow/penguin-server#SessionIndex",
+    "Goals": "@prismshadow/penguin-server#Goals",
+    "SessionOrigins": "@prismshadow/penguin-server#SessionOrigins",
+    "Schedules": "@prismshadow/penguin-server#Schedules",
+    "Scheduling": "@prismshadow/penguin-server#Scheduling",
+    "Sessions": "@prismshadow/penguin-server#Sessions",
+    "SessionServiceIface": "@prismshadow/penguin-server#SessionServiceIface",
+    "SessionEnv": "@prismshadow/penguin-server#SessionEnv",
+    "ScheduleTaskRunner": "@prismshadow/penguin-server#ScheduleTaskRunner",
+    "ScheduleSessionCreator": "@prismshadow/penguin-server#ScheduleSessionCreator",
+    "MessagingTaskRunner": "@prismshadow/penguin-server#MessagingTaskRunner",
+    "ProjectRuns": "@prismshadow/penguin-server#ProjectRuns"
+   },
+   "contributes": {},
+   "children": [
+    "SessionsRepo",
+    "GoalsRepo",
+    "SessionSources",
+    "SchedulesRepo",
+    "Scheduler",
+    "CoreSessionLoaders",
+    "DefaultTitleGenerators",
+    "SessionsModule",
+    "SessionApiRoutes",
+    "SchedulerRoutes",
+    "EventsRoutes"
+   ],
+   "exports": [
+    "SessionIndex",
+    "Goals",
+    "SessionOrigins",
+    "Schedules",
+    "Scheduling",
+    "Sessions",
+    "SessionServiceIface",
+    "SessionEnv",
+    "ScheduleTaskRunner",
+    "ScheduleSessionCreator",
+    "MessagingTaskRunner",
+    "ProjectRuns"
+   ]
+  },
   "SessionSources": {
    "name": "SessionSources",
    "requires": {},
@@ -14579,68 +14933,88 @@
    "name": "SessionsModule",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "channels": {
-     "iface": "@prismshadow/penguin-server#Channels"
+     "iface": "@prismshadow/penguin-server#Channels",
+     "from": "RuntimeModule"
     },
     "authState": {
-     "iface": "@prismshadow/penguin-server#AuthState"
+     "iface": "@prismshadow/penguin-server#AuthState",
+     "from": "RuntimeModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     },
     "sessionLoaders": {
-     "iface": "@prismshadow/penguin-server#SessionLoaders"
+     "iface": "@prismshadow/penguin-server#SessionLoaders",
+     "from": "CoreSessionLoaders"
     },
     "titleGenerators": {
-     "iface": "@prismshadow/penguin-server#TitleGenerators"
+     "iface": "@prismshadow/penguin-server#TitleGenerators",
+     "from": "DefaultTitleGenerators"
     },
     "log": {
-     "iface": "@prismshadow/penguin-server#Log"
+     "iface": "@prismshadow/penguin-server#Log",
+     "from": "RuntimeModule"
     },
     "settings": {
-     "iface": "@prismshadow/penguin-server#Settings"
+     "iface": "@prismshadow/penguin-server#Settings",
+     "from": "SettingsModule"
     },
     "sessionsRepo": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionsRepo"
     },
     "goalsRepo": {
-     "iface": "@prismshadow/penguin-server#Goals"
+     "iface": "@prismshadow/penguin-server#Goals",
+     "from": "GoalsRepo"
     },
     "sources": {
-     "iface": "@prismshadow/penguin-server#SessionOrigins"
+     "iface": "@prismshadow/penguin-server#SessionOrigins",
+     "from": "SessionSources"
     },
     "recorder": {
-     "iface": "@prismshadow/penguin-server#UsageRecording"
+     "iface": "@prismshadow/penguin-server#UsageRecording",
+     "from": "ObservabilityModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#Errors"
+     "iface": "@prismshadow/penguin-server#Errors",
+     "from": "ObservabilityModule"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectsModule"
     },
     "traceIndex": {
-     "iface": "@prismshadow/penguin-server#TraceIndex"
+     "iface": "@prismshadow/penguin-server#TraceIndex",
+     "from": "TracesModule"
     },
     "traceStore": {
-     "iface": "@prismshadow/penguin-server#TraceIndexStore"
+     "iface": "@prismshadow/penguin-server#TraceIndexStore",
+     "from": "TracesModule"
     },
     "sandbox": {
      "iface": "@prismshadow/penguin-server#Sandbox",
      "from": "SandboxModule"
     },
     "projectsRepo": {
-     "iface": "@prismshadow/penguin-server#Projects"
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsModule"
     },
     "membersRepo": {
-     "iface": "@prismshadow/penguin-server#Members"
+     "iface": "@prismshadow/penguin-server#Members",
+     "from": "ProjectsModule"
     },
     "messagingRepo": {
-     "iface": "@prismshadow/penguin-server#MessagingBindings"
+     "iface": "@prismshadow/penguin-server#MessagingBindings",
+     "from": "MessagingHubModule"
     },
     "assembly": {
-     "iface": "@prismshadow/penguin-server#Assembly"
+     "iface": "@prismshadow/penguin-server#Assembly",
+     "from": "AgentsModule"
     }
    },
    "provides": {
@@ -14655,7 +15029,8 @@
    "name": "SessionsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14664,6 +15039,23 @@
    },
    "contributes": {},
    "children": []
+  },
+  "SettingsModule": {
+   "name": "SettingsModule",
+   "requires": {},
+   "provides": {
+    "Settings": "@prismshadow/penguin-server#Settings",
+    "UiPrefsStore": "@prismshadow/penguin-server#UiPrefsStore"
+   },
+   "contributes": {},
+   "children": [
+    "ServerSettingsRepo",
+    "UiPrefsRepo"
+   ],
+   "exports": [
+    "Settings",
+    "UiPrefsStore"
+   ]
   },
   "SkillLibraryRoutes": {
    "name": "SkillLibraryRoutes",
@@ -14687,7 +15079,8 @@
    "name": "SnapshotService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14701,17 +15094,20 @@
    "name": "Startup",
    "requires": {
     "goals": {
-     "iface": "@prismshadow/penguin-server#Goals"
+     "iface": "@prismshadow/penguin-server#Goals",
+     "from": "SessionRuntimeModule"
     },
     "scheduler": {
-     "iface": "@prismshadow/penguin-server#Scheduling"
+     "iface": "@prismshadow/penguin-server#Scheduling",
+     "from": "SessionRuntimeModule"
     },
     "sessionService": {
      "iface": "@prismshadow/penguin-server#SessionServiceIface",
-     "from": "SessionsModule"
+     "from": "SessionRuntimeModule"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#Errors"
+     "iface": "@prismshadow/penguin-server#Errors",
+     "from": "ObservabilityModule"
     }
    },
    "provides": {
@@ -14734,10 +15130,12 @@
    "name": "TelegramMessaging",
    "requires": {
     "telegram": {
-     "iface": "@prismshadow/penguin-server#TelegramTransportHandle"
+     "iface": "@prismshadow/penguin-server#TelegramTransportHandle",
+     "from": "TelegramTransportProvider"
     },
     "tuning": {
-     "iface": "@prismshadow/penguin-server#MessagingTuning"
+     "iface": "@prismshadow/penguin-server#MessagingTuning",
+     "from": "DefaultMessagingTuning"
     }
    },
    "provides": {
@@ -14766,13 +15164,16 @@
    "name": "TerminalModule",
    "requires": {
     "hmr": {
-     "iface": "@prismshadow/penguin-server#Hmr"
+     "iface": "@prismshadow/penguin-server#Hmr",
+     "from": "RuntimeModule"
     },
     "resourceGroups": {
-     "iface": "@prismshadow/penguin-server#ResourceGroups"
+     "iface": "@prismshadow/penguin-server#ResourceGroups",
+     "from": "RuntimeModule"
     },
     "auth": {
-     "iface": "@prismshadow/penguin-server#Auth"
+     "iface": "@prismshadow/penguin-server#Auth",
+     "from": "IdentityModule"
     }
    },
    "provides": {
@@ -14800,7 +15201,8 @@
    "name": "TraceIndexRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14814,13 +15216,16 @@
    "name": "TraceIndexService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "repo": {
-     "iface": "@prismshadow/penguin-server#TraceIndexStore"
+     "iface": "@prismshadow/penguin-server#TraceIndexStore",
+     "from": "TraceIndexRepo"
     },
     "sources": {
-     "iface": "@prismshadow/penguin-server#SessionOrigins"
+     "iface": "@prismshadow/penguin-server#SessionOrigins",
+     "from": "SessionRuntimeModule"
     }
    },
    "provides": {
@@ -14834,19 +15239,24 @@
    "name": "TraceService",
    "requires": {
     "paths": {
-     "iface": "@prismshadow/penguin-server#Paths"
+     "iface": "@prismshadow/penguin-server#Paths",
+     "from": "RuntimeModule"
     },
     "index": {
-     "iface": "@prismshadow/penguin-server#TraceIndex"
+     "iface": "@prismshadow/penguin-server#TraceIndex",
+     "from": "TraceIndexService"
     },
     "store": {
-     "iface": "@prismshadow/penguin-server#TraceIndexStore"
+     "iface": "@prismshadow/penguin-server#TraceIndexStore",
+     "from": "TraceIndexRepo"
     },
     "sessions": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
+     "iface": "@prismshadow/penguin-server#SessionIndex",
+     "from": "SessionRuntimeModule"
     },
     "sources": {
-     "iface": "@prismshadow/penguin-server#SessionOrigins"
+     "iface": "@prismshadow/penguin-server#SessionOrigins",
+     "from": "SessionRuntimeModule"
     }
    },
    "provides": {
@@ -14856,11 +15266,32 @@
    "contributes": {},
    "children": []
   },
+  "TracesModule": {
+   "name": "TracesModule",
+   "requires": {},
+   "provides": {
+    "TraceIndexStore": "@prismshadow/penguin-server#TraceIndexStore",
+    "TraceIndex": "@prismshadow/penguin-server#TraceIndex",
+    "Traces": "@prismshadow/penguin-server#Traces"
+   },
+   "contributes": {},
+   "children": [
+    "TraceIndexRepo",
+    "TraceIndexService",
+    "TraceService"
+   ],
+   "exports": [
+    "TraceIndexStore",
+    "TraceIndex",
+    "Traces"
+   ]
+  },
   "UiPrefsRepo": {
    "name": "UiPrefsRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14874,14 +15305,17 @@
    "name": "UpdateCheckService",
    "requires": {
     "http": {
-     "iface": "@prismshadow/penguin-server#HttpFetch"
+     "iface": "@prismshadow/penguin-server#HttpFetch",
+     "from": "GlobalFetch"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
-    "UpdateCheckService": "@prismshadow/penguin-server#UpdateCheckService"
+    "UpdateCheckService": "@prismshadow/penguin-server#UpdateCheckService",
+    "UpdateCheck": "@prismshadow/penguin-server#UpdateCheck"
    },
    "contributes": {},
    "children": []
@@ -14890,10 +15324,12 @@
    "name": "UsageRecorder",
    "requires": {
     "usage": {
-     "iface": "@prismshadow/penguin-server#UsageStore"
+     "iface": "@prismshadow/penguin-server#UsageStore",
+     "from": "UsageRepo"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14907,7 +15343,8 @@
    "name": "UsageRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14921,16 +15358,20 @@
    "name": "UsageService",
    "requires": {
     "usage": {
-     "iface": "@prismshadow/penguin-server#UsageStore"
+     "iface": "@prismshadow/penguin-server#UsageStore",
+     "from": "UsageRepo"
     },
     "errors": {
-     "iface": "@prismshadow/penguin-server#ErrorLog"
+     "iface": "@prismshadow/penguin-server#ErrorLog",
+     "from": "ErrorsRepo"
     },
     "projectConfig": {
-     "iface": "@prismshadow/penguin-server#ProjectConfigStore"
+     "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+     "from": "ProjectsModule"
     },
     "clock": {
-     "iface": "@prismshadow/penguin-server#Clock"
+     "iface": "@prismshadow/penguin-server#Clock",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14944,7 +15385,8 @@
    "name": "UsersRepo",
    "requires": {
     "db": {
-     "iface": "@prismshadow/penguin-server#Db"
+     "iface": "@prismshadow/penguin-server#Db",
+     "from": "RuntimeModule"
     }
    },
    "provides": {
@@ -14958,10 +15400,12 @@
    "name": "VersionRoutes",
    "requires": {
     "config": {
-     "iface": "@prismshadow/penguin-server#Config"
+     "iface": "@prismshadow/penguin-server#Config",
+     "from": "RuntimeModule"
     },
     "updateCheck": {
-     "iface": "@prismshadow/penguin-server#UpdateCheck"
+     "iface": "@prismshadow/penguin-server#UpdateCheck",
+     "from": "UpdateCheckService"
     }
    },
    "provides": {
@@ -15009,28 +15453,20 @@
   },
   "WorkspaceModule": {
    "name": "WorkspaceModule",
-   "requires": {
-    "workspaceFiles": {
-     "iface": "@prismshadow/penguin-server#WorkspaceFiles"
-    },
-    "sessionsRepo": {
-     "iface": "@prismshadow/penguin-server#SessionIndex"
-    }
-   },
+   "requires": {},
    "provides": {
-    "previewTokens": "@prismshadow/penguin-server#PreviewTokens"
+    "WorkspaceFiles": "@prismshadow/penguin-server#WorkspaceFiles",
+    "PreviewTokens": "@prismshadow/penguin-server#PreviewTokens"
    },
-   "contributes": {
-    "HttpModule.routes": [
-     {
-      "id": "workspace.preview",
-      "prefix": "/preview",
-      "auth": "none",
-      "order": 900
-     }
-    ]
-   },
-   "children": []
+   "contributes": {},
+   "children": [
+    "WorkspaceFilesService",
+    "PreviewModule"
+   ],
+   "exports": [
+    "WorkspaceFiles",
+    "PreviewTokens"
+   ]
   }
  }
 }
