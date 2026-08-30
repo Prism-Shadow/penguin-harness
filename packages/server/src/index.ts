@@ -26,8 +26,7 @@ import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-pas
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { ExtensionHost } from "./extension/host.js";
 import { loadExtensions } from "./extension/loader.js";
-import { terminalUpgradeRoute } from "./terminal/ws.js";
-import { machineUpgradeRoute } from "./machines/proxy-ws.js";
+import { platformUpgradeRoute, terminalUpgradeRoute } from "./terminal/ws.js";
 import { attachUpgradeRoutes } from "./http-upgrade.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
@@ -357,13 +356,18 @@ class PenguinServer {
   }
 
   /**
-   * The upgrade routes, in order, built fresh per listener: each holds a WebSocketServer or
-   * a connection of its own, and two listeners must not share one. A path no route claims is
-   * refused by the router rather than left hanging.
+   * The upgrade routes, in order, built fresh per listener: the terminal transport holds a
+   * WebSocketServer of its own, and two listeners must not share one.
+   *
+   * Two, and only ever two. The terminal stream is the one socket the runtime serves itself
+   * (a WebSocket cannot cross the seam as a Response, so the handshake reaches the App
+   * through in-process members); everything else is offered to the platform, which claims
+   * what it owns. Adding a third route here for a new kind of socket would be the same
+   * mistake as adding a route per business API — the seam exists so that stays a push.
    */
   private upgradeRoutes() {
     const deps = this.terminalWebSocketDeps();
-    return [terminalUpgradeRoute(deps), machineUpgradeRoute(deps)];
+    return [terminalUpgradeRoute(deps), platformUpgradeRoute(deps)];
   }
 
   /**

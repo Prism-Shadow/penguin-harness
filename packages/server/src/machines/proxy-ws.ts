@@ -2,16 +2,21 @@
  * The same-origin proxy's other half: `/server/<machineId>/api/…` upgrades.
  *
  * machines/proxy.ts forwards requests, and a request is something a seam handler can return
- * whole. An upgrade is not: the socket outlives the handshake, so it is the RUNTIME that
- * owns it — the same reason the terminal's own transport lives in terminal/ws.ts rather than
- * in the platform. Without this a terminal on a machine had nowhere to connect: the REST
- * calls that create it proxied fine, and the stream that makes it a terminal was dropped by
- * an upgrade handler that only recognised local paths.
+ * whole. An upgrade is not — the socket outlives the handshake — so it arrives on the socket
+ * seam instead (hmr/platform.ts's `upgrade`), which is the same bargain the HTTP seam makes:
+ * the runtime authenticates and offers, the PLATFORM decides. This file is the deciding, and
+ * it is platform code for the ordinary reason — which machine, over which forward, under
+ * whose session, with which headers crossing, is how a capability behaves. Runtime code here
+ * would make every later change to any of it a reinstall of every installation.
+ *
+ * Without it a terminal on a machine had nowhere to connect: the REST calls that create one
+ * proxied fine, and the stream that makes it a terminal was dropped by an upgrade handler
+ * that only recognised local paths.
  *
  * ONE IDENTITY, exactly as the request proxy states it: the caller is this server's admin,
  * this server's admin is that machine's admin, and the session presented over there is one
- * this server minted over ssh. So the browser's credential is checked HERE — its cookie and
- * its Origin, by the very functions the local terminal upgrade uses — and neither travels.
+ * this server minted over ssh. The browser's own credential was checked by the runtime before
+ * this was ever called, and neither it nor its Origin travels.
  *
  * Once the far side answers 101 this is a pipe. The protocol over it (terminal frames,
  * backpressure, restore) is the machine's business and never this server's; what flows
@@ -20,12 +25,8 @@
 import http from "node:http";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { SESSION_COOKIE } from "../auth/middleware.js";
-import { isAllowedOrigin, readCookie, refuse } from "../terminal/ws.js";
 import { parseProxyPath } from "./proxy.js";
-import type { AuthService } from "../auth/service.js";
-import type { HmrHost } from "../hmr/host.js";
-import type { UpgradeRoute } from "../http-upgrade.js";
+import { refuseUpgrade } from "../http-upgrade.js";
 
 /**
  * Headers that must not cross. Hop-by-hop ones are rewritten below for the upstream
@@ -35,51 +36,43 @@ import type { UpgradeRoute } from "../http-upgrade.js";
  */
 const DROP = new Set(["host", "cookie", "origin", "connection", "upgrade"]);
 
-export interface MachineWebSocketProxyDeps {
-  hmr: HmrHost;
-  authService: AuthService;
-  log: (line: string) => void;
+/** Just enough of the machines service to point a socket at a machine. */
+export interface MachineForwards {
+  proxyTarget(machineId: string): Promise<{ port: number; cookie: string } | null>;
 }
 
 /**
- * The proxy's upgrade route (http-upgrade.ts): false for a path that is not addressed to a
- * machine, true once this has taken the socket — refusals included.
+ * The socket seam's machines route: false for a handshake not addressed to a machine, true
+ * once this has taken the socket — refusals included, since answering 503 is handling it.
  */
-export function machineUpgradeRoute(deps: MachineWebSocketProxyDeps): UpgradeRoute {
-  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const path = parseProxyPath(url.pathname);
-    if (path === null) return false;
-
-    if (!isAllowedOrigin(req)) {
-      refuse(socket, 403, "Forbidden");
-      return true;
-    }
-    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    if (token === null || deps.authService.authenticateWithMeta(token) === null) {
-      refuse(socket, 401, "Unauthorized");
-      return true;
-    }
-
-    void deps.hmr
-      .ensure()
-      .then(async (platform) => {
-        const machines = platform.api.business()?.machines;
-        const target = machines ? await machines.proxyTarget(path.machineId) : null;
-        if (target === null || target === undefined) {
-          // The same answer the request proxy gives, in the only shape a handshake has.
-          return refuse(socket, 503, "Not Connected");
-        }
-        tunnel(req, socket, head, `${path.remotePath}${url.search}`, target, deps.log);
-      })
-      .catch((err: unknown) => {
-        deps.log(
-          `[machines] upgrade to ${path.machineId} failed: ${err instanceof Error ? err.message : err}`,
-        );
-        refuse(socket, 502, "Bad Gateway");
-      });
+export async function proxyUpgradeToMachine(
+  req: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+  url: URL,
+  machines: MachineForwards | null,
+): Promise<boolean> {
+  const path = parseProxyPath(url.pathname);
+  if (path === null) return false;
+  if (machines === null) {
+    // A bare kernel has no machines to reach; the path is still ours to answer for.
+    refuseUpgrade(socket, 503, "Not Connected");
     return true;
-  };
+  }
+  let target: { port: number; cookie: string } | null;
+  try {
+    target = await machines.proxyTarget(path.machineId);
+  } catch {
+    refuseUpgrade(socket, 502, "Bad Gateway");
+    return true;
+  }
+  if (target === null) {
+    // The same answer the request proxy gives, in the only shape a handshake has.
+    refuseUpgrade(socket, 503, "Not Connected");
+    return true;
+  }
+  tunnel(req, socket, head, `${path.remotePath}${url.search}`, target);
+  return true;
 }
 
 /** Hands the client's handshake to the machine and, on 101, joins the two sockets. */
@@ -89,7 +82,6 @@ function tunnel(
   head: Buffer,
   path: string,
   target: { port: number; cookie: string },
-  log: (line: string) => void,
 ): void {
   const headers: Record<string, string | string[]> = {};
   for (const [name, value] of Object.entries(req.headers)) {
@@ -138,14 +130,11 @@ function tunnel(
   // Pass its status through rather than inventing one — 404 for a terminal that is not
   // there reads very differently from 401.
   upstream.on("response", (res) => {
-    refuse(socket, res.statusCode ?? 502, res.statusMessage ?? "Bad Gateway");
+    refuseUpgrade(socket, res.statusCode ?? 502, res.statusMessage ?? "Bad Gateway");
     res.resume();
   });
 
-  upstream.on("error", (err) => {
-    log(`[machines] forward did not answer an upgrade: ${err.message}`);
-    refuse(socket, 502, "Bad Gateway");
-  });
+  upstream.on("error", () => refuseUpgrade(socket, 502, "Bad Gateway"));
 
   upstream.end();
 }

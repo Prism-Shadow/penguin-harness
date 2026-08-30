@@ -93,6 +93,49 @@ export function terminalUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute 
 }
 
 /**
+ * The socket seam: an authenticated handshake this runtime does not own is offered to the
+ * booted platform, which claims it or declines (hmr/platform.ts's `upgrade`).
+ *
+ * The upgrade counterpart of the HTTP seam, and there for the same reason: WHICH sockets go
+ * where, and what is done with one, is policy — a pushed platform decides it, and no route of
+ * its own is added here. What stays is what only the runtime can do. The handshake is
+ * authenticated FIRST and here: a WebSocket handshake bypasses CORS entirely while the
+ * session cookie rides along, so a socket must be known to be this user's before it is handed
+ * anywhere at all.
+ *
+ * A platform too old to have the member declines by not having it — the socket falls through
+ * to the router's 404, which is the honest answer for a build that cannot serve it.
+ */
+export function platformUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute {
+  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (!isAllowedOrigin(req)) {
+      refuse(socket, 403, "Forbidden");
+      return true;
+    }
+    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
+    if (token === null || deps.authService.authenticateWithMeta(token) === null) {
+      refuse(socket, 401, "Unauthorized");
+      return true;
+    }
+    void deps.hmr
+      .ensure()
+      .then(async (platform) => {
+        // Declined, or a platform without the member: nobody claimed the socket, and a
+        // socket nobody claimed must be closed rather than left to hang.
+        if ((await platform.api.upgrade?.(req, socket, head, url)) !== true) {
+          refuse(socket, 404, "Not Found");
+        }
+      })
+      .catch((err: unknown) => {
+        deps.log(`[upgrade] platform seam failed: ${err instanceof Error ? err.message : err}`);
+        refuse(socket, 500, "Internal Server Error");
+      });
+    return true;
+  };
+}
+
+/**
  * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
  * still rides along. Only a genuinely same-origin page may connect: host AND port must match
  * the Host the browser targeted. Cookies are port-agnostic, so anything looser (hostname-only,
