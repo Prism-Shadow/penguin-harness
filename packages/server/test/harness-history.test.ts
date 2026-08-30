@@ -75,6 +75,39 @@ describe("harness history store", () => {
     expect(await store.table("../../harness")).toBeNull();
   });
 
+  it("never overwrites another platform's line: the boot before a push sees the previous commit", async () => {
+    const root = await makeTempRoot();
+    // The previous platform recorded version 1 with ITS table …
+    await commit(root, 1);
+    await fs.mkdir(path.join(root, "harness-history"), { recursive: true });
+    const theirs = {
+      source: null,
+      pushedAt: "2026-08-29T00:00:00.000Z",
+      bundles: {
+        platform: "store/platform/p1.mjs",
+        cli: "store/cli/c1.mjs",
+        web: "store/web/w1.webz",
+      },
+      ifaces: { hash: "e".repeat(64), nodes: 1, interfaces: 1, types: 0 },
+    };
+    await fs.writeFile(
+      path.join(root, "harness-history", "history.json"),
+      JSON.stringify([theirs]),
+    );
+    // … and this platform boots while harness.json still says version 1.
+    const store = storeAt(root);
+    await store.record();
+    expect(await store.entries()).toEqual([theirs]);
+    // Once the runtime commits version 2, the record is this platform's own line.
+    await commit(root, 2);
+    await store.record();
+    const entries = await store.entries();
+    expect(entries.map((e) => [e.bundles.platform, e.ifaces?.hash === OWN_HASH])).toEqual([
+      ["store/platform/p2.mjs", true],
+      ["store/platform/p1.mjs", false],
+    ]);
+  });
+
   it("keeps HISTORY_KEEP entries and degrades a corrupt file to what still parses", async () => {
     const root = await makeTempRoot();
     const store = storeAt(root);
