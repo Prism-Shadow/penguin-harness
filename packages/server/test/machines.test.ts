@@ -23,6 +23,7 @@ import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
 import {
   cmdQuote,
   runInstallScriptCommand,
+  startServerCommand,
   unpackStoreCommand,
   scpArgs,
   shQuote,
@@ -512,6 +513,16 @@ describe("reading what `penguin server status` answered", () => {
     // would turn every such machine into a silently wrong one.
     const said = "error: unknown command 'status'";
     expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
+  });
+});
+
+describe("startServerCommand", () => {
+  it("survives nohup: the data root rides on `env`, never as a bare assignment nohup would run", () => {
+    const command = startServerCommand(7370, DEV);
+    expect(command).toContain('nohup env PENGUIN_HOME="$HOME/.penguin-dev/data" ');
+    expect(command).not.toMatch(/nohup PENGUIN_HOME=/);
+    expect(command).toContain("server --host 127.0.0.1 --port 7370");
+    expect(command).toContain('"$HOME/.penguin-dev/data/server.log"');
   });
 });
 
