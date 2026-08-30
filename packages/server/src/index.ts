@@ -267,6 +267,16 @@ class PenguinServer {
     console.log(`penguin-server started: http://${this.appHost()}:${port}`);
     console.log(`Data root: ${this.config.root}`);
     console.log(`SQLite: ${this.config.dbPath}`);
+    // Named for the same reason the data root is: it is the one path the static tail
+    // serves from when no pushed web version is restored, and the only trace of a wrong
+    // PENGUIN_WEB_DIST or a missing build is otherwise a 404 on every page.
+    console.log(`Web dist: ${this.config.webDist}`);
+    if (!fs.existsSync(path.join(this.config.webDist, "index.html"))) {
+      console.warn(
+        `[server] Web dist has no index.html; the Web App answers 404 unless a pushed web ` +
+          `version is restored. Build packages/web or point PENGUIN_WEB_DIST at a build.`,
+      );
+    }
     if (this.config.desktopToken !== null) console.log("Desktop mode: enabled");
     // PORT=0 asked for an ephemeral port: record the real one so everything derived from
     // the server's own port is correct — Workspace preview URLs above all, which are built
