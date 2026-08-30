@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `skills`
+- **PR:** [#548](https://github.com/Prism-Shadow/penguin-harness/pull/548)
 
 [中文版](2026-08-30-pushed-skills-root.zh.md)
 
