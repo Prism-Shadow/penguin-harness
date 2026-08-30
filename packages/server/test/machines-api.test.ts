@@ -829,6 +829,35 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Starting its server");
     });
 
+    it("falls back to the profile's default port when the remembered one does not take", async () => {
+      // A row written before profiles reached machines remembers the port the RELEASE
+      // server holds there; a dev instance starting on it collides. The default is the one
+      // number nothing else is meant to hold, so it gets one try — and is what the row
+      // remembers afterwards.
+      const starts: number[] = [];
+      let up = false;
+      await boot({
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7364, pid: 4242 }, machineId: null }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async (_t, port) => {
+          starts.push(port);
+          if (port === 7376) return { ok: false, detail: "EADDRINUSE" };
+          up = true;
+          return { ok: true };
+        },
+      });
+      installed("9.9.9");
+      machinesRepo.patch("ssh:nas", { remotePort: 7376 });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(starts).toEqual([7376, 7364]);
+      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7364);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("did not take; trying 7364");
+    });
+
     it("reconnecting over a live connection to an answering server starts nothing new", async () => {
       // hold() is idempotent in the transport: it promotes the session in place. What must
       // not happen is a start — the server is up — and the record must name the held session.
