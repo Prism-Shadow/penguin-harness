@@ -27,6 +27,7 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { ExtensionHost } from "./extension/host.js";
 import { loadExtensions } from "./extension/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { attachMachineWebSocketProxy } from "./machines/proxy-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -212,6 +213,10 @@ class PenguinServer {
       (info) => this.onListening(info.port),
     );
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    attachMachineWebSocketProxy(
+      this.httpServer as unknown as HttpServer,
+      this.terminalWebSocketDeps(),
+    );
   }
 
   /**
@@ -339,9 +344,14 @@ class PenguinServer {
     // handler — it has to be bound on each Node listener, this one included, or the
     // terminal only works on whichever address the browser happened to resolve.
     attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    attachMachineWebSocketProxy(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
   }
 
-  /** Terminal WebSocket wiring, shared by every listener this process opens. */
+  /**
+   * WebSocket wiring, shared by every listener this process opens and by both upgrade
+   * handlers: the local terminal transport and the proxy that carries one to a machine.
+   * They want the same three things, and must agree about the credential.
+   */
   private terminalWebSocketDeps() {
     return {
       hmr: this.deps.hmr,

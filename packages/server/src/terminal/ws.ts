@@ -88,7 +88,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
  * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
  * browser's own Host survives the proxy and this comparison holds in development too.
  */
-function isAllowedOrigin(req: IncomingMessage): boolean {
+export function isAllowedOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
   let parsed: URL;
@@ -101,7 +101,7 @@ function isAllowedOrigin(req: IncomingMessage): boolean {
   return parsed.host === (req.headers.host ?? "");
 }
 
-function readCookie(header: string | undefined, name: string): string | null {
+export function readCookie(header: string | undefined, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
@@ -118,7 +118,7 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null;
 }
 
-function refuse(socket: Duplex, status: number, text: string): void {
+export function refuse(socket: Duplex, status: number, text: string): void {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
 }

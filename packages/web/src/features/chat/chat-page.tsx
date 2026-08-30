@@ -405,8 +405,13 @@ export function ChatPage() {
   // which stays live everywhere.
   useEffect(() => {
     if (draft) return;
-    setDockCwd(selected?.workspace ?? null);
-  }, [draft, selected?.workspace]);
+    // With the machine that Workspace is on: the path only means anything on its own
+    // filesystem, and a shell for this conversation belongs beside the agent running it.
+    setDockCwd(
+      selected?.workspace ?? null,
+      selected === null ? null : machineForSession(selected.sessionId),
+    );
+  }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected

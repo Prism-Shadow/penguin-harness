@@ -17,6 +17,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { useTheme } from "../../state/theme";
+import { terminalUrl } from "../../lib/terminal-machines";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -112,8 +113,17 @@ export function terminalTheme(dark: boolean): ITheme {
   return dark ? DARK_THEME : LIGHT_THEME;
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
+/**
+ * Every terminal round-trip goes through here, and so is addressed to the machine that holds
+ * the terminal it names (lib/terminal-machines.ts). `server` is for the one call with no id
+ * to route by: creating a terminal names its machine before the terminal exists.
+ */
+async function request(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<Response> {
+  return fetch(terminalUrl(path, server), {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -148,15 +158,23 @@ function httpError(
 }
 
 /** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await request(path, init);
+export async function fetchJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T> {
+  const res = await request(path, init, server);
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
 /** Existence probe: 404 means "not there" and answers null; every other failure throws. */
-export async function probeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await request(path, init);
+export async function probeJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T | null> {
+  const res = await request(path, init, server);
   if (res.status === 404) return null;
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
@@ -164,7 +182,11 @@ export async function probeJson<T>(path: string, init?: RequestInit): Promise<T 
 
 function streamUrl(id: string, cols: number, rows: number): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/terminals/${id}/stream?cols=${cols}&rows=${rows}`;
+  // Through the same-origin proxy when the pty is on a machine. The prefix has to be IN the
+  // URL: an upgrade carries no body and no routing hook, so the path is the whole address.
+  // The runtime tunnels it from there (machines/proxy-ws.ts).
+  const path = terminalUrl(`/api/terminals/${id}/stream`);
+  return `${scheme}//${location.host}${path}?cols=${cols}&rows=${rows}`;
 }
 
 export interface TerminalViewProps {
