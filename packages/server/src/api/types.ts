@@ -28,6 +28,7 @@ import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/pe
 import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type { PackageManifest as PackageManifestType } from "../mechanisms/packages.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -219,6 +220,11 @@ export interface ServerSettings {
    * image and the JSON framing), which is why raising it needs no separate setting.
    */
   attachmentTotalMb: number;
+  /**
+   * Whether a GitHub token is stored for publishing Agent packages as gists. The token
+   * itself never leaves the server: this flag is all any client is told.
+   */
+  githubTokenSet: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -229,6 +235,8 @@ export interface ServerSettingsResponse {
 export interface ServerSettingsUpdateRequest {
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
+  /** GitHub token with the `gist` scope, used to publish Agent packages; "" clears it. */
+  githubToken?: string;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -3245,6 +3253,12 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
+  AgentPackage,
+  PackageFile,
+  PackageManifest,
+  PackagePreview,
+} from "../mechanisms/packages.js";
+export type {
   WorkflowInfo,
   WorkflowVersion,
   WorkflowRequest,
@@ -3561,6 +3575,28 @@ export interface ContributionsResponse {
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
 }
+
+/** GET /api/projects/:p/agents/:a/package — what publishing would send. */
+export interface AgentPackageResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  /** Whether the server has a GitHub token; false = the publish button explains why not. */
+  canPublish: boolean;
+}
+
+/** POST …/package/publish — the gist it landed in. */
+export interface AgentPackagePublishResponse {
+  gistId: string;
+  url: string;
+  files: number;
+  bytes: number;
+}
+
+/** POST /api/agent-packages/preview — a gist read and validated, nothing written. */
+export interface AgentPackagePreviewResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  source: string;
 
 /**
  * One field of a plugin's declared configuration (`package.json#penguin.configuration
