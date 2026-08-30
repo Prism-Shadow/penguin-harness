@@ -214,6 +214,13 @@ export const en: Strings = {
     typesSummary: (added: number, removed: number, changed: number) =>
       `Data types: ${added} added, ${removed} removed, ${changed} changed`,
     change: { added: "added", removed: "removed", changed: "changed" },
+    rollback: "Roll back to this version",
+    rollbackConfirm: "Push this version back and swap now?",
+    rollbackYes: "Roll back",
+    rollbackPushing: "Pushing… the server swaps when it lands.",
+    rollbackDone: "Rolled back — this version is current.",
+    rollbackTimeout: "The server did not report the swap in time; check the history.",
+    notKept: "Artifacts of this version were not kept; it cannot be pushed back.",
     requires: "requires",
     provides: "provides",
     contributes: "contributes",

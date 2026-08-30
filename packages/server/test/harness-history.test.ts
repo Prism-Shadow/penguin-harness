@@ -9,10 +9,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import table from "../src/ifaces.json" with { type: "json" };
-import { HarnessHistoryStore, HISTORY_KEEP } from "../src/services/harness-history.js";
+import {
+  HarnessHistoryStore,
+  HISTORY_KEEP,
+  KEEP_VERSIONS,
+} from "../src/services/harness-history.js";
+import zlib from "node:zlib";
 import { diffIfaces } from "../src/hmr/ifaces-diff.js";
 import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
-import { apiClient, createTestApp, loginAdmin, makeTempRoot, type TestApp } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+  type TestApp,
+} from "./helpers.js";
 
 const OWN_HASH = (table as { hash: string }).hash;
 
@@ -23,22 +35,47 @@ async function commit(
   source: { repo: string; revision: string } | null = null,
 ) {
   await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+  // The store's files behind the pointers, so the platform has something to keep.
+  for (const [rel, body] of [
+    [`store/platform/p${n}.mjs`, `export const platform = ${n};`],
+    [`store/cli/c${n}.mjs`, `export const cli = ${n};`],
+    [
+      `store/web/w${n}.webz`,
+      zlib.gzipSync(
+        JSON.stringify({ files: { "index.html": Buffer.from(`<b>${n}</b>`).toString("base64") } }),
+      ),
+    ],
+    [`assets/a${n}/node_modules/node-pty/spawn-helper`, "#!/bin/sh"],
+  ] as Array<[string, string | Buffer]>) {
+    await fs.mkdir(path.dirname(path.join(root, "hmr", rel)), { recursive: true });
+    await fs.writeFile(path.join(root, "hmr", rel), body);
+  }
   await fs.writeFile(
     path.join(root, "hmr", "harness.json"),
     JSON.stringify({
       platform: { bundle: `store/platform/p${n}.mjs` },
       cli: { bundle: `store/cli/c${n}.mjs` },
       web: { manifest: `store/web/w${n}.webz` },
+      assets: { dir: `assets/a${n}` },
       ...(source ? { source } : {}),
       pushedAt: new Date(Date.UTC(2026, 7, 30, 0, 0, n)).toISOString(),
     }),
   );
 }
 
+const posted: Array<{ url: string; init: RequestInit }> = [];
 const storeAt = (root: string) =>
   wire(HarnessHistoryStore, {
     paths: { root },
     clock: { now: () => new Date("2026-08-30T12:00:00Z") },
+    config: { port: 7364 },
+    log: { line: () => {} },
+    http: {
+      fetch: async (url: string, init?: RequestInit) => {
+        posted.push({ url, init: init ?? {} });
+        return new Response('{"status":"ok"}', { status: 200 });
+      },
+    },
   });
 
 describe("harness history store", () => {
@@ -97,7 +134,7 @@ describe("harness history store", () => {
     // … and this platform boots while harness.json still says version 1.
     const store = storeAt(root);
     await store.record();
-    expect(await store.entries()).toEqual([theirs]);
+    expect(await store.entries()).toEqual([{ id: "p1-c1-w1", rollbackable: false, ...theirs }]);
     // Once the runtime commits version 2, the record is this platform's own line.
     await commit(root, 2);
     await store.record();
@@ -106,6 +143,64 @@ describe("harness history store", () => {
       ["store/platform/p2.mjs", true],
       ["store/platform/p1.mjs", false],
     ]);
+  });
+
+  it("keeps a committed version's artifacts and pushes them back through the runtime's own door", async () => {
+    const root = await makeTempRoot();
+    await fs.writeFile(path.join(root, "api-token"), "tok-1");
+    const store = storeAt(root);
+    await commit(root, 1, { repo: "r", revision: "v1" });
+    await store.record();
+    await commit(root, 2);
+    await store.record();
+    const entries = (await store.list()).entries;
+    expect(entries.map((e) => [e.id, e.rollbackable])).toEqual([
+      ["p2-c2-w2", true],
+      ["p1-c1-w1", true],
+    ]);
+    // The copy is whole: bundles, the web archive, the assets with their exec bits noted.
+    const kept = path.join(root, "harness-history", "versions", "p1-c1-w1");
+    expect(JSON.parse(await fs.readFile(path.join(kept, "version.json"), "utf8"))).toEqual({
+      id: "p1-c1-w1",
+      source: { repo: "r", revision: "v1" },
+      assets: { exec: ["node_modules/node-pty/spawn-helper"] },
+    });
+    // Rolling back posts exactly what a deploy would, with the local api token.
+    posted.length = 0;
+    expect(await store.rollback("p1-c1-w1")).toBe(true);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.url).toBe("http://127.0.0.1:7364/api/hmr/upgrade");
+    expect((posted[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer tok-1");
+    const payload = JSON.parse(
+      zlib.gunzipSync(posted[0]!.init.body as Buffer).toString("utf8"),
+    ) as {
+      platform: string;
+      cli: string;
+      web: { files: Record<string, string> };
+      assets: { files: Record<string, string>; exec: string[] };
+      source: { revision: string };
+    };
+    expect(payload.platform).toBe("export const platform = 1;");
+    expect(payload.cli).toBe("export const cli = 1;");
+    expect(Buffer.from(payload.web.files["index.html"]!, "base64").toString()).toBe("<b>1</b>");
+    expect(payload.assets.exec).toEqual(["node_modules/node-pty/spawn-helper"]);
+    expect(payload.source.revision).toBe("v1");
+    // Nothing kept under that id: not a rollback.
+    expect(await store.rollback("nope")).toBe(false);
+    expect(await store.rollback("../etc")).toBe(false);
+  });
+
+  it("keeps the newest KEEP_VERSIONS versions' artifacts", async () => {
+    const root = await makeTempRoot();
+    const store = storeAt(root);
+    for (let i = 0; i < KEEP_VERSIONS + 2; i++) {
+      await commit(root, i);
+      await store.record();
+    }
+    const dirs = (await fs.readdir(path.join(root, "harness-history", "versions"))).sort();
+    expect(dirs).toHaveLength(KEEP_VERSIONS);
+    expect(dirs).not.toContain("p0-c0-w0");
+    expect(dirs).toContain(`p${KEEP_VERSIONS + 1}-c${KEEP_VERSIONS + 1}-w${KEEP_VERSIONS + 1}`);
   });
 
   it("keeps HISTORY_KEEP entries and degrades a corrupt file to what still parses", async () => {
