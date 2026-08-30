@@ -53,7 +53,7 @@ import { workspaceMachines } from "../lib/workspace-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../lib/machine-cache";
 import { ensureMachineConnected, onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
-import { setMachineConnector } from "../api/client";
+import { ApiError, setMachineConnector } from "../api/client";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -322,6 +322,7 @@ export function createSessionsStore() {
         // not whether what is already shown is still so — and the chat page reads this flag
         // to decide whether to draw a skeleton over the open conversation.
         if (get().sessions.length === 0) set({ loading: true });
+        let applied = false;
         // This server first, then every machine of the Project. Order matters only as a
         // tie-break — mergeSessionPages sorts by time and keeps source order for equal
         // stamps, so the list stays stable between refreshes instead of shuffling.
@@ -368,17 +369,33 @@ export function createSessionsStore() {
                       };
                     }),
                   );
-                  return { agentId, source, pages };
-                } catch {
-                  // One (Agent, machine) pair failing must not empty the list: an Agent is
-                  // per-server, so a machine simply not having this one answers 404 and is
-                  // the ORDINARY case, not an error worth showing.
-                  return { agentId, source, pages: [] };
+                  return { agentId, source, pages, answered: true };
+                } catch (err) {
+                  // Two very different things arrive here, and treating them alike is what
+                  // emptied the sidebar. An Agent is per-server, so a server simply not
+                  // having this one answers 404: an ANSWER, and the ordinary case. Anything
+                  // else — this server mid-swap, a forward up but not yet serving, the
+                  // network — is a failure to answer at all, and an empty result standing in
+                  // for it replaces rows that are perfectly alive.
+                  const absent = err instanceof ApiError && err.status === 404;
+                  return { agentId, source, pages: [], answered: absent };
                 }
               }),
             ),
           );
           if (g !== gen) return;
+          // This server did not answer. It holds the Sessions every other source is merged
+          // AROUND, so there is no list to build — and building one anyway would replace
+          // everything on screen with a handful of remote rows, or with nothing at all. A
+          // reload is a refresh, and a refresh that cannot read anything changes nothing:
+          // the rows stand, `loading` is left as it was, and the next one tries again. This
+          // is the ordinary state during a hot swap and for the moment after a reconnect.
+          if (results.some((r) => r.source === null && !r.answered)) return;
+          // Machines that did not answer are treated exactly like machines that were never
+          // asked: their rows come from the cache below, and their cache is left alone.
+          const silent = new Set(
+            results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
+          );
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
           // What each machine answered, kept so it can be shown after the next restart while
@@ -444,23 +461,28 @@ export function createSessionsStore() {
             }
             nextWorkspaceCounts.set(agentId, out);
           }
-          // Every machine that ANSWERED replaces what it is remembered as holding — including
+          // Only a machine that ANSWERED replaces what it is remembered as holding — including
           // with nothing, which is how a Session deleted over there stops coming back from
-          // the cache. Machines that did not answer are left alone: their entry is the only
-          // record of their rows until they do.
+          // the cache. `machineIds` is the set that answered the reachability PROBE, which is
+          // a different question and a moment earlier: a machine that passed it and then
+          // failed this fetch would otherwise erase its own cache, leaving the fallback with
+          // nothing to fall back to. That is why an emptied list did not come back.
           for (const machineId of machineIds) {
+            if (silent.has(machineId)) continue;
             rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
           }
-          // And the ones that did not answer contribute what they last held. `seen` still
-          // guards, so a live answer always wins over a remembered one. Their owner entries
-          // are recorded the same way, so opening such a Session addresses the machine that
-          // has it rather than this server — which would answer 404 about someone else's.
+          // And every machine this list could not read contributes what it last held — the
+          // ones known to be out of reach, and the ones that went quiet during the fetch.
+          // `seen` still guards, so a live answer always wins over a remembered one. Their
+          // owner entries are recorded the same way, so opening such a Session addresses the
+          // machine that has it rather than this server — which would answer 404 about
+          // someone else's.
           //
           // Folder badges are NOT topped up from here: counts come from the servers that
           // answered, so an out-of-reach machine's rows show without being counted. Better
           // than the alternative — a count is a claim about what a server holds now, and the
           // cache cannot make that claim.
-          for (const machineId of offlineMachineIds) {
+          for (const machineId of new Set([...offlineMachineIds, ...silent])) {
             for (const s of cachedMachineSessions(projectId, machineId)) {
               if (seen.has(s.sessionId)) continue;
               seen.add(s.sessionId);
@@ -480,8 +502,13 @@ export function createSessionsStore() {
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
           });
+          applied = true;
         } finally {
-          if (g === gen) set({ loading: false });
+          // Only a reload that produced a list may report one. Abandoning above leaves the
+          // flag exactly as it was — false with rows on screen, which is still true of them;
+          // true with none, because none were fetched and saying otherwise is what paints an
+          // empty state over a list that was merely unreadable this round.
+          if (g === gen && applied) set({ loading: false });
         }
       },
 
