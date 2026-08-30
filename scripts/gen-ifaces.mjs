@@ -946,6 +946,19 @@ for (const project of projects) {
         m.provides[field] = ifaceKeyOfType(member.type, file);
       }
     }
+    // `exports: [Users, …]`: the module forwards a child's provision under that interface.
+    for (const exp of meta.exports ?? []) {
+      const isym = exp?.$id;
+      const idecl = isym?.declarations?.find((d) => isInterfaceClassDecl(d));
+      if (!idecl) {
+        errors.push(
+          `${file}: exports: an entry is not an interface class (extends Interface<…>())`,
+        );
+        continue;
+      }
+      m.provides[isym.getName()] = keyOf(isym, idecl);
+      (m.exports ??= []).push(isym.getName());
+    }
     for (const child of meta.children ?? []) {
       const childName = moduleNameBySymbol.get(child?.$id);
       if (childName === undefined)
@@ -954,6 +967,40 @@ for (const project of projects) {
     }
     if (manifests[m.name]) errors.push(`${file}: module '${m.name}' is defined twice`);
     manifests[m.name] = m;
+  }
+  // Wire every requirement that names no module to the module that will provide it —
+  // the one visible provider declaring that very interface (siblings, or an ancestor's
+  // siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
+  // node depends on, not only which interface, and the booter follows the same choice.
+  {
+    const childOf = new Map();
+    for (const m of Object.values(manifests))
+      for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
+    const visibleOf = (name) => {
+      const out = new Set();
+      const ancestors = new Set();
+      let cur = name;
+      for (;;) {
+        const parent = childOf.get(cur);
+        if (parent === undefined) break;
+        ancestors.add(parent);
+        for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
+        cur = parent;
+      }
+      for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
+      return out;
+    };
+    for (const m of Object.values(manifests)) {
+      if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
+      const visible = visibleOf(m.name);
+      for (const [alias, req] of Object.entries(m.requires)) {
+        if (req.from !== undefined) continue;
+        const declaring = [...visible].filter((v) =>
+          Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
+        );
+        if (declaring.length === 1) req.from = declaring[0];
+      }
+    }
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker

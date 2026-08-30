@@ -31,6 +31,8 @@ export interface ModuleMeta {
   >;
   readonly context?: ContextDecl;
   readonly children?: ReadonlyArray<ModuleClass>;
+  /** Interfaces this module forwards from its children — what the subtree offers outside. */
+  readonly exports?: ReadonlyArray<IfaceClass>;
 }
 
 /** What a @Component declares: a module's meta minus children — a component exports itself. */
