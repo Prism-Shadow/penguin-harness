@@ -9,6 +9,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type {
   HarnessHistory,
   HarnessHistoryEntry,
@@ -19,6 +20,9 @@ import table from "../ifaces.json" with { type: "json" };
 import { readHarnessInfo } from "../hmr/manifest.js";
 import { summarizeTable } from "../hmr/ifaces-diff.js";
 import type { Clock, Paths } from "../hmr/capabilities.js";
+
+/** How long after boot the runtime's commit of a pushed version is expected to have landed. */
+const COMMIT_SETTLE_MS = 1500;
 
 /** How many versions the history remembers; the newest are kept. */
 export const HISTORY_KEEP = 100;
@@ -82,15 +86,33 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     return path.join(this.paths.root, "harness-history");
   }
 
-  /** Records this boot: the runtime's current commit, with this platform's own table. */
-  async setup(): Promise<void> {
+  /**
+   * Records this boot: the runtime's current commit, with this platform's own table. On a
+   * push the runtime commits AFTER the boot succeeds, so at setup harness.json still names
+   * the previous version; the record is made again a moment later, and on every read —
+   * each time an upsert that never touches another platform's line (see record).
+   */
+  async setup({ effect }: ClassCtx): Promise<void> {
+    await this.recordQuietly();
+    const later = setTimeout(() => void this.recordQuietly(), COMMIT_SETTLE_MS);
+    later.unref();
+    effect(() => clearTimeout(later));
+  }
+
+  private async recordQuietly(): Promise<void> {
     try {
       await this.record();
     } catch {
-      // A history that cannot be written is not a reason not to boot.
+      // A history that cannot be written is not a reason not to boot or to answer.
     }
   }
 
+  /**
+   * Upserts the line for the runtime's current commit. A line already there for the same
+   * bundles is refreshed only when it carries THIS platform's table; one carrying another
+   * table belongs to the platform that recorded it (the boot before a push sees the
+   * previous commit) and is left alone.
+   */
   async record(): Promise<void> {
     const current = await readHarnessInfo(this.paths.root);
     const own = table as { hash: string; ifaces: object; types: object; modules: object };
@@ -110,6 +132,7 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     };
     const entries = await this.entries();
     const at = entries.findIndex((e) => sameVersion(e, entry));
+    if (at !== -1 && entries[at]!.ifaces?.hash !== summary.hash) return;
     const next = at === -1 ? [entry, ...entries] : entries.map((e, i) => (i === at ? entry : e));
     await writeAtomic(
       path.join(this.dir, "history.json"),
@@ -130,6 +153,7 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
   }
 
   async list(): Promise<HarnessHistory> {
+    await this.recordQuietly();
     const [current, entries] = await Promise.all([
       readHarnessInfo(this.paths.root),
       this.entries(),
