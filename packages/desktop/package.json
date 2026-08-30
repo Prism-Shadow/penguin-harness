@@ -10,10 +10,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "start": "node scripts/preflight.mjs && electron .",
-    "pack": "electron-builder",
-    "pack:linux": "electron-builder --linux",
-    "pack:mac": "electron-builder --mac",
-    "pack:win": "electron-builder --win"
+    "pack": "node scripts/preflight.mjs && electron-builder",
+    "pack:linux": "node scripts/preflight.mjs && electron-builder --linux",
+    "pack:mac": "node scripts/preflight.mjs && electron-builder --mac",
+    "pack:win": "node scripts/preflight.mjs && electron-builder --win"
   },
   "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",
