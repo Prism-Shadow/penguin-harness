@@ -203,6 +203,11 @@ export const en: Strings = {
     noHistory: "No versions recorded yet.",
     current: "current",
     restore: "Restore",
+    remove: "Remove",
+    removeConfirm: "Delete this workflow and all its recorded versions?",
+    removeYes: "Remove",
+    removing: "Removing…",
+    removeNo: "Keep",
     fileCount: (n: number) => `${n} files`,
   },
   harnessHistory: {

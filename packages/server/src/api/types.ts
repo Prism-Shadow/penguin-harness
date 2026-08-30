@@ -2293,7 +2293,9 @@ export type ScheduleServerEvent =
       sessionId: string;
     }
   /** A workflow of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
-  | { type: "workflow_updated"; projectId: string; agentId: string; workflow: WorkflowInfo };
+  | { type: "workflow_updated"; projectId: string; agentId: string; workflow: WorkflowInfo }
+  /** A workflow's folder is gone — removed from the Web App or deleted on disk. */
+  | { type: "workflow_removed"; projectId: string; agentId: string; workflowId: string };
 
 // ---------------------------------------------------------------------------
 // Trace browsing and performance analysis

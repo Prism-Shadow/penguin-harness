@@ -14,11 +14,11 @@ The root module `Workflow` requires `WorkflowHost` (published by the server as m
 
 ## Reload and rollback
 
-The server watches the Agent's `workflows/` folder and re-imports a workflow when its files change (also `POST …/:id/reload`); the import is keyed by the folder's content hash, so an edited module is never served from the module cache. Every successful load is recorded under `workflows-history/<id>/<revision>/` (twenty kept, `GET …/:id/history`), and `POST …/:id/rollback { revision }` restores that version's files — `state.json` untouched — and reloads. Users of the Project hear `workflow_updated` on their event stream.
+The server watches the Agent's `workflows/` folder and re-imports a workflow when its files change (also `POST …/:id/reload`); the import is keyed by the folder's content hash, so an edited module is never served from the module cache. Every successful load is recorded under `workflows-history/<id>/<revision>/` (twenty kept, `GET …/:id/history`), and `POST …/:id/rollback { revision }` restores that version's files — `state.json` untouched — and reloads. `DELETE …/:id` removes the workflow together with its versions. Users of the Project hear `workflow_updated` and `workflow_removed` on their event stream, so a tab appears, refreshes or disappears without a reload.
 
 ## Web App
 
-A workflow with a UI is a tab beside *Chat* at the top of the chat page; the tab shows the page in an iframe (reloaded when the UI's revision changes, the chat staying mounted underneath), with the workflow's version and revision, its load error when the current files do not boot, a *Reload* button and a *History* fold with a *Restore* button per recorded version.
+A workflow with a UI is a tab beside *Chat* at the top of the chat page; the tab shows the page in an iframe (reloaded when the UI's revision changes, the chat staying mounted underneath), with the workflow's version and revision, its load error when the current files do not boot, a *Reload* button, a *History* fold with a *Restore* button per recorded version, and a two-click *Remove*.
 
 ## Theme
 

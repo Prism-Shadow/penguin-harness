@@ -210,6 +210,11 @@ export const zh = {
     noHistory: "还没有记录过版本。",
     current: "当前",
     restore: "恢复",
+    remove: "移除",
+    removeConfirm: "删除这个工作流及其全部已记录版本？",
+    removeYes: "确认移除",
+    removing: "移除中…",
+    removeNo: "取消",
     fileCount: (n: number) => `${n} 个文件`,
   },
   harnessHistory: {

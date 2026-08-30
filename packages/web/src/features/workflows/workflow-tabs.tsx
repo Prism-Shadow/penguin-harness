@@ -121,16 +121,22 @@ export function WorkflowFrame({
   agentId,
   tab,
   onChanged,
+  onRemoved,
 }: {
   projectId: string;
   agentId: string;
   tab: WorkflowTab;
   /** The workflow was reloaded or restored; the caller refetches the list. */
   onChanged: (workflow: WorkflowInfo) => void;
+  /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
+  onRemoved: () => void;
 }) {
   const { dark, accent, fontScale } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [busy, setBusy] = useState<"reload" | "rollback" | null>(null);
+  const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
+  // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
+  const [removeArmed, setRemoveArmed] = useState(false);
+  useEffect(() => setRemoveArmed(false), [tab.workflowId]);
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
@@ -185,6 +191,19 @@ export function WorkflowFrame({
     return () => cancelAnimationFrame(id);
   }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
 
+  const remove = async () => {
+    setBusy("remove");
+    setFailure(null);
+    try {
+      await api.removeWorkflow(projectId, agentId, tab.workflowId);
+      onRemoved();
+    } catch (err) {
+      setFailure(err instanceof Error ? err.message : String(err));
+      setBusy(null);
+      setRemoveArmed(false);
+    }
+  };
+
   const historyId = `workflow-history-${tab.workflowId}`;
   return (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
@@ -210,6 +229,36 @@ export function WorkflowFrame({
         >
           {S.workflows.history}
         </Button>
+        {removeArmed ? (
+          <>
+            <span className={toneInk.danger}>{S.workflows.removeConfirm}</span>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => void remove()}
+            >
+              {busy === "remove" ? S.workflows.removing : S.workflows.removeYes}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => setRemoveArmed(false)}
+            >
+              {S.workflows.removeNo}
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => setRemoveArmed(true)}
+          >
+            {S.workflows.remove}
+          </Button>
+        )}
       </div>
       {tab.error !== null && (
         <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>
