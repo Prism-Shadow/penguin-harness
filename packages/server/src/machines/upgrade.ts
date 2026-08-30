@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { machineApi } from "./machine-api.js";
+import { MATERIALIZED } from "../hmr/host.js";
 
 /** Long enough for 8 MB over a slow link, plus the unpack, boot and commit on the far side. */
 const APPLY_TIMEOUT_MS = 10 * 60_000;
@@ -36,8 +37,14 @@ export type UpgradeOutcome =
 
 /**
  * The upgrade body, rebuilt from this server's own hmr store: exactly what it was pushed,
- * forwarded unchanged. Null when nothing has been pushed here — a server running its
- * packaged build has no bundle to hand on.
+ * forwarded unchanged — the native assets and the provenance included. Null when nothing has
+ * been pushed here — a server running its packaged build has no bundle to hand on.
+ *
+ * The assets are not optional in practice: a pushed platform resolves node-pty out of its
+ * assets directory and nowhere else (terminal/pty-module.ts), so a hand-over that dropped
+ * them left the machine on a build whose every terminal failed with "no assets directory
+ * available" — while the same build pushed by deploy.mjs worked. Exec bits come from the
+ * files' modes, which the receiving host restores from the `exec` list.
  */
 export function readPushedBuild(dataRoot: string): Buffer | null {
   try {
@@ -46,6 +53,8 @@ export function readPushedBuild(dataRoot: string): Buffer | null {
       platform?: { bundle?: string };
       cli?: { bundle?: string };
       web?: { manifest?: string };
+      assets?: { dir?: string };
+      source?: { repo?: string; revision?: string };
     };
     if (
       typeof manifest.platform?.bundle !== "string" ||
@@ -61,10 +70,42 @@ export function readPushedBuild(dataRoot: string): Buffer | null {
     const web = JSON.parse(
       zlib.gunzipSync(fs.readFileSync(path.join(hmrDir, manifest.web.manifest))).toString("utf8"),
     ) as { files: Record<string, string> };
-    return zlib.gzipSync(Buffer.from(JSON.stringify({ platform, cli, web })));
+    const assets =
+      typeof manifest.assets?.dir === "string"
+        ? readAssets(path.join(hmrDir, manifest.assets.dir))
+        : undefined;
+    const source =
+      typeof manifest.source?.repo === "string" && typeof manifest.source.revision === "string"
+        ? { repo: manifest.source.repo, revision: manifest.source.revision }
+        : undefined;
+    return zlib.gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          platform,
+          cli,
+          web,
+          ...(assets ? { assets } : {}),
+          ...(source ? { source } : {}),
+        }),
+      ),
+    );
   } catch {
     return null; // No store, a partial record, or damage: nothing safe to forward.
   }
+}
+
+/** A materialized assets directory back into the shape it was pushed as. */
+function readAssets(dir: string): { files: Record<string, string>; exec: string[] } {
+  const files: Record<string, string> = {};
+  const exec: string[] = [];
+  for (const entry of fs.readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || entry.name === MATERIALIZED) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    const rel = path.relative(dir, abs).split(path.sep).join("/");
+    files[rel] = fs.readFileSync(abs).toString("base64");
+    if ((fs.statSync(abs).mode & 0o111) !== 0) exec.push(rel);
+  }
+  return { files, exec };
 }
 
 /** The machine's own words for a refusal: the API error envelope's message, else the text. */
