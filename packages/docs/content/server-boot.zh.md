@@ -105,7 +105,7 @@ platformImpl.create
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
 | 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | `package.json#penguin.modules` + 默认导出 `{ modules }`；配置面是 `<root>/plugins.json` |
-| 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
+| 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；`@Module({ children, exports })` 分组（`IdentityModule`、`ProjectsModule`……），exports 是组内 children 向树的其余部分提供的接口；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
 | 沙盒                 | `sandbox/service.ts`——**App 级**（一个模块；后端向它的 `providers` 槽位投递） | 插件模块向 `SandboxModule.providers` 投递的一条 contribution；约束经 core 的 spawn seam 落到命令上 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
 

@@ -24,9 +24,9 @@ import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
 import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
-import { UpdateJobService } from "./services/update-job.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "./runtime/session-manager.js";
 import { GlobalFetch, UpdateCheckService } from "./services/update-check-service.js";
+import { UpdateJobService } from "./services/update-job.js";
 import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -60,12 +60,10 @@ import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
-import { WorkspaceModule } from "./http/routes/preview.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { HostAssembly } from "./services/host-assembly.js";
-import { SessionServiceIface, SessionsModule } from "./runtime/session-manager.js";
+import { SessionsModule } from "./runtime/session-manager.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
-import { MessagingModule } from "./runtime/messaging/bridge.js";
 import { MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
@@ -76,10 +74,66 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import { HttpModule } from "./http/app.js";
-import { WebModule } from "./http/routes/contributions.js";
-import type { Scheduling } from "./mechanisms/sessions.js";
-import type { Errors } from "./mechanisms/observability.js";
+import {
+  AuthState,
+  Channels,
+  Clock,
+  Config,
+  Db,
+  Desktop,
+  Lifecycle,
+  Hmr,
+  Log,
+  Paths,
+  Proxy,
+  ResourceGroups,
+} from "./hmr/capabilities.js";
+import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
+import { PasswordHasher } from "./auth/password.js";
+import { InitialProjectProvisioner } from "./auth/service.js";
+import {
+  Access,
+  AgentIndex,
+  Members,
+  ModelOAuth,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  Projects,
+} from "./mechanisms/projects.js";
+import { ProjectRuns } from "./services/project-service.js";
+import {
+  Schedules,
+  Scheduling,
+  SessionIndex,
+  SessionOrigins,
+} from "./mechanisms/sessions.js";
+import { ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
+import { SessionEnv, Sessions, SessionServiceIface } from "./runtime/session-manager.js";
+import {
+  ErrorLog,
+  Errors,
+  UsageQueries,
+  UsageRecording,
+  UsageStore,
+} from "./mechanisms/observability.js";
+import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
+import {
+  AgentConfig,
+  AgentLifecycle,
+  Assembly,
+  Benchmarks,
+  Memory,
+  Snapshots,
+} from "./mechanisms/agents.js";
+import { WorkspaceFiles } from "./mechanisms/workspace.js";
+import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+import { MessagingBindings } from "./mechanisms/messaging.js";
+import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
+import { Messaging, MessagingTaskRunner, MessagingModule } from "./runtime/messaging/bridge.js";
+import { QQScan } from "./runtime/messaging/bridge.js";
+import { Http, HttpModule } from "./http/app.js";
+import { WebModule, WebShell } from "./http/routes/contributions.js";
+import { UpdateCheck } from "./services/update-check-service.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -99,7 +153,7 @@ import type { Errors } from "./mechanisms/observability.js";
 @Component()
 export class Startup {
   @Use() private readonly scheduler!: Scheduling;
-  @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
+  @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly errors!: Errors;
 
   async setup() {
@@ -113,10 +167,14 @@ export class Startup {
   }
 }
 
-/** The root: provides nothing and requires nothing; it exists so the children have a scope to see each other in. */
+/**
+ * The tree, grouped by mechanism. Each group is a @Module whose `exports` are the
+ * interfaces its children offer the rest of the tree; everything else in a group — the
+ * repos, the seams a test replaces, the route components — is visible only inside it.
+ * A whole group is replaceable, and so is any node inside one.
+ */
 @Module({
   children: [
-    // Runtime capabilities, one node each
     RuntimeConfig,
     RuntimeDb,
     RuntimeChannels,
@@ -129,74 +187,177 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
-    // Mechanisms a test stands in for
-    ScryptHasher,
-    DefaultMessagingTuning,
-    FeishuSdkProvider,
-    TelegramTransportProvider,
-    QQTransportProvider,
-    QQScanTransportProvider,
-    WeChatTransportProvider,
-    WeChatScanTransportProvider,
-    CoreSessionLoaders,
-    DefaultTitleGenerators,
-    GlobalFetch,
-    UpdateCheckService,
-    UpdateJobService,
-    // Stores
+  ],
+  exports: [
+    Config,
+    Db,
+    Channels,
+    Proxy,
+    Hmr,
+    Desktop,
+    AuthState,
+    Lifecycle,
+    ResourceGroups,
+    Log,
+    Clock,
+    Paths,
+  ],
+})
+export class RuntimeModule {}
+
+@Module({
+  children: [
     UsersRepo,
     AuthSessionsRepo,
-    ServerSettingsRepo,
-    UiPrefsRepo,
-    SessionsRepo,
+    ScryptHasher,
+    AuthService,
+    AdminService,
+    AdminRoutes,
+    MeRoutes,
+  ],
+  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
+})
+export class IdentityModule {}
+
+@Module({
+  children: [
     ProjectsRepo,
     MembersRepo,
     AgentsRepo,
-    UsageRepo,
-    SchedulesRepo,
-    TraceIndexRepo,
-    MessagingBindingsRepo,
-    ErrorsRepo,
-    SessionSources,
-    // Services
-    ErrorRecorder,
-    UsageRecorder,
-    UsageService,
-    ProjectConfigService,
-    ModelOAuthService,
-    TraceIndexService,
-    TraceService,
-    WorkspaceFilesService,
     ProjectAccess,
     ProjectService,
-    AuthService,
-    AdminService,
+    ProjectConfigService,
+    ModelOAuthService,
+    ProjectsRoutes,
+    ProjectAdminRoutes,
+  ],
+  exports: [
+    Projects,
+    Members,
+    AgentIndex,
+    Access,
+    ProjectLifecycle,
+    ProjectConfigStore,
+    ModelOAuth,
+    InitialProjectProvisioner,
+  ],
+})
+export class ProjectsModule {}
+
+@Module({
+  children: [
+    SessionsRepo,
+    SessionSources,
+    SchedulesRepo,
     Scheduler,
+    CoreSessionLoaders,
+    DefaultTitleGenerators,
+    SessionsModule,
+    SessionApiRoutes,
+    SchedulerRoutes,
+    EventsRoutes,
+  ],
+  exports: [
+    SessionIndex,
+    SessionOrigins,
+    Schedules,
+    Scheduling,
+    Sessions,
+    SessionServiceIface,
+    SessionEnv,
+    ScheduleTaskRunner,
+    ScheduleSessionCreator,
+    MessagingTaskRunner,
+    ProjectRuns,
+  ],
+})
+export class SessionRuntimeModule {}
+
+@Module({
+  children: [ServerSettingsRepo, UiPrefsRepo],
+  exports: [Settings, UiPrefsStore],
+})
+export class SettingsModule {}
+
+@Module({
+  children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
+  exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
+})
+export class ObservabilityModule {}
+
+@Module({
+  children: [TraceIndexRepo, TraceIndexService, TraceService],
+  exports: [TraceIndexStore, TraceIndex, Traces],
+})
+export class TracesModule {}
+
+@Module({
+  children: [
     AgentConfigService,
     SnapshotService,
     AgentService,
     MemoryService,
     BenchmarkService,
     HostAssembly,
-    // Runtimes and route groups
-    WorkspaceModule,
-    SandboxModule,
-    SessionsModule,
+  ],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, Assembly],
+})
+export class AgentsModule {}
+
+@Module({
+  children: [WorkspaceFilesService, PreviewModule],
+  exports: [WorkspaceFiles, PreviewTokens],
+})
+export class WorkspaceModule {}
+
+@Module({
+  children: [
+    FeishuSdkProvider,
+    TelegramTransportProvider,
+    QQTransportProvider,
+    QQScanTransportProvider,
+    WeChatTransportProvider,
+    WeChatScanTransportProvider,
+    DefaultMessagingTuning,
+    MessagingBindingsRepo,
     MessagingModule,
-    MachinesModule,
-    ProjectsRoutes,
-    SchedulerRoutes,
-    ProjectAdminRoutes,
-    AdminRoutes,
-    MeRoutes,
-    VersionRoutes,
-    InstallRoutes,
-    EventsRoutes,
-    PluginRoutes,
-    TerminalModule,
-    SessionApiRoutes,
-    WebModule,
+  ],
+  exports: [Messaging, QQScan, MessagingBindings],
+})
+export class MessagingHubModule {}
+
+@Module({
+  children: [
+    GlobalFetch,
+    UpdateCheckService,
+    UpdateJobService,
     HttpModule,
+    WebModule,
+    InstallRoutes,
+    VersionRoutes,
+    PluginRoutes,
+  ],
+  exports: [Http, WebShell, UpdateCheck],
+})
+export class ApiModule {}
+
+/** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
+@Module({
+  children: [
+    RuntimeModule,
+    SettingsModule,
+    IdentityModule,
+    ProjectsModule,
+    SessionRuntimeModule,
+    ObservabilityModule,
+    TracesModule,
+    AgentsModule,
+    WorkspaceModule,
+    MessagingHubModule,
+    ApiModule,
+    SandboxModule,
+    TerminalModule,
+    MachinesModule,
     Startup,
   ],
 })
@@ -220,6 +381,7 @@ export function platformDef(
     [RuntimeHmr, new RuntimeHmr(caps)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
+    [RuntimeLifecycle, new RuntimeLifecycle(caps)],
     [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
   ]);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);

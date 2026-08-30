@@ -51,7 +51,7 @@ export class GlobalFetch implements HttpFetch {
 }
 
 @Component()
-export class UpdateCheckService {
+export class UpdateCheckService implements UpdateCheck {
   @Use() private readonly http!: HttpFetch;
   @Use() private readonly clock!: Clock;
   /** Environment to read PENGUIN_UPDATE_CHECK from; a test wires its own. */
