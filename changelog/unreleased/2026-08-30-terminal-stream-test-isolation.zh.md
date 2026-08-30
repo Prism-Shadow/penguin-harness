@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** process
 - **Scope:** `server`, `tooling`
+- **PR:** [#558](https://github.com/Prism-Shadow/penguin-harness/pull/558)
 
 [English](2026-08-30-terminal-stream-test-isolation.md)
 
