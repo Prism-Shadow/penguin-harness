@@ -27,15 +27,14 @@ import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
-import type { BuildDepsOverrides } from "../app.js";
 import type { HmrHost } from "./host.js";
 import type { DesktopService } from "../services/desktop-service.js";
 import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type { Channel } from "../runtime/channel.js";
-import { Module, Provide } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -120,9 +119,8 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
   hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
-  // The construction-override seam (BuildDepsOverrides): production publishes {}, tests
-  // publish live collaborators (loader fakes, clocks). Presence-only — its fields are all
-  // optional, so there are no members to verify.
+  // The replacement seam (Replacements): production publishes [], tests publish the nodes
+  // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
   lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
@@ -199,7 +197,7 @@ export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
  * a definite "nobody would relaunch me" to refuse with, not a missing capability.
  */
 export const RUNTIME_LIFECYCLE_RESOURCE_ID = "runtime:lifecycle";
-/** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
+/** Test-only: the node Replacements published by bootAppDeps for the platform boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 
 /**
@@ -242,8 +240,8 @@ export interface RuntimeCapabilities {
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
   lifecycle: LifecycleService;
-  /** The construction-override seam; {} outside tests. */
-  overrides: BuildDepsOverrides;
+  /** Nodes a test stands in for (see Replacements); [] outside tests. */
+  replacements: Replacements;
 }
 
 /**
@@ -296,7 +294,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
-  const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
+  const replacements = resources.claim<Replacements>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? [];
   // Optional by design (see the resource's own note): an older runtime published no such
   // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
   // than this platform may also publish a holder missing the fields added since; they are
@@ -328,15 +326,15 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, overrides },
+    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, replacements },
   };
 }
 
 /**
- * What the runtime publishes, as the platform's modules see it. The runtime registers live
- * objects in the resource registry (hmr/capabilities.ts); this module claims them once and
- * exposes each under an interface here. Every other module reaches the runtime only through
- * these — `requires: { db: { iface: "runtime#Db", from: "RuntimeModule" } }` — so what a bundle
+ * What the runtime publishes, as the tree sees it. The runtime registers live objects in
+ * the resource registry; the platform claims them once and hands each to a node of its own
+ * (RuntimeDb, RuntimeChannels, …) that provides it under an interface declared here. Every
+ * other node reaches the runtime only through these — `@Use() db!: Db` — so what a bundle
  * needs from its host is written down and checked, not assumed.
  */
 
@@ -405,11 +403,6 @@ export abstract class Lifecycle extends Interface<
   Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
 >() {}
 
-/** Construction overrides — production publishes {}, tests publish live collaborators. */
-export abstract class Overrides extends Interface<{
-  value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
-}>() {}
-
 export abstract class Log extends Interface<{
   line(text: string): void;
 }>() {}
@@ -423,42 +416,121 @@ export abstract class ResourceGroups extends Interface<{
   adoptable(group: string): boolean;
 }>() {}
 
+/** A clock every node reads time through; a test replaces it. */
+export abstract class Clock extends Interface<{ now(): Date }>() {}
+
+/** Where the data lives — what most nodes actually want from the config. */
+export abstract class Paths extends Interface<{ root: string }>() {}
+
 /**
- * The claimed capabilities are handed in by the platform node, which is the one place the
- * registry is read (see hmr/platform.ts): this module only presents them. It is the one
- * module class with constructor arguments, so the platform pre-builds its instance.
+ * A replacement for one node of the tree: the class the platform would build, and the
+ * instance to boot in its place. Tests publish these (bootAppDeps) for the platform to
+ * claim; production publishes none. A replacement is checked exactly like the node it
+ * stands in for — the table says what the class provides, the instance has to have it.
+ */
+export type Replacements = ReadonlyArray<readonly [ModuleClass, object]>;
+
+/**
+ * The claimed capabilities enter the tree one node each, so a consumer names the one it
+ * needs and nothing else. They are the only classes with constructor arguments; the
+ * platform pre-builds their instances (platform.ts) from the claim, which is the one
+ * place the registry is read.
  */
 @Module()
-export class RuntimeModule {
+export class RuntimeConfig {
   @Provide() config!: Config;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.config = this.caps.config;
+  }
+}
+@Module()
+export class RuntimeDb {
   @Provide() db!: Db;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.db = this.caps.db;
+  }
+}
+@Module()
+export class RuntimeChannels {
   @Provide() channels!: Channels;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.channels = this.caps.channels;
+  }
+}
+@Module()
+export class RuntimeProxy {
   @Provide() proxy!: Proxy;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.proxy = { apply: this.caps.proxyControl };
+  }
+}
+@Module()
+export class RuntimeHmr {
   @Provide() hmr!: Hmr;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.hmr = this.caps.hmr;
+  }
+}
+@Module()
+export class RuntimeDesktop {
   @Provide() desktop!: Desktop;
-  @Provide() authState!: AuthState;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    const { desktop } = this.caps;
+    this.desktop = { current: () => desktop };
+  }
+}
+@Module()
+export class RuntimeLifecycle {
   @Provide() lifecycle!: Lifecycle;
-  @Provide() overrides!: Overrides;
-  @Provide() log!: Log;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.lifecycle = this.caps.lifecycle;
+  }
+}
+@Module()
+export class RuntimeAuthState {
+  @Provide() authState!: AuthState;
+  constructor(private readonly caps: RuntimeCapabilities) {}
+  setup() {
+    this.authState = this.caps.authState;
+  }
+}
+@Module()
+export class RuntimeResourceGroups {
   @Provide() resourceGroups!: ResourceGroups;
-  constructor(
-    private readonly caps: RuntimeCapabilities,
-    private readonly adoptable: (group: string) => boolean,
-  ) {}
-
-  setup(_ctx: ClassCtx) {
-    const { caps } = this;
-    const log = caps.overrides.log ?? ((line: string) => console.log(line));
-    this.config = caps.config;
-    this.db = caps.db;
-    this.channels = caps.channels;
-    this.proxy = { apply: caps.proxyControl };
-    this.hmr = caps.hmr;
-    this.desktop = { current: () => caps.desktop };
-    this.authState = caps.authState;
-    this.lifecycle = caps.lifecycle;
-    this.overrides = { value: () => caps.overrides };
-    this.log = { line: log };
+  constructor(private readonly adoptable: (group: string) => boolean) {}
+  setup() {
     this.resourceGroups = { adoptable: this.adoptable };
+  }
+}
+
+/** The process log; a test replaces it with a sink. */
+@Component()
+export class ConsoleLog implements Log {
+  line(text: string): void {
+    console.log(text);
+  }
+}
+
+/** Wall-clock time; a test replaces it with a frozen one. */
+@Component()
+export class SystemClock implements Clock {
+  now(): Date {
+    return new Date();
+  }
+}
+
+/** The data root, read off the config. */
+@Component()
+export class ConfigPaths implements Paths {
+  @Use() private readonly config!: Config;
+  get root(): string {
+    return this.config.root;
   }
 }

@@ -54,7 +54,7 @@ describe("usage-recorder", () => {
   afterEach(() => db.close());
 
   it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
-    const rec = wire(UsageRecorder, { usage: repo });
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
     expect(rows).toHaveLength(1);
@@ -67,7 +67,7 @@ describe("usage-recorder", () => {
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
-    const rec = wire(UsageRecorder, { usage: repo });
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
       "session-child",
@@ -81,20 +81,20 @@ describe("usage-recorder", () => {
   });
 
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {
-    const rec = wire(UsageRecorder, { usage: repo });
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
   it("non-token_usage messages are a no-op", async () => {
-    const rec = wire(UsageRecorder, { usage: repo });
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
   it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
-    const rec = wire(UsageRecorder, { usage: repo });
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
       await rec.record(CTX, withOrigin(sessionMeta(meta(`sub-${i}`, "sub-model")), `sub-${i}`));
@@ -127,7 +127,7 @@ describe("usage-service (cost computed on the fly)", () => {
     repo = wire(UsageRepo, { db: db });
     const errors = wire(ErrorsRepo, { db: db });
     service = (now: Date) =>
-      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, now: () => now });
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -256,7 +256,7 @@ describe("usage-service (cost computed on the fly)", () => {
         asked.push(modelId);
         return lookup(p, provider, modelId);
       },
-      now: () => now,
+      clock: { now: () => now },
     });
     const res = await svc.query("p1", { groupBy: "date", from: "2026-07-06", to: "2026-07-06" });
     expect(asked).toEqual(["m1"]);
@@ -417,7 +417,7 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
     repo = wire(UsageRepo, { db: db });
     const errors = wire(ErrorsRepo, { db: db });
     service = (now: Date) =>
-      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, now: () => now });
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -690,6 +690,7 @@ describe("usage-service.queryErrors (error table paging)", () => {
       usage: wire(UsageRepo, { db: db }),
       errors,
       lookupPricing: async () => undefined,
+      clock: { now: () => new Date() },
     });
     // 25 rows, oldest first — so "newest first" ordering is observable across a page boundary.
     for (let i = 0; i < 25; i += 1) {

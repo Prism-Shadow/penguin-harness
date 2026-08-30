@@ -98,6 +98,8 @@ function moduleNameOf(fileName) {
 }
 
 const table = {};
+/** `@Use` fields typed by a component class — a dependency on an implementation, not a mechanism. */
+const implementationDeps = [];
 /** Named data types, keyed like interfaces; signatures reference them as { "$ref": key }. */
 const types = {};
 /** Module manifests, extracted STATICALLY from each module.ts's defineModule({...}) literal. */
@@ -672,6 +674,10 @@ for (const project of projects) {
       if (symbol && symbol.flags & ts.SymbolFlags.Class && !isIfaceClass(symbol)) {
         return fail(atNode, `class '${name}' in a signature: wrap it as Opaque<"${name}">`);
       }
+      // Inside a component's own surface, an interface with methods that is not an
+      // interface class is a host object of that class's world, compared by name — the
+      // component does not publish its dependencies' types as contracts.
+      if (lenient && hasMethods(type, atNode) && !isIfaceClass(symbol)) return { opaque: name };
       if (hasMethods(type, atNode) || isIfaceClass(symbol)) {
         const decl = symbol?.declarations?.find(
           (d) =>
@@ -718,6 +724,8 @@ for (const project of projects) {
     return { params, returns: exprOf(signature.getReturnType(), atNode, stack) };
   }
 
+  /** True while a component member is being projected (see `tolerant` in ifaceOf). */
+  let lenient = false;
   const LIFECYCLE = new Set(["setup", "park", "migrations"]);
   /** A member of a component class that is not part of its interface. */
   const isHiddenMember = (prop) => {
@@ -742,7 +750,13 @@ for (const project of projects) {
     const tolerant = (prop, project) => {
       if (!component) return project();
       const mark = errors.length;
-      const out = project();
+      lenient = true;
+      let out;
+      try {
+        out = project();
+      } finally {
+        lenient = false;
+      }
       if (errors.length === mark) return out;
       const why = errors.splice(mark).map((e) => e.slice(e.indexOf(": ") + 2));
       warnings.push(
@@ -879,6 +893,23 @@ for (const project of projects) {
     if (meta.context !== undefined) m.context = meta.context;
     if (kind === "component") {
       m.provides[className] = componentKeyBySymbol.get(sym);
+      // `implements Users`: the component declares the mechanism it implements; the
+      // provision is the same instance under the interface's name.
+      for (const clause of node.heritageClauses ?? []) {
+        if (clause.token !== ts.SyntaxKind.ImplementsKeyword) continue;
+        for (const t of clause.types) {
+          const s0 = checker.getSymbolAtLocation(t.expression);
+          const isym = s0 && s0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(s0) : s0;
+          const idecl = isym?.declarations?.find((d) => isInterfaceClassDecl(d));
+          if (!idecl) {
+            errors.push(
+              `${file}: ${className} implements '${t.getText()}', which is not an interface class (extends Interface<…>())`,
+            );
+            continue;
+          }
+          m.provides[isym.getName()] = keyOf(isym, idecl);
+        }
+      }
       if (meta.children !== undefined)
         errors.push(`${file}: a @Component has no children — it exports itself`);
     }
@@ -893,6 +924,8 @@ for (const project of projects) {
       const use = decoratorCall(member, "Use");
       if (use) {
         const req = { iface: ifaceKeyOfType(member.type, file) };
+        if (componentOfType(member.type) !== undefined)
+          implementationDeps.push(`${m.name}.${field} → ${member.type.getText()}`);
         if (use.arguments.length > 0) {
           const ref = refLiteral(use.arguments[0], file);
           const fromName = moduleNameBySymbol.get(ref?.$id);
@@ -941,6 +974,10 @@ for (const project of projects) {
 }
 
 for (const w of warnings) console.warn(`gen-ifaces: warning: ${w}`);
+if (implementationDeps.length > 0)
+  console.warn(
+    `gen-ifaces: ${implementationDeps.length} @Use fields depend on an implementation class rather than an interface (first: ${implementationDeps[0]}); declare those mechanisms as interface classes`,
+  );
 if (errors.length > 0) {
   for (const e of errors) console.error(`gen-ifaces: error: ${e}`);
   process.exit(1);
