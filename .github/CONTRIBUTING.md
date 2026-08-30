@@ -72,8 +72,18 @@ step further: an unpackaged run takes a dev-suffixed app identity (`PenguinHarne
 with its own userData directory, single-instance lock, and sticky port, and defaults to
 `~/.penguin/dev-data` even when launched without the env var
 (`pnpm --dir packages/desktop start`) — so it runs side by side with an installed release
-build, with neither instance seeing the other. Every unpackaged launch prints which pair
+build, with neither instance seeing the other. Every dev-profile launch prints which pair
 it picked: `[shell] dev instance '<name>' on data root <root>`.
+
+That dev profile is a switch, not a property of being unpackaged: an installed release
+build launched with `--dev` (a second shortcut whose target ends in `--dev`, or
+`PenguinHarness.exe --dev`) takes the same dev identity and `~/.penguin/dev-data`, so one
+installation runs twice side by side — the release instance on your real data and a
+second one on a scratch root — without a checkout. It runs the release's own code, so it
+is a way to try the app against separate data, not a way to see uncommitted changes. A
+`--dev` instance does not update itself and does not repair the `penguin` command link;
+both belong to the one installation the two instances share, and the release instance
+does them.
 
 Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
 to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,

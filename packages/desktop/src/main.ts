@@ -19,9 +19,12 @@
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead — normal login page, deliberate degradation.
  *
- * Dev isolation: an unpackaged run takes a dev-suffixed identity (own userData, and with
- * it the single-instance lock and sticky port) and defaults to the ~/.penguin/dev-data
- * root, so it runs beside an installed release build (see app-identity.ts).
+ * Dev isolation: the dev profile — an unpackaged run, or any build launched with `--dev`
+ * — takes a dev-suffixed identity (own userData, and with it the single-instance lock and
+ * sticky port) and defaults to the ~/.penguin/dev-data root, so it runs beside an
+ * installed release build (see app-identity.ts). Updating and the per-launch CLI link
+ * repair stay with the release profile: both touch the one installation the two
+ * instances share.
  *
  * Smoke hook (PENGUIN_DESKTOP_SMOKE=1): after the first load settles, print a
  * `DESKTOP-SMOKE-RESULT {json}` line (+ screenshot when PENGUIN_DESKTOP_SMOKE_SHOT is
@@ -32,7 +35,7 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
-import { appIdentity, desktopDataRoot } from "./app-identity.js";
+import { appIdentity, desktopDataRoot, resolveProfile } from "./app-identity.js";
 import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
@@ -50,10 +53,11 @@ import {
 } from "./util.js";
 
 // Identity first: the name decides the userData directory, which also keys the
-// single-instance lock requested below — a dev (unpackaged) run takes a dev-suffixed
-// identity so it runs beside an installed release build instead of quitting into its
-// window (#292; see app-identity.ts).
-const identity = appIdentity(app.isPackaged);
+// single-instance lock requested below — the dev profile takes a dev-suffixed identity
+// so it runs beside an installed release build instead of quitting into its window
+// (#292; see app-identity.ts).
+const profile = resolveProfile({ argv: process.argv, isPackaged: app.isPackaged });
+const identity = appIdentity(profile);
 app.setName(identity.name);
 // Windows toasts (the web app's task-completion notifications) need the AppUserModelID
 // of the installed shortcuts; electron-builder stamps them with the appId. Keep the
@@ -210,15 +214,15 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  // Explicit PENGUIN_HOME wins; otherwise a release build shares the CLI's data root and
-  // a dev run takes the repo's dev root (the rule, and why, live in app-identity.ts).
+  // Explicit PENGUIN_HOME wins; otherwise the release profile shares the CLI's data root
+  // and the dev profile takes the repo's dev root (the rule, and why, live in app-identity.ts).
   const dataRoot = desktopDataRoot({
     envHome: process.env.PENGUIN_HOME,
-    isPackaged: app.isPackaged,
+    profile,
     homedir: os.homedir(),
     releaseRoot: resolveRoot,
   });
-  if (!app.isPackaged) {
+  if (profile === "dev") {
     process.stdout.write(`[shell] dev instance '${app.name}' on data root ${dataRoot}\n`);
   }
   const existing = await liveServerLock(dataRoot);
@@ -286,9 +290,13 @@ if (!app.requestSingleInstanceLock()) {
       initUpdater(() => win);
       await boot();
       // Install or repair the bundled 'penguin' command. Runs every launch: that is what
-      // carries it across an update and repairs a link a moved app left dangling. Skipped
+      // carries it across an update and repairs a link a moved app left dangling. Only the
+      // release profile does it — a `--dev` instance of the same install has nothing of
+      // its own to link, and one owner keeps the link from being rewritten twice. Skipped
       // in smoke mode — the macOS administrator prompt would hang the automated run.
-      if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await ensureCliCommand();
+      if (profile === "release" && process.env.PENGUIN_DESKTOP_SMOKE !== "1") {
+        await ensureCliCommand();
+      }
     })().catch((err) => fatal(`${app.name} failed to start.`, err)),
   );
 }
