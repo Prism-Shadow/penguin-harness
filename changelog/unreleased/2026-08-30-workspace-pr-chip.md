@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#555](https://github.com/Prism-Shadow/penguin-harness/pull/555)
 
 [中文版](2026-08-30-workspace-pr-chip.zh.md)
 
