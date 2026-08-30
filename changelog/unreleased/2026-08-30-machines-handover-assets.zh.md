@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#549](https://github.com/Prism-Shadow/penguin-harness/pull/549)
 
 [English](2026-08-30-machines-handover-assets.md)
 
