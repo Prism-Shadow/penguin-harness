@@ -64,6 +64,7 @@ function usage(problem) {
   console.error(
     `${problem}\n\n` +
       "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build]\n" +
+      "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
       "  <url>   a full origin, when the target is not reached over loopback\n",
   );
@@ -74,8 +75,13 @@ const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
 const target = args.find((a) => !a.startsWith("--"));
 if (target === undefined) usage("[deploy] no target given.");
+// Two credentials, either one: the admin password (exchanged for a cookie), or the
+// runtime's own local API token (`<root>/api-token`, admin-equivalent — see
+// server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
-if (!ADMIN_PASSWORD) usage("[deploy] PENGUIN_ADMIN_PASSWORD is not set.");
+const API_TOKEN = process.env.PENGUIN_API_TOKEN;
+if (!ADMIN_PASSWORD && !API_TOKEN)
+  usage("[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).");
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
 const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
@@ -122,6 +128,12 @@ function request(urlStr, { method = "GET", headers = {}, body } = {}) {
     if (body !== undefined) req.write(body);
     req.end();
   });
+}
+
+/** The request headers that authenticate as admin: a Bearer token, or a cookie from a password login. */
+async function authHeaders() {
+  if (API_TOKEN) return { authorization: `Bearer ${API_TOKEN}` };
+  return { cookie: await login() };
 }
 
 /** Signs in as `admin` and returns the session cookie. */
@@ -279,7 +291,7 @@ async function main() {
   const assets = await readNativeAssets();
   const source = pushSource();
 
-  const cookie = await login();
+  const auth = await authHeaders();
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);
   const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
@@ -301,7 +313,7 @@ async function main() {
   });
   const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", ...auth },
     body: JSON.stringify({ hashes: [...blobs.keys()] }),
   });
   if (probe.status === 200) {
@@ -311,7 +323,7 @@ async function main() {
       if (bytes === undefined) continue;
       const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
         method: "PUT",
-        headers: { "content-type": "application/octet-stream", cookie },
+        headers: { "content-type": "application/octet-stream", ...auth },
         body: bytes,
       });
       if (put.status !== 200) {
@@ -333,7 +345,7 @@ async function main() {
   const started = Date.now();
   const res = await request(`${baseUrl}/api/hmr/upgrade`, {
     method: "POST",
-    headers: { "content-type": "application/gzip", cookie },
+    headers: { "content-type": "application/gzip", ...auth },
     body: gz,
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
