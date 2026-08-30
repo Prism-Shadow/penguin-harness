@@ -3,6 +3,7 @@
 - **Date:** 2026-08-29
 - **Type:** fix
 - **Scope:** `server`, `desktop`
+- **PR:** [#547](https://github.com/Prism-Shadow/penguin-harness/pull/547)
 
 [中文版](2026-08-29-web-dist-diagnostics.zh.md)
 
