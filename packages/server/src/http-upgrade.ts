@@ -3,11 +3,14 @@
  *
  * Node destroys an upgrade socket nobody handles — but ONLY while no `upgrade` listener is
  * registered at all. Register one and that default is gone for every path, including the
- * ones that listener declines. Two independent listeners (the terminal transport and the
- * machines proxy) each declining silently therefore does not mean "nobody handled it": it
- * means the socket is left open, and the browser waits on a handshake that will never be
- * answered. A hang is the worst answer available — it carries no information at all, and
- * looks exactly like a slow machine.
+ * ones that listener declines. Independent listeners each declining silently therefore does
+ * not mean "nobody handled it": it means the socket is left open, and the browser waits on a
+ * handshake that will never be answered. A hang is the worst answer available — it carries no
+ * information at all, and looks exactly like a slow server.
+ *
+ * Mechanism, and only mechanism: this file knows that sockets must be dispatched and that an
+ * unclaimed one must be closed. WHICH sockets exist, and what any of them means, is decided
+ * above it — by the platform, through the seam (terminal/ws.ts's platformUpgradeRoute).
  *
  * So there is one listener, it tries each route in order, and a path no route claims is
  * refused immediately and by name.
