@@ -34,6 +34,10 @@
 
 `packages/server/src/mechanisms/*.ts` 声明这棵树由哪些机制组成——`identity`（`Users`、`AuthSessions`、`Auth`、`Admin`）、`projects`（`Projects`、`Members`、`AgentIndex`、`Access`、`ProjectLifecycle`、`ProjectConfigStore`、`ModelOAuth`）、`sessions`（`SessionIndex`、`Goals`、`SessionOrigins`、`Schedules`、`Scheduling`）、`observability`（`ErrorLog`、`Errors`、`UsageStore`、`UsageRecording`、`UsageQueries`）、`traces`、`workspace`、`agents`、`settings`、`messaging`——都是带完整签名的接口类，与实现分开声明。每个实现自己表明（`class UsersRepo implements Users`）；每个 `@Use` 字段、每组路由的依赖类型、每个服务的依赖类型都写机制名。`AuthService` 需要 `Users`、`AuthSessions`、`AuthState`、`Clock`、`PasswordHasher` 和它自己声明的 `InitialProjectProvisioner`——没有 sqlite，没有运行时。`gen-ifaces` 拒绝类型为组件 class 的 `@Use` 字段，规则不靠 review 维持；计数从 102/189 归零（0/192）。
 
+### 会导出的组
+
+根下面是十四个 child 而不是七十四个：`RuntimeModule`、`SettingsModule`、`IdentityModule`、`ProjectsModule`、`SessionRuntimeModule`、`ObservabilityModule`、`TracesModule`、`AgentsModule`、`WorkspaceModule`、`MessagingHubModule`、`ApiModule`，加上沙箱、终端、machines 三个模块和 `Startup`。组是 `@Module({ children, exports })`：`exports` 是它的 children 向树的其余部分提供的接口，由声明该接口的那个 child 转出；组里其余的一切——repo、测试要顶替的接缝、路由组件——只在组内可见（kernel 的可见性是词法的：兄弟与祖先的兄弟，从不包括祖先）。整个组可以替换，组里的任何节点也可以。启动顺序跟随被导出的 child 而不是组，所以两个组可以互相需要对方的 child 而不成环。生成器把每个 requires 解析到将要提供它的模块并记为 `from`——表现在写明一个节点依赖哪个*模块*，页面也就显示出谁依赖谁。
+
 ## 表就是一个页面
 
 `pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，按 commit sha 发布到 `ifaces-pages` 分支，并从 job summary 与一条 PR 评论链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。

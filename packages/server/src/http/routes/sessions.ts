@@ -106,9 +106,7 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
-import { SessionsModule } from "../../runtime/session-manager.js";
-import { MessagingModule } from "../../runtime/messaging/bridge.js";
-import { WorkspaceModule } from "./preview.js";
+
 import { agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
@@ -118,6 +116,7 @@ import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { PreviewTokens } from "./preview.js";
+import type { Machines } from "../../machines/service.js";
 import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
@@ -1524,12 +1523,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 export class SessionApiRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
-  @Use(SessionsModule) private readonly manager!: ManagerIface;
+  @Use() private readonly manager!: ManagerIface;
   @Use() private readonly machines!: Machines;
-  @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
+  @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly agents!: AgentLifecycle;
-  @Use(MessagingModule) private readonly messaging!: Messaging;
+  @Use() private readonly messaging!: Messaging;
   @Use() private readonly schedulesRepo!: Schedules;
   @Use() private readonly access!: Access;
   @Use() private readonly projectConfig!: ProjectConfigStore;
@@ -1537,7 +1536,7 @@ export class SessionApiRoutes {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
-  @Use(WorkspaceModule) private readonly previewTokens!: PreviewTokens;
+  @Use() private readonly previewTokens!: PreviewTokens;
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly sources!: SessionOrigins;
