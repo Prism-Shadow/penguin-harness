@@ -26,6 +26,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
+import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3237,8 +3238,14 @@ export interface LanguageIndexResponse {
  */
 export type VersionResponse = VersionReport;
 
+export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
+
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
+
+/** GET /api/version/history/diff?from=&to=: what changed between two stored interface tables. */
+export type VersionHistoryDiffResponse = IfacesDiff;
+export type { IfaceChange, IfacesDiff, MemberChange, ModuleChange } from "@prismshadow/penguin-hmr";
 
 /**
  * GET /api/version/update-check: newest published release vs the running version.

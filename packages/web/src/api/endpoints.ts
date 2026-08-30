@@ -147,6 +147,7 @@ import type {
   VaultUpdateRequest,
   InstalledPluginsResponse,
   SandboxSettingsResponse,
+  VersionHistoryDiffResponse,
   VersionHistoryResponse,
   VersionResponse,
   WorkspaceFilesResponse,
@@ -1219,6 +1220,11 @@ export const installOnMachine = (projectId: string, machineId: string) =>
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
+/** What changed between two stored interface tables; either hash may be "none". */
+export const getVersionHistoryDiff = (from: string, to: string) =>
+  apiFetch<VersionHistoryDiffResponse>(
+    `/api/version/history/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
 
 /** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
 export const checkUpdate = (force = false) =>
