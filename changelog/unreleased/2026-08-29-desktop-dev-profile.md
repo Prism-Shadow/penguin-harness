@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-29
 - **Type:** feature
-- **Scope:** `desktop`, `docs`
+- **Scope:** `desktop`, `server`, `core`, `docs`
 - **PR:** [#544](https://github.com/Prism-Shadow/penguin-harness/pull/544)
 
 [中文版](2026-08-29-desktop-dev-profile.zh.md)
@@ -17,3 +17,7 @@ The desktop shell's dev isolation — the `PenguinHarness-Dev` identity with its
 - The per-launch repair of the bundled `penguin` command link runs only on the release profile, so the shared installation has one owner for it.
 - The `[shell] dev instance '<name>' on data root <root>` startup line prints for every dev-profile launch, packaged or not.
 - The dev AppUserModelID has no installed shortcut carrying it, so Windows toasts from a `--dev` instance may not render; the release instance is unaffected.
+
+## Machines
+
+The profile holds on every machine the instance reaches. The shell hands it to its server as `PENGUIN_PROFILE` (the `pnpm dev:server` and `pnpm penguin` scripts set it too), and the Machines page installs to, probes, starts, stops and connects to the machine's installation for that profile: release at `~/.penguin` with its data at `~/.penguin/data` on port 7364; dev at `~/.penguin-dev` with `~/.penguin-dev/data` on port 7370 (`DEFAULT_DEV_SERVER_PORT`). A dev instance therefore never restarts the release server a person is using on that machine, and the two profiles keep separate Agents, Sessions and pushed versions on both ends. Every remote command names its program directory and data root explicitly (`PENGUIN_INSTALL_DIR`, `PENGUIN_HOME`) rather than relying on the far side's defaults.

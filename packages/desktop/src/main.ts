@@ -194,6 +194,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
       appPath: app.getAppPath(),
       env: process.env,
     }),
+    profile,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),

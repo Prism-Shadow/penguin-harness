@@ -7,6 +7,7 @@
  * it IS the answer "cannot reach this machine", carrying OpenSSH's diagnostic.
  */
 import { remotePenguin } from "./commands.js";
+import type { RemoteLayout } from "./layout.js";
 import { jsonAnswer } from "./answer.js";
 import type { RemoteTarget } from "./commands.js";
 import type { RemotePlatform } from "./detect.js";
@@ -18,8 +19,8 @@ import type { MachineStatus } from "../machine-status.js";
  * that is not there) comes back as text rather than being swallowed by the shared shell,
  * which merges the streams and reports an empty stderr.
  */
-export function readServerStateCommand(platform: RemotePlatform): string {
-  return `${remotePenguin(platform)} server status 2>&1`;
+export function readServerStateCommand(platform: RemotePlatform, layout: RemoteLayout): string {
+  return `${remotePenguin(platform, layout)} server status 2>&1`;
 }
 
 type MachineServerState =
@@ -86,6 +87,7 @@ export function parseProbe(stdout: string): MachineProbe {
  */
 export async function probeServerState(
   target: RemoteTarget,
+  layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   /**
    * The dialect to ask in — what the install found the machine to be. Null when nothing is
@@ -95,18 +97,19 @@ export async function probeServerState(
    */
   platform: RemotePlatform | null = null,
 ): Promise<MachineProbe> {
-  const first = await probeIn(target, exec, platform ?? "linux");
+  const first = await probeIn(target, layout, exec, platform ?? "linux");
   if (platform !== null || first.state.kind !== "unreachable") return first;
-  const second = await probeIn(target, exec, "win32");
+  const second = await probeIn(target, layout, exec, "win32");
   return second.state.kind === "unreachable" ? first : second;
 }
 
 async function probeIn(
   target: RemoteTarget,
+  layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
   platform: RemotePlatform,
 ): Promise<MachineProbe> {
-  const result = await exec(target, readServerStateCommand(platform));
+  const result = await exec(target, readServerStateCommand(platform, layout));
   if (result.code !== 0) {
     // stdout as the fallback, not just stderr: over the shared shell the two streams are
     // merged and stderr arrives empty (ssh-session.ts), so reading only stderr threw away
