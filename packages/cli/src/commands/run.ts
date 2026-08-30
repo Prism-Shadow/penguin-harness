@@ -161,10 +161,17 @@ export function registerRunCommand(program: Command, t: Messages): void {
         }
       }
 
+      // The level is pinned on the Session, never sent with the task: core opens the
+      // Session's model contexts at it — a fresh Session's first context, an existing
+      // Session's next one (its context in flight keeps its level).
       const effectiveThinking = thinking ?? callerThinking;
+      if (effectiveThinking) {
+        await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
+          thinkingLevel: effectiveThinking,
+        });
+      }
       const taskBody = {
         input: [{ type: "text", text: String(opts.message) }],
-        ...(effectiveThinking ? { thinkingLevel: effectiveThinking } : {}),
         ...(goalBudget !== null ? { goal: { budget: goalBudget } } : {}),
       };
 

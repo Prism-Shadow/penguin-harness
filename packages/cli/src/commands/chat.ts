@@ -10,7 +10,7 @@
  * Session's SSE stream (subscribe first, POST second) through the shared watcher.
  * `/goal[:<budget>] <objective>` runs goal mode; `/compact` POSTs a compaction and
  * renders its progress; `/clear` creates a fresh server Session in place; `/thinking`
- * shows or overrides the per-turn thinking level; `/verbose` toggles tool-output
+ * shows or re-pins the Session's thinking level; `/verbose` toggles tool-output
  * collapsing (display only); `/exit` or `/quit` exits. Typing while a turn runs POSTs
  * a steering message (delivered between turns); Ctrl-C during a run POSTs /abort.
  *
@@ -167,13 +167,17 @@ export function registerChatCommand(program: Command, t: Messages): void {
         }
       }
 
-      // Thinking level shown/changed by `/thinking` (a per-turn run parameter):
-      // - a new chat's `--thinking` pinned the Session default above; under `--resume`
-      //   the Session already exists and the flag becomes the initial per-turn override.
-      // - `/thinking <level>` sets the override; unset turns omit the parameter so the
-      //   Session's pinned level (else the Agent config) applies.
-      let thinkingOverride = opts.resume !== undefined ? flagThinking : undefined;
-      const sessionThinkingDefault = (): string =>
+      // The thinking level is pinned on the Session (PATCH) and core applies it per model
+      // context: a Session that has not run yet starts at it, a running one takes it at
+      // its next compaction — the context in flight keeps its level. `--thinking` under
+      // `--resume` pins the existing Session the same way; `/thinking <level>` re-pins.
+      if (opts.resume !== undefined && flagThinking) {
+        await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
+          thinkingLevel: flagThinking,
+        });
+        session = { ...session, thinkingLevel: flagThinking };
+      }
+      const sessionThinkingLevel = (): string =>
         session.thinkingLevel ?? t.chatThinkingConfigured();
 
       let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
@@ -465,17 +469,17 @@ export function registerChatCommand(program: Command, t: Messages): void {
             if (!parsed.ok) {
               out.write(`${t.error(t.thinkingInvalid(parsed.value))}\n`);
             } else if (parsed.level === null) {
-              const sessionDefault = sessionThinkingDefault();
-              out.write(
-                `${
-                  thinkingOverride
-                    ? t.thinkingCurrentOverride(thinkingOverride, sessionDefault)
-                    : t.thinkingCurrentDefault(sessionDefault)
-                }\n`,
-              );
+              out.write(`${t.thinkingCurrent(sessionThinkingLevel())}\n`);
             } else {
-              thinkingOverride = parsed.level;
-              out.write(`${t.thinkingSet(parsed.level)}\n`);
+              try {
+                await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
+                  thinkingLevel: parsed.level,
+                });
+                session = { ...session, thinkingLevel: parsed.level };
+                out.write(`${t.thinkingSet(parsed.level)}\n`);
+              } catch (err) {
+                out.write(`${t.error(err instanceof Error ? err.message : String(err))}\n`);
+              }
             }
             continue;
           }
@@ -547,7 +551,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
                   () =>
                     client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
                       input: [{ type: "text", text: parsed.objective }],
-                      ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                       goal: { budget: parsed.budget },
                     }),
                   { goal: true },
@@ -558,7 +561,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
               await runTurn(() =>
                 client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
                   input: [{ type: "text", text }],
-                  ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                 }),
               );
             }

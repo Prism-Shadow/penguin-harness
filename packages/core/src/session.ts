@@ -47,6 +47,7 @@ import type {
   CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
+  ThinkingLevelName,
   ToolPermission,
 } from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
@@ -102,6 +103,14 @@ export interface SessionConfig {
     opts: OpenContextOptions,
   ) => OpenedContext | Promise<OpenedContext>;
   /**
+   * Re-pins the Session's thinking level (see `Session.pinThinkingLevel`): the composition
+   * layer records `level` for every context opened from now on and, when `adoptNow` is true
+   * and the initial context has not started, re-stamps that context — returning its updated
+   * session_meta, which the Session adopts as its own; null when nothing was re-stamped.
+   * Without it, `pinThinkingLevel` is a no-op.
+   */
+  pinThinkingLevel?: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
+  /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
    * `generateTitle`; if not provided, `generateTitle` returns null.
@@ -111,6 +120,8 @@ export interface SessionConfig {
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
+  /** Session resume of an open context: the initial context is the recorded one, mid-life — a pin arriving before the first run applies to the next context, never to it. */
+  initialContextOpen?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
   initialEngineState?: EngineInitialState;
   /** Session resume: the full historical messages of the current context (for rendering, including interrupted turns and their markers), for frontend display. */
@@ -285,6 +296,10 @@ export class Session {
   /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `openContext` opens (see `metaMessage`). */
   private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
+  private readonly pinContext?: SessionConfig["pinThinkingLevel"];
+  private readonly initialContextOpen: boolean;
+  /** Whether a run (or a compaction) has started: from then on the initial context's request prefix is in use. */
+  private runsStarted = false;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
@@ -330,6 +345,8 @@ export class Session {
     this.metaWritten = config.metaAlreadyWritten ?? false;
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
+    if (config.pinThinkingLevel) this.pinContext = config.pinThinkingLevel;
+    this.initialContextOpen = config.initialContextOpen ?? false;
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
@@ -535,6 +552,7 @@ export class Session {
    * later run retries with a fresh attempt.
    */
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
+    this.runsStarted = true;
     await this.ensureMetaWritten();
     if (this.engine) return true;
     const records: OmniMessage[] = [];
@@ -606,7 +624,7 @@ export class Session {
   /**
    * The goal-mode branch of `run`: validates the input, folds any attached images into the
    * objective, then drives the goal loop, running each round through the single-Task path with
-   * the same per-call options (approval, signal, thinking level). The loop's terminal
+   * the same per-call options (approval, signal). The loop's terminal
    * `goal_finished` event is additionally written to the Trace (best-effort, like session_meta)
    * so the goal's end survives with its conversation.
    *
@@ -810,6 +828,21 @@ export class Session {
       ...material,
       ...(args?.signal ? { signal: args.signal } : {}),
     });
+  }
+
+  /**
+   * Pins the Session's thinking level: every model context opened from now on runs at
+   * `level` instead of the Agent config's default, and a Session whose first context has
+   * not started yet — no run issued, and not a resumed open context — takes it for that
+   * first context too (its session_meta is re-stamped before anything is written). The
+   * context that is running keeps its level: the level is part of the request prefix, and
+   * a context's prefix never changes between its open and its close. A host that keeps a
+   * per-Session pin (the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`)
+   * calls this; the change lands at the next compaction.
+   */
+  pinThinkingLevel(level: ThinkingLevelName): void {
+    const meta = this.pinContext?.(level, !this.runsStarted && !this.initialContextOpen);
+    if (meta) this.meta = sessionMeta(meta);
   }
 
   /** Queries a tool's permission level (for the frontend to determine permission mode); returns undefined for unknown tools. */

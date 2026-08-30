@@ -263,7 +263,7 @@ export function MemoryTab({
         config: { memory: { enabled: next } },
       });
       setEnabled(res.config.memory.enabled);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -320,7 +320,7 @@ export function MemoryTab({
         .then((res) => {
           setMemoryPrompt(res.config.memory.prompt);
           setWorkspacePrompt(res.config.memory.workspacePrompt);
-          toastSuccess(S.common.saved);
+          toastSuccess(S.agent.savedTakesEffect);
           onConfigChanged?.();
         })
         .catch((e: unknown) => toastError(apiErrorText(e)));

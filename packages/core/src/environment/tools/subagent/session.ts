@@ -35,12 +35,7 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type {
-  ApproveFn,
-  RunCutoff,
-  SubagentHandle,
-  ThinkingLevelName,
-} from "../../../interfaces/index.js";
+import type { ApproveFn, RunCutoff, SubagentHandle } from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -162,10 +157,7 @@ export class ManagedSubagentSession {
    * parent must not receive a completion notice for it. Throws if already disposed or still
    * running (converted to an explanatory output by the caller).
    */
-  startRun(
-    messages: OmniMessage[],
-    opts?: { thinkingLevel?: ThinkingLevelName; suppressDoneReport?: boolean },
-  ): void {
+  startRun(messages: OmniMessage[], opts?: { suppressDoneReport?: boolean }): void {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
@@ -173,7 +165,7 @@ export class ManagedSubagentSession {
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
-    void this.pump(messages, this.runCtrl, opts?.thinkingLevel);
+    void this.pump(messages, this.runCtrl);
   }
 
   /**
@@ -349,11 +341,7 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(
-    messages: OmniMessage[],
-    runCtrl: AbortController,
-    thinkingLevel?: ThinkingLevelName,
-  ): Promise<void> {
+  private async pump(messages: OmniMessage[], runCtrl: AbortController): Promise<void> {
     let wroteAny = false;
     // Whether the round was cut off early (a user abort, a terminal LLM failure, a
     // mid-task compaction failure): read from the run generator's return value — the
@@ -367,7 +355,6 @@ export class ManagedSubagentSession {
         messages,
         signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
         approve: this.childApprove,
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       for (;;) {
         const res = await it.next();

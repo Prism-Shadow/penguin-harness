@@ -33,8 +33,7 @@ describe("the advertised tier set matches the accepted one", () => {
     for (const messages of [getMessages("en"), getMessages("zh")]) {
       const printed = [
         messages.common.thinking,
-        messages.thinkingCurrentDefault("low"),
-        messages.thinkingCurrentOverride("low", "medium"),
+        messages.thinkingCurrent("low"),
         messages.thinkingInvalid("bogus"),
       ].join(" ");
       for (const level of DEFAULT_CHAT_THINKING_LEVELS) {

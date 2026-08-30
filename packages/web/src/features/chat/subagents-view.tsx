@@ -26,13 +26,15 @@ import type {
   ApprovalMode,
   ModelInfo,
   SessionInfo,
+  SessionPatchRequest,
   SkillMetadataItem,
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
-import { abortSubagent, getAgentSkills, messageSubagent } from "../../api/endpoints";
+import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
 import { toastError } from "../../components/ui/toast";
+import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
@@ -361,9 +363,16 @@ function SubagentComposer({
     };
   }, [projectId, meta?.agentId]);
 
-  // Per-turn thinking level for the child's NEXT round ("" = untouched, follow the child's
-  // own config): mirrors the main composer's per-session pick, scoped to this child.
+  // The level pinned on the child Session from this panel ("" = untouched, the child runs at
+  // its own level): mirrors the main composer's per-session pick, scoped to this child —
+  // written through PATCH on the child, so core opens its next model context at it.
   const [turnLevel, setTurnLevel] = useState("");
+  const pinChildLevel = (level: string): void => {
+    setTurnLevel(level);
+    void patchSession(childSessionId, {
+      thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+    }).catch((err: unknown) => toastError(apiErrorText(err)));
+  };
 
   const modelRef = meta ? { provider: meta.provider, modelId: meta.modelId } : null;
   const contextWindow = modelRef
@@ -371,8 +380,7 @@ function SubagentComposer({
         ?.contextWindow
     : undefined;
 
-  const send = (text: string) =>
-    messageSubagent(sessionId, childSessionId, text, turnLevel || undefined);
+  const send = (text: string) => messageSubagent(sessionId, childSessionId, text);
   const sendFailure = (err: unknown): void => {
     toastError(
       err instanceof ApiError && err.code === "subagent_gone"
@@ -422,10 +430,10 @@ function SubagentComposer({
         modelRef={modelRef}
         models={models}
         // Display: the user's pick for this child, else what the child actually runs at
-        // (spawn-pinned level, else the parent's effective level it inherited). Only an
-        // explicit pick rides the send (see messageSubagent's thinkingLevel).
+        // (spawn-pinned level, else the parent's effective level it inherited). A pick is
+        // PATCHed onto the child Session and lands in its next model context.
         turnThinkingLevel={turnLevel || fallbackThinkingLevel}
-        onChangeTurnThinkingLevel={setTurnLevel}
+        onChangeTurnThinkingLevel={pinChildLevel}
         {...(contextWindow !== undefined ? { contextWindow } : {})}
         contextNow={contextNow}
         vision={false}

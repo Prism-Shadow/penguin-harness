@@ -450,6 +450,42 @@ describe("context compaction", () => {
     expect(opened).toBe(2);
   });
 
+  it("an opener that throws fails the run and leaves the engine on the old context, with no rotation pending", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+        { messages: [assistantText("still the old context"), usage(20, 330)] },
+      ],
+      "llm1",
+    );
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_opener_throws" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openContext: () => {
+        throw new Error("Invalid Agent State config");
+      },
+    });
+    const firstPath = trace.currentPath();
+
+    await expect(
+      collect(engine.run([userText("task one")], { approve: allowAll })),
+    ).rejects.toThrow("Invalid Agent State config");
+
+    // The old LLM object is still current and nothing rotates: the next run appends to the
+    // same file and goes to the same object.
+    const out = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain(
+      "still the old context",
+    );
+    expect(trace.currentPath()).toBe(firstPath);
+    expect(llm1.calls).toHaveLength(3);
+  });
+
   it("an opened context's maxTurns and compaction settings replace the engine's from then on", async () => {
     // Context one compacts at 100. The opened context raises the threshold to 1000 and caps a
     // Task at one turn: task two's 150-token turn must not compact again, and its tool call

@@ -920,14 +920,9 @@ describe("subagent steering and per-run abort", () => {
 
   it("revives a released child through the runner's resume and starts its next round", async () => {
     const prompts: string[] = [];
-    const levels: (string | undefined)[] = [];
     const resumes: { agentId?: string; sessionId: string }[] = [];
-    const run = async function* ({
-      prompt,
-      thinkingLevel,
-    }: RunInput & { thinkingLevel?: string }): AsyncGenerator<OmniMessage> {
+    const run = async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
       prompts.push(prompt);
-      levels.push(thinkingLevel);
       yield withOrigin(partialText("delta", `ran:${prompt}`), HOP);
     };
     const runner: SubagentRunner = {
@@ -965,7 +960,6 @@ describe("subagent steering and per-run abort", () => {
       expect(await env.sendToBackgroundSubagent(HOP, [userText("wake up")])).toBe("gone");
       expect(
         await env.sendToBackgroundSubagent(HOP, [userText("wake up")], {
-          thinkingLevel: "high",
           resume: { agentId: "owner_agent" },
         }),
       ).toBe("resumed");
@@ -973,8 +967,6 @@ describe("subagent steering and per-run abort", () => {
       await until(() => env.listBackgroundSubagents()[0]?.running === false);
       expect(env.listBackgroundSubagents()[0]!.subagentId).toBe(`subagent-${HOP.slice(-8)}`);
       expect(prompts).toEqual(["task", "wake up"]);
-      // The per-turn thinking level rides only the round the message starts.
-      expect(levels).toEqual([undefined, "high"]);
     } finally {
       env.dispose();
     }

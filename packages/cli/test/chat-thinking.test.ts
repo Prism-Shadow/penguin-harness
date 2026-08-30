@@ -1,9 +1,9 @@
 /**
- * chat `/thinking` + `--thinking` (per-turn thinking level) and `/verbose` (tool-output
- * collapsing), over the server transport: drives the real REPL over a fake stdin against
- * the in-process fake server (same harness as chat-clear.test.ts). Task bodies record
- * what the server would receive (`thinkingLevel` on POST /tasks; a sticky pin is a PATCH
- * on the Session); the verbose test streams a long fake tool output through the real
+ * chat `/thinking` + `--thinking` (the Session's pinned thinking level) and `/verbose`
+ * (tool-output collapsing), over the server transport: drives the real REPL over a fake
+ * stdin against the in-process fake server (same harness as chat-clear.test.ts). The fake
+ * records what the server would receive (a pin is a PATCH on the Session; task bodies
+ * carry no level); the verbose test streams a long fake tool output through the real
  * renderer to prove the collapsed/full switch.
  */
 import { PassThrough } from "node:stream";
@@ -72,19 +72,27 @@ async function driveChat(lines: string[], argv: string[] = []): Promise<string> 
   }
 }
 
-/** Task bodies' thinkingLevel in POST order for one session. */
-function taskLevels(sessionOrdinal: number): Array<string | undefined> {
+/** The thinking levels PATCHed onto one session, in order. */
+function pinnedLevels(sessionOrdinal: number): string[] {
   const sessions = [...server.sessions.values()];
-  return sessions[sessionOrdinal]!.tasks.map((b) => b.thinkingLevel as string | undefined);
+  return sessions[sessionOrdinal]!.patches.map(
+    (p) => (p as { thinkingLevel?: unknown }).thinkingLevel,
+  ).filter((l): l is string => typeof l === "string");
 }
 
-describe("chat /thinking (per-turn thinking level, server-backed)", () => {
-  it("bare /thinking shows the Session default (unpinned = the Agent's configured level applies server-side)", async () => {
+/** Whether any task body of one session carried a thinking level (none may). */
+function anyTaskCarriesLevel(sessionOrdinal: number): boolean {
+  const sessions = [...server.sessions.values()];
+  return sessions[sessionOrdinal]!.tasks.some((b) => "thinkingLevel" in (b as object));
+}
+
+describe("chat /thinking (the Session's pinned thinking level, applied per model context)", () => {
+  it("bare /thinking shows the Session's level (unpinned = the Agent's configured level applies server-side)", async () => {
     const out = await driveChat(["/thinking", "/exit"]);
-    expect(out).toContain(t.thinkingCurrentDefault(t.chatThinkingConfigured()));
+    expect(out).toContain(t.thinkingCurrent(t.chatThinkingConfigured()));
   });
 
-  it("/thinking <level> overrides subsequent turns; invalid values change nothing", async () => {
+  it("/thinking <level> pins the Session (a PATCH) and tasks carry no level; invalid values change nothing", async () => {
     const out = await driveChat([
       "/thinking",
       "first",
@@ -96,9 +104,9 @@ describe("chat /thinking (per-turn thinking level, server-backed)", () => {
       "/exit",
     ]);
     expect(out).toContain(t.thinkingSet("high"));
-    // Once overridden, the display says so and still names the Session default it overrides.
-    expect(out).toContain(t.thinkingCurrentOverride("high", t.chatThinkingConfigured()));
-    // "none" is not selectable (mirrors the web picker): error + the override stays "high".
+    // Once pinned, the display shows the Session's level.
+    expect(out).toContain(t.thinkingCurrent("high"));
+    // "none" is not selectable (mirrors the web picker): error + the pin stays "high".
     expect(out).toContain(t.error(t.thinkingInvalid("none")));
     const session = [...server.sessions.values()][0]!;
     expect(session.tasks.map((b) => (b.input as Array<{ text: string }>)[0]!.text)).toEqual([
@@ -106,45 +114,48 @@ describe("chat /thinking (per-turn thinking level, server-backed)", () => {
       "second",
       "third",
     ]);
-    expect(taskLevels(0)).toEqual([undefined, "high", "high"]);
+    expect(pinnedLevels(0)).toEqual(["high"]);
+    expect(session.thinkingLevel).toBe("high");
+    expect(anyTaskCarriesLevel(0)).toBe(false);
   });
 
-  it("--thinking pins the Session default (a PATCH — sticky, so subagents follow) and runs carry no per-turn override", async () => {
+  it("--thinking pins the Session (a PATCH — sticky, so subagents follow); tasks carry no level", async () => {
     const out = await driveChat(["/thinking", "go", "/exit"], ["--thinking", "xhigh"]);
     const session = [...server.sessions.values()][0]!;
     expect(session.patches).toContainEqual({ thinkingLevel: "xhigh" });
     expect(session.thinkingLevel).toBe("xhigh");
-    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
-    expect(taskLevels(0)).toEqual([undefined]);
+    expect(out).toContain(t.thinkingCurrent("xhigh"));
+    expect(anyTaskCarriesLevel(0)).toBe(false);
   });
 
-  it("--resume turns --thinking into the initial per-turn override (the Session already exists)", async () => {
+  it("--resume with --thinking re-pins the existing Session (its context in flight keeps its level until the next compaction)", async () => {
     const existing = server.addSession({ thinkingLevel: "low" });
     const out = await driveChat(
       ["/thinking", "go", "/exit"],
       ["--resume", existing.sessionId, "--thinking", "high"],
     );
-    // No pin is written on resume; the flag rides each task instead.
-    expect(existing.patches).toEqual([]);
-    expect(out).toContain(t.thinkingCurrentOverride("high", "low"));
-    expect(existing.tasks.map((b) => b.thinkingLevel)).toEqual(["high"]);
+    expect(existing.patches).toContainEqual({ thinkingLevel: "high" });
+    expect(existing.thinkingLevel).toBe("high");
+    expect(out).toContain(t.thinkingCurrent("high"));
+    expect(existing.tasks.some((b) => "thinkingLevel" in (b as object))).toBe(false);
   });
 
-  it("--resume without --thinking runs on the resumed Session's own pinned level (no override)", async () => {
+  it("--resume without --thinking runs on the resumed Session's own pinned level (no PATCH)", async () => {
     const existing = server.addSession({ thinkingLevel: "xhigh" });
     const out = await driveChat(["/thinking", "go", "/exit"], ["--resume", existing.sessionId]);
-    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
-    expect(existing.tasks.map((b) => b.thinkingLevel)).toEqual([undefined]);
+    expect(out).toContain(t.thinkingCurrent("xhigh"));
+    expect(existing.patches.some((p) => "thinkingLevel" in (p as object))).toBe(false);
   });
 
-  it("/clear keeps the --thinking session default and the /thinking override", async () => {
+  it("/clear carries the Session's latest pin to the replacement Session", async () => {
     await driveChat(["/thinking high", "/clear", "after", "/exit"], ["--thinking", "low"]);
     const sessions = [...server.sessions.values()];
     expect(sessions).toHaveLength(2);
-    // The replacement Session gets the same sticky pin…
-    expect(sessions[1]!.patches).toContainEqual({ thinkingLevel: "low" });
-    // …and the per-turn override still rides the next task.
-    expect(sessions[1]!.tasks.map((b) => b.thinkingLevel)).toEqual(["high"]);
+    // Pinned low at creation, re-pinned high by /thinking; the replacement inherits the
+    // latest pin and its tasks carry none.
+    expect(pinnedLevels(0)).toEqual(["low", "high"]);
+    expect(sessions[1]!.patches).toContainEqual({ thinkingLevel: "high" });
+    expect(anyTaskCarriesLevel(1)).toBe(false);
   });
 });
 
@@ -206,8 +217,8 @@ describe("chat caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => 
     expect(created.provider).toBe("caller-prov");
     expect(created.approvalMode).toBe("read-only");
     // The caller's level pins the new Session (sticky, so subagents follow), and the
-    // display names it as the Session default — not an override.
+    // display shows it as the Session's level.
     expect(created.patches).toContainEqual({ thinkingLevel: "xhigh" });
-    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
+    expect(out).toContain(t.thinkingCurrent("xhigh"));
   });
 });

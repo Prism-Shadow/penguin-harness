@@ -455,6 +455,10 @@ export const en: Strings = {
   },
 
   agent: {
+    savedTakesEffect:
+      "Saved. New conversations pick it up right away; running ones after their next compaction.",
+    takesEffectSuffix:
+      " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
     create: "Create agent",
     createTitle: "Create agent",
@@ -1228,6 +1232,8 @@ export const en: Strings = {
   },
 
   chat: {
+    thinkingLevelNextContext:
+      "Takes effect after the next compaction; the current context keeps its level.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",

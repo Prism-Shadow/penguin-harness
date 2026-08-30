@@ -86,7 +86,7 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
 ];
 
-/** The valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+/** The valid thinking level names (SessionPatchRequest.thinkingLevel). */
 const THINKING_LEVELS: readonly ThinkingLevelName[] = [
   "none",
   "low",
@@ -355,18 +355,10 @@ function recallStore(
  * delete their scratchpad copies (nothing references them anymore — leaving them would strand
  * a second copy when the user resends), and hand the composer-shaped content back.
  */
-async function recalledResponse(
-  recall: RecallStore,
-  thinkingLevel?: ThinkingLevelName,
-): Promise<RecalledMessageResponse> {
+async function recalledResponse(recall: RecallStore): Promise<RecalledMessageResponse> {
   const files = await readRecalledFiles(recall.files);
   await removeAttachments(recall.files.map((f) => f.path));
-  return {
-    text: recall.text,
-    images: recall.images,
-    files,
-    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-  };
+  return { text: recall.text, images: recall.images, files };
 }
 
 /**
@@ -599,9 +591,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, approvalMode };
     }
     if (thinkingLevel !== undefined) {
-      // Takes effect from the next run on: launchTask/startGoal read the pinned level for
-      // any run that carries none of its own (a run already in flight keeps its level).
+      // The row is what the loader pins at load; a runtime already loaded is pinned here.
+      // Core applies it per model context: a Session that has not run takes it for its first
+      // context, a running one at its next compaction — the running context keeps its level.
       deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
+      deps.manager.pinThinkingLevel(row.sessionId, thinkingLevel);
       updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {
@@ -887,10 +881,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
-    // Per-turn thinking level (optional): validated against the level names; omitted follows
-    // the session's default. In goal mode it rides every round of the goal; a queued
-    // follow-up keeps its level for its auto-start.
-    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     // Resolved per request from the admin settings, so a limit change applies to the very next
     // upload rather than at the next restart.
     const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
@@ -916,7 +906,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         input: messages,
         budget: goal.budget,
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
@@ -944,7 +933,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         queueIfBusy,
         // Original content, kept while the input waits in the follow-up queue so a recall
         // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
@@ -1013,7 +1001,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // Panel message to one subagent child of this session (#272): a user input on the child,
   // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
   // (resume-session semantics) when it was released — the same core channel input_subagent
-  // uses. The optional thinkingLevel pins only a round this message starts. The parent
+  // uses. The child runs at its own context's thinking level (pin it through PATCH on the
+  // child Session, like any Session). The parent
   // runtime loads on demand (the same get-or-resume path a task uses). 404 subagent_gone
   // when the child's record does not exist or cannot be revived; 409 subagent_busy when the
   // child cannot take the message right now.
@@ -1022,7 +1011,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (!text) throw badRequest("text must carry the message.");
-    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,
       pathParam(c, "childSessionId"),
@@ -1030,7 +1018,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // a human typed this (the model's own dispatch through input_subagent stamps
       // "parent_agent" on its side).
       [userText(text)],
-      thinkingLevel,
     );
     if (outcome === "gone") {
       throw new HttpError(
@@ -1067,13 +1054,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // user and keeps its own code.
   app.delete("/:sessionId/follow-ups/:followUpId", async (c) => {
     const row = resolveSession(c);
-    const { recall, thinkingLevel } = deps.manager.recallFollowUp(
-      row.sessionId,
-      pathParam(c, "followUpId"),
-    );
-    return c.json(
-      (await recalledResponse(recall, thinkingLevel)) satisfies RecalledMessageResponse,
-    );
+    const { recall } = deps.manager.recallFollowUp(row.sessionId, pathParam(c, "followUpId"));
+    return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
   // The Session's most recent goal run (for restoring the chat page's goal banner on load).

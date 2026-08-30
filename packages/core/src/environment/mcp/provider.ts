@@ -6,14 +6,15 @@
  * flat tool namespace collision-free (builtin names never carry the prefix, and the server
  * name — validated to a safe alphabet — separates servers from each other).
  *
- * Lifecycle: connection and tool discovery are lazy and happen exactly once per provider
- * (single-flight) — an Environment holds one provider per model context, and its
- * `listTools()` triggers the connect; all servers connect in parallel, each bounded by its
- * `connectTimeoutMs`. A server that fails to connect (or an invalid config entry) is
- * reported as a stderr warning and skipped — MCP problems never break Session creation,
- * matching Environment's stance on unrecognized builtin tool names. Discovery is a snapshot
- * for the context: `tools/list_changed` notifications are ignored, and the next context's
- * Environment reconfiguration builds a new provider from the then-current config.
+ * Lifecycle: connection and tool discovery are lazy and single-flight — `Environment.listTools()`
+ * triggers a connect phase for every configured server that has no live connection; the
+ * pending servers connect in parallel, each bounded by its `connectTimeoutMs`. A server that
+ * fails to connect (or an invalid config entry) is reported as a stderr warning and skipped —
+ * MCP problems never break Session creation, matching Environment's stance on unrecognized
+ * builtin tool names. Discovery is a snapshot per connection: `tools/list_changed`
+ * notifications are ignored. When a compaction opens the next model context, `reconfigure`
+ * keeps every connection whose entry is unchanged (no respawn, no re-discovery), closes the
+ * removed or changed ones, and leaves the new or changed ones pending for the next phase.
  *
  * Execution: a call is bridged to `client.callTool` with the Environment-merged abort
  * signal passed through. The SDK's own per-request timeout is pushed out of the way
@@ -86,11 +87,12 @@ export interface McpToolProviderOptions {
   warn?: (message: string) => void;
 }
 
-/** One connected server: its client plus the tools discovered on it. */
+/** One connected server: its client, the tools discovered on it, and the executable wrappers built from the usable ones (registered into the toolset in config order, see `rebuildRegistry`). */
 interface McpConnection {
   server: ResolvedMCPServer;
   client: Client;
   tools: Tool[];
+  wrappers: BuiltinTool[];
 }
 
 function describeError(err: unknown): string {
@@ -158,22 +160,23 @@ export function renderCallToolResult(result: CallToolResult): { text: string; im
 }
 
 export class McpToolProvider {
-  private readonly servers: ResolvedMCPServer[];
-  private readonly configWarnings: string[];
+  /** The configured servers of the current model context (config order); replaced by `reconfigure`. */
+  private servers: ResolvedMCPServer[];
+  private configWarnings: string[];
   private readonly workspaceDir: string | undefined;
   private readonly warn: (message: string) => void;
-  /** Single-flight connect+discovery; resolved results live in the fields below. */
+  /** Single-flight connect+discovery of the servers still pending; resolved results live in the fields below. */
   private ensurePromise: Promise<void> | null = null;
   /** Attempt token + abort handle of the in-flight connect; cancelConnect() invalidates the token so a cancelled attempt registers nothing. */
   private attempt = 0;
   private connectAbort: AbortController | null = null;
-  /** Successfully connected servers, kept for close(). */
-  private readonly connections: McpConnection[] = [];
+  /** Live connections, kept across `reconfigure` while their entry is unchanged, and closed by close(). */
+  private connections: McpConnection[] = [];
   /** Full tool name (`mcp__server__tool`) → executable wrapper. */
   private readonly byName = new Map<string, BuiltinTool>();
   /** LLM-facing definitions in stable server-config order. */
   private defs: ToolDefinition[] = [];
-  /** Per-server connect outcomes (config order), populated by the single-flight connect; feeds the mcp_connect_end event. */
+  /** Per-server outcomes of the latest connect phase (config order) — every server on the first phase, only the pending ones after a `reconfigure`; feeds the mcp_connect_end event. */
   private results: McpServerConnectResult[] = [];
   private closed = false;
 
@@ -185,20 +188,57 @@ export class McpToolProvider {
     this.warn = options?.warn ?? ((message) => process.stderr.write(`[penguin] ${message}\n`));
   }
 
-  /** Connects (once) and returns the LLM-facing definitions of every discovered MCP tool. */
+  /** Connects the pending servers (once per phase) and returns the LLM-facing definitions of every discovered MCP tool. */
   async listTools(): Promise<ToolDefinition[]> {
     await this.ensure();
     return this.defs;
   }
 
-  /** Names of the (validly configured) servers this provider will contact, in config order. */
+  /** Names of the (validly configured) servers of the current context, in config order. */
   serverNames(): string[] {
     return this.servers.map((s) => s.name);
   }
 
-  /** Per-server connect outcomes; empty before the first listTools()/resolveTool() completed. */
+  /**
+   * Configured servers without a live connection — never connected yet, failed on their
+   * last phase, or changed by `reconfigure`: the ones the next listTools() will contact.
+   * Empty once every configured server is connected.
+   */
+  pendingServerNames(): string[] {
+    const connected = new Set(this.connections.map((c) => c.server.name));
+    return this.servers.filter((s) => !connected.has(s.name)).map((s) => s.name);
+  }
+
+  /** Per-server outcomes of the latest connect phase; empty before it completed, and after a phase that had nothing to connect. */
   connectResults(): McpServerConnectResult[] {
     return this.results;
+  }
+
+  /**
+   * Replaces the server list for a new model context, keeping what it can: a server whose
+   * resolved config is unchanged keeps its live connection and discovered tools — no
+   * respawn, no re-discovery — a removed or changed server is closed, and a new or changed
+   * one connects lazily on the next listTools(), exactly like a first connect, bounded by
+   * its own connectTimeoutMs. A server that failed last time is pending again, so a rotation
+   * retries it. Not for use while a connect is in flight (the composition layer calls it
+   * between turns, after the first run's connect completed).
+   */
+  reconfigure(entries: MCPServerConfig[]): void {
+    const resolved = resolveMCPServers(entries);
+    this.servers = resolved.servers;
+    this.configWarnings = resolved.warnings;
+    // The resolved server is plain data produced by one resolver, so its JSON is a stable
+    // identity for "the same entry".
+    const wanted = new Map(this.servers.map((s) => [s.name, JSON.stringify(s)]));
+    const kept: McpConnection[] = [];
+    for (const conn of this.connections) {
+      if (wanted.get(conn.server.name) === JSON.stringify(conn.server)) kept.push(conn);
+      else void conn.client.close().catch(() => {});
+    }
+    this.connections = kept;
+    this.ensurePromise = null;
+    this.results = [];
+    this.rebuildRegistry();
   }
 
   /**
@@ -249,22 +289,23 @@ export class McpToolProvider {
     this.connectAbort = null;
     this.ensurePromise = null;
     this.results = [];
-    this.byName.clear();
-    this.defs = [];
-    const open = this.connections.splice(0);
-    for (const conn of open) void conn.client.close().catch(() => {});
+    // Connections the cancelled attempt established are closed by connectAll itself once it
+    // settles (it sees the stale attempt token); the ones kept from an earlier phase stay.
+    this.rebuildRegistry();
   }
 
   private async connectAll(): Promise<void> {
     for (const warning of this.configWarnings) this.warn(warning);
+    const connected = new Set(this.connections.map((c) => c.server.name));
+    const pending = this.servers.filter((s) => !connected.has(s.name));
     const attempt = ++this.attempt;
     const ac = new AbortController();
     this.connectAbort = ac;
-    // Connect in parallel, then register in config order so tool listing order is stable.
-    // Each server's outcome (status + wall time, feeding the mcp_connect_end event) is
-    // recorded either way; a failure also keeps the existing warning behavior.
+    // Connect the pending servers in parallel, then register in config order so tool listing
+    // order is stable. Each server's outcome (status + wall time, feeding the mcp_connect_end
+    // event) is recorded either way; a failure also keeps the existing warning behavior.
     const settled = await Promise.all(
-      this.servers.map(
+      pending.map(
         async (server): Promise<{ conn: McpConnection | null; result: McpServerConnectResult }> => {
           const startedAt = performance.now();
           const durationMs = (): number => Math.round(performance.now() - startedAt);
@@ -318,13 +359,31 @@ export class McpToolProvider {
         continue;
       }
       this.connections.push(conn);
-      let registered = 0;
-      for (const tool of conn.tools) {
-        if (this.register(conn, tool)) registered += 1;
-      }
       // The reported count is what actually joined the toolset (duplicates and
       // LLM-unusable names are skipped), keeping it consistent with tool_list_ready.
-      result.tools = registered;
+      result.tools = conn.wrappers.length;
+    }
+    this.rebuildRegistry();
+  }
+
+  /** Rebuilds the name → wrapper map and the definition list from the live connections, in config order (kept connections keep their place; a closed server's tools drop out). */
+  private rebuildRegistry(): void {
+    this.byName.clear();
+    this.defs = [];
+    const byServer = new Map(this.connections.map((c) => [c.server.name, c]));
+    for (const server of this.servers) {
+      const conn = byServer.get(server.name);
+      if (!conn) continue;
+      for (const wrapper of conn.wrappers) {
+        this.byName.set(wrapper.name, wrapper);
+        this.defs.push({
+          name: wrapper.name,
+          description: wrapper.definition.description,
+          ...(wrapper.definition.parameters !== undefined
+            ? { parameters: wrapper.definition.parameters }
+            : {}),
+        });
+      }
     }
   }
 
@@ -385,7 +444,15 @@ export class McpToolProvider {
         timeout: remainingMs,
         ...(signal ? { signal } : {}),
       });
-      return { server, client, tools: listed.tools };
+      // Wrappers are built once, here — the usable-name check and its warning fire at
+      // connect time, not at every registry rebuild a later context triggers.
+      const wrappers: BuiltinTool[] = [];
+      const seen = new Set<string>();
+      for (const tool of listed.tools) {
+        const wrapper = this.wrap(server, client, tool, seen);
+        if (wrapper) wrappers.push(wrapper);
+      }
+      return { server, client, tools: listed.tools, wrappers };
     } catch (err) {
       await client.close().catch(() => {});
       await transport.close().catch(() => {});
@@ -394,42 +461,46 @@ export class McpToolProvider {
     }
   }
 
-  /** Returns whether the tool joined the toolset (skips are warned, never thrown). */
-  private register(conn: McpConnection, tool: Tool): boolean {
-    const name = mcpToolName(conn.server.name, tool.name);
+  /** Builds the executable wrapper of one discovered tool; null when it cannot join the toolset (skips are warned, never thrown). `seen` holds the names already taken on this server. */
+  private wrap(
+    server: ResolvedMCPServer,
+    client: Client,
+    tool: Tool,
+    seen: Set<string>,
+  ): BuiltinTool | null {
+    const name = mcpToolName(server.name, tool.name);
     if (!LLM_TOOL_NAME_PATTERN.test(name)) {
       this.warn(
-        `MCP server "${conn.server.name}" tool "${tool.name}" skipped: the prefixed name ` +
+        `MCP server "${server.name}" tool "${tool.name}" skipped: the prefixed name ` +
           `is not usable as an LLM tool name (allowed: letters, digits, _ and -, ≤128 chars total).`,
       );
-      return false;
+      return null;
     }
-    if (this.byName.has(name)) {
-      this.warn(
-        `MCP server "${conn.server.name}" listed tool "${tool.name}" twice; keeping the first.`,
-      );
-      return false;
+    if (seen.has(name)) {
+      this.warn(`MCP server "${server.name}" listed tool "${tool.name}" twice; keeping the first.`);
+      return null;
     }
+    seen.add(name);
     const description =
-      tool.description ?? tool.title ?? `MCP tool "${tool.name}" on server "${conn.server.name}".`;
+      tool.description ?? tool.title ?? `MCP tool "${tool.name}" on server "${server.name}".`;
     // The entry's own permission wins over the annotation for every tool of the server;
     // without one, readOnlyHint is an untrusted hint and only an explicit true relaxes to "r".
     const permission: ToolPermission =
-      conn.server.permission ?? (tool.annotations?.readOnlyHint === true ? "r" : "rw");
-    const wrapper: BuiltinTool = {
+      server.permission ?? (tool.annotations?.readOnlyHint === true ? "r" : "rw");
+    return {
       name,
       definition: {
         name,
         description,
         parameters: tool.inputSchema as Record<string, unknown>,
         permission,
-        ...(conn.server.timeoutMs !== undefined ? { timeoutMs: conn.server.timeoutMs } : {}),
-        ...(conn.server.maxOutputLength !== undefined
-          ? { maxOutputLength: conn.server.maxOutputLength }
+        ...(server.timeoutMs !== undefined ? { timeoutMs: server.timeoutMs } : {}),
+        ...(server.maxOutputLength !== undefined
+          ? { maxOutputLength: server.maxOutputLength }
           : {}),
       },
       execute: async function* (args, ctx): AsyncGenerator<OmniMessage, ToolResult> {
-        const result = await conn.client.callTool(
+        const result = await client.callTool(
           { name: tool.name, arguments: args },
           {
             timeout: MAX_SDK_TIMEOUT_MS,
@@ -455,14 +526,5 @@ export class McpToolProvider {
         };
       },
     };
-    this.byName.set(name, wrapper);
-    this.defs.push({
-      name,
-      description,
-      ...(wrapper.definition.parameters !== undefined
-        ? { parameters: wrapper.definition.parameters }
-        : {}),
-    });
-    return true;
   }
 }

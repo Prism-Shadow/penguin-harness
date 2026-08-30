@@ -106,9 +106,9 @@ export interface ToolDefinition {
  * assembled system prompt is fixed per context — a context is assembled from the Agent State
  * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), so
  * each file's meta carries the prompt its context actually ran with; the context's toolset
- * follows as the `tool_list_ready` record. Per-turn parameters (e.g. the thinking level,
- * passed with each run) never belong here; a `thinking_level` field still present in a
- * legacy Trace's meta is ignored on resume.
+ * follows as the `tool_list_ready` record. The thinking level is fixed per context as well
+ * and recorded here: everything that shapes the request prefix — model, prompt, toolset,
+ * thinking level — holds from a context's open to its close.
  */
 export interface SessionMetaPayload {
   session_id: string;
@@ -119,6 +119,14 @@ export interface SessionMetaPayload {
   model_context_window: number | string;
   /** The system prompt this context runs with (the assembled result, placeholders already substituted). */
   system_prompt: string;
+  /**
+   * The thinking level this context runs with (the `ThinkingLevelName` vocabulary), or
+   * `"default"` when it runs without one (the model's own default); absent on Traces written
+   * before the level became a per-context fact. A resume of an open context reads it back so
+   * the rebuilt request prefix is identical; a pin or an Agent-config change takes effect at
+   * the next context.
+   */
+  thinking_level?: "none" | "low" | "medium" | "high" | "xhigh" | "max" | "default";
   // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
   // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta
   // must not wait for that. Pre-split Traces still carry the field on disk; it is

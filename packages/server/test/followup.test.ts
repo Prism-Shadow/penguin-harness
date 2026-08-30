@@ -101,7 +101,7 @@ describe("follow-up queue route", () => {
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
 
-  it("recall (#287): DELETE withdraws a queued follow-up with its content and thinking level; the rest auto-start", async () => {
+  it("recall (#287): DELETE withdraws a queued follow-up with its content; the rest auto-start", async () => {
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
@@ -112,7 +112,6 @@ describe("follow-up queue route", () => {
         { type: "image_url", imageUrl: png },
       ],
       queueIfBusy: true,
-      thinkingLevel: "high",
     });
     await api.post(`/api/sessions/${SID}/tasks`, {
       input: [{ type: "text", text: "follow-up 2" }],
@@ -124,15 +123,10 @@ describe("follow-up queue route", () => {
       { id: expect.any(String), text: "follow-up 2", images: 0, files: 0 },
     ]);
 
-    // The recall returns the original content plus the per-turn level it was queued with.
+    // The recall returns the original content.
     const res = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      text: "follow-up 1",
-      images: [png],
-      files: [],
-      thinkingLevel: "high",
-    });
+    expect(await res.json()).toEqual({ text: "follow-up 1", images: [png], files: [] });
     expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
 
     // Recalled means never started: only the remaining follow-up auto-starts.

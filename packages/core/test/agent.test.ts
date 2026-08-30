@@ -286,15 +286,15 @@ describe("Agent.createSession session source (session_meta origin marker)", () =
 });
 
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
-  // The session's default level lives on the LLM object (per-request overrides fall back to
-  // it); session_meta holds per-session invariants only and never records a thinking level.
+  // A context's level is the LLM object's construction default (nothing overrides it per
+  // request), and session_meta records it as the context's `thinking_level`.
   const defaultLevelOf = async (session: unknown): Promise<unknown> => {
     await bootstrapped(session);
     return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
       .deps.llm.defaultThinkingLevel;
   };
 
-  it("falls back to the Agent config for the llm default; session_meta records no level", async () => {
+  it("falls back to the Agent config for the llm default; session_meta records the level", async () => {
     const agent = await createAgent();
     // The seeded Agent config pins thinking_level "medium" — the only source when no option is given.
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
@@ -302,10 +302,10 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      // session_meta contains ONLY per-session invariants: the thinking level is per-turn.
+      // The context's level, fixed for its lifetime, is part of its session_meta.
       expect(
-        "thinking_level" in (session.metaMessage.payload as unknown as Record<string, unknown>),
-      ).toBe(false);
+        (session.metaMessage.payload as unknown as Record<string, unknown>).thinking_level,
+      ).toBe("medium");
       expect(await defaultLevelOf(session)).toBe("medium");
       expect(mapThinkingLevel("medium")).toBeDefined(); // the name maps onto the wire enum
     } finally {
@@ -979,6 +979,56 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
+  it("records the context's thinking level in session_meta and re-reads the config default at the next context", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-meta");
+    await fs.mkdir(ws, { recursive: true });
+    const levelOf = (session: { metaMessage: OmniMessage }) =>
+      (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+
+    // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
+    // without a level and says so.
+    const configured = await agent.createSession({ workspaceDir: ws });
+    const unlevelled = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
+    try {
+      expect(levelOf(configured)).toBe("medium");
+      expect(levelOf(unlevelled)).toBe("default");
+    } finally {
+      configured.dispose();
+      unlevelled.dispose();
+    }
+  });
+
+  it("pinThinkingLevel re-stamps a first context that has not started, and otherwise reaches only the next context", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-pin");
+    await fs.mkdir(ws, { recursive: true });
+    const levelOf = (session: { metaMessage: OmniMessage }) =>
+      (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      // Before the first run: the first context takes the pin — meta and LLM alike.
+      session.pinThinkingLevel("high");
+      expect(levelOf(session)).toBe("high");
+      await bootstrapped(session);
+      expect(lastBuilt()!.thinkingLevel).toBe("high");
+
+      // While the context runs, its level is part of the request prefix and never moves; the
+      // pin lands in the context a compaction opens.
+      session.pinThinkingLevel("xhigh");
+      expect(levelOf(session)).toBe("high");
+      const { opened } = await openNext(session);
+      expect((opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level).toBe(
+        "xhigh",
+      );
+      expect(lastBuilt()!.thinkingLevel).toBe("xhigh");
+      expect(levelOf(session)).toBe("xhigh");
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("reconnects the new context's MCP Servers, bracketing the connect with the same event pair the first run uses", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-mcp-rotate");
@@ -1020,33 +1070,21 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("keeps the previous context's whole configuration, with a warning, when the Agent State cannot be read at context open", async () => {
+  it("an Agent State that cannot be assembled fails the context open outright — no silent fallback", async () => {
     const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-failsoft");
+    const ws = path.join(tmpRoot, "ws-unreadable");
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await bootstrapped(session);
       const before = promptOf(session);
-      const toolsBefore = toolNames(lastBuilt()!.tools);
       // system_config.yaml no longer parses — an edit gone wrong mid-context.
       await fs.writeFile(systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "");
 
-      const { opened, records } = await openNext(session);
-
-      expect(opened.sessionMeta).toBeUndefined();
-      expect(opened.maxTurns).toBeUndefined();
-      expect(opened.compaction).toBeUndefined();
-      expect(records).toEqual([]);
-      expect(lastBuilt()!.systemPrompt).toBe(before);
-      expect(toolNames(lastBuilt()!.tools)).toEqual(toolsBefore);
+      await expect(openNext(session)).rejects.toThrow("Invalid Agent State config");
+      // Nothing was adopted: the Session still describes the context that is running.
       expect(promptOf(session)).toBe(before);
-      expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining("keeping the previous context's configuration"),
-      );
     } finally {
-      stderr.mockRestore();
       session.dispose();
     }
   });

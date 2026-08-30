@@ -89,6 +89,7 @@ import type {
   ToolDefinition,
   VisionDescriberService,
 } from "./interfaces/index.js";
+import { THINKING_LEVEL_NAMES } from "./interfaces/index.js";
 import type { ModelEntry } from "./state/index.js";
 
 /**
@@ -178,6 +179,19 @@ export interface ResumeSessionOptions {
 }
 
 /**
+ * The thinking level a Trace's `session_meta` recorded for its context: `null` for a context
+ * that ran without one (`"default"`), the name itself when valid, and `undefined` when the
+ * meta predates the field (or holds junk) — the caller then resolves the level as for a new
+ * context.
+ */
+function recordedThinkingLevel(value: unknown): ThinkingLevelName | null | undefined {
+  if (value === "default") return null;
+  return (THINKING_LEVEL_NAMES as readonly unknown[]).includes(value)
+    ? (value as ThinkingLevelName)
+    : undefined;
+}
+
+/**
  * The facts fixed for a Session's lifetime — every model context of the Session is opened
  * against them. Everything else a context runs with comes from the Agent State as it is on
  * disk when the context opens (see `Agent.assembleContext`).
@@ -191,8 +205,9 @@ interface SessionSpec {
   baseUrl: string | undefined;
   /**
    * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
-   * a value pins every context; `null` runs every context without a level; `undefined` reads
-   * the Agent config's default when each context opens.
+   * a value pins every context opened from now on; `null` runs them without a level;
+   * `undefined` reads the Agent config's default when each context opens. Mutable: a host
+   * re-pins a running Session through `Session.pinThinkingLevel`.
    */
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
@@ -289,14 +304,14 @@ export class Agent {
    * inject metadata (name and description) and the model reads the body on demand via shell;
    * Memory likewise injects only its index; Schedules inject only task names.
    *
-   * `systemPrompt`, when given, is used instead of assembling one: a resume of an open
-   * context keeps the prompt its Trace recorded, since the history replayed into it was
-   * produced under that text.
+   * `systemPrompt` and `thinkingLevel`, when given, are used instead of assembling them: a
+   * resume of an open context keeps the prompt and the thinking level its Trace recorded,
+   * since the history replayed into it was produced under that request prefix.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async assembleContext(
     spec: SessionSpec,
-    opts: { systemPrompt?: string } = {},
+    opts: { systemPrompt?: string; thinkingLevel?: ThinkingLevelName | null } = {},
   ): Promise<AssembledContext> {
     const { root, projectId, agentId } = this.state;
     const state = await loadAgentState({ root, projectId, agentId });
@@ -353,15 +368,14 @@ export class Agent {
     }
     const toolConfig: ToolConfig = { ...baseToolConfig, customTools };
 
-    // Effective thinking level (the Session's tri-state pin): a value wins over every config;
-    // `null` — how subagent spawning says "the parent has none" — suppresses the config
-    // fallback entirely; only `undefined` (no pin) reads the config chain, against this
-    // context's State (Agent explicit > Project default_chat > built-in "medium", see
-    // configuredThinkingLevel).
-    const thinkingLevel =
-      spec.thinkingLevel === null
-        ? undefined
-        : (spec.thinkingLevel ?? this.configuredThinkingLevel(state));
+    // Effective thinking level — a recorded one when resuming an open context, else the
+    // Session's tri-state pin: a value wins over every config; `null` — how subagent spawning
+    // says "the parent has none" — suppresses the config fallback entirely; only `undefined`
+    // (no pin) reads the config chain, against this context's State (Agent explicit > Project
+    // default_chat > built-in "medium", see configuredThinkingLevel). Fixed for the context:
+    // the level is part of the request prefix.
+    const pin = opts.thinkingLevel !== undefined ? opts.thinkingLevel : spec.thinkingLevel;
+    const thinkingLevel = pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state));
 
     // Compaction config: defaults are filled in here; an unknown mode falls back to
     // summarize (the default).
@@ -376,17 +390,17 @@ export class Agent {
       prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
     };
 
-    // session_meta: this context's runtime configuration — the assembled prompt goes both to
-    // the LLM and in here, so the Trace can audit the actual effective value. The thinking
-    // level is a per-turn run parameter (RunOptions.thinkingLevel) and is deliberately not
-    // recorded here; the toolset travels as the tool_list_ready event (it is only known once
-    // the context's MCP Servers connected).
+    // session_meta: this context's runtime configuration — the assembled prompt and the
+    // thinking level go both to the LLM and in here, so the Trace can audit the actual
+    // effective values and a resume rebuilds the same request prefix; the toolset travels as
+    // the tool_list_ready event (it is only known once the context's MCP Servers connected).
     const meta: SessionMetaPayload = {
       session_id: spec.sessionId,
       provider: spec.modelEntry.provider,
       model_id: spec.modelEntry.model_id,
       model_context_window: spec.modelEntry.context_window ?? "unknown",
       system_prompt: systemPrompt,
+      thinking_level: thinkingLevel ?? "default",
       agent_state: state.stateDir,
       workspace: spec.workspaceDir,
       ...(spec.source !== undefined ? { source: spec.source } : {}),
@@ -507,6 +521,7 @@ export class Agent {
       environment: rt.environment,
       trace,
       openContext: rt.openContext,
+      pinThinkingLevel: rt.pinThinkingLevel,
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
@@ -598,15 +613,12 @@ export class Agent {
     const apiKey = opts.apiKey ?? modelEntry.api_key;
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
-    // The thinking level comes from the current config chain only, read per context (the
-    // same chain createSession uses when no level is pinned): session_meta no longer records
-    // one (it became a per-turn run parameter), and a `thinking_level` still present in a
-    // legacy Trace's meta JSON is deliberately ignored — a resumed legacy subagent session
-    // falls back to this Agent's configured level instead of keeping the level it inherited
-    // at spawn time. The origin carries over from the original session_meta (a resumed
-    // scheduled/subagent Session stays marked); the on-disk value is untrusted: only the
-    // exact known origins pass, junk written by a third party is dropped rather than cast
-    // through.
+    // No pin at resume: the host re-pins through Session.pinThinkingLevel when it holds one,
+    // and contexts opened without a pin read the Agent config's chain (the same chain
+    // createSession uses). The origin carries over from the original session_meta (a
+    // resumed scheduled/subagent Session stays marked); the on-disk value is untrusted: only
+    // the exact known origins pass, junk written by a third party is dropped rather than
+    // cast through.
     const spec: SessionSpec = {
       sessionId,
       workspaceDir,
@@ -621,16 +633,23 @@ export class Agent {
     // for the first time — nothing was produced under any configuration yet — so it is
     // assembled from the current Agent State exactly as the compaction would have opened it,
     // and the rotation deferred to the first write records its meta at the new file's head.
-    // An open context keeps the system prompt its file recorded — the history replayed into
-    // it was produced under that text — while its tools, Environment, vault and run
-    // parameters can only come from the current Agent State: the Trace records no executable
-    // configuration (tool definitions travel with every Request and are not part of the
-    // history).
+    // An open context keeps the system prompt and the thinking level its file recorded — the
+    // history replayed into it was produced under that request prefix (a meta from before
+    // the level was recorded resolves it as a new context would) — while its tools,
+    // Environment, vault and run parameters can only come from the current Agent State: the
+    // Trace records no executable configuration (tool definitions travel with every Request
+    // and are not part of the history).
+    const recordedLevel = recordedThinkingLevel(meta.thinking_level);
     const context = await this.assembleContext(
       spec,
-      resumed.contextClosed ? {} : { systemPrompt: meta.system_prompt },
+      resumed.contextClosed
+        ? {}
+        : {
+            systemPrompt: meta.system_prompt,
+            ...(recordedLevel !== undefined ? { thinkingLevel: recordedLevel } : {}),
+          },
     );
-    const rt = this.buildRuntime(spec, context);
+    const rt = this.buildRuntime(spec, context, { initialContextOpen: !resumed.contextClosed });
 
     // History is injected once into the freshly built context object as part of the lazy
     // bootstrap (setHistory is only used on resume); Session cumulative Token counts carry
@@ -691,6 +710,7 @@ export class Agent {
       environment: rt.environment,
       trace,
       openContext: rt.openContext,
+      pinThinkingLevel: rt.pinThinkingLevel,
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
@@ -717,6 +737,8 @@ export class Agent {
         : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
+      // An open context is mid-life: a pin arriving before the first run applies to the next context, never to it.
+      initialContextOpen: !resumed.contextClosed,
       initialEngineState: {
         carryOver: resumed.carryOver,
         ...(resumed.pendingSummary ? { pendingSummary: resumed.pendingSummary } : {}),
@@ -750,6 +772,10 @@ export class Agent {
   private buildRuntime(
     spec: SessionSpec,
     initial: AssembledContext,
+    opts: {
+      /** The initial context is a resumed open one: history already ran under its recorded prefix, so nothing may re-stamp it (see `pinThinkingLevel`). */
+      initialContextOpen?: boolean;
+    } = {},
   ): {
     environment: Environment;
     /**
@@ -771,12 +797,17 @@ export class Agent {
      * built from the result together with the session_meta recording it.
      */
     openContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
+    /** See SessionConfig.pinThinkingLevel. */
+    pinThinkingLevel: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
     createBareLLM: () => GenerativeModel;
   } {
     const { sessionId, workspaceDir, modelEntry, apiKey, baseUrl, subagentDepth } = spec;
     // The context the Session is running: the initial one, then whatever `openContext` last
-    // assembled (a rebuild that failed keeps the previous one, see there).
+    // assembled.
     let current = initial;
+    // Whether the initial context has been built into an LLM object (the first run's
+    // bootstrap ran): from then on its request prefix is in use and cannot be re-stamped.
+    let started = false;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
     // optionally choose agentId (omitted = call the current Agent), the child
@@ -893,7 +924,7 @@ export class Agent {
           metaSent = true;
           return withOrigin(childSession.metaMessage, hop);
         },
-        async *run({ messages, signal, approve, thinkingLevel: turnThinkingLevel }) {
+        async *run({ messages, signal, approve }) {
           if (!metaSent) {
             metaSent = true;
             yield withOrigin(childSession.metaMessage, hop);
@@ -924,7 +955,6 @@ export class Agent {
           const it = childSession.run(messages, {
             ...(signal ? { signal } : {}),
             ...(childApprove ? { approve: childApprove } : {}),
-            ...(turnThinkingLevel !== undefined ? { thinkingLevel: turnThinkingLevel } : {}),
           });
           for (;;) {
             const res = await it.next();
@@ -1065,46 +1095,30 @@ export class Agent {
       mcp: McpServerConnectResult[];
     }> => {
       const tools = await environment.listTools();
+      started = true;
       return { tools, llm: buildLLM(current, tools), mcp: environment.mcpConnectResults() };
     };
 
     // The context that follows a completed compaction: assembled anew from the Agent State
     // as it is now — an edit the model (or the user) made during the old context to
     // AGENTS.md, system_config.yaml, the vault, the Skills or the MCP Servers lands here.
-    // The Environment is re-equipped with the new toolset and vault, the MCP Servers
-    // reconnect from the new config (the connect phase is published as the same pair the
-    // first run brackets it with, then the toolset record — the engine yields them live and
-    // writes them at the head of the rotated Trace file), and the LLM object is built from
-    // the result.
+    // The Environment is re-equipped with the new toolset and vault; MCP Servers whose entry
+    // is unchanged keep their connection, and the ones that must connect (new, changed, or
+    // failed last time) are bracketed by the same pair the first run streams, followed by
+    // the toolset record — the engine yields them live and writes them at the head of the
+    // rotated Trace file. An Agent State that cannot be assembled (a config that no longer
+    // parses) throws: the run fails with that error and the engine keeps the old context.
     const openContext = async (
       sessionTokens: TokenCounts,
       { emit }: OpenContextOptions,
     ): Promise<OpenedContext> => {
-      let next: AssembledContext;
-      try {
-        next = await this.assembleContext(spec);
-      } catch (err) {
-        // Fail-soft: the compaction that opens this context has already succeeded and its
-        // summary is in hand, so an Agent State that cannot be read at this moment (a
-        // system_config.yaml or vault that no longer parses, say) keeps the previous
-        // context's whole configuration — still a correct configuration, only a stale one —
-        // rather than failing the compaction after the fact. The Environment stays as it
-        // is and nothing is emitted, so the engine keeps the previous meta and records too;
-        // listTools returns the already-connected toolset without reconnecting.
-        const detail = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[session] context rebuild from the Agent State failed, keeping the previous context's configuration: ${detail}\n`,
-        );
-        const llm = buildLLM(current, await environment.listTools());
-        llm.sessionTokens = sessionTokens;
-        return { llm };
-      }
+      const next = await this.assembleContext(spec);
       current = next;
       environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
-      const servers = environment.mcpServerNames();
-      if (servers.length > 0) emit(mcpConnectBegin(servers));
+      const pending = environment.pendingMcpServerNames();
+      if (pending.length > 0) emit(mcpConnectBegin(pending));
       const tools = await environment.listTools();
-      if (servers.length > 0) {
+      if (pending.length > 0) {
         emit(mcpConnectEnd(mcpConnectOutcome(environment.mcpConnectResults())));
       }
       emit(toolListReady(tools));
@@ -1117,6 +1131,24 @@ export class Agent {
         maxTurns: next.maxTurns ?? -1,
         compaction: next.compaction,
       };
+    };
+
+    // Re-pins the Session's thinking level for every context opened from now on. The
+    // initial context adopts it too while it has not started — nothing has run under its
+    // prefix yet — unless it is a resumed open context (`initialContextOpen`), whose
+    // recorded level stands; the caller says which case it is (`adoptNow`).
+    const pinThinkingLevel = (
+      level: ThinkingLevelName,
+      adoptNow: boolean,
+    ): SessionMetaPayload | null => {
+      spec.thinkingLevel = level;
+      if (!adoptNow || started || opts.initialContextOpen) return null;
+      current = {
+        ...current,
+        thinkingLevel: level,
+        meta: { ...current.meta, thinking_level: level },
+      };
+      return current.meta;
     };
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle):
     // same Model/credentials, no tools, no system prompt, thinking disabled, a small
@@ -1147,6 +1179,6 @@ export class Agent {
     // that throw here; the instance is discarded.
     createBareLLM();
 
-    return { environment, bootstrap, openContext, createBareLLM };
+    return { environment, bootstrap, openContext, pinThinkingLevel, createBareLLM };
   }
 }

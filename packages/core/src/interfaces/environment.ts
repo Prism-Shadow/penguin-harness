@@ -121,8 +121,6 @@ export interface SubagentHandle {
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
-    /** Per-turn thinking level for THIS round only (a host follow-up's picker); omitted keeps the child Session's own level. */
-    thinkingLevel?: ThinkingLevelName;
   }): AsyncGenerator<OmniMessage, RunCutoff | null>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
@@ -144,6 +142,16 @@ export interface SubagentHandle {
  * argument inherits the parent Session's effective level, so a parent genuinely running
  * without a level still passes that down.
  */
+/** Every thinking level name, the `ThinkingLevelName` vocabulary as a runtime list (validating a recorded or wire value). */
+export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
 export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
   "low",
   "medium",
@@ -380,8 +388,6 @@ export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" 
 
 /** Options of a host-initiated subagent message (see EnvironmentInterface.sendToBackgroundSubagent). */
 export interface SubagentMessageOptions {
-  /** Per-turn thinking level for a follow-up/resumed round; steering an already-running round cannot change that round's level. */
-  thinkingLevel?: ThinkingLevelName;
   /**
    * Enables the resume fallback when no live child bears the session id: the child Session
    * is revived (its own history, model and Workspace — `resumeSession` semantics) and

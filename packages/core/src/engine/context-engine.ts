@@ -80,7 +80,6 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
-  ThinkingLevelName,
 } from "../interfaces/index.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
@@ -165,12 +164,6 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
-  /**
-   * Thinking level for this run's LLM requests (a per-turn parameter): forwarded to every
-   * `streamGenerate` of this run — reconnect retries included; compaction requests keep the
-   * construction-time default (no override). Omitted = the LLM object's default.
-   */
-  thinkingLevel?: ThinkingLevelName;
 }
 
 /**
@@ -718,9 +711,6 @@ export class ContextEngine {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
-    // Per-turn thinking level: applies to each of this run's LLM requests (reconnects included);
-    // compaction requests are out of scope and keep the LLM default.
-    const thinkingLevel = opts?.thinkingLevel;
 
     // Merge the Task-boundary compaction summary (the new context's first input, merged with
     // this Prompt), the carry-over left over from the last interruption, and this call's new
@@ -809,7 +799,7 @@ export class ContextEngine {
         // it decides retry/resend purely from `outcome`. The retry count so far is threaded
         // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
         // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
+        turn = yield* this.runTurn(attemptInput, approve, signal, reconnects);
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -1146,7 +1136,6 @@ export class ContextEngine {
     input: OmniMessage[],
     approve: ApproveFn,
     signal?: AbortSignal,
-    thinkingLevel?: ThinkingLevelName,
     /** Retries already performed for this turn (from the caller's reconnect loop): lets request_end announce the NEXT attempt's planned backoff. */
     reconnectsSoFar = 0,
   ): AsyncGenerator<OmniMessage, TurnResult> {
@@ -1179,7 +1168,6 @@ export class ContextEngine {
         const gen = this.llm.streamGenerate({
           newMessages: input,
           ...(signal ? { signal } : {}),
-          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
         for (;;) {
           const res = await gen.next();
@@ -1819,7 +1807,6 @@ export class ContextEngine {
    * `write`), avoiding an empty file if no further messages follow the compaction.
    */
   private async *startNewContext(): AsyncGenerator<OmniMessage> {
-    this.pendingTraceRotation = true;
     // The opener publishes records through a callback; a merge queue turns them into this
     // generator's live yields while the opener is still running.
     const queue = new MergeQueue();
@@ -1843,7 +1830,11 @@ export class ContextEngine {
       records.push(msg);
       yield msg;
     }
+    // An opener that throws (the Agent State could not be assembled) propagates out of the
+    // run with the engine untouched: the old context stays current and no rotation is
+    // pending, so the next trigger compacts again from a consistent state.
     const opened = await opening;
+    this.pendingTraceRotation = true;
     this.llm = opened.llm;
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;

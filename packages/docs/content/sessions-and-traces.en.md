@@ -81,7 +81,7 @@ When tool output exceeds `maxOutputLength`, Trace records the same bounded head,
 The Trace is the single source of truth for recovery — there is no separate session database to keep in sync. `resumeSession` works as follows:
 
 1. Locate the highest-index Trace file of the Session;
-2. Read the runtime configuration from its `session_meta` — the model and the Workspace, immutable for the lifetime of the Session, and the system prompt that context ran with;
+2. Read the runtime configuration from its `session_meta` — the model and the Workspace, immutable for the lifetime of the Session, and the system prompt and thinking level that context ran with;
 3. Replay the committed history into a fresh LLM context;
 4. Reconstruct the carry-over (undelivered tool outputs, interruption markers) plus turn and Token counters;
 5. Continue appending to the same Trace file.

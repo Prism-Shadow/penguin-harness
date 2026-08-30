@@ -49,7 +49,7 @@ penguin run -m "long job" --background                # returns the session id i
 | `--model-id <id>` | Upstream id of the model to use; requires `--provider`. Omit both to use the Project's default model |
 | `--provider <group>` | Provider group of the model; required whenever `--model-id` is given |
 | `--approve <mode>` | Approval mode, see below (default `allow-all`). With `--session` it PATCHes the session's sticky mode |
-| `--thinking <level>` | Thinking level for this task: `low` / `medium` / `high` / `xhigh` / `max`; rides the task request. Omitted, the session's pinned level (else the Agent config) applies |
+| `--thinking <level>` | Pins the session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the task: a new session starts its first model context at it; with `--session`, the existing session takes it at its next compaction (its running context keeps its level). Omitted, the session's pinned level (else the Agent config) applies |
 | `--session <sessionId>` | Reuse an existing session (full id or unique fragment) instead of creating one; excludes `--workspace` and the model pair |
 | `--background` | POST the task and exit immediately, printing the session id (`{"sessionId"}` under `--json`); the task keeps running on the server — follow it with `penguin logs -f` |
 | `--timeout <duration>` | Soft-yield wait budget (see Global conventions): at expiry, print what has rendered plus a dim still-running line with the session id (`{sessionId, status: "running", text}` under `--json`) and exit 0 — the task is not aborted. `--timeout 0` returns right after the POST (`{sessionId, status: "running"}` under `--json`, no `text`). Excludes `--background` |
@@ -67,7 +67,7 @@ Interactive REPL; each input line starts a Task. Takes the same options as `run`
 | `--verbose` | Show full tool output; by default long tool outputs are collapsed (see below) |
 | `--server <url>` | Target server (see Server connection) |
 
-With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. The thinking level is a per-turn parameter, so `--thinking` is still accepted: it becomes the initial `/thinking` override instead of a creation-time default. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
+With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. `--thinking` is still accepted: it re-pins the existing Session, and the new level applies from its next model context (after its next compaction) — the context in flight keeps its level. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
 
 In-REPL commands:
 
@@ -76,8 +76,8 @@ In-REPL commands:
 | any text while a Task runs | Mid-run steering: queued and delivered to the model between turns as a `[user_steering]` user message (a `»` acknowledgment echoes the text); rendering is held while you type so streamed output doesn't scribble over the line. If the Task finishes first, the line is sent as the next normal prompt |
 | `/compact` | Proactively compact the current context |
 | `/clear` | Start a fresh blank Session in place; the old Session stays on disk and can be resumed with `--resume` |
-| `/thinking` | Show the thinking level the next turn will run at, and whether it is this Session's default or an active per-turn override (which also names the default it overrides) |
-| `/thinking <level>` | Override the thinking level (`low` / `medium` / `high` / `xhigh` / `max`) for subsequent turns of this chat; never written back to the Agent config. The override applies to this Session's own turns only — subagent sessions are spawned with the level the Session was created with |
+| `/thinking` | Show this Session's thinking level: the level it is pinned to (by `--thinking` or `/thinking`), else the Agent's configured level |
+| `/thinking <level>` | Pin the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); never written back to the Agent config. The level is part of a model context's request prefix, so the pin lands in the next context — after the next compaction — while the running context keeps its level; subagent sessions spawned from then on inherit the pinned level |
 | `/verbose` | Toggle between collapsed and full tool output |
 | `/exit`, `/quit` | Quit |
 

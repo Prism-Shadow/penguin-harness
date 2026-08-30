@@ -96,7 +96,7 @@ export function VaultTab({
     try {
       const res = await api.putVault(projectId, agentId, body);
       setEntries(res.entries);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       // Add / delete moves the agent card's vault-key count; refresh the list provider too.
       void reloadAgents();
       return null;

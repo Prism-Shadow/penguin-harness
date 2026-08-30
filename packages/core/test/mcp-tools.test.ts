@@ -156,6 +156,32 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     const echoed = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "hi" }));
     expect(echoed.stop_reason).toBe("completed");
     expect(echoed.output).toBe("echo: hi");
+
+    // The same entry again — a Session compacting every turn must not respawn its servers:
+    // nothing is pending, the next listTools runs no connect phase (no outcome to report),
+    // and the connection keeps serving.
+    env.reconfigure({
+      toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+    });
+    expect(env.pendingMcpServerNames()).toEqual([]);
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
+    expect(env.mcpConnectResults()).toEqual([]);
+    const again = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "kept" }));
+    expect(again.output).toBe("echo: kept");
+
+    // A changed entry (a new env var for the server) is a different server: reconnected.
+    env.reconfigure({
+      toolConfig: {
+        customTools: [],
+        mcpServers: [{ ...fixtureEntry({ env: { FIXTURE_SECRET: "v2" } }), name: "fx2" }],
+      },
+    });
+    expect(env.pendingMcpServerNames()).toEqual(["fx2"]);
+    await env.listTools();
+    expect(env.mcpConnectResults()).toEqual([
+      expect.objectContaining({ server: "fx2", status: "completed" }),
+    ]);
+    expect(finalPayload(await runTool(env, "mcp__fx2__probe", {})).output).toMatch(/^v2\|/);
   }, 30_000);
 });
 

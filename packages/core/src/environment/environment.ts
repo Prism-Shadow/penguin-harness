@@ -214,18 +214,36 @@ export class Environment implements EnvironmentInterface {
   /**
    * Re-equips the Environment for a new model context (the composition layer calls it when a
    * compaction opens one): the toolset — builtin entries and MCP Servers — and the vault are
-   * replaced as a whole with what the Agent State says now. The previous context's MCP
-   * clients are closed (stdio server processes included) and the new list connects lazily on
-   * the next listTools(), exactly as at Session creation; the vault reaches every command
+   * replaced as a whole with what the Agent State says now. MCP connections are cached by
+   * config: a server whose entry is unchanged keeps its live connection and discovered tools
+   * (a Session that compacts every turn must not respawn its servers every turn), a removed
+   * or changed one is closed, and a new or changed one connects lazily on the next
+   * listTools() — `pendingMcpServerNames()` names those. The vault reaches every command
    * spawned from now on, while processes already running keep the environment they were
    * started with. The Session-lifetime parts — background command processes, subagent child
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
    */
   reconfigure(config: { toolConfig: ToolConfig; vault?: Record<string, string> }): void {
-    this.mcp?.closeQuietly();
+    const servers = config.toolConfig.mcpServers;
+    if (this.mcp && servers.length > 0) {
+      this.mcp.reconfigure(servers);
+    } else {
+      this.mcp?.closeQuietly();
+      this.mcp =
+        servers.length > 0
+          ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
+          : null;
+    }
+    const mcp = this.mcp;
     this.equip(config.toolConfig);
+    this.mcp = mcp;
     this.commandSessions.setVault(config.vault ?? {});
+  }
+
+  /** Configured MCP servers the next listTools() will contact — those without a live connection (never connected, failed, or changed by `reconfigure`); empty once every configured server is connected. Concrete-class surface for the composition layer's connect events. */
+  pendingMcpServerNames(): string[] {
+    return this.mcp?.pendingServerNames() ?? [];
   }
 
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */
@@ -316,8 +334,8 @@ export class Environment implements EnvironmentInterface {
    * on the same managed-session channel input_subagent uses, taking the same OmniMessage list;
    * the caller's messages carry no sender (human origin), unlike the model path's
    * "parent_agent" — and they reach both branches unchanged, so a steered round and a started
-   * round record the same author. `opts.thinkingLevel` pins only a round this call starts —
-   * steering cannot change the round already in flight.
+   * round record the same author. The child runs every round at its own context's thinking
+   * level (pinned on the child Session, or inherited at spawn) — a message never changes it.
    */
   async sendToBackgroundSubagent(
     childSessionId: string,
@@ -332,10 +350,7 @@ export class Environment implements EnvironmentInterface {
     try {
       // A host round is the user's own conversation with the child, not work the model
       // dispatched: it must not fire a background completion notice at the parent.
-      session.startRun(messages, {
-        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-        suppressDoneReport: true,
-      });
+      session.startRun(messages, { suppressDoneReport: true });
     } catch {
       return "gone";
     }
@@ -374,10 +389,7 @@ export class Environment implements EnvironmentInterface {
     this.attachHostTap(session);
     try {
       // Host-initiated like the started path: no completion notice at the parent.
-      session.startRun(messages, {
-        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-        suppressDoneReport: true,
-      });
+      session.startRun(messages, { suppressDoneReport: true });
     } catch {
       return "gone";
     }
