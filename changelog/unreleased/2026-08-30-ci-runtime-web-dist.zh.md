@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** fix
 - **Scope:** `ci`, `desktop`, `tooling`
+- **PR:** [#545](https://github.com/Prism-Shadow/penguin-harness/pull/545)
 
 [English](2026-08-30-ci-runtime-web-dist.md)
 
