@@ -73,6 +73,7 @@
  * refused with a reason — see refuseMedia, which explains what QQ would require.
  */
 import { MESSAGING_TEXT_CHUNK_CHARS, chunkMessagingText } from "./bridge.js";
+import type { MessagingTuning } from "./bridge.js";
 import { MessagingUnsupportedError } from "./media.js";
 import type {
   MessagingChannelConnector,
@@ -91,11 +92,10 @@ import type {
 } from "./qq-api.js";
 import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError } from "./qq-api.js";
 import { qqMarkdownOf } from "./qq-markdown.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { createQQTransport } from "./qq-api.js";
+import type { Clock } from "../../hmr/capabilities.js";
 
 /** The QQ binding's stored config document (`messaging_bindings.config_json`). */
 export interface QQBindingConfig extends Record<string, unknown> {
@@ -647,13 +647,27 @@ export class QQConnector implements MessagingChannelConnector {
   },
 })
 export class QqMessaging {
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use() private readonly qq!: QQTransportHandle;
+  @Use() private readonly tuning!: MessagingTuning;
+  @Use() private readonly clock!: Clock;
   @Bind("messaging-qq.connector") connector!: MessagingChannelConnector;
   setup() {
-    const overrides = this.overrides.value();
-    this.connector = new QQConnector(overrides.qqTransport ?? createQQTransport(), {
-      ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
-      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    const { qqTailFlushMs } = this.tuning;
+    this.connector = new QQConnector(this.qq.transport, {
+      ...(qqTailFlushMs !== undefined ? { tailFlushMs: qqTailFlushMs } : {}),
+      now: () => this.clock.now().getTime(),
     });
+  }
+}
+
+/** The QQ OpenAPI + gateway transport as a node, so a test stands in a fake for the network. */
+export abstract class QQTransportHandle extends Interface<{
+  transport: Opaque<"QQTransport", QQTransport>;
+}>() {}
+@Module()
+export class QQTransportProvider {
+  @Provide() qqTransport!: QQTransportHandle;
+  setup() {
+    this.qqTransport = { transport: createQQTransport() };
   }
 }

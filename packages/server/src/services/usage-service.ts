@@ -48,8 +48,8 @@ import {
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
 import type { ProjectConfigService } from "./project-config-service.js";
+import type { Clock } from "../hmr/capabilities.js";
 
 /**
  * Number of most-recent entries kept in the error detail table. Also the page size the whole
@@ -154,14 +154,9 @@ export class UsageService {
   @Use() private readonly usage!: UsageRepo;
   @Use() private readonly errors!: ErrorsRepo;
   @Use() private readonly projectConfig!: ProjectConfigService;
-  @Use() private readonly overrides!: Overrides;
+  @Use() private readonly clock!: Clock;
   private lookupPricing: PricingLookup = (projectId, provider, modelId) =>
     this.projectConfig.getPricing(projectId, provider, modelId);
-  private now: () => Date = () => new Date();
-
-  setup(): void {
-    this.now = this.overrides.value().now ?? this.now;
-  }
 
   /**
    * The catalog's time-based schedules, as the aggregations want them.
@@ -181,7 +176,7 @@ export class UsageService {
   }
 
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
-    const today = formatLocalDate(this.now());
+    const today = formatLocalDate(this.clock.now());
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).
     const base: UsageFilter = {};
     if (q.agentId !== undefined) base.agentId = q.agentId;
@@ -205,7 +200,7 @@ export class UsageService {
     const todayRows = this.usage.bucketByModel(projectId, win(today, today), tiers);
     const last7dRows = this.usage.bucketByModel(
       projectId,
-      win(localDateMinusDays(this.now(), 6)),
+      win(localDateMinusDays(this.clock.now(), 6)),
       tiers,
     );
     const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
@@ -218,7 +213,7 @@ export class UsageService {
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
-    const seriesFrom = q.from ?? localDateMinusDays(this.now(), 29);
+    const seriesFrom = q.from ?? localDateMinusDays(this.clock.now(), 29);
     const seriesTo = q.to ?? today;
     // The series is zero-filled over the whole effective range: cap the bucket
     // count so an arbitrary range × precision combination cannot materialize an

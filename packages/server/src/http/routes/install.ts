@@ -32,7 +32,6 @@ import { ensureInstallId } from "../../install-id.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
 
 export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -62,7 +61,7 @@ export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   },
 })
 export class InstallRoutes {
-  @Use(RuntimeModule) private readonly config!: Config;
+  @Use() private readonly config!: Config;
   @Bind("InstallRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = installRoutes({ config: this.config });

@@ -35,7 +35,7 @@ import type {
 } from "./workspace-files-service.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Paths } from "../hmr/capabilities.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
@@ -191,9 +191,9 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
 
 @Component()
 export class BenchmarkService {
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() private readonly workspaceFiles!: WorkspaceFilesService;
 
