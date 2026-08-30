@@ -399,6 +399,8 @@ export default {
 
 HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev` and current load `error`; `GET /:id/ui/*` serves the page (`index.html` for the bare path); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. From the page (served under `ui/`), call your handler with a relative `fetch("../api/…")`; the Web App shows the page in a tab and reloads it when `uiRev` changes.
 
+**Theme.** A workflow page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps `light`/`dark` on the page's root, copies its resolved palette (the gray scale, the accent pair, the font stack, the root font size) onto it, and injects `/workflow-ui.css` first in the head — a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg`, plus the classes `wf-primary` (a button), `wf-card`, `wf-rows`, `wf-row`, `wf-muted`. Write plain markup, take every colour and font from those variables, and the page follows the user through a theme or accent change; hardcode them and it clashes in one theme or the other. The page's own rules always win, and linking `/workflow-ui.css` yourself makes it look right when opened outside the app too.
+
 ## Verify before you hand over
 
 Never declare the app done without running it:
