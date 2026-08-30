@@ -8,6 +8,7 @@
 import type { UsageGroupBy } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { UsageStore } from "../../mechanisms/observability.js";
 
 export interface UsageRecordInsert {
   ts: string;
@@ -183,7 +184,7 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
 }
 
 @Component()
-export class UsageRepo {
+export class UsageRepo implements UsageStore {
   @Use() private readonly db!: Db;
 
   insert(r: UsageRecordInsert): void {

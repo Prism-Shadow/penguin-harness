@@ -22,6 +22,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
 
 /** Row cap: once exceeded, oldest rows are evicted in ascending id order (see file header). */
 export const MAX_ROWS = 20000;
@@ -84,7 +85,7 @@ export interface ErrorItem {
 }
 
 @Component()
-export class ErrorsRepo {
+export class ErrorsRepo implements ErrorLog {
   private readonly maxRows: number = MAX_ROWS;
   private readonly pruneEvery: number = PRUNE_EVERY;
   /** Insert count since the last capacity check (see file header: avoids COUNT on every call). */

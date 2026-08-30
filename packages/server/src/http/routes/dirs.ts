@@ -17,13 +17,13 @@ import { Hono } from "hono";
 import type { DirListResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { requireProjectDir, requireValidId } from "../validate.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { directorySkillsRoutes } from "./directory-skills.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface DirsRouteDeps {
-  access: ProjectAccess;
+  access: Access;
 }
 
 export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
@@ -80,7 +80,7 @@ export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
   },
 })
 export class ProjectsRoutes {
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly access!: Access;
   @Bind("projects.dirs") dirsRoutes!: Hono<AppEnv>;
   @Bind("projects.dir-skills") dirSkillsRoutes!: Hono<AppEnv>;
   setup() {
