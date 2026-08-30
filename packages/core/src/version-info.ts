@@ -98,6 +98,20 @@ export interface HarnessInfo {
     cli: string | null;
     web: string | null;
   };
+  /**
+   * The interface table (`ifaces.json`) the pushed platform was built from, when the push
+   * carried it: its sha256 — the identity of every interface and manifest in the tree —
+   * and the size of what it describes. Null for a push without a table.
+   */
+  ifaces: IfacesSummary | null;
+}
+
+/** What a stored interface table says about itself, without reading it. */
+export interface IfacesSummary {
+  hash: string;
+  nodes: number;
+  interfaces: number;
+  types: number;
 }
 
 /**
@@ -115,6 +129,7 @@ export interface HarnessHistoryEntry {
   /** When the version was committed (ISO 8601); null for a commit that predates the record. */
   pushedAt: string | null;
   bundles: HarnessInfo["bundles"];
+  ifaces: IfacesSummary | null;
 }
 
 /**

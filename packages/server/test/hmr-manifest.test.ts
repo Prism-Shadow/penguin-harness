@@ -155,6 +155,7 @@ describe("readHarnessInfo", () => {
         cli: "store/cli/abc123.mjs",
         web: "store/web/cafe01.webz",
       },
+      ifaces: null,
     });
   });
 
@@ -195,6 +196,7 @@ describe("readHarnessInfo", () => {
       source: null,
       pushedAt: null,
       bundles: { platform: null, cli: "store/cli/abc123.mjs", web: null },
+      ifaces: null,
     });
   });
 
