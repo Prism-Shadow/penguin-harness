@@ -47,6 +47,13 @@ export interface Manifest {
   >;
   readonly context?: ContextDecl;
   readonly children: ReadonlyArray<ChildRef>;
+  /**
+   * Aliases in `provides` that are FORWARDED from a child: the module exports what one of
+   * its children provides under that interface, so the subtree's other provisions stay
+   * private to it. Resolved at boot to the child declaring the interface (else the one
+   * child whose provision satisfies it).
+   */
+  readonly exports?: ReadonlyArray<string>;
 }
 
 const ManifestType = type({
@@ -56,6 +63,7 @@ const ManifestType = type({
   contributes: { "[string]": type({ id: "string > 0", "[string]": "unknown" }).array() },
   "context?": { version: "number.integer >= 1", "schema?": "unknown" },
   children: type("string").or({ keyed: "string" }).array(),
+  "exports?": "string[]",
 });
 
 /** Strict parse of a manifest document; throws with the arktype summary on failure. */

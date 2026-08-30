@@ -49,7 +49,7 @@ interface Located {
   manifest: Manifest;
   /** Module names this module may wire to or contribute to. */
   visible: Set<string>;
-  /** The subset of `visible` that is an ancestor — contributable, not requirable. */
+  /** Module names above this one — never a provider for it (their exports face outward). */
   ancestors: Set<string>;
 }
 
@@ -70,19 +70,14 @@ function provided(
 
 function locate(root: ManifestNode): Located[] {
   const out: Located[] = [];
-  const walk = (node: ManifestNode, path: string, inherited: string[], ancestors: string[]) => {
-    const names = node.children.map((c) => c.manifest.name);
-    const above = [...ancestors, node.manifest.name];
+  const walk = (node: ManifestNode, path: string, inherited: string[], above: string[]) => {
+    const siblings = node.children.map((c) => c.manifest.name);
+    const ancestors = new Set([...above, node.manifest.name]);
     for (const child of node.children) {
       const childPath = `${path}/${child.manifest.name}`;
-      const siblings = names.filter((n) => n !== child.manifest.name);
-      out.push({
-        path: childPath,
-        manifest: child.manifest,
-        visible: new Set([...inherited, node.manifest.name, ...siblings]),
-        ancestors: new Set(above),
-      });
-      walk(child, childPath, [...inherited, node.manifest.name, ...names], above);
+      const visible = new Set([...inherited, node.manifest.name, ...siblings]);
+      out.push({ path: childPath, manifest: child.manifest, visible, ancestors });
+      walk(child, childPath, [...inherited, node.manifest.name, ...siblings], [...ancestors]);
     }
   };
   out.push({
@@ -143,7 +138,7 @@ export function checkTree(
         need.from !== undefined
           ? [need.from]
           : [...m.visible, ...Object.keys(published)].filter(
-              (name) => name !== mf.name && requirable(name),
+              (name) => name !== mf.name && !m.ancestors.has(name),
             );
       const matches: string[] = [];
       // Providers that DECLARE this very interface (the same table entry): when exactly
