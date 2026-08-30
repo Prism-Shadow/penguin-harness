@@ -265,7 +265,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       console.warn("[platform] bare kernel: terminals only, no business surface");
       terminals = new TerminalManager(ctx.resources, { assets: () => null });
       terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-      tree = await bootModules(bareTree([...plugins.modules()]), {
+      tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
         ifaces: ifaceTable as unknown as IfaceTable,
         resources: ctx.resources,
         parked: parkedModules(context),
@@ -275,19 +275,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // group and the terminal manager are modules wired by their manifests — checked as
       // data before any create() runs, created in dependency order. Sandbox backends the
       // plugin host registered enter the same tree as one contributing module.
-      tree = await bootModules(platformDef(caps, adoptable, [...plugins.modules()]), {
-        ifaces: ifaceTable as unknown as IfaceTable,
-        resources: ctx.resources,
-        parked: parkedModules(context),
-      });
+      tree = await bootModules(
+        platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements()),
+        {
+          ifaces: ifaceTable as unknown as IfaceTable,
+          resources: ctx.resources,
+          parked: parkedModules(context),
+        },
+      );
       business = tree;
       terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
     }
     // Ordinary code over this App's own auth: the same object the business routes
     // authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const auth = business?.api<Auth>("AuthService", "AuthService") ?? null;
+    const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
     const identity = identityFrom(auth);
-    const manager = business?.api<SessionManager>("SessionsModule", "manager") ?? null;
+    const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a
     // claimed capability — overwrite-only across swaps, so a dead generation's hook is
     // replaced and never removed: "is this session busy" for the channel sweep.
@@ -390,7 +393,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
 };
 
 /** A bare kernel's tree: the sandbox floor and whatever contributes to it, nothing that needs a capability. */
-function bareTree(plugins: ModuleDef[]): ModuleDef {
+function bareTree(
+  plugins: ModuleDef[],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
+): ModuleDef {
   return {
     manifest: {
       name: "platform",
@@ -400,7 +406,7 @@ function bareTree(plugins: ModuleDef[]): ModuleDef {
       children: ["SandboxModule", "*"],
     },
     children: [
-      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable }),
+      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable, replace }),
       ...plugins,
     ],
     create: () => ({ api: {} }),

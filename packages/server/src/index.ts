@@ -86,7 +86,7 @@ class PenguinServer {
 
   /** The current App's auth service — resolved per call, since a hot swap replaces the tree. */
   private auth(): Auth {
-    return this.deps.tree.api<Auth>("AuthService", "AuthService");
+    return this.deps.tree.api<Auth>("IdentityModule", "Auth");
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
@@ -173,7 +173,7 @@ class PenguinServer {
    * handlers).
    */
   applyPersistedProxy(): void {
-    const settings = this.deps.tree.api<Settings>("ServerSettingsRepo", "ServerSettingsRepo");
+    const settings = this.deps.tree.api<Settings>("SettingsModule", "Settings");
     applyProxySettings({
       proxyForApp: settings.getProxyForApp(),
       proxyUrl: settings.getProxyUrl(),
@@ -261,7 +261,7 @@ class PenguinServer {
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
       this.deps.tree
-        .api<Errors>("ErrorRecorder", "ErrorRecorder")
+        .api<Errors>("ObservabilityModule", "Errors")
         .record({ source: "process", err, code: "uncaught_exception" });
       // From this point the process state can't be trusted (the error was never converged
       // by any catch): don't swallow it — wrap up per existing shutdown semantics and exit
@@ -275,7 +275,7 @@ class PenguinServer {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
       this.deps.tree
-        .api<Errors>("ErrorRecorder", "ErrorRecorder")
+        .api<Errors>("ObservabilityModule", "Errors")
         .record({ source: "process", err, code: "unhandled_rejection" });
       // Unlike uncaughtException, this **doesn't** exit: a rejected promise is a localized
       // failure of some background task, and the process state isn't compromised; dragging

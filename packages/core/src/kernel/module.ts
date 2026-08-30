@@ -284,9 +284,24 @@ export function moduleDefOf(
     manifests: ManifestTable;
     instances?: ReadonlyMap<ModuleClass, object>;
     extra?: ModuleDef[];
+    /**
+     * Definitions standing in for nodes, by name — an extension's replacements. A
+     * replaced class is not looked at (its table entry, its fields): the definition is
+     * taken as it is, and the assembled tree is what gets checked.
+     */
+    replace?: ReadonlyMap<string, ModuleDef>;
   },
 ): ModuleDef {
   const meta = moduleMetaOf(cls);
+  const replacement = opts.replace?.get(meta.name);
+  if (replacement !== undefined) {
+    if (replacement.manifest.name !== meta.name) {
+      throw new ModuleBootError(
+        `replacement for '${meta.name}' is named '${replacement.manifest.name}' — a replacement keeps the name of the node it stands in for`,
+      );
+    }
+    return replacement;
+  }
   const manifest = opts.manifests[meta.name];
   if (manifest === undefined) {
     throw new ModuleBootError(`${meta.name}: not in the generated manifest table — run gen:ifaces`);

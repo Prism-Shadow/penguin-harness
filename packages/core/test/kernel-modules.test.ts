@@ -774,6 +774,63 @@ describe("class form: @Module / @Use / @Provide / @Bind", () => {
     expect(c).toBeInstanceOf(Counter);
   });
 
+  it("a replacement stands in for a node by name and is checked as the tree, not as the class", async () => {
+    // The in-memory stand-in never sees SessionsModule's class or table entry: it is a
+    // definition of its own, under the replaced node's name, checked with everything else.
+    const calls: string[] = [];
+    const memory = {
+      manifest: manifests.SessionsModule!,
+      create: () => ({
+        api: {
+          sessions: {
+            startTask: async (id: string) => ({ sessionId: `mem-${id}` }),
+            statusOf: () => "idle",
+          },
+        },
+      }),
+    };
+    const seenHere: string[] = [];
+    @Module()
+    class SchedulerModule {
+      @Use(SessionsModule) readonly runner!: Runner;
+      setup() {
+        seenHere.push(this.runner.statusOf("s"));
+      }
+    }
+    @Module({ children: [SessionsModule, SchedulerModule] })
+    class PlatformModule {}
+    const def = moduleDefOf(PlatformModule, {
+      manifests,
+      replace: new Map([["SessionsModule", memory]]),
+    });
+    const tree = await bootModules(def, { ifaces: t, resources });
+    expect(seenHere).toEqual(["idle"]);
+    expect((await tree.api<Sessions>("SessionsModule", "sessions").startTask("x")).sessionId).toBe(
+      "mem-x",
+    );
+    calls.push("ok");
+    tree.dispose();
+    // A stand-in that offers less than a consumer needs is refused by name, before anything runs.
+    const hollow = {
+      manifest: manifests.SessionsModule!,
+      create: () => ({ api: { sessions: {} } }),
+    };
+    const bad = moduleDefOf(PlatformModule, {
+      manifests,
+      replace: new Map([["SessionsModule", hollow]]),
+    });
+    await expect(bootModules(bad, { ifaces: t, resources })).rejects.toThrow(
+      /SessionsModule: api 'sessions' does not satisfy 'Sessions': missing \[startTask, statusOf\]/,
+    );
+    // A stand-in under another name is not a replacement at all.
+    expect(() =>
+      moduleDefOf(PlatformModule, {
+        manifests,
+        replace: new Map([["SessionsModule", { ...memory, manifest: manifests.SchedulerModule! }]]),
+      }),
+    ).toThrow(/keeps the name of the node it stands in for/);
+  });
+
   it("an undecorated class is refused by name", () => {
     class Plain {
       setup() {}

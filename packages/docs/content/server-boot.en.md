@@ -80,7 +80,7 @@ platformImpl.create
 │    # order. Plugin modules (package.json#penguin) are children of the same tree.
 └─ ctx.effect: tree.dispose() (every module's effects, reverse order) + manager.shutdown drain
 ```
-A plugin is a set of modules — the unit the harness itself is built from. `package.json#penguin.modules` carries the manifests (requires / provides / contributes / context / children); the package's default export is `{ modules: { <name>: { create } } }`, paired by name at load. Split by frequency:
+A plugin is a set of modules — the unit the harness itself is built from. `package.json#penguin.modules` carries the manifests (requires / provides / contributes / context / children / exports) of the nodes it adds, `package.json#penguin.replaces` those of the nodes it stands in for (by the replaced node's name — a component, a module, or a whole group); the package's default export is `{ modules?: { <name>: { create } }, replaces?: { <name>: { create } } }`, paired by name at load. A stand-in is not checked when it is put in place; the tree it results in is checked as one before any node runs, and refused by name if the stand-in offers less than its consumers need. Split by frequency:
 
 | Moment                | Frequency        | What happens                                                                                                                                                       |
 | --------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
