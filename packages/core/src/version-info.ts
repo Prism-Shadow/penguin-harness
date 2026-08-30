@@ -112,8 +112,8 @@ export interface HarnessInfo {
 /** One version the HMR store committed, as the history remembers it: what {@link HarnessInfo} said at the time. */
 export interface HarnessHistoryEntry {
   source: HarnessSource | null;
-  /** When the version was committed (ISO 8601). */
-  pushedAt: string;
+  /** When the version was committed (ISO 8601); null for a commit that predates the record. */
+  pushedAt: string | null;
   bundles: HarnessInfo["bundles"];
 }
 
