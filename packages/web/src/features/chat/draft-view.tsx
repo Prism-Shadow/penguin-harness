@@ -209,8 +209,8 @@ export function DraftView({
   // temporary Workspace, whose directory the server only creates with the Session, so
   // that case falls back to home (setDockCwd's null).
   useEffect(() => {
-    setDockCwd(workspace || null);
-  }, [workspace]);
+    setDockCwd(workspace || null, workspaceMachine);
+  }, [workspace, workspaceMachine]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );

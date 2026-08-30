@@ -12,6 +12,7 @@ import {
   type TerminalInfo,
 } from "../terminal/terminal-view";
 import { liveTerminals, noteTerminalCreated, refreshTerminals } from "../terminal/terminal-list";
+import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,
   currentDockScope,
@@ -35,10 +36,21 @@ const HOME_CWD = "~";
  * falls back to home.
  */
 let workspaceCwd: string | null = null;
+/**
+ * And the machine that directory is ON. A Workspace path is only meaningful on its own
+ * filesystem, so the machine travels with it — the same pairing every other Workspace
+ * carries in this feature. Null = this server.
+ */
+let workspaceMachine: string | null = null;
 
-/** Points new shells at this absolute Workspace path; null restores the home default. */
-export function setDockCwd(path: string | null): void {
+/**
+ * Points new shells at this absolute Workspace path, on `machineId`; null path restores the
+ * home default. A shell for a conversation that lives on a machine has to be a pty on THAT
+ * machine: the files it is for are there, and the agent it sits beside is there.
+ */
+export function setDockCwd(path: string | null, machineId: string | null = null): void {
   workspaceCwd = path !== null && path.trim() !== "" ? path : null;
+  workspaceMachine = workspaceCwd === null ? null : machineId;
 }
 
 /** A rejected working directory (gone, replaced by a file, relative) — see resolveCwd server-side. */
@@ -56,8 +68,15 @@ function isBadCwd(err: unknown): boolean {
  * how a server-side spawn failure used to present.
  */
 export async function createShellInDock(position?: DockPosition): Promise<void> {
+  // The machine is named explicitly: there is no terminal id yet for the routing rule to
+  // read, which is the one call in this feature that cannot use it.
+  const machine = workspaceMachine;
   const create = (cwd: string): Promise<TerminalInfo> =>
-    fetchJson<TerminalInfo>("/api/terminals", { method: "POST", body: JSON.stringify({ cwd }) });
+    fetchJson<TerminalInfo>(
+      "/api/terminals",
+      { method: "POST", body: JSON.stringify({ cwd }) },
+      machine,
+    );
   try {
     let created: TerminalInfo;
     try {
@@ -65,8 +84,11 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
     } catch (err) {
       if (workspaceCwd === null || !isBadCwd(err)) throw err;
       console.warn(`[terminal] Workspace unusable as cwd, opening in ${HOME_CWD}:`, err);
+      // Home is still home ON THAT MACHINE: a Workspace that has gone is no reason to put
+      // the shell on a different computer from the conversation it belongs to.
       created = await create(HOME_CWD);
     }
+    rememberTerminalMachine(created.id, machine);
     noteTerminalCreated(created);
     addTerminalTab(created.id, position);
   } catch (err) {
@@ -115,7 +137,14 @@ export async function openTerminalInDock(position?: DockPosition): Promise<void>
  */
 export function detachTerminal(id: string, position: DockPosition): void {
   const fromScope = currentDockScope();
-  const popup = window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank");
+  // The machine travels in the URL: the new window starts with an empty terminal map, so
+  // without it a detached remote pane would try to attach to a pty on the wrong computer.
+  const machine = machineForTerminal(id);
+  const popup = window.open(
+    `/terminal?id=${encodeURIComponent(id)}` +
+      (machine === null ? "" : `&machine=${encodeURIComponent(machine)}`),
+    "_blank",
+  );
   removeTab(`terminal:${id}`);
   if (!popup) return; // blocked popup: the shell stays reachable from the "+" menus
   const timer = window.setInterval(() => {

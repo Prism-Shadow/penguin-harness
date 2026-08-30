@@ -50,6 +50,7 @@ import {
   rememberSessionMachine,
 } from "../lib/session-machines";
 import { workspaceMachines } from "../lib/workspace-machines";
+import { setTerminalMachines } from "../lib/terminal-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../lib/machine-cache";
 import { ensureMachineConnected, onMachineAutoConnected } from "../lib/machine-autoconnect";
 import { openUserEvents } from "../api/sse";
@@ -913,6 +914,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const answered = reachable.filter((id): id is string => id !== null);
       const offline = ids.filter((_, i) => reachable[i] === null);
       setMachineIdsKey(answered.join(","));
+      // The terminal list asks the same machines, from a module-scope timer with no React
+      // context to read them from (lib/terminal-machines.ts).
+      setTerminalMachines(answered);
       setMachinesUnreachable(offline.length > 0);
       setOfflineMachineIdsKey(offline.join(","));
       // A forward does not survive a restart, so on a fresh page every machine of the
