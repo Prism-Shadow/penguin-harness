@@ -29,16 +29,17 @@ import {
   truncateTitle,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../api/types.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { RuntimeSession } from "./session-manager.js";
-import type { UsageContext, UsageRecorder } from "./usage-recorder.js";
+import type { UsageContext } from "./usage-recorder.js";
+import type { UsageRecording } from "../mechanisms/observability.js";
+import type { SessionIndex } from "../mechanisms/sessions.js";
 
 export interface TitleGeneratorDeps {
-  sessions: SessionsRepo;
+  sessions: SessionIndex;
   channels: ChannelHub;
-  recorder: Pick<UsageRecorder, "record">;
+  recorder: Pick<UsageRecording, "record">;
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;

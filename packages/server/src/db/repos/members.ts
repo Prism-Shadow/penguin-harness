@@ -4,6 +4,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { Members } from "../../mechanisms/projects.js";
 
 export interface MemberRow {
   projectId: string;
@@ -12,7 +13,7 @@ export interface MemberRow {
 }
 
 @Component()
-export class MembersRepo {
+export class MembersRepo implements Members {
   @Use() private readonly db!: Db;
 
   insert(row: MemberRow): void {

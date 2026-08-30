@@ -10,6 +10,7 @@ import {
 } from "../../services/attachment-limits.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
@@ -35,7 +36,7 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 
 @Component()
-export class ServerSettingsRepo {
+export class ServerSettingsRepo implements Settings {
   @Use() private readonly db!: Db;
 
   /** Returns the raw JSON-encoded value; null if never set. */

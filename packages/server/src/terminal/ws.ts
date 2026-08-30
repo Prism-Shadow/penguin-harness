@@ -15,9 +15,9 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import type { AuthService } from "../auth/service.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import type { HmrHost } from "../hmr/host.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -39,7 +39,7 @@ const BACKPRESSURE_POLL_MS = 250;
 export interface TerminalWebSocketDeps {
   /** The booted platform owns the terminals; the runtime asks it per upgrade. */
   hmr: HmrHost;
-  authService: AuthService;
+  authService: Auth;
   log: (line: string) => void;
 }
 

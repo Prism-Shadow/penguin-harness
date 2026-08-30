@@ -72,11 +72,8 @@ import type {
   WeChatTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type {
-  MessagingBindingRow,
-  MessagingBindingsRepo,
-} from "../../db/repos/messaging-bindings.js";
-import type { SessionRow, SessionsRepo } from "../../db/repos/sessions.js";
+import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
+import type { SessionRow } from "../../db/repos/sessions.js";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
@@ -96,19 +93,21 @@ import {
 } from "./messaging-channels.js";
 import type { MessagingChannelSpec } from "./messaging-channels.js";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
-import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
-import type { ProjectAccess } from "../../services/project-access.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MessagingRouteDeps {
   messaging: MessagingBridge;
-  messagingRepo: MessagingBindingsRepo;
-  access: ProjectAccess;
+  messagingRepo: MessagingBindings;
+  access: Access;
   qqScan: QQScanService;
   wechatScan: WeChatScanService;
-  sessionsRepo: SessionsRepo;
+  sessionsRepo: SessionIndex;
 }
 
 /** The stored feishu config, tolerated loosely (a malformed document reads as blanks). */
