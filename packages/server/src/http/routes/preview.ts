@@ -14,8 +14,6 @@
  * would be a same-origin XSS with full API access.
  */
 import { Hono } from "hono";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
-import { WorkspaceFilesService } from "../../services/workspace-files-service.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import { hostOnly, requestAuthority } from "../../services/preview-token.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
@@ -23,10 +21,12 @@ import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { createPreviewTokenSigner } from "../../services/preview-token.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
 
 export interface PreviewDeps {
-  sessionsRepo: SessionsRepo;
-  workspaceFiles: WorkspaceFilesService;
+  sessionsRepo: SessionIndex;
+  workspaceFiles: WorkspaceFiles;
   previewTokens: PreviewTokenSigner;
 }
 
@@ -89,9 +89,6 @@ export function previewRoutes(deps: PreviewDeps) {
   return app;
 }
 
-export abstract class WorkspaceFiles extends Interface<
-  Pick<WorkspaceFilesService, "list" | "read" | "write" | "statExisting">
->() {}
 export abstract class PreviewTokens extends Interface<
   Pick<PreviewTokenSigner, "sign" | "verify">
 >() {}
@@ -109,19 +106,17 @@ export abstract class PreviewTokens extends Interface<
   },
 })
 export class WorkspaceModule {
-  @Use() private readonly sessionsRepo!: SessionsRepo;
-  @Provide() workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly sessionsRepo!: SessionIndex;
   @Provide() previewTokens!: PreviewTokens;
   @Bind("workspace.preview") previewRoutes!: ReturnType<typeof previewRoutes>;
   setup() {
-    const workspaceFiles = new WorkspaceFilesService();
     const previewTokens = createPreviewTokenSigner();
-    this.workspaceFiles = workspaceFiles;
     this.previewTokens = previewTokens;
     this.previewRoutes = previewRoutes({
       previewTokens,
       sessionsRepo: this.sessionsRepo,
-      workspaceFiles,
+      workspaceFiles: this.workspaceFiles,
     });
   }
 }

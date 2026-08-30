@@ -12,15 +12,14 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { optionalEnum, optionalString, readJson, requireValidId } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ChatDefaultsRouteDeps {
-  agentConfigService: AgentConfigService;
-  projectConfigService: ProjectConfigService;
-  access: ProjectAccess;
+  agentConfigService: AgentConfig;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
 }
 
 export function chatDefaultsRoutes(deps: ChatDefaultsRouteDeps): Hono<AppEnv> {

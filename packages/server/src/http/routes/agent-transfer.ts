@@ -7,17 +7,16 @@ import fs from "node:fs/promises";
 import { Hono } from "hono";
 import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { SnapshotService } from "../../services/snapshot-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTransferRouteDeps {
-  agentConfigService: AgentConfigService;
-  access: ProjectAccess;
-  snapshots: SnapshotService;
+  agentConfigService: AgentConfig;
+  access: Access;
+  snapshots: Snapshots;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

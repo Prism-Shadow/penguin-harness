@@ -27,7 +27,6 @@ import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
-import type { ProjectAccess } from "./services/project-access.js";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
@@ -172,6 +171,10 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
+import type { Settings } from "./mechanisms/settings.js";
+import type { Errors } from "./mechanisms/observability.js";
+import type { Access } from "./mechanisms/projects.js";
+import type { Auth } from "./mechanisms/identity.js";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -278,11 +281,11 @@ export async function bootAppDeps(
 /** Assembles the Hono app (does not listen on a port). */
 export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
-  const errors = tree.api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder");
+  const errors = tree.api<Errors>("ErrorRecorder", "ErrorRecorder");
   const log = tree.api<{ line(text: string): void }>("ConsoleLog", "ConsoleLog");
-  const settings = tree.api<ServerSettingsRepo>("ServerSettingsRepo", "ServerSettingsRepo");
-  const access = tree.api<ProjectAccess>("ProjectAccess", "ProjectAccess");
-  const authService = tree.api<AuthService>("AuthService", "AuthService");
+  const settings = tree.api<Settings>("ServerSettingsRepo", "ServerSettingsRepo");
+  const access = tree.api<Access>("ProjectAccess", "ProjectAccess");
+  const authService = tree.api<Auth>("AuthService", "AuthService");
   const deps = {
     config: boot.config,
     desktop: boot.desktop,

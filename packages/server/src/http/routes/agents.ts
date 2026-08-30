@@ -18,27 +18,25 @@ import {
   requireValidId,
 } from "../validate.js";
 import { readArchiveBase64 } from "./agent-transfer.js";
-import type { ErrorsRepo } from "../../db/repos/errors.js";
-import type { SchedulesRepo } from "../../db/repos/schedules.js";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { AgentService } from "../../services/agent-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 import type { SessionService } from "../../services/session-service.js";
-import type { TraceIndexService } from "../../services/trace-index.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
+import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentsRouteDeps {
-  agentConfigService: AgentConfigService;
-  agentService: AgentService;
-  errorsRepo: ErrorsRepo;
+  agentConfigService: AgentConfig;
+  agentService: AgentLifecycle;
+  errorsRepo: ErrorLog;
   manager: SessionManager;
-  access: ProjectAccess;
-  schedulesRepo: SchedulesRepo;
+  access: Access;
+  schedulesRepo: Schedules;
   sessionService: SessionService;
-  sessionsRepo: SessionsRepo;
-  traceIndex: TraceIndexService;
+  sessionsRepo: SessionIndex;
+  traceIndex: TraceIndex;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */

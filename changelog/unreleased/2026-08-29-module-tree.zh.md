@@ -30,6 +30,10 @@
 
 `BuildDepsOverrides`——十三个生产节点在启动时读的那袋测试替身——被删除。测试改为顶替一个节点：`bootAppDeps(config, [[SystemClock, { now }]])`，一份**替换**列表，平台用它们代替所命名的 class 启动，并按同一张表校验。`createTestApp` 保留原有选项名，把它们变成替换。
 
+### 每个依赖都是机制
+
+`packages/server/src/mechanisms/*.ts` 声明这棵树由哪些机制组成——`identity`（`Users`、`AuthSessions`、`Auth`、`Admin`）、`projects`（`Projects`、`Members`、`AgentIndex`、`Access`、`ProjectLifecycle`、`ProjectConfigStore`、`ModelOAuth`）、`sessions`（`SessionIndex`、`Goals`、`SessionOrigins`、`Schedules`、`Scheduling`）、`observability`（`ErrorLog`、`Errors`、`UsageStore`、`UsageRecording`、`UsageQueries`）、`traces`、`workspace`、`agents`、`settings`、`messaging`——都是带完整签名的接口类，与实现分开声明。每个实现自己表明（`class UsersRepo implements Users`）；每个 `@Use` 字段、每组路由的依赖类型、每个服务的依赖类型都写机制名。`AuthService` 需要 `Users`、`AuthSessions`、`AuthState`、`Clock`、`PasswordHasher` 和它自己声明的 `InitialProjectProvisioner`——没有 sqlite，没有运行时。`gen-ifaces` 拒绝类型为组件 class 的 `@Use` 字段，规则不靠 review 维持；计数从 102/189 归零（0/192）。
+
 ## 表就是一个页面
 
 `pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，按 commit sha 发布到 `ifaces-pages` 分支，并从 job summary 与一条 PR 评论链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。

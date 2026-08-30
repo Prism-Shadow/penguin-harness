@@ -11,13 +11,12 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface CommandPolicyRouteDeps {
-  projectConfigService: ProjectConfigService;
-  access: ProjectAccess;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
 }
 
 /** Bounds for the rule list: enough for a serious deny list, small enough to stay a config file. */

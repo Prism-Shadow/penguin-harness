@@ -22,9 +22,6 @@ import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp } from "./app.js";
 import type { ServerBoot } from "./app.js";
-import type { AuthService } from "./auth/service.js";
-import type { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import type { ErrorRecorder } from "./runtime/error-recorder.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
@@ -35,6 +32,9 @@ import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
+import type { Settings } from "./mechanisms/settings.js";
+import type { Errors } from "./mechanisms/observability.js";
+import type { Auth } from "./mechanisms/identity.js";
 
 /**
  * The startup lifecycle: one line per step, in the order they have to happen.
@@ -85,8 +85,8 @@ class PenguinServer {
   private shuttingDown = false;
 
   /** The current App's auth service — resolved per call, since a hot swap replaces the tree. */
-  private auth(): AuthService {
-    return this.deps.tree.api<AuthService>("AuthService", "AuthService");
+  private auth(): Auth {
+    return this.deps.tree.api<Auth>("AuthService", "AuthService");
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
@@ -173,10 +173,7 @@ class PenguinServer {
    * handlers).
    */
   applyPersistedProxy(): void {
-    const settings = this.deps.tree.api<ServerSettingsRepo>(
-      "ServerSettingsRepo",
-      "ServerSettingsRepo",
-    );
+    const settings = this.deps.tree.api<Settings>("ServerSettingsRepo", "ServerSettingsRepo");
     applyProxySettings({
       proxyForApp: settings.getProxyForApp(),
       proxyUrl: settings.getProxyUrl(),
@@ -264,7 +261,7 @@ class PenguinServer {
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
       this.deps.tree
-        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
+        .api<Errors>("ErrorRecorder", "ErrorRecorder")
         .record({ source: "process", err, code: "uncaught_exception" });
       // From this point the process state can't be trusted (the error was never converged
       // by any catch): don't swallow it — wrap up per existing shutdown semantics and exit
@@ -278,7 +275,7 @@ class PenguinServer {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
       this.deps.tree
-        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
+        .api<Errors>("ErrorRecorder", "ErrorRecorder")
         .record({ source: "process", err, code: "unhandled_rejection" });
       // Unlike uncaughtException, this **doesn't** exit: a rejected promise is a localized
       // failure of some background task, and the process state isn't compromised; dragging

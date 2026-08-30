@@ -22,9 +22,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
-import type { ProjectsRepo } from "../db/repos/projects.js";
-import type { SchedulesRepo, ScheduleStateRow } from "../db/repos/schedules.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
+import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
@@ -34,10 +32,11 @@ import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleServerEvent } from "../api/types.js";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { ProjectConfigService } from "../services/project-config-service.js";
-import type { ErrorRecorder } from "./error-recorder.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
+import type { Schedules, Scheduling, SessionIndex } from "../mechanisms/sessions.js";
+import type { ProjectConfigStore, Projects } from "../mechanisms/projects.js";
+import type { Errors } from "../mechanisms/observability.js";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
@@ -91,7 +90,7 @@ export interface ScheduleEntryView {
 }
 
 @Component()
-export class Scheduler {
+export class Scheduler implements Scheduling {
   private intervalMs: number = TICK_INTERVAL_MS;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** key = `${projectId}\0${agentId}\0${name}` */
@@ -109,14 +108,14 @@ export class Scheduler {
   private get root(): string {
     return this.paths.root;
   }
-  @Use() private readonly repo!: SchedulesRepo;
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly sessions!: SessionsRepo;
+  @Use() private readonly repo!: Schedules;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly sessions!: SessionIndex;
   @Use() private readonly runner!: ScheduleTaskRunner;
   @Use() private readonly sessionCreator!: ScheduleSessionCreator;
   /** Project-config source for model-ref validation (mtime-cached reads). */
-  @Use() private readonly projectConfig!: ProjectConfigService;
-  @Use() private readonly errors!: ErrorRecorder;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly errors!: Errors;
   @Use() private readonly channels!: Channels;
   @Use() private readonly clock!: Clock;
   private now(): number {

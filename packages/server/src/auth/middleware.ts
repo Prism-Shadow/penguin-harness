@@ -17,7 +17,8 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
-import type { AuthService, SessionVia } from "./service.js";
+import type { SessionVia } from "./service.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 /** Session cookie name. */
 export const SESSION_COOKIE = "penguin_session";
@@ -62,7 +63,7 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
-export function authMiddleware(auth: AuthService, trustProxy: boolean): MiddlewareHandler<AppEnv> {
+export function authMiddleware(auth: Auth, trustProxy: boolean): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
     // a wrong one is an error, never a silent fallback (see the module doc).

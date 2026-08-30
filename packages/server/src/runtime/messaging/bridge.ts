@@ -73,10 +73,7 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
-import type {
-  MessagingBindingRow,
-  MessagingBindingsRepo,
-} from "../../db/repos/messaging-bindings.js";
+import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
 import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
@@ -115,13 +112,14 @@ import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
 import { createQQScanTransport } from "./qq-scan.js";
 import { toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { ErrorRecorder } from "../error-recorder.js";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
-import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
-import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
 import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
+import type { Access } from "../../mechanisms/projects.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Errors } from "../../mechanisms/observability.js";
+import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { Settings } from "../../mechanisms/settings.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
@@ -629,7 +627,7 @@ export interface MessagingWorkspaceFiles {
 }
 
 export interface MessagingBridgeDeps {
-  repo: MessagingBindingsRepo;
+  repo: MessagingBindings;
   sessions: MessagingSessionIndex;
   files: MessagingWorkspaceFiles;
   /**
@@ -1919,13 +1917,13 @@ export class MessagingModule {
   @Use() private readonly qqScanTransport!: QQScanTransportHandle;
   @Use() private readonly wechatScanTransport!: WeChatScanTransportHandle;
   @Use() private readonly log!: Log;
-  @Use() private readonly messagingRepo!: MessagingBindingsRepo;
-  @Use() private readonly sessionsRepo!: SessionsRepo;
-  @Use() private readonly workspaceFiles!: WorkspaceFilesService;
-  @Use() private readonly settings!: ServerSettingsRepo;
+  @Use() private readonly messagingRepo!: MessagingBindings;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly settings!: Settings;
   @Use(SessionsModule) private readonly runner!: MessagingTaskRunner;
-  @Use() private readonly errors!: ErrorRecorder;
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly access!: Access;
   @Provide() messaging!: Messaging;
   @Provide() qqScan!: QQScan;
   @Bind("messaging.session-routes") sessionRoutesRoutes!: Hono<AppEnv>;

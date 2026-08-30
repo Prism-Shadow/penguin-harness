@@ -4,9 +4,9 @@
  * it without dragging the runtime shell into its graph.
  */
 import type { Context } from "hono";
-import type { ProjectAccess } from "../services/project-access.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { UserRow } from "../db/repos/users.js";
+import type { Access } from "../mechanisms/projects.js";
 
 /**
  * The Project an error is attributed to: only
@@ -32,7 +32,7 @@ import type { UserRow } from "../db/repos/users.js";
  */
 export function attributedProjectId(
   c: Context<AppEnv>,
-  deps: { access: ProjectAccess },
+  deps: { access: Access },
 ): string | undefined {
   try {
     const projectId = c.req.param("projectId");

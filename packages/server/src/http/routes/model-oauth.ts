@@ -24,20 +24,19 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { ModelOAuthService } from "../../services/model-oauth-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelOauthRouteDeps extends ModelsRouteDeps {
   config: ServerConfig;
   manager: SessionManager;
-  modelOAuth: ModelOAuthService;
-  access: ProjectAccess;
+  modelOAuth: ModelOAuth;
+  access: Access;
 }
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
 import type { ModelsRouteDeps } from "./models.js";
+import type { Access, ModelOAuth } from "../../mechanisms/projects.js";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;

@@ -31,13 +31,14 @@ import type {
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
 
@@ -52,13 +53,15 @@ export function sessionIdCreatedAt(sessionId: string): string | null {
 
 export interface SessionServiceDeps {
   root: string;
-  sessions: SessionsRepo;
+  sessions: SessionIndex;
   manager: SessionManager;
-  projectConfig: ProjectConfigService;
+  projectConfig: ProjectConfigStore;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
-  sources: SessionSources;
+  sources: SessionOrigins;
   /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
-  traceIndex: TraceIndexService;
+  traceIndex: TraceIndex;
+  /** The index rows themselves (files and sessions), for the reads the service does directly. */
+  traceStore: TraceIndexStore;
   /**
    * Admin proxy-settings threading (same getter the session loader passes, see
    * createCoreSessionLoader): the runtime created here is adopted by the manager and
@@ -132,7 +135,7 @@ export class SessionService {
     const known = this.deps.sources.get(row.sessionId);
     if (known !== undefined) return known ?? undefined;
     if (!hasTrace) return undefined;
-    const facts = this.deps.traceIndex.repo.getSession(row.sessionId);
+    const facts = this.deps.traceStore.getSession(row.sessionId);
     if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
     this.deps.sources.set(row.sessionId, facts.source);
     return facts.source ?? undefined;
@@ -285,7 +288,7 @@ export class SessionService {
     // this used to walk the Agent's ENTIRE trace history on every agents-list request):
     // the date is the shard's date directory (local yyyy-mm-dd, core's writing convention).
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       mark(f.date, f.sessionId);
     }
     // DB index: the creation day also counts as active (a Session that hasn't run a Task yet produces no Trace).
@@ -423,20 +426,12 @@ export class SessionService {
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {
     await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId);
-    let files = this.deps.traceIndex.repo.listFilesBySession(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-    );
+    let files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     if (files.length === 0) {
       // Index miss with disk possibly ahead: one forced diff, then retry (the consumers'
       // rule — a stale index costs one extra scan, never a missing resume shard).
       await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId, { force: true });
-      files = this.deps.traceIndex.repo.listFilesBySession(
-        row.projectId,
-        row.agentId,
-        row.sessionId,
-      );
+      files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     }
     const latest = files.at(-1);
     return latest === undefined ? undefined : traceFilePath(this.deps.root, latest);
@@ -451,7 +446,7 @@ export class SessionService {
   private async discoverTraces(projectId: string, agentId: string): Promise<Set<string>> {
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
     const out = new Set<string>();
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       out.add(f.sessionId);
     }
     return out;
@@ -495,7 +490,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
   ): SessionRow | null {
-    const facts = this.deps.traceIndex.repo.getSession(sessionId);
+    const facts = this.deps.traceStore.getSession(sessionId);
     if (!facts?.metaRead) return null; // Corrupt/unreadable head: skip (does not block the list; retried by a later reconcile)
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption

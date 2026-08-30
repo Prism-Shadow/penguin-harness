@@ -46,10 +46,11 @@ import { TraceIndexRepo } from "../db/repos/trace-index.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
 import { asSessionSource } from "../runtime/session-sources.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -115,7 +116,7 @@ interface SeenDirs {
 }
 
 @Component()
-export class TraceIndexService {
+export class TraceIndexService implements TraceIndex {
   private readonly seen = new Map<string, SeenDirs>();
   private readonly inflight = new Map<string, Promise<void>>();
   /**
@@ -129,9 +130,9 @@ export class TraceIndexService {
   private get root(): string {
     return this.paths.root;
   }
-  @Use() readonly repo!: TraceIndexRepo;
+  @Use() readonly repo!: TraceIndexStore;
   /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
-  @Use() private readonly sources?: SessionSources;
+  @Use() private readonly sources?: SessionOrigins;
 
   /**
    * Brings one Agent's index in step with disk. Hot path: one root stat, then the

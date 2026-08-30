@@ -10,16 +10,16 @@ import { randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { UserRow } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
+import type { Auth, AuthSessions, Users } from "../mechanisms/identity.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -67,9 +67,9 @@ export function toUserInfo(row: UserRow): UserInfo {
 }
 
 @Component()
-export class AuthService {
-  @Use() private readonly users!: UsersRepo;
-  @Use() private readonly authSessions!: AuthSessionsRepo;
+export class AuthService implements Auth {
+  @Use() private readonly users!: Users;
+  @Use() private readonly authSessions!: AuthSessions;
   /**
    * Process-scoped auth values (runtime-state.ts). Held by the RUNTIME so the link a boot
    * printed survives a platform push; everything else about auth is rebuilt with the App.

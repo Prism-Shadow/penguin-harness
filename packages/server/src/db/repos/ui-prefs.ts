@@ -3,9 +3,10 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { UiPrefsStore } from "../../mechanisms/settings.js";
 
 @Component()
-export class UiPrefsRepo {
+export class UiPrefsRepo implements UiPrefsStore {
   @Use() private readonly db!: Db;
 
   /** Returns the raw JSON string; null if never set. */

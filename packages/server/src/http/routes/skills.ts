@@ -27,14 +27,12 @@ import {
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SkillsRouteDeps {
-  agentConfigService: AgentConfigService;
+  agentConfigService: AgentConfig;
   config: ServerConfig;
-  access: ProjectAccess;
+  access: Access;
 }
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
@@ -47,6 +45,8 @@ import {
 } from "../../services/skill-import-limits.js";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
