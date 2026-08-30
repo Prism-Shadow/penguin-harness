@@ -105,7 +105,7 @@ export abstract class PreviewTokens extends Interface<
     ],
   },
 })
-export class WorkspaceModule {
+export class PreviewModule {
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Provide() previewTokens!: PreviewTokens;
