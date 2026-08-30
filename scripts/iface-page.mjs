@@ -123,7 +123,7 @@ function expr(e) {
   if ("data" in e) return data(e.data);
   if ("$ref" in e) return ref(e.$ref, "type");
   if ("iface" in e) return ref(e.iface, "iface");
-  if ("opaque" in e) return '<span class="opaque">' + esc(e.opaque) + "</span>";
+  if ("opaque" in e) return '<span class="opaque" title="' + esc(e.opaque) + '">' + esc(short(e.opaque)) + "</span>";
   if ("void" in e) return "void";
   if ("promise" in e) return "Promise&lt;" + expr(e.promise) + "&gt;";
   if ("stream" in e) return "AsyncIterable&lt;" + expr(e.stream) + "&gt;";
