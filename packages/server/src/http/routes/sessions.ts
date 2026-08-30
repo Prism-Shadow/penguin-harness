@@ -109,17 +109,12 @@ import {
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels } from "../../runtime/channel.js";
-import { Config } from "../../config.js";
-import {
-  Sessions as ManagerIface,
-  SessionServiceIface,
-  SessionsModule,
-} from "../../runtime/session-manager.js";
-import { Messaging, MessagingModule } from "../../runtime/messaging/bridge.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
-import type { Machines } from "../../machines/service.js";
-import { WorkspaceModule, PreviewTokens } from "./preview.js";
+import { Channels, Config } from "../../hmr/capabilities.js";
+import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
+import { Messaging } from "../../runtime/messaging/bridge.js";
+import { SessionsModule } from "../../runtime/session-manager.js";
+import { MessagingModule } from "../../runtime/messaging/bridge.js";
+import { WorkspaceModule } from "./preview.js";
 import { agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
@@ -1531,8 +1526,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   },
 })
 export class SessionApiRoutes {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
   @Use(SessionsModule) private readonly manager!: ManagerIface;
   @Use() private readonly machines!: Machines;
   @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;

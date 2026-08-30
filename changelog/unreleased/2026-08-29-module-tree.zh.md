@@ -24,6 +24,12 @@
 
 一个插件包就是一组模块：`package.json#penguin.modules` 承载 manifest，默认导出是 `{ modules: { <name>: { create } } }`，按名字配对，这些模块在每次 App 创建时作为 platform 树的子节点启动。`activate(ctx)` 契约——`initialize` / `create` 事件、`PenguinInterface`、`PenguinContext`——不再存在；它过去注册的东西（沙箱后端、workflow factory）现在是 contribution 或 provides，它过去触达的东西（`terminals`、`sandbox`）现在是按签名校验的 requires。四个沙箱后端已转换。
 
+## 机制而非实现：运行时拆分，`Overrides` 消失
+
+那个一口气导出十样东西的 `RuntimeModule` 没有了：每个认领的能力是一个自己的节点（`RuntimeConfig`、`RuntimeDb`、`RuntimeChannels`、`RuntimeProxy`、`RuntimeHmr`、`RuntimeDesktop`、`RuntimeAuthState`、`RuntimeResourceGroups`），大多数节点真正想从 config 拿的东西成了独立机制 `Paths`（`root`）。时间是机制（`Clock` / `SystemClock`），日志是（`Log` / `ConsoleLog`），密码哈希是（`PasswordHasher` / `ScryptHasher`），消息节奏参数是（`MessagingTuning`），每个 connector 的网络传输是（`FeishuSdkHandle`、`TelegramTransportHandle`、`QQTransportHandle`、`QQScanTransportHandle`），session loader 与标题生成器是（`SessionLoaders`、`TitleGenerators`），更新检查的网络也是（`HttpFetch`）。组件声明自己实现什么——`class SystemClock implements Clock`——生成器记录下来；声明了该接口的提供者在接线时胜过只是形状相符的。
+
+`BuildDepsOverrides`——十三个生产节点在启动时读的那袋测试替身——被删除。测试改为顶替一个节点：`bootAppDeps(config, [[SystemClock, { now }]])`，一份**替换**列表，平台用它们代替所命名的 class 启动，并按同一张表校验。`createTestApp` 保留原有选项名，把它们变成替换。
+
 ## 表就是一个页面
 
 `pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，按 commit sha 发布到 `ifaces-pages` 分支，并从 job summary 与一条 PR 评论链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。

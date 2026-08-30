@@ -32,8 +32,9 @@ import {
 import type { ProjectAccess } from "./project-access.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 import type { TraceIndexService } from "./trace-index.js";
-import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../config.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -49,9 +50,9 @@ async function dirExists(path: string): Promise<boolean> {
 
 @Component()
 export class ProjectService {
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() private readonly access!: ProjectAccess;
   @Use() private readonly users!: UsersRepo;

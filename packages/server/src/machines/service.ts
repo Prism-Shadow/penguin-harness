@@ -60,10 +60,6 @@ import type { MachineRow } from "../db/repos/machines.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../config.js";
-import type { Hmr } from "../hmr/host.js";
-import type { Overrides } from "../app.js";
-import { RuntimeModule } from "../hmr/capabilities.js";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import { HttpError } from "../http/errors.js";
@@ -71,7 +67,8 @@ import type { ProjectAccess } from "../services/project-access.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Db } from "../db/database.js";
+import { Db } from "../db/database.js";
+import type { Hmr, Paths } from "../hmr/capabilities.js";
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
@@ -1163,10 +1160,9 @@ export abstract class Machines extends Interface<
   },
 })
 export class MachinesModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly db!: Db;
-  @Use(RuntimeModule) private readonly hmr!: Hmr;
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use() private readonly paths!: Paths;
+  @Use() private readonly db!: Db;
+  @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: ProjectAccess;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
@@ -1175,14 +1171,10 @@ export class MachinesModule {
     // This machine's own id is minted on the first boot of this data root and stable ever
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
-    const machines =
-      this.overrides.value().machines ??
-      (() => {
-        const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
-        return new MachinesService(this.config.root, repo.ownId(), repo, {}, () =>
-          this.hmr.assetsDir(),
-        );
-      })();
+    const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
+    const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
+      this.hmr.assetsDir(),
+    );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });
     this.serverProxyRoutes = serverProxyApp(machines);

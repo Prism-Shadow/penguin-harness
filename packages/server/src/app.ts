@@ -26,7 +26,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { ModuleTree, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ProjectAccess } from "./services/project-access.js";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -41,10 +41,12 @@ import {
   RUNTIME_LIFECYCLE_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
+  type Replacements,
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
+import type { Log } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
@@ -170,7 +172,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
-import { wire, Interface } from "@prismshadow/penguin-core/kernel";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -195,48 +197,6 @@ export interface ServerBoot {
   readonly tree: ModuleTree;
 }
 
-export interface BuildDepsOverrides {
-  /** Test double: session-manager's underlying loader (avoids the real LLM/SDK path). */
-  loader?: SessionLoader;
-  /** Test double: Session title generator (avoids real LLM requests). */
-  titles?: TitleNotifier;
-  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
-  updateCheck?: UpdateCheckService;
-  /** Tests: a job service over a scripted runner, so no real `penguin update` is ever spawned. */
-  updateJob?: UpdateJobService;
-  /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
-  feishuSdk?: FeishuSdk;
-  /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
-  telegramTransport?: TelegramTransport;
-  /** Test hook: the Telegram connector's poll backoff (tests collapse it to zero). */
-  telegramRetryDelayMs?: (failures: number) => number;
-  /** Test double: the QQ connector's OpenAPI + gateway transport (avoids real QQ network / a WebSocket). */
-  qqTransport?: QQTransport;
-  /** Test hook: how long the QQ connector withholds its coalesced tail (tests collapse it to zero). */
-  qqTailFlushMs?: number;
-  /** Test hook: the bridge's pace between a per-line reply's messages (tests collapse it to zero). */
-  messagingLineDelayMs?: number;
-  /** Test hook: one binding's inbound image budget, so a budget test needs no 20MB buffers. */
-  messagingInboundImageBudgetBytes?: number;
-  /** Test double: the QQ scan-to-connect transport (avoids real q.qq.com requests). */
-  qqScanTransport?: QQScanTransport;
-  /** Test double: the WeChat connector's long-poll + CDN transport (avoids real WeChat network). */
-  wechatTransport?: WeChatTransport;
-  /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
-  wechatRetryDelayMs?: (failures: number) => number;
-  /** Test double: the WeChat scan-to-connect transport (avoids real ilinkai.weixin.qq.com requests). */
-  wechatScanTransport?: WeChatScanTransport;
-  /** Test double: machines service whose ssh effects are faked (the real one reads ~/.ssh/config and spawns ssh). */
-  machines?: MachinesService;
-  /**
-   * Test double: scrypt work factor for password hashes written through this app.
-   * Omitted in production, where the KDF runs at full strength.
-   */
-  passwordHashCost?: number;
-  log?: (line: string) => void;
-  now?: () => Date;
-}
-
 /**
  * Assemble the runtime core, publish its capabilities, boot the platform (which builds
  * the business surface — see app.ts), and return the merged view. Shared
@@ -249,7 +209,7 @@ export interface BuildDepsOverrides {
  */
 export async function bootAppDeps(
   config: ServerConfig,
-  overrides: BuildDepsOverrides = {},
+  replacements: Replacements = [],
   plugins?: PluginHost,
 ): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
@@ -297,7 +257,7 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
-  hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
+  hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
   const lifecycle = new LifecycleService(config.supervised);
@@ -378,7 +338,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   };
   const log = {
     line: (text: string) =>
-      liveApi<{ line(text: string): void }>(boot, "RuntimeModule", "log").line(text),
+      liveApi<Log>(boot, "ConsoleLog", "ConsoleLog").line(text),
   };
   const settings = () =>
     liveApi<ServerSettingsRepo>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
@@ -394,7 +354,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   };
   // Read once now, while the packaged App is current: the floor a narrower push falls to.
   liveApi(boot, "ErrorRecorder", "ErrorRecorder");
-  liveApi(boot, "RuntimeModule", "log");
+  liveApi(boot, "ConsoleLog", "ConsoleLog");
   settings();
   access();
   void deps.authService;
@@ -800,8 +760,3 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
 
-/** Construction overrides — production publishes {}, tests publish live collaborators. */
-@Interface()
-export abstract class Overrides {
-  abstract value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
-}
