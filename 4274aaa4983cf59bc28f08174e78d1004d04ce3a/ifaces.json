@@ -1,5 +1,5 @@
 {
- "hash": "c87a240f503d76f1e1244483e7ded17b6c45642e069cbfbc8a433b5237612b01",
+ "hash": "d92dfb3a729a30aa7842b7fb5ceaccf8a828445978bb7fd9bdf7b2d100fbefae",
  "ifaces": {
   "@prismshadow/penguin-server#Access": {
    "name": "Access",
@@ -737,7 +737,7 @@
       },
       {
        "maybe": {
-        "opaque": "Buffer"
+        "opaque": "@types/node#Buffer"
        }
       }
      ],
@@ -821,7 +821,7 @@
       },
       {
        "maybe": {
-        "opaque": "Buffer"
+        "opaque": "@types/node#Buffer"
        }
       }
      ],
@@ -916,7 +916,7 @@
     "toolFactories": {
      "params": [],
      "returns": {
-      "opaque": "__type"
+      "object": {}
      }
     }
    },
@@ -1624,7 +1624,7 @@
       "promise": {
        "object": {
         "data": {
-         "opaque": "Buffer"
+         "opaque": "@types/node#Buffer"
         },
         "fileName": {
          "data": "string"
@@ -1755,7 +1755,7 @@
       "promise": {
        "object": {
         "data": {
-         "opaque": "Buffer"
+         "opaque": "@types/node#Buffer"
         },
         "fileName": {
          "data": "string"
@@ -1779,6 +1779,97 @@
    },
    "slots": {}
   },
+  "@prismshadow/penguin-server#ChannelApi": {
+   "name": "ChannelApi",
+   "methods": {
+    "publish": {
+     "params": [
+      {
+       "data": "unknown"
+      },
+      {
+       "data": "string|undefined"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ChannelEvent"
+      }
+     }
+    },
+    "sendTo": {
+     "params": [
+      {
+       "fn": {
+        "params": [
+         {
+          "data": {
+           "$ref": "@prismshadow/penguin-server#ChannelEvent"
+          }
+         }
+        ],
+        "returns": {
+         "void": true
+        }
+       }
+      },
+      {
+       "data": "unknown"
+      },
+      {
+       "data": "string|undefined"
+      }
+     ],
+     "returns": {
+      "data": {
+       "$ref": "@prismshadow/penguin-server#ChannelEvent"
+      }
+     }
+    },
+    "subscribe": {
+     "params": [
+      {
+       "fn": {
+        "params": [
+         {
+          "data": {
+           "$ref": "@prismshadow/penguin-server#ChannelEvent"
+          }
+         }
+        ],
+        "returns": {
+         "void": true
+        }
+       }
+      }
+     ],
+     "returns": {
+      "fn": {
+       "params": [],
+       "returns": {
+        "void": true
+       }
+      }
+     }
+    },
+    "replayAfter": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": {
+       "hit": "boolean",
+       "events": {
+        "$ref": "typescript#Array<ChannelEvent>"
+       }
+      }
+     }
+    }
+   },
+   "slots": {}
+  },
   "@prismshadow/penguin-server#Channels": {
    "name": "Channels",
    "methods": {
@@ -1789,7 +1880,7 @@
       }
      ],
      "returns": {
-      "opaque": "__type"
+      "iface": "@prismshadow/penguin-server#ChannelApi"
      }
     },
     "peek": {
@@ -1800,7 +1891,7 @@
      ],
      "returns": {
       "maybe": {
-       "opaque": "__type"
+       "iface": "@prismshadow/penguin-server#ChannelApi"
       }
      }
     },
@@ -2013,7 +2104,7 @@
           }
          },
          "assembly": {
-          "opaque": "AgentAssembly"
+          "opaque": "@prismshadow/penguin-core#AgentAssembly"
          }
         },
         "optional": [
@@ -2026,7 +2117,7 @@
       }
      ],
      "returns": {
-      "opaque": "SessionLoader"
+      "opaque": "@prismshadow/penguin-server#SessionLoader"
      }
     }
    },
@@ -2042,7 +2133,7 @@
       }
      ],
      "returns": {
-      "opaque": "StatementSync"
+      "opaque": "@types/node#StatementSync"
      }
     },
     "exec": {
@@ -2074,7 +2165,7 @@
    "methods": {},
    "fields": {
     "create": {
-     "opaque": "DefaultTitleGenerators.create"
+     "opaque": "@prismshadow/penguin-server#DefaultTitleGenerators.create"
     }
    },
    "slots": {}
@@ -2086,8 +2177,108 @@
      "params": [],
      "returns": {
       "maybe": {
-       "opaque": "__type"
+       "iface": "@prismshadow/penguin-server#DesktopApi"
       }
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#DesktopApi": {
+   "name": "DesktopApi",
+   "methods": {
+    "verifyToken": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "redeemLoginToken": {
+     "params": [
+      {
+       "data": "string"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "onShutdownRequest": {
+     "params": [
+      {
+       "fn": {
+        "params": [],
+        "returns": {
+         "void": true
+        }
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "requestShutdown": {
+     "params": [],
+     "returns": {
+      "data": "boolean"
+     }
+    },
+    "getUpdateStatus": {
+     "params": [],
+     "returns": {
+      "data": [
+       "null",
+       "|",
+       {
+        "$ref": "@prismshadow/penguin-server#DesktopUpdateStatus"
+       }
+      ]
+     }
+    },
+    "setUpdateStatus": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#DesktopUpdateStatus"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "onUpdateCommand": {
+     "params": [
+      {
+       "fn": {
+        "params": [
+         {
+          "data": "'check'|'install'"
+         }
+        ],
+        "returns": {
+         "void": true
+        }
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    },
+    "requestUpdateCommand": {
+     "params": [
+      {
+       "data": "'check'|'install'"
+      }
+     ],
+     "returns": {
+      "data": "boolean"
      }
     }
    },
@@ -2209,6 +2400,24 @@
   },
   "@prismshadow/penguin-server#ErrorRecorder": {
    "name": "ErrorRecorder",
+   "methods": {
+    "record": {
+     "params": [
+      {
+       "data": {
+        "$ref": "@prismshadow/penguin-server#ErrorRecordArgs"
+       }
+      }
+     ],
+     "returns": {
+      "void": true
+     }
+    }
+   },
+   "slots": {}
+  },
+  "@prismshadow/penguin-server#ErrorSink": {
+   "name": "ErrorSink",
    "methods": {
     "record": {
      "params": [
@@ -2372,7 +2581,7 @@
    "methods": {},
    "fields": {
     "sdk": {
-     "opaque": "FeishuSdk"
+     "opaque": "@prismshadow/penguin-server#FeishuSdk"
     }
    },
    "slots": {}
@@ -2387,13 +2596,13 @@
       },
       {
        "maybe": {
-        "opaque": "RequestInit"
+        "opaque": "@types/node#RequestInit"
        }
       }
      ],
      "returns": {
       "promise": {
-       "opaque": "Response"
+       "opaque": "@types/node#Response"
       }
      }
     }
@@ -2635,7 +2844,7 @@
      "params": [],
      "returns": {
       "promise": {
-       "opaque": "PlatformInstance"
+       "opaque": "@prismshadow/penguin-core#PlatformInstance"
       }
      }
     },
@@ -2643,7 +2852,7 @@
      "params": [],
      "returns": {
       "maybe": {
-       "opaque": "WebSource"
+       "opaque": "@prismshadow/penguin-server#WebSource"
       }
      }
     },
@@ -2662,7 +2871,7 @@
    },
    "fields": {
     "resources": {
-     "opaque": "Resources"
+     "opaque": "@prismshadow/penguin-core#Resources"
     }
    },
    "slots": {}
@@ -2681,7 +2890,7 @@
     "toolFactories": {
      "params": [],
      "returns": {
-      "opaque": "__type"
+      "object": {}
      }
     }
    },
@@ -2700,7 +2909,7 @@
       }
      },
      "code": {
-      "opaque": "BuiltinToolFactory"
+      "opaque": "@prismshadow/penguin-core#BuiltinToolFactory"
      }
     }
    }
@@ -2711,12 +2920,12 @@
     "fetch": {
      "params": [
       {
-       "opaque": "Request"
+       "opaque": "@types/node#Request"
       }
      ],
      "returns": {
       "promise": {
-       "opaque": "Response"
+       "opaque": "@types/node#Response"
       }
      }
     }
@@ -2729,7 +2938,7 @@
       "order": "number"
      },
      "code": {
-      "opaque": "Hono"
+      "opaque": "hono#Hono"
      }
     }
    }
@@ -2744,13 +2953,13 @@
       },
       {
        "maybe": {
-        "opaque": "RequestInit"
+        "opaque": "@types/node#RequestInit"
        }
       }
      ],
      "returns": {
       "promise": {
-       "opaque": "Response"
+       "opaque": "@types/node#Response"
       }
      }
     }
@@ -5692,7 +5901,7 @@
    "methods": {},
    "fields": {
     "transport": {
-     "opaque": "QQScanTransport"
+     "opaque": "@prismshadow/penguin-server#QQScanTransport"
     }
    },
    "slots": {}
@@ -5702,7 +5911,7 @@
    "methods": {},
    "fields": {
     "transport": {
-     "opaque": "QQTransport"
+     "opaque": "@prismshadow/penguin-server#QQTransport"
     }
    },
    "slots": {}
@@ -5817,12 +6026,12 @@
       "maybe": {
        "oneOf": [
         {
-         "opaque": "SandboxProvider"
+         "opaque": "@prismshadow/penguin-core#SandboxProvider"
         },
         {
          "promise": {
           "maybe": {
-           "opaque": "SandboxProvider"
+           "opaque": "@prismshadow/penguin-core#SandboxProvider"
           }
          }
         }
@@ -5975,7 +6184,7 @@
    },
    "fields": {
     "files": {
-     "opaque": "Scheduler.files"
+     "opaque": "@prismshadow/penguin-server#Scheduler.files"
     }
    },
    "slots": {}
@@ -6466,7 +6675,7 @@
    },
    "fields": {
     "files": {
-     "opaque": "ScheduleFileCache"
+     "opaque": "@prismshadow/penguin-server#ScheduleFileCache"
     }
    },
    "slots": {}
@@ -6929,14 +7138,14 @@
        "data": "string"
       },
       {
-       "opaque": "SessionOrigins"
+       "opaque": "@prismshadow/penguin-server#SessionOrigins"
       },
       {
-       "opaque": "SessionLoaderEnv"
+       "opaque": "@prismshadow/penguin-server#SessionLoaderEnv"
       }
      ],
      "returns": {
-      "opaque": "SessionLoader"
+      "opaque": "@prismshadow/penguin-server#SessionLoader"
      }
     }
    },
@@ -8150,7 +8359,7 @@
        "data": "string"
       },
       {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       },
       {
        "data": {
@@ -8234,7 +8443,7 @@
        "data": "string"
       },
       {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       },
       {
        "data": {
@@ -8283,7 +8492,7 @@
    "methods": {},
    "fields": {
     "transport": {
-     "opaque": "TelegramTransport"
+     "opaque": "@prismshadow/penguin-server#TelegramTransport"
     }
    },
    "slots": {}
@@ -8301,7 +8510,7 @@
      ],
      "returns": {
       "promise": {
-       "opaque": "TerminalSession"
+       "opaque": "@prismshadow/penguin-server#TerminalSession"
       }
      }
     },
@@ -8341,7 +8550,7 @@
       }
      ],
      "returns": {
-      "opaque": "TerminalSession"
+      "opaque": "@prismshadow/penguin-server#TerminalSession"
      }
     },
     "get": {
@@ -8352,7 +8561,7 @@
      ],
      "returns": {
       "maybe": {
-       "opaque": "TerminalSession"
+       "opaque": "@prismshadow/penguin-server#TerminalSession"
       }
      }
     },
@@ -8364,7 +8573,7 @@
      ],
      "returns": {
       "array": {
-       "opaque": "TerminalSession"
+       "opaque": "@prismshadow/penguin-server#TerminalSession"
       }
      }
     },
@@ -8408,11 +8617,11 @@
     "create": {
      "params": [
       {
-       "opaque": "TitleGeneratorDeps"
+       "opaque": "@prismshadow/penguin-server#TitleGeneratorDeps"
       }
      ],
      "returns": {
-      "opaque": "TitleNotifier"
+      "opaque": "@prismshadow/penguin-server#TitleNotifier"
      }
     }
    },
@@ -9344,7 +9553,7 @@
      ],
      "returns": {
       "promise": {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       }
      }
     },
@@ -9625,7 +9834,7 @@
      ],
      "returns": {
       "promise": {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       }
      }
     },
@@ -10478,7 +10687,7 @@
       "promise": {
        "object": {
         "data": {
-         "opaque": "Buffer"
+         "opaque": "@types/node#Buffer"
         },
         "fileName": {
          "data": "string"
@@ -10508,7 +10717,7 @@
        "data": "string"
       },
       {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       }
      ],
      "returns": {
@@ -10600,7 +10809,7 @@
       "promise": {
        "object": {
         "data": {
-         "opaque": "Buffer"
+         "opaque": "@types/node#Buffer"
         },
         "fileName": {
          "data": "string"
@@ -10630,7 +10839,7 @@
        "data": "string"
       },
       {
-       "opaque": "Buffer"
+       "opaque": "@types/node#Buffer"
       }
      ],
      "returns": {
@@ -10640,6 +10849,11 @@
      }
     }
    },
+   "slots": {}
+  },
+  "typescript#Pick": {
+   "name": "Pick",
+   "methods": {},
    "slots": {}
   }
  },
@@ -11483,6 +11697,11 @@
    }
   },
   "@prismshadow/penguin-server#CaseMaterial": "'statement'|'rubric'",
+  "@prismshadow/penguin-server#ChannelEvent": {
+   "id": "string",
+   "event?": "string",
+   "data": "string"
+  },
   "@prismshadow/penguin-server#ChatDefaultsDto": {
    "agentId?": "string",
    "workspace?": "string",
@@ -11533,6 +11752,15 @@
    "apiKeyMasked?": "string",
    "baseUrl?": "string",
    "createdAt?": "string"
+  },
+  "@prismshadow/penguin-server#DesktopUpdateStatus": {
+   "appVersion": "string",
+   "seq?": "number",
+   "state": "'unsupported'|'error'|'idle'|'checking'|'up-to-date'|'downloading'|'downloaded'",
+   "version?": "string",
+   "percent?": "number",
+   "message?": "string",
+   "reason?": "'dev'|'linux-not-appimage'"
   },
   "@prismshadow/penguin-server#EndpointModelListRequest": {
    "baseUrl": "string",
@@ -12842,6 +13070,12 @@
   "typescript#Array<BenchmarkSummary>": [
    {
     "$ref": "@prismshadow/penguin-server#BenchmarkSummary"
+   },
+   "[]"
+  ],
+  "typescript#Array<ChannelEvent>": [
+   {
+    "$ref": "@prismshadow/penguin-server#ChannelEvent"
    },
    "[]"
   ],
