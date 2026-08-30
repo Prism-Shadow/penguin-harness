@@ -137,6 +137,7 @@ import {
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
+import { writeClipboard } from "../ui/copy-button";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { SessionActivityIcon } from "../ui/session-activity-icon";
@@ -2641,6 +2642,13 @@ function SessionRow({
     const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
       pin: onTogglePin,
       rename: onRename,
+      // The copy affordance's feedback normally rides on the button itself (copy-button.tsx),
+      // which a menu row cannot do: the row acts and the panel closes under it. A toast is
+      // the confirmation that survives that, and it says the same word.
+      copy: (x) => {
+        writeClipboard(x.sessionId);
+        toastSuccess(S.common.copied);
+      },
       messaging: onMessaging,
       archive: onToggleArchive,
       delete: onDelete,
