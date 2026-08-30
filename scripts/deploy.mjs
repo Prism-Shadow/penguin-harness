@@ -177,6 +177,9 @@ async function compileEntry(entry, outfile) {
     bundle: true,
     format: "esm",
     platform: "node",
+    // Class decorators (@Module / @Component) are TypeScript syntax Node cannot run: the
+    // target makes esbuild lower them, instead of passing them through as esnext.
+    target: "es2022",
     outfile,
     logLevel: "silent",
     banner: { js: ESM_CJS_BANNER },
