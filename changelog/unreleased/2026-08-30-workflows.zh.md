@@ -14,11 +14,11 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 重载与回滚
 
-服务器监视 Agent 的 `workflows/` 目录，文件变化时重新导入对应工作流（也可 `POST …/:id/reload`）；导入以目录内容哈希为键，改过的模块不会从模块缓存里被拿出来。每次成功加载都记录在 `workflows-history/<id>/<revision>/`（保留二十个，`GET …/:id/history`），`POST …/:id/rollback { revision }` 恢复该版本的文件——`state.json` 不动——并重新加载。Project 的用户会在事件流上收到 `workflow_updated`。
+服务器监视 Agent 的 `workflows/` 目录，文件变化时重新导入对应工作流（也可 `POST …/:id/reload`）；导入以目录内容哈希为键，改过的模块不会从模块缓存里被拿出来。每次成功加载都记录在 `workflows-history/<id>/<revision>/`（保留二十个，`GET …/:id/history`），`POST …/:id/rollback { revision }` 恢复该版本的文件——`state.json` 不动——并重新加载。`DELETE …/:id` 连同版本一起删除工作流。Project 的用户会在事件流上收到 `workflow_updated` 与 `workflow_removed`，标签页因此无需刷新即可出现、更新或消失。
 
 ## Web App
 
-带 UI 的工作流在聊天页顶部成为 *聊天* 旁的一个标签页；标签页以 iframe 展示页面（UI 版本变化时重新加载，聊天在其下保持挂载），并显示工作流的版本与修订、当前文件启动失败时的加载错误、*重新加载* 按钮，以及每个已记录版本带 *恢复* 按钮的 *历史* 折叠面板。
+带 UI 的工作流在聊天页顶部成为 *聊天* 旁的一个标签页；标签页以 iframe 展示页面（UI 版本变化时重新加载，聊天在其下保持挂载），并显示工作流的版本与修订、当前文件启动失败时的加载错误、*重新加载* 按钮、每个已记录版本带 *恢复* 按钮的 *历史* 折叠面板，以及需点击两次的 *移除*。
 
 ## 主题
 
