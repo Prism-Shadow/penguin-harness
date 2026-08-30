@@ -591,10 +591,10 @@ export function applyUserEvent(
   }
   // A workflow of some Agent was (re)loaded: the chat page's tab strip owns that list and
   // listens on window (it is mounted per page, this provider per app).
-  if (ev.type === "workflow_updated") {
+  if (ev.type === "workflow_updated" || ev.type === "workflow_removed") {
     window.dispatchEvent(
       new CustomEvent(WORKFLOW_UPDATED_EVENT, {
-        detail: { projectId: ev.projectId, agentId: ev.agentId, workflow: ev.workflow },
+        detail: { projectId: ev.projectId, agentId: ev.agentId },
       }),
     );
     return;
