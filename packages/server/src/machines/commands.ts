@@ -170,7 +170,10 @@ export function unpackStoreCommand(platform: RemotePlatform, layout: RemoteLayou
  */
 export function remotePenguin(layout: RemoteLayout): string {
   const dir = layout.programDir.posix;
-  return `PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
+  // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
+  // and nohup takes the first word as the program — a bare assignment there is "no such
+  // command", and the server never starts.
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /**
