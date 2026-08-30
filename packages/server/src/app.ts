@@ -167,6 +167,13 @@ export interface AppDeps {
   config: ServerConfig;
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
+  /**
+   * Publishes a user-level event to everyone who can see a Project — its owner and members
+   * with GET /api/events open. For a route that changes what the list shows (a rename) as
+   * much as for the runtime's state flips: the list has no other way to learn of a change
+   * it did not make itself.
+   */
+  notifyProjectUsers: (projectId: string, event: ServerEvent) => void;
   prefsRepo: UiPrefsRepo;
   /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
@@ -1015,6 +1022,7 @@ export function buildAppDeps(
     traceIndex,
     proxyEnv,
     controlEnv,
+    notifyProjectUsers,
     // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
     // the row); a point query per row keeps the repo out of the service. An unknown
     // stored channel reads as none (same defensive skip as the bridge and the routes).
@@ -1051,6 +1059,7 @@ export function buildAppDeps(
     config,
     db,
     sessionsRepo,
+    notifyProjectUsers,
     prefsRepo,
     serverSettingsRepo,
     authService,

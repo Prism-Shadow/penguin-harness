@@ -394,3 +394,84 @@ describe("other user-channel events keep their behaviour", () => {
     expect(reloads).toBe(1);
   });
 });
+
+describe("session_created on the user channel", () => {
+  const created = (projectId: string): ServerEvent => ({
+    type: "session_created",
+    projectId,
+    agentId: "default_agent",
+    sessionId: "session-new",
+  });
+  const counting = () => {
+    const store = storeWith();
+    let reloads = 0;
+    store.setState({
+      reload: async () => {
+        reloads += 1;
+      },
+    });
+    return { store, count: () => reloads };
+  };
+
+  it("reloads the list: a row this list did not make can only be fetched, not conjured", () => {
+    // The CLI, another tab, a schedule, an agent's child — none of them put a row here, and
+    // session_state / session_title on an unknown id are ignored by design. This is the one
+    // event that makes such a Session appear before the next manual reload.
+    const { store, count } = counting();
+    applyUserEvent(store, created("proj"), neverReload);
+    expect(count()).toBe(1);
+  });
+
+  it("ignores another Project's creation on this server", () => {
+    const { store, count } = counting();
+    applyUserEvent(store, created("other"), neverReload);
+    expect(count()).toBe(0);
+  });
+
+  it("reloads for a machine's creation whatever its Project id: those ids are the machine's own", () => {
+    const { store, count } = counting();
+    applyUserEvent(store, created("remote-project"), neverReload, "kUkIyqU-1GOfXgKD");
+    expect(count()).toBe(1);
+  });
+});
+
+describe("events from a machine's stream", () => {
+  const REMOTE = "kUkIyqU-1GOfXgKD";
+
+  it("move a remote row's state exactly like a local one", () => {
+    // A Session on a machine changes state on THAT server; its stream is the only place the
+    // flip is announced. The row is keyed by Session id alone, so the source does not matter
+    // for the update itself.
+    const store = storeWith(session("s-remote", { status: "idle" }));
+    applyUserEvent(store, stateEvent("s-remote", "running", STARTED), neverReload, REMOTE);
+    expect(rowOf(store, "s-remote").status).toBe("running");
+  });
+
+  it("never reload this window for a machine's web_updated: that is the machine's web, not ours", () => {
+    const store = storeWith();
+    let reloaded = false;
+    applyUserEvent(store, { type: "web_updated", rev: "abc" }, () => (reloaded = true), REMOTE);
+    expect(reloaded).toBe(false);
+    applyUserEvent(store, { type: "web_updated", rev: "abc" }, () => (reloaded = true));
+    expect(reloaded).toBe(true);
+  });
+
+  it("reload on a machine's schedule_fired regardless of Project id", () => {
+    const store = storeWith();
+    let reloads = 0;
+    store.setState({
+      reload: async () => {
+        reloads += 1;
+      },
+    });
+    const fired: ServerEvent = {
+      type: "schedule_fired",
+      projectId: "remote-project",
+      agentId: "default_agent",
+      name: "nightly",
+      sessionId: "s-1",
+    };
+    applyUserEvent(store, fired, neverReload, REMOTE);
+    expect(reloads).toBe(1);
+  });
+});
