@@ -281,11 +281,11 @@ export async function bootAppDeps(
 /** Assembles the Hono app (does not listen on a port). */
 export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
-  const errors = tree.api<Errors>("ErrorRecorder", "ErrorRecorder");
-  const log = tree.api<{ line(text: string): void }>("ConsoleLog", "ConsoleLog");
-  const settings = tree.api<Settings>("ServerSettingsRepo", "ServerSettingsRepo");
-  const access = tree.api<Access>("ProjectAccess", "ProjectAccess");
-  const authService = tree.api<Auth>("AuthService", "AuthService");
+  const errors = tree.api<Errors>("ObservabilityModule", "Errors");
+  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
+  const settings = tree.api<Settings>("SettingsModule", "Settings");
+  const access = tree.api<Access>("ProjectsModule", "Access");
+  const authService = tree.api<Auth>("IdentityModule", "Auth");
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
