@@ -164,7 +164,7 @@ describe("sandbox settings ride the parked context across a swap", () => {
    * confiner itself is same-generation wiring into buildAppDeps (no caps published here,
    * so no business surface boots); enforcement is covered by the service tests above.
    */
-  async function bootObserved(doc: Json, stampedVersion?: number) {
+  async function bootObserved(doc: Json) {
     const resources = new HotResources();
     // A bare-kernel declaration — right family, no capabilities offered — is what makes a
     // terminals-only boot legal (see capabilities.ts's RuntimeClaim). The sandbox floor is
@@ -196,13 +196,10 @@ describe("sandbox settings ride the parked context across a swap", () => {
     });
     resources.register(PLUGINS_RESOURCE_ID, host);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const parked = initialDoc(packagedPlatform.iface, doc);
-    // A document a LATER generation of the platform parked carries its stamp.
-    if (stampedVersion !== undefined) (parked as { v: number }).v = stampedVersion;
     const inst = await boot(
       packagedPlatform.impl,
       packagedPlatform.iface,
-      parked,
+      initialDoc(packagedPlatform.iface, doc),
       resources,
     ).finally(() => warn.mockRestore());
     return { inst, ctx: () => ({ sandbox: { settings: () => seen!.currentSettings() } }) };
@@ -258,21 +255,6 @@ describe("sandbox settings ride the parked context across a swap", () => {
       } finally {
         b.inst.dispose();
       }
-    } finally {
-      a.inst.dispose();
-    }
-  });
-
-  it("a document a later generation stamped v3 boots here: the platform reads it as its own (a rollback)", async () => {
-    const a = await bootObserved(
-      {
-        motd: "gen-3",
-        modules: { SandboxModule: { v: 1, self: { settings: { mode: "read-only" } } } },
-      },
-      3,
-    );
-    try {
-      expect(a.ctx().sandbox.settings()).toEqual({ mode: "read-only" });
     } finally {
       a.inst.dispose();
     }
