@@ -57,6 +57,7 @@ import {
   UpdateCheck,
 } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
+import { HarnessHistoryStore } from "./services/harness-history.js";
 import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -345,6 +346,7 @@ export class MessagingHubModule {}
     GlobalFetch,
     UpdateCheckService,
     UpdateJobService,
+    HarnessHistoryStore,
     HttpModule,
     WebModule,
     InstallRoutes,
