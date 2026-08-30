@@ -54,6 +54,8 @@ export interface Manifest {
    * child whose provision satisfies it).
    */
   readonly exports?: ReadonlyArray<string>;
+  /** What the class was declared as: a component exports itself, a module exports others. Informational. */
+  readonly kind?: "module" | "component";
 }
 
 const ManifestType = type({
@@ -64,6 +66,7 @@ const ManifestType = type({
   "context?": { version: "number.integer >= 1", "schema?": "unknown" },
   children: type("string").or({ keyed: "string" }).array(),
   "exports?": "string[]",
+  "kind?": "'module' | 'component'",
 });
 
 /** Strict parse of a manifest document; throws with the arktype summary on failure. */

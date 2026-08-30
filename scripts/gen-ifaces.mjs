@@ -885,6 +885,7 @@ for (const project of projects) {
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     const m = {
       name: meta.name,
+      kind,
       requires: {},
       provides: {},
       contributes: meta.contributes ?? {},
