@@ -78,7 +78,7 @@ platformImpl.create
 │    # 插件模块（包里生成的 ifaces.json）是同一棵树的子节点。
 └─ ctx.effect：tree.dispose()（每个模块的 effect，逆序）+ manager.shutdown 排空
 ```
-插件是一组模块——与 harness 自身的构成单位相同，写法也相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的，不是手写的——包的 build 对自己的 tsconfig 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json` 一起发布——这张表就是包的模块载荷，包是不是插件由它被列出决定；默认导出是 `{ modules: [<class>, …] }`，加载时每个类对照表中自己的 manifest 核对。按频率拆开：
+插件是一组模块——与 harness 自身的构成单位相同，写法也相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的，不是手写的——包的 build 对自己的 tsconfig 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json` 一起发布——这张表就是包的模块载荷，包是不是插件由它被列出决定；默认导出是 `{ modules?: [<class>, …], replaces?: [<class>, …] }`——`modules` 是它新增的节点，`replaces` 是它顶替的节点（以被顶替节点为名的类：组件、模块或整个组）——加载时每个类对照表中自己的 manifest 核对。替身放入时不做检查；组装出的树在任何节点运行前作为整体校验，替身提供的少于消费者所需就按名字拒绝。按频率拆开：
 
 | 时机          | 频率        | 发生什么                                                                                                                                         |
 | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |

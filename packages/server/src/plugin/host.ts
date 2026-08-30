@@ -5,10 +5,13 @@
  */
 import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 
-/** One loaded plugin: the package, its modules with manifests paired to code, and its generated table. */
+/** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
 export interface LoadedPlugin {
   specifier: string;
+  /** Nodes the plugin adds under the root. */
   modules: ModuleDef[];
+  /** Nodes the plugin stands in for, by the replaced node's name. */
+  replaces: ModuleDef[];
   /** The interfaces and types the package's `ifaces.json` carries; absent for a module built in code. */
   ifaces?: IfaceTable;
 }
@@ -27,12 +30,25 @@ export class PluginHost {
         );
       }
     }
+    const replaced = this.replacements();
+    for (const m of plugin.replaces) {
+      if (replaced.has(m.manifest.name)) {
+        throw new Error(
+          `plugin '${plugin.specifier}': '${m.manifest.name}' is already replaced by another plugin`,
+        );
+      }
+    }
     this.plugins.push(plugin);
   }
 
   /** Every plugin module, in load order — what the platform adds to its tree. */
   modules(): readonly ModuleDef[] {
     return this.plugins.flatMap((e) => e.modules);
+  }
+
+  /** The nodes plugins stand in for, by name — what the platform builds instead of its own. */
+  replacements(): ReadonlyMap<string, ModuleDef> {
+    return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
   }
 
   /**
