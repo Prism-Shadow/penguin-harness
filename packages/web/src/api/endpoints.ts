@@ -1040,9 +1040,22 @@ export const deleteAgent = (projectId: string, agentId: string) =>
 export const listWorkspaceFiles = (sessionId: string, path: string) =>
   apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, { query: { path } });
 
-/** File content URL (inline preview / download=1 triggers download; usable directly in <a>/<img>/fetch). */
+/**
+ * File content URL (inline preview / download=1 triggers download; usable directly in
+ * <a>/<img>/<iframe>/fetch).
+ *
+ * Routed like every other Session call, by hand: this is a URL, not a call, so it never
+ * passes through the fetch wrapper that applies the rule (lib/session-machines.ts). Left
+ * bare, every preview, image, PDF and download of a Session that lives on a machine asked
+ * THIS server for a Session it does not have — and the workspace browser reports the
+ * resulting failure as "preview not supported for this type", since a file it cannot read
+ * is indistinguishable from one it cannot render.
+ */
 export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
-  `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+  apiUrl(
+    `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+    machineForSession(sessionId),
+  );
 
 /**
  * "Open in a new tab" for a Workspace html file: an App-origin link that mints a signed

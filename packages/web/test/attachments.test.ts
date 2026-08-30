@@ -4,8 +4,11 @@
  * endpoint, http(s) URLs are quoted as-is, file lines yield their paths, and unrecognized
  * lines stay in the text.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { attachmentFileName, splitAttachments } from "../src/lib/attachments";
+import { forgetSessionMachines, rememberSessionMachine } from "../src/lib/session-machines";
+
+afterEach(() => forgetSessionMachines());
 
 describe("splitAttachments", () => {
   it("scratchpad path lines → session file endpoint, body kept", () => {
@@ -81,5 +84,23 @@ describe("attachmentFileName", () => {
     expect(attachmentFileName("/x/scratchpad/s1/report.pdf")).toBe("report.pdf");
     expect(attachmentFileName("C:\\data\\scratchpad\\s1\\rows.csv")).toBe("rows.csv");
     expect(attachmentFileName("report.pdf")).toBe("report.pdf");
+  });
+});
+
+describe("an attachment on a Session that lives on a machine", () => {
+  const REMOTE = "QS7J4YVgSovi-Z2c";
+  const line = "[attached image: /root/.penguin/data/p/agents/a/scratchpad/s-1/shot.png]";
+
+  it("is addressed to that machine, not to this server", () => {
+    // The address is a URL, not a call, so nothing else applies the Session routing rule to
+    // it: left bare, the image is fetched from a server that does not have the Session.
+    rememberSessionMachine("s-1", REMOTE);
+    const { images } = splitAttachments(line);
+    expect(images).toEqual([`/server/${REMOTE}/api/sessions/s-1/scratchpad/shot.png`]);
+  });
+
+  it("stays a plain path for a Session on this server", () => {
+    const { images } = splitAttachments(line);
+    expect(images).toEqual(["/api/sessions/s-1/scratchpad/shot.png"]);
   });
 });
