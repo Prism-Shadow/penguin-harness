@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>module tree · 088fd63a913c</title>
+<title>module tree · c87a240f503d</title>
 <style>
 :root { color-scheme: light dark; --ink: #1f2328; --muted: #6a737d; --line: #d0d7de; --bg: #fff; --panel: #f6f8fa; --accent: #0969da; --mod: #8250df; --comp: #1a7f37; }
 @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #8b949e; --line: #30363d; --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --mod: #d2a8ff; --comp: #3fb950; } }
@@ -27,6 +27,7 @@ nav button.current { outline: 1px solid var(--line); }
 .kind.module { color: var(--mod); border-color: var(--mod); }
 .kind.component { color: var(--comp); border-color: var(--comp); }
 .kind.iface { color: var(--accent); border-color: var(--accent); }
+.kind.group { color: var(--ink); border-color: var(--ink); }
 .kind.slot { color: var(--muted); border-color: var(--muted); }
 section { padding: 16px 24px; max-width: 1100px; }
 section h2 { margin: 0 0 4px; font-size: 20px; }
@@ -47,9 +48,9 @@ summary { cursor: pointer; color: var(--muted); }
 <body>
 <header>
   <h1>module tree</h1>
-  <span class="hash" title="sha256 of the interface table">088fd63a913cf62a63b134cbd79cb057f55c3df289afcdaab8897bb1629ba583</span>
+  <span class="hash" title="sha256 of the interface table">c87a240f503d76f1e1244483e7ded17b6c45642e069cbfbc8a433b5237612b01</span>
   <a href="ifaces.json">ifaces.json</a>
-  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/0a1d805afb36a82932ac17aad51af9813d8713a0"><code>0a1d805</code> 543/merge</a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/4eec00da058173fc85389e6e8a7c15718463247f"><code>4eec00d</code> 543/merge</a>
   <input id="q" type="search" placeholder="filter nodes and interfaces">
 </header>
 <main>
@@ -57,7 +58,7 @@ summary { cursor: pointer; color: var(--muted); }
   <section id="detail"><p class="muted">Pick a node or an interface.</p></section>
 </main>
 <script id="data" type="application/json">{
- "hash": "088fd63a913cf62a63b134cbd79cb057f55c3df289afcdaab8897bb1629ba583",
+ "hash": "c87a240f503d76f1e1244483e7ded17b6c45642e069cbfbc8a433b5237612b01",
  "ifaces": {
   "@prismshadow/penguin-server#Access": {
    "name": "Access",
@@ -13349,6 +13350,7 @@ summary { cursor: pointer; color: var(--muted); }
  "modules": {
   "AdminRoutes": {
    "name": "AdminRoutes",
+   "kind": "component",
    "requires": {
     "admin": {
      "iface": "@prismshadow/penguin-server#Admin",
@@ -13390,6 +13392,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AdminService": {
    "name": "AdminService",
+   "kind": "component",
    "requires": {
     "users": {
      "iface": "@prismshadow/penguin-server#Users",
@@ -13425,6 +13428,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AgentConfigService": {
    "name": "AgentConfigService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13440,6 +13444,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AgentService": {
    "name": "AgentService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13467,6 +13472,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AgentsModule": {
    "name": "AgentsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "AgentConfig": "@prismshadow/penguin-server#AgentConfig",
@@ -13496,6 +13502,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AgentsRepo": {
    "name": "AgentsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13511,6 +13518,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ApiModule": {
    "name": "ApiModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Http": "@prismshadow/penguin-server#Http",
@@ -13535,6 +13543,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AuthService": {
    "name": "AuthService",
+   "kind": "component",
    "requires": {
     "users": {
      "iface": "@prismshadow/penguin-server#Users",
@@ -13574,6 +13583,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "AuthSessionsRepo": {
    "name": "AuthSessionsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13589,6 +13599,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "BenchmarkService": {
    "name": "BenchmarkService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13608,6 +13619,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ConfigPaths": {
    "name": "ConfigPaths",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13623,6 +13635,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ConsoleLog": {
    "name": "ConsoleLog",
+   "kind": "component",
    "requires": {},
    "provides": {
     "ConsoleLog": "@prismshadow/penguin-server#ConsoleLog",
@@ -13633,6 +13646,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "CoreSessionLoaders": {
    "name": "CoreSessionLoaders",
+   "kind": "component",
    "requires": {},
    "provides": {
     "CoreSessionLoaders": "@prismshadow/penguin-server#CoreSessionLoaders",
@@ -13643,6 +13657,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "DefaultMessagingTuning": {
    "name": "DefaultMessagingTuning",
+   "kind": "component",
    "requires": {},
    "provides": {
     "DefaultMessagingTuning": "@prismshadow/penguin-server#DefaultMessagingTuning",
@@ -13653,6 +13668,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "DefaultTitleGenerators": {
    "name": "DefaultTitleGenerators",
+   "kind": "component",
    "requires": {},
    "provides": {
     "DefaultTitleGenerators": "@prismshadow/penguin-server#DefaultTitleGenerators",
@@ -13663,6 +13679,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ErrorRecorder": {
    "name": "ErrorRecorder",
+   "kind": "component",
    "requires": {
     "errors": {
      "iface": "@prismshadow/penguin-server#ErrorLog",
@@ -13682,6 +13699,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ErrorsRepo": {
    "name": "ErrorsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13697,6 +13715,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "EventsRoutes": {
    "name": "EventsRoutes",
+   "kind": "component",
    "requires": {
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels",
@@ -13720,6 +13739,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "FeishuMessaging": {
    "name": "FeishuMessaging",
+   "kind": "component",
    "requires": {
     "feishu": {
      "iface": "@prismshadow/penguin-server#FeishuSdkHandle",
@@ -13741,6 +13761,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "FeishuSdkProvider": {
    "name": "FeishuSdkProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "feishuSdk": "@prismshadow/penguin-server#FeishuSdkHandle"
@@ -13750,6 +13771,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "GlobalFetch": {
    "name": "GlobalFetch",
+   "kind": "component",
    "requires": {},
    "provides": {
     "GlobalFetch": "@prismshadow/penguin-server#GlobalFetch",
@@ -13760,6 +13782,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "GoalsRepo": {
    "name": "GoalsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13775,6 +13798,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "HostAssembly": {
    "name": "HostAssembly",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13847,6 +13871,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "HttpModule": {
    "name": "HttpModule",
+   "kind": "module",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13881,6 +13906,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "IdentityModule": {
    "name": "IdentityModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Users": "@prismshadow/penguin-server#Users",
@@ -13909,6 +13935,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "InstallRoutes": {
    "name": "InstallRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13932,6 +13959,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MachinesModule": {
    "name": "MachinesModule",
+   "kind": "module",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13959,6 +13987,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MeRoutes": {
    "name": "MeRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13998,6 +14027,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MembersRepo": {
    "name": "MembersRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14013,6 +14043,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MemoryService": {
    "name": "MemoryService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14032,6 +14063,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MessagingBindingsRepo": {
    "name": "MessagingBindingsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14047,6 +14079,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MessagingHubModule": {
    "name": "MessagingHubModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Messaging": "@prismshadow/penguin-server#Messaging",
@@ -14071,6 +14104,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "MessagingModule": {
    "name": "MessagingModule",
+   "kind": "module",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14147,6 +14181,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ModelOAuthService": {
    "name": "ModelOAuthService",
+   "kind": "component",
    "requires": {
     "projectConfig": {
      "iface": "@prismshadow/penguin-server#ProjectConfigStore",
@@ -14162,6 +14197,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ObservabilityModule": {
    "name": "ObservabilityModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "ErrorLog": "@prismshadow/penguin-server#ErrorLog",
@@ -14188,6 +14224,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "PlatformModule": {
    "name": "PlatformModule",
+   "kind": "module",
    "requires": {},
    "provides": {},
    "contributes": {},
@@ -14211,6 +14248,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "PreviewModule": {
    "name": "PreviewModule",
+   "kind": "module",
    "requires": {
     "workspaceFiles": {
      "iface": "@prismshadow/penguin-server#WorkspaceFiles",
@@ -14238,6 +14276,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectAccess": {
    "name": "ProjectAccess",
+   "kind": "component",
    "requires": {
     "projects": {
      "iface": "@prismshadow/penguin-server#Projects",
@@ -14261,6 +14300,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectAdminRoutes": {
    "name": "ProjectAdminRoutes",
+   "kind": "component",
    "requires": {
     "projectService": {
      "iface": "@prismshadow/penguin-server#ProjectLifecycle",
@@ -14294,6 +14334,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectConfigService": {
    "name": "ProjectConfigService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14309,6 +14350,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectService": {
    "name": "ProjectService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14376,6 +14418,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectsModule": {
    "name": "ProjectsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Projects": "@prismshadow/penguin-server#Projects",
@@ -14412,6 +14455,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectsRepo": {
    "name": "ProjectsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14427,6 +14471,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ProjectsRoutes": {
    "name": "ProjectsRoutes",
+   "kind": "component",
    "requires": {
     "access": {
      "iface": "@prismshadow/penguin-server#Access",
@@ -14456,6 +14501,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "QQScanTransportProvider": {
    "name": "QQScanTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "qqScanTransport": "@prismshadow/penguin-server#QQScanTransportHandle"
@@ -14465,6 +14511,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "QQTransportProvider": {
    "name": "QQTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "qqTransport": "@prismshadow/penguin-server#QQTransportHandle"
@@ -14474,6 +14521,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "QqMessaging": {
    "name": "QqMessaging",
+   "kind": "component",
    "requires": {
     "qq": {
      "iface": "@prismshadow/penguin-server#QQTransportHandle",
@@ -14503,6 +14551,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeAuthState": {
    "name": "RuntimeAuthState",
+   "kind": "module",
    "requires": {},
    "provides": {
     "authState": "@prismshadow/penguin-server#AuthState"
@@ -14512,6 +14561,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeChannels": {
    "name": "RuntimeChannels",
+   "kind": "module",
    "requires": {},
    "provides": {
     "channels": "@prismshadow/penguin-server#Channels"
@@ -14521,6 +14571,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeConfig": {
    "name": "RuntimeConfig",
+   "kind": "module",
    "requires": {},
    "provides": {
     "config": "@prismshadow/penguin-server#Config"
@@ -14530,6 +14581,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeDb": {
    "name": "RuntimeDb",
+   "kind": "module",
    "requires": {},
    "provides": {
     "db": "@prismshadow/penguin-server#Db"
@@ -14539,6 +14591,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeDesktop": {
    "name": "RuntimeDesktop",
+   "kind": "module",
    "requires": {},
    "provides": {
     "desktop": "@prismshadow/penguin-server#Desktop"
@@ -14548,6 +14601,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeHmr": {
    "name": "RuntimeHmr",
+   "kind": "module",
    "requires": {},
    "provides": {
     "hmr": "@prismshadow/penguin-server#Hmr"
@@ -14557,6 +14611,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeModule": {
    "name": "RuntimeModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Config": "@prismshadow/penguin-server#Config",
@@ -14601,6 +14656,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeProxy": {
    "name": "RuntimeProxy",
+   "kind": "module",
    "requires": {},
    "provides": {
     "proxy": "@prismshadow/penguin-server#Proxy"
@@ -14610,6 +14666,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "RuntimeResourceGroups": {
    "name": "RuntimeResourceGroups",
+   "kind": "module",
    "requires": {},
    "provides": {
     "resourceGroups": "@prismshadow/penguin-server#ResourceGroups"
@@ -14619,6 +14676,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SandboxModule": {
    "name": "SandboxModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "sandbox": "@prismshadow/penguin-server#Sandbox"
@@ -14638,6 +14696,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "Scheduler": {
    "name": "Scheduler",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14687,6 +14746,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SchedulerRoutes": {
    "name": "SchedulerRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -14730,6 +14790,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SchedulesRepo": {
    "name": "SchedulesRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14745,6 +14806,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ScryptHasher": {
    "name": "ScryptHasher",
+   "kind": "component",
    "requires": {},
    "provides": {
     "ScryptHasher": "@prismshadow/penguin-server#ScryptHasher",
@@ -14755,6 +14817,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "ServerSettingsRepo": {
    "name": "ServerSettingsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14770,6 +14833,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SessionApiRoutes": {
    "name": "SessionApiRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -14933,6 +14997,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SessionRuntimeModule": {
    "name": "SessionRuntimeModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "SessionIndex": "@prismshadow/penguin-server#SessionIndex",
@@ -14979,6 +15044,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SessionSources": {
    "name": "SessionSources",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SessionSources": "@prismshadow/penguin-server#SessionSources",
@@ -14989,6 +15055,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SessionsModule": {
    "name": "SessionsModule",
+   "kind": "module",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -15085,6 +15152,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SessionsRepo": {
    "name": "SessionsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15100,6 +15168,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SettingsModule": {
    "name": "SettingsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Settings": "@prismshadow/penguin-server#Settings",
@@ -15117,6 +15186,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SkillLibraryRoutes": {
    "name": "SkillLibraryRoutes",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SkillLibraryRoutes": "@prismshadow/penguin-server#SkillLibraryRoutes"
@@ -15135,6 +15205,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SnapshotService": {
    "name": "SnapshotService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15150,6 +15221,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "Startup": {
    "name": "Startup",
+   "kind": "component",
    "requires": {
     "goals": {
      "iface": "@prismshadow/penguin-server#Goals",
@@ -15176,6 +15248,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "SystemClock": {
    "name": "SystemClock",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SystemClock": "@prismshadow/penguin-server#SystemClock",
@@ -15186,6 +15259,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TelegramMessaging": {
    "name": "TelegramMessaging",
+   "kind": "component",
    "requires": {
     "telegram": {
      "iface": "@prismshadow/penguin-server#TelegramTransportHandle",
@@ -15211,6 +15285,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TelegramTransportProvider": {
    "name": "TelegramTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "telegramTransport": "@prismshadow/penguin-server#TelegramTransportHandle"
@@ -15220,6 +15295,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TerminalModule": {
    "name": "TerminalModule",
+   "kind": "module",
    "requires": {
     "hmr": {
      "iface": "@prismshadow/penguin-server#Hmr",
@@ -15257,6 +15333,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TraceIndexRepo": {
    "name": "TraceIndexRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15272,6 +15349,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TraceIndexService": {
    "name": "TraceIndexService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15295,6 +15373,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TraceService": {
    "name": "TraceService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15326,6 +15405,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "TracesModule": {
    "name": "TracesModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "TraceIndexStore": "@prismshadow/penguin-server#TraceIndexStore",
@@ -15346,6 +15426,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UiPrefsRepo": {
    "name": "UiPrefsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15361,6 +15442,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UpdateCheckService": {
    "name": "UpdateCheckService",
+   "kind": "component",
    "requires": {
     "http": {
      "iface": "@prismshadow/penguin-server#HttpFetch",
@@ -15380,6 +15462,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UsageRecorder": {
    "name": "UsageRecorder",
+   "kind": "component",
    "requires": {
     "usage": {
      "iface": "@prismshadow/penguin-server#UsageStore",
@@ -15399,6 +15482,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UsageRepo": {
    "name": "UsageRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15414,6 +15498,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UsageService": {
    "name": "UsageService",
+   "kind": "component",
    "requires": {
     "usage": {
      "iface": "@prismshadow/penguin-server#UsageStore",
@@ -15441,6 +15526,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "UsersRepo": {
    "name": "UsersRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15456,6 +15542,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "VersionRoutes": {
    "name": "VersionRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -15483,6 +15570,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "WebModule": {
    "name": "WebModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "web": "@prismshadow/penguin-server#WebShell"
@@ -15501,6 +15589,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "WorkspaceFilesService": {
    "name": "WorkspaceFilesService",
+   "kind": "component",
    "requires": {},
    "provides": {
     "WorkspaceFilesService": "@prismshadow/penguin-server#WorkspaceFilesService",
@@ -15511,6 +15600,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "WorkspaceModule": {
    "name": "WorkspaceModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "WorkspaceFiles": "@prismshadow/penguin-server#WorkspaceFiles",
@@ -15534,7 +15624,7 @@ const T = JSON.parse(document.getElementById("data").textContent);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const short = (key) => key.slice(key.indexOf("#") + 1);
 const ref = (key, kind) => '<a class="ref" href="#' + kind + ':' + encodeURIComponent(key) + '" title="' + esc(key) + '">' + esc(short(key)) + "</a>";
-const isComponent = (m) => Object.entries(m.provides).length === 1 && Object.entries(m.provides).every(([alias, key]) => key === m.name + "#" + alias);
+const kindOf = (m) => (m.kind === "component" ? "component" : m.exports?.length ? "group" : "module");
 
 // --- TypeExpr → TypeScript-ish text (mirrors core kernel/sig.ts) ---
 function data(d) {
@@ -15576,7 +15666,7 @@ const roots = Object.keys(modules).filter((n) => !childOf.has(n));
 function node(name) {
   const m = modules[name];
   if (!m) return "<li><button disabled>" + esc(name) + " (not in this table)</button></li>";
-  const kind = isComponent(m) ? "component" : "module";
+  const kind = kindOf(m);
   const kids = m.children.map((c) => (c === "*" ? '<li><span class="kind slot">slot</span><span class="muted">extension modules</span></li>' : node(c))).join("");
   return "<li data-name=\"" + esc(name) + "\"><button data-go=\"node:" + encodeURIComponent(name) + "\"><span class=\"kind " + kind + "\">" + kind[0] + "</span>" + esc(name) + "</button>" + (kids ? "<ul>" + kids + "</ul>" : "") + "</li>";
 }
@@ -15589,7 +15679,7 @@ document.getElementById("tree").innerHTML =
 // --- detail ---
 function showNode(name) {
   const m = modules[name];
-  const kind = isComponent(m) ? "component" : "module";
+  const kind = kindOf(m);
   const req = Object.entries(m.requires);
   const prov = Object.entries(m.provides);
   const contrib = Object.entries(m.contributes);
@@ -15598,8 +15688,8 @@ function showNode(name) {
     (m.context ? "<p class=\"muted\">parks context v" + esc(m.context.version) + "</p>" : "") +
     "<h3>requires (" + req.length + ")</h3>" + (req.length ? "<table><tr><th>field</th><th>interface</th><th>from</th></tr>" +
       req.map(([f, r]) => "<tr><td><code>" + esc(f) + "</code></td><td>" + ref(r.iface, "iface") + "</td><td>" + (r.from ? '<a class="ref" href="#node:' + encodeURIComponent(r.from) + '">' + esc(r.from) + "</a>" : "<span class=\"muted\">by structure</span>") + "</td></tr>").join("") + "</table>" : "<p class=\"muted\">nothing</p>") +
-    "<h3>provides (" + prov.length + ")</h3>" + (prov.length ? "<table><tr><th>alias</th><th>interface</th></tr>" +
-      prov.map(([a, k]) => "<tr><td><code>" + esc(a) + "</code></td><td>" + ref(k, "iface") + "</td></tr>").join("") + "</table>" : "<p class=\"muted\">nothing</p>") +
+    "<h3>" + (m.exports?.length ? "exports" : "provides") + " (" + prov.length + ")</h3>" + (prov.length ? "<table><tr><th>alias</th><th>interface</th>" + (m.exports?.length ? "<th></th>" : "") + "</tr>" +
+      prov.map(([a, k]) => "<tr><td><code>" + esc(a) + "</code></td><td>" + ref(k, "iface") + "</td>" + (m.exports?.length ? "<td class=\"muted\">" + (m.exports.includes(a) ? "from a child" : "") + "</td>" : "") + "</tr>").join("") + "</table>" : "<p class=\"muted\">nothing</p>") +
     "<h3>contributes (" + contrib.length + ")</h3>" + (contrib.length ? contrib.map(([slot, items]) =>
       "<details open><summary><code>" + esc(slot) + "</code> × " + items.length + "</summary><pre>" + esc(JSON.stringify(items, null, 2)) + "</pre></details>").join("") : "<p class=\"muted\">nothing</p>") +
     (m.children.length ? "<h3>children (" + m.children.length + ")</h3><p>" + m.children.map((c) => c === "*" ? "<span class=\"muted\">+ extension modules</span>" : '<a class="ref" href="#node:' + encodeURIComponent(c) + '">' + esc(c) + "</a>").join(", ") + "</p>" : "") +

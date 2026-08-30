@@ -1,5 +1,5 @@
 {
- "hash": "088fd63a913cf62a63b134cbd79cb057f55c3df289afcdaab8897bb1629ba583",
+ "hash": "c87a240f503d76f1e1244483e7ded17b6c45642e069cbfbc8a433b5237612b01",
  "ifaces": {
   "@prismshadow/penguin-server#Access": {
    "name": "Access",
@@ -13291,6 +13291,7 @@
  "modules": {
   "AdminRoutes": {
    "name": "AdminRoutes",
+   "kind": "component",
    "requires": {
     "admin": {
      "iface": "@prismshadow/penguin-server#Admin",
@@ -13332,6 +13333,7 @@
   },
   "AdminService": {
    "name": "AdminService",
+   "kind": "component",
    "requires": {
     "users": {
      "iface": "@prismshadow/penguin-server#Users",
@@ -13367,6 +13369,7 @@
   },
   "AgentConfigService": {
    "name": "AgentConfigService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13382,6 +13385,7 @@
   },
   "AgentService": {
    "name": "AgentService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13409,6 +13413,7 @@
   },
   "AgentsModule": {
    "name": "AgentsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "AgentConfig": "@prismshadow/penguin-server#AgentConfig",
@@ -13438,6 +13443,7 @@
   },
   "AgentsRepo": {
    "name": "AgentsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13453,6 +13459,7 @@
   },
   "ApiModule": {
    "name": "ApiModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Http": "@prismshadow/penguin-server#Http",
@@ -13477,6 +13484,7 @@
   },
   "AuthService": {
    "name": "AuthService",
+   "kind": "component",
    "requires": {
     "users": {
      "iface": "@prismshadow/penguin-server#Users",
@@ -13516,6 +13524,7 @@
   },
   "AuthSessionsRepo": {
    "name": "AuthSessionsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13531,6 +13540,7 @@
   },
   "BenchmarkService": {
    "name": "BenchmarkService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13550,6 +13560,7 @@
   },
   "ConfigPaths": {
    "name": "ConfigPaths",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13565,6 +13576,7 @@
   },
   "ConsoleLog": {
    "name": "ConsoleLog",
+   "kind": "component",
    "requires": {},
    "provides": {
     "ConsoleLog": "@prismshadow/penguin-server#ConsoleLog",
@@ -13575,6 +13587,7 @@
   },
   "CoreSessionLoaders": {
    "name": "CoreSessionLoaders",
+   "kind": "component",
    "requires": {},
    "provides": {
     "CoreSessionLoaders": "@prismshadow/penguin-server#CoreSessionLoaders",
@@ -13585,6 +13598,7 @@
   },
   "DefaultMessagingTuning": {
    "name": "DefaultMessagingTuning",
+   "kind": "component",
    "requires": {},
    "provides": {
     "DefaultMessagingTuning": "@prismshadow/penguin-server#DefaultMessagingTuning",
@@ -13595,6 +13609,7 @@
   },
   "DefaultTitleGenerators": {
    "name": "DefaultTitleGenerators",
+   "kind": "component",
    "requires": {},
    "provides": {
     "DefaultTitleGenerators": "@prismshadow/penguin-server#DefaultTitleGenerators",
@@ -13605,6 +13620,7 @@
   },
   "ErrorRecorder": {
    "name": "ErrorRecorder",
+   "kind": "component",
    "requires": {
     "errors": {
      "iface": "@prismshadow/penguin-server#ErrorLog",
@@ -13624,6 +13640,7 @@
   },
   "ErrorsRepo": {
    "name": "ErrorsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13639,6 +13656,7 @@
   },
   "EventsRoutes": {
    "name": "EventsRoutes",
+   "kind": "component",
    "requires": {
     "channels": {
      "iface": "@prismshadow/penguin-server#Channels",
@@ -13662,6 +13680,7 @@
   },
   "FeishuMessaging": {
    "name": "FeishuMessaging",
+   "kind": "component",
    "requires": {
     "feishu": {
      "iface": "@prismshadow/penguin-server#FeishuSdkHandle",
@@ -13683,6 +13702,7 @@
   },
   "FeishuSdkProvider": {
    "name": "FeishuSdkProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "feishuSdk": "@prismshadow/penguin-server#FeishuSdkHandle"
@@ -13692,6 +13712,7 @@
   },
   "GlobalFetch": {
    "name": "GlobalFetch",
+   "kind": "component",
    "requires": {},
    "provides": {
     "GlobalFetch": "@prismshadow/penguin-server#GlobalFetch",
@@ -13702,6 +13723,7 @@
   },
   "GoalsRepo": {
    "name": "GoalsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13717,6 +13739,7 @@
   },
   "HostAssembly": {
    "name": "HostAssembly",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13789,6 +13812,7 @@
   },
   "HttpModule": {
    "name": "HttpModule",
+   "kind": "module",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13823,6 +13847,7 @@
   },
   "IdentityModule": {
    "name": "IdentityModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Users": "@prismshadow/penguin-server#Users",
@@ -13851,6 +13876,7 @@
   },
   "InstallRoutes": {
    "name": "InstallRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13874,6 +13900,7 @@
   },
   "MachinesModule": {
    "name": "MachinesModule",
+   "kind": "module",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13901,6 +13928,7 @@
   },
   "MeRoutes": {
    "name": "MeRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -13940,6 +13968,7 @@
   },
   "MembersRepo": {
    "name": "MembersRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13955,6 +13984,7 @@
   },
   "MemoryService": {
    "name": "MemoryService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -13974,6 +14004,7 @@
   },
   "MessagingBindingsRepo": {
    "name": "MessagingBindingsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -13989,6 +14020,7 @@
   },
   "MessagingHubModule": {
    "name": "MessagingHubModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Messaging": "@prismshadow/penguin-server#Messaging",
@@ -14013,6 +14045,7 @@
   },
   "MessagingModule": {
    "name": "MessagingModule",
+   "kind": "module",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14089,6 +14122,7 @@
   },
   "ModelOAuthService": {
    "name": "ModelOAuthService",
+   "kind": "component",
    "requires": {
     "projectConfig": {
      "iface": "@prismshadow/penguin-server#ProjectConfigStore",
@@ -14104,6 +14138,7 @@
   },
   "ObservabilityModule": {
    "name": "ObservabilityModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "ErrorLog": "@prismshadow/penguin-server#ErrorLog",
@@ -14130,6 +14165,7 @@
   },
   "PlatformModule": {
    "name": "PlatformModule",
+   "kind": "module",
    "requires": {},
    "provides": {},
    "contributes": {},
@@ -14153,6 +14189,7 @@
   },
   "PreviewModule": {
    "name": "PreviewModule",
+   "kind": "module",
    "requires": {
     "workspaceFiles": {
      "iface": "@prismshadow/penguin-server#WorkspaceFiles",
@@ -14180,6 +14217,7 @@
   },
   "ProjectAccess": {
    "name": "ProjectAccess",
+   "kind": "component",
    "requires": {
     "projects": {
      "iface": "@prismshadow/penguin-server#Projects",
@@ -14203,6 +14241,7 @@
   },
   "ProjectAdminRoutes": {
    "name": "ProjectAdminRoutes",
+   "kind": "component",
    "requires": {
     "projectService": {
      "iface": "@prismshadow/penguin-server#ProjectLifecycle",
@@ -14236,6 +14275,7 @@
   },
   "ProjectConfigService": {
    "name": "ProjectConfigService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14251,6 +14291,7 @@
   },
   "ProjectService": {
    "name": "ProjectService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14318,6 +14359,7 @@
   },
   "ProjectsModule": {
    "name": "ProjectsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Projects": "@prismshadow/penguin-server#Projects",
@@ -14354,6 +14396,7 @@
   },
   "ProjectsRepo": {
    "name": "ProjectsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14369,6 +14412,7 @@
   },
   "ProjectsRoutes": {
    "name": "ProjectsRoutes",
+   "kind": "component",
    "requires": {
     "access": {
      "iface": "@prismshadow/penguin-server#Access",
@@ -14398,6 +14442,7 @@
   },
   "QQScanTransportProvider": {
    "name": "QQScanTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "qqScanTransport": "@prismshadow/penguin-server#QQScanTransportHandle"
@@ -14407,6 +14452,7 @@
   },
   "QQTransportProvider": {
    "name": "QQTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "qqTransport": "@prismshadow/penguin-server#QQTransportHandle"
@@ -14416,6 +14462,7 @@
   },
   "QqMessaging": {
    "name": "QqMessaging",
+   "kind": "component",
    "requires": {
     "qq": {
      "iface": "@prismshadow/penguin-server#QQTransportHandle",
@@ -14445,6 +14492,7 @@
   },
   "RuntimeAuthState": {
    "name": "RuntimeAuthState",
+   "kind": "module",
    "requires": {},
    "provides": {
     "authState": "@prismshadow/penguin-server#AuthState"
@@ -14454,6 +14502,7 @@
   },
   "RuntimeChannels": {
    "name": "RuntimeChannels",
+   "kind": "module",
    "requires": {},
    "provides": {
     "channels": "@prismshadow/penguin-server#Channels"
@@ -14463,6 +14512,7 @@
   },
   "RuntimeConfig": {
    "name": "RuntimeConfig",
+   "kind": "module",
    "requires": {},
    "provides": {
     "config": "@prismshadow/penguin-server#Config"
@@ -14472,6 +14522,7 @@
   },
   "RuntimeDb": {
    "name": "RuntimeDb",
+   "kind": "module",
    "requires": {},
    "provides": {
     "db": "@prismshadow/penguin-server#Db"
@@ -14481,6 +14532,7 @@
   },
   "RuntimeDesktop": {
    "name": "RuntimeDesktop",
+   "kind": "module",
    "requires": {},
    "provides": {
     "desktop": "@prismshadow/penguin-server#Desktop"
@@ -14490,6 +14542,7 @@
   },
   "RuntimeHmr": {
    "name": "RuntimeHmr",
+   "kind": "module",
    "requires": {},
    "provides": {
     "hmr": "@prismshadow/penguin-server#Hmr"
@@ -14499,6 +14552,7 @@
   },
   "RuntimeModule": {
    "name": "RuntimeModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Config": "@prismshadow/penguin-server#Config",
@@ -14543,6 +14597,7 @@
   },
   "RuntimeProxy": {
    "name": "RuntimeProxy",
+   "kind": "module",
    "requires": {},
    "provides": {
     "proxy": "@prismshadow/penguin-server#Proxy"
@@ -14552,6 +14607,7 @@
   },
   "RuntimeResourceGroups": {
    "name": "RuntimeResourceGroups",
+   "kind": "module",
    "requires": {},
    "provides": {
     "resourceGroups": "@prismshadow/penguin-server#ResourceGroups"
@@ -14561,6 +14617,7 @@
   },
   "SandboxModule": {
    "name": "SandboxModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "sandbox": "@prismshadow/penguin-server#Sandbox"
@@ -14580,6 +14637,7 @@
   },
   "Scheduler": {
    "name": "Scheduler",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -14629,6 +14687,7 @@
   },
   "SchedulerRoutes": {
    "name": "SchedulerRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -14672,6 +14731,7 @@
   },
   "SchedulesRepo": {
    "name": "SchedulesRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14687,6 +14747,7 @@
   },
   "ScryptHasher": {
    "name": "ScryptHasher",
+   "kind": "component",
    "requires": {},
    "provides": {
     "ScryptHasher": "@prismshadow/penguin-server#ScryptHasher",
@@ -14697,6 +14758,7 @@
   },
   "ServerSettingsRepo": {
    "name": "ServerSettingsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -14712,6 +14774,7 @@
   },
   "SessionApiRoutes": {
    "name": "SessionApiRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -14875,6 +14938,7 @@
   },
   "SessionRuntimeModule": {
    "name": "SessionRuntimeModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "SessionIndex": "@prismshadow/penguin-server#SessionIndex",
@@ -14921,6 +14985,7 @@
   },
   "SessionSources": {
    "name": "SessionSources",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SessionSources": "@prismshadow/penguin-server#SessionSources",
@@ -14931,6 +14996,7 @@
   },
   "SessionsModule": {
    "name": "SessionsModule",
+   "kind": "module",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -15027,6 +15093,7 @@
   },
   "SessionsRepo": {
    "name": "SessionsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15042,6 +15109,7 @@
   },
   "SettingsModule": {
    "name": "SettingsModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "Settings": "@prismshadow/penguin-server#Settings",
@@ -15059,6 +15127,7 @@
   },
   "SkillLibraryRoutes": {
    "name": "SkillLibraryRoutes",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SkillLibraryRoutes": "@prismshadow/penguin-server#SkillLibraryRoutes"
@@ -15077,6 +15146,7 @@
   },
   "SnapshotService": {
    "name": "SnapshotService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15092,6 +15162,7 @@
   },
   "Startup": {
    "name": "Startup",
+   "kind": "component",
    "requires": {
     "goals": {
      "iface": "@prismshadow/penguin-server#Goals",
@@ -15118,6 +15189,7 @@
   },
   "SystemClock": {
    "name": "SystemClock",
+   "kind": "component",
    "requires": {},
    "provides": {
     "SystemClock": "@prismshadow/penguin-server#SystemClock",
@@ -15128,6 +15200,7 @@
   },
   "TelegramMessaging": {
    "name": "TelegramMessaging",
+   "kind": "component",
    "requires": {
     "telegram": {
      "iface": "@prismshadow/penguin-server#TelegramTransportHandle",
@@ -15153,6 +15226,7 @@
   },
   "TelegramTransportProvider": {
    "name": "TelegramTransportProvider",
+   "kind": "module",
    "requires": {},
    "provides": {
     "telegramTransport": "@prismshadow/penguin-server#TelegramTransportHandle"
@@ -15162,6 +15236,7 @@
   },
   "TerminalModule": {
    "name": "TerminalModule",
+   "kind": "module",
    "requires": {
     "hmr": {
      "iface": "@prismshadow/penguin-server#Hmr",
@@ -15199,6 +15274,7 @@
   },
   "TraceIndexRepo": {
    "name": "TraceIndexRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15214,6 +15290,7 @@
   },
   "TraceIndexService": {
    "name": "TraceIndexService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15237,6 +15314,7 @@
   },
   "TraceService": {
    "name": "TraceService",
+   "kind": "component",
    "requires": {
     "paths": {
      "iface": "@prismshadow/penguin-server#Paths",
@@ -15268,6 +15346,7 @@
   },
   "TracesModule": {
    "name": "TracesModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "TraceIndexStore": "@prismshadow/penguin-server#TraceIndexStore",
@@ -15288,6 +15367,7 @@
   },
   "UiPrefsRepo": {
    "name": "UiPrefsRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15303,6 +15383,7 @@
   },
   "UpdateCheckService": {
    "name": "UpdateCheckService",
+   "kind": "component",
    "requires": {
     "http": {
      "iface": "@prismshadow/penguin-server#HttpFetch",
@@ -15322,6 +15403,7 @@
   },
   "UsageRecorder": {
    "name": "UsageRecorder",
+   "kind": "component",
    "requires": {
     "usage": {
      "iface": "@prismshadow/penguin-server#UsageStore",
@@ -15341,6 +15423,7 @@
   },
   "UsageRepo": {
    "name": "UsageRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15356,6 +15439,7 @@
   },
   "UsageService": {
    "name": "UsageService",
+   "kind": "component",
    "requires": {
     "usage": {
      "iface": "@prismshadow/penguin-server#UsageStore",
@@ -15383,6 +15467,7 @@
   },
   "UsersRepo": {
    "name": "UsersRepo",
+   "kind": "component",
    "requires": {
     "db": {
      "iface": "@prismshadow/penguin-server#Db",
@@ -15398,6 +15483,7 @@
   },
   "VersionRoutes": {
    "name": "VersionRoutes",
+   "kind": "component",
    "requires": {
     "config": {
      "iface": "@prismshadow/penguin-server#Config",
@@ -15425,6 +15511,7 @@
   },
   "WebModule": {
    "name": "WebModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "web": "@prismshadow/penguin-server#WebShell"
@@ -15443,6 +15530,7 @@
   },
   "WorkspaceFilesService": {
    "name": "WorkspaceFilesService",
+   "kind": "component",
    "requires": {},
    "provides": {
     "WorkspaceFilesService": "@prismshadow/penguin-server#WorkspaceFilesService",
@@ -15453,6 +15541,7 @@
   },
   "WorkspaceModule": {
    "name": "WorkspaceModule",
+   "kind": "module",
    "requires": {},
    "provides": {
     "WorkspaceFiles": "@prismshadow/penguin-server#WorkspaceFiles",
