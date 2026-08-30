@@ -128,7 +128,9 @@ describe("plugin loading", () => {
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
     expect(result.loaded).toEqual([]);
-    expect(result.failed.get(file)).toMatch(/names module 'thing'.*no create\(\)/);
+    expect(result.failed.get(file)).toMatch(
+      /names 'thing', but the default export's modules has no create\(\)/,
+    );
   });
 
   it("a module the code provides but the manifest does not declare is refused too", async () => {
@@ -139,7 +141,7 @@ describe("plugin loading", () => {
     );
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
-    expect(result.failed.get(file)).toMatch(/module 'ghost' that .* does not declare/);
+    expect(result.failed.get(file)).toMatch(/modules has 'ghost', which .* does not declare/);
   });
 
   it("a package without package.json#penguin is not a plugin, and says so", async () => {
