@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { HarnessInfo } from "@prismshadow/penguin-core";
+import type { HarnessHistoryEntry, HarnessInfo } from "@prismshadow/penguin-core";
 
 /**
  * The committed on-disk record: a runtime restart resumes exactly this CODE (platform,
@@ -132,4 +132,55 @@ export async function resolveCliBundlePath(root: string): Promise<string | null>
   const withinHmrDir = abs === hmrDir || abs.startsWith(hmrDir + path.sep);
   if (!withinHmrDir) return null;
   return fs.existsSync(abs) ? abs : null;
+}
+
+/** How many committed versions the history remembers; the newest are kept. */
+export const HISTORY_KEEP = 100;
+
+const historyPath = (root: string) => path.join(root, "hmr", "history.json");
+
+/**
+ * The versions committed to this root, newest first — `<root>/hmr/history.json`, appended
+ * by persistVersion. Read defensively: a truncated or hand-edited file degrades to the
+ * entries that still parse, never to a crash.
+ */
+export async function readHarnessHistory(root: string): Promise<HarnessHistoryEntry[]> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fsp.readFile(historyPath(root), "utf8"));
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const entries: HarnessHistoryEntry[] = [];
+  for (const raw of parsed) {
+    const e = (raw ?? {}) as Record<string, unknown>;
+    const pushedAt = str(e.pushedAt);
+    const b = (e.bundles ?? {}) as Record<string, unknown>;
+    const bundles = { platform: str(b.platform), cli: str(b.cli), web: str(b.web) };
+    if (pushedAt === null) continue;
+    if (bundles.platform === null && bundles.cli === null && bundles.web === null) continue;
+    const src = (e.source ?? {}) as Record<string, unknown>;
+    const repo = str(src.repo);
+    const revision = str(src.revision);
+    entries.push({
+      source: repo !== null && revision !== null ? { repo, revision } : null,
+      pushedAt,
+      bundles,
+    });
+  }
+  return entries;
+}
+
+/** Records a committed version at the head of the history, keeping the newest {@link HISTORY_KEEP}. */
+export async function appendHarnessHistory(
+  root: string,
+  entry: HarnessHistoryEntry,
+): Promise<void> {
+  const entries = [entry, ...(await readHarnessHistory(root))].slice(0, HISTORY_KEEP);
+  const file = historyPath(root);
+  await fsp.mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(entries, null, 2));
+  await fsp.rename(tmp, file);
 }
