@@ -19,7 +19,7 @@ describe("ProjectConfigService.listEndpointModels", () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "penguin-models-list-"));
-    service = wire(ProjectConfigService, { config: { root } });
+    service = wire(ProjectConfigService, { paths: { root } });
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

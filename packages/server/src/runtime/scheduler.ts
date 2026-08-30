@@ -34,10 +34,10 @@ import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleServerEvent } from "../api/types.js";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { Channels, Config, Overrides } from "../hmr/capabilities.js";
 import type { ProjectConfigService } from "../services/project-config-service.js";
 import type { ErrorRecorder } from "./error-recorder.js";
 import { userChannelKey } from "../http/routes/events.js";
+import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
@@ -92,7 +92,6 @@ export interface ScheduleEntryView {
 
 @Component()
 export class Scheduler {
-  private now: () => number = () => Date.now();
   private intervalMs: number = TICK_INTERVAL_MS;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** key = `${projectId}\0${agentId}\0${name}` */
@@ -106,9 +105,9 @@ export class Scheduler {
   /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
   private readonly agentDirs = new Map<string, { mtimeMs: number; ids: string[] }>();
 
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() private readonly repo!: SchedulesRepo;
   @Use() private readonly projects!: ProjectsRepo;
@@ -119,11 +118,12 @@ export class Scheduler {
   @Use() private readonly projectConfig!: ProjectConfigService;
   @Use() private readonly errors!: ErrorRecorder;
   @Use() private readonly channels!: Channels;
-  @Use() private readonly overrides!: Overrides;
+  @Use() private readonly clock!: Clock;
+  private now(): number {
+    return this.clock.now().getTime();
+  }
 
   setup({ effect }: ClassCtx): void {
-    const overrides = this.overrides.value();
-    if (overrides.now) this.now = () => overrides.now!().getTime();
     // Only active while this App is; the successor's start() reconciles missed fires.
     effect(() => this.stop());
   }

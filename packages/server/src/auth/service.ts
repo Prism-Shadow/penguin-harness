@@ -14,10 +14,12 @@ import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
-import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
+import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
+import { verifyPassword } from "./password.js";
+import type { PasswordHasher } from "./password.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AuthState, Config, Overrides } from "../hmr/capabilities.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -76,10 +78,8 @@ export class AuthService {
   /** Provisions the initial Project at signup — declared at the consumer, below. */
   @Use() private readonly provisioner!: InitialProjectProvisioner;
   @Use() private readonly config!: Config;
-  @Use() private readonly overrides!: Overrides;
-  private now: () => Date = () => new Date();
-  /** scrypt work factor for hashes this service writes; a test double lowers it. */
-  private hashCost: number = SCRYPT_COST;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly hasher!: PasswordHasher;
   /** Session lifetime, for the cookie that must expire WITH the session, not before it. */
   get sessionTtlMs(): number {
     return this.config.authSessionTtlMs;
@@ -93,10 +93,7 @@ export class AuthService {
   }
 
   setup(): void {
-    const overrides = this.overrides.value();
-    this.now = overrides.now ?? this.now;
-    this.hashCost = overrides.passwordHashCost ?? SCRYPT_COST;
-    this.authSessions.deleteExpired(this.now().toISOString());
+    this.authSessions.deleteExpired(this.clock.now().toISOString());
   }
 
   /**
@@ -143,10 +140,10 @@ export class AuthService {
     }
     const user: UserRow = {
       userId: ADMIN_USER_ID,
-      passwordHash: await hashPassword(password, this.hashCost),
+      passwordHash: await this.hasher.hash(password),
       isAdmin: true,
       passwordIsInitial: true,
-      createdAt: this.now().toISOString(),
+      createdAt: this.clock.now().toISOString(),
     };
     this.users.insert(user);
     try {
@@ -184,7 +181,7 @@ export class AuthService {
   }
 
   async login(userId: string, password: string): Promise<{ user: UserInfo; token: string }> {
-    const nowMs = this.now().getTime();
+    const nowMs = this.clock.now().getTime();
     for (const [key, entry] of this.loginFailures) {
       if (nowMs - entry.lastFailureAt > LOGIN_FAILURE_IDLE_MS) this.loginFailures.delete(key);
     }
@@ -204,12 +201,12 @@ export class AuthService {
     if (!row || !ok) {
       this.loginFailures.set(userId, {
         failures: (failed?.failures ?? 0) + 1,
-        lastFailureAt: this.now().getTime(),
+        lastFailureAt: this.clock.now().getTime(),
       });
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
-    this.authSessions.deleteExpired(this.now().toISOString());
+    this.authSessions.deleteExpired(this.clock.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
 
@@ -248,7 +245,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
+    this.users.updatePassword(userId, await this.hasher.hash(newPassword), false);
     // A successful set proves at least what the successful login that resets the counter
     // proves (the old password, or a desktop/setup session), so it resets it too. Without
     // this, anyone spamming the login endpoint holds the backoff window open, and the sign-in
@@ -304,7 +301,7 @@ export class AuthService {
     const tokenHash = sessionTokenHash(token);
     const session = this.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
-    const now = this.now();
+    const now = this.clock.now();
     const expiresAt = Date.parse(session.expiresAt);
     if (expiresAt <= now.getTime()) {
       this.authSessions.delete(tokenHash);
@@ -327,7 +324,7 @@ export class AuthService {
     return this.authSessions.issue({
       userId,
       via,
-      now: this.now(),
+      now: this.clock.now(),
       ttlMs: this.sessionTtlMs,
     }).token;
   }

@@ -230,7 +230,7 @@ describe("error-recorder", () => {
   afterEach(() => db.close());
 
   it("HttpError → expected (keeps code and status)", () => {
-    wire(ErrorRecorder, { errors: repo, now: now }).record({
+    wire(ErrorRecorder, { errors: repo, clock: { now: now } }).record({
       source: "http",
       err: new HttpError(
         404,
@@ -248,7 +248,7 @@ describe("error-recorder", () => {
   });
 
   it("non-HttpError → unexpected; HTTP source converges to 500, non-HTTP status is NULL", () => {
-    const rec = wire(ErrorRecorder, { errors: repo, now: now });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "http", err: new Error("boom") });
     rec.record({
       source: "session",
@@ -268,7 +268,7 @@ describe("error-recorder", () => {
   });
 
   it("non-Error throwables and overlong messages: stringified and truncated to the cap", () => {
-    const rec = wire(ErrorRecorder, { errors: repo, now: now });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "process", err: "a string error", code: "unhandled_rejection" });
     rec.record({ source: "usage", err: new Error("x".repeat(MESSAGE_MAX + 100)) });
     const rows = db.prepare("SELECT message FROM error_records ORDER BY id").all();
@@ -283,12 +283,15 @@ describe("error-recorder", () => {
       },
     } as unknown as ErrorsRepo;
     expect(() =>
-      wire(ErrorRecorder, { errors: broken }).record({ source: "http", err: new Error("x") }),
+      wire(ErrorRecorder, { errors: broken, clock: { now: () => new Date() } }).record({
+        source: "http",
+        err: new Error("x"),
+      }),
     ).not.toThrow();
   });
 
   it("explicit kind wins over HttpError inference (sources self-report human need)", () => {
-    const rec = wire(ErrorRecorder, { errors: repo, now: now });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "llm", err: "timed out", code: "llm_timeout", kind: "expected" });
     rec.record({ source: "llm", err: "auth failed", code: "llm_failed", kind: "unexpected" });
     const rows = db.prepare("SELECT kind, source, status FROM error_records ORDER BY id").all();
@@ -334,7 +337,7 @@ describe("error-recorder", () => {
 
   it("short-window dedup: same-kind errors persist once per window, then resume", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = wire(ErrorRecorder, { errors: repo, now: () => new Date(t) });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = () =>
       rec.record({
         source: "http",
@@ -356,7 +359,7 @@ describe("error-recorder", () => {
   });
 
   it("dedup never crosses source / code / Project (kinds don't suppress each other)", () => {
-    const rec = wire(ErrorRecorder, { errors: repo, now: now }); // time frozen: everything lands in the same window
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } }); // time frozen: everything lands in the same window
     const err = new Error("boom");
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" });
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" }); // same kind: discarded
@@ -369,7 +372,7 @@ describe("error-recorder", () => {
 
   it("bounded dedup table: expired entries cleaned first, else wiped; works afterward", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = wire(ErrorRecorder, { errors: repo, now: () => new Date(t) });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = (code: string) =>
       rec.record({ source: "http", err: "boom", ctx: { projectId: "p1" }, code });
 
@@ -404,7 +407,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   afterEach(() => db.close());
 
   const watcher = () =>
-    new StreamErrorWatcher(wire(ErrorRecorder, { errors: repo, now: now }), CTX);
+    new StreamErrorWatcher(wire(ErrorRecorder, { errors: repo, clock: { now: now } }), CTX);
   const rows = () =>
     db.prepare("SELECT * FROM error_records ORDER BY id").all() as Array<Record<string, unknown>>;
 

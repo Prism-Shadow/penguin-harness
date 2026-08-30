@@ -42,7 +42,7 @@ import type { PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config, Paths } from "../hmr/capabilities.js";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
@@ -95,9 +95,9 @@ export interface AgentListItem {
 
 @Component()
 export class AgentService {
-  @Use() private readonly config!: Config;
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
   @Use() private readonly agents!: AgentsRepo;
   @Use() private readonly agentConfig!: AgentConfigService;

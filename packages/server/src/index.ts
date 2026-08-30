@@ -163,7 +163,7 @@ class PenguinServer {
    * plugin objects at all (see plugin/index.ts's pluginHostFrom).
    */
   async buildDeps(): Promise<void> {
-    this.deps = await bootAppDeps(this.config, {}, this.plugins);
+    this.deps = await bootAppDeps(this.config, [], this.plugins);
   }
 
   /**

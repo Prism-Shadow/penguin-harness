@@ -77,13 +77,11 @@ import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { AuthState, Channels, Config, Log, Overrides } from "../hmr/capabilities.js";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox } from "../sandbox/service.js";
-import { RuntimeModule } from "../hmr/capabilities.js";
 import { SandboxModule } from "../sandbox/service.js";
 import { SessionService } from "../services/session-service.js";
 import { TitleGenerator } from "./title-generator.js";
@@ -100,6 +98,7 @@ import type { MessagingBindingsRepo } from "../db/repos/messaging-bindings.js";
 import type { MembersRepo } from "../db/repos/members.js";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { HostAssembly } from "../services/host-assembly.js";
+import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -2109,11 +2108,13 @@ export abstract class SessionEnv extends Interface<{
 
 @Module()
 export class SessionsModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
-  @Use(RuntimeModule) private readonly authState!: AuthState;
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
-  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly authState!: AuthState;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly sessionLoaders!: SessionLoaders;
+  @Use() private readonly titleGenerators!: TitleGenerators;
+  @Use() private readonly log!: Log;
   @Use() private readonly settings!: ServerSettingsRepo;
   @Use() private readonly sessionsRepo!: SessionsRepo;
   @Use() private readonly sources!: SessionSources;
@@ -2131,7 +2132,6 @@ export class SessionsModule {
   @Provide() env!: SessionEnv;
   setup() {
     const { config, settings, authState } = this;
-    const overrides = this.overrides.value();
     const log = (line: string) => this.log.line(line);
     const channels = this.channels as ChannelHub;
     const sessionsRepo = this.sessionsRepo;
@@ -2177,34 +2177,30 @@ export class SessionsModule {
         channels.peek(userChannelKey(userId))?.publish(event, "server_event");
       }
     };
-    const titles =
-      overrides.titles ??
-      new TitleGenerator({
-        sessions: sessionsRepo,
-        channels,
-        recorder,
-        errors,
-        log,
-        notifyProjectUsers,
-      });
+    const titles = this.titleGenerators.create({
+      sessions: sessionsRepo,
+      channels,
+      recorder,
+      errors,
+      log,
+      notifyProjectUsers,
+    });
     const manager = new SessionManager({
       sessions: sessionsRepo,
       channels,
-      loader:
-        overrides.loader ??
-        createCoreSessionLoader(config.root, sources, {
-          proxyEnv: env.proxyEnv,
-          controlEnv: env.controlEnv,
-          confineSpawn: env.confineSpawn,
-          assembly: this.assembly,
-        }),
+      loader: this.sessionLoaders.create(config.root, sources, {
+        proxyEnv: env.proxyEnv,
+        controlEnv: env.controlEnv,
+        confineSpawn: env.confineSpawn,
+        assembly: this.assembly,
+      }),
       sources,
       recorder,
       errors,
       titles,
       log,
       notifyProjectUsers,
-      ...(overrides.now ? { now: overrides.now } : {}),
+      now: () => this.clock.now(),
     });
     const sessionService = new SessionService({
       root: config.root,
@@ -2230,5 +2226,37 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+  }
+}
+
+/** Builds the loader a manager runs sessions through; a test stands in a fake session. */
+export abstract class SessionLoaders extends Interface<{
+  create(
+    root: string,
+    sources: Opaque<"SessionSources", SessionSources>,
+    env: Opaque<"SessionLoaderEnv", Parameters<typeof createCoreSessionLoader>[2]>,
+  ): Opaque<"SessionLoader", SessionLoader>;
+}>() {}
+@Component()
+export class CoreSessionLoaders implements SessionLoaders {
+  create(
+    root: string,
+    sources: SessionSources,
+    env: Parameters<typeof createCoreSessionLoader>[2],
+  ): SessionLoader {
+    return createCoreSessionLoader(root, sources, env);
+  }
+}
+
+/** Builds the title generator; a test stands in a notifier that never calls a model. */
+export abstract class TitleGenerators extends Interface<{
+  create(
+    deps: Opaque<"TitleGeneratorDeps", ConstructorParameters<typeof TitleGenerator>[0]>,
+  ): Opaque<"TitleNotifier", TitleNotifier>;
+}>() {}
+@Component()
+export class DefaultTitleGenerators implements TitleGenerators {
+  create(deps: ConstructorParameters<typeof TitleGenerator>[0]): TitleNotifier {
+    return new TitleGenerator(deps);
   }
 }
