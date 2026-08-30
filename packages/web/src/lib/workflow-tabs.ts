@@ -70,3 +70,15 @@ export function settleActiveTab(
 ): string | null {
   return active !== null && tabs.some((t) => t.workflowId === active) ? active : null;
 }
+
+/**
+ * The route that shows one workflow's page as the whole app (no sidebar, no chat, no tab
+ * strip): what `penguin web --app <project>/<agent>/<workflow>` opens, and what the tab's
+ * "fill the app" action navigates to. The palette (Ctrl+P / Ctrl+Shift+P) is the way out.
+ */
+export function workflowAppPath(projectId: string, agentId: string, workflowId: string): string {
+  return `/app/${encodeURIComponent(projectId)}/${encodeURIComponent(agentId)}/${encodeURIComponent(workflowId)}`;
+}
+
+/** A page's own request to fill the app, posted to its parent: `{ type: "penguin:fill-app" }`. */
+export const FILL_APP_MESSAGE = "penguin:fill-app";
