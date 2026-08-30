@@ -147,6 +147,9 @@ import type {
   VersionHistoryResponse,
   WorkflowInfo,
   WorkflowVersion,
+  AgentPackageResponse,
+  AgentPackagePublishResponse,
+  AgentPackagePreviewResponse,
   VersionRollbackResponse,
   VersionResponse,
   WorkspaceFilesResponse,
@@ -1285,3 +1288,28 @@ export const removeWorkflow = (projectId: string, agentId: string, workflowId: s
   apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
     method: "DELETE",
   });
+
+// ---- Agent packages (an Agent's definition to a gist and back) ----
+export const getAgentPackage = (projectId: string, agentId: string) =>
+  apiFetch<AgentPackageResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package`,
+  );
+/** Owner only; `gistId` updates that gist instead of creating one. */
+export const publishAgentPackage = (
+  projectId: string,
+  agentId: string,
+  body: { gistId?: string; public: boolean },
+) =>
+  apiFetch<AgentPackagePublishResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package/publish`,
+    { method: "POST", body },
+  );
+/** Reads and validates a gist as a package; writes nothing. */
+export const previewAgentPackage = (gist: string) =>
+  apiFetch<AgentPackagePreviewResponse>("/api/agent-packages/preview", {
+    method: "POST",
+    body: { gist },
+  });
+/** Owner only: installs the gist as a new Agent of the Project. */
+export const installAgentPackage = (body: { gist: string; projectId: string; agentId: string }) =>
+  apiFetch<{ agentId: string }>("/api/agent-packages/install", { method: "POST", body });

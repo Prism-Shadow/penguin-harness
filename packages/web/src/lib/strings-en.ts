@@ -141,6 +141,18 @@ export const en: Strings = {
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
     /** Admin-only sub-page (server-global). */
+    sharingTitle: "Sharing",
+    sharingInfo:
+      "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
+    sharingDesc:
+      "The server publishes Agent packages with this token. It is write-only: the page shows whether one is stored, never the value.",
+    githubToken: "GitHub token",
+    githubTokenHint:
+      "Needs the gist scope (fine-grained token: Gists → Read and write). Leaving it empty and saving changes nothing.",
+    githubTokenStored: "A token is stored.",
+    githubTokenMissing: "No token yet: Agents can be installed from a gist, but not published.",
+    githubTokenReplace: "Enter a new token to replace it",
+    githubTokenClear: "Clear token",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -591,6 +603,36 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    installFromGist: "Install from gist",
+    installTitle: "Install an Agent from a gist",
+    installDesc:
+      "Paste the link or id of a gist PenguinHarness published. It is read and checked first; then choose the new Agent's id and install.",
+    installGist: "Gist link or id",
+    installRead: "Read",
+    installReading: "Reading…",
+    installChangeGist: "Use another gist",
+    install: "Install",
+    installing: "Installing…",
+    installed: (agentId: string) => `Installed Agent ${agentId}`,
+    packageSummary: (files: number, size: string) => `${files} files · ${size}`,
+    packagedBy: (version: string) => `packaged by PenguinHarness ${version}`,
+    packageExcludes:
+      "Not included: memory, workspaces, a workflow's state.json, version history, the vault.",
+    publishToGist: "Publish to gist",
+    publishTitle: "Publish to a GitHub gist",
+    publishDesc:
+      "Publishes this Agent's definition as a set of readable text files; anyone (or another machine) can install a clean copy of the same Agent from it.",
+    publishNoToken:
+      "The server has no GitHub token, so it cannot publish. An admin sets one under Settings → Sharing.",
+    publishGistId: "Update an existing gist",
+    publishGistIdPlaceholder: "Empty creates a new one",
+    publishGistIdHint:
+      "Paste the link or id from an earlier publish to update it in place; the link stays the same.",
+    publishPublic: "Public gist",
+    publish: "Publish",
+    publishUpdate: "Update gist",
+    publishing: "Publishing…",
+    published: (files: number, size: string) => `Published ${files} files (${size}).`,
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,

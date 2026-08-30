@@ -231,6 +231,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.agentGist.",
+    scope: "install",
+    why: "The gist an Agent was last published to, per Project and Agent — offered as the target of a republish.",
+  },
+  {
+    kind: "family",
     key: "penguin.memoryCollapsed.",
     scope: "install",
     why: "Collapsed Memory scopes, keyed by user x Project x Agent and holding scope keys.",

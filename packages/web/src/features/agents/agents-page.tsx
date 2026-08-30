@@ -63,6 +63,7 @@ import {
   agentIdFromSnapshotName,
   fileToBase64,
 } from "./snapshot-file";
+import { InstallFromGistDialog } from "./install-dialog";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
@@ -159,6 +160,7 @@ export function AgentsPage() {
    * rejects the combination.
    */
   const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
+  const [installOpen, setInstallOpen] = useState(false);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
   const openCreate = () => {
@@ -409,9 +411,12 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <Button variant="primary" onClick={openCreate}>
-              {S.agent.create}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setInstallOpen(true)}>{S.agent.installFromGist}</Button>
+              <Button variant="primary" onClick={openCreate}>
+                {S.agent.create}
+              </Button>
+            </div>
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -430,6 +435,14 @@ export function AgentsPage() {
             />
           )}
         </div>
+        {projectId && (
+          <InstallFromGistDialog
+            open={installOpen}
+            onClose={() => setInstallOpen(false)}
+            projectId={projectId}
+            onInstalled={() => void reloadAgents()}
+          />
+        )}
 
         {agentsLoading ? (
           /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a
