@@ -286,6 +286,9 @@ async function main() {
         web: { files },
         assets,
         ...(source === null ? {} : { source }),
+        // The table the platform was built from, so the target's history can say what
+        // this push changed at interface level.
+        ifaces: await fsp.readFile(path.join(ROOT, "packages/server/src/ifaces.json"), "utf8"),
       }),
     ),
   );

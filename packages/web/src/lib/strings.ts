@@ -200,10 +200,35 @@ export const zh = {
   },
   harnessHistory: {
     title: "Harness 历史",
+    pageDesc:
+      "这台服务器通过热更新提交过的每个 harness 版本，最新在前，以及每次推送在模块树与接口上改了什么。",
     loading: "加载中…",
     empty: "还没有向这台服务器推送过 harness。",
     current: "当前",
     noProvenance: "（未记录来源）",
+    pushedAt: "提交时间",
+    bundles: "Bundle",
+    table: "接口表",
+    tableCounts: (nodes: number, interfaces: number, types: number) =>
+      `${nodes} 个节点 · ${interfaces} 个接口 · ${types} 个类型`,
+    noTable: "这次推送没有携带接口表。",
+    noTableShort: "无表",
+    changesSince: (previous: string) => `相对 ${previous} 的变化`,
+    changesFirst: "变化（首个记录的表）",
+    noChanges: "接口与树没有变化。",
+    nodes: (n: number) => `节点（${n}）`,
+    interfaces: (n: number) => `接口（${n}）`,
+    typesSummary: (added: number, removed: number, changed: number) =>
+      `数据类型：新增 ${added}，移除 ${removed}，变化 ${changed}`,
+    change: { added: "新增", removed: "移除", changed: "变化" },
+    requires: "requires",
+    provides: "provides",
+    contributes: "contributes",
+    children: "children",
+    exports: "exports",
+    methods: "方法",
+    fields: "字段",
+    slots: "槽位",
   },
   /**
    * The software-update flow (lib/update-flow.ts): the one modal for both the server release
