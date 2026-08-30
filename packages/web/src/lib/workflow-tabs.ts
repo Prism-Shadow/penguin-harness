@@ -21,13 +21,16 @@ export interface WorkflowTab {
   error: string | null;
 }
 
-/** Dispatched on `window` when the server says a workflow of some Agent was (re)loaded. */
+/**
+ * Dispatched on `window` when the server says a workflow of some Agent was (re)loaded or
+ * removed. The detail names the Agent only: the listener refetches the list, which is the
+ * one shape that covers both.
+ */
 export const WORKFLOW_UPDATED_EVENT = "penguin:workflow-updated";
 
 export interface WorkflowUpdatedDetail {
   projectId: string;
   agentId: string;
-  workflow: WorkflowInfo;
 }
 
 export function workflowsBase(projectId: string, agentId: string): string {
