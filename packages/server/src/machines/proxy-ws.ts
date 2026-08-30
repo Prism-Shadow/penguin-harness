@@ -18,13 +18,14 @@
  * through is bytes.
  */
 import http from "node:http";
-import type { IncomingMessage, Server as HttpServer } from "node:http";
+import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import { isAllowedOrigin, readCookie, refuse } from "../terminal/ws.js";
 import { parseProxyPath } from "./proxy.js";
 import type { AuthService } from "../auth/service.js";
 import type { HmrHost } from "../hmr/host.js";
+import type { UpgradeRoute } from "../http-upgrade.js";
 
 /**
  * Headers that must not cross. Hop-by-hop ones are rewritten below for the upstream
@@ -40,21 +41,24 @@ export interface MachineWebSocketProxyDeps {
   log: (line: string) => void;
 }
 
-export function attachMachineWebSocketProxy(
-  server: HttpServer,
-  deps: MachineWebSocketProxyDeps,
-): void {
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+/**
+ * The proxy's upgrade route (http-upgrade.ts): false for a path that is not addressed to a
+ * machine, true once this has taken the socket — refusals included.
+ */
+export function machineUpgradeRoute(deps: MachineWebSocketProxyDeps): UpgradeRoute {
+  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = parseProxyPath(url.pathname);
-    // Not ours: leave the socket for the local terminal transport, or for the default
-    // "no handler -> destroy". Both handlers are registered, and each declines silently.
-    if (path === null) return;
+    if (path === null) return false;
 
-    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
+    if (!isAllowedOrigin(req)) {
+      refuse(socket, 403, "Forbidden");
+      return true;
+    }
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
     if (token === null || deps.authService.authenticateWithMeta(token) === null) {
-      return refuse(socket, 401, "Unauthorized");
+      refuse(socket, 401, "Unauthorized");
+      return true;
     }
 
     void deps.hmr
@@ -74,7 +78,8 @@ export function attachMachineWebSocketProxy(
         );
         refuse(socket, 502, "Bad Gateway");
       });
-  });
+    return true;
+  };
 }
 
 /** Hands the client's handshake to the machine and, on 101, joins the two sockets. */

@@ -26,8 +26,9 @@ import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-pas
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { ExtensionHost } from "./extension/host.js";
 import { loadExtensions } from "./extension/loader.js";
-import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { attachMachineWebSocketProxy } from "./machines/proxy-ws.js";
+import { terminalUpgradeRoute } from "./terminal/ws.js";
+import { machineUpgradeRoute } from "./machines/proxy-ws.js";
+import { attachUpgradeRoutes } from "./http-upgrade.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -212,11 +213,7 @@ class PenguinServer {
       { fetch: this.app.fetch, hostname: this.config.host, port: this.config.port },
       (info) => this.onListening(info.port),
     );
-    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachMachineWebSocketProxy(
-      this.httpServer as unknown as HttpServer,
-      this.terminalWebSocketDeps(),
-    );
+    attachUpgradeRoutes(this.httpServer as unknown as HttpServer, this.upgradeRoutes());
   }
 
   /**
@@ -343,8 +340,7 @@ class PenguinServer {
     // The terminal stream is a WebSocket upgrade, which never reaches the Hono fetch
     // handler — it has to be bound on each Node listener, this one included, or the
     // terminal only works on whichever address the browser happened to resolve.
-    attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachMachineWebSocketProxy(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    attachUpgradeRoutes(loopback as unknown as HttpServer, this.upgradeRoutes());
   }
 
   /**
@@ -358,6 +354,16 @@ class PenguinServer {
       authService: this.deps.authService,
       log: (line: string) => console.log(line),
     };
+  }
+
+  /**
+   * The upgrade routes, in order, built fresh per listener: each holds a WebSocketServer or
+   * a connection of its own, and two listeners must not share one. A path no route claims is
+   * refused by the router rather than left hanging.
+   */
+  private upgradeRoutes() {
+    const deps = this.terminalWebSocketDeps();
+    return [terminalUpgradeRoute(deps), machineUpgradeRoute(deps)];
   }
 
   /**

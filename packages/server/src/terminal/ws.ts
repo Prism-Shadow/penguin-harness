@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import type { AuthService } from "../auth/service.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import type { HmrHost } from "../hmr/host.js";
+import { refuseUpgrade, type UpgradeRoute } from "../http-upgrade.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
@@ -43,21 +44,31 @@ export interface TerminalWebSocketDeps {
   log: (line: string) => void;
 }
 
-export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSocketDeps): void {
+/**
+ * The terminal's upgrade route (http-upgrade.ts): false for a path that is not a terminal
+ * stream, true once this has taken the socket — refusals included, since answering 401 is
+ * handling it.
+ */
+export function terminalUpgradeRoute(deps: TerminalWebSocketDeps): UpgradeRoute {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const match = STREAM_PATH.exec(url.pathname);
-    // Not ours: leave the socket alone so another upgrade handler (or the default
-    // "no handler -> destroy" behaviour) can deal with it.
-    if (!match) return;
+    // Not ours. Declining is all this says — the router decides what an unclaimed path gets.
+    if (!match) return false;
 
-    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
+    if (!isAllowedOrigin(req)) {
+      refuse(socket, 403, "Forbidden");
+      return true;
+    }
 
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
     const authed = token ? deps.authService.authenticateWithMeta(token) : null;
-    if (!authed) return refuse(socket, 401, "Unauthorized");
+    if (!authed) {
+      refuse(socket, 401, "Unauthorized");
+      return true;
+    }
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
     // terminals right now, which is also the one whose protocol should serve this socket.
@@ -77,7 +88,8 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         deps.log(`[terminal] stream upgrade failed: ${err instanceof Error ? err.message : err}`);
         refuse(socket, 500, "Internal Server Error");
       });
-  });
+    return true;
+  };
 }
 
 /**
@@ -118,7 +130,5 @@ export function readCookie(header: string | undefined, name: string): string | n
   return null;
 }
 
-export function refuse(socket: Duplex, status: number, text: string): void {
-  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
-  socket.destroy();
-}
+/** Answering a handshake with a status is the router's, so both routes answer alike. */
+export const refuse = refuseUpgrade;
