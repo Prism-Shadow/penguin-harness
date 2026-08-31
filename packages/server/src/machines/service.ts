@@ -562,16 +562,11 @@ export class MachinesService {
     if (target === null)
       return { ok: false, step: "connect", message: "ssh could not resolve that host." };
 
-    const live = this.#livePort(address);
-    if (live !== null) {
-      // Connecting again is how someone retries a sync that failed, or picks up a new key.
-      say(`Already connected on port ${live}.`);
-      const updated = await this.#updateOnConnect(address, target, live, say);
-      if (!updated.ok) return updated.result;
-      await this.#syncModels(address, target, live, say, this.#projectsUsing(address));
-      return { ok: true, connected: true };
-    }
-
+    // Asked even when a forward is already up: the forward is an ssh process on THIS side,
+    // and it outlives the far server. Taking it as the answer reported "connected" over a
+    // dead server — and every caller that then found the machine silent asked for another
+    // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
+    // that failed, or pick up a new key) now costs one probe and stays honest.
     say("Asking what is running there…");
     const probed = await this.#effects.probe(target, this.#layout, this.#effects.runOn);
     if (probed.state.kind === "unreachable") {

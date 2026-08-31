@@ -597,6 +597,64 @@ describe("machines API", () => {
       expect(body.machines.find((m) => m.id === "ssh:nas")?.connected).toBe(true);
     });
 
+    it("a live forward to a dead server is not 'connected': connect asks the machine and starts it", async () => {
+      // The loop this guards: the forward is an ssh process on THIS side and outlives the
+      // far server. Connect used to answer "Already connected" on the forward's word alone,
+      // so the one job that could have started the dead server never did — and every caller
+      // that found the machine silent asked for another connect, forever.
+      const starts: number[] = [];
+      let up = false;
+      await boot({
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7364, pid: 4242 }, machineId: null }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async (_t, port) => {
+          starts.push(port);
+          up = true;
+          return { ok: true };
+        },
+      });
+      installed("9.9.9");
+      // A forward that reads as live (a real pid) to a server that probes as stopped.
+      machinesRepo.patch("ssh:nas", {
+        forwardPid: process.pid,
+        forwardPort: 53000,
+        remotePort: 7364,
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(starts).toEqual([7364]);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("Starting its server");
+    });
+
+    it("reconnecting over a live forward to an answering server starts nothing and keeps the forward", async () => {
+      const starts: number[] = [];
+      const forwards: number[] = [];
+      await boot({
+        startServer: async (_t, port) => {
+          starts.push(port);
+          return { ok: true };
+        },
+        forward: async ({ remotePort }) => {
+          forwards.push(remotePort);
+          return { ok: true, port: 53000, pid: process.pid };
+        },
+      });
+      installed("9.9.9");
+      machinesRepo.patch("ssh:nas", {
+        forwardPid: process.pid,
+        forwardPort: 53000,
+        remotePort: 7364,
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(starts).toEqual([]);
+      expect(forwards).toEqual([]);
+    });
+
     it("a release gap is not the hot channel's to close: it says the release needs installing", async () => {
       await boot({ upgrade: async () => ({ kind: "no-build" }) });
       installed("9.9.8");

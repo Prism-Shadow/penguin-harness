@@ -20,7 +20,10 @@
  * Whether the machine is CONNECTED is read from the machine list after the job settles, not
  * from the job's verdict: a connect whose build hand-over failed still leaves the forward up
  * (the server keeps it deliberately), and that failure is reported on the Machines page for a
- * person to act on — it is not a reason to keep re-connecting.
+ * person to act on — it is not a reason to keep re-connecting. But the list's word is about
+ * the FORWARD, so it is confirmed by asking the machine itself (meOnMachine) before the
+ * attempt counts as connected — see AutoConnectApi.meOnMachine for the loop that ran when
+ * it was not.
  */
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
 
@@ -42,6 +45,15 @@ export interface AutoConnectApi {
   getMachines(projectId: string): Promise<MachinesResponse>;
   /** POST connect for the machine at `address` (the `ssh:<alias>` id, not the machine's own). */
   connectMachine(projectId: string, address: string): Promise<MachinesResponse>;
+  /**
+   * Whether the machine's API answers through the proxy right now (endpoints.meOnMachine).
+   * `connected` in the machine list is a fact about the forward — an ssh process on this
+   * side that outlives the far server — so an attempt only counts as connected once the
+   * machine itself has answered. Declaring success on the forward's word alone is what made
+   * this loop forever: the listener re-ran the reachability probe, the silent machine read
+   * as offline again, and the "successful" attempt had already been forgotten.
+   */
+  meOnMachine(machineId: string): Promise<unknown>;
 }
 
 export interface AutoConnectDeps {
@@ -119,6 +131,15 @@ async function runAttempt(
     return state;
   };
 
+  const answers = async (): Promise<boolean> => {
+    try {
+      await deps.api.meOnMachine(machineId);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   let failures = 0;
   for (;;) {
     let state: MachinesResponse;
@@ -133,14 +154,17 @@ async function runAttempt(
     if (machine === null) {
       // Not listed at all is a different answer from unreachable: nothing to connect to.
       if (state.machines.length > 0) return "unknown-machine";
-    } else if (machine.connected) {
+    } else if (machine.connected && (await answers())) {
       for (const listener of listeners) listener(projectId, machineId);
       return "connected";
     } else {
+      // Not connected — or connected in the list while its server does not answer, which
+      // the connect job is what heals: it asks the machine what is actually running there
+      // and starts its server when nothing is.
       try {
         await deps.api.connectMachine(projectId, machine.id);
         const after = lookup(await settled());
-        if (after?.connected === true) {
+        if (after?.connected === true && (await answers())) {
           for (const listener of listeners) listener(projectId, machineId);
           return "connected";
         }
