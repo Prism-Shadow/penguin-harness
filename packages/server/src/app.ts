@@ -17,6 +17,7 @@
  * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import { createHash } from "node:crypto";
+import zlib from "node:zlib";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -561,6 +562,78 @@ function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
   return header.split(",").some((tag) => bare(tag) === want);
 }
 
+/**
+ * Extensions worth compressing. Everything absent is either already compressed (png, woff2,
+ * ico) or too small for the round trip to pay for the CPU — recompressing a PNG spends time
+ * to make the response slightly larger.
+ */
+const COMPRESSIBLE = new Set([".html", ".js", ".css", ".json", ".svg", ".map", ".txt"]);
+
+/**
+ * Below this, compression is not worth doing: a few hundred bytes rarely shrink past the
+ * gzip header, and the transfer was never the cost at that size.
+ */
+const COMPRESS_MIN_BYTES = 1024;
+
+/**
+ * The best encoding this client accepts, or null for none.
+ *
+ * Brotli first — on the app bundle it is meaningfully smaller than gzip, and everything that
+ * speaks it also speaks gzip, so the fallback is free. Parsed rather than substring-matched
+ * because `q=0` means REFUSED: a client that sends `gzip;q=0` is saying "not gzip", and a
+ * naive `includes("gzip")` reads that as consent and returns bytes it cannot decode.
+ */
+function pickEncoding(header: string | undefined): "br" | "gzip" | null {
+  if (header === undefined) return null;
+  const accepted = new Set<string>();
+  for (const part of header.split(",")) {
+    const [rawToken, ...params] = part.split(";");
+    const token = (rawToken ?? "").trim().toLowerCase();
+    const q = params.map((p) => /^\s*q=([0-9.]+)\s*$/i.exec(p)).find((m) => m !== null)?.[1];
+    if (q !== undefined && Number.parseFloat(q) === 0) continue;
+    accepted.add(token);
+  }
+  if (accepted.has("br")) return "br";
+  if (accepted.has("gzip")) return "gzip";
+  return null;
+}
+
+/**
+ * Compressed bodies, keyed by `<encoding> <etag>` — the ETag already identifies one exact
+ * representation, so it is the only key this needs, and it changes when the bytes do.
+ *
+ * Cached because the alternative is compressing the same 1.2 MB bundle on every page load.
+ * Bounded and insertion-ordered (oldest evicted first): a dist is tens of files, but a hot
+ * push replaces all of them, and nothing should grow without a ceiling across a long uptime.
+ */
+const COMPRESSED_CACHE_ENTRIES = 128;
+const compressedCache = new Map<string, Buffer>();
+
+function compressedBody(content: Buffer, encoding: "br" | "gzip", etag: string): Buffer {
+  const key = `${encoding} ${etag}`;
+  const hit = compressedCache.get(key);
+  if (hit !== undefined) return hit;
+  const body =
+    encoding === "br"
+      ? zlib.brotliCompressSync(content, {
+          params: {
+            // Text mode and the real size let brotli pick its window; quality 5 is the knee
+            // of the curve — near-max ratio for a fraction of the time of 11, which on a
+            // megabyte is the difference between imperceptible and a visible stall.
+            [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: content.byteLength,
+          },
+        })
+      : zlib.gzipSync(content, { level: 6 });
+  if (compressedCache.size >= COMPRESSED_CACHE_ENTRIES) {
+    const oldest = compressedCache.keys().next();
+    if (!oldest.done) compressedCache.delete(oldest.value);
+  }
+  compressedCache.set(key, body);
+  return body;
+}
+
 /** The static response for one resolved file: 304 on an ETag match, the bytes otherwise. */
 function staticResponse(
   c: Context<AppEnv>,
@@ -568,16 +641,35 @@ function staticResponse(
   servedPath: string,
   etag: string,
 ): Response {
+  const ext = path.extname(servedPath).toLowerCase();
+  const mayCompress = COMPRESSIBLE.has(ext) && content.byteLength >= COMPRESS_MIN_BYTES;
+  // Chosen BEFORE the 304, because it decides which representation is being talked about —
+  // and a 304 has to carry the validator of the one the client would have got.
+  const encoding = mayCompress ? pickEncoding(c.req.header("accept-encoding")) : null;
+  // Weakened when compressed, as a re-encoding proxy would: those bytes are a different
+  // representation of the same thing, and a weak validator is exactly the claim "equivalent,
+  // not identical". Revalidation matches either spelling — ifNoneMatchHits compares weakly.
+  const responseEtag = encoding !== null && !etag.startsWith("W/") ? `W/${etag}` : etag;
   const headers: Record<string, string> = {
     "Cache-Control": cacheControlFor(servedPath),
-    ETag: etag,
+    ETag: responseEtag,
   };
+  // Announced whenever the answer COULD have varied — on the 304 too, and even when this
+  // particular client took no encoding: a shared cache keys on what the header says, so
+  // leaving it off is how one client's gzip reaches another that cannot read it.
+  if (mayCompress) headers["Vary"] = "Accept-Encoding";
   if (ifNoneMatchHits(c.req.header("if-none-match"), etag)) {
     return new Response(null, { status: 304, headers });
   }
-  headers["Content-Type"] =
-    CONTENT_TYPES[path.extname(servedPath).toLowerCase()] ?? "application/octet-stream";
-  return new Response(new Uint8Array(content), { status: 200, headers });
+  headers["Content-Type"] = CONTENT_TYPES[ext] ?? "application/octet-stream";
+  if (encoding === null) {
+    return new Response(new Uint8Array(content), { status: 200, headers });
+  }
+  headers["Content-Encoding"] = encoding;
+  return new Response(new Uint8Array(compressedBody(content, encoding, etag)), {
+    status: 200,
+    headers,
+  });
 }
 
 /**
