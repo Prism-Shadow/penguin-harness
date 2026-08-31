@@ -22,7 +22,7 @@ import {
   ensureUserMemoryDir,
   ensureWorkspaceMemoryDir,
   isTemporaryWorkspace,
-  loadOrInitAgentState,
+  loadAgentState,
   memoryDir,
   memoryScopeDir,
   parseMemoryFrontmatter,
@@ -55,7 +55,7 @@ afterEach(async () => {
 
 /** Loads a default Agent State under the temp root (creates it on first call). */
 async function agentState(): Promise<AgentState> {
-  return loadOrInitAgentState({ root });
+  return loadAgentState({ init: {}, root });
 }
 
 /** The effective system prompt a created Session recorded in its session_meta. */

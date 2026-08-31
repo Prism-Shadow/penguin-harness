@@ -16,7 +16,7 @@ import {
   EXAMPLE_BENCHMARK_ID,
   benchmarksDir,
   buildExampleScoreboard,
-  loadOrInitAgentState,
+  loadAgentState,
   provisionProjectAgents,
 } from "../src/state/index.js";
 
@@ -67,7 +67,7 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
 
 describe("example benchmark provisioning", () => {
   it("default_agent init creates a parseable example benchmark (config + scoreboard + cases)", async () => {
-    await loadOrInitAgentState();
+    await loadAgentState({ init: {} });
     const dir = path.join(
       benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       EXAMPLE_BENCHMARK_ID,
@@ -165,14 +165,14 @@ describe("example benchmark provisioning", () => {
   });
 
   it("does not create benchmarks for a non-default agent", async () => {
-    await loadOrInitAgentState({ agentId: "worker" });
+    await loadAgentState({ init: {}, agentId: "worker" });
     expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, "worker"))).toBe(false);
   });
 
   it("skips provisioning when benchmarks/ already exists (idempotent, no clobber)", async () => {
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.mkdir(dir, { recursive: true });
-    await loadOrInitAgentState();
+    await loadAgentState({ init: {} });
     expect(await fs.readdir(dir)).toEqual([]);
   });
 });

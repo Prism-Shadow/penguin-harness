@@ -31,7 +31,7 @@ import {
   insertSkillsPlaceholder,
   insertVaultPlaceholder,
   listScheduleNames,
-  loadOrInitAgentState,
+  loadAgentState,
   scheduleDir,
   type AgentState,
   type SystemConfig,
@@ -53,7 +53,7 @@ afterEach(async () => {
 
 /** Loads a default Agent State under the temp root (creates it on first call). */
 async function agentState(): Promise<AgentState> {
-  return loadOrInitAgentState({ root });
+  return loadAgentState({ init: {}, root });
 }
 
 /** A copy of `state` with the given systemConfig fields overridden (in memory only). */

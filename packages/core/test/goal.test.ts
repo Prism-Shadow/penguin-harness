@@ -541,8 +541,7 @@ describe("Session.runGoal input", () => {
     };
     return new Session({
       meta,
-      bootstrap: async () => ({ tools: [], llm: fakeLLM(completeOn), mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ tools: [], llm: fakeLLM(completeOn) }),
       environment: fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,

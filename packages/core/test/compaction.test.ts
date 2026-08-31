@@ -1897,8 +1897,7 @@ describe("context compaction", () => {
     const written: OmniMessage[] = [];
     const session = new Session({
       meta: metaMessage.payload,
-      bootstrap: async () => ({ tools: [], llm: resumedLLM, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ tools: [], llm: resumedLLM }),
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {
@@ -1937,9 +1936,8 @@ describe("context compaction", () => {
       meta: metaMessage.payload,
       bootstrap: async () => {
         bootstrapped = true;
-        return { tools: [], llm: new ScriptedLLM([]), mcp: [] };
+        return { tools: [], llm: new ScriptedLLM([]) };
       },
-      mcpServers: [],
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {

@@ -35,8 +35,12 @@
   对（如有）与工具集记录；`Session.metaMessage` 随运行中的上下文更新。
 - 上下文开启时 Agent State 装配失败（例如 `system_config.yaml` 已无法解析）则本次运行以该错误结束、引擎保持
   旧上下文——与新建 Session 遇到的是同一个错误；不做静默回退。
-- `createSession` 与 `resumeSession` 同样从磁盘装载 Agent State（新增 `loadAgentState`），因此跨修改被长期
-  持有的 Agent 对象（例如自派生的子 Agent）不再用装载时的快照开启 Session。
+- Agent State 装载收敛为一个函数：`loadAgentState`——带 `init` 即创建或装载入口（`createAgent` 与内置 Agent
+  预置；`loadOrInitAgentState` 移除），不带 `init` 时 Agent 缺失即报错——上下文在会话中途开启时必须看到这个
+  错误，而不是把已删除的 Agent 悄悄重建出来。`createSession` 与 `resumeSession` 因此同样从磁盘装载，跨修改被
+  长期持有的 Agent 对象（例如自派生的子 Agent）不再用装载时的快照开启 Session。
+- 上下文开启同样收敛为一个流程：首次运行的 bootstrap 与压缩后的 `openContext` 共用同一段实现（连接待连的
+  Server、经 `emit` 发布连接事件对与工具集记录、构建 LLM），两条路径由同一个合并队列泵实时送出。
 - 服务端不再因 vault 更新而重建该 Agent 已缓存的 Session 运行时：新值在运行中 Session 的下一次压缩后生效，与
   CLI 进程内 Session 的时机一致。智能体设置各页（提示词、运行参数、工具与 MCP、记忆、定时任务、vault、技能）、
   CLI 的 `config vault set/remove` 与对话内思考等级选择器都在修改处说明：新对话立即生效，进行中的对话在下一次
@@ -50,6 +54,10 @@
   文件头部。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
   `Agent.createSession` / `resumeSession` 的代码无需改动。`Environment` 新增 `reconfigure({ toolConfig, vault })`
   与 `pendingMcpServerNames()`。
+- SDK：`loadOrInitAgentState` 并入 `loadAgentState`——创建或装载行为改传 `init: {}`（或 `init: { preset }`）；
+  不带 `init` 时 Agent 缺失即抛错。`SessionConfig.bootstrap` 改为接受 `{ emit }`、返回 `{ tools, llm }`（不再有
+  `mcp` 字段），连接事件对与工具集记录经 `emit` 发布；`SessionConfig.mcpServers` 字段随之删除——要连什么由
+  bootstrap 自己知道。
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
   `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改用 `Session.pinThinkingLevel(level)` 钉住
   Session，从下一个模型上下文生效。`GenerativeModelParameters.thinkingLevel` 仍保留在 LLM 接口上（引擎从不设置）。

@@ -51,9 +51,16 @@ closes, so the provider's prompt cache holds across the whole Trace file.
 - An Agent State that cannot be assembled when a context opens (a `system_config.yaml` that no
   longer parses) fails the run with that error and the engine stays on the old context — the same
   error a new Session would hit; there is no silent fallback.
-- `createSession` and `resumeSession` load the Agent State from disk too (new
-  `loadAgentState`), so an Agent object held across edits — a self-spawned subagent's, for
-  instance — no longer starts Sessions on its load-time snapshot.
+- Agent State loading is one function: `loadAgentState` — with `init` it is the
+  create-or-load entry (`createAgent`, provisioning; `loadOrInitAgentState` is gone), without
+  it a missing Agent throws, which is what a model context opening mid-session must see. So
+  `createSession` and `resumeSession` read the disk too, and an Agent object held across
+  edits — a self-spawned subagent's, for instance — no longer starts Sessions on its
+  load-time snapshot.
+- Opening a context is one procedure as well: the first run's bootstrap and the
+  post-compaction `openContext` share the same implementation (connect what is pending,
+  publish the connect pair and the toolset record through `emit`, build the LLM), delivered
+  live by the same merge-queue pump on both paths.
 - The server no longer rebuilds an Agent's cached Session runtimes when its vault is updated: the
   new values reach a running Session at its next compaction, the same timing the CLI's
   in-process Session has. The Agent settings pages (prompt, runtime, tools and MCP, memory,
@@ -70,6 +77,11 @@ closes, so the provider's prompt cache holds across the whole Trace file.
   that constructs `Session` or `ContextEngine` directly returns `{ llm }` where it returned the
   LLM before; the `Agent.createSession` / `resumeSession` path needs no change. `Environment`
   gains `reconfigure({ toolConfig, vault })` and `pendingMcpServerNames()`.
+- SDK: `loadOrInitAgentState` is folded into `loadAgentState` — pass `init: {}` (or
+  `init: { preset }`) for the create-or-load behavior; without `init` a missing Agent throws.
+  `SessionConfig.bootstrap` now takes `{ emit }` and returns `{ tools, llm }` (no `mcp`
+  field), publishing its connect pair and toolset record through `emit`; the
+  `SessionConfig.mcpServers` field is gone — the bootstrap knows what it is connecting.
 - SDK: `RunOptions.thinkingLevel`, `SubagentHandle.run`'s `thinkingLevel` and
   `SubagentMessageOptions.thinkingLevel` are removed; a host that changed the level per run
   pins the Session with `Session.pinThinkingLevel(level)` instead, and the level applies from

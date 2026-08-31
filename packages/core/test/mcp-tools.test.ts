@@ -12,7 +12,15 @@ import { z } from "zod";
 import { Environment } from "../src/environment/index.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
 import { Session } from "../src/session.js";
-import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
+import {
+  assistantText,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  toolCall,
+  toolListReady,
+  userText,
+} from "../src/omnimessage/index.js";
+import { mcpConnectOutcome } from "../src/internal/session-support.js";
 import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
 import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
@@ -476,12 +484,16 @@ describe("Session first-run bootstrap events", () => {
     };
     return new Session({
       meta,
-      bootstrap: async () => ({
-        tools: await env.listTools(),
-        llm: fakeLLM,
-        mcp: env.mcpConnectResults(),
-      }),
-      mcpServers: env.mcpServerNames(),
+      // The real composition layer's opening procedure, spelled out: connect pair around
+      // the pending connect, then the toolset record, all through emit.
+      bootstrap: async ({ emit }) => {
+        const pending = env.pendingMcpServerNames();
+        if (pending.length > 0) emit(mcpConnectBegin(pending));
+        const tools = await env.listTools();
+        if (pending.length > 0) emit(mcpConnectEnd(mcpConnectOutcome(env.mcpConnectResults())));
+        emit(toolListReady(tools));
+        return { tools, llm: fakeLLM };
+      },
       environment: env,
       trace: {
         write: async (msg) => {
@@ -592,12 +604,15 @@ describe("Session first-run bootstrap events", () => {
         agent_state: tmp,
         workspace: tmp,
       },
-      bootstrap: async () => {
+      bootstrap: async ({ emit }) => {
         calls += 1;
+        emit(mcpConnectBegin(["fx"]));
         await gate;
-        return { tools: [{ name: "t", description: "d" }], llm: capturingLLM, mcp: [] };
+        emit(mcpConnectEnd({ status: "completed", results: [] }));
+        const tools = [{ name: "t", description: "d" }];
+        emit(toolListReady(tools));
+        return { tools, llm: capturingLLM };
       },
-      mcpServers: ["fx"],
       environment: env,
       trace: {
         write: async (msg) => {
