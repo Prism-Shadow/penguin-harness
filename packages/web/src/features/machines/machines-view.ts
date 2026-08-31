@@ -114,7 +114,7 @@ export function connectAction(
   if (job?.running === true && job.kind === "connect" && job.machineId === machine.id) {
     return "connecting";
   }
-  return machine.connected ? "connected" : "connect";
+  return machine.forward !== null ? "connected" : "connect";
 }
 
 /**

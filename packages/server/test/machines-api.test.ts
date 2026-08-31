@@ -133,7 +133,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          connected: false,
+          forward: null,
           status: null,
         },
         {
@@ -142,7 +142,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          connected: false,
+          forward: null,
           status: null,
         },
       ]);

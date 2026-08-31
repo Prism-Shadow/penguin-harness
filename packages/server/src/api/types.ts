@@ -3241,10 +3241,14 @@ export interface MachineInfo {
    */
   local: boolean;
   /**
-   * True while this server holds a forward to that machine, so its API answers at
-   * `/server/<id>/api/…` and its directories can be browsed. Always true for `local`.
+   * The forward this server holds to it — a fact about an ssh child on THIS side, which
+   * outlives the far server (machines/transport/forward.ts). Present means
+   * `/server/<id>/api/…` has somewhere to go; whether a server ANSWERS over there is
+   * `status`'s word, from the last probe — and the two must not be read for each other:
+   * taking the forward for the machine's liveness is the mistake behind the connect loop
+   * (#561). Always null for `local`, which needs no forward to be reached.
    */
-  connected: boolean;
+  forward: { localPort: number } | null;
   /**
    * Whether a server is up over there, as of the last probe. Null means "not probed yet";
    * the page probes on a widening schedule rather than at list time, because each probe is
