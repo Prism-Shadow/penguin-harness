@@ -50,7 +50,7 @@ export const zh = {
 
   hero: {
     platformLead: "开源、本地的多 Agent 应用",
-    platformAccent: "自动开发",
+    platformActions: ["自动开发", "自动调优"],
     platformTail: "平台",
     automationLead: "全自动",
     automationActions: ["创建", "优化", "部署"],
@@ -59,7 +59,7 @@ export const zh = {
     cliInstall: "命令行安装",
     stats: [
       { value: "1000+ 模型", label: "支持主流供应商" },
-      { value: "跨平台本地部署", label: "Linux，Windows，macOS 多系统兼容" },
+      { value: "跨平台部署", label: "Linux · Windows · macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
@@ -278,7 +278,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     eyebrow: "案例",
-    title: "一句话生成可运行的 Agent 应用",
+    title: "一句话生成会思考、可运行的 AI 应用",
     subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
     tabs: [
       {

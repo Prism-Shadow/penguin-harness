@@ -36,7 +36,16 @@ export function Hero() {
           style={{ animationDelay: "70ms" }}
         >
           {S.hero.platformLead}
-          <span className="text-brand-600 dark:text-brand-300">{S.hero.platformAccent}</span>
+          <span className="text-brand-600 dark:text-brand-300">
+            <span className="sr-only">{S.hero.platformActions.join(" / ")}</span>
+            <span className="hero-rotator" aria-hidden="true">
+              {S.hero.platformActions.map((action) => (
+                <span key={action} className="hero-rotator-word">
+                  {action}
+                </span>
+              ))}
+            </span>
+          </span>
           {S.hero.platformTail}
         </p>
 

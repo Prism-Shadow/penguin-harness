@@ -146,6 +146,38 @@
   font-size: clamp(1rem, 2.1vw, 1.125rem);
 }
 
+/* Both words size the same grid cell, keeping the headline still as they alternate. */
+.hero-rotator {
+  display: inline-grid;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.hero-rotator-word {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  animation: hero-word-cycle 10s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.hero-rotator-word:nth-child(2) {
+  animation-delay: -5s;
+}
+@keyframes hero-word-cycle {
+  0%,
+  43%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  50.01%,
+  93% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
 /* ---------- Ambient neon backdrop: blurred glows wandering across the screen ----------
    Viewport-FIXED (the page background stays put while content scrolls over it) with a
    uniform page background behind every section, so nothing jumps at section boundaries.
@@ -328,6 +360,13 @@
   .reveal {
     opacity: 1;
     transform: none;
+  }
+  .hero-rotator {
+    display: inline;
+    overflow: visible;
+  }
+  .hero-rotator-word + .hero-rotator-word::before {
+    content: " / ";
   }
   /* With animations disabled the trend lines' base state is hidden; restore them fully drawn. */
   .anim-line-draw {
