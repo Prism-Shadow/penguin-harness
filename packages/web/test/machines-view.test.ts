@@ -29,6 +29,7 @@ const fresh = (alias: string): MachineInfo => ({
   installed: null,
   local: false,
   forward: null,
+  api: null,
   status: null,
 });
 const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
@@ -40,6 +41,7 @@ const here = (): MachineInfo => ({
   installed: INSTALLED,
   local: true,
   forward: null,
+  api: null,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 

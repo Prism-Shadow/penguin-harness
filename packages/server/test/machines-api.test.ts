@@ -134,6 +134,7 @@ describe("machines API", () => {
           installed: null,
           local: false,
           forward: null,
+          api: null,
           status: null,
         },
         {
@@ -143,6 +144,7 @@ describe("machines API", () => {
           installed: null,
           local: false,
           forward: null,
+          api: null,
           status: null,
         },
       ]);
@@ -572,6 +574,36 @@ describe("machines API", () => {
       expect(forwards).toEqual([]);
     });
   });
+
+  describe("the api sighting", () => {
+    const REMOTE = "kUkIyqU-1GOfXgKD";
+    const nas = async () =>
+      (
+        (await (
+          await admin.get("/api/projects/default_project/machines")
+        ).json()) as MachinesResponse
+      ).machines.find((m) => m.id === "ssh:nas");
+
+    it("is stamped by the proxy's report and served with the list, by machine id", async () => {
+      await boot();
+      machinesRepo.patch("ssh:nas", { machineId: REMOTE });
+      expect((await nas())?.api).toBeNull();
+      t.deps.machines.noteApiSeen(REMOTE, { ok: true });
+      expect((await nas())?.api).toEqual({ answeredAt: "2026-08-24T12:00:00.000Z" });
+      t.deps.machines.noteApiSeen(REMOTE, { ok: false, detail: "connect ECONNREFUSED" });
+      expect((await nas())?.api).toEqual({
+        failedAt: "2026-08-24T12:00:00.000Z",
+        detail: "connect ECONNREFUSED",
+      });
+    });
+
+    it("a sighting of a machine no row names lands nowhere, and does not throw", async () => {
+      await boot();
+      t.deps.machines.noteApiSeen("nobody-knows-this", { ok: true });
+      expect((await nas())?.api).toBeNull();
+    });
+  });
+
   describe("machine identity", () => {
     const ID = "LNrJdHAZJ91G58i0";
     const listed = async () =>

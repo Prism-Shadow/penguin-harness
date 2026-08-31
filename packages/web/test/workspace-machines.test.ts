@@ -18,6 +18,7 @@ const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo =>
   installed: null,
   local: false,
   forward: null,
+  api: null,
   status: null,
   ...over,
 });

@@ -1,9 +1,16 @@
 /**
- * The same-origin proxy's pure half: which paths it claims, and how a remote's redirects are
- * re-rooted. Everything is addressed by the MACHINE'S own id rather than the ssh alias.
+ * The same-origin proxy: which paths it claims, how a remote's redirects are re-rooted, and
+ * what each forwarded request reports having learned. Everything is addressed by the
+ * MACHINE'S own id rather than the ssh alias.
  */
-import { describe, expect, it } from "vitest";
-import { SERVER_PROXY_PREFIX, parseProxyPath, rewriteLocation } from "../src/machines/proxy.js";
+import http from "node:http";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  SERVER_PROXY_PREFIX,
+  machinesProxy,
+  parseProxyPath,
+  rewriteLocation,
+} from "../src/machines/proxy.js";
 
 /** A machine, by the id it minted. */
 const A = "QS7J4YVgSovi-Z2c";
@@ -42,5 +49,68 @@ describe("rewriteLocation", () => {
 
   it("leaves an absolute URL alone — it is not ours to re-root", () => {
     expect(rewriteLocation("https://example.com/x", A)).toBe("https://example.com/x");
+  });
+});
+
+describe("the report", () => {
+  /** What a forwarded request learned, as noteApiSeen would hear it. */
+  let upstream: http.Server | null = null;
+
+  afterEach(() => {
+    upstream?.close();
+    upstream = null;
+  });
+
+  const listen = (): Promise<number> =>
+    new Promise((resolve) => {
+      upstream = http.createServer((_req, res) => {
+        res.statusCode = 500; // Any HTTP answer is an ANSWER — a refusing server is alive.
+        res.end("{}");
+      });
+      upstream.listen(0, "127.0.0.1", () => {
+        resolve((upstream!.address() as { port: number }).port);
+      });
+    });
+
+  const request = (machineId: string) =>
+    new Request(`http://app.local${SERVER_PROXY_PREFIX}${machineId}/api/me`);
+
+  it("says the machine answered on any HTTP answer, refusals included", async () => {
+    const port = await listen();
+    const seen: [string, { ok: boolean }][] = [];
+    const proxy = machinesProxy(
+      async () => ({ port, cookie: "penguin_session=x" }),
+      (machineId, outcome) => seen.push([machineId, outcome]),
+    );
+    const response = await proxy(request(A));
+    expect(response?.status).toBe(500);
+    expect(seen).toEqual([[A, { ok: true }]]);
+  });
+
+  it("says the forward had nowhere to deliver when the socket fails, with the transport's words", async () => {
+    const port = await listen();
+    upstream!.close();
+    upstream = null;
+    const seen: [string, { ok: boolean; detail?: string }][] = [];
+    const proxy = machinesProxy(
+      async () => ({ port, cookie: "penguin_session=x" }),
+      (machineId, outcome) => seen.push([machineId, outcome]),
+    );
+    const response = await proxy(request(A));
+    expect(response?.status).toBe(502);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]![1]).toMatchObject({ ok: false });
+    expect((seen[0]![1] as { detail: string }).detail).not.toBe("");
+  });
+
+  it("reports nothing when there is no forward to try — an unasked machine is unmeasured", async () => {
+    const seen: unknown[] = [];
+    const proxy = machinesProxy(
+      async () => null,
+      (machineId, outcome) => seen.push([machineId, outcome]),
+    );
+    const response = await proxy(request(A));
+    expect(response?.status).toBe(503);
+    expect(seen).toEqual([]);
   });
 });

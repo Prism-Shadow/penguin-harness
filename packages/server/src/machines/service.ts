@@ -105,6 +105,14 @@ export class MachinesService {
   readonly #busy = new Set<string>();
   /** Sessions minted on machines, by address, reused until near their TTL. */
   readonly #sessions = new Map<string, { cookie: string; at: number }>();
+  /**
+   * What the proxy's traffic last learned of each machine's API, by address. In memory
+   * like #statuses: a sighting is only true for the moment it was taken.
+   */
+  readonly #apiSeen = new Map<
+    string,
+    { answeredAt: string } | { failedAt: string; detail: string }
+  >();
   readonly #effects: MachinesEffects;
   readonly #assets: () => string | null;
   readonly #machineId: string;
@@ -223,6 +231,7 @@ export class MachinesService {
       installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
       local: true,
       forward: null,
+      api: null,
       status: {
         state: "running",
         checkedAt: this.#effects.now().toISOString(),
@@ -245,6 +254,7 @@ export class MachinesService {
           row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" },
         local: false,
         forward: port === null ? null : { localPort: port },
+        api: this.#apiSeen.get(id) ?? null,
         status: this.#statuses.get(id) ?? null,
       };
     });
@@ -299,6 +309,22 @@ export class MachinesService {
   /** The running or last job; null before the first one. */
   job(): MachineJob | null {
     return this.#job;
+  }
+
+  /**
+   * Stamps what a forwarded request just learned (proxy.ts's ProxyReport): the machine's
+   * API answered, or the forward had nowhere to deliver. Passive on purpose — the proxy
+   * carries every request the app makes to a machine, so the fact rides traffic that flows
+   * anyway, and a machine nobody asks about is simply not measured.
+   */
+  noteApiSeen(machineId: string, outcome: { ok: true } | { ok: false; detail: string }): void {
+    const address = this.repo.byMachineId(machineId)?.address;
+    if (address === undefined) return;
+    const at = this.#effects.now().toISOString();
+    this.#apiSeen.set(
+      address,
+      outcome.ok ? { answeredAt: at } : { failedAt: at, detail: outcome.detail },
+    );
   }
 
   /**

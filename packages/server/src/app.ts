@@ -1183,7 +1183,10 @@ export function createApp(
   // to it and addressed by the machine's OWN id. Admins only: the request is made over there
   // as that machine's admin, with a session this server minted over the ssh access that
   // installed it, so this server's admin session is the one credential involved.
-  const serverProxy = machinesProxy((machineId) => deps.machines.proxyTarget(machineId));
+  const serverProxy = machinesProxy(
+    (machineId) => deps.machines.proxyTarget(machineId),
+    (machineId, outcome) => deps.machines.noteApiSeen(machineId, outcome),
+  );
   app.all(
     `${SERVER_PROXY_PREFIX}*`,
     authMiddleware(deps.authService, deps.config.trustProxy),

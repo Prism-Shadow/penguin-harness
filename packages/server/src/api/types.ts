@@ -3250,6 +3250,16 @@ export interface MachineInfo {
    */
   forward: { localPort: number } | null;
   /**
+   * The machine's API as last seen by this server's proxy — stamped by traffic passing
+   * through, never by a probe of its own. `answeredAt` when the last forwarded request got
+   * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
+   * the transport's own words when the forward had nowhere to deliver. Null until a first
+   * request flows, and only as fresh as the last one — no traffic, no measurement, which is
+   * honest: nothing burns ssh for a page nobody is looking at. Always null for `local`;
+   * this server answering the request that fetched this list is that measurement.
+   */
+  api: { answeredAt: string } | { failedAt: string; detail: string } | null;
+  /**
    * Whether a server is up over there, as of the last probe. Null means "not probed yet";
    * the page probes on a widening schedule rather than at list time, because each probe is
    * an ssh round trip while the list itself is only the config's text.

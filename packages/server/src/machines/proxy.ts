@@ -59,6 +59,7 @@ function proxyToTunnel(
   path: ProxyPath,
   port: number,
   cookie: string,
+  report?: ProxyReport,
 ): Promise<Response> {
   return new Promise((resolve) => {
     const url = new URL(request.url);
@@ -78,6 +79,7 @@ function proxyToTunnel(
         headers,
       },
       (res) => {
+        report?.(path.machineId, { ok: true });
         const out = new Headers();
         for (const [name, value] of Object.entries(res.headers)) {
           if (value === undefined || DROP_RESPONSE_HEADERS.has(name.toLowerCase())) continue;
@@ -97,6 +99,7 @@ function proxyToTunnel(
       },
     );
     upstream.on("error", (err) => {
+      report?.(path.machineId, { ok: false, detail: err.message });
       resolve(
         Response.json(
           {
@@ -122,8 +125,19 @@ function proxyToTunnel(
  * nothing to forward to. `resolve` is the machines service's lookup: the forward's port and
  * a session on that machine, or null when it is not connected.
  */
+/**
+ * Told what each forwarded request learned: the machine's API answered, or the forward had
+ * nowhere to deliver. The machines service stamps it into the list's `api` fact — passive
+ * measurement, riding traffic that flows anyway (api/types.ts on MachineInfo.api).
+ */
+export type ProxyReport = (
+  machineId: string,
+  outcome: { ok: true } | { ok: false; detail: string },
+) => void;
+
 export function machinesProxy(
   resolve: (machineId: string) => Promise<{ port: number; cookie: string } | null>,
+  report?: ProxyReport,
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const path = parseProxyPath(new URL(request.url).pathname);
@@ -140,6 +154,6 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return proxyToTunnel(request, path, target.port, target.cookie);
+    return proxyToTunnel(request, path, target.port, target.cookie, report);
   };
 }
