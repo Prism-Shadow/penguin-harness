@@ -16,6 +16,7 @@ import "@xterm/xterm/css/xterm.css";
 // Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { useTheme } from "../../state/theme";
 
 /**
@@ -30,6 +31,7 @@ function loadXterm() {
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
     import("@xterm/addon-web-links"),
+    import("@xterm/addon-clipboard"),
   ]);
 }
 
@@ -226,7 +228,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
     };
 
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await loadXterm();
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
       let socket: WebSocket | null = null;
       let exited = false;
@@ -234,6 +236,10 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
       const report = (status: TerminalStatus, detail = ""): void => {
         if (!disposed) callbacks.current.onStatus?.(status, detail);
       };
+      /** Resolves clicks on links by position (terminal-links.ts); fed by the providers' hover reports. */
+      const links = new LinkClickTracker(() => term.cols);
+      /** One abort for every DOM listener this terminal registers; fired at teardown. */
+      const listenerAbort = new AbortController();
 
       const term = new Terminal({
         allowProposedApi: true,
@@ -244,13 +250,76 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         lineHeight: 1.2,
         scrollback: 5000,
         theme: terminalTheme(darkRef.current),
+        // OSC 8 hyperlinks — how a program that knows the terminal is capable writes a link.
+        // The providers only REPORT links here; the click itself is resolved below by
+        // position, because xterm's own activation cannot survive a redrawing program
+        // (terminal-links.ts). `activate` stays a no-op so a click never opens twice.
+        linkHandler: {
+          activate: () => {},
+          hover: (_event, text, range) => links.hover(text, range),
+          leave: () => links.leave(),
+        },
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
+      // Same arrangement for URLs found in the output: the addon reports, the tracker
+      // decides. Its built-in handler would also have opened a blank window first, which
+      // the desktop shell reads as a link to about:blank.
+      term.loadAddon(
+        new WebLinksAddon(() => {}, {
+          hover: (_event, text, range) => links.hover(text, range),
+          leave: () => links.leave(),
+        }),
+      );
+      // OSC 52: a program's own copy reaches the system clipboard — what tmux's copy mode
+      // does on every copy, and what makes a selection inside tmux land where a person
+      // expects it. WRITE only. The addon's default provider also answers a program's
+      // request to READ the clipboard, and terminal output is not something to hand the
+      // clipboard's contents to.
+      term.loadAddon(
+        new ClipboardAddon({
+          readText: () => Promise.resolve(""),
+          writeText: (_selection, text) =>
+            navigator.clipboard?.writeText(text).catch(() => {}) ?? Promise.resolve(),
+        }),
+      );
       termRef.current = term;
       term.open(container);
       fit.fit();
+
+      // Where a pointer event landed, in the coordinates the link ranges use. The screen
+      // element is exactly cols × rows cells, so the cell size falls out of its box.
+      const linkPosition = (event: MouseEvent) => {
+        const screen = term.element?.querySelector(".xterm-screen");
+        if (!screen) return null;
+        const box = screen.getBoundingClientRect();
+        return positionFromPointer(
+          { x: event.clientX, y: event.clientY },
+          { left: box.left, top: box.top, width: box.width, height: box.height },
+          { cols: term.cols, rows: term.rows, viewportY: term.buffer.active.viewportY },
+        );
+      };
+      const linkTarget = term.element;
+      if (linkTarget) {
+        const opts = { signal: listenerAbort.signal };
+        linkTarget.addEventListener("mousemove", (e) => links.move(linkPosition(e)), opts);
+        linkTarget.addEventListener(
+          "mousedown",
+          (e) => {
+            if (e.button === 0) links.down(linkPosition(e), e.clientX, e.clientY);
+          },
+          opts,
+        );
+        linkTarget.addEventListener(
+          "mouseup",
+          (e) => {
+            if (e.button !== 0) return;
+            const uri = links.up(linkPosition(e), e.clientX, e.clientY);
+            if (uri !== null) openTerminalLink(uri);
+          },
+          opts,
+        );
+      }
 
       /** Copies the active selection and clears it — the visual ack that the copy happened. */
       const copySelection = (): void => {
@@ -303,7 +372,6 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
        * htop) has turned mouse tracking on — the app owns the pointer then, and xterm
        * forwards the events as escape codes.
        */
-      const listenerAbort = new AbortController();
       const { signal } = listenerAbort;
       const appOwnsMouse = (): boolean => term.modes.mouseTrackingMode !== "none";
       container.addEventListener(
