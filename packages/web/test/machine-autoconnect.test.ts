@@ -34,9 +34,15 @@ const response = (machines: MachineInfo[], job: MachinesResponse["job"] = null) 
   job,
 });
 
-/** A fake server: connect flips the machine to connected after one poll, unless told to fail. */
+/**
+ * A fake server: connect flips the machine to connected after one poll, unless told to
+ * fail. The machine ANSWERS whenever its forward is up, except with `silent` — the
+ * live-forward-to-a-dead-server shape, where the list says connected and /api/me does not.
+ */
 function fakeApi(
-  opts: { connects: "ok" | "fail" | "throw"; listed?: boolean } = { connects: "ok" },
+  opts: { connects: "ok" | "fail" | "throw"; listed?: boolean; silent?: boolean } = {
+    connects: "ok",
+  },
 ) {
   const calls: string[] = [];
   let forwarded = false;
@@ -75,6 +81,11 @@ function fakeApi(
         result: null,
       });
     },
+    async meOnMachine(machineId: string) {
+      calls.push(`me:${machineId}`);
+      if (!forwarded || opts.silent === true) throw new Error("502 server_unreachable");
+      return {};
+    },
   };
   return { api, calls };
 }
@@ -102,11 +113,11 @@ describe("connecting on first need", () => {
   it("connects an installed machine and reports it connected", async () => {
     const { api, calls } = fakeApi();
     await expect(ensureMachineConnected("p", REMOTE, { api, sleep })).resolves.toBe("connected");
-    expect(calls).toEqual(["list", "connect:ssh:nas", "list"]);
+    expect(calls).toEqual(["list", "connect:ssh:nas", "list", `me:${REMOTE}`]);
     expect(sleeps).toEqual([]);
   });
 
-  it("does nothing to a machine that is already connected", async () => {
+  it("does nothing to a machine that is already connected and answering", async () => {
     const api = {
       async getMachines() {
         return response([nas({ forward: { localPort: 53000 } })]);
@@ -114,8 +125,66 @@ describe("connecting on first need", () => {
       async connectMachine(): Promise<MachinesResponse> {
         throw new Error("must not be called");
       },
+      async meOnMachine() {
+        return {};
+      },
     };
     await expect(ensureMachineConnected("p", REMOTE, { api, sleep })).resolves.toBe("connected");
+  });
+
+  it("a live forward to a silent server is not success: the attempt connects, retries, gives up", async () => {
+    // The regression this guards: "connected" was the machine LIST's word, which is about
+    // the forward — an ssh process on this side that outlives the far server. The attempt
+    // declared instant success over a dead server, its listener re-ran the reachability
+    // probe, the machine read as offline again, and the "successful" attempt had already
+    // been forgotten — a new one started, forever, with no backoff and no give-up.
+    const { api, calls } = fakeApi({ connects: "ok", silent: true });
+    const machine = nas({ forward: { localPort: 53000 } });
+    const listedConnected = {
+      ...api,
+      async getMachines() {
+        calls.push("list");
+        return response([machine]);
+      },
+      async meOnMachine(machineId: string) {
+        calls.push(`me:${machineId}`);
+        throw new Error("502 server_unreachable");
+      },
+    };
+    const seen: string[] = [];
+    const off = onMachineAutoConnected((_p, machineId) => seen.push(machineId));
+    await expect(
+      ensureMachineConnected("p", REMOTE, { api: listedConnected, sleep }),
+    ).resolves.toBe("gave-up");
+    off();
+    // It walked the whole widening schedule instead of looping hot, asked the machine
+    // itself every round, tried the connect job (which is what starts a dead server) —
+    // and told no listener a machine that never answered was up.
+    expect(sleeps).toEqual([...AUTO_CONNECT_STEPS_MS]);
+    expect(calls.filter((c) => c === `me:${REMOTE}`).length).toBeGreaterThan(0);
+    expect(calls.filter((c) => c.startsWith("connect:"))).toHaveLength(
+      AUTO_CONNECT_STEPS_MS.length + 1,
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it("…and the give-up is remembered, so the next need does not restart the cycle", async () => {
+    const { api } = fakeApi({ connects: "ok", silent: true });
+    const listedConnected = {
+      ...api,
+      async getMachines() {
+        return response([nas({ forward: { localPort: 53000 } })]);
+      },
+      async meOnMachine(): Promise<unknown> {
+        throw new Error("502 server_unreachable");
+      },
+    };
+    await ensureMachineConnected("p", REMOTE, { api: listedConnected, sleep });
+    const counted = fakeApi({ connects: "ok", silent: true });
+    await expect(ensureMachineConnected("p", REMOTE, { api: counted.api, sleep })).resolves.toBe(
+      "gave-up",
+    );
+    expect(counted.calls).toEqual([]);
   });
 
   it("retries on the widening schedule and then gives up", async () => {
@@ -155,6 +224,9 @@ describe("connecting on first need", () => {
       async connectMachine(): Promise<MachinesResponse> {
         throw new Error("must not be called — it came up on its own");
       },
+      async meOnMachine() {
+        return {};
+      },
     };
     await expect(ensureMachineConnected("p", REMOTE, { api, sleep, pollMs: 7 })).resolves.toBe(
       "connected",
@@ -170,6 +242,7 @@ describe("connecting on first need", () => {
         return response([nas({ machineId: "someone-else" })]);
       },
       connectMachine: api.connectMachine,
+      meOnMachine: api.meOnMachine,
     };
     await expect(ensureMachineConnected("p", REMOTE, { api: other, sleep })).resolves.toBe(
       "unknown-machine",
