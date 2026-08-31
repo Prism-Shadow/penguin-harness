@@ -221,7 +221,7 @@ interface SessionSpec {
  * and resumeSession) around the context the Session starts in.
  */
 interface SessionRuntime {
-  /** Session-lifetime Environment, equipped with the initial context's toolset and vault (a later context re-equips it — see openContext). */
+  /** Session-lifetime Environment, equipped with the initial context's toolset and vault (a later context re-equips it — see createContext). */
   environment: Environment;
   /**
    * Opens the Session's FIRST context, lazily at the start of the first run: resolves the
@@ -229,18 +229,18 @@ interface SessionRuntime {
    * published through `opts.emit` as the connect pair, then the toolset record) and builds
    * that context's LLM object. Kept out of createSession on purpose — Session creation
    * stays instant and the records stream on the run. The same opening procedure as
-   * `openContext`: only what is being opened differs.
+   * `createContext`: only what is being opened differs.
    */
   bootstrap: (
     opts: OpenContextOptions,
   ) => Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }>;
   /**
-   * Opens the context that follows a completed compaction (see ContextEngineDeps.openContext):
+   * Opens the context that follows a completed compaction (see ContextEngineDeps.createContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
    * the context alongside its engine settings.
    */
-  openContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
+  createContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
   /** See SessionConfig.pinThinkingLevel. */
   pinThinkingLevel: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
   createBareLLM: () => GenerativeModel;
@@ -330,7 +330,7 @@ export class Agent {
    * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the Memory
    * indexes, the schedule roster and the Environment values (the date included). Every
    * context opener goes through here — createSession, the context a completed compaction
-   * opens (buildRuntime's openContext) and a resume that finds its context closed — so an
+   * opens (buildRuntime's createContext) and a resume that finds its context closed — so an
    * edit made during one context, by the user or by the model working on its own
    * configuration, lands in the next context and never in the one that is running. What
    * stays fixed is the Session itself (`spec`): id, Workspace, model entry, origin, depth and
@@ -747,7 +747,7 @@ export class Agent {
       cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       environment: rt.environment,
       trace,
-      openContext: rt.openContext,
+      createContext: rt.createContext,
       pinThinkingLevel: rt.pinThinkingLevel,
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
@@ -817,7 +817,7 @@ export class Agent {
     } = {},
   ): SessionRuntime {
     const { sessionId, workspaceDir, modelEntry, apiKey, baseUrl, subagentDepth } = spec;
-    // The context the Session is running: the initial one, then whatever `openContext` last
+    // The context the Session is running: the initial one, then whatever `createContext` last
     // assembled.
     let current = initial;
     // Whether the initial context has been built into an LLM object (the first run's
@@ -1032,7 +1032,7 @@ export class Agent {
 
     // Environment binds the Workspace for the Session's lifetime and is equipped with the
     // initial context's tool config and vault (a later context re-equips it, see
-    // openContext). The toolset is resolved lazily by the bootstrap below (Session's first
+    // createContext). The toolset is resolved lazily by the bootstrap below (Session's first
     // run), not here — its first listTools connects any configured MCP Servers, and that
     // wait belongs on the run stream (bracketed by mcp_connect events), not inside
     // createSession. Vault environment variables are injected into command subprocesses; a
@@ -1102,13 +1102,13 @@ export class Agent {
       });
 
     // THE opening procedure — behind the first run's bootstrap and every post-compaction
-    // openContext alike, so initialization and rotation cannot drift apart: connects
+    // createContext alike, so initialization and rotation cannot drift apart: connects
     // whatever MCP Servers are still pending on the Environment (publishing the connect
     // pair around the wait when there are any — at the first open that is every configured
     // server), resolves the toolset, publishes the toolset record, and builds the context's
     // LLM object. The caller's `emit` decides where the records go live (the Session's
     // first-run pump, or the engine's rotation pump).
-    const openOn = async (
+    const openAssembled = async (
       context: AssembledContext,
       emit: OpenContextOptions["emit"],
     ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> => {
@@ -1126,7 +1126,7 @@ export class Agent {
     const bootstrap = async (
       opts: OpenContextOptions,
     ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> => {
-      const opened = await openOn(current, opts.emit);
+      const opened = await openAssembled(current, opts.emit);
       started = true;
       return opened;
     };
@@ -1139,14 +1139,14 @@ export class Agent {
     // records live and writes them at the head of the rotated Trace file. An Agent State
     // that cannot be assembled (a config that no longer parses) throws: the run fails with
     // that error and the engine keeps the old context.
-    const openContext = async (
+    const createContext = async (
       sessionTokens: TokenCounts,
       { emit }: OpenContextOptions,
     ): Promise<OpenedContext> => {
       const next = await this.assembleContext(spec);
       current = next;
       environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
-      const { llm } = await openOn(next, emit);
+      const { llm } = await openAssembled(next, emit);
       // Carries over the Session's cumulative Token counts, so token_usage.session stays continuous across compaction.
       llm.sessionTokens = sessionTokens;
       return {
@@ -1203,6 +1203,6 @@ export class Agent {
     // that throw here; the instance is discarded.
     createBareLLM();
 
-    return { environment, bootstrap, openContext, pinThinkingLevel, createBareLLM };
+    return { environment, bootstrap, createContext, pinThinkingLevel, createBareLLM };
   }
 }

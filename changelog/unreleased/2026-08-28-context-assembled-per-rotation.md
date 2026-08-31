@@ -4,7 +4,7 @@
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `docs`
 - **PR:** [#539](https://github.com/Prism-Shadow/penguin-harness/pull/539)
-- **Breaking:** yes — SDK: `SessionConfig.createLLM` / `ContextEngineDeps.createLLM` became `openContext`, `RunOptions.thinkingLevel` and the per-round thinking level of the subagent seams are gone; HTTP API: `POST /tasks` and the subagent message no longer take `thinkingLevel`, and a follow-up recall no longer returns one
+- **Breaking:** yes — SDK: `SessionConfig.createLLM` / `ContextEngineDeps.createLLM` became `createContext`, `RunOptions.thinkingLevel` and the per-round thinking level of the subagent seams are gone; HTTP API: `POST /tasks` and the subagent message no longer take `thinkingLevel`, and a follow-up recall no longer returns one
 
 [中文版](2026-08-28-context-assembled-per-rotation.zh.md)
 
@@ -68,7 +68,7 @@ context — the pickers advise compacting first), and **unrestricted** (approval
   edits — a self-spawned subagent's, for instance — no longer starts Sessions on its
   load-time snapshot.
 - Opening a context is one procedure as well: the first run's bootstrap and the
-  post-compaction `openContext` share the same implementation (connect what is pending,
+  post-compaction `createContext` share the same implementation (connect what is pending,
   publish the connect pair and the toolset record through `emit`, build the LLM), delivered
   live by the same merge-queue pump on both paths.
 - The server no longer rebuilds an Agent's cached Session runtimes when its vault is updated: the
@@ -81,7 +81,7 @@ context — the pickers advise compacting first), and **unrestricted** (approval
 ## Compatibility
 
 - SDK: `SessionConfig.createLLM` and `ContextEngineDeps.createLLM` are replaced by
-  `openContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>`, with
+  `createContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>`, with
   `OpenedContext` being `{ llm, sessionMeta?, maxTurns?, compaction? }`; records passed to
   `emit` are yielded on the run stream and written at the head of the rotated Trace file. Code
   that constructs `Session` or `ContextEngine` directly returns `{ llm }` where it returned the

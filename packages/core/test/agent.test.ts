@@ -877,11 +877,14 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       session as {
         engine: {
           deps: {
-            openContext: (tokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
+            createContext: (
+              tokens: TokenCounts,
+              opts: OpenContextOptions,
+            ) => Promise<OpenedContext>;
           };
         };
       }
-    ).engine.deps.openContext;
+    ).engine.deps.createContext;
   /** Opens the Session's next context through its opener, collecting the records the opener publishes. */
   async function openNext(
     session: unknown,

@@ -6,7 +6,7 @@ import type { OmniMessage } from "../omnimessage/index.js";
  * the queue is drained. It is the engine's merge point for a turn's concurrent streams
  * (the LLM consumer plus N tool executions — see /docs/message-flow § "The merge point:
  * MergeQueue"), and the same pump turns a context opener's published records into live
- * yields: the engine's post-compaction `openContext` and the Session's first-run
+ * yields: the engine's post-compaction `createContext` and the Session's first-run
  * bootstrap deliver through one mechanism.
  */
 export class MergeQueue {

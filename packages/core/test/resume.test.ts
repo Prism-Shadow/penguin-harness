@@ -492,7 +492,7 @@ describe("agent.resumeSession system prompt per context", () => {
       const meta = metaFor(SID, workspace);
       return { ...meta, payload: { ...meta.payload, thinking_level: level } } as OmniMessage;
     };
-    const openContext = (meta: OmniMessage): OmniMessage[] => [
+    const traceRecords = (meta: OmniMessage): OmniMessage[] => [
       meta,
       userText("hello"),
       requestBegin(),
@@ -503,7 +503,7 @@ describe("agent.resumeSession system prompt per context", () => {
     // The Agent config says "medium"; the running context recorded "xhigh" and keeps it —
     // its history was produced under that prefix — and a pin arriving before the first run
     // reaches only the next context.
-    await writeTraceFile(tmpRoot, SID, openContext(withLevel("xhigh")));
+    await writeTraceFile(tmpRoot, SID, traceRecords(withLevel("xhigh")));
     const recorded = await agent.resumeSession({ sessionId: SID });
     try {
       expect(levelOf(recorded)).toBe("xhigh");
@@ -513,7 +513,7 @@ describe("agent.resumeSession system prompt per context", () => {
       recorded.dispose();
     }
     // A context that recorded "default" ran without a level and resumes without one.
-    await writeTraceFile(tmpRoot, SID, openContext(withLevel("default")));
+    await writeTraceFile(tmpRoot, SID, traceRecords(withLevel("default")));
     const unlevelled = await agent.resumeSession({ sessionId: SID });
     try {
       expect(levelOf(unlevelled)).toBe("default");
@@ -521,7 +521,7 @@ describe("agent.resumeSession system prompt per context", () => {
       unlevelled.dispose();
     }
     // A meta from before the level was recorded resolves it like a new context: the config.
-    await writeTraceFile(tmpRoot, SID, openContext(metaFor(SID, workspace)));
+    await writeTraceFile(tmpRoot, SID, traceRecords(metaFor(SID, workspace)));
     const legacy = await agent.resumeSession({ sessionId: SID });
     try {
       expect(levelOf(legacy)).toBe("medium");
