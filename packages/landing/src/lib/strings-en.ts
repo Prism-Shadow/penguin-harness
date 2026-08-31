@@ -290,7 +290,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     eyebrow: "Cases",
-    title: "Generate a runnable agent app in one sentence",
+    title: "One sentence to an AI app that thinks and runs",
     subtitle:
       "Hand the requirement to an agent and get a runnable result end to end — more cases are on the way.",
     tabs: [

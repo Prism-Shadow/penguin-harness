@@ -15,3 +15,7 @@ Added an alternating phrase to the homepage headline: “auto-dev” / “auto-t
 - Clipped the moving phrases to a single line, keeping the outgoing and incoming text from overlapping.
 - Reserved space for both phrases to keep the surrounding headline stable.
 - Provided both phrases as static screen-reader text and displayed them together when reduced motion was enabled.
+
+## App demo headline
+
+- Updated the case-study heading to “One sentence to an AI app that thinks and runs” and its Chinese counterpart.

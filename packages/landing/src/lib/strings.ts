@@ -278,7 +278,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     eyebrow: "案例",
-    title: "一句话生成可运行的 Agent 应用",
+    title: "一句话生成会思考、可运行的 AI 应用",
     subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
     tabs: [
       {
