@@ -1657,6 +1657,7 @@ Benchmark：
     statTotalTokens: "总 Token",
     statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
+    statPullRequest: (title: string): string => `Pull Request：${title}`,
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",

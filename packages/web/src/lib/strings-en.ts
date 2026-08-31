@@ -1690,6 +1690,8 @@ Scenarios:
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
+    /** Header chip for the open PR the Workspace's branch has; the hover carries its title. */
+    statPullRequest: (title: string): string => `Pull request: ${title}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",

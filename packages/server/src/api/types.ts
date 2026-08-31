@@ -2486,6 +2486,15 @@ export interface WorkspaceFileEntry {
   mtime: string;
 }
 
+/**
+ * The open pull request whose head is the branch a Session's Workspace is on, or null when
+ * there is none to show. Null covers every reason equally on purpose: no PR for the branch,
+ * no `gh`, not signed in, not a repository. A header chip reports work, not problems.
+ */
+export interface WorkspacePullRequestResponse {
+  pullRequest: { number: number; title: string; url: string } | null;
+}
+
 export interface WorkspaceFilesResponse {
   /** Requested relative path ("" = Workspace root). */
   path: string;
