@@ -23,6 +23,7 @@ import { S } from "../../lib/strings";
 import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
 import { MESSAGING_RELAY_ICON } from "./icons";
+import { STAT_ICONS } from "../../lib/stat-icons";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 export const PIN_ICON =
@@ -61,7 +62,7 @@ export const overflowMenuGlyph = (d: string) => (
 );
 
 /** One thing a Session row can do to its Session. */
-export type SessionRowAction = "pin" | "rename" | "messaging" | "archive" | "delete";
+export type SessionRowAction = "pin" | "rename" | "copy" | "messaging" | "archive" | "delete";
 
 /** Row state the labels and glyphs read (both of the toggles flip on it). */
 export interface SessionRowState {
@@ -79,13 +80,14 @@ export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
 /**
  * The context menu's actions. Pin only reorders rows in the active list, so folder rows
  * (archived / subagent / scheduled) offer the rest without it — the same gate the
- * ellipsis menu applied before this moved. The messaging binding sits with the other
- * configuration actions, before the archive/delete pair.
+ * ellipsis menu applied before this moved. Copying the id sits next to rename, the other
+ * action about which Session this is rather than what happens to it, and the messaging
+ * binding sits with them, before the archive/delete pair.
  */
 export function contextMenuActions(canPin: boolean): readonly SessionRowAction[] {
   return canPin
-    ? ["pin", "rename", "messaging", "archive", "delete"]
-    : ["rename", "messaging", "archive", "delete"];
+    ? ["pin", "rename", "copy", "messaging", "archive", "delete"]
+    : ["rename", "copy", "messaging", "archive", "delete"];
 }
 
 export interface SessionRowMenuItem {
@@ -110,6 +112,10 @@ export function sessionRowMenuItem(
       };
     case "rename":
       return { label: S.chat.renameSession, icon: PENCIL_ICON, danger: false };
+    case "copy":
+      // The same glyph and label the details card's Session id row carries: one copy
+      // affordance for one value, wherever the reader meets it.
+      return { label: S.chat.copySessionId, icon: STAT_ICONS.copy, danger: false };
     case "messaging":
       // Same paper plane the session row flies when it is actually relaying: the menu entry
       // and the mark it produces are one feature, and a reader should not have to learn two
