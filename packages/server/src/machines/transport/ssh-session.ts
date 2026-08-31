@@ -21,8 +21,8 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { connectionOptionsFor } from "./commands.js";
-import type { RemoteTarget } from "./commands.js";
+import { connectionOptionsFor } from "../commands.js";
+import type { RemoteTarget } from "../commands.js";
 
 /**
  * What a command in the shared shell produced. `output` is stdout and stderr merged, with

@@ -11,7 +11,7 @@
  */
 import { REMOTE_PENGUIN, SERVER_LOG_TAIL, startServerCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import type { ExecResult } from "./exec.js";
+import type { ExecResult } from "./transport/index.js";
 import { probeServerState } from "./server-state.js";
 import { jsonAnswer } from "./answer.js";
 

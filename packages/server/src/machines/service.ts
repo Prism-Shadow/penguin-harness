@@ -5,9 +5,10 @@
  * ONE JOB at a time — an install or a connect — started by POST and polled by the Web App
  * for its progress lines. The job lives in this App's memory; what it achieved is in web.db
  * (MachinesRepo): which machines carry this program, the forward held to each, and which
- * Project uses which. Every path to a machine is a held connection — the shared shell for
- * commands, one forward per machine for HTTP — and every request to a machine's API is made
- * as its admin, with a session this server mints over the ssh access that installed it.
+ * Project uses which. Every word to a machine leaves through its MachineConnection
+ * (transport/connection.ts) — the shared shell for commands, the held forward for HTTP —
+ * and every request to a machine's API is made as its admin, with a session this server
+ * mints over the ssh access that installed it.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -21,18 +22,21 @@ import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type { MachineInfo, MachineJob, MachineServerStatus } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
-import { listHostAliases, resolveTarget } from "./targets.js";
+import {
+  closeConnectionTo,
+  connectionTo,
+  listHostAliases,
+  resolveTarget,
+} from "./transport/index.js";
 import { machineIdentity } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import type { ExecResult } from "./exec.js";
+import type { ExecResult } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
 import { mintTokenOnRemote } from "./remote-token.js";
-import { closeShell, runOnShell } from "./ssh-session.js";
-import { closeForward, forwardTo } from "./forward.js";
 import { syncModelsToMachine } from "./models-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
@@ -62,7 +66,11 @@ export interface MachinesEffects {
   upgrade: typeof upgradeRemote;
   /** This server's own Project config, credentials in plaintext — the source of a model sync. */
   loadConfig: (projectId: string) => Promise<ProjectConfig>;
-  forward: typeof forwardTo;
+  forward: (opts: {
+    address: string;
+    target: RemoteTarget;
+    remotePort: number;
+  }) => Promise<{ ok: true; port: number; pid: number | null } | { ok: false; detail: string }>;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
@@ -116,15 +124,12 @@ export class MachinesService {
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
-      runOn: async (target, command) => {
-        const result = await runOnShell(`ssh:${target.alias}`, target, command);
-        return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
-      },
+      runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, this.#effects.runOn),
       stopServer: (target) => stopRemoteServer(target, this.#effects.runOn),
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
-      forward: forwardTo,
+      forward: ({ target, remotePort }) => connectionTo(target).forward(remotePort),
       now: () => new Date(),
       ...effects,
     };
@@ -604,8 +609,7 @@ export class MachinesService {
    * machine's own server, and other people may be on it.
    */
   disconnect(address: string): void {
-    closeShell(address);
-    closeForward(address, this.repo.get(address)?.forwardPid);
+    closeConnectionTo(address, this.repo.get(address)?.forwardPid);
     this.#sessions.delete(address);
     if (this.repo.get(address) !== null) {
       this.repo.patch(address, { forwardPid: null, forwardPort: null });
@@ -718,7 +722,7 @@ export class MachinesService {
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
     // Its sessions died with it, and the forward points at a port nothing holds any more.
     this.#sessions.delete(address);
-    closeForward(address, this.repo.get(address)?.forwardPid);
+    closeConnectionTo(address, this.repo.get(address)?.forwardPid);
     this.repo.patch(address, { forwardPid: null, forwardPort: null });
     say(`Starting it again on port ${port}…`);
     const started = await this.#effects.startServer(target, port);

@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { authTokenCommand, mintTokenOnRemote, parseToken } from "../src/machines/remote-token.js";
-import type { ExecResult } from "../src/machines/exec.js";
+import type { ExecResult } from "../src/machines/transport/index.js";
 
 const ok = (stdout: string): ExecResult => ({ code: 0, stdout, stderr: "", timedOut: false });
 
