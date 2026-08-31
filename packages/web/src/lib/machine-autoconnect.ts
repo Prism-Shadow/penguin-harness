@@ -47,8 +47,8 @@ export interface AutoConnectApi {
   connectMachine(projectId: string, address: string): Promise<MachinesResponse>;
   /**
    * Whether the machine's API answers through the proxy right now (endpoints.meOnMachine).
-   * `connected` in the machine list is a fact about the forward — an ssh process on this
-   * side that outlives the far server — so an attempt only counts as connected once the
+   * The list's `forward` is a fact about an ssh process on this side that outlives the far
+   * server — so an attempt only counts as connected once the
    * machine itself has answered. Declaring success on the forward's word alone is what made
    * this loop forever: the listener re-ran the reachability probe, the silent machine read
    * as offline again, and the "successful" attempt had already been forgotten.
@@ -154,7 +154,7 @@ async function runAttempt(
     if (machine === null) {
       // Not listed at all is a different answer from unreachable: nothing to connect to.
       if (state.machines.length > 0) return "unknown-machine";
-    } else if (machine.connected && (await answers())) {
+    } else if (machine.forward !== null && (await answers())) {
       for (const listener of listeners) listener(projectId, machineId);
       return "connected";
     } else {
@@ -164,7 +164,7 @@ async function runAttempt(
       try {
         await deps.api.connectMachine(projectId, machine.id);
         const after = lookup(await settled());
-        if (after?.connected === true && (await answers())) {
+        if (after !== null && after.forward !== null && (await answers())) {
           for (const listener of listeners) listener(projectId, machineId);
           return "connected";
         }

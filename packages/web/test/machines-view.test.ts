@@ -28,7 +28,7 @@ const fresh = (alias: string): MachineInfo => ({
   machineId: null,
   installed: null,
   local: false,
-  connected: false,
+  forward: null,
   status: null,
 });
 const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
@@ -39,7 +39,7 @@ const here = (): MachineInfo => ({
   machineId: "LNrJdHAZJ91G58i0",
   installed: INSTALLED,
   local: true,
-  connected: false,
+  forward: null,
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 
@@ -260,7 +260,7 @@ describe("connectAction", () => {
   const connected = (alias: string): MachineInfo => ({
     ...carrying(alias),
     machineId: "noeSE0FFHhNXl2J5",
-    connected: true,
+    forward: { localPort: 53000 },
   });
   const job = (over: Partial<MachineJob> = {}): MachineJob => ({
     kind: "connect",

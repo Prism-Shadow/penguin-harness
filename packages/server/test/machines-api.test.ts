@@ -133,7 +133,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          connected: false,
+          forward: null,
           status: null,
         },
         {
@@ -142,7 +142,7 @@ describe("machines API", () => {
           machineId: null,
           installed: null,
           local: false,
-          connected: false,
+          forward: null,
           status: null,
         },
       ]);
@@ -594,7 +594,7 @@ describe("machines API", () => {
       const body = (await (
         await admin.get("/api/projects/default_project/machines")
       ).json()) as MachinesResponse;
-      expect(body.machines.find((m) => m.id === "ssh:nas")?.connected).toBe(true);
+      expect(body.machines.find((m) => m.id === "ssh:nas")?.forward).not.toBeNull();
     });
 
     it("a live forward to a dead server is not 'connected': connect asks the machine and starts it", async () => {

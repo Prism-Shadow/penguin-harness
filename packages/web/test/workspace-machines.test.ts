@@ -17,7 +17,7 @@ const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo =>
   machineId: null,
   installed: null,
   local: false,
-  connected: false,
+  forward: null,
   status: null,
   ...over,
 });
@@ -38,7 +38,7 @@ const here = machine({
 const connected = machine({
   alias: "far-box",
   machineId: "noeSE0FFHhNXl2J5",
-  connected: true,
+  forward: { localPort: 53000 },
   installed: INSTALL,
 });
 
@@ -50,7 +50,7 @@ describe("workspaceMachines", () => {
   });
   const connectedNameless = machine({
     alias: "ghost",
-    connected: true,
+    forward: { localPort: 53000 },
     installed: INSTALL,
   });
   const neverInstalled = machine({ alias: "just-an-ssh-host" });

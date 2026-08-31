@@ -22,7 +22,7 @@ const nas = (over: Partial<MachineInfo> = {}): MachineInfo => ({
   installed: { version: "1.0.0", at: "2026-08-01T00:00:00.000Z" },
   machineId: REMOTE,
   local: false,
-  connected: false,
+  forward: null,
   status: null,
   ...over,
 });
@@ -44,14 +44,14 @@ function fakeApi(
   },
 ) {
   const calls: string[] = [];
-  let connected = false;
+  let forwarded = false;
   let running = false;
   const api = {
     async getMachines() {
       calls.push("list");
       const wasRunning = running;
       running = false;
-      const machine = nas({ connected });
+      const machine = nas(forwarded ? { forward: { localPort: 53000 } } : {});
       return response(
         opts.listed === false ? [] : [machine],
         wasRunning
@@ -70,7 +70,7 @@ function fakeApi(
       calls.push(`connect:${address}`);
       if (opts.connects === "throw") throw new Error("409 connect_running");
       running = true;
-      if (opts.connects === "ok") connected = true;
+      if (opts.connects === "ok") forwarded = true;
       return response([nas()], {
         kind: "connect",
         machineId: address,
@@ -82,7 +82,7 @@ function fakeApi(
     },
     async meOnMachine(machineId: string) {
       calls.push(`me:${machineId}`);
-      if (!connected || opts.silent === true) throw new Error("502 server_unreachable");
+      if (!forwarded || opts.silent === true) throw new Error("502 server_unreachable");
       return {};
     },
   };
@@ -119,7 +119,7 @@ describe("connecting on first need", () => {
   it("does nothing to a machine that is already connected and answering", async () => {
     const api = {
       async getMachines() {
-        return response([nas({ connected: true })]);
+        return response([nas({ forward: { localPort: 53000 } })]);
       },
       async connectMachine(): Promise<MachinesResponse> {
         throw new Error("must not be called");
@@ -138,7 +138,7 @@ describe("connecting on first need", () => {
     // probe, the machine read as offline again, and the "successful" attempt had already
     // been forgotten — a new one started, forever, with no backoff and no give-up.
     const { api, calls } = fakeApi({ connects: "ok", silent: true });
-    const machine = nas({ connected: true });
+    const machine = nas({ forward: { localPort: 53000 } });
     const listedConnected = {
       ...api,
       async getMachines() {
@@ -172,7 +172,7 @@ describe("connecting on first need", () => {
     const listedConnected = {
       ...api,
       async getMachines() {
-        return response([nas({ connected: true })]);
+        return response([nas({ forward: { localPort: 53000 } })]);
       },
       async meOnMachine(): Promise<unknown> {
         throw new Error("502 server_unreachable");
@@ -207,7 +207,7 @@ describe("connecting on first need", () => {
       async getMachines() {
         polls += 1;
         return response(
-          [nas({ connected: polls > 2 })],
+          [nas(polls > 2 ? { forward: { localPort: 53000 } } : {})],
           polls <= 2
             ? {
                 kind: "install",

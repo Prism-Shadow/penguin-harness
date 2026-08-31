@@ -226,9 +226,9 @@ export class MachinesService {
       id: LOCAL_MACHINE_ID,
       alias: os.hostname(),
       machineId: this.#machineId,
-      connected: true,
       installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
       local: true,
+      forward: null,
       status: {
         state: "running",
         checkedAt: this.#effects.now().toISOString(),
@@ -250,7 +250,7 @@ export class MachinesService {
         installed:
           row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" },
         local: false,
-        connected: port !== null,
+        forward: port === null ? null : { localPort: port },
         status: this.#statuses.get(id) ?? null,
       };
     });
@@ -915,7 +915,7 @@ export class MachinesService {
   /** Raises a forward to every installed machine that has none, starting its server if it is down. */
   async autoConnect(): Promise<void> {
     const unconnected = this.#allMachines().filter(
-      (m) => !m.local && m.installed !== null && !m.connected,
+      (m) => !m.local && m.installed !== null && m.forward === null,
     );
     await this.#sweep(
       unconnected.map((m) => m.id),
@@ -928,7 +928,7 @@ export class MachinesService {
 
   /** Brings every connected machine up to date with this server's Model config. */
   async syncConnectedModels(): Promise<void> {
-    const connected = this.#allMachines().filter((m) => !m.local && m.connected);
+    const connected = this.#allMachines().filter((m) => !m.local && m.forward !== null);
     await this.#sweep(
       connected.map((m) => m.id),
       async (address, target) => {
@@ -943,7 +943,7 @@ export class MachinesService {
   /** Pushes a Project's models to every connected machine it uses — a key rotated here reaches them at once. */
   async syncModelsEverywhere(projectId: string): Promise<void> {
     const connected = this.list(projectId).filter(
-      (m) => !m.local && m.installed !== null && m.connected,
+      (m) => !m.local && m.installed !== null && m.forward !== null,
     );
     await this.#sweep(
       connected.map((m) => m.id),
