@@ -59,7 +59,7 @@ export const zh = {
     cliInstall: "命令行安装",
     stats: [
       { value: "1000+ 模型", label: "支持主流供应商" },
-      { value: "跨平台本地部署", label: "Linux，Windows，macOS 多系统兼容" },
+      { value: "跨平台部署", label: "Linux，Windows，macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
       { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],

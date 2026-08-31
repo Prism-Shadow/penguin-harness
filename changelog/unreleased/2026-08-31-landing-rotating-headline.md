@@ -16,6 +16,7 @@ Added an alternating phrase to the homepage headline: “auto-dev” / “auto-t
 - Reserved space for both phrases to keep the surrounding headline stable.
 - Provided both phrases as static screen-reader text and displayed them together when reduced motion was enabled.
 
-## App demo headline
+## Homepage copy
 
 - Updated the case-study heading to “One sentence to an AI app that thinks and runs” and its Chinese counterpart.
+- Shortened the platform summary to “Cross-Platform Deployment” / “跨平台部署” and retained only the OS names in its label.

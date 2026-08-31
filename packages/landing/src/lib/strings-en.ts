@@ -58,7 +58,7 @@ export const en: Strings = {
     cliInstall: "Command-line install",
     stats: [
       { value: "1000+ Models", label: "Support for Major Providers" },
-      { value: "Cross-Platform Local Deployment", label: "Linux · Windows · macOS" },
+      { value: "Cross-Platform Deployment", label: "Linux · Windows · macOS" },
       { value: "100% Open Source", label: "Apache 2.0 Licensed" },
       { value: "First Self-Improving Harness", label: "Native Agent Self-Evolution Engine" },
     ],
