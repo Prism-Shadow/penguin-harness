@@ -4,7 +4,7 @@
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `docs`
 - **PR:** [#539](https://github.com/Prism-Shadow/penguin-harness/pull/539)
-- **Breaking:** yes — SDK：`SessionConfig.createLLM` / `ContextEngineDeps.createLLM` 改为 `createContext`，移除 `RunOptions.thinkingLevel` 与子会话接缝上的逐轮思考等级；HTTP API：`POST /tasks` 与子会话消息不再接受 `thinkingLevel`，撤回跟进消息不再返回它
+- **Breaking:** yes — SDK：`SessionConfig.createLLM` / `ContextEngineDeps.createLLM` 改为 `openNextContext`，移除 `RunOptions.thinkingLevel` 与子会话接缝上的逐轮思考等级；HTTP API：`POST /tasks` 与子会话消息不再接受 `thinkingLevel`，撤回跟进消息不再返回它
 
 [English](2026-08-28-context-assembled-per-rotation.md)
 
@@ -45,7 +45,7 @@
   预置；`loadOrInitAgentState` 移除），不带 `init` 时 Agent 缺失即报错——上下文在会话中途开启时必须看到这个
   错误，而不是把已删除的 Agent 悄悄重建出来。`createSession` 与 `resumeSession` 因此同样从磁盘装载，跨修改被
   长期持有的 Agent 对象（例如自派生的子 Agent）不再用装载时的快照开启 Session。
-- 上下文开启同样收敛为一个流程：首次运行的 bootstrap 与压缩后的 `createContext` 共用同一段实现（连接待连的
+- 上下文开启同样收敛为一个流程：首次运行的 bootstrap 与压缩后的 `openNextContext` 共用同一段实现（连接待连的
   Server、经 `emit` 发布连接事件对与工具集记录、构建 LLM），两条路径由同一个合并队列泵实时送出。
 - 服务端不再因 vault 更新而重建该 Agent 已缓存的 Session 运行时：新值在运行中 Session 的下一次压缩后生效，与
   CLI 进程内 Session 的时机一致。智能体设置各页（提示词、运行参数、工具与 MCP、记忆、定时任务、vault、技能）、
@@ -55,7 +55,7 @@
 ## 兼容性
 
 - SDK：`SessionConfig.createLLM` 与 `ContextEngineDeps.createLLM` 被
-  `createContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>` 取代，`OpenedContext` 即
+  `openNextContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>` 取代，`OpenedContext` 即
   `{ llm, sessionMeta?, maxTurns?, compaction? }`；传给 `emit` 的记录在运行流上推出并写入轮转出的 Trace
   文件头部。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
   `Agent.createSession` / `resumeSession` 的代码无需改动。`Environment` 新增 `reconfigure({ toolConfig, vault })`

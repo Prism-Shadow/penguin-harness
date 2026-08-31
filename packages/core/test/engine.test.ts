@@ -1090,7 +1090,7 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
       maxReconnects: 1,
       reconnectBackoffMs: 1,
       thinkingLevel: () => live,
-      createContext: () => ({ llm: llm }),
+      openNextContext: () => ({ llm: llm }),
       compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
     });
 
@@ -2993,7 +2993,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     const engine = new ContextEngine({
       llm: oldLLM,
       environment: steeringEnvironment(),
-      createContext: () => ({ llm: newLLM }),
+      openNextContext: () => ({ llm: newLLM }),
       compaction: {
         maxContextLength: 1000,
         maxSessionTurns: -1,

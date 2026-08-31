@@ -31,7 +31,7 @@ Key point: **every message is written to the Trace at the same moment it enters 
 
 ## The merge point: MergeQueue
 
-A turn has several concurrent producers: the driver task consuming the LLM stream, plus N concurrently executing tools. All of them push into one merge queue, and a **single consumer** (the `run` generator) yields messages one at a time in **arrival order**; the turn ends only when every producer has finished and the queue is drained. The same pump delivers a context opener's records — the first run's bootstrap and a compaction's `createContext` publish their connect pair and toolset record through it, so those stream live too.
+A turn has several concurrent producers: the driver task consuming the LLM stream, plus N concurrently executing tools. All of them push into one merge queue, and a **single consumer** (the `run` generator) yields messages one at a time in **arrival order**; the turn ends only when every producer has finished and the queue is drained. The same pump delivers a context opener's records — the first run's bootstrap and a compaction's `openNextContext` publish their connect pair and toolset record through it, so those stream live too.
 
 This one mechanism fixes three basic properties of message delivery:
 

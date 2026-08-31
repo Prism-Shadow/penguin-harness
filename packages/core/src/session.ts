@@ -63,7 +63,7 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata: the first context's runtime configuration (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source) — a context a compaction opens brings its own through `createContext`; the toolset travels separately as the first run's tool_list_ready event. */
+  /** Session metadata: the first context's runtime configuration (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source) — a context a compaction opens brings its own through `openNextContext`; the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
   /**
    * Opens the Session's FIRST context, lazily at the start of the first run: resolves the
@@ -71,7 +71,7 @@ export interface SessionConfig {
    * builds that context's LLM. The records it produces on the way — the
    * `mcp_connect_begin` / `mcp_connect_end` pair around a connect, then the
    * `tool_list_ready` carrying the toolset — are published through `opts.emit` and stream
-   * live from `run`: the same shape as `createContext`, because opening the first context
+   * live from `run`: the same shape as `openNextContext`, because opening the first context
    * and opening a later one are one procedure in the composition layer. Kept out of
    * Session construction so creating a Session is instant and the connect wait streams as
    * visible events instead. An aborted attempt is cancelled via `cancelBootstrap` — the
@@ -85,10 +85,10 @@ export interface SessionConfig {
   cancelBootstrap?: () => void;
   environment: EnvironmentInterface;
   trace?: TraceSink;
-  /** Maximum LLM turns per Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `createContext` opens brings its own. */
+  /** Maximum LLM turns per Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `openNextContext` opens brings its own. */
   maxTurns?: number;
   /**
-   * Opens a fresh model context after compaction (see ContextEngineDeps.createContext): the new
+   * Opens a fresh model context after compaction (see ContextEngineDeps.openNextContext): the new
    * LLM object carrying over the Session's accumulated Token count, with the session_meta and
    * engine settings of the context it opened — the composition layer assembles them from the
    * Agent State as it is then — and the records it produced while opening (its MCP connect
@@ -96,7 +96,7 @@ export interface SessionConfig {
    * one (`metaMessage`); the engine yields the records live and writes meta and records at
    * the head of the rotated Trace file. Context compaction is unavailable if not provided.
    */
-  createContext?: (
+  openNextContext?: (
     sessionTokens: TokenCounts,
     opts: OpenContextOptions,
   ) => OpenedContext | Promise<OpenedContext>;
@@ -122,7 +122,7 @@ export interface SessionConfig {
    * `generateTitle`; if not provided, `generateTitle` returns null.
    */
   createBareLLM?: () => LLMInterface;
-  /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `createContext`, and a context that one opens brings its own. */
+  /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openNextContext`, and a context that one opens brings its own. */
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
@@ -299,7 +299,7 @@ export class Session {
   >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
-  /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `createContext` opens (see `metaMessage`). */
+  /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `openNextContext` opens (see `metaMessage`). */
   private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
   private readonly pinContext?: SessionConfig["pinThinkingLevel"];
@@ -378,13 +378,13 @@ export class Session {
       // context's session_meta (and tool_list_ready) at the start of the new Trace file after
       // splitting. The factory is wrapped so the Session's own meta follows the opened context:
       // `metaMessage` must describe the context that is running, not the one that was.
-      ...(config.createContext
+      ...(config.openNextContext
         ? {
-            createContext: async (
+            openNextContext: async (
               sessionTokens: TokenCounts,
               opts: OpenContextOptions,
             ): Promise<OpenedContext> => {
-              const opened = await config.createContext!(sessionTokens, opts);
+              const opened = await config.openNextContext!(sessionTokens, opts);
               if (opened.sessionMeta) this.meta = opened.sessionMeta;
               return opened;
             },
@@ -807,7 +807,7 @@ export class Session {
     // nothing to compact (the server renders this reason as a 409 `nothing_to_compact`).
     const init = this.engineDeps.initialState;
     return compactAvailability({
-      configured: Boolean(this.engineDeps.compaction && this.engineDeps.createContext),
+      configured: Boolean(this.engineDeps.compaction && this.engineDeps.openNextContext),
       sessionTurns: init?.sessionTurns ?? 0,
       fromCompaction: init?.fromCompaction ?? false,
     });
