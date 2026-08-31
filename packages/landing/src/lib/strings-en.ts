@@ -49,7 +49,7 @@ export const en: Strings = {
 
   hero: {
     platformLead: "Open-source, local-first multi-agent app ",
-    platformAccent: "development",
+    platformActions: ["auto-dev", "auto-tuning"],
     platformTail: " platform",
     automationLead: "Fully automated ",
     automationActions: ["creation", "optimization", "deployment"],

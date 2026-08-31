@@ -50,7 +50,7 @@ export const zh = {
 
   hero: {
     platformLead: "开源、本地的多 Agent 应用",
-    platformAccent: "自动开发",
+    platformActions: ["自动开发", "自动调优"],
     platformTail: "平台",
     automationLead: "全自动",
     automationActions: ["创建", "优化", "部署"],
