@@ -154,6 +154,52 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
     freshRoot = undefined;
   });
 
+  it("refuses to restore a web version without index.html, and says so", async () => {
+    // A push is held to "the web dist has an index.html"; a restart restoring the same
+    // artifact was not, so a store file damaged after the push came back as a version
+    // that 404s on every page with nothing in the log. The restore now fails the same
+    // way a bad push does: a warning naming the file, and the packaged default served.
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect(
+      (await pushPlatform(t.app, cookie, platformServing(["/api/demo/x"], "webless"))).status,
+    ).toBe(200);
+    const root = t.root;
+    freshRoot = root;
+    t.deps.hmr.dispose();
+    t.deps.channels.dispose();
+    t.deps.db.close();
+    t = undefined;
+
+    const webDir = path.join(root, "hmr", "store", "web");
+    const [webz] = (await fs.readdir(webDir)).filter((name) => name.endsWith(".webz"));
+    if (webz === undefined) throw new Error("push left no .webz in the store");
+    await fs.writeFile(
+      path.join(webDir, webz),
+      zlib.gzipSync(Buffer.from(JSON.stringify({ files: { "app.js": "Lw==" } }))),
+    );
+
+    const warnings: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((
+      chunk: string | Uint8Array,
+    ) => {
+      warnings.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write);
+    const fresh = new HmrHost(root);
+    try {
+      // Restore refused, the host goes on to boot the packaged default — which this bare
+      // host cannot (it publishes no runtime resources). That rejection is the fixture's,
+      // and it comes after the refusal under test has already been logged.
+      await fresh.ensure().catch(() => undefined);
+      expect(fresh.resolveWebSource()).toBeNull();
+      expect(warnings.join("")).toMatch(/failed to restore.*has no index\.html/s);
+    } finally {
+      spy.mockRestore();
+      fresh.dispose();
+    }
+  });
+
   it("concurrent ensure() calls on a fresh host share one init and all resolve to the restored (pushed) instance", async () => {
     // Push a version and let it persist, then tear down that host WITHOUT touching the
     // root directory — simulating a restart of the same data root.

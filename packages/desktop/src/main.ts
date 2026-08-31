@@ -27,12 +27,14 @@
  * `DESKTOP-SMOKE-RESULT {json}` line (+ screenshot when PENGUIN_DESKTOP_SMOKE_SHOT is
  * set) and quit through the regular quit path, exercising the graceful server stop.
  */
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
+import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
@@ -166,8 +168,22 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */
 async function startServerAndWindow(dataRoot: string): Promise<void> {
+  const webDist = webDistFor({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    env: process.env,
+  });
+  // Checked here, not left to the server: a server with nothing to serve still starts,
+  // and the window would open on a 404 with no line in the log naming the directory.
+  if (webDist !== null && !fs.existsSync(webDistEntry(webDist))) {
+    throw new Error(
+      `The Web App is missing: ${webDistEntry(webDist)} does not exist. ` +
+        `This build was packed without the web assets, or PENGUIN_WEB_DIST points elsewhere.`,
+    );
+  }
   const started = await startEmbeddedServer({
     dataRoot,
+    webDist,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),
