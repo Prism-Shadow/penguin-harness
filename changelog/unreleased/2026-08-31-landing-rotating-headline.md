@@ -11,6 +11,7 @@ Added an alternating phrase to the homepage headline: “auto-dev” / “auto-t
 
 ## Headline animation
 
-- Alternated the highlighted phrases every three seconds with a short fade and vertical transition.
+- Alternated the highlighted phrases every five seconds, holding each phrase still for 4.3 seconds before a 700ms upward transition.
+- Clipped the moving phrases to a single line, keeping the outgoing and incoming text from overlapping.
 - Reserved space for both phrases to keep the surrounding headline stable.
 - Provided both phrases as static screen-reader text and displayed them together when reduced motion was enabled.
