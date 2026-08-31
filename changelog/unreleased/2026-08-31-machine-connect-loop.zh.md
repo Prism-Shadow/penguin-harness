@@ -3,6 +3,7 @@
 - **Date:** 2026-08-31
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#561](https://github.com/Prism-Shadow/penguin-harness/pull/561)
 
 [English](2026-08-31-machine-connect-loop.md)
 
