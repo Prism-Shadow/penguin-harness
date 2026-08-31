@@ -6,11 +6,11 @@
  * already read every credential on that machine by hand — so it keeps working on a machine
  * whose admin password a person has set. One command over the shared connection.
  */
-import { execFailureText } from "./exec.js";
+import { execFailureText } from "./transport/index.js";
 import { remotePenguin } from "./commands.js";
 import type { RemoteLayout } from "./layout.js";
 import type { RemoteTarget } from "./commands.js";
-import type { ExecResult } from "./exec.js";
+import type { ExecResult } from "./transport/index.js";
 
 /** Precedes the token on its own line — the same mark the CLI prints (cli/commands/auth.ts). */
 const TOKEN_MARK = "---penguin-auth-token---";

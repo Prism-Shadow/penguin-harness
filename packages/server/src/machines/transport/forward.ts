@@ -19,8 +19,8 @@ import { spawn } from "node:child_process";
 import net from "node:net";
 import type { ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { forwardArgs } from "./commands.js";
-import type { RemoteTarget } from "./commands.js";
+import { forwardArgs } from "../commands.js";
+import type { RemoteTarget } from "../commands.js";
 
 /** How long the far server has to answer through a fresh forward before it is called dead. */
 const READY_TIMEOUT_MS = 20_000;

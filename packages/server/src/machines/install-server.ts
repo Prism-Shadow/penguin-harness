@@ -22,12 +22,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from "./commands.js";
+import { runInstallScriptCommand, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { execFailureText, looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
+import { connectionTo, looksLikeAuthFailure } from "./transport/index.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -150,8 +150,9 @@ export async function detectRemote(
   target: RemoteTarget,
   layout: RemoteLayout,
 ): Promise<{ identity: RemoteIdentity } | { error: string }> {
+  const conn = connectionTo(target);
   for (const probe of [posixProbe(layout), windowsProbe(layout)]) {
-    const result = await run("ssh", sshArgs(target, probe), { timeoutMs: 30_000 });
+    const result = await conn.oneShot(probe, { timeoutMs: 30_000 });
     const identity = parseProbeOutput(result.stdout);
     if (identity) return { identity };
     if (result.code !== 0 && looksLikeAuthFailure(result)) {
@@ -213,6 +214,7 @@ export async function installOnRemote(opts: {
   layout: RemoteLayout;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan, layout } = opts;
+  const conn = connectionTo(target);
   const say = opts.onProgress ?? (() => {});
 
   let identity = opts.identity;
@@ -283,7 +285,7 @@ export async function installOnRemote(opts: {
         const local = path.join(os.tmpdir(), name);
         fs.writeFileSync(local, installer);
         windowsTmp = { local, remote: `%USERPROFILE%\\${name}` };
-        const copy = await run("scp", scpArgs(target, [local], "."));
+        const copy = await conn.copyTo([local], ".");
         if (copy.code !== 0) {
           return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
         }
@@ -295,11 +297,8 @@ export async function installOnRemote(opts: {
       // One connection when the script rides stdin, and the far side's own progress is
       // relayed as it arrives rather than after the minutes an install can take.
       const install = step.scriptOnStdin
-        ? await runWithInput("ssh", sshArgs(target, step.command), {
-            input: installer,
-            onLine: say,
-          })
-        : await run("ssh", sshArgs(target, step.command));
+        ? await conn.oneShot(step.command, { input: installer, onLine: say })
+        : await conn.oneShot(step.command);
       if (install.code !== 0) {
         return {
           kind: "failed",
@@ -313,9 +312,9 @@ export async function installOnRemote(opts: {
     if (plan.hmrDir !== null && identity.harness !== plan.harness) {
       say("Replicating the pushed version…");
       // harness.json and store/ only: uploads/ is this machine's scratch, not state.
-      const sync = await runPiped(
+      const sync = await conn.pipeTo(
         { file: "tar", args: ["-czf", "-", "-C", plan.hmrDir, "harness.json", "store"] },
-        { file: "ssh", args: sshArgs(target, unpackStoreCommand(identity.platform, layout)) },
+        unpackStoreCommand(identity.platform, layout),
       );
       if (sync.code !== 0) {
         return {
