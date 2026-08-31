@@ -592,8 +592,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     if (thinkingLevel !== undefined) {
       // The row is what the loader pins at load; a runtime already loaded is pinned here.
-      // Core applies it per model context: a Session that has not run takes it for its first
-      // context, a running one at its next compaction — the running context keeps its level.
+      // Soft-limited: core applies it from the Session's very next LLM request (the picker
+      // advises compacting first — the change invalidates the provider's cached context).
       deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
       deps.manager.pinThinkingLevel(row.sessionId, thinkingLevel);
       updated = { ...updated, thinkingLevel };

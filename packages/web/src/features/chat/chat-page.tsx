@@ -508,9 +508,9 @@ export function ChatPage() {
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
   // config's level (auto-follow — each model context reads the config, so Agent-config edits
   // keep taking effect). A pin is DURABLE: it survives a reload, shows up in a second tab,
-  // and core opens every later model context of this Session at it — the context in flight
-  // keeps its level until the next compaction. It is still never written through to the
-  // Agent config (that stays draft-only).
+  // and core applies it from the Session's next LLM request on (soft-limited — the picker's
+  // menu advises compacting first, since the change invalidates the model's cached
+  // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
@@ -1159,8 +1159,8 @@ export function ChatPage() {
   );
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
-  // returned row into the session store (the picker reads it back from there); it lands in
-  // the next model context (the picker's menu says so). Modeled on
+  // returned row into the session store (the picker reads it back from there); it applies
+  // from the next LLM request (the picker's menu advises compacting first). Modeled on
   // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
   // was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(

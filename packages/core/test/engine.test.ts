@@ -40,7 +40,12 @@ import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js
 import { goalRoundMessage } from "../src/goal/goal-prompts.js";
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
-import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
+import type {
+  ApproveFn,
+  EnvironmentInterface,
+  ThinkingLevelName,
+  ToolPermission,
+} from "../src/interfaces/index.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
 const PNG_DATA_URL =
@@ -1028,6 +1033,85 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       ),
     ).toBe(false);
     expect(recorded.filter((m) => (m.payload as { text?: string }).text === "go")).toHaveLength(1);
+  });
+});
+
+describe("ContextEngine live thinking level (the soft-limited runtime parameter)", () => {
+  it("reads deps.thinkingLevel at every turn request — reconnects included — and compaction requests keep the context default", async () => {
+    const levels: (string | undefined)[] = [];
+    let calls = 0;
+    let live: ThinkingLevelName | undefined;
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        calls += 1;
+        levels.push(params.thinkingLevel);
+        if (calls === 1) {
+          // First attempt drops: the reconnect retry re-reads the live level.
+          yield assistantText("half", "retryable");
+          return { status: "retryable" };
+        }
+        if (calls === 2) {
+          // Retry completes with usage above the compaction threshold → a Task-boundary
+          // summarize compaction issues one more request (the engine's, not a turn): it
+          // must NOT carry the live override — its prefix stays the context's own.
+          yield assistantText("recovered");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 100,
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("<summary>s</summary>");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 5,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool() {
+        // No tool ever runs in this test.
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 1,
+      reconnectBackoffMs: 1,
+      thinkingLevel: () => live,
+      openContext: () => ({ llm: llm }),
+      compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
+    });
+
+    live = "high";
+    await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(3);
+    // Turn attempt + reconnect retry carry the live level; the compaction request does not.
+    expect(levels).toEqual(["high", "high", undefined]);
+
+    // A re-pin between runs is picked up by the next request without any rotation.
+    live = "low";
+    const llm2Levels: (string | undefined)[] = [];
+    (llm as { streamGenerate: unknown }).streamGenerate = async function* (params: {
+      thinkingLevel?: string;
+    }) {
+      llm2Levels.push(params.thinkingLevel);
+      yield assistantText("again");
+      return { status: "completed" };
+    };
+    await collectRun(engine, [userText("next")], allowAll);
+    expect(llm2Levels).toEqual(["low"]);
   });
 });
 

@@ -343,8 +343,32 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   });
 
   it("a disabled policy delegates every call, vetoed or not", async () => {
-    const guarded = withCommandPolicy(async () => "allow", { enabled: false });
+    const guarded = withCommandPolicy(
+      async () => "allow",
+      () => ({ enabled: false }),
+    );
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
+  });
+
+  it("reads the policy source at every decision: an edit applies to the next tool call", async () => {
+    // The unrestricted tier: security policy never touches the request prefix, so nothing
+    // holds it to a rotation — the wrapper consults the source per call.
+    let policy: { enabled: boolean } = { enabled: false };
+    const guarded = withCommandPolicy(
+      async () => "allow",
+      () => policy,
+    );
+    expect(await guarded(call("rm -rf /") as never)).toBe("allow");
+    policy = { enabled: true };
+    expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
+    // A source that cannot be read fails toward the factory rules, never toward allow.
+    const failing = withCommandPolicy(
+      async () => "allow",
+      () => {
+        throw new Error("unreadable");
+      },
+    );
+    expect(await failing(call("rm -rf /") as never)).toBe("forbidden");
   });
 });
 
@@ -469,7 +493,7 @@ describe("Session applies the policy at the approval boundary", () => {
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
-      commandPolicy: { enabled: false },
+      commandPolicy: () => ({ enabled: false }),
     });
 
     for await (const _ of session.run([userText("clean up")], {

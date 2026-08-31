@@ -167,10 +167,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
         }
       }
 
-      // The thinking level is pinned on the Session (PATCH) and core applies it per model
-      // context: a Session that has not run yet starts at it, a running one takes it at
-      // its next compaction — the context in flight keeps its level. `--thinking` under
-      // `--resume` pins the existing Session the same way; `/thinking <level>` re-pins.
+      // The thinking level is pinned on the Session (PATCH) and core applies it from the
+      // next LLM request — the soft-limited parameter: a mid-context change is allowed,
+      // and the /thinking reply advises compacting first since it costs the provider's
+      // cached context. `--thinking` under `--resume` pins the existing Session the same
+      // way; `/thinking <level>` re-pins.
       if (opts.resume !== undefined && flagThinking) {
         await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
           thinkingLevel: flagThinking,

@@ -49,7 +49,7 @@ penguin run -m "long job" --background                # returns the session id i
 | `--model-id <id>` | Upstream id of the model to use; requires `--provider`. Omit both to use the Project's default model |
 | `--provider <group>` | Provider group of the model; required whenever `--model-id` is given |
 | `--approve <mode>` | Approval mode, see below (default `allow-all`). With `--session` it PATCHes the session's sticky mode |
-| `--thinking <level>` | Pins the session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the task: a new session starts its first model context at it; with `--session`, the existing session takes it at its next compaction (its running context keeps its level). Omitted, the session's pinned level (else the Agent config) applies |
+| `--thinking <level>` | Pins the session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the task; it applies from the session's next LLM request. Omitted, the session's pinned level (else the Agent config) applies |
 | `--session <sessionId>` | Reuse an existing session (full id or unique fragment) instead of creating one; excludes `--workspace` and the model pair |
 | `--background` | POST the task and exit immediately, printing the session id (`{"sessionId"}` under `--json`); the task keeps running on the server — follow it with `penguin logs -f` |
 | `--timeout <duration>` | Soft-yield wait budget (see Global conventions): at expiry, print what has rendered plus a dim still-running line with the session id (`{sessionId, status: "running", text}` under `--json`) and exit 0 — the task is not aborted. `--timeout 0` returns right after the POST (`{sessionId, status: "running"}` under `--json`, no `text`). Excludes `--background` |
@@ -67,7 +67,7 @@ Interactive REPL; each input line starts a Task. Takes the same options as `run`
 | `--verbose` | Show full tool output; by default long tool outputs are collapsed (see below) |
 | `--server <url>` | Target server (see Server connection) |
 
-With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. `--thinking` is still accepted: it re-pins the existing Session, and the new level applies from its next model context (after its next compaction) — the context in flight keeps its level. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
+With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. `--thinking` is still accepted: it re-pins the existing Session, effective from its next LLM request (mid-context changes cost the provider's cached context — compacting first is recommended). On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
 
 In-REPL commands:
 
@@ -77,7 +77,7 @@ In-REPL commands:
 | `/compact` | Proactively compact the current context |
 | `/clear` | Start a fresh blank Session in place; the old Session stays on disk and can be resumed with `--resume` |
 | `/thinking` | Show this Session's thinking level: the level it is pinned to (by `--thinking` or `/thinking`), else the Agent's configured level |
-| `/thinking <level>` | Pin the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); never written back to the Agent config. The level is part of a model context's request prefix, so the pin lands in the next context — after the next compaction — while the running context keeps its level; subagent sessions spawned from then on inherit the pinned level |
+| `/thinking <level>` | Pin the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); never written back to the Agent config. Soft-limited: it applies from the next request, mid-context included — the reply advises `/compact` first, since the change invalidates the provider's cached context; subagent sessions spawned from then on inherit the pinned level |
 | `/verbose` | Toggle between collapsed and full tool output |
 | `/exit`, `/quit` | Quit |
 

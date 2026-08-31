@@ -97,7 +97,8 @@ export class ApprovalRegistry {
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
-  toolPermission: (name: string) => "r" | "rw" | undefined;
+  /** Live per-decision lookup (core Session.toolPermission reads the Agent State as it is on disk): a permission edit applies to the very next decision. */
+  toolPermission: (name: string) => Promise<"r" | "rw" | undefined> | "r" | "rw" | undefined;
   registry: ApprovalRegistry;
   publishRequest: (pending: PendingApproval) => void;
 }): ApproveFn {
@@ -118,7 +119,7 @@ export function makeApprove(args: {
         return "deny";
       case "read-only":
         // Auto-approve read-only tools; route read-write/unknown tools to manual approval (matches CLI semantics).
-        if (toolPermission(toolCall.payload.name) === "r") return "allow";
+        if ((await toolPermission(toolCall.payload.name)) === "r") return "allow";
         return manual(toolCall);
       case "always-ask":
       default:

@@ -246,7 +246,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 | --- | --- |
 | SDK | 每次 `session.run` 传入 `approve` 回调；未注入时引擎默认全部拒绝(保守策略，避免无人值守下误放行) |
 | CLI | `--approve` 四种模式：allow-all(默认)/ deny-all / read-only / always-ask;read-only 自动放行 `permission: "r"` 的工具，其余转人工 |
-| Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读，改模式立即生效；人工决策经 API 送达 |
+| Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读审批模式、从 Agent State 重读工具的 `r`/`rw`——模式与权限的修改对下一次决策即生效；人工决策经 API 送达 |
 
 deny 会合成一条 `aborted` 的 `tool_call_output` 供模型据此调整策略——`Tool call denied by user.`，被[命令策略](/configuration#沙箱安全策略)拒绝时为 `Tool call denied by policy.`，策略命中因此不会被读成「有人取消了」。见 [ApproveFn](/interfaces#approvefn)。每次决策都以 `approval_decision` 事件写入 Trace（策略拦截即记 `forbidden`），构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
 

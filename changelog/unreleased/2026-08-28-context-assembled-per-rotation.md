@@ -14,10 +14,13 @@ template with its section prompts and toggles, the builtin tool entries and MCP 
 compaction settings, `max_turns`, the model defaults), `AGENTS.md`, the vault, the installed
 Skills' metadata, the Memory indexes and the schedule roster. An edit made during the old
 context — by the model working on its own configuration, or by hand in the Agent settings —
-takes effect at the next compaction rather than the next Session, and never inside the context
-that is running: everything that shapes the request prefix — the model, the system prompt, the
-toolset, the vault and the thinking level — is fixed from the moment a context opens until it
-closes, so the provider's prompt cache holds across the whole Trace file.
+takes effect at the next compaction rather than the next Session. Runtime parameters now fall
+into three explicit tiers: **strict** (system prompt, toolset incl. MCP, compaction settings,
+model reference — the request prefix, byte-fixed across a whole Trace file so the provider's
+prompt cache holds; the vault rotates on the same schedule), **soft** (the thinking level:
+changeable mid-context, effective from the next request, at the cost of the provider's cached
+context — the pickers advise compacting first), and **unrestricted** (approval mode, per-tool
+`r`/`rw` permissions, the command policy: consulted per decision, effective immediately).
 
 ## Details
 
@@ -27,12 +30,19 @@ closes, so the provider's prompt cache holds across the whole Trace file.
   file recorded — the replayed history was produced under that prefix — and takes tools,
   Environment, vault and run settings from the current Agent State, as before (the Trace records
   no executable configuration).
-- The thinking level is a per-context fact, recorded as `session_meta.thinking_level`
-  (`"default"` for a context without one). A context opens at the Session's pinned level — the
-  Web App's in-chat picker, the CLI's `--thinking` / `/thinking`, the SDK's new
-  `Session.pinThinkingLevel` — or, unpinned, at the Agent config's `model.thinking_level`. A pin
-  lands in the next context: a Session that has not run yet starts its first context with it, a
-  running one takes it at its next compaction. Nothing rides a run or a task any more.
+- The thinking level is the soft-limited tier: a context opens at the Session's pinned level —
+  the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`, the SDK's new
+  `Session.pinThinkingLevel` — or, unpinned, at the Agent config's `model.thinking_level`, and
+  records what it opened with as `session_meta.thinking_level` (`"default"` for none). A re-pin
+  applies from the very next LLM request, mid-context included; because that invalidates the
+  provider's cached context, the change points remind the user first (the web picker's menu
+  note, the CLI `/thinking` reply) that compacting is recommended. Compaction requests keep the
+  context's own level — their prefix must stay byte-identical. Nothing rides a run or a task.
+- The unrestricted tier is consulted per decision: the approval mode was already re-read from
+  the DB on every decision; a tool's `r`/`rw` permission is now read from the Agent State as it
+  is on disk at each lookup (`Session.toolPermission`, async), and the command policy is read
+  from `.project_config.toml` at every approval — an edit to any of them reaches every running
+  Session's very next tool call, no rotation, no reload.
 - Fixed for the Session's lifetime: its id, Workspace, model entry (credentials, window and
   per-model annotations included), origin, the Project's command policy, and the Environment's
   process host — background commands, subagent child sessions and their listeners survive the
@@ -85,8 +95,10 @@ closes, so the provider's prompt cache holds across the whole Trace file.
 - SDK: `RunOptions.thinkingLevel`, `SubagentHandle.run`'s `thinkingLevel` and
   `SubagentMessageOptions.thinkingLevel` are removed; a host that changed the level per run
   pins the Session with `Session.pinThinkingLevel(level)` instead, and the level applies from
-  the next model context. `GenerativeModelParameters.thinkingLevel` stays on the LLM interface
-  (the engine never sets it).
+  the next LLM request (the engine reads the live pin through `ContextEngineDeps.thinkingLevel`).
+- SDK: `Session.toolPermission` is now async (live per-decision lookup);
+  `SessionConfig.commandPolicy` takes a source function evaluated per approval instead of a
+  static config; `SessionConfig.toolPermission` carries the live permission lookup.
 - HTTP API: `TaskCreateRequest.thinkingLevel` and the subagent message's `thinkingLevel` are
   no longer read (a client still sending them is ignored), and `RecalledMessageResponse` no
   longer carries one. `PATCH /sessions/:id { thinkingLevel }` is the way to set a level; it

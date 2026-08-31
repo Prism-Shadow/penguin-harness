@@ -74,6 +74,8 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
+import { MCP_TOOL_PREFIX } from "./environment/mcp/provider.js";
+import { resolveMCPServers } from "./environment/mcp/config.js";
 import type {
   CompactionSettings,
   OpenContextOptions,
@@ -86,6 +88,7 @@ import type {
   ThinkingLevelName,
   ToolConfig,
   ToolDefinition,
+  ToolPermission,
   VisionDescriberService,
 } from "./interfaces/index.js";
 import { THINKING_LEVEL_NAMES } from "./interfaces/index.js";
@@ -706,7 +709,7 @@ export class Agent {
       bootstrap,
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
-      // An open context is mid-life: a pin arriving before the first run applies to the next context, never to it.
+      // An open context is mid-life: a pin arriving before the first run must not re-stamp its recorded session_meta (requests still take the pin — the level is soft).
       initialContextOpen: !resumed.contextClosed,
       initialEngineState: {
         carryOver: resumed.carryOver,
@@ -755,15 +758,43 @@ export class Agent {
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(root, projectId, agentId, spec.sessionId),
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
-      // Sandbox command policy snapshot: Project-owned (never Agent State), read once per
-      // Session build so the running Session's copy cannot be edited from inside it — a
-      // resumed Session re-reads the current Project config, so a policy edit takes effect
-      // from the next load. Absent config means the factory rule set, on.
-      ...(this.projectConfig.command_policy !== undefined
-        ? { commandPolicy: this.projectConfig.command_policy }
-        : {}),
+      // Sandbox command policy, unrestricted-tier: Project-owned (never Agent State) and
+      // read from disk at every approval decision, so an edit reaches every running
+      // Session's very next tool call. Nothing of it enters the request prefix, which is
+      // what makes the liveness free. Absent config means the factory rule set, on.
+      commandPolicy: async () =>
+        (await loadProjectConfig(this.state.root, this.state.projectId)).command_policy,
+      // Tool permissions, unrestricted-tier likewise: the r/rw a tool reports to the
+      // read-only approval mode is read from the Agent State as it is on disk at each
+      // lookup — an edit applies to the next decision, no rotation needed. Only the
+      // permission is live; the tool's definition stays the context's (strict tier).
+      toolPermission: (name) => this.livePermission(name, rt.environment),
       ...extras,
     });
+  }
+
+  /**
+   * The live per-tool permission lookup behind Session.toolPermission: a builtin entry's
+   * `permission` from the current `system_config.yaml`; an `mcp__<server>__<tool>` name from
+   * the current server entry's `permission` override, else the running context's discovered
+   * annotation (a re-discovery would need a connect — the override is the live part). Load
+   * failures fall back to the context's toolset in Session.toolPermission.
+   */
+  private async livePermission(
+    name: string,
+    environment: Environment,
+  ): Promise<ToolPermission | undefined> {
+    const { root, projectId, agentId } = this.state;
+    const state = await loadAgentState({ root, projectId, agentId });
+    const toolConfig = buildToolConfig(state);
+    if (name.startsWith(MCP_TOOL_PREFIX)) {
+      const serverName = name.slice(MCP_TOOL_PREFIX.length).split("__")[0] ?? "";
+      const server = resolveMCPServers(toolConfig.mcpServers).servers.find(
+        (s) => s.name === serverName,
+      );
+      return server?.permission ?? environment.toolPermission(name);
+    }
+    return toolConfig.customTools.find((t) => t.name === name)?.permission;
   }
 
   /** Id of the most recent Session under the current Agent (determined by the timestamp in session_id); returns null if there is no Session. */

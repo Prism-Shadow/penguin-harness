@@ -37,14 +37,14 @@ interface SessionMetaPayload {
   model_id: string;                       // the upstream request id sent to AgentHub
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
-  thinking_level?: ThinkingLevelName | "default"; // the level this context runs with ("default" = none); absent on older Traces
+  thinking_level?: ThinkingLevelName | "default"; // the level this context OPENED with ("default" = none); absent on older Traces
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
   source?: "subagent" | "schedule";       // session origin; absent = user-created
 }
 ```
 
-session_meta describes **one model context**: the model and the Workspace are immutable for the Session's lifetime, while the system prompt is fixed per context — the file a compaction's rotation opens starts with a `session_meta` carrying the prompt assembled for the new context from the Agent State as it is then (see [Compaction](/agent-loop)); on resume, the engine takes the latest file's line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is fixed per context too and recorded as `thinking_level`: an open context resumed after a restart runs at the recorded level, so its request prefix is rebuilt identically; a meta from before the field existed resolves the level as a new context would (the Session's pin, else the Agent config).
+session_meta describes **one model context**: the model and the Workspace are immutable for the Session's lifetime, while the system prompt is fixed per context — the file a compaction's rotation opens starts with a `session_meta` carrying the prompt assembled for the new context from the Agent State as it is then (see [Compaction](/agent-loop)); on resume, the engine takes the latest file's line as the runtime config. See [Sessions & Traces](/sessions-and-traces). `thinking_level` records what the context OPENED with. The level itself is the soft-limited runtime parameter — a Session pin applies from the next request, mid-context — so on resume the recorded value rebuilds the opening prefix, the host's pin (restored from its own store) rides the requests, and a meta from before the field existed resolves the level as a new context would.
 
 The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `tool_list_ready` event at the first run and, for every context a compaction opens, right after that context's `session_meta` at the head of its Trace file (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
 

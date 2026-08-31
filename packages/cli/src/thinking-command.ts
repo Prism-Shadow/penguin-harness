@@ -6,14 +6,14 @@
  * mirroring the web pickers: "none" stays a valid stored config value but is never offered
  * for selection (many models cannot disable thinking).
  *
- * Semantics (aligned with the web active-session picker and core's per-context level):
+ * Semantics (aligned with the web active-session picker; the thinking level is the
+ * SOFT-limited runtime parameter):
  * - `--thinking <level>` pins the Session (a PATCH on it, so spawned subagent sessions
- *   follow it too). Core applies the pin per model context: a Session that has not run yet
- *   starts its first context at it; under chat `--resume` the existing Session is re-pinned
- *   and takes it at its next compaction — the context in flight keeps its level, which is
- *   part of its request prefix.
- * - `/thinking <level>` re-pins the Session the same way; it never writes back to the
- *   Agent config.
+ *   follow it too). Core applies the pin from the Session's next LLM request, and every
+ *   context opened from then on defaults to it.
+ * - `/thinking <level>` re-pins the Session the same way; the reply advises `/compact`
+ *   first, because a mid-context change invalidates the provider's cached context. It
+ *   never writes back to the Agent config.
  * - `/thinking` bare shows the Session's pinned level, else the Agent's configured level.
  */
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";

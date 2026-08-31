@@ -123,10 +123,9 @@ export interface RuntimeSession {
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /**
-   * Pins the Session's thinking level for the model contexts it opens from now on (core
-   * `Session.pinThinkingLevel`): a Session that has not run yet takes it for its first
-   * context, a running one at its next compaction — the running context keeps its level.
-   * Optional: test fakes may omit it.
+   * Pins the Session's thinking level (core `Session.pinThinkingLevel`): soft-limited — it
+   * applies from the Session's very next LLM request, and becomes the default of every
+   * context opened from then on. Optional: test fakes may omit it.
    */
   pinThinkingLevel?(level: ThinkingLevelName): void;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
@@ -142,7 +141,7 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
-  toolPermission(name: string): "r" | "rw" | undefined;
+  toolPermission(name: string): Promise<"r" | "rw" | undefined> | "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
    * writes no history/Trace). Material defaults to what the Session collects itself
@@ -242,8 +241,8 @@ export function createCoreSessionLoader(
         // the original message rather than bubbling up as 500.
         try {
           const session = await agent.resumeSession({ sessionId: row.sessionId });
-          // The row's pin: a context the resume finds closed opens with it; an open one
-          // keeps its recorded level and takes the pin at its next compaction.
+          // The row's pin — the knob position the user last chose — restored onto the
+          // runtime: it rides the resumed Session's requests and its future contexts.
           if (row.thinkingLevel) session.pinThinkingLevel(row.thinkingLevel);
           return session;
         } catch (err) {
@@ -622,8 +621,9 @@ export class SessionManager {
   /**
    * Pins a Session's thinking level on its loaded runtime (core `Session.pinThinkingLevel`):
    * the row's pin is what the loader applies at load, so this only needs to reach a runtime
-   * that is already in the active table — a Session that has not run takes it for its first
-   * context, a running one at its next compaction. No-op when nothing is loaded.
+   * that is already in the active table. The level is soft-limited: it applies from the
+   * Session's very next LLM request (mid-context — the UI advises compacting first, since
+   * the change invalidates the provider's cached context). No-op when nothing is loaded.
    */
   pinThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
     this.entries.get(sessionId)?.session.pinThinkingLevel?.(level);

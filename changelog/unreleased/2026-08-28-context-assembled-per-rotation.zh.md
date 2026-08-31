@@ -11,19 +11,25 @@
 压缩开启的新模型上下文，改为与新建 Session 的首个上下文完全相同地装配：Agent State 下的一切在此刻从磁盘
 读取——整份 `system_config.yaml`（提示词模板及各节提示词与开关、内置工具条目与 MCP Server、压缩配置、
 `max_turns`、模型默认参数）、`AGENTS.md`、vault、已装 Skill 的元数据、Memory 索引与定时任务名单。旧上下文
-期间的修改——模型改自己的配置，或用户在 Agent 设置里手改——在下一次压缩即生效，不必等下一个 Session，也绝不
-会作用于正在运行的上下文：构成请求前缀的一切——模型、系统提示词、工具集、vault 与思考等级——自上下文开启起
-固定到关闭，整个 Trace 文件内提供商的提示词缓存始终有效。
+期间的修改——模型改自己的配置，或用户在 Agent 设置里手改——在下一次压缩即生效，不必等下一个 Session。运行参数
+明确分为三层：**严格层**（系统提示词、工具集含 MCP、压缩配置、模型引用——请求前缀，一个 Trace 文件内逐字节
+固定，提供商提示词缓存始终有效；vault 按同一轮换节奏更换）、**软限制层**（思考等级：允许中途更换、自下一次
+请求生效，代价是提供商缓存失效——调节入口提醒建议先压缩）与**不限制层**（审批模式、工具 `r`/`rw` 权限、命令
+策略：逐次决策读取、即刻生效）。
 
 ## 细节
 
 - 三处开启以同一流程装配上下文：Session 创建、完成的压缩（summarize 与 discard 皆然）、以及恢复时发现最新
   Trace 文件已被完成的压缩收尾。恢复未关闭的上下文时沿用该文件记录的提示词与思考等级——注入的历史正是在该
   前缀下产生的——工具、Environment、vault 与运行参数一如既往取自当前 Agent State（Trace 不记录可执行配置）。
-- 思考等级成为上下文的属性，记录为 `session_meta.thinking_level`（无等级记为 `"default"`）。上下文以 Session
-  钉住的等级开启——Web 对话内选择器、CLI 的 `--thinking` / `/thinking`、SDK 新增的 `Session.pinThinkingLevel`
-  ——未钉住则取 Agent 配置的 `model.thinking_level`。钉住值落在下一个上下文：尚未运行的 Session 以它开启首个
-  上下文，运行中的 Session 在下一次压缩后生效。运行与 Task 请求都不再携带等级。
+- 思考等级属软限制层：上下文以 Session 钉住的等级开启——Web 对话内选择器、CLI 的 `--thinking` / `/thinking`、
+  SDK 新增的 `Session.pinThinkingLevel`——未钉住则取 Agent 配置的 `model.thinking_level`，并把**开启时**的等级
+  记录为 `session_meta.thinking_level`（无等级记为 `"default"`）。重新钉住自下一次 LLM 请求即生效、允许中途更
+  换；因为这会使提供商的缓存失效，调节入口在调节之前提醒建议先压缩（Web 选择器菜单脚注、CLI `/thinking` 回
+  执）。压缩请求保持上下文自身的等级——其前缀必须逐字节不变。运行与 Task 请求都不携带等级。
+- 不限制层逐次决策读取：审批模式此前已每次决策从 DB 重读；工具的 `r`/`rw` 权限现在每次查询都从磁盘上的
+  Agent State 读取（`Session.toolPermission` 改为异步），命令策略每次审批从 `.project_config.toml` 读取——三者
+  的修改对每个运行中 Session 的下一次工具调用即生效，无需轮换也无需重载。
 - 随 Session 固定的只有：Session id、Workspace、模型条目（含凭据、窗口与逐模型标注）、来源、Project 的命令策略，
   以及 Environment 的进程宿主——后台命令、子会话及其监听器跨轮换存续。
 - Environment 为新上下文重新装备（`Environment.reconfigure`）：vault 的值直接进入此后每条命令的子进程环境
@@ -60,7 +66,9 @@
   bootstrap 自己知道。
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
   `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改用 `Session.pinThinkingLevel(level)` 钉住
-  Session，从下一个模型上下文生效。`GenerativeModelParameters.thinkingLevel` 仍保留在 LLM 接口上（引擎从不设置）。
+  Session，自下一次 LLM 请求起生效（引擎经 `ContextEngineDeps.thinkingLevel` 读取实时钉住值）。
+- SDK：`Session.toolPermission` 改为异步（逐次决策实时查询）；`SessionConfig.commandPolicy` 改为每次审批求值的
+  来源函数，不再是静态配置；新增 `SessionConfig.toolPermission` 承载实时权限查询。
 - HTTP API：`TaskCreateRequest.thinkingLevel` 与子会话消息的 `thinkingLevel` 不再读取（仍发送的客户端被忽略），
   `RecalledMessageResponse` 不再携带它。设置等级的方式是 `PATCH /sessions/:id { thinkingLevel }`，从该 Session
   的下一个模型上下文生效。

@@ -346,7 +346,7 @@ function ThinkingLevelSelect({
   disabled: boolean;
   /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
   direction?: "down" | "up";
-  /** Footnote under the rows — when the pick takes effect (the session variant: at the next model context, never the one in flight). */
+  /** Footnote under the rows — the session variant's pre-pick reminder: a change applies right away but invalidates the model's cached context, so compacting first is recommended. */
   note?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -912,12 +912,12 @@ export function ChatInput({
    * Session state: the Session's thinking level to DISPLAY — the parent resolves it as "the
    * user's pick for this session, else the Agent config's level" ("" = neither known yet),
    * so the picker auto-follows the config until touched. A pick is the parent's own state:
-   * it pins the level on the Session (PATCH), and core opens the Session's next model
-   * context at it — the context in flight keeps its level; nothing rides a task. Never
+   * it pins the level on the Session (PATCH), and core applies it from the next LLM request
+   * (soft-limited; the menu note advises compacting first); nothing rides a task. Never
    * written through to the Agent config (that behavior stays draft-only).
    */
   turnThinkingLevel?: string;
-  /** Session state: pins the thinking level on this session (effective from its next model context); also enables the editable picker. */
+  /** Session state: pins the thinking level on this session (effective from its next LLM request); also enables the editable picker. */
   onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
@@ -2574,16 +2574,17 @@ export function ChatInput({
             )}
             {/* Session state: the Session's pinned thinking level (editable) — displays the
               user's pick, else the Agent config's level (auto-follow; the parent resolves
-              it). A pick is pinned on the Session (PATCH) and lands in the next model
-              context — the context in flight keeps its level, which the menu's footnote
-              says — never writing through to the Agent config. */}
+              it). A pick is pinned on the Session (PATCH) and applies from the next LLM
+              request (soft-limited): the menu's footnote reminds, before the pick, that the
+              change costs the model's cached context and compacting first is recommended —
+              never writing through to the Agent config. */}
             {!onChangeModel && onChangeTurnThinkingLevel && (
               <ThinkingLevelSelect
                 value={turnThinkingLevel ?? ""}
                 onChange={onChangeTurnThinkingLevel}
                 disabled={busy}
                 direction="up"
-                note={S.chat.thinkingLevelNextContext}
+                note={S.chat.thinkingLevelChangeNote}
               />
             )}
             {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}

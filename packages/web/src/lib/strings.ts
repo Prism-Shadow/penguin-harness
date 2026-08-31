@@ -1200,8 +1200,8 @@ export const zh = {
   },
 
   chat: {
-    /** Footnote of the session picker's menu: a pick lands in the next model context; the one in flight keeps its level. */
-    thinkingLevelNextContext: "下一次压缩后生效；当前上下文保持现有等级。",
+    /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
+    thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",

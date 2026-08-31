@@ -161,9 +161,8 @@ export function registerRunCommand(program: Command, t: Messages): void {
         }
       }
 
-      // The level is pinned on the Session, never sent with the task: core opens the
-      // Session's model contexts at it — a fresh Session's first context, an existing
-      // Session's next one (its context in flight keeps its level).
+      // The level is pinned on the Session, never sent with the task: core applies it from
+      // the Session's next LLM request (and every context opened from then on).
       const effectiveThinking = thinking ?? callerThinking;
       if (effectiveThinking) {
         await client.request("PATCH", `/api/sessions/${session.sessionId}`, {

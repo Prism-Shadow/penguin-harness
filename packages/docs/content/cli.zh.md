@@ -49,7 +49,7 @@ penguin run -m "长任务" --background            # 立即返回 session id
 | `--model-id <id>` | 指定模型的上游 id，须与 `--provider` 同时给出；两者都不给时使用 Project 默认模型 |
 | `--provider <group>` | 模型所属 Provider 分组，给出 `--model-id` 时必填 |
 | `--approve <mode>` | 审批模式，见下文（缺省 `allow-all`）。与 `--session` 同用时 PATCH 该会话的粘性模式 |
-| `--thinking <level>` | 发起任务前把会话的思考等级钉为 `low` / `medium` / `high` / `xhigh` / `max`：新会话的首个模型上下文即以此开启；带 `--session` 时，已有会话在下一次压缩后生效（运行中的上下文保持现有等级）。省略时按会话钉定值（否则 Agent 配置）生效 |
+| `--thinking <level>` | 发起任务前把会话的思考等级钉为 `low` / `medium` / `high` / `xhigh` / `max`，自会话的下一次 LLM 请求起生效。省略时按会话钉定值（否则 Agent 配置）生效 |
 | `--session <sessionId>` | 复用既有 Session（完整 id 或唯一片段），不再新建；不能与 `--workspace` 及模型对同用 |
 | `--background` | 提交任务后立即退出并打印 session id（`--json` 下为 `{"sessionId"}`）；任务在服务端继续运行，可用 `penguin logs -f` 跟随 |
 | `--timeout <duration>` | 软让出等待预算（见「全局约定」）：到时打印已渲染内容与一行暗色「仍在运行」提示（含 session id；`--json` 下为 `{sessionId, status: "running", text}`）并以 0 退出——任务不被中止。`--timeout 0` 在 POST 后立即返回（`--json` 下为 `{sessionId, status: "running"}`，无 `text`）。不能与 `--background` 同用 |
@@ -67,7 +67,7 @@ penguin run -m "长任务" --background            # 立即返回 session id
 | `--verbose` | 显示完整工具输出；缺省折叠过长的工具输出（见下文） |
 | `--server <url>` | 目标服务器（见「服务器连接」） |
 
-使用 `--resume` 时，Workspace 与模型由原 Session 锁定，不可再用 `--workspace` / `--model-id` / `--provider` 覆盖。`--resume` 下仍接受 `--thinking`：它重新钉住该 Session，新等级从下一个模型上下文（下一次压缩后）生效——运行中的上下文保持现有等级。退出时会打印可直接复制的 `penguin chat --resume <sessionId>` 命令。
+使用 `--resume` 时，Workspace 与模型由原 Session 锁定，不可再用 `--workspace` / `--model-id` / `--provider` 覆盖。`--resume` 下仍接受 `--thinking`：它重新钉住该 Session，自下一次 LLM 请求起生效（中途更换会使提供商缓存失效，建议先压缩）。退出时会打印可直接复制的 `penguin chat --resume <sessionId>` 命令。
 
 REPL 内命令：
 
@@ -77,7 +77,7 @@ REPL 内命令：
 | `/compact` | 主动压缩当前上下文 |
 | `/clear` | 原地开启全新空白 Session；原会话保留在磁盘上，仍可用 `--resume` 恢复 |
 | `/thinking` | 显示本 Session 的思考等级：被 `--thinking` 或 `/thinking` 钉住的等级，否则为 Agent 配置的等级 |
-| `/thinking <level>` | 钉住本 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；不会写回 Agent 配置。思考等级是模型上下文请求前缀的一部分，因此钉住值落在下一个上下文——下一次压缩后——运行中的上下文保持现有等级；此后派生的子会话继承钉住的等级 |
+| `/thinking <level>` | 钉住本 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；不会写回 Agent 配置。软限制：自下一次请求起生效、允许中途更换——回执会建议先 `/compact` 压缩，因为更换会使提供商的提示词缓存失效；此后派生的子会话继承钉住的等级 |
 | `/verbose` | 在折叠与完整工具输出之间切换 |
 | `/exit`、`/quit` | 退出 |
 

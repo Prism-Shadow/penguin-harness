@@ -80,6 +80,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
+  ThinkingLevelName,
 } from "../interfaces/index.js";
 import { MergeQueue } from "../internal/merge-queue.js";
 
@@ -244,6 +245,16 @@ export interface ContextEngineDeps {
   ) => OpenedContext | Promise<OpenedContext>;
   /** The first context's compaction settings; only takes effect if provided together with `openContext`. A context `openContext` opens may bring its own. */
   compaction?: CompactionSettings;
+  /**
+   * The Session's live thinking level, evaluated at every turn request and sent as the
+   * per-request override when defined. This is the one soft-limited runtime parameter: a
+   * host may move it mid-context (the change costs the provider's cached context, which is
+   * why hosts advise compacting), unlike the prompt/toolset/model, which never change
+   * between a context's open and its close. Compaction requests ignore it and keep the
+   * context's own default — their prefix must stay byte-identical at the moment the
+   * context is largest.
+   */
+  thinkingLevel?: () => ThinkingLevelName | undefined;
   /**
    * The first context's session_meta message: written at the start of each Trace file a
    * compaction's rotation opens, until an `openContext` result brings the meta of the context
@@ -1118,9 +1129,11 @@ export class ContextEngine {
         await this.write(startEvt);
         // Iterate manually to capture the generator's **return value** (LLMOutcome); LLM
         // guarantees it never throws.
+        const level = this.deps.thinkingLevel?.();
         const gen = this.llm.streamGenerate({
           newMessages: input,
           ...(signal ? { signal } : {}),
+          ...(level !== undefined ? { thinkingLevel: level } : {}),
         });
         for (;;) {
           const res = await gen.next();

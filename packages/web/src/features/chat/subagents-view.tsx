@@ -365,7 +365,7 @@ function SubagentComposer({
 
   // The level pinned on the child Session from this panel ("" = untouched, the child runs at
   // its own level): mirrors the main composer's per-session pick, scoped to this child —
-  // written through PATCH on the child, so core opens its next model context at it.
+  // written through PATCH on the child; core applies it from the child's next LLM request.
   const [turnLevel, setTurnLevel] = useState("");
   const pinChildLevel = (level: string): void => {
     setTurnLevel(level);
@@ -431,7 +431,7 @@ function SubagentComposer({
         models={models}
         // Display: the user's pick for this child, else what the child actually runs at
         // (spawn-pinned level, else the parent's effective level it inherited). A pick is
-        // PATCHed onto the child Session and lands in its next model context.
+        // PATCHed onto the child Session and applies from its next LLM request.
         turnThinkingLevel={turnLevel || fallbackThinkingLevel}
         onChangeTurnThinkingLevel={pinChildLevel}
         {...(contextWindow !== undefined ? { contextWindow } : {})}

@@ -999,7 +999,33 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("pinThinkingLevel re-stamps a first context that has not started, and otherwise reaches only the next context", async () => {
+  it("toolPermission answers from the Agent State as it is on disk — a permission edit applies to the next decision", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-live-permission");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(await session.toolPermission("read_file")).toBe("r");
+      // The unrestricted tier: nothing of this touches the request prefix, so the edit
+      // needs no rotation — the very next lookup sees it.
+      await patchSystemConfig((cfg) => {
+        cfg.tools = {
+          ...(cfg.tools ?? {}),
+          builtin: (cfg.tools?.builtin ?? []).map((t) =>
+            t.name === "read_file" ? { ...t, permission: "rw" as const } : t,
+          ),
+        };
+      });
+      expect(await session.toolPermission("read_file")).toBe("rw");
+      // An unreadable Agent State falls back to the running context's toolset.
+      await fs.writeFile(systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "");
+      expect(await session.toolPermission("read_file")).toBe("r");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("pinThinkingLevel re-stamps a first context that has not started, and otherwise applies live while the meta keeps the opening record", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
@@ -1014,9 +1040,16 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       await bootstrapped(session);
       expect(lastBuilt()!.thinkingLevel).toBe("high");
 
-      // While the context runs, its level is part of the request prefix and never moves; the
-      // pin lands in the context a compaction opens.
+      // The level is the SOFT-limited parameter: a re-pin rides the very next LLM request
+      // (the engine reads the live getter per turn), while session_meta keeps recording
+      // what the context OPENED with; the new default also lands in the context a
+      // compaction opens.
       session.pinThinkingLevel("xhigh");
+      expect(
+        (
+          session as unknown as { engineDeps: { thinkingLevel: () => string | undefined } }
+        ).engineDeps.thinkingLevel(),
+      ).toBe("xhigh");
       expect(levelOf(session)).toBe("high");
       const { opened } = await openNext(session);
       expect((opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level).toBe(

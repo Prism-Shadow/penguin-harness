@@ -1232,8 +1232,8 @@ export const en: Strings = {
   },
 
   chat: {
-    thinkingLevelNextContext:
-      "Takes effect after the next compaction; the current context keeps its level.",
+    thinkingLevelChangeNote:
+      "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",

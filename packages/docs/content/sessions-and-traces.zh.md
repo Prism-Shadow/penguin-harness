@@ -79,7 +79,7 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与之对齐。`resumeSession` 的流程：
 
 1. 定位该 Session 索引最大的 Trace 文件；
-2. 从文件内的 `session_meta` 读取运行配置——模型与 Workspace（二者在 Session 生命周期内不可变）以及该上下文所用的系统提示词与思考等级；
+2. 从文件内的 `session_meta` 读取运行配置——模型与 Workspace（二者在 Session 生命周期内不可变）以及该上下文开启时的系统提示词与思考等级；
 3. 将已提交的历史回放进一份全新的 LLM 上下文；
 4. 重建 carry-over（未送达的工具输出、中断标记）与轮数、Token 计数器；
 5. 继续追加写入同一个 Trace 文件。

@@ -245,7 +245,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
-| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化：此后该 Session 开启的每个模型上下文都以它运行、不再回落到 Agent 配置——尚未运行的 Session 以它开启首个上下文，运行中的 Session 在下一次压缩后生效（进行中的上下文保持现有等级）；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住） |
+| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |

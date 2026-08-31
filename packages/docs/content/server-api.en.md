@@ -245,7 +245,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
-| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable): every model context the Session opens from then on runs at it instead of the Agent config's — a Session that has not run yet starts its first context with it, a running one takes it at its next compaction (the context in flight keeps its level) — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned) |
+| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |

@@ -51,9 +51,9 @@ describe("getMessages", () => {
     expect(getMessages("zh").thinkingCurrent("medium")).toContain("medium");
     expect(getMessages("en").thinkingSet("high")).toContain("high");
     expect(getMessages("zh").thinkingSet("high")).toContain("high");
-    // A pin lands in the next model context: both locales say when, and that the running one keeps its level.
-    expect(getMessages("en").thinkingSet("high")).toContain("next compaction");
-    expect(getMessages("zh").thinkingSet("high")).toContain("下一次压缩");
+    // The soft limit's reminder: both locales advise compacting first when re-pinning.
+    expect(getMessages("en").thinkingSet("high")).toContain("/compact");
+    expect(getMessages("zh").thinkingSet("high")).toContain("/compact");
     expect(getMessages("en").thinkingInvalid("none")).toContain('"none"');
     expect(getMessages("zh").thinkingInvalid("none")).toContain('"none"');
     expect(getMessages("en").toolOutputElided(42)).toContain("42");

@@ -42,13 +42,13 @@ import type {
   SubagentMessageOptions,
   SubagentMessageOutcome,
   BackgroundTaskDoneEvent,
-  CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
   ThinkingLevelName,
   ToolPermission,
 } from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
+import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
@@ -101,13 +101,21 @@ export interface SessionConfig {
     opts: OpenContextOptions,
   ) => OpenedContext | Promise<OpenedContext>;
   /**
-   * Re-pins the Session's thinking level (see `Session.pinThinkingLevel`): the composition
-   * layer records `level` for every context opened from now on and, when `adoptNow` is true
-   * and the initial context has not started, re-stamps that context — returning its updated
-   * session_meta, which the Session adopts as its own; null when nothing was re-stamped.
-   * Without it, `pinThinkingLevel` is a no-op.
+   * Records a re-pinned thinking level with the composition layer (see
+   * `Session.pinThinkingLevel` — the Session itself applies the level to live requests):
+   * `level` becomes the default of every context opened from now on and, when `adoptNow` is
+   * true and the initial context has not started, re-stamps that context — returning its
+   * updated session_meta, which the Session adopts as its own; null when nothing was
+   * re-stamped.
    */
   pinThinkingLevel?: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
+  /**
+   * Live per-tool permission lookup (the composition layer reads the Agent State as it is
+   * on disk): tool permissions sit in the unrestricted tier — they never touch the request
+   * prefix, so a change applies to the very next approval decision rather than waiting for
+   * a rotation. Absent, `toolPermission` answers from the running context's toolset.
+   */
+  toolPermission?: (name: string) => Promise<ToolPermission | undefined>;
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
@@ -118,7 +126,7 @@ export interface SessionConfig {
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
-  /** Session resume of an open context: the initial context is the recorded one, mid-life — a pin arriving before the first run applies to the next context, never to it. */
+  /** Session resume of an open context: the initial context is the recorded one, mid-life — a pin arriving before the first run must not re-stamp its session_meta (the requests still take the pin: the level is soft). */
   initialContextOpen?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
   initialEngineState?: EngineInitialState;
@@ -144,14 +152,15 @@ export interface SessionConfig {
    */
   goalFilePath?: string;
   /**
-   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`): a
-   * snapshot taken when the Agent built this Session, so the Agent's own file tools cannot
-   * reach the effective copy. `run` wraps the injected approval callback with it — the
-   * refusal happens at the approval boundary, above every approval mode and below no
-   * Human implementation. Absent = the factory rule set applies; `{ enabled: false }` opts
-   * out. Docs: /docs/configuration § "Command policy".
+   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
+   * SOURCE evaluated at every approval decision: security policy is unrestricted-tier — it
+   * never touches the request prefix, so an edit reaches every running Session's very next
+   * tool call. `run` wraps the injected approval callback with it — the refusal happens at
+   * the approval boundary, above every approval mode and below no Human implementation.
+   * Absent, or a source yielding nothing = the factory rule set applies;
+   * `{ enabled: false }` opts out. Docs: /docs/configuration § "Command policy".
    */
-  commandPolicy?: CommandPolicyConfig;
+  commandPolicy?: CommandPolicySource;
 }
 
 /** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
@@ -300,7 +309,15 @@ export class Session {
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
-  private readonly commandPolicy?: CommandPolicyConfig;
+  private readonly commandPolicy?: CommandPolicySource;
+  private readonly livePermission?: SessionConfig["toolPermission"];
+  /**
+   * The level the user pinned (the soft-limited knob): rides every subsequent LLM request
+   * as the per-request override the moment it is set — mid-context included — and shapes
+   * every context opened from then on. Unset until `pinThinkingLevel` is called; the
+   * contexts' own defaults apply meanwhile.
+   */
+  private pinnedLevel?: ThinkingLevelName;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -348,6 +365,7 @@ export class Session {
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
+    if (config.toolPermission) this.livePermission = config.toolPermission;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
@@ -382,6 +400,9 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
+      // The soft-limited knob: the engine reads the pinned level at every turn request, so
+      // a mid-context re-pin applies from the very next request (see pinThinkingLevel).
+      thinkingLevel: () => this.pinnedLevel,
       // Background completion notices: the engine pulls from the Session's queue at every
       // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
       // the steering delivery path — the notice joins a Task that already exists — so the
@@ -841,22 +862,38 @@ export class Session {
   }
 
   /**
-   * Pins the Session's thinking level: every model context opened from now on runs at
-   * `level` instead of the Agent config's default, and a Session whose first context has
-   * not started yet — no run issued, and not a resumed open context — takes it for that
-   * first context too (its session_meta is re-stamped before anything is written). The
-   * context that is running keeps its level: the level is part of the request prefix, and
-   * a context's prefix never changes between its open and its close. A host that keeps a
-   * per-Session pin (the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`)
-   * calls this; the change lands at the next compaction.
+   * Pins the Session's thinking level — the SOFT-limited runtime parameter: it applies from
+   * the very next LLM request (mid-context, even mid-Task), unlike the prompt, toolset and
+   * model, which never change between a context's open and its close. The cost of the
+   * softness is the provider's cached context — changing the thinking level invalidates the
+   * cached messages — so a host lets the user know at the picker that compacting first is
+   * recommended (the Web menu note, the CLI `/thinking` reply). The pin also becomes the
+   * default of every context opened from now on, and a Session whose first context has not
+   * started yet — no run issued, and not a resumed open context — takes it for that first
+   * context's session_meta too (`thinking_level` records what a context OPENED with).
+   * Callers: the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`.
    */
   pinThinkingLevel(level: ThinkingLevelName): void {
+    this.pinnedLevel = level;
     const meta = this.pinContext?.(level, !this.runsStarted && !this.initialContextOpen);
     if (meta) this.meta = sessionMeta(meta);
   }
 
-  /** Queries a tool's permission level (for the frontend to determine permission mode); returns undefined for unknown tools. */
-  toolPermission(name: string): ToolPermission | undefined {
+  /**
+   * A tool's permission level (what the read-only approval mode auto-approves by);
+   * undefined for unknown tools. Unrestricted-tier: with the composition layer's live
+   * lookup wired, a permission edit answers here on the very next decision — no rotation
+   * needed — falling back to the running context's toolset when the live read fails.
+   */
+  async toolPermission(name: string): Promise<ToolPermission | undefined> {
+    if (this.livePermission) {
+      try {
+        return await this.livePermission(name);
+      } catch {
+        // A momentarily unreadable Agent State must not turn a permission lookup into an
+        // error: the context's own record still answers.
+      }
+    }
     return this.environment.toolPermission(name);
   }
 

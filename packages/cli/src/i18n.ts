@@ -475,7 +475,7 @@ export interface Messages {
   goalObjectiveEmpty(): string;
   /** `/thinking` with no argument: the level this Session is pinned to (by `--thinking` or `/thinking`), else the Agent's configured level. */
   thinkingCurrent(level: string): string;
-  /** `/thinking <level>` accepted: the Session is pinned to it; the running context keeps its level until the next compaction (never written to the Agent config). */
+  /** `/thinking <level>` accepted: the Session is pinned to it, effective from the next request; the reply advises compacting first — a mid-context change invalidates the provider's cached context (never written to the Agent config). */
   thinkingSet(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
@@ -1012,7 +1012,7 @@ const en: Messages = {
   thinkingCurrent: (level) =>
     `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
   thinkingSet: (level) =>
-    `[thinking] level pinned to ${level} for this Session — takes effect after the next compaction; the current context keeps its level (the Agent config is unchanged)`,
+    `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingInvalid: (value) =>
     `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
@@ -1505,7 +1505,7 @@ const zh: Messages = {
   thinkingCurrent: (level) =>
     `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
   thinkingSet: (level) =>
-    `[思考] 本 Session 的等级已钉为 ${level}，下一次压缩后生效；当前上下文保持现有等级（不改动 Agent 配置）`,
+    `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
