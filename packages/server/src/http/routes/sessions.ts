@@ -920,15 +920,30 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (attachments.length > 0) {
         throw badRequest("goal mode accepts text and images only (no file attachments).");
       }
-      // The goal plugin owns the protocol: its start script (installed with the hook package)
-      // writes the Session's goal file and composes the round-1 message; its stop hook then
-      // drives every later round. Without the plugin there is nothing to drive the rounds.
+      // The goal plugin owns the protocol: its user_prompt hook (declared in the installed
+      // package's hooks.json) writes the Session's goal file and expands the submitted
+      // prompt with the round-1 protocol message; its stop hook then drives every later
+      // round. Without the package — or a package without the hook — there is nothing to
+      // drive the rounds.
       const hookDir = path.join(hooksDir(deps.config.root, row.projectId, row.agentId), "goal");
-      const installed = await fs.access(path.join(hookDir, "hooks.json")).then(
-        () => true,
-        () => false,
-      );
-      if (!installed) {
+      let start: { command: string; timeout?: number } | undefined;
+      try {
+        const manifest = JSON.parse(
+          await fs.readFile(path.join(hookDir, "hooks.json"), "utf8"),
+        ) as {
+          user_prompt?: Array<{ command?: unknown; timeout?: unknown }>;
+        };
+        const cmd = manifest.user_prompt?.find((c) => typeof c?.command === "string");
+        if (cmd) {
+          start = {
+            command: cmd.command as string,
+            ...(typeof cmd.timeout === "number" ? { timeout: cmd.timeout } : {}),
+          };
+        }
+      } catch {
+        // Missing or unreadable manifest: not installed.
+      }
+      if (!start) {
         throw new HttpError(
           409,
           "goal_plugin_not_installed",
@@ -936,30 +951,35 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         );
       }
       const objective = stripLeadingMarkerBlocks(text).trim() || text;
-      const started = (await runHookScript(path.join(hookDir, "start.mjs"), {
-        session_id: row.sessionId,
-        scratchpad_dir: sessionScratchpadDir(
-          deps.config.root,
-          row.projectId,
-          row.agentId,
-          row.sessionId,
-        ),
-        objective,
-        budget: goal.budget,
-      })) as { input?: unknown } | undefined;
-      if (typeof started?.input !== "string" || !started.input) {
+      const started = (await runHookScript(
+        path.join(hookDir, start.command),
+        {
+          hook: "user_prompt",
+          session_id: row.sessionId,
+          scratchpad_dir: sessionScratchpadDir(
+            deps.config.root,
+            row.projectId,
+            row.agentId,
+            row.sessionId,
+          ),
+          prompt: objective,
+          budget: goal.budget,
+        },
+        start.timeout !== undefined ? { timeoutS: start.timeout } : {},
+      )) as { context?: unknown } | undefined;
+      if (typeof started?.context !== "string" || !started.context) {
         throw new HttpError(
           500,
           "goal_start_failed",
-          "The goal plugin's start script gave no round-1 message.",
+          "The goal plugin's user_prompt hook gave no round-1 context.",
         );
       }
       // Round 1 is the user's own message(s) exactly as typed — text and images, no
-      // wrapping — followed by the plugin's protocol message stamped as harness-injected
+      // wrapping — followed by the hook's expansion context stamped as harness-injected
       // (the protocol text points back at the user message as the objective). Later rounds
       // are the stop hook's continues, which core stamps the same way.
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input: [...messages, userText(started.input, "harness")],
+        input: [...messages, userText(started.context, "harness")],
         objective,
         budget: goal.budget,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),

@@ -84,7 +84,7 @@ Task 由若干连续的 Request(轮)组成，每轮：
 
 ## Stop hook
 
-hook 是 Session 在循环固定点上执行的函数。目前有两个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）——与 **`pre_tool_use`**，每次工具调用审批之前（见下方小节）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` 注册进程内函数。
+hook 是 Session 在循环固定点上执行的函数。目前有三个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）——**`pre_tool_use`**，每次工具调用审批之前，以及 **`user_prompt`**，用户提交 Prompt 之时（均见下方小节）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` 注册进程内函数。
 
 已安装的 hook 是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行：只告诉它去哪里看，其余一切——token 用量、轮次、Task 的结束方式、它自己的状态文件——都由它从 Trace 推导。
 
@@ -129,6 +129,15 @@ stdout  空 = 无意见；否则
 - 脚本跑在**热路径**上——每个工具调用执行前咨询一次——保持脚本轻快，并在清单里给出较小的 `timeout`。
 
 没有内置插件带这个点；它留给自定义守卫——项目专属的沙箱规则、审计日志、为已知安全的调用跳过审批弹窗的放行清单。
+
+### User-prompt hook
+
+第三个点 `user_prompt` 用来扩展提交的 Prompt：宿主在接受某个流程的用户 Prompt 时运行它，回答里的 `context` 紧随用户自己的消息之后、以 harness 标记发出（渲染为紧凑的折叠卡片）。[目标模式的启动](/goal-mode)是唯一的内置用途：goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令——服务端对 `goal: { budget }` 运行它，它写下 `GOAL.json` 并以第一轮协议消息作答。
+
+```text
+stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …宿主附加字段（goal 为 "budget"） }
+stdout  { "context": "<追加在用户消息之后的文本>" }
+```
 
 ## 运行中插话(Steering)
 

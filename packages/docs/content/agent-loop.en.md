@@ -91,7 +91,7 @@ Carry-over enters the model context only — it is never written to the Trace, w
 
 ## Stop hooks
 
-A hook is a function the Session runs at a fixed point of the loop. Two points exist today: **stop** — the moment a Task ends (the model's final reply with no tool call, or a cutoff: user abort, LLM failure, the `max_turns` cap) — and **`pre_tool_use`**, before each tool call's approval (its own section below). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse`.
+A hook is a function the Session runs at a fixed point of the loop. Three points exist today: **stop** — the moment a Task ends (the model's final reply with no tool call, or a cutoff: user abort, LLM failure, the `max_turns` cap) — **`pre_tool_use`**, before each tool call's approval, and **`user_prompt`**, when a prompt is submitted (their own sections below). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse`.
 
 An installed hook is a plain Node script, run as a subprocess the way Claude Code runs its command hooks: it is told only where to look, and derives everything else — token usage, turn counts, how the Task ended, its own state file — from the Trace.
 
@@ -136,6 +136,15 @@ The rules mirror the stop point's — every non-empty answer is one `hook` event
 - the scripts run **on the hot path** — one consult per tool call, before anything executes — so keep them fast and set a tight `timeout` in the manifest.
 
 No built-in plugin ships one; the point is there for custom guards — a project-specific sandbox rule, an audit log, an allowlist that skips the approval prompt for known-safe calls.
+
+### User-prompt hooks
+
+The third point, `user_prompt`, expands a submitted prompt: the host runs it when it accepts a user prompt for the flow the package owns, and the answer's `context` is sent right behind the user's own message as a harness-stamped message (rendered as a compact collapsed card). [Goal mode's start](/goal-mode) is the one shipped use: the goal plugin's `start.mjs` is its `user_prompt` command — the server runs it for `goal: { budget }`, it writes `GOAL.json` and answers with round 1's protocol message.
+
+```text
+stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …host extras (goal: "budget") }
+stdout  { "context": "<text appended after the user's message>" }
+```
 
 ## Mid-run steering
 

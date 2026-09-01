@@ -7,7 +7,7 @@ description: 给 Agent 一个目标而不是一条消息——goal 插件的 sto
 
 普通 Task 在模型不再调用工具、给出回复时就结束了。目标模式反转了这个契约：你给出一个**目标（objective）**，系统在同一个 Session 上持续驱动 Task——每一轮重新注入目标并检查目标文件——直到目标进入终态。模型不能靠"不说话"来停下：它必须通过下述协议**声明**完成（或真正的僵局），否则循环继续。
 
-目标模式就是 **`goal` 插件**，一个[钩子包](/skills#钩子包)，`default_agent` 预装，任何 Agent 都可以从插件库安装。它的 `start.mjs` 写下目标文件并组装第一轮的协议消息；它的 `stop.mjs`——一个 [stop hook](/agent-loop#stop-hook)——在每个 Task 结束后读 Session 的 Trace，回答 `continue`（附下一轮的消息）或 `stop`。核心 SDK 不知道目标是什么；咨询钩子的循环是通用的。没装插件的 Agent 发不起目标：Web App 与 API 会直说（`409 goal_plugin_not_installed`），而不是跑一个到点就结束的普通 Task。
+目标模式就是 **`goal` 插件**，一个[钩子包](/skills#钩子包)，`default_agent` 预装，任何 Agent 都可以从插件库安装。它的 `start.mjs`——钩子包的 [`user_prompt` hook](/agent-loop#user-prompt-hook)——写下目标文件、以第一轮协议消息作为扩展 `context` 应答提交的 Prompt；它的 `stop.mjs`——一个 [stop hook](/agent-loop#stop-hook)——在每个 Task 结束后读 Session 的 Trace，回答 `continue`（附下一轮的消息）或 `stop`。核心 SDK 不知道目标是什么；咨询钩子的循环是通用的。没装插件的 Agent 发不起目标：Web App 与 API 会直说（`409 goal_plugin_not_installed`），而不是跑一个到点就结束的普通 Task。
 
 三个入口都能发起目标：
 
@@ -47,7 +47,7 @@ description: 给 Agent 一个目标而不是一条消息——goal 插件的 sto
 
 ## 循环
 
-每一轮的协议消息就是纯文本 user 消息，带 `sender: "harness"` 标记——没有任何标记块；来源全靠这一标记说明，Web App 按普通用户消息渲染，只在上方加一行「由 harness 注入」。第一轮先原样发送你自己的消息（文本与图片、技能调用块等一并保留），协议消息紧随其后、指回你的消息作为目标；后续轮从目标文件复述目标文本。协议消息内嵌钩子刚写下的那份 `GOAL.json`（轮次、已用 token、预算都在其中，模型看到的就是它要编辑的那个文件），并附工作规则——声明完成前必须基于证据逐项核验、不许把目标缩水成更容易的子集、关键进展写入 `PLAN.md` 以跨越上下文压缩。Task 结束后 stop hook 读 Trace 与文件、按序判定，第一条命中即生效：
+每一轮的协议消息就是纯文本 user 消息，带 `sender: "harness"` 标记——没有任何标记块；来源全靠这一标记说明，Web App 把它渲染为一张紧凑的折叠卡片（「由 harness 注入」，后台任务通知同款形态），展开可见全文。第一轮先原样发送你自己的消息（文本与图片、技能调用块等一并保留），协议消息紧随其后、指回你的消息作为目标；后续轮从目标文件复述目标文本。协议消息内嵌钩子刚写下的那份 `GOAL.json`（轮次、已用 token、预算都在其中，模型看到的就是它要编辑的那个文件），并附工作规则——声明完成前必须基于证据逐项核验、不许把目标缩水成更容易的子集、关键进展写入 `PLAN.md` 以跨越上下文压缩。Task 结束后 stop hook 读 Trace 与文件、按序判定，第一条命中即生效：
 
 - 文件写着 `complete` → 目标完成；`blocked` → 模型缺什么写在它最后一条回复里。注入规则要求**同一阻塞条件持续三个连续轮次**后才允许声明 `blocked`，临时性障碍不会终结目标；
 - 这一轮被掐断——`abort` 事件（用户停止）、最后一次请求彻底失败、或单 Task `max_turns` 通知——→ `aborted`：模型没来得及写文件，重发只会撞上同一次掐断；

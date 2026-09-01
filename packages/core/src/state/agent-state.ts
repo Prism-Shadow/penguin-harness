@@ -705,6 +705,7 @@ export async function listInstalledHooks(
             }))
         : [];
     const preToolUse = commands(manifest.pre_tool_use);
+    const userPrompt = commands(manifest.user_prompt);
     hooks.push({
       name: entry.name,
       description: typeof manifest.description === "string" ? manifest.description : "",
@@ -714,6 +715,7 @@ export async function listInstalledHooks(
       version: typeof manifest.version === "string" ? manifest.version : "",
       stop: commands(manifest.stop),
       ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
+      ...(userPrompt.length > 0 ? { user_prompt: userPrompt } : {}),
       dir,
     });
   }

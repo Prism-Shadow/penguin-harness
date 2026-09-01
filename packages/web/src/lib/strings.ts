@@ -1846,7 +1846,7 @@ Benchmark：
     goalRemove: "退出目标模式",
     /** Toast for the 409 a goal-mode send gets while the goal plugin is not installed on the Agent. */
     goalPluginMissing: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
-    /** Origin caption above a harness-injected user message (a stop hook's continue, a goal round's protocol). */
+    /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
     goalStatus: {

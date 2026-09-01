@@ -27,6 +27,7 @@ import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
+import { HarnessInjectedBanner } from "./harness-banner";
 import {
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
@@ -185,6 +186,9 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
 export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
   switch (item.kind) {
     case "user_text": {
+      // A harness-injected input (a goal round's protocol, a hook's continue or expansion
+      // context): a compact collapsed card, not a user bubble — nothing in it was typed.
+      if (item.sender === "harness") return <HarnessInjectedBanner text={item.text} />;
       // Source block for a chat created via the /agent handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
       if (handoff) return <HandoffBanner origin={handoff} />;
@@ -217,14 +221,6 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
-              {/* A harness-injected input (a stop hook's continue, the goal plugin's round
-                  protocol) reads like any other user message — no special block, no
-                  collapsing — with only this origin caption saying who sent it. */}
-              {item.sender === "harness" && (
-                <div className="mb-1 text-xs text-gray-400 dark:text-gray-500">
-                  {S.chat.harnessInjected}
-                </div>
-              )}
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
                 {/* wrap-anywhere: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing; unlike break-words it also shrinks min-content, so a pathological token can't stretch the flex bubble itself. Normal words still only break when a token can't fit on a line. */}
                 <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">

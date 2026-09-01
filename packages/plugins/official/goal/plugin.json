@@ -6,6 +6,12 @@
   "version": "2026-09-01.1",
   "category": "session-hooks",
   "hooks": {
+    "user_prompt": [
+      {
+        "command": "start.mjs",
+        "timeout": 60
+      }
+    ],
     "stop": [
       {
         "command": "stop.mjs",

@@ -1884,7 +1884,7 @@ Scenarios:
     /** Toast for the 409 a goal-mode send gets while the goal plugin is not installed on the agent. */
     goalPluginMissing:
       "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
-    /** Origin caption above a harness-injected user message (a stop hook's continue, a goal round's protocol). */
+    /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
     goalStatus: {

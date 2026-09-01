@@ -71,6 +71,8 @@ export interface HookManifest {
   stop: HookCommand[];
   /** Pre-tool-use commands, consulted before each tool call's approval; absent = none (older installs carry no field). */
   pre_tool_use?: HookCommand[];
+  /** User-prompt expansion commands, run by the host when it accepts a prompt for the flow the package owns (goal mode's start); absent = none. */
+  user_prompt?: HookCommand[];
 }
 
 /** A plugin's hook package as read from the library: the manifest to install and the `hooks/` files (relative path → text). */
@@ -274,6 +276,7 @@ interface PluginManifestFile {
   hooks?: {
     stop?: Array<{ command?: string; timeout?: number }>;
     pre_tool_use?: Array<{ command?: string; timeout?: number }>;
+    user_prompt?: Array<{ command?: string; timeout?: number }>;
   };
 }
 
@@ -323,6 +326,7 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
       }));
   const stop = commandList(manifest.hooks?.stop);
   const preToolUse = commandList(manifest.hooks?.pre_tool_use);
+  const userPrompt = commandList(manifest.hooks?.user_prompt);
   let icon: string | undefined;
   try {
     icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
@@ -343,6 +347,7 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
             version,
             stop,
             ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
+            ...(userPrompt.length > 0 ? { user_prompt: userPrompt } : {}),
           },
           files: hookFiles,
         }

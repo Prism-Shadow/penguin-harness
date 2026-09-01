@@ -82,9 +82,11 @@ describe("SessionManager.startGoal", () => {
   type RunOpts = { thinkingLevel?: string };
 
   /**
-   * Fake session: `run` emits the whole goal stream the way core would — per-round
-   * harness-stamped inputs and work, the goal hook's answers after each round (the hook
-   * loop is core's and the decisions are the goal plugin's; both are tested where they live).
+   * Fake session: `run` emits the goal stream the way core would — the run's own initial
+   * input is NEVER yielded (startGoal publishes it; the tap counts round 1 off the seeded
+   * input), later rounds' harness-stamped injections and the goal hook's answers are (the
+   * hook loop is core's and the decisions are the goal plugin's; both are tested where
+   * they live).
    */
   function goalFakeSession(
     stream: (input: OmniMessage[]) => OmniMessage[],
@@ -130,8 +132,7 @@ describe("SessionManager.startGoal", () => {
 
   it("drives one goal-mode run, mapping the round inputs and the hook's answers to goal events", async () => {
     const text = buildSkillsMessage(["web-design"], "make it work");
-    const session = goalFakeSession((input) => [
-      ...input,
+    const session = goalFakeSession(() => [
       assistantText("round 1 work"),
       tokenUsage(usage(100), usage(100)),
       goalHook("continue", "active", 2, 100),
@@ -173,7 +174,9 @@ describe("SessionManager.startGoal", () => {
       used: 300,
     });
 
-    // The inputs were published on the message stream (no `event:` name) for live viewers:
+    // The inputs were published on the message stream (no `event:` name) for live viewers —
+    // round 1 by startGoal itself (core never yields a run's initial input, and a page
+    // already subscribed would otherwise miss it until a reload), round 2 off the stream:
     // the user's own message verbatim — the [use_skills] block included — and both rounds'
     // harness-stamped protocol messages.
     const published = events
@@ -217,8 +220,7 @@ describe("SessionManager.startGoal", () => {
       "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished",
       "harness",
     );
-    const session = goalFakeSession((input) => [
-      ...input,
+    const session = goalFakeSession(() => [
       assistantText("working"),
       notice,
       assistantText("absorbed"),
@@ -250,7 +252,7 @@ describe("SessionManager.startGoal", () => {
     };
     const manager = makeManager(session);
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj")],
+      input: [userText("obj"), roundInput(1)],
       objective: "obj",
       budget: -1,
     });
@@ -264,7 +266,6 @@ describe("SessionManager.startGoal", () => {
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {
     const session = goalFakeSession(() => []);
     session.run = async function* () {
-      yield roundInput(1);
       yield goalHook("stop", "complete", 1, 42);
       throw new Error("post-terminal hiccup");
     };
@@ -273,7 +274,7 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj")],
+      input: [userText("obj"), roundInput(1)],
       objective: "obj",
       budget: -1,
     });
@@ -286,7 +287,6 @@ describe("SessionManager.startGoal", () => {
   it("closes the goal as aborted when the stream ends without the hook's terminal event", async () => {
     // A cut-off run (infrastructure failure upstream) must not leave the banner active.
     const session = goalFakeSession(() => [
-      roundInput(1),
       assistantText("partial work"),
       tokenUsage(usage(50), usage(50)),
     ]);
@@ -295,7 +295,7 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj")],
+      input: [userText("obj"), roundInput(1)],
       objective: "obj",
       budget: 1000,
     });

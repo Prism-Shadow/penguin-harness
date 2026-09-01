@@ -41,8 +41,14 @@ function run(
   return { out: text ? JSON.parse(text) : undefined, status: res.status, stderr: res.stderr };
 }
 
-const start = (objective: string, budget = -1) =>
-  run("start.mjs", { session_id: "s1", scratchpad_dir: scratchpad, objective, budget });
+const start = (prompt: string, budget = -1) =>
+  run("start.mjs", {
+    hook: "user_prompt",
+    session_id: "s1",
+    scratchpad_dir: scratchpad,
+    prompt,
+    budget,
+  });
 const stop = () => run("stop.mjs", { hook: "stop", session_id: "s1", trace_path: tracePath });
 
 const meta = () => ({
@@ -89,8 +95,8 @@ async function setStatus(status: string): Promise<void> {
   await fs.writeFile(goalFile, JSON.stringify({ ...goal, status }), "utf8");
 }
 
-describe("start.mjs", () => {
-  it("writes GOAL.json and prints the round-1 protocol message", async () => {
+describe("start.mjs (the user_prompt hook)", () => {
+  it("writes GOAL.json and prints the round-1 protocol message as context", async () => {
     const { out, status } = start("ship the landing page", 500);
     expect(status).toBe(0);
     expect(await readGoal()).toEqual({
@@ -100,7 +106,7 @@ describe("start.mjs", () => {
       round: 1,
       tokens_used: 0,
     });
-    const input = (out as { input: string }).input;
+    const input = (out as { context: string }).context;
     // Plain text, no marker block: round 1 points at the user's own message instead of
     // restating the objective (the host sends this right behind it, stamped as harness).
     expect(input).toContain("sent automatically by goal mode");
@@ -112,7 +118,7 @@ describe("start.mjs", () => {
     expect(input).toContain('"budget": 500');
   });
 
-  it("rejects an empty objective and treats a non-positive budget as none", async () => {
+  it("rejects an empty prompt and treats a non-positive budget as none", async () => {
     expect(start("   ").status).not.toBe(0);
     start("obj", 0);
     expect((await readGoal()).budget).toBe(-1);
@@ -138,7 +144,7 @@ describe("stop.mjs", () => {
     await writeTrace([
       meta(),
       usage(999),
-      harness((started as { input: string }).input),
+      harness((started as { context: string }).context),
       assistant("working"),
       usage(100, 40),
       requestEnd("completed"),
@@ -165,7 +171,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj");
     await writeTrace([
       meta(),
-      harness((started as { input: string }).input),
+      harness((started as { context: string }).context),
       assistant("all green"),
       usage(50),
     ]);
@@ -188,7 +194,7 @@ describe("stop.mjs", () => {
       const { out: started } = start("obj");
       await writeTrace([
         meta(),
-        harness((started as { input: string }).input),
+        harness((started as { context: string }).context),
         assistant("partial"),
         usage(5),
         ...tail,
@@ -202,7 +208,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj");
     await writeTrace([
       meta(),
-      harness((started as { input: string }).input),
+      harness((started as { context: string }).context),
       requestEnd("retryable"),
       assistant("recovered"),
       usage(5),
@@ -215,7 +221,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj", 100);
     await writeTrace([
       meta(),
-      harness((started as { input: string }).input),
+      harness((started as { context: string }).context),
       assistant("spent"),
       usage(120),
     ]);
@@ -240,7 +246,7 @@ describe("stop.mjs", () => {
 
   it("honors a truthful complete during the wrap-up round", async () => {
     const { out: started } = start("obj", 100);
-    await writeTrace([meta(), harness((started as { input: string }).input), usage(120)]);
+    await writeTrace([meta(), harness((started as { context: string }).context), usage(120)]);
     const wrap = stop().out as { input: string };
     await writeTrace([meta(), harness(wrap.input), usage(10)]);
     await setStatus("complete");
@@ -253,7 +259,7 @@ describe("stop.mjs", () => {
       "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished";
     await writeTrace([
       meta(),
-      harness((started as { input: string }).input),
+      harness((started as { context: string }).context),
       assistant("working"),
       usage(100),
       requestEnd("completed"),

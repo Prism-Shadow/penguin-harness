@@ -888,11 +888,16 @@ export class SessionManager {
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
-      // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
-      // inputs onto the stream, but the Trace write still waits for the bootstrap);
-      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
+      // Round-1 input: same publish + pendingInputs hold as launchTask. Core never yields
+      // a run's own initial input (only the stop hook's later injections), so without this
+      // publish the round-1 messages reach only the Trace — a page already subscribed (a
+      // second goal on the session) would not see the user's message or the protocol
+      // message until a reload. Append + bootstrap reset for the same abort-mid-bootstrap
+      // reasons as launchTask.
       entry.pendingInputs = [...entry.pendingInputs, ...args.input];
       entry.pendingBootstrap = [];
+      const channel = this.deps.channels.get(entry.sessionId);
+      for (const msg of args.input) channel.publish(msg);
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
       this.publishEvent(entry, {
@@ -917,9 +922,10 @@ export class SessionManager {
   }
 
   /**
-   * Taps a goal run's stream for `drive`: round boundaries (the harness-injected inputs —
-   * round 1's protocol message, then every stop-hook continue) become goal_round events,
-   * and the goal hook's `stop` event becomes the
+   * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
+   * round 1 from the seeded input (core never yields a run's initial input, so it is
+   * counted here, where startGoal published it), later rounds from the stop-hook continues
+   * core yields — and the goal hook's `stop` event becomes the
    * goal_finished server event. `used` is what the hook last recorded in its event's
    * `output` — the same number its budget check used — so the UI never shows a different
    * figure. A stream that ends without the hook's terminal event (a cut-off run, an
@@ -943,6 +949,19 @@ export class SessionManager {
     let round = 0;
     let used = 0;
     let finished = false;
+    // Round 1's boundary is the seeded input itself: it never comes back out of `gen`.
+    for (const msg of args.input) {
+      if (isGoalRoundInput(msg)) {
+        round++;
+        this.publishEvent(entry, {
+          type: "goal_round",
+          sessionId: entry.sessionId,
+          round,
+          used,
+          budget: args.budget,
+        });
+      }
+    }
     try {
       for await (const msg of gen) {
         if (isGoalRoundInput(msg)) {
