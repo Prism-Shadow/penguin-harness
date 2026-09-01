@@ -463,14 +463,9 @@ export function PluginsPage() {
           </h1>
           {/* What this deployment installs and actually runs, as opposed to the library and the
               registry listed below. */}
-          <Button
-            variant="secondary"
-            size="icon"
-            title={S.plugins.installedTitle}
-            aria-label={S.plugins.installedTitle}
-            onClick={() => setInstalledOpen(true)}
-          >
-            <GlyphIcon d={NAV_ICONS.plugins} size={ICON_SIZE.iconButton} />
+          <Button variant="secondary" size="sm" onClick={() => setInstalledOpen(true)}>
+            <GlyphIcon d={NAV_ICONS.plugins} size={ICON_SIZE.inlineGlyph} />
+            {S.plugins.installedTitle}
           </Button>
         </div>
         <InstalledPluginsDialog
@@ -1045,14 +1040,17 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
 }
 
 /**
- * One index entry as a row: icon tile + specifier/version, description, and a license +
- * keywords metadata row. The row itself is the link — a plugin has one destination — and the
- * install control sits BESIDE that link rather than inside it: a button nested in an anchor is
- * invalid markup, and the click would have two meanings.
+ * One index entry as a row: icon tile, specifier/version and description, a license +
+ * keywords metadata line, and a trailing cluster where a list row's chevron would sit — the
+ * app-store shape, so the action reads at a glance instead of riding a full-width footer bar.
+ * The row itself is the link — a plugin has one destination — and the cluster sits BESIDE
+ * that link rather than inside it: a button nested in an anchor is invalid markup, and the
+ * click would have two meanings.
  *
- * The button says what the deployment's own state is, not what the catalogue holds: not
- * installed → Install, installed but not loaded → the restart it is waiting for, running →
- * Remove. Installing writes plugins.json; it does not load anything (see installed-dialog).
+ * The cluster says what the deployment's own state is, not what the catalogue holds: not
+ * installed → an Install pill, installed but not loaded → the restart it waits for, running →
+ * a success chip; Remove is the quiet text action under a chip. Installing writes
+ * plugins.json; it does not load anything (see installed-dialog).
  */
 function RegistryRow({
   plugin,
@@ -1067,11 +1065,21 @@ function RegistryRow({
   onInstall: (() => void) | null;
   onRemove: (() => void) | null;
 }) {
+  const chip =
+    state === "active" ? (
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.success}`}>
+        {S.plugins.stateActive}
+      </span>
+    ) : state === "pending" ? (
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.attention}`}>
+        {S.plugins.installedRestart}
+      </span>
+    ) : null;
   return (
-    <div className="rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
+    <div className="flex items-stretch rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
       <Link
         to={`/plugins/registry/${plugin.name}`}
-        className="block rounded-md p-4 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+        className="min-w-0 flex-1 rounded-l-md p-4 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
       >
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
@@ -1094,11 +1102,13 @@ function RegistryRow({
               {plugin.description}
             </p>
           </div>
-          <GlyphIcon
-            d="M9 6l6 6-6 6"
-            size={14}
-            className="shrink-0 text-gray-300 dark:text-gray-600"
-          />
+          {chip === null && onInstall === null && (
+            <GlyphIcon
+              d="M9 6l6 6-6 6"
+              size={14}
+              className="shrink-0 text-gray-300 dark:text-gray-600"
+            />
+          )}
         </div>
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
           <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
@@ -1112,23 +1122,25 @@ function RegistryRow({
           ))}
         </div>
       </Link>
-      {(onInstall !== null || state !== "none") && (
-        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-4 py-2 text-xs dark:border-gray-800">
-          {state === "pending" && (
-            <span className={toneInk.attention}>{S.plugins.installedRestart}</span>
-          )}
-          {state === "active" && <span className={toneInk.success}>{S.plugins.stateActive}</span>}
+      {(chip !== null || onInstall !== null) && (
+        <div className="flex shrink-0 flex-col items-end justify-center gap-1 py-3 pr-4 pl-1">
           {state === "none"
             ? onInstall !== null && (
-                <Button variant="secondary" size="sm" disabled={busy} onClick={onInstall}>
+                <Button variant="primary" size="sm" disabled={busy} onClick={onInstall}>
                   {S.plugins.install}
                 </Button>
               )
-            : onRemove !== null && (
-                <Button variant="secondary" size="sm" disabled={busy} onClick={onRemove}>
-                  {S.plugins.uninstall}
-                </Button>
-              )}
+            : chip}
+          {state !== "none" && onRemove !== null && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRemove}
+              className="text-[11px] text-gray-400 underline-offset-2 transition-colors duration-150 hover:text-red-600 hover:underline disabled:opacity-60 dark:text-gray-500 dark:hover:text-red-400"
+            >
+              {S.plugins.uninstall}
+            </button>
+          )}
         </div>
       )}
     </div>
