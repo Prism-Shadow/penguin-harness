@@ -49,6 +49,7 @@ import {
   cachedRegistry,
   httpPluginRegistry,
   mergeIndexes,
+  NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
 import type { PluginRegistry } from "../../plugin/registry.js";
 import { pluginBases } from "../../plugin/loader.js";
@@ -179,7 +180,10 @@ export class PluginRoutes {
 }
 
 export interface PluginRoutesOptions {
-  /** The published index to read, or null for builtin entries only (see ServerConfig). */
+  /**
+   * The published index to read, or null for builtin entries only (see ServerConfig).
+   * Undefined = unset, which reads the index repository's published document.
+   */
   indexUrl?: string | null;
   /** Where the builtin packages are on this machine, for their readmes (plugin/loader.ts's pluginBases). */
   bases?: () => readonly PluginBase[];
@@ -226,7 +230,9 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
 
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const builtin = builtinPluginRegistry(options.bases);
-  const url = options.indexUrl ?? null;
+  // Undefined and null part ways here: a runtime that predates the setting publishes nothing
+  // and gets the default index, while `off` resolves to null and means builtin entries only.
+  const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
   if (url === null) return [builtin];
   return [builtin, cachedRegistry(httpPluginRegistry(url, options.fetchImpl ?? fetch))];
 }
