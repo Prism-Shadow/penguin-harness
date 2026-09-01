@@ -24,7 +24,7 @@ The Session gained a generic hook mechanism: core codes the hook _points_ — on
 
 ## The `skill-summary` plugin
 
-- Not preinstalled. When the Task that just ended ran more than 20 completed turns, its stop script condenses that Task (clipped user/assistant text, tool calls and outputs) and answers with a `subagent` request whose prompt asks the child to fold durable findings into the relevant `SKILL.md` files and bump their version. The window is the Task itself, so a Task triggers at most once — at its end — and short Tasks never do. An Agent with no installed skill never fires it.
+- Not preinstalled. When the Task that just ended ran more than 30 completed turns, its stop script condenses that Task (clipped user/assistant text, tool calls and outputs) and answers with a `subagent` request whose prompt asks the child to fold durable findings into the relevant `SKILL.md` files and bump their version. The window is the Task itself, so a Task triggers at most once — at its end — and short Tasks never do. An Agent with no installed skill never fires it.
 
 ## The plugin library
 

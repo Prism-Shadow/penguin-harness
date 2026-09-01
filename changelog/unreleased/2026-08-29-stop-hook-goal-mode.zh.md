@@ -24,7 +24,7 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 ## `skill-summary` 插件
 
-- 不预装。刚结束的 Task 跑了超过 20 个完成的轮次时，它的 stop 脚本把该 Task 浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。窗口就是 Task 本身，因此一个任务至多在结束时触发一次，短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
+- 不预装。刚结束的 Task 跑了超过 30 个完成的轮次时，它的 stop 脚本把该 Task 浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。窗口就是 Task 本身，因此一个任务至多在结束时触发一次，短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 插件库
 

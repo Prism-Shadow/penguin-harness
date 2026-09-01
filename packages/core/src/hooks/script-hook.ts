@@ -47,7 +47,10 @@ export async function runHookScript(
     const child = spawn(process.execPath, [script], {
       cwd: opts.cwd ?? path.dirname(script),
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
+      // In the desktop app process.execPath is the Electron binary: without this flag the
+      // spawn boots a whole Electron app (GPU process and all) instead of running the
+      // script, and dies on machines where that fails. A plain Node execPath ignores it.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     });
     let stdout = "";
     let stderr = "";

@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** Completed LLM turns (token_usage records) a Task must exceed before a summary fires. */
-const TURNS_THRESHOLD = 20;
+const TURNS_THRESHOLD = 30;
 /** Per-line clips of the excerpt and its total cap (the oldest lines go first). */
 const CLIP = { user: 800, assistant: 1200, toolCall: 300, toolOutput: 400 };
 const MAX_CHARS = 60_000;

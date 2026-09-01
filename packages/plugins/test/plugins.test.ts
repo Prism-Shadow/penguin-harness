@@ -52,6 +52,12 @@ describe("loadLibraryPlugins", () => {
 
   it("stamps the plugin's metadata into each skill: slim file frontmatter, full installable frontmatter", async () => {
     for (const plugin of loadLibraryPlugins()) {
+      // Chinese in a manifest is written as real characters, not \uXXXX escapes.
+      const rawManifest = await fs.readFile(
+        path.join(pluginsRoot, plugin.name, "plugin.json"),
+        "utf8",
+      );
+      expect(rawManifest, `${plugin.name} plugin.json escapes`).not.toMatch(/\\u[0-9a-fA-F]{4}/);
       // Every built-in plugin ships an icon.svg beside plugin.json.
       expect(plugin.icon, `${plugin.name} icon.svg`).toBeDefined();
       expect(plugin.icon).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);

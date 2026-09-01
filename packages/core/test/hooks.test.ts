@@ -120,7 +120,10 @@ describe("script hooks", () => {
   };
 
   it("runHookScript feeds the input on stdin and returns the parsed stdout; empty stdout is no opinion", async () => {
-    const echo = await write("echo.mjs", answering("{ got: input, cwd: process.cwd() }"));
+    const echo = await write(
+      "echo.mjs",
+      answering("{ got: input, cwd: process.cwd(), asNode: process.env.ELECTRON_RUN_AS_NODE }"),
+    );
     const out = (await runHookScript(echo, { hook: "stop", session_id: "s1" })) as Record<
       string,
       unknown
@@ -128,6 +131,8 @@ describe("script hooks", () => {
     expect(out.got).toEqual({ hook: "stop", session_id: "s1" });
     // Real paths on both sides: macOS reports the temp dir through its /private symlink.
     expect(await fs.realpath(out.cwd as string)).toBe(await fs.realpath(dir));
+    // The Electron-safety flag reaches the child (see runHookScript's spawn env).
+    expect(out.asNode).toBe("1");
     const quiet = await write("quiet.mjs", "process.exit(0);\n");
     expect(await runHookScript(quiet, {})).toBeUndefined();
   });

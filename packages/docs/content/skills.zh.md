@@ -111,11 +111,11 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 | | `agent-evaluation` | 内部叶子工作者：按完整评测协议执行并私下打分恰好一次 Case 运行 |
 | | `agent-optimization` | 在冻结的 Benchmark 上，从完整的当前基线出发改进指定 Agent |
 | 会话钩子 | `goal` | [目标模式](/goal-mode)背后的 stop hook：让会话持续朝目标工作，直到完成、受阻或 token 预算耗尽（预装） |
-| | `skill-summary` | 单个任务结束时轮次超过 20，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
+| | `skill-summary` | 单个任务结束时轮次超过 30，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
 
 ## 编写与优化
 
 - 手工安装：在 `agent_state/skills/<name>/` 下建目录并写入 `SKILL.md` 即可，系统组装系统 Prompt 时扫描 `skills/` 注入元数据；没有 `SKILL.md` 的目录不计为 Skill。
 - 卸载即删除整个 `skills/<name>/`（或 `hooks/<name>/`）目录，操作幂等。
 - Agent 可以在任务中直接改写自己的 SKILL.md——配合 Benchmark 评测与优化形成闭环，见 [自我进化](/self-improvement)。改完把 `version` 记成当天日期加下一个序号。
-- 长任务可以自己回流：装上 `skill-summary` 插件后，某个任务结束时轮次超过 20，它的 stop hook 就把该任务的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。
+- 长任务可以自己回流：装上 `skill-summary` 插件后，某个任务结束时轮次超过 30，它的 stop hook 就把该任务的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。

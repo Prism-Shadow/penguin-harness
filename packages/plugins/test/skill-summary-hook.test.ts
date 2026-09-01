@@ -89,21 +89,21 @@ const append = (records: unknown[]) =>
   fs.appendFile(tracePath, records.map((r) => `${JSON.stringify(r)}\n`).join(""), "utf8");
 
 describe("skill-summary stop.mjs", () => {
-  it("is silent while the task stays at 20 turns, fires with the condensed task once it exceeds them", async () => {
+  it("is silent while the task stays at 30 turns, fires with the condensed task once it exceeds them", async () => {
     await append([
       meta(),
       user("[use_skills]\nskills: web-design\n[/use_skills]\n\nmake it pretty"),
     ]);
-    for (let i = 1; i <= 20; i++) await append(turn(i));
+    for (let i = 1; i <= 30; i++) await append(turn(i));
     expect(stop()).toBeUndefined();
     await append([
       toolOutput("c2", "boom", "fatal"),
       user("[user_steering]\nskip the tests\n[/user_steering]"),
-      ...turn(21),
+      ...turn(31),
     ]);
     const res = stop();
-    expect(res).toMatchObject({ output: { turns: 21 } });
-    expect(res!.reason).toContain("21 turns");
+    expect(res).toMatchObject({ output: { turns: 31 } });
+    expect(res!.reason).toContain("31 turns");
     const prompt = res!.subagent!.prompt;
     expect(prompt).toContain("Installed skills: penguin-cli, web-design");
     expect(prompt).toContain("Skills invoked in this task: web-design");
@@ -119,8 +119,8 @@ describe("skill-summary stop.mjs", () => {
   it("windows per task: a new input resets the count, and it never fires without skills", async () => {
     // A long task that already fired…
     await append([meta(), user("big refactor")]);
-    for (let i = 1; i <= 25; i++) await append(turn(i));
-    expect(stop()).toMatchObject({ output: { turns: 25 } });
+    for (let i = 1; i <= 35; i++) await append(turn(i));
+    expect(stop()).toMatchObject({ output: { turns: 35 } });
     // …then a short follow-up task: its own window, silent — the long task never re-fires.
     await append([user("quick question"), assistant("quick answer"), usage()]);
     expect(stop()).toBeUndefined();
@@ -140,14 +140,14 @@ describe("skill-summary stop.mjs", () => {
 
   it("mid-task deliveries do not reset the window: steering and steered notices ride inside", async () => {
     await append([meta(), user("long task")]);
-    for (let i = 1; i <= 15; i++) await append(turn(i));
+    for (let i = 1; i <= 25; i++) await append(turn(i));
     await append([
       user("[user_steering]\nkeep going\n[/user_steering]"),
       user(
         "[background_task_done]\nkind: command\nid: p1\nstatus: completed\ndelivery: steering\n[/background_task_done]\n\nBackground command finished",
       ),
     ]);
-    for (let i = 16; i <= 21; i++) await append(turn(i));
-    expect(stop()).toMatchObject({ output: { turns: 21 } });
+    for (let i = 26; i <= 31; i++) await append(turn(i));
+    expect(stop()).toMatchObject({ output: { turns: 31 } });
   });
 });

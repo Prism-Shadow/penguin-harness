@@ -111,11 +111,11 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/plugins/src/
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
 | | `agent-optimization` | Improve a specified Agent from a complete current baseline on a frozen Benchmark |
 | Session Hooks | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the session working toward an objective until it is complete, blocked, or out of token budget (preinstalled) |
-| | `skill-summary` | When a task ends after more than 20 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
+| | `skill-summary` | When a task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
 
 ## Writing and optimizing Skills
 
 - Manual install: create a directory under `agent_state/skills/<name>/` and write a `SKILL.md`; the system scans `skills/` when assembling the system prompt and injects the metadata. A directory without a `SKILL.md` does not count as a Skill.
 - Uninstalling deletes the whole `skills/<name>/` (or `hooks/<name>/`) directory and is idempotent.
 - An Agent can rewrite its own SKILL.md as part of a task — combined with Benchmark evaluation and optimization this closes the improvement loop, see [Self-Improvement](/self-improvement). Bump `version` to today's date with the next sequence number when you do.
-- Long tasks can feed back on their own: with the `skill-summary` plugin installed, a task that ends after more than 20 turns has its stop hook hand a condensed excerpt of that task to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).
+- Long tasks can feed back on their own: with the `skill-summary` plugin installed, a task that ends after more than 30 turns has its stop hook hand a condensed excerpt of that task to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).
