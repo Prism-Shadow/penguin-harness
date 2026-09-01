@@ -37,7 +37,7 @@ context_engine 依赖三个接口：Human、LLM、Environment。协议转换全�
 | 控制面项 | 位置 | 为什么不是消息 |
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`、`GenerativeModelParameters`、`ToolExecutionRequest` | 要在消息队列里排队才生效的打断，就不叫打断了。 |
-| `thinkingLevel` | `GenerativeModelParameters` | 逐次请求参数，与超时同类——它说的是这次请求怎么跑，而不是说了什么。引擎按 Session 的实时钉住值设置它（`ContextEngineDeps.thinkingLevel`，软限制旋钮）；未钉住时用 LLM 对象的构造默认值——即上下文开启时的等级（`RunOptions` 不带等级）。 |
+| `thinkingLevel` | `GenerativeModelParameters` | 逐次请求参数，与超时同类——它说的是这次请求怎么跑，而不是说了什么。实时值是引擎自有状态（`ContextEngine.setThinkingLevel`，由 `Session.thinkingLevel` 赋值转发，软限制旋钮）；未设置时用 LLM 对象的构造默认值——即上下文开启时的等级（`RunOptions` 不带等级）。 |
 | `approve` 及其 `ApprovalDecision` | `RunOptions`、`ToolExecutionRequest` | 回调的入参是 OmniMessage 工具调用；答案是三值枚举，引擎拿到后立刻转写为 `approval_decision` 消息。 |
 | `LLMOutcome` | `streamGenerate` generator 的返回值 | 本次 Request 的结束态，引擎的重试与重连策略全部据此分支。generator 的返回值由类型强制存在；「最后产出的消息必须是 `request_end`」只能是运行期约定。引擎正是据它写出那条 `request_end`。 |
 

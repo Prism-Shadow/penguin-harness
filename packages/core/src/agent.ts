@@ -191,8 +191,9 @@ interface SessionSpec {
   /**
    * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
    * a value pins every context opened from now on; `null` runs them without a level;
-   * `undefined` reads the Agent config's default when each context opens. Mutable: a host
-   * re-pins a running Session through `Session.pinThinkingLevel`.
+   * `undefined` reads the Agent config's default when each context opens. Fixed at
+   * creation: a mid-session change (`Session.thinkingLevel`) is engine state — it rides
+   * requests but reshapes no context and never lands here.
    */
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
@@ -226,8 +227,7 @@ interface SessionRuntime {
   openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
   commandPolicy: () => CommandPolicyConfig | undefined;
-  /** See SessionConfig.pinThinkingLevel. */
-  pinThinkingLevel: (level: ThinkingLevelName) => void;
+
   createBareLLM: () => GenerativeModel;
 }
 
@@ -606,7 +606,7 @@ export class Agent {
     const apiKey = opts.apiKey ?? modelEntry.api_key;
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
-    // No pin at resume: the host re-pins through Session.pinThinkingLevel when it holds one,
+    // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
     // createSession uses). The origin carries over from the original session_meta (a
     // resumed scheduled/subagent Session stays marked); the on-disk value is untrusted: only
@@ -729,7 +729,7 @@ export class Agent {
       environment: rt.environment,
       trace,
       openNextContext: rt.openNextContext,
-      pinThinkingLevel: rt.pinThinkingLevel,
+
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
@@ -765,9 +765,6 @@ export class Agent {
     // The context the Session is running: the initial one, then whatever `openNextContext` last
     // assembled.
     let current = initial;
-    // Whether the initial context has been built into an LLM object (the first run's
-    // bootstrap ran): from then on its request prefix is in use and cannot be re-stamped.
-    let started = false;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
     // optionally choose agentId (omitted = call the current Agent), the child
@@ -828,10 +825,11 @@ export class Agent {
                 ...(provider !== undefined ? { provider } : {}),
               };
         // An explicit spawn-time level (run_subagent's `thinking_level`) pins the child;
-        // otherwise the parent Session's effective level right now — its pin when re-pinned,
-        // else the base its context opened with — is passed down, as a tri-state: `null`
-        // when the parent has none, so the child never falls back to its own Agent config
-        // (which would otherwise apply on a cross-agent spawn).
+        // otherwise the parent Session's creation-time level, else the base its running
+        // context opened with, is passed down as a tri-state: `null` when the parent has
+        // none, so the child never falls back to its own Agent config (which would apply on
+        // a cross-agent spawn). A mid-session `Session.thinkingLevel` assignment is engine
+        // state and is not inherited — the spawn argument exists for explicit control.
         const parentLevel =
           spec.thinkingLevel === undefined ? current.thinkingLevel : spec.thinkingLevel;
         const childSession = await childAgent.createSession({
@@ -1072,11 +1070,8 @@ export class Agent {
     // The first context's opener (see SessionRuntime.bootstrap).
     const bootstrap = async (
       opts: OpenContextOptions,
-    ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> => {
-      const opened = await openAssembled(current, opts.emit);
-      started = true;
-      return opened;
-    };
+    ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> =>
+      openAssembled(current, opts.emit);
 
     // The context that follows a completed compaction: assembled anew from the Agent State
     // as it is now — an edit the model (or the user) made during the old context to
@@ -1099,14 +1094,6 @@ export class Agent {
       };
     };
 
-    // Re-pins the Session's thinking level: the base of every context opened from now on
-    // (the live per-request value is the Session's own pin, served to the engine by
-    // `ContextEngineDeps.thinkingLevel`). Before the first open the initial context adopts
-    // it as its base too; nothing is recorded — no context carries a level.
-    const pinThinkingLevel = (level: ThinkingLevelName): void => {
-      spec.thinkingLevel = level;
-      if (!started) current = { ...current, thinkingLevel: level };
-    };
     // Bare LLM for one-off out-of-band requests (meta requests like generateTitle):
     // same Model/credentials, no tools, no system prompt, thinking disabled, a small
     // output cap, and an independent timeout.
@@ -1141,7 +1128,7 @@ export class Agent {
       bootstrap,
       openNextContext,
       commandPolicy: () => current.commandPolicy,
-      pinThinkingLevel,
+
       createBareLLM,
     };
   }

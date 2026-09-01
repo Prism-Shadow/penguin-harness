@@ -1036,34 +1036,37 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("pinThinkingLevel is a per-request parameter: the live getter serves it, nothing is recorded, and the next context takes it as base", async () => {
+  it("thinkingLevel is plain engine state: an assignment rides requests while contexts keep their config base", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
     const levelOf = (session: { metaMessage: OmniMessage }) =>
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+    const engineLevelOf = (session: unknown) =>
+      (session as { engine: { thinkingLevel?: string } }).engine.thinkingLevel;
 
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      // A pin before the first run reaches the initial context's LLM base (assembly already
-      // happened at createSession; the runtime adopts the pin until the context starts).
-      session.pinThinkingLevel("high");
+      // Assigned before the first run: buffered on the Session, handed to the engine when
+      // it is built. The context's own base stays the config default ("medium").
+      session.thinkingLevel = "high";
+      expect(session.thinkingLevel).toBe("high");
       expect(levelOf(session)).toBeUndefined();
       await bootstrapped(session);
-      expect(lastBuilt()!.thinkingLevel).toBe("high");
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(engineLevelOf(session)).toBe("high");
 
-      // A re-pin rides the very next LLM request via the live getter; the meta records
-      // nothing, and the context a compaction opens takes the pin as its base.
-      session.pinThinkingLevel("xhigh");
-      expect(
-        (session as unknown as { engine: { thinkingLevel?: string } }).engine.thinkingLevel,
-      ).toBe("xhigh");
+      // Reassigned mid-session: engine state for every subsequent request; the context a
+      // compaction opens still bases on the creation option and the config, and the meta
+      // records nothing.
+      session.thinkingLevel = "xhigh";
+      expect(engineLevelOf(session)).toBe("xhigh");
       const { opened } = await openNext(session);
       expect(
         (opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level,
       ).toBeUndefined();
-      expect(lastBuilt()!.thinkingLevel).toBe("xhigh");
-      expect(levelOf(session)).toBeUndefined();
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(session.thinkingLevel).toBe("xhigh");
     } finally {
       session.dispose();
     }

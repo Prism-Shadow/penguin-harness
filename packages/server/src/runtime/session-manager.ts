@@ -123,11 +123,11 @@ export interface RuntimeSession {
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /**
-   * Pins the Session's thinking level (core `Session.pinThinkingLevel`): soft-limited — it
-   * applies from the Session's very next LLM request, and becomes the default of every
-   * context opened from then on. Optional: test fakes may omit it.
+   * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
+   * an assignment applies from the Session's very next LLM request. Optional: test fakes may
+   * omit it.
    */
-  pinThinkingLevel?(level: ThinkingLevelName): void;
+  thinkingLevel?: ThinkingLevelName;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
   /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
@@ -242,9 +242,9 @@ export function createCoreSessionLoader(
         // the original message rather than bubbling up as 500.
         try {
           const session = await agent.resumeSession({ sessionId: row.sessionId });
-          // The row's pin — the knob position the user last chose — restored onto the
-          // runtime: it rides the resumed Session's requests and its future contexts.
-          if (row.thinkingLevel) session.pinThinkingLevel(row.thinkingLevel);
+          // The row's stored level — the knob position the user last chose — restored onto
+          // the runtime as a plain assignment: it rides the resumed Session's requests.
+          if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
           return session;
         } catch (err) {
           // The credential key was deleted after the Session was created: only caught
@@ -620,14 +620,16 @@ export class SessionManager {
   }
 
   /**
-   * Pins a Session's thinking level on its loaded runtime (core `Session.pinThinkingLevel`):
-   * the row's pin is what the loader applies at load, so this only needs to reach a runtime
-   * that is already in the active table. The level is soft-limited: it applies from the
-   * Session's very next LLM request (mid-context — the UI advises compacting first, since
-   * the change invalidates the provider's cached context). No-op when nothing is loaded.
+   * Sets a Session's thinking level on its loaded runtime (core `Session.thinkingLevel`,
+   * plain state): the row's value is what the loader applies at load, so this only needs to
+   * reach a runtime that is already in the active table. The level is soft-limited: it
+   * applies from the Session's very next LLM request (mid-context — the UI advises
+   * compacting first, since the change invalidates the provider's cached context). No-op
+   * when nothing is loaded.
    */
-  pinThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
-    this.entries.get(sessionId)?.session.pinThinkingLevel?.(level);
+  setThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
+    const session = this.entries.get(sessionId)?.session;
+    if (session) session.thinkingLevel = level;
   }
 
   /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */

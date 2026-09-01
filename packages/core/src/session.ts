@@ -93,12 +93,7 @@ export interface SessionConfig {
    * provided.
    */
   openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
-  /**
-   * Records a re-pinned thinking level with the composition layer (see
-   * `Session.pinThinkingLevel` — the Session itself applies the level to live requests):
-   * `level` becomes the base of every context opened from now on.
-   */
-  pinThinkingLevel?: (level: ThinkingLevelName) => void;
+
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
@@ -284,7 +279,8 @@ export class Session {
   /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `openNextContext` opens (see `metaMessage`). */
   private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
-  private readonly pinContext?: SessionConfig["pinThinkingLevel"];
+  /** The Session's thinking level — buffered here until the engine exists, engine state afterwards (see the `thinkingLevel` accessors). */
+  private level?: ThinkingLevelName;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
@@ -330,7 +326,7 @@ export class Session {
     this.metaWritten = config.metaAlreadyWritten ?? false;
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
-    if (config.pinThinkingLevel) this.pinContext = config.pinThinkingLevel;
+
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
@@ -611,6 +607,9 @@ export class Session {
       ...(toolsMsg !== undefined ? { toolList: toolsMsg } : {}),
       bootstrapRecords: connectRecords,
     });
+    // A level assigned before the first run was buffered on the Session: hand it to the
+    // engine now that it exists, ahead of the first turn request.
+    if (this.level !== undefined) this.engine.setThinkingLevel(this.level);
     return true;
   }
 
@@ -824,21 +823,23 @@ export class Session {
   }
 
   /**
-   * Pins the Session's thinking level — the SOFT-limited runtime parameter, a pure
-   * per-request value: it rides the very next LLM request (mid-context, even mid-Task),
-   * unlike the prompt, toolset and model, which never change between a context's open and
-   * its close — and nothing records it in the Trace. The cost of the softness is the
-   * provider's cached context — changing the thinking level invalidates the cached
-   * messages — so a host lets the user know at the picker that compacting first is
-   * recommended (the Web menu note, the CLI `/thinking` reply). The pin also becomes the
-   * base level of every context opened from now on.
-   * Callers: the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`.
+   * The Session's thinking level — the SOFT-limited runtime parameter as plain state: an
+   * assignment rides the very next LLM request (mid-context, even mid-Task), unlike the
+   * prompt, toolset and model, which never change between a context's open and its close —
+   * and nothing records it in the Trace. The live value is engine state
+   * (`ContextEngine.setThinkingLevel`), buffered on the Session until the engine exists;
+   * contexts keep their opening base (the creation option, else the Agent config) for
+   * compaction requests and as the fallback while nothing was ever assigned. The cost of
+   * the softness is the provider's cached context — changing the level invalidates the
+   * cached messages — so a host lets the user know at the picker that compacting first is
+   * recommended (the Web menu note, the CLI `/thinking` reply).
+   * Callers: the Web App's in-chat picker (PATCH), the CLI's `--thinking` / `/thinking`.
    */
-  pinThinkingLevel(level: ThinkingLevelName): void {
-    this.pinContext?.(level);
-    // The live value is engine-owned state, applied from the next turn request. Before the
-    // engine exists (no run yet) the pinContext call above already made the pin the first
-    // context's base, which is exactly what its requests will use.
+  get thinkingLevel(): ThinkingLevelName | undefined {
+    return this.level;
+  }
+  set thinkingLevel(level: ThinkingLevelName) {
+    this.level = level;
     this.engine?.setThinkingLevel(level);
   }
 

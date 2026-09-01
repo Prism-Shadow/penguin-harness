@@ -457,7 +457,7 @@ export class ContextEngine {
   private fromCompaction = false;
   /**
    * The Session's current thinking level — the soft-limited runtime parameter as
-   * engine-owned state: `setThinkingLevel` (wired from `Session.pinThinkingLevel`) moves it
+   * engine-owned state: `setThinkingLevel` (fed by the `Session.thinkingLevel` setter) moves it
    * mid-context, and every subsequent turn request carries it as the per-request override.
    * Undefined = no pin: the LLM object's construction default (the context's opening base)
    * applies. Compaction requests ignore it and keep the context's base — their prefix must

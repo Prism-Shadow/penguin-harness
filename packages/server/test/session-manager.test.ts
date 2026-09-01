@@ -275,18 +275,17 @@ describe("session-manager", () => {
     expect(recordedErrors.map((e) => e.code)).toContain("session_touch_failed");
   });
 
-  it("startTask carries no thinking level: a run's level is the context's, pinned on the runtime instead", async () => {
+  it("startTask carries no thinking level: the manager assigns runtime state instead", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const runOpts: Record<string, unknown>[] = [];
-    const pinned: string[] = [];
     const fake: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
+      thinkingLevel: undefined,
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
-      pinThinkingLevel: (level) => pinned.push(level),
       async *run(_input: OmniMessage[], opts: Record<string, unknown>) {
         runOpts.push(opts);
         yield assistantText("ok");
@@ -297,12 +296,12 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("a")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && runOpts.length === 1);
     expect("thinkingLevel" in runOpts[0]!).toBe(false);
-    // What the Web App's in-chat picker writes reaches the loaded runtime as a pin (core
-    // applies it to the next model context); a Session that is not loaded is a no-op — the
-    // loader pins the row's level when it loads.
-    manager.pinThinkingLevel("session-1", "xhigh");
-    manager.pinThinkingLevel("session-nowhere", "low");
-    expect(pinned).toEqual(["xhigh"]);
+    // What the Web App's in-chat picker writes reaches the loaded runtime as a plain
+    // assignment (core applies it from the next request); a Session that is not loaded is a
+    // no-op — the loader assigns the row's level when it loads.
+    manager.setThinkingLevel("session-1", "xhigh");
+    manager.setThinkingLevel("session-nowhere", "low");
+    expect(fake.thinkingLevel).toBe("xhigh");
   });
 
   it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {

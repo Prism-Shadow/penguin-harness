@@ -33,7 +33,7 @@ approval mode: re-read from the DB per decision, effective immediately).
   no executable configuration).
 - The thinking level is the soft-limited tier — a purely per-request parameter: every LLM
   request takes the Session's pinned level — the Web App's in-chat picker, the CLI's
-  `--thinking` / `/thinking`, the SDK's new `Session.pinThinkingLevel` — or, unpinned, the
+  `--thinking` / `/thinking`, the SDK's `Session.thinkingLevel` state — or, unset, the
   Agent config's `model.thinking_level` as read when the context opened. A re-pin applies
   from the very next LLM request, mid-context included, and nothing is recorded in the Trace;
   because a change invalidates the provider's cached context, the change points remind the
@@ -97,9 +97,8 @@ approval mode: re-read from the DB per decision, effective immediately).
   `SessionConfig.mcpServers` field is gone — the bootstrap knows what it is connecting.
 - SDK: `RunOptions.thinkingLevel`, `SubagentHandle.run`'s `thinkingLevel` and
   `SubagentMessageOptions.thinkingLevel` are removed; a host that changed the level per run
-  pins the Session with `Session.pinThinkingLevel(level)` instead, and the level applies from
-  the next LLM request (the Session forwards the pin into engine-owned state:
-  `ContextEngine.setThinkingLevel`).
+  assigns `Session.thinkingLevel = level` instead — plain state, forwarded into the engine
+  (`ContextEngine.setThinkingLevel`) and applied from the next LLM request.
 - SDK: `SessionConfig.commandPolicy` takes a source function instead of a static config — the
   composition layer's source answers with the running context's policy, read from
   `.project_config.toml` once per context open. `Session.toolPermission` keeps its synchronous

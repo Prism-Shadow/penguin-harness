@@ -591,11 +591,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, approvalMode };
     }
     if (thinkingLevel !== undefined) {
-      // The row is what the loader pins at load; a runtime already loaded is pinned here.
-      // Soft-limited: core applies it from the Session's very next LLM request (the picker
-      // advises compacting first — the change invalidates the provider's cached context).
+      // The row is what the loader applies at load; a runtime already loaded is assigned
+      // here. Soft-limited: core applies it from the Session's very next LLM request (the
+      // picker advises compacting first — a change invalidates the provider's cached context).
       deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
-      deps.manager.pinThinkingLevel(row.sessionId, thinkingLevel);
+      deps.manager.setThinkingLevel(row.sessionId, thinkingLevel);
       updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {

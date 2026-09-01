@@ -23,7 +23,7 @@
   Trace 文件已被完成的压缩收尾。恢复未关闭的上下文时沿用该文件记录的提示词——注入的历史正是在该前缀下产生
   的——工具、Environment、vault 与运行参数一如既往取自当前 Agent State（Trace 不记录可执行配置）。
 - 思考等级属软限制层——纯粹的每请求参数：每次 LLM 请求取 Session 钉住的等级——Web 对话内选择器、CLI 的
-  `--thinking` / `/thinking`、SDK 新增的 `Session.pinThinkingLevel`——未钉住则取上下文开启时读到的 Agent 配置
+  `--thinking` / `/thinking`、SDK 的 `Session.thinkingLevel` 状态——未设置则取上下文开启时读到的 Agent 配置
   `model.thinking_level`。重新钉住自下一次 LLM 请求即生效、允许中途更换，且不在 Trace 中留任何记录；因为更换
   会使提供商的缓存失效，调节入口在调节之前提醒建议先压缩（Web 选择器菜单脚注、CLI `/thinking` 回执）。压缩
   请求保持上下文开启时的基准等级——其前缀必须逐字节不变。运行与 Task 请求都不携带等级。
@@ -66,8 +66,8 @@
   `mcp` 字段），连接事件对与工具集记录经 `emit` 发布；`SessionConfig.mcpServers` 字段随之删除——要连什么由
   bootstrap 自己知道。
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
-  `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改用 `Session.pinThinkingLevel(level)` 钉住
-  Session，自下一次 LLM 请求起生效（钉住值转发为引擎自有状态：`ContextEngine.setThinkingLevel`）。
+  `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改为给 `Session.thinkingLevel` 赋值——纯状态，
+  转发为引擎自有状态（`ContextEngine.setThinkingLevel`），自下一次 LLM 请求起生效。
 - SDK：`SessionConfig.commandPolicy` 改为来源函数、不再是静态配置——组合层的来源返回运行中上下文的策略，
   每个上下文开启时从 `.project_config.toml` 读取一次。`Session.toolPermission` 签名不变（同步），取值为运行中
   上下文的工具集。
