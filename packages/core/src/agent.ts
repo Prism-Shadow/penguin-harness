@@ -74,21 +74,19 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import { MCP_TOOL_PREFIX } from "./environment/mcp/provider.js";
-import { resolveMCPServers } from "./environment/mcp/config.js";
 import type {
   CompactionSettings,
   OpenContextOptions,
   OpenedContext,
 } from "./engine/context-engine.js";
 import type {
+  CommandPolicyConfig,
   ProxyEnvPolicy,
   SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
   ToolConfig,
   ToolDefinition,
-  ToolPermission,
   VisionDescriberService,
 } from "./interfaces/index.js";
 import { THINKING_LEVEL_NAMES } from "./interfaces/index.js";
@@ -241,6 +239,8 @@ interface SessionRuntime {
    * the context alongside its engine settings.
    */
   openNextContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
+  /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
+  commandPolicy: () => CommandPolicyConfig | undefined;
   /** See SessionConfig.pinThinkingLevel. */
   pinThinkingLevel: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
   createBareLLM: () => GenerativeModel;
@@ -257,6 +257,8 @@ interface AssembledContext {
   /** The vault's values, for the Environment's command subprocesses; only the key names enter the prompt. */
   vault: Record<string, string>;
   toolConfig: ToolConfig;
+  /** The Project's command policy as read when this context opened (`[command_policy]` of `.project_config.toml`) — Project-owned rather than Agent State, rotated on the same strict-tier schedule. */
+  commandPolicy: CommandPolicyConfig | undefined;
   /** The context's effective thinking level: the Session's pin, or the config default read now. */
   thinkingLevel: ThinkingLevelName | undefined;
   maxTokens: number | undefined;
@@ -353,6 +355,9 @@ export class Agent {
     const { root, projectId, agentId } = this.state;
     const state = await loadAgentState({ root, projectId, agentId });
     const vault = await loadAgentVault(root, projectId, agentId);
+    // Strict-tier alongside the Agent State even though it is Project-owned: the command
+    // policy this context runs under is the one on disk at its open.
+    const commandPolicy = (await loadProjectConfig(root, projectId)).command_policy;
     let systemPrompt = opts.systemPrompt;
     if (systemPrompt === undefined) {
       const installedSkills = await listInstalledSkills(root, projectId, agentId);
@@ -448,6 +453,7 @@ export class Agent {
       systemPrompt,
       vault,
       toolConfig,
+      commandPolicy,
       thinkingLevel,
       // Configured output cap: the entry's per-model annotation wins over the Agent's
       // system_config value; unset inherits the Agent value. This is a ceiling, not the
@@ -758,43 +764,14 @@ export class Agent {
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(root, projectId, agentId, spec.sessionId),
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
-      // Sandbox command policy, unrestricted-tier: Project-owned (never Agent State) and
-      // read from disk at every approval decision, so an edit reaches every running
-      // Session's very next tool call. Nothing of it enters the request prefix, which is
-      // what makes the liveness free. Absent config means the factory rule set, on.
-      commandPolicy: async () =>
-        (await loadProjectConfig(this.state.root, this.state.projectId)).command_policy,
-      // Tool permissions, unrestricted-tier likewise: the r/rw a tool reports to the
-      // read-only approval mode is read from the Agent State as it is on disk at each
-      // lookup — an edit applies to the next decision, no rotation needed. Only the
-      // permission is live; the tool's definition stays the context's (strict tier).
-      toolPermission: (name) => this.livePermission(name, rt.environment),
+      // Sandbox command policy, strict-tier like the rest of the context (though
+      // Project-owned, never Agent State): read from disk when each context opens, so an
+      // edit applies at the Session's next rotation. Absent config means the factory rule
+      // set, on. Tool permissions need no seam of their own: Session.toolPermission
+      // answers from the Environment's toolset, which each rotation re-equips.
+      commandPolicy: rt.commandPolicy,
       ...extras,
     });
-  }
-
-  /**
-   * The live per-tool permission lookup behind Session.toolPermission: a builtin entry's
-   * `permission` from the current `system_config.yaml`; an `mcp__<server>__<tool>` name from
-   * the current server entry's `permission` override, else the running context's discovered
-   * annotation (a re-discovery would need a connect — the override is the live part). Load
-   * failures fall back to the context's toolset in Session.toolPermission.
-   */
-  private async livePermission(
-    name: string,
-    environment: Environment,
-  ): Promise<ToolPermission | undefined> {
-    const { root, projectId, agentId } = this.state;
-    const state = await loadAgentState({ root, projectId, agentId });
-    const toolConfig = buildToolConfig(state);
-    if (name.startsWith(MCP_TOOL_PREFIX)) {
-      const serverName = name.slice(MCP_TOOL_PREFIX.length).split("__")[0] ?? "";
-      const server = resolveMCPServers(toolConfig.mcpServers).servers.find(
-        (s) => s.name === serverName,
-      );
-      return server?.permission ?? environment.toolPermission(name);
-    }
-    return toolConfig.customTools.find((t) => t.name === name)?.permission;
   }
 
   /** Id of the most recent Session under the current Agent (determined by the timestamp in session_id); returns null if there is no Session. */
@@ -1203,6 +1180,13 @@ export class Agent {
     // that throw here; the instance is discarded.
     createBareLLM();
 
-    return { environment, bootstrap, openNextContext, pinThinkingLevel, createBareLLM };
+    return {
+      environment,
+      bootstrap,
+      openNextContext,
+      commandPolicy: () => current.commandPolicy,
+      pinThinkingLevel,
+      createBareLLM,
+    };
   }
 }

@@ -248,7 +248,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 | --- | --- |
 | SDK | Pass `approve` per `session.run`; with none injected the engine denies by default (conservative — nothing gets approved unattended) |
 | CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
-| Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, and a tool's `r`/`rw` is re-read from the Agent State the same way — mode and permission edits take effect on the very next decision; manual decisions arrive via the API |
+| Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision (edits apply at once), while a tool's `r`/`rw` comes from the running context's toolset — permission edits apply at the next rotation (compaction); manual decisions arrive via the API |
 
 A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto recorded as `forbidden` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
 

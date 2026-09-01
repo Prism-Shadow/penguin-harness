@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
 import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
-import { agentsMdPath, systemConfigPath } from "../src/state/paths.js";
+import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
 import {
   addModel,
   createAgent,
@@ -1002,15 +1002,19 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("toolPermission answers from the Agent State as it is on disk — a permission edit applies to the next decision", async () => {
+  it("toolPermission and the command policy are strict-tier: an edit lands at the next context open, not mid-context", async () => {
     const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-live-permission");
+    const ws = path.join(tmpRoot, "ws-strict-permission");
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
+    const policyOf = () =>
+      (
+        session as unknown as { commandPolicy?: () => { enabled?: boolean } | undefined }
+      ).commandPolicy?.();
     try {
-      expect(await session.toolPermission("read_file")).toBe("r");
-      // The unrestricted tier: nothing of this touches the request prefix, so the edit
-      // needs no rotation — the very next lookup sees it.
+      await bootstrapped(session);
+      expect(session.toolPermission("read_file")).toBe("r");
+      const openedWith = policyOf();
       await patchSystemConfig((cfg) => {
         cfg.tools = {
           ...(cfg.tools ?? {}),
@@ -1019,10 +1023,18 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
           ),
         };
       });
-      expect(await session.toolPermission("read_file")).toBe("rw");
-      // An unreadable Agent State falls back to the running context's toolset.
-      await fs.writeFile(systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "");
-      expect(await session.toolPermission("read_file")).toBe("r");
+      await fs.writeFile(
+        projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID),
+        "[command_policy]\nenabled = false\n",
+        "utf8",
+      );
+      // The running context's toolset and policy stand until rotation…
+      expect(session.toolPermission("read_file")).toBe("r");
+      expect(policyOf()).toBe(openedWith);
+      // …and the next context opens with both edits.
+      await openNext(session);
+      expect(session.toolPermission("read_file")).toBe("rw");
+      expect(policyOf()).toEqual({ enabled: false });
     } finally {
       session.dispose();
     }

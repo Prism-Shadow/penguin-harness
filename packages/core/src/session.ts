@@ -110,13 +110,6 @@ export interface SessionConfig {
    */
   pinThinkingLevel?: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
   /**
-   * Live per-tool permission lookup (the composition layer reads the Agent State as it is
-   * on disk): tool permissions sit in the unrestricted tier — they never touch the request
-   * prefix, so a change applies to the very next approval decision rather than waiting for
-   * a rotation. Absent, `toolPermission` answers from the running context's toolset.
-   */
-  toolPermission?: (name: string) => Promise<ToolPermission | undefined>;
-  /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
    * `generateTitle`; if not provided, `generateTitle` returns null.
@@ -153,10 +146,11 @@ export interface SessionConfig {
   goalFilePath?: string;
   /**
    * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
-   * SOURCE evaluated at every approval decision: security policy is unrestricted-tier — it
-   * never touches the request prefix, so an edit reaches every running Session's very next
-   * tool call. `run` wraps the injected approval callback with it — the refusal happens at
-   * the approval boundary, above every approval mode and below no Human implementation.
+   * SOURCE answering with the running context's policy: command policy is strict-tier —
+   * the composition layer reads it from disk once per context open, so an edit applies at
+   * the next rotation. `run` wraps the injected approval callback with it — the refusal
+   * happens at the approval boundary, above every approval mode and below no Human
+   * implementation.
    * Absent, or a source yielding nothing = the factory rule set applies;
    * `{ enabled: false }` opts out. Docs: /docs/configuration § "Command policy".
    */
@@ -310,7 +304,6 @@ export class Session {
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
   private readonly commandPolicy?: CommandPolicySource;
-  private readonly livePermission?: SessionConfig["toolPermission"];
   /**
    * The level the user pinned (the soft-limited knob): rides every subsequent LLM request
    * as the per-request override the moment it is set — mid-context included — and shapes
@@ -365,7 +358,6 @@ export class Session {
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
-    if (config.toolPermission) this.livePermission = config.toolPermission;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
@@ -881,19 +873,10 @@ export class Session {
 
   /**
    * A tool's permission level (what the read-only approval mode auto-approves by);
-   * undefined for unknown tools. Unrestricted-tier: with the composition layer's live
-   * lookup wired, a permission edit answers here on the very next decision — no rotation
-   * needed — falling back to the running context's toolset when the live read fails.
+   * undefined for unknown tools. Strict-tier: answers from the running context's toolset —
+   * rebuilt at every rotation — so a permission edit applies when the next context opens.
    */
-  async toolPermission(name: string): Promise<ToolPermission | undefined> {
-    if (this.livePermission) {
-      try {
-        return await this.livePermission(name);
-      } catch {
-        // A momentarily unreadable Agent State must not turn a permission lookup into an
-        // error: the context's own record still answers.
-      }
-    }
+  toolPermission(name: string): ToolPermission | undefined {
     return this.environment.toolPermission(name);
   }
 

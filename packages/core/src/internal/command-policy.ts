@@ -16,10 +16,11 @@
  *
  * The config lives in `.project_config.toml` (`[command_policy]`) — Project-owned on purpose:
  * security policy belongs to the Project, not to Agent State the Agent itself can rewrite.
- * The Session receives a policy SOURCE and evaluates it per decision: security policy is in
- * the unrestricted tier of runtime parameters — it never touches the request prefix, so an
- * edit takes effect on the very next tool call of every running Session, with no rotation
- * and no reload in between.
+ * The Session receives a policy SOURCE — a getter answering with the policy of the model
+ * context it is running, read from disk once when each context opens: command policy is
+ * strict-tier, so an edit applies when the next context opens (rotation), never mid-file.
+ * The getter is still consulted per decision, which is what hands the tool calls after a
+ * mid-run rotation the new context's policy without any reload machinery.
  *
  * The rules are **data, not code**: every rule (name / pattern / description / enabled) is
  * project-editable, and the factory set (state/command-policy-defaults.ts) is *seeded* into
@@ -149,9 +150,8 @@ export function vetoForToolCall(
   return evaluateCommandPolicy(text, policy);
 }
 
-/** Where the policy comes from at decision time: evaluated per approval, so an edit is live (see SessionConfig.commandPolicy). */
-export type CommandPolicySource = () =>
-  CommandPolicyConfig | undefined | Promise<CommandPolicyConfig | undefined>;
+/** Where the policy comes from at decision time: a getter answering with the running context's policy (see SessionConfig.commandPolicy) — consulted per approval, so a mid-run rotation swaps what later calls see. */
+export type CommandPolicySource = () => CommandPolicyConfig | undefined;
 
 /**
  * Wraps an approval callback with the policy: a vetoed call answers `"forbidden"` here and
@@ -159,7 +159,7 @@ export type CommandPolicySource = () =>
  * it through. `"forbidden"` is the decision's own third value: the engine renders it as
  * the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
  * user."), and the `approval_decision` event carries it — the model's text and the Trace
- * both name the decider. The policy is read from `source` at every decision (no source, or
+ * both name the decider. The `source` getter is consulted at every decision (no source, or
  * a source yielding nothing, applies the factory rule set); a source that cannot be read
  * fails toward the factory rules rather than waving the call through.
  */
@@ -167,7 +167,7 @@ export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySour
   return async (toolCall) => {
     let policy: CommandPolicyConfig | undefined;
     try {
-      policy = await source?.();
+      policy = source?.();
     } catch {
       policy = undefined;
     }

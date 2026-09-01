@@ -4,7 +4,7 @@
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `docs`
 - **PR:** [#539](https://github.com/Prism-Shadow/penguin-harness/pull/539)
-- **Breaking:** yes — SDK：`SessionConfig.createLLM` / `ContextEngineDeps.createLLM` 改为 `openNextContext`，移除 `RunOptions.thinkingLevel` 与子会话接缝上的逐轮思考等级；HTTP API：`POST /tasks` 与子会话消息不再接受 `thinkingLevel`，撤回跟进消息不再返回它
+- **Breaking:** yes — SDK：`SessionConfig.createLLM` / `ContextEngineDeps.createLLM` 改为 `openNextContext`，移除 `RunOptions.thinkingLevel` 与子会话接缝上的逐轮思考等级，`SessionConfig.commandPolicy` 改为按上下文取值的来源函数；HTTP API：`POST /tasks` 与子会话消息不再接受 `thinkingLevel`，撤回跟进消息不再返回它
 
 [English](2026-08-28-context-assembled-per-rotation.md)
 
@@ -13,9 +13,9 @@
 `max_turns`、模型默认参数）、`AGENTS.md`、vault、已装 Skill 的元数据、Memory 索引与定时任务名单。旧上下文
 期间的修改——模型改自己的配置，或用户在 Agent 设置里手改——在下一次压缩即生效，不必等下一个 Session。运行参数
 明确分为三层：**严格层**（系统提示词、工具集含 MCP、压缩配置、模型引用——请求前缀，一个 Trace 文件内逐字节
-固定，提供商提示词缓存始终有效；vault 按同一轮换节奏更换）、**软限制层**（思考等级：允许中途更换、自下一次
-请求生效，代价是提供商缓存失效——调节入口提醒建议先压缩）与**不限制层**（审批模式、工具 `r`/`rw` 权限、命令
-策略：逐次决策读取、即刻生效）。
+固定，提供商提示词缓存始终有效；vault、工具 `r`/`rw` 权限与命令策略不进模型请求，但同样每上下文读取一次、
+随同一轮换节奏更换）、**软限制层**（思考等级：允许中途更换、自下一次请求生效，代价是提供商缓存失效——调节
+入口提醒建议先压缩）与**不限制层**（审批模式：逐次决策从 DB 重读、即刻生效）。
 
 ## 细节
 
@@ -27,11 +27,11 @@
   记录为 `session_meta.thinking_level`（无等级记为 `"default"`）。重新钉住自下一次 LLM 请求即生效、允许中途更
   换；因为这会使提供商的缓存失效，调节入口在调节之前提醒建议先压缩（Web 选择器菜单脚注、CLI `/thinking` 回
   执）。压缩请求保持上下文自身的等级——其前缀必须逐字节不变。运行与 Task 请求都不携带等级。
-- 不限制层逐次决策读取：审批模式此前已每次决策从 DB 重读；工具的 `r`/`rw` 权限现在每次查询都从磁盘上的
-  Agent State 读取（`Session.toolPermission` 改为异步），命令策略每次审批从 `.project_config.toml` 读取——三者
-  的修改对每个运行中 Session 的下一次工具调用即生效，无需轮换也无需重载。
-- 随 Session 固定的只有：Session id、Workspace、模型条目（含凭据、窗口与逐模型标注）、来源、Project 的命令策略，
-  以及 Environment 的进程宿主——后台命令、子会话及其监听器跨轮换存续。
+- 工具的 `r`/`rw` 权限与命令策略同属严格层：`Session.toolPermission` 取运行中上下文的工具集（随轮换重建，
+  MCP 条目的 `permission` 覆盖一并烤入），命令策略在每个上下文开启时从 `.project_config.toml` 读取一次——
+  审批决策不再读任何文件。不限制层只余审批模式，逐次决策从 DB 重读、修改即刻生效。
+- 随 Session 固定的只有：Session id、Workspace、模型条目（含凭据、窗口与逐模型标注）、来源，以及 Environment
+  的进程宿主——后台命令、子会话及其监听器跨轮换存续。
 - Environment 为新上下文重新装备（`Environment.reconfigure`）：vault 的值直接进入此后每条命令的子进程环境
   （已在运行的进程保留启动时的环境）。MCP 连接按配置缓存：条目未变的 Server 保持连接与已发现的工具——每轮压缩
   的 Session 不会每轮重启 Server——被删除或改动的关闭，只有新增、改动或上次失败的 Server 才连接，等待期间流式
@@ -67,8 +67,9 @@
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
   `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改用 `Session.pinThinkingLevel(level)` 钉住
   Session，自下一次 LLM 请求起生效（引擎经 `ContextEngineDeps.thinkingLevel` 读取实时钉住值）。
-- SDK：`Session.toolPermission` 改为异步（逐次决策实时查询）；`SessionConfig.commandPolicy` 改为每次审批求值的
-  来源函数，不再是静态配置；新增 `SessionConfig.toolPermission` 承载实时权限查询。
+- SDK：`SessionConfig.commandPolicy` 改为来源函数、不再是静态配置——组合层的来源返回运行中上下文的策略，
+  每个上下文开启时从 `.project_config.toml` 读取一次。`Session.toolPermission` 签名不变（同步），取值为运行中
+  上下文的工具集。
 - HTTP API：`TaskCreateRequest.thinkingLevel` 与子会话消息的 `thinkingLevel` 不再读取（仍发送的客户端被忽略），
   `RecalledMessageResponse` 不再携带它。设置等级的方式是 `PATCH /sessions/:id { thinkingLevel }`，从该 Session
   的下一个模型上下文生效。

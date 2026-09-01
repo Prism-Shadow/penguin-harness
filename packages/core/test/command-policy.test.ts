@@ -350,9 +350,9 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
   });
 
-  it("reads the policy source at every decision: an edit applies to the next tool call", async () => {
-    // The unrestricted tier: security policy never touches the request prefix, so nothing
-    // holds it to a rotation — the wrapper consults the source per call.
+  it("consults the policy source at every decision, so a mid-run rotation swaps what later calls see", async () => {
+    // The source answers with the running context's policy from memory; consulting it per
+    // call is what hands the tool calls after a mid-run rotation the new context's policy.
     let policy: { enabled: boolean } = { enabled: false };
     const guarded = withCommandPolicy(
       async () => "allow",
