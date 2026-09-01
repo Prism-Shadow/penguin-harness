@@ -16,7 +16,7 @@ gist 没有目录——它的 API 直接拒绝含 `/` 的文件名——因此�
 
 ## 路由
 
-`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布。**一个 Agent 只对应一个 gist**：它发布到的 gist 记录在自己身边（Agent 目录下的 `.penguin-publish.json`，是 dotfile，因此永远不会被打包），重新发布时调用方什么都不用传就会更新那个 gist。`gistId` 可覆盖目标；只有首次发布才会新建。更新时还会*删除*包里已经没有的文件——gist 更新本身只做新增与覆盖，否则改名或删掉的文件会永远留在 gist 里。若记住的 gist 已在 GitHub 上被删除，下一次发布会新建一个，而不是失败。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
+`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布。**一个 Agent 只对应一个 gist**：它发布到的 gist 记录在自己身边（Agent 目录下的 `.penguin-publish.json`，是 dotfile，因此永远不会被打包），重新发布时调用方什么都不用传就会更新那个 gist。`gistId` 可覆盖目标；只有首次发布才会新建。更新时还会*删除*包里已经没有的文件——gist 更新本身只做新增与覆盖，否则改名或删掉的文件会永远留在 gist 里。内容没有变化的重新发布不消耗任何 API 调用：已发布内容的摘要与 gist 一起记录，若这次要写的正是它，直接返回 `unchanged: true` 而不请求 GitHub（显式指定 `gistId` 则一定写入，gist 在 GitHub 上被删或被手改时用它覆盖）。gist 的描述——也就是 GitHub 列表里显示的标题——为 `<名称> — <Agent 自己的描述> · PenguinHarness Agent`。若记住的 gist 已在 GitHub 上被删除，下一次发布会新建一个，而不是失败。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
 
 ## 其他来源
 
