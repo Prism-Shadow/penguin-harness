@@ -36,10 +36,13 @@ export function agentPackageRoutes(deps: PackageRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const pkg = await deps.packages.pack(projectId, agentId);
+    const publishVia = await deps.packages.publishMethod();
     return c.json({
       manifest: pkg.manifest,
       bytes: pkg.bytes,
-      canPublish: deps.packages.canPublish(),
+      canPublish: publishVia !== null,
+      publishVia,
+      publishedGist: await deps.packages.publishedGist(projectId, agentId),
     });
   });
 

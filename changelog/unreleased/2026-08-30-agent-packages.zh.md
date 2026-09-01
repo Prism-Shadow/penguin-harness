@@ -1,4 +1,4 @@
-# Agent 的定义可发布为 GitHub gist，并可从 gist、npm、GitHub、git 或链接安装
+# Agent 的定义可发布为 GitHub gist（以服务器 gh 的登录身份），并可从 gist、npm、GitHub、git 或链接安装
 
 - **Date:** 2026-08-30
 - **Type:** feature
@@ -16,7 +16,7 @@ gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SK
 
 ## 路由
 
-`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布，或就地更新指定 gist，让重新发布的 Agent 保持同一个链接。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
+`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布。**一个 Agent 只对应一个 gist**：它发布到的 gist 记录在自己身边（Agent 目录下的 `.penguin-publish.json`，是 dotfile，因此永远不会被打包），重新发布时调用方什么都不用传就会更新那个 gist。`gistId` 可覆盖目标；只有首次发布才会新建。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
 
 ## 其他来源
 
@@ -24,10 +24,10 @@ gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SK
 
 目录形态的来源不需要清单：其中属于 Agent 定义的部分——`agent_state/`、`workflows/`，排除项同前——就是包，因此一个本身就是 Agent 目录的仓库可以原样安装。若带有 `penguin-agent.json`，则每一项都必须存在（按路径或压平名），并通过与 gist 相同的检查。文件树上限 2000 个文件。
 
-## Token
+## 身份
 
-发布使用一个 GitHub token（`gist` 权限），存为服务器设置 `github_token`——与消息通道凭据、代理地址一样明文落盘，且在所有 API 表面只写不读：`GET /api/admin/settings` 返回 `githubTokenSet`，`PUT` 接受 `githubToken`（空串即清除）。读取公开 gist 不需要 token，未配置时安装照常可用。
+发布有两种认证方式，优先第一种：**服务器所在机器上已登录的 `gh` CLI**，或存在 harness 里的 GitHub token。gh 的凭据不会从它自己的存储里被读出来——服务器把请求交给 gh（`gh api`，请求体走 stdin），由 gh 自己带上认证，因此没有任何东西被复制进 harness，`gh auth logout` 即可吊销。兜底 token（`gist` 权限）是服务器设置 `github_token`：与消息通道凭据、代理地址一样明文落盘，且在所有 API 表面只写不读——`GET /api/admin/settings` 返回 `githubTokenSet`，`PUT` 接受 `githubToken`（空串即清除）。读取公开 gist 两者都不需要，什么都没配也能安装；没有 token 时，私有 gist 通过 gh 读取。
 
 ## Web App
 
-设置新增 **分享** 页（管理员）用于配置 token。Agent 概览页在快照导出 / 导入旁多了 **发布到 gist**：对话框列出将要发送的内容与不包含的内容，提供上次发布的 gist（按 Agent 记忆）以便就地更新，并展示结果链接。Agent 列表页多了 **安装 Agent**：粘贴任意来源（类型自动识别，也可用下拉强制），读取（名称、描述、解析后的来源、文件数、大小、打包版本），选择新 Agent 的 id——清单里的，或来源的名字——然后安装。
+设置新增 **分享** 页（管理员）用于配置兜底 token；发布对话框会说明将使用哪种身份，以及（该 Agent 发布过之后）将要更新的那个 gist。Agent 概览页在快照导出 / 导入旁多了 **发布到 gist**：对话框列出将要发送的内容与不包含的内容，提供上次发布的 gist（按 Agent 记忆）以便就地更新，并展示结果链接。Agent 列表页多了 **安装 Agent**：粘贴任意来源（类型自动识别，也可用下拉强制），读取（名称、描述、解析后的来源、文件数、大小、打包版本），选择新 Agent 的 id——清单里的，或来源的名字——然后安装。
