@@ -90,8 +90,12 @@ export interface ServerConfig {
    * for none. Unset = the index repository's published document; `off` = builtin entries only
    * and no outbound request, the same opt-out shape PENGUIN_UPDATE_CHECK=off gives the version
    * check; any other value replaces the URL, which is what a fork or a private index needs.
+   *
+   * OPTIONAL because the config a RUNTIME publishes is whatever its own build knew: a runtime
+   * older than this field carries none, and a pushed platform still has to boot on it. Absent
+   * therefore reads as unset — the published index — while an explicit null is the opt-out.
    */
-  pluginIndexUrl: string | null;
+  pluginIndexUrl?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
