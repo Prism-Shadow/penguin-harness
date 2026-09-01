@@ -1,4 +1,4 @@
-# An Agent's definition publishes to a GitHub gist and installs from a gist, npm, GitHub, git or a URL
+# An Agent's definition publishes to a GitHub gist (as the server's `gh` login) and installs from a gist, npm, GitHub, git or a URL
 
 - **Date:** 2026-08-30
 - **Type:** feature
@@ -16,7 +16,7 @@ Installing validates every entry before a byte is written: the manifest's format
 
 ## Routes
 
-`GET /api/projects/:p/agents/:a/package` shows what would be published (manifest, size, whether the server can publish). `POST …/package/publish { gistId?, public? }` (owner) publishes, or updates the named gist in place so a republished Agent keeps its URL. `POST /api/agent-packages/preview { gist }` reads and validates a gist, writing nothing; `POST /api/agent-packages/install { gist, projectId, agentId }` (owner) installs it. A gist is named by its URL or bare id.
+`GET /api/projects/:p/agents/:a/package` shows what would be published (manifest, size, whether the server can publish). `POST …/package/publish { gistId?, public? }` (owner) publishes. **An Agent keeps one gist**: the gist it was published to is recorded beside it (`.penguin-publish.json` in the Agent directory — a dotfile, so it is never packaged), and a republish updates that gist without the caller naming anything. `gistId` overrides the target; only a first publish creates. `POST /api/agent-packages/preview { gist }` reads and validates a gist, writing nothing; `POST /api/agent-packages/install { gist, projectId, agentId }` (owner) installs it. A gist is named by its URL or bare id.
 
 ## Other sources
 
@@ -24,10 +24,10 @@ Installing reads more than gists. A source is any of: a gist link or id; `npm:<n
 
 A directory-shaped source needs no manifest: whatever in it is an Agent's definition — `agent_state/`, `workflows/`, under the same exclusions — is the package, so a repository that simply *is* an Agent directory installs as it stands. With a `penguin-agent.json` present, every entry must be there (by path or flattened name) and passes the same checks as a gist. Trees are capped at 2000 files.
 
-## Token
+## Identity
 
-Publishing uses one GitHub token (scope `gist`) stored as the server setting `github_token` — plaintext at rest like the messaging credentials and the proxy address, and write-only at every API surface: `GET /api/admin/settings` reports `githubTokenSet`, `PUT` takes `githubToken` (empty clears it). Reading a public gist needs no token, so installing works with none configured.
+Publishing authenticates one of two ways, and prefers the first: the **`gh` CLI logged in on the machine the server runs on**, or a GitHub token stored in the harness. The gh credential is never read out of gh's own store — the server hands the request *to* gh (`gh api`, body on stdin), which supplies its own auth, so nothing is copied into the harness and `gh auth logout` revokes it. The fallback token (scope `gist`) is the server setting `github_token`: plaintext at rest like the messaging credentials and the proxy address, and write-only at every API surface — `GET /api/admin/settings` reports `githubTokenSet`, `PUT` takes `githubToken` (empty clears it). Reading a public gist needs neither, so installing works with nothing configured; a private gist is read through gh when there is no token.
 
 ## Web App
 
-Settings gains a **Sharing** page (admin) for the token. An Agent's overview has **Publish to gist** beside the snapshot export/import: the dialog lists exactly what will be sent and what is left out, offers the gist it published to before (remembered per Agent) so republishing updates it, and shows the resulting link. The Agents page has **Install an Agent**: paste any source (the kind is detected, a select forces one), read it (name, description, resolved origin, file count, size, packaging version), choose the new Agent's id — the manifest's, or the source's name — and install.
+Settings gains a **Sharing** page (admin) for the fallback token; the publish dialog names which identity would be used and, once an Agent has a gist, the gist it will update. An Agent's overview has **Publish to gist** beside the snapshot export/import: the dialog lists exactly what will be sent and what is left out, offers the gist it published to before (remembered per Agent) so republishing updates it, and shows the resulting link. The Agents page has **Install an Agent**: paste any source (the kind is detected, a select forces one), read it (name, description, resolved origin, file count, size, packaging version), choose the new Agent's id — the manifest's, or the source's name — and install.
