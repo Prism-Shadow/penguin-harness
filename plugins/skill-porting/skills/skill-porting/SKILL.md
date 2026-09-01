@@ -5,7 +5,7 @@ description: Install skills from external ecosystems into this agent's agent_sta
 
 # Skill Porting
 
-Penguin has no plugin mechanism and needs none: the wider ecosystem's plugins are wrappers around plain skill directories — a `SKILL.md` plus support files — which is exactly the shape Penguin installs. This skill turns any common external source into installed skills: locate the source, fetch it at a pinned revision, review everything, normalize the frontmatter, copy into `agent_state/skills/<name>/`, verify.
+A Penguin plugin is a package a deployment installs to add capability the harness does not ship, and nothing here produces one: the wider ecosystem's plugins are wrappers around plain skill directories — a `SKILL.md` plus support files — which is exactly the shape Penguin installs. This skill turns any common external source into installed skills: locate the source, fetch it at a pinned revision, review everything, normalize the frontmatter, copy into `agent_state/skills/<name>/`, verify.
 
 ## Before you start
 

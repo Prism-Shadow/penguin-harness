@@ -18,7 +18,7 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
   SandboxSettings,
-} from "@prismshadow/penguin-core/extension";
+} from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
 
 interface MountedProvider {
@@ -40,7 +40,7 @@ export class SandboxService {
   private readonly ready: Promise<void>;
 
   /**
-   * @param registrations - the backends extensions registered (see the sandbox registry on
+   * @param registrations - the backends plugins registered (see the sandbox registry on
    *   PenguinInterface). Loading is async, but create() and the confiner are sync: a
    *   confining policy resolved before loading settles fails closed rather than
    *   waiting. The default settings never consult a backend, so that window only
