@@ -154,6 +154,8 @@ import type {
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
+  InstalledPluginsResponse,
+  SandboxSettingsResponse,
   VersionResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
@@ -1373,3 +1375,20 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
  */
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
+
+// ---- Plugins this deployment installs, and the confinement agent commands run under ----
+export const getInstalledPlugins = () =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed");
+/** Admin only; the list applies at the next server start (plugins load once per process). */
+export const putInstalledPlugins = (plugins: readonly string[]) =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+    method: "PUT",
+    body: { plugins },
+  });
+export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
+/** Applies to the next command spawn; no restart. */
+export const adminPutSandbox = (body: {
+  mode: string;
+  network: "none" | null;
+  maskPaths: string[];
+}) => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox", { method: "PUT", body });

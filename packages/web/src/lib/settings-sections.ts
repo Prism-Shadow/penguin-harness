@@ -25,7 +25,7 @@ import type { AccountMenuSession } from "./account-menu";
 
 /** A page of the System settings dialog. */
 export type SettingsSectionKey =
-  "profile" | "general" | "appearance" | "account" | "proxy" | "uploads" | "users";
+  "profile" | "general" | "appearance" | "account" | "proxy" | "uploads" | "sandbox" | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
 export type SettingsGroupKey = "personal" | "server";
@@ -57,6 +57,7 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },
     { key: "proxy", group: "server", visible: (v) => v.isAdmin },
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
+    { key: "sandbox", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
     { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },
   ];
