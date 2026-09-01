@@ -108,9 +108,16 @@ function fakeGithub() {
     const id = match?.[1];
     if (method === "POST") {
       if (headers["authorization"] === undefined) return new Response("", { status: 401 });
-      const body = JSON.parse(String(init?.body)) as { files: Record<string, { content: string }> };
+      const body = JSON.parse(String(init?.body)) as {
+        files: Record<string, { content: string } | null>;
+      };
       const gistId = id ?? `a1b2c${nextId++}`;
-      gists.set(gistId, { ...(gists.get(gistId) ?? {}), ...body.files });
+      const next = { ...(gists.get(gistId) ?? {}) };
+      for (const [name, value] of Object.entries(body.files)) {
+        if (value === null) delete next[name];
+        else next[name] = value;
+      }
+      gists.set(gistId, next);
       return Response.json({ id: gistId, html_url: `https://gist.github.com/u/${gistId}` });
     }
     if (id === undefined || !gists.has(id)) return new Response("", { status: 404 });
@@ -327,8 +334,23 @@ describe("agent packages", () => {
           const target = path === "/gists" ? null : path.split("/").pop()!;
           if (target !== null && !github.gists.has(target))
             throw new GhError("HTTP 404: Not Found");
+          if (method === "GET") {
+            return {
+              id: target,
+              html_url: `https://gist.github.com/u/${target!}`,
+              files: github.gists.get(target!),
+            };
+          }
           const id = target ?? `beef0${++minted}`;
-          github.gists.set(id, (body as { files: Record<string, { content: string }> }).files);
+          // GitHub's own semantics: a named file is written, a null one is removed.
+          const next = { ...(github.gists.get(id) ?? {}) };
+          for (const [name, value] of Object.entries(
+            (body as { files: Record<string, { content: string } | null> }).files,
+          )) {
+            if (value === null) delete next[name];
+            else next[name] = value;
+          }
+          github.gists.set(id, next);
           return { id, html_url: `https://gist.github.com/u/${id}` };
         },
       },
@@ -355,13 +377,27 @@ describe("agent packages", () => {
         await ghOwner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})
       ).json()) as AgentPackagePublishResponse;
       expect(again.gistId).toBe(first.gistId);
-      expect(calls[1]).toMatchObject({ path: `/gists/${first.gistId}`, method: "POST" });
+      expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([
+        "/gists",
+        `/gists/${first.gistId}`,
+      ]);
       expect(github.gists.size).toBe(1);
 
       const after = (await (
         await ghOwner.get(`/api/projects/${PROJECT}/agents/${AGENT}/package`)
       ).json()) as AgentPackageResponse;
       expect(after.publishedGist?.gistId).toBe(first.gistId);
+
+      // A file the gist holds and the package does not — a rename, a deletion, or a name
+      // from an older separator — is removed by the next publish rather than accumulating.
+      github.gists.set(first.gistId, {
+        ...github.gists.get(first.gistId)!,
+        "agent_state--AGENTS.md": { content: "stale" },
+      });
+      await ghOwner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {});
+      const kept = Object.keys(github.gists.get(first.gistId)!);
+      expect(kept).not.toContain("agent_state--AGENTS.md");
+      expect(kept).toContain("penguin-agent.json");
 
       // The remembered gist was deleted on GitHub: the next publish creates a new one
       // rather than failing on a target that no longer exists.
