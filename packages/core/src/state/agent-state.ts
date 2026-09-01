@@ -17,6 +17,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  type HookCommand,
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
@@ -694,14 +695,16 @@ export async function listInstalledHooks(
       continue;
     }
     if (manifest === null || typeof manifest !== "object") continue;
-    const stop = Array.isArray(manifest.stop)
-      ? manifest.stop
-          .filter((c) => c && typeof c.command === "string")
-          .map((c) => ({
-            command: c.command,
-            ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
-          }))
-      : [];
+    const commands = (list?: HookCommand[]): HookCommand[] =>
+      Array.isArray(list)
+        ? list
+            .filter((c) => c && typeof c.command === "string")
+            .map((c) => ({
+              command: c.command,
+              ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
+            }))
+        : [];
+    const preToolUse = commands(manifest.pre_tool_use);
     hooks.push({
       name: entry.name,
       description: typeof manifest.description === "string" ? manifest.description : "",
@@ -709,7 +712,8 @@ export async function listInstalledHooks(
         ? { descriptionZh: manifest.descriptionZh }
         : {}),
       version: typeof manifest.version === "string" ? manifest.version : "",
-      stop,
+      stop: commands(manifest.stop),
+      ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
       dir,
     });
   }

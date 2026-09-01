@@ -52,6 +52,33 @@ export interface RunCutoff {
 export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 
 /**
+ * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the
+ * Session-wired {@link PreToolUseFn}: the `hook` events to record (every non-void answer,
+ * in hook order), and the first decision — `"deny"` refuses the call without consulting the
+ * approval callback, `"allow"` approves it the same way (the project command policy still
+ * outranks an allow: the Session downgrades a policy-vetoed allow to `null` before the
+ * engine sees it), `null` leaves the call to the normal approval boundary. `name` / `reason`
+ * are the deciding hook's, for the denied output line the model reads.
+ */
+export interface PreToolUseOutcome {
+  events: OmniMessage[];
+  decision: "allow" | "deny" | null;
+  name?: string;
+  reason?: string;
+}
+
+/**
+ * Pre-tool-use hook consult: called by `context_engine` once per complete `tool_call`,
+ * BEFORE the approval callback. Wired by the Session from the Agent's installed hook
+ * packages (`hooks.json` `pre_tool_use` commands); absent when none are installed, and the
+ * engine then goes straight to approval.
+ * Docs: /docs/agent-loop § "Hooks".
+ */
+export type PreToolUseFn = (
+  toolCall: OmniMessage<ToolCallPayload>,
+) => Promise<PreToolUseOutcome | null>;
+
+/**
  * One command-policy deny rule — plain project-editable data: a name (identifies the rule
  * in the settings UI), a regex source tested against the whitespace-normalized command, an
  * optional free-text description, and a per-rule switch.

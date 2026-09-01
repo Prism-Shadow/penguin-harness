@@ -45,7 +45,10 @@ export function goalProgressOf(msg: OmniMessage): GoalProgress | null {
   if (msg.origin && msg.origin.length > 0) return null;
   if (!isEventMessage(msg) || msg.payload.type !== "hook") return null;
   const p = msg.payload;
-  if (p.name !== GOAL_HOOK_NAME || p.decision === undefined || !p.output) return null;
+  if (p.name !== GOAL_HOOK_NAME || !p.output) return null;
+  // The goal plugin's stop hook only ever answers continue/stop; other decision values
+  // belong to other hook points and are no goal record.
+  if (p.decision !== "continue" && p.decision !== "stop") return null;
   const o = p.output;
   return {
     decision: p.decision,

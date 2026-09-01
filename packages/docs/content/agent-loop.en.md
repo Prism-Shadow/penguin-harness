@@ -91,7 +91,7 @@ Carry-over enters the model context only — it is never written to the Trace, w
 
 ## Stop hooks
 
-A hook is a function the Session runs at a fixed point of the loop. One point exists today, **stop**: the moment a Task ends — the model's final reply with no tool call, or a cutoff (user abort, LLM failure, the `max_turns` cap). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop`.
+A hook is a function the Session runs at a fixed point of the loop. Two points exist today: **stop** — the moment a Task ends (the model's final reply with no tool call, or a cutoff: user abort, LLM failure, the `max_turns` cap) — and **`pre_tool_use`**, before each tool call's approval (its own section below). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse`.
 
 An installed hook is a plain Node script, run as a subprocess the way Claude Code runs its command hooks: it is told only where to look, and derives everything else — token usage, turn counts, how the Task ended, its own state file — from the Trace.
 
@@ -115,6 +115,27 @@ exit    non-zero = failure (stderr's tail becomes the reason); a timeout (defaul
 - a hook that fails — crashes, prints something that is not JSON, or times out — is recorded with the error as its `reason` and treated as having no opinion; it never takes the run down.
 
 Two hook packages ship in the plugin library. [Goal mode](/goal-mode) is one: its stop hook reads the goal file, decides, and hands back the next round's protocol message. The **`skill-summary`** plugin is the other (not preinstalled): when the Task that just ended ran more than 30 completed turns, it condenses that Task — user and assistant text, tool calls with their arguments, tool outputs, each clipped, no thinking or images — into an excerpt and answers with a `subagent` request whose prompt names the skills directory and the skills the task invoked and asks the child to fold the durable findings into the relevant `SKILL.md` files, or change nothing. The window is the Task itself (its records in the Trace, from its input message; a compaction rotates the file mid-Task and the window is then what the new file holds), so a Task triggers at most once — at its end — and short Tasks never do. An Agent with no installed skill never fires it.
+
+### Pre-tool-use hooks
+
+A hook package can also name `pre_tool_use` commands (`hooks.json`, from the plugin's `hooks.pre_tool_use`). The engine consults them once per complete tool call, **before** the approval callback — the same subprocess contract, with the call inline:
+
+```text
+stdin   { "hook": "pre_tool_use", "session_id", "trace_path",
+          "tool_name": "exec_command", "tool_call_id": "…", "arguments": "<raw argument JSON>" }
+stdout  nothing = no opinion; otherwise
+        { "decision": "allow" | "deny",   // deny: refuse the call; allow: approve it without asking
+          "reason": "one line for people",
+          "output": { "…": scalars } }    // the hook's own record
+```
+
+The rules mirror the stop point's — every non-empty answer is one `hook` event, the first decision wins, a crash / non-JSON / timeout is recorded and treated as no opinion — plus three of its own:
+
+- a **deny** refuses the call without consulting the approval callback; the model reads the refusal as the tool's output, the hook's name and `reason` included;
+- an **allow** approves without asking the host — except that the [command policy](/configuration#command-policy) still outranks it: hook packages live in agent-writable state, the policy is Project-owned security config, so a policy-vetoed call stays `forbidden` no matter what a hook answers. A deny can only ever narrow what would have run;
+- the scripts run **on the hot path** — one consult per tool call, before anything executes — so keep them fast and set a tight `timeout` in the manifest.
+
+No built-in plugin ships one; the point is there for custom guards — a project-specific sandbox rule, an audit log, an allowlist that skips the approval prompt for known-safe calls.
 
 ## Mid-run steering
 

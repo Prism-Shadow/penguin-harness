@@ -5,19 +5,23 @@
  * process: a script that hangs is killed at its timeout, one that crashes or prints
  * something that is not JSON is recorded as a failed hook, and neither touches the run.
  *
- * stdin:  `{ "hook": "stop", "session_id": "…", "trace_path": "/abs/…_001.jsonl" }`
- *         (`trace_path` absent for a Trace-less Session)
- * stdout: empty = no opinion; otherwise a StopHookResult as JSON (`decision`, `input`,
- *         `reason`, `output`, `subagent: { prompt, agent_id }`).
+ * stdin:  `{ "hook": "stop", "session_id": "…", "trace_path": "/abs/…_001.jsonl" }` for a
+ *         stop hook (`trace_path` absent for a Trace-less Session); a pre_tool_use hook
+ *         additionally gets `tool_name`, `tool_call_id` and `arguments` (the raw argument
+ *         JSON string).
+ * stdout: empty = no opinion; otherwise the point's result as JSON — a StopHookResult
+ *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`) or a
+ *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`).
  * exit:   non-zero = failure (stderr's tail becomes the reason).
  *
  * `runHookScript` is the generic runner — the server uses it for a hook package's other
- * scripts too (the goal plugin's start script) — and `scriptStopHook` adapts one installed
- * command into the in-process StopHook interface.
+ * scripts too (the goal plugin's start script) — and `scriptStopHook` /
+ * `scriptPreToolUseHook` adapt one installed command into the in-process interfaces.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
+import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
 
 /** Seconds a script may run before it is killed, when its manifest names none. */
 export const DEFAULT_HOOK_TIMEOUT_S = 60;
@@ -135,6 +139,57 @@ export function parseStopHookResult(value: unknown): StopHookResult | undefined 
     }
   }
   return result;
+}
+
+/** Narrows a script's parsed stdout to a PreToolUseHookResult: unknown decisions and non-scalar output values are dropped, an unusable value reads as no opinion. */
+export function parsePreToolUseResult(value: unknown): PreToolUseHookResult | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  const result: PreToolUseHookResult = {};
+  if (v.decision === "allow" || v.decision === "deny") result.decision = v.decision;
+  if (typeof v.reason === "string") result.reason = v.reason;
+  if (v.output !== null && typeof v.output === "object" && !Array.isArray(v.output)) {
+    const output: Record<string, string | number | boolean> = {};
+    for (const [k, val] of Object.entries(v.output as Record<string, unknown>)) {
+      if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
+        output[k] = val;
+      }
+    }
+    result.output = output;
+  }
+  return result;
+}
+
+/** One installed pre-tool-use command as a PreToolUseHook: `command` relative to `dir`, the hook package's directory. */
+export function scriptPreToolUseHook(
+  name: string,
+  dir: string,
+  command: string,
+  timeoutS?: number,
+): PreToolUseHook {
+  const script = path.resolve(dir, command);
+  return {
+    name,
+    async run(input: PreToolUseHookInput): Promise<PreToolUseHookResult | void> {
+      const answer = await runHookScript(
+        script,
+        {
+          hook: "pre_tool_use",
+          session_id: input.sessionId,
+          ...(input.tracePath !== undefined ? { trace_path: input.tracePath } : {}),
+          tool_name: input.toolName,
+          tool_call_id: input.toolCallId,
+          arguments: input.argumentsJson,
+        },
+        {
+          cwd: dir,
+          ...(timeoutS !== undefined ? { timeoutS } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
+        },
+      );
+      return parsePreToolUseResult(answer);
+    },
+  };
 }
 
 /** One installed stop-hook command as a StopHook: `command` relative to `dir`, the hook package's directory. */

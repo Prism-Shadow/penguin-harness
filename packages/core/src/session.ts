@@ -36,6 +36,8 @@ import type {
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runStopHooks } from "./hooks/stop-hook.js";
 import type { HookSubagentSpawner, SessionHooks, StopHook } from "./hooks/stop-hook.js";
+import { runPreToolUseHooks } from "./hooks/tool-hook.js";
+import type { PreToolUseHook } from "./hooks/tool-hook.js";
 import type {
   ApproveFn,
   RunCutoff,
@@ -49,7 +51,7 @@ import type {
   LLMInterface,
   ToolPermission,
 } from "./interfaces/index.js";
-import { withCommandPolicy } from "./internal/command-policy.js";
+import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
@@ -265,6 +267,7 @@ export class Session {
   private readonly modelHasVision: boolean;
   /** Stop hooks every `run` of this Session consults, and the spawner for their subagent answers (see SessionConfig.hooks). */
   private readonly stopHooks: readonly StopHook[];
+  private readonly preToolUseHooks: readonly PreToolUseHook[];
   private readonly spawnSubagent?: HookSubagentSpawner;
   private readonly commandPolicy?: CommandPolicyConfig;
   private metaWritten = false;
@@ -311,6 +314,7 @@ export class Session {
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     this.stopHooks = config.hooks?.stop ?? [];
+    this.preToolUseHooks = config.hooks?.preToolUse ?? [];
     if (config.hooks?.spawnSubagent) this.spawnSubagent = config.hooks.spawnSubagent;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
@@ -384,6 +388,38 @@ export class Session {
     // engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
+    }
+    // Pre-tool-use hooks ride the engine's consult seam (RunOptions.preToolUse): the
+    // engine records their events in stream order and applies the first decision before
+    // the approval callback. One rule is enforced here, where the command policy lives:
+    // a hook `allow` never overrides the policy — hook packages sit in agent-writable
+    // state, the policy is Project-owned security config — so a policy-vetoed allow is
+    // downgraded to no decision and the approval chain (policy outermost) answers.
+    if (this.preToolUseHooks.length > 0) {
+      const hooks = this.preToolUseHooks;
+      const signal = opts?.signal;
+      opts = {
+        ...opts,
+        preToolUse: async (tc) => {
+          const p = tc.payload;
+          const tracePath = this.trace?.currentPath?.();
+          const outcome = await runPreToolUseHooks(hooks, {
+            sessionId: this.sessionId,
+            ...(tracePath !== undefined ? { tracePath } : {}),
+            toolName: p.name,
+            toolCallId: p.tool_call_id,
+            argumentsJson: p.arguments,
+            ...(signal ? { signal } : {}),
+          });
+          if (
+            outcome.decision === "allow" &&
+            vetoForToolCall(p.name, p.arguments, this.commandPolicy) !== null
+          ) {
+            return { ...outcome, decision: null };
+          }
+          return outcome;
+        },
+      };
     }
     const approve = opts?.approve;
     const spawn = this.spawnSubagent;

@@ -44,7 +44,10 @@ export function toSkillItem(skill: SkillMetadata & { icon?: string }): SkillMeta
 
 /** The hook points a manifest answers at, in a fixed order. */
 export function hookEvents(manifest: HookManifest): string[] {
-  return manifest.stop.length > 0 ? ["stop"] : [];
+  return [
+    ...(manifest.stop.length > 0 ? ["stop"] : []),
+    ...((manifest.pre_tool_use?.length ?? 0) > 0 ? ["pre_tool_use"] : []),
+  ];
 }
 
 /** An installed hook package as the API describes it: the manifest without its scripts. */

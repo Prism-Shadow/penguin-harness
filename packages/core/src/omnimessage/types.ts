@@ -433,7 +433,7 @@ export interface CompactionEndPayload extends RetryDetail {
 }
 
 /** A stop hook's decision: `continue` keeps the run going (its injected input follows as the next user message), `stop` lets the run end. */
-export type HookDecision = "continue" | "stop";
+export type HookDecision = "continue" | "stop" | "allow" | "deny";
 
 /**
  * Hook result event: one per non-void answer a hook gave at a hook point — today only
@@ -448,7 +448,7 @@ export type HookDecision = "continue" | "stop";
 export interface HookPayload {
   type: "hook";
   /** The hook point that fired. */
-  hook: "stop";
+  hook: "stop" | "pre_tool_use";
   name: string;
   decision?: HookDecision;
   /** One line for people, as the hook wrote it. */

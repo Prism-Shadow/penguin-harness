@@ -24,7 +24,7 @@ official/<plugin>/
 | `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-tuning`, `session-hooks`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
-| `hooks.stop` | The hook package's stop-hook commands: `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
+| `hooks.stop` / `hooks.pre_tool_use` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
 

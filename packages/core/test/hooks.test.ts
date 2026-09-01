@@ -6,20 +6,27 @@ import {
   Session,
   assistantText,
   isEventMessage,
+  parsePreToolUseResult,
   parseStopHookResult,
   runHookScript,
+  runPreToolUseHooks,
   runStopHooks,
+  scriptPreToolUseHook,
   scriptStopHook,
   tokenUsage,
+  toolCall,
+  toolCallOutput,
   userText,
 } from "../src/index.js";
 import type {
+  CommandPolicyConfig,
   EnvironmentInterface,
   HookPayload,
   HookSubagentRequest,
   LLMInterface,
   LLMOutcome,
   OmniMessage,
+  PreToolUseHook,
   SessionMetaPayload,
   StopHook,
   StopHookInput,
@@ -186,6 +193,50 @@ describe("script hooks", () => {
   });
 });
 
+describe("script pre-tool-use hooks", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-script-"));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("scriptPreToolUseHook feeds the call on stdin and narrows the parsed answer", async () => {
+    const script = path.join(dir, "guard.mjs");
+    await fs.writeFile(
+      script,
+      [
+        'import fs from "node:fs";',
+        'const input = JSON.parse(fs.readFileSync(0, "utf8"));',
+        "const args = JSON.parse(input.arguments);",
+        "process.stdout.write(JSON.stringify({",
+        '  decision: "deny",',
+        "  reason: `${input.hook}/${input.tool_name}/${input.tool_call_id}: ${args.cmd}`,",
+        "  output: { checked: true, nested: { dropped: true } },",
+        "}));",
+      ].join("\n"),
+    );
+    const hook = scriptPreToolUseHook("guard", dir, "guard.mjs");
+    const result = await hook.run({
+      sessionId: "s1",
+      toolName: "exec_command",
+      toolCallId: "c9",
+      argumentsJson: '{"cmd":"make it"}',
+    });
+    expect(result).toEqual({
+      decision: "deny",
+      reason: "pre_tool_use/exec_command/c9: make it",
+      output: { checked: true },
+    });
+  });
+
+  it("parsePreToolUseResult drops unknown decisions", () => {
+    expect(parsePreToolUseResult({ decision: "continue", reason: "r" })).toEqual({ reason: "r" });
+    expect(parsePreToolUseResult("nope")).toBeUndefined();
+  });
+});
+
 describe("Session stop hooks", () => {
   let dir: string;
   beforeEach(async () => {
@@ -225,6 +276,9 @@ describe("Session stop hooks", () => {
     extra: {
       trace?: TraceSink;
       spawnSubagent?: (request: HookSubagentRequest, approve?: unknown) => Promise<string>;
+      preToolUse?: PreToolUseHook[];
+      commandPolicy?: CommandPolicyConfig;
+      environment?: EnvironmentInterface;
     } = {},
   ): Session {
     const meta: SessionMetaPayload = {
@@ -240,13 +294,15 @@ describe("Session stop hooks", () => {
       meta,
       bootstrap: async () => ({ tools: [], llm, mcp: [] }),
       mcpServers: [],
-      environment: fakeEnvironment,
+      environment: extra.environment ?? fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,
       hooks: {
         stop: hooks,
+        ...(extra.preToolUse ? { preToolUse: extra.preToolUse } : {}),
         ...(extra.spawnSubagent ? { spawnSubagent: extra.spawnSubagent } : {}),
       },
+      ...(extra.commandPolicy ? { commandPolicy: extra.commandPolicy } : {}),
       ...(extra.trace ? { trace: extra.trace } : {}),
     });
   }
@@ -344,5 +400,215 @@ describe("Session stop hooks", () => {
       .payload as HookPayload;
     expect(event.output).toEqual({ session_id: "child-9" });
     expect(llm.inputs).toEqual(["hello"]);
+  });
+});
+describe("runPreToolUseHooks", () => {
+  const input = {
+    sessionId: "session-1",
+    toolName: "exec_command",
+    toolCallId: "c1",
+    argumentsJson: '{"cmd":"ls"}',
+  };
+
+  it("records every answer, first decision wins, a throwing hook has no opinion", async () => {
+    const hooks: PreToolUseHook[] = [
+      { name: "watcher", run: async () => ({ output: { seen: true } }) },
+      {
+        name: "broken",
+        run: async () => {
+          throw new Error("boom");
+        },
+      },
+      { name: "guard", run: async () => ({ decision: "deny", reason: "not here" }) },
+      { name: "late", run: async () => ({ decision: "allow", reason: "too late" }) },
+      { name: "quiet", run: async () => undefined },
+    ];
+    const outcome = await runPreToolUseHooks(hooks, input);
+    expect(outcome.decision).toBe("deny");
+    expect(outcome.name).toBe("guard");
+    expect(outcome.reason).toBe("not here");
+    const events = outcome.events.map((e) => e.payload as HookPayload);
+    expect(events.map((e) => e.name)).toEqual(["watcher", "broken", "guard", "late"]);
+    expect(events.every((e) => e.hook === "pre_tool_use")).toBe(true);
+    expect(events[1]!.reason).toContain("hook failed: boom");
+    expect(events[1]!.decision).toBeUndefined();
+  });
+
+  it("no hook answering means a null decision and no events", async () => {
+    const outcome = await runPreToolUseHooks(
+      [{ name: "quiet", run: async () => undefined }],
+      input,
+    );
+    expect(outcome).toEqual({ events: [], decision: null });
+  });
+});
+
+describe("Session pre-tool-use hooks", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-hooks-"));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  /** Turn 1 calls exec_command; turn 2 answers with the tool output it saw. */
+  function toolLLM(cmd: string): LLMInterface & { toolOutputs: string[] } {
+    let calls = 0;
+    const toolOutputs: string[] = [];
+    return {
+      toolOutputs,
+      async *streamGenerate({ newMessages }): AsyncGenerator<OmniMessage, LLMOutcome> {
+        calls += 1;
+        if (calls === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd }),
+            toolCallId: "c1",
+            stopReason: "completed",
+          });
+          yield tokenUsage(usage(1), usage(1));
+          return { status: "completed" };
+        }
+        for (const m of newMessages) {
+          const p = m.payload as { type?: string; output?: string };
+          if (p.type === "tool_call_output" && typeof p.output === "string") {
+            toolOutputs.push(p.output);
+          }
+        }
+        yield assistantText("done");
+        yield tokenUsage(usage(1), usage(1));
+        return { status: "completed" };
+      },
+    };
+  }
+
+  const runningEnv: EnvironmentInterface = {
+    listTools: async () => [],
+    executeTool: async function* ({ toolCall: tc }) {
+      yield toolCallOutput({
+        output: "ran",
+        toolCallId: tc.payload.tool_call_id,
+        stopReason: "completed",
+      });
+    },
+    toolPermission: () => undefined,
+  };
+
+  function session(
+    llm: LLMInterface,
+    preToolUse: PreToolUseHook[],
+    commandPolicy?: CommandPolicyConfig,
+  ): Session {
+    const meta: SessionMetaPayload = {
+      session_id: "session-1",
+      provider: "custom",
+      model_id: "m1",
+      model_context_window: 1000,
+      system_prompt: "sp",
+      agent_state: dir,
+      workspace: dir,
+    };
+    return new Session({
+      meta,
+      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
+      mcpServers: [],
+      environment: runningEnv,
+      imagesDir: path.join(dir, "scratchpad", "session-1"),
+      modelHasVision: true,
+      hooks: { preToolUse },
+      ...(commandPolicy ? { commandPolicy } : {}),
+    });
+  }
+
+  async function collect(
+    s: Session,
+    approve: (tc: OmniMessage) => Promise<"allow" | "deny">,
+  ): Promise<OmniMessage[]> {
+    const stream: OmniMessage[] = [];
+    for await (const msg of s.run([userText("go")], { approve: approve as never })) {
+      stream.push(msg);
+    }
+    return stream;
+  }
+
+  it("a deny refuses the call without consulting approval, with the hook's reason in the output", async () => {
+    const llm = toolLLM("ls");
+    let approvals = 0;
+    const guard: PreToolUseHook = {
+      name: "guard",
+      run: async (input) => {
+        expect(input.toolName).toBe("exec_command");
+        expect(input.toolCallId).toBe("c1");
+        expect(JSON.parse(input.argumentsJson)).toEqual({ cmd: "ls" });
+        return { decision: "deny", reason: "not in this sandbox" };
+      },
+    };
+    const stream = await collect(session(llm, [guard]), async () => {
+      approvals += 1;
+      return "allow";
+    });
+    expect(approvals).toBe(0);
+    const hookEvents = stream.filter((m) => isEventMessage(m) && m.payload.type === "hook");
+    expect(hookEvents).toHaveLength(1);
+    expect(hookEvents[0]!.payload).toMatchObject({
+      hook: "pre_tool_use",
+      name: "guard",
+      decision: "deny",
+    });
+    const decision = stream.find(
+      (m) => isEventMessage(m) && m.payload.type === "approval_decision",
+    );
+    expect((decision!.payload as { decision: string }).decision).toBe("deny");
+    expect(llm.toolOutputs).toEqual(["Tool call denied by the guard hook: not in this sandbox."]);
+  });
+
+  it("an allow approves without consulting the host", async () => {
+    const llm = toolLLM("ls");
+    let approvals = 0;
+    const stream = await collect(
+      session(llm, [{ name: "opener", run: async () => ({ decision: "allow" }) }]),
+      async () => {
+        approvals += 1;
+        return "deny";
+      },
+    );
+    expect(approvals).toBe(0);
+    const decision = stream.find(
+      (m) => isEventMessage(m) && m.payload.type === "approval_decision",
+    );
+    expect((decision!.payload as { decision: string }).decision).toBe("allow");
+    expect(llm.toolOutputs).toEqual(["ran"]);
+  });
+
+  it("no answer falls through to the approval callback", async () => {
+    const llm = toolLLM("ls");
+    let approvals = 0;
+    await collect(session(llm, [{ name: "quiet", run: async () => undefined }]), async () => {
+      approvals += 1;
+      return "allow";
+    });
+    expect(approvals).toBe(1);
+    expect(llm.toolOutputs).toEqual(["ran"]);
+  });
+
+  it("the command policy outranks a hook allow: the vetoed call stays forbidden", async () => {
+    const llm = toolLLM("rm -rf /");
+    let approvals = 0;
+    const stream = await collect(
+      session(llm, [{ name: "opener", run: async () => ({ decision: "allow" }) }], {
+        rules: [{ name: "no-rm", pattern: "^rm " }],
+      }),
+      async () => {
+        approvals += 1;
+        return "allow";
+      },
+    );
+    expect(approvals).toBe(0);
+    const decision = stream.find(
+      (m) => isEventMessage(m) && m.payload.type === "approval_decision",
+    );
+    expect((decision!.payload as { decision: string }).decision).toBe("forbidden");
+    expect(llm.toolOutputs).toEqual(["Tool call denied by policy."]);
   });
 });

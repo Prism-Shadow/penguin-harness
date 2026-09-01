@@ -69,6 +69,8 @@ export interface HookManifest {
   descriptionZh?: string;
   version: string;
   stop: HookCommand[];
+  /** Pre-tool-use commands, consulted before each tool call's approval; absent = none (older installs carry no field). */
+  pre_tool_use?: HookCommand[];
 }
 
 /** A plugin's hook package as read from the library: the manifest to install and the `hooks/` files (relative path → text). */
@@ -269,7 +271,10 @@ interface PluginManifestFile {
   version?: string;
   category?: string;
   preinstall?: boolean;
-  hooks?: { stop?: Array<{ command?: string; timeout?: number }> };
+  hooks?: {
+    stop?: Array<{ command?: string; timeout?: number }>;
+    pre_tool_use?: Array<{ command?: string; timeout?: number }>;
+  };
 }
 
 /** Reads one plugin directory; undefined without a parseable plugin.json. */
@@ -309,12 +314,15 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
     typeof manifest.version === "string" && PLUGIN_VERSION_PATTERN.test(manifest.version)
       ? manifest.version
       : "";
-  const stop = (manifest.hooks?.stop ?? [])
-    .filter((c): c is { command: string; timeout?: number } => typeof c?.command === "string")
-    .map((c) => ({
-      command: c.command,
-      ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
-    }));
+  const commandList = (list?: Array<{ command?: string; timeout?: number }>): HookCommand[] =>
+    (list ?? [])
+      .filter((c): c is { command: string; timeout?: number } => typeof c?.command === "string")
+      .map((c) => ({
+        command: c.command,
+        ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
+      }));
+  const stop = commandList(manifest.hooks?.stop);
+  const preToolUse = commandList(manifest.hooks?.pre_tool_use);
   let icon: string | undefined;
   try {
     icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
@@ -334,6 +342,7 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
               : {}),
             version,
             stop,
+            ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
           },
           files: hookFiles,
         }

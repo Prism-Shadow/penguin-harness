@@ -286,9 +286,10 @@ interface SubagentPayload {
 
 interface HookPayload {
   type: "hook";
-  hook: "stop";               // 触发的 hook 点（见运行循环的 stop hook）
+  hook: "stop" | "pre_tool_use";    // 触发的 hook 点（见运行循环的 hook 两节）
   name: string;               // hook 名："goal"、"skill-summary"……
-  decision?: "continue" | "stop";   // 只留记录时缺省
+  decision?: "continue" | "stop"    // stop 点
+    | "allow" | "deny";             // pre_tool_use 点；只留记录时缺省
   reason?: string;            // 一行给人看的说明
   output?: Record<string, string | number | boolean>;
                               // hook 自己的记录——goal hook 写 status / round /

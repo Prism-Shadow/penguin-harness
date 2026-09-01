@@ -84,7 +84,7 @@ Task 由若干连续的 Request(轮)组成，每轮：
 
 ## Stop hook
 
-hook 是 Session 在循环固定点上执行的函数。目前只有一个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` 注册进程内函数。
+hook 是 Session 在循环固定点上执行的函数。目前有两个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）——与 **`pre_tool_use`**，每次工具调用审批之前（见下方小节）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` 注册进程内函数。
 
 已安装的 hook 是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行：只告诉它去哪里看，其余一切——token 用量、轮次、Task 的结束方式、它自己的状态文件——都由它从 Trace 推导。
 
@@ -108,6 +108,27 @@ exit    非零 = 失败（stderr 末尾成为 reason）；超时（缺省 60 秒
 - hook 失败——崩溃、打印的不是 JSON、或超时——以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
 
 插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的协议消息。**`skill-summary`** 插件是另一个（不预装）：刚结束的 Task 跑了超过 30 个完成的轮次时，它把该 Task 浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与该任务调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。窗口就是 Task 本身（Trace 里自它的输入消息起的记录；压缩在任务中途换文件时，窗口即新文件所含），因此一个 Task 至多触发一次——在它结束时——短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
+
+### Pre-tool-use hook
+
+钩子包还可以声明 `pre_tool_use` 命令（`hooks.json`，来自插件的 `hooks.pre_tool_use`）。引擎在每个完整的工具调用上、**审批回调之前**咨询它们——同一套子进程契约，调用本身随 stdin 给出：
+
+```text
+stdin   { "hook": "pre_tool_use", "session_id", "trace_path",
+          "tool_name": "exec_command", "tool_call_id": "…", "arguments": "<原始参数 JSON>" }
+stdout  空 = 无意见；否则
+        { "decision": "allow" | "deny",   // deny：拒绝该调用；allow：不询问直接放行
+          "reason": "给人看的一行说明",
+          "output": { "…": 标量 } }        // 钩子自己的记录
+```
+
+规则与 stop 点一致——每个非空回答记一条 `hook` 事件、第一个决定生效、崩溃 / 非 JSON / 超时按无意见记录——另有三条自己的：
+
+- **deny** 不咨询审批回调直接拒绝；模型在工具输出里读到拒绝原因，含钩子名与 `reason`；
+- **allow** 不询问宿主直接放行——但[命令策略](/configuration#沙箱安全策略)仍然压过它：钩子包在 Agent 可写的状态里，策略是 Project 持有的安全配置，被策略否决的调用无论钩子怎么答都保持 `forbidden`。deny 只会收窄、永远不会放宽；
+- 脚本跑在**热路径**上——每个工具调用执行前咨询一次——保持脚本轻快，并在清单里给出较小的 `timeout`。
+
+没有内置插件带这个点；它留给自定义守卫——项目专属的沙箱规则、审计日志、为已知安全的调用跳过审批弹窗的放行清单。
 
 ## 运行中插话(Steering)
 

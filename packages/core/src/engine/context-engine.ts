@@ -76,6 +76,8 @@ import type {
 import type {
   RunCutoff,
   ApproveFn,
+  PreToolUseFn,
+  PreToolUseOutcome,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
@@ -137,6 +139,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
+  /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
+  preToolUse?: PreToolUseFn;
   /**
    * Thinking level for this run's LLM requests (a per-turn parameter): forwarded to every
    * `streamGenerate` of this run — reconnect retries included; compaction requests keep the
@@ -627,6 +631,7 @@ export class ContextEngine {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
+    const preToolUse = opts?.preToolUse;
     // Per-turn thinking level: applies to each of this run's LLM requests (reconnects included);
     // compaction requests are out of scope and keep the LLM default.
     const thinkingLevel = opts?.thinkingLevel;
@@ -718,7 +723,14 @@ export class ContextEngine {
         // it decides retry/resend purely from `outcome`. The retry count so far is threaded
         // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
         // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
+        turn = yield* this.runTurn(
+          attemptInput,
+          approve,
+          signal,
+          thinkingLevel,
+          reconnects,
+          preToolUse,
+        );
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -1055,6 +1067,7 @@ export class ContextEngine {
     thinkingLevel?: ThinkingLevelName,
     /** Retries already performed for this turn (from the caller's reconnect loop): lets request_end announce the NEXT attempt's planned backoff. */
     reconnectsSoFar = 0,
+    preToolUse?: PreToolUseFn,
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -1150,17 +1163,43 @@ export class ContextEngine {
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
             // returns its outcome (the LLM will close out quickly and return aborted).
             if (signal?.aborted) continue;
+            // Pre-tool-use hooks (RunOptions.preToolUse, wired by the Session from the
+            // Agent's installed hook packages): consulted before the approval boundary,
+            // every answer recorded as a `hook` event in stream order. A throw collapses
+            // to no opinion — a broken hook must not decide anything.
+            let hooked: PreToolUseOutcome | null = null;
+            if (preToolUse) {
+              try {
+                hooked = await preToolUse(tc);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                process.stderr.write(`[penguin] preToolUse consult threw: ${message}; ignoring.\n`);
+              }
+              if (hooked) {
+                for (const ev of hooked.events) {
+                  queue.push(ev);
+                  await this.write(ev);
+                }
+              }
+              if (signal?.aborted) continue;
+            }
             // The approval callback is injected externally (RunOptions.approve): any throw
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,
-            // leaving the already-committed tool_use unanswered.
+            // leaving the already-committed tool_use unanswered. A hook decision skips the
+            // callback: deny refuses without asking, allow approves without asking (the
+            // Session already gave the command policy the last word on an allow).
             let decision: ApprovalDecision;
-            try {
-              decision = await approve(tc);
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-              decision = "deny";
+            if (hooked?.decision === "deny" || hooked?.decision === "allow") {
+              decision = hooked.decision;
+            } else {
+              try {
+                decision = await approve(tc);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
+                decision = "deny";
+              }
             }
             if (signal?.aborted) continue;
             // approve is a callback; context_engine emits its decision as an approval_decision
@@ -1172,12 +1211,15 @@ export class ContextEngine {
               // Denied: feed back an aborted output immediately, so the already-committed
               // tool_use never dangles. One fixed line either way — the wording names the
               // decider ("forbidden" is the command policy's answer, via the Session
-              // wrapper), and the approval_decision event above carries the decision itself.
+              // wrapper; a hook deny names the hook and carries its reason), and the
+              // approval_decision event above carries the decision itself.
               const denied = toolCallOutput({
                 output:
-                  decision === "forbidden"
-                    ? "Tool call denied by policy."
-                    : "Tool call denied by user.",
+                  hooked?.decision === "deny"
+                    ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
+                    : decision === "forbidden"
+                      ? "Tool call denied by policy."
+                      : "Tool call denied by user.",
                 toolCallId,
                 stopReason: "aborted",
               });
