@@ -1334,6 +1334,22 @@ export const putInstalledPlugins = (plugins: readonly string[]) =>
     method: "PUT",
     body: { plugins },
   });
+/**
+ * Admin only: npm-installs the package into the data root, then lists it. Slow — a cold
+ * registry fetch — and listing a package that is not on the machine means nothing, which is
+ * why the two happen together.
+ */
+export const installPlugin = (specifier: string) =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+    method: "POST",
+    body: { specifier },
+  });
+/** Admin only: drops it from the list and removes the package from the data root. */
+export const uninstallPlugin = (specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(
+    `/api/plugins/installed?specifier=${encodeURIComponent(specifier)}`,
+    { method: "DELETE" },
+  );
 export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
 /** Applies to the next command spawn; no restart. */
 export const adminPutSandbox = (body: {
