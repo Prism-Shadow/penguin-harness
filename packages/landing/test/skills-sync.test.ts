@@ -16,7 +16,7 @@ import { zh } from "../src/lib/strings";
 import type { Strings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
-const pluginsRoot = join(__dirname, "..", "..", "plugins", "plugins");
+const pluginsRoot = join(__dirname, "..", "..", "plugins", "library");
 
 /** Every skill directory under every plugin's skills/ (a plugin may ship none). */
 const librarySkills = readdirSync(pluginsRoot, { withFileTypes: true })

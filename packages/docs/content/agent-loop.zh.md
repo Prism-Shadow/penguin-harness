@@ -107,7 +107,7 @@ exit    非零 = 失败（stderr 末尾成为 reason）；超时（缺省 60 秒
 - `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的那个），以该 prompt 为第一条 user 消息；它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上；
 - hook 失败——崩溃、打印的不是 JSON、或超时——以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
 
-插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的协议消息。**`skill-summary`** 插件是另一个（不预装）：当前 Trace 文件里自上一条它记下的摘要事件以来累积了 20 个完成的轮次时（Trace 就是它唯一的状态——重启不影响，压缩换文件则从新文件重新计窗），它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。没有安装任何 Skill 的 Agent 不会触发。
+插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的协议消息。**`skill-summary`** 插件是另一个（不预装）：刚结束的 Task 跑了超过 20 个完成的轮次时，它把该 Task 浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与该任务调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。窗口就是 Task 本身（Trace 里自它的输入消息起的记录；压缩在任务中途换文件时，窗口即新文件所含），因此一个 Task 至多触发一次——在它结束时——短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 运行中插话(Steering)
 

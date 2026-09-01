@@ -4,9 +4,9 @@
 # unignored in every other working copy, one `git add -A` away from a commit.
 #   bin/     — generated `penguin` / `penguin.cmd` CLI launchers
 #   out/     — electron-builder output
-#   plugins/ — a copy of packages/plugins/plugins, which is tracked at its source
+#   library/ — a copy of packages/plugins/library, which is tracked at its source
 #   stage/   — the assembled app directory, on branches that stage before packing
 bin/
 out/
-plugins/
+library/
 stage/

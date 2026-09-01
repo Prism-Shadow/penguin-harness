@@ -1,0 +1,16 @@
+{
+  "description": "Goal mode: a stop hook that keeps the session working toward an objective \u2014 re-injecting it every round and checking the goal file \u2014 until the goal is complete, blocked, or out of token budget.",
+  "description_zh": "\u76ee\u6807\u6a21\u5f0f\uff1a\u4e00\u4e2a stop hook\uff0c\u8ba9\u4f1a\u8bdd\u6301\u7eed\u671d\u76ee\u6807\u5de5\u4f5c\u2014\u2014\u6bcf\u8f6e\u91cd\u65b0\u6ce8\u5165\u76ee\u6807\u5e76\u68c0\u67e5\u76ee\u6807\u6587\u4ef6\u2014\u2014\u76f4\u5230\u76ee\u6807\u5b8c\u6210\u3001\u53d7\u963b\u6216 token \u9884\u7b97\u8017\u5c3d\u3002",
+  "short_description": "Loop the session on an objective until it is done.",
+  "short_description_zh": "\u8ba9\u4f1a\u8bdd\u5faa\u73af\u63a8\u8fdb\u4e00\u4e2a\u76ee\u6807\u76f4\u5230\u5b8c\u6210\u3002",
+  "version": "2026-09-01.1",
+  "category": "session-hooks",
+  "hooks": {
+    "stop": [
+      {
+        "command": "stop.mjs",
+        "timeout": 60
+      }
+    ]
+  }
+}

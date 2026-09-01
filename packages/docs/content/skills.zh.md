@@ -8,8 +8,8 @@ description: 插件打包 Skill（目录加 SKILL.md，元数据先行、正文�
 内置库由一组**插件**组成。一个插件就是一个目录：一份 `plugin.json` 清单，加上它携带的内容——**Skill**（模型按需读取的可复用指令）和/或一个**钩子包**（harness 在循环固定点上运行的脚本，见[运行循环](/agent-loop#stop-hook)）。安装插件即把它的 Skill 放进 `agent_state/skills/`、钩子包放进 `agent_state/hooks/`——Agent State 里并列的两个一等成员，本页其余部分分别介绍。
 
 ```text
-plugins/<plugin>/
-├── plugin.json                # 清单
+library/<plugin>/
+├── plugin.json                # 清单——插件唯一的元数据载体
 ├── skills/<name>/SKILL.md     # 零个或多个 Skill（icon.svg、reference/… 随行）
 └── hooks/*.mjs                # 至多一个钩子包：纯 Node 脚本
 ```
@@ -25,30 +25,25 @@ plugins/<plugin>/
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
 | `hooks.stop` | 钩子包的 stop hook 命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径相对 `hooks/`，超时以秒计 |
 
-插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；插件清单与它携带的每个 Skill 写同一个版本串。没有别的版本方案。
+插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
 
-插件库以 npm 包 `@prismshadow/penguin-plugins` 发布，tarball 直接携带原始 `plugins/` 目录；运行时库内容的事实源同样是包内文件，每次调用直接读取。
+插件库以 npm 包 `@prismshadow/penguin-plugins` 发布，tarball 直接携带原始 `library/` 目录；运行时库内容的事实源同样是包内文件，每次调用直接读取。
 
 ## Skill 的形态
 
 一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标，以及 `SKILL.md` 引用的其他文件（例如它链接到的 `reference/` 子目录）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
 
-frontmatter 字段：
+库内 `SKILL.md` 的 frontmatter 只有两个字段——其余全部放在 `plugin.json`：
 
 | 字段 | 说明 |
 | --- | --- |
 | `name` | Skill 名，与目录名一致 |
 | `description` | 英文单行描述，注入系统 Prompt |
-| `short_description` / `short_description_zh` | UI 短标签(卡片等紧凑位置用)，不注入 Prompt |
-| `version` | `YYYY-MM-DD.N`，与携带它的插件同一个版本串 |
 
 ```md
 ---
 name: my-skill
 description: One-line English description injected into the system prompt.
-short_description: Short UI label.
-short_description_zh: 简短的中文标签。
-version: 2026-08-29.1
 ---
 
 # My Skill
@@ -56,7 +51,7 @@ version: 2026-08-29.1
 具体的步骤、边界与验收标准……
 ```
 
-解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是 `YYYY-MM-DD.N` 时读作空——比库里任何版本都旧，于是库内副本算作可更新。
+**已安装**的副本是自描述的：库在读取时把插件的 `short_description`、`short_description_zh` 与 `version` 盖章进各 Skill 的 frontmatter 重新生成（如同已装钩子包的 `hooks.json` 由清单生成），写进 `agent_state/skills/` 的就是这份内容。更新检查读已装 frontmatter 的 `version`，UI 读它的短标签。解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是 `YYYY-MM-DD.N` 时读作空——比库里任何版本都旧，于是库内副本算作可更新。
 
 ## 渐进式加载
 
@@ -87,7 +82,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整插件库（标记 `preinstall: false` 的插件除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的插件库页，或经 SDK；
-- 安装 Skill 即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 与其他文件（保留子目录）一并拷贝；安装钩子包即写入 `hooks.json` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
+- 安装 Skill 即写入它的可安装 `SKILL.md`（frontmatter 已按插件元数据重新生成，见上），目录内的 `icon.svg` 与其他文件（保留子目录）一并拷贝；安装钩子包即写入 `hooks.json` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
 
 ## 内置插件库
 
@@ -115,11 +110,11 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 | | `agent-evaluation` | 内部叶子工作者：按完整评测协议执行并私下打分恰好一次 Case 运行 |
 | | `agent-optimization` | 在冻结的 Benchmark 上，从完整的当前基线出发改进指定 Agent |
 | 会话钩子 | `goal` | [目标模式](/goal-mode)背后的 stop hook：让会话持续朝目标工作，直到完成、受阻或 token 预算耗尽（预装） |
-| | `skill-summary` | 每累积 20 个完成的轮次，把会话的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
+| | `skill-summary` | 单个任务结束时轮次超过 20，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
 
 ## 编写与优化
 
 - 手工安装：在 `agent_state/skills/<name>/` 下建目录并写入 `SKILL.md` 即可，系统组装系统 Prompt 时扫描 `skills/` 注入元数据；没有 `SKILL.md` 的目录不计为 Skill。
 - 卸载即删除整个 `skills/<name>/`（或 `hooks/<name>/`）目录，操作幂等。
 - Agent 可以在任务中直接改写自己的 SKILL.md——配合 Benchmark 评测与优化形成闭环，见 [自我进化](/self-improvement)。改完把 `version` 记成当天日期加下一个序号。
-- 长会话可以自己回流：装上 `skill-summary` 插件后，每累积 20 个完成的轮次，它的 stop hook 就把会话的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。
+- 长任务可以自己回流：装上 `skill-summary` 插件后，某个任务结束时轮次超过 20，它的 stop hook 就把该任务的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。

@@ -1,7 +1,7 @@
 /**
  * Dev preflight for `pnpm --dir packages/desktop start` (and the root `pnpm desktop`):
  * verify everything a source run needs, and fail with the actual fix instead of a bare
- * ENOENT from the utilityProcess fork or an empty skill library. A source run loads the
+ * ENOENT from the utilityProcess fork or an empty plugin library. A source run loads the
  * same bundles a packaged app does, so all of them have to exist first.
  */
 import { createRequire } from "node:module";
@@ -20,7 +20,7 @@ for (const [what, rel] of [
   // Where the server bundle's `require("node-pty")` lands; without it every terminal
   // session fails to spawn, and only once the user opens a terminal panel.
   ["the staged node-pty package", "dist/node_modules/node-pty/package.json"],
-  ["the skill library copy", "skills"],
+  ["the plugin library copy", "library"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {

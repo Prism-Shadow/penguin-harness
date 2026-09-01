@@ -25,11 +25,11 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 ## `skill-summary` 插件
 
-- 不预装。它的 stop 脚本从上一条它记下的摘要事件起截取当前 Trace 的窗口，窗口累积 20 个完成的轮次后把它浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。没有安装任何 Skill 的 Agent 不会触发。
+- 不预装。刚结束的 Task 跑了超过 20 个完成的轮次时，它的 stop 脚本把该 Task 浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。窗口就是 Task 本身，因此一个任务至多在结束时触发一次，短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 插件库
 
-- `packages/plugins`（npm `@prismshadow/penguin-plugins`）取代 `packages/skills`：`plugins/<plugin>/plugin.json` + `skills/<name>/` + `hooks/`。既有 Skill 各自成为单 Skill 插件；两个钩子包归入新的 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`——插件清单与 SKILL.md frontmatter 皆然；自然数 `version` 与 `updated` 时间戳退场。
+- `packages/plugins`（npm `@prismshadow/penguin-plugins`）取代 `packages/skills`：`library/<plugin>/plugin.json` + `skills/<name>/` + `hooks/`。既有 Skill 各自成为单 Skill 插件；两个钩子包归入新的 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；自然数 `version` 与 `updated` 时间戳退场。
 - Agent State：`agent_state/hooks/<plugin>/` 存放钩子包（由清单生成的 `hooks.json` 加脚本），与 `agent_state/skills/` 并列；状态层新增 `installPlugin`、`installHook`、`removeHook`、`listInstalledHooks`。`default_agent` 预装全部未标 `preinstall: false` 的插件。
 - API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
 - Web App：技能库页改为**插件库**（`/plugins`）——卡片显示插件的 Skill 与钩子点，按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。

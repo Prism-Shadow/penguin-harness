@@ -1,0 +1,17 @@
+{
+  "description": "Skill summary: a stop hook that, every 20 completed turns, hands a condensed excerpt of the session to a background subagent, which folds the durable findings into the agent's own skills.",
+  "description_zh": "\u6280\u80fd\u6c89\u6dc0\uff1a\u4e00\u4e2a stop hook\uff0c\u6bcf\u7d2f\u79ef 20 \u4e2a\u5b8c\u6210\u7684\u8f6e\u6b21\u5c31\u628a\u4f1a\u8bdd\u7684\u6d53\u7f29\u6458\u5f55\u4ea4\u7ed9\u4e00\u4e2a\u540e\u53f0\u5b50\u4f1a\u8bdd\uff0c\u7531\u5b83\u628a\u503c\u5f97\u6c89\u6dc0\u7684\u53d1\u73b0\u5199\u8fdb Agent \u81ea\u5df1\u7684 Skill\u3002",
+  "short_description": "Fold a long session's findings back into the agent's skills.",
+  "short_description_zh": "\u628a\u957f\u4f1a\u8bdd\u7684\u53d1\u73b0\u56de\u6d41\u8fdb Agent \u7684 Skill\u3002",
+  "version": "2026-09-01.1",
+  "category": "session-hooks",
+  "preinstall": false,
+  "hooks": {
+    "stop": [
+      {
+        "command": "stop.mjs",
+        "timeout": 60
+      }
+    ]
+  }
+}

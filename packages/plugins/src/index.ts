@@ -1,7 +1,7 @@
 /**
  * PenguinHarness plugin library: the built-in plugins and the loader that reads them.
  *
- * A plugin is a directory under the package's `plugins/` carrying a `plugin.json` manifest and
+ * A plugin is a directory under the package's `library/` carrying a `plugin.json` manifest and
  * any of two kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
  * `agent_state/skills/`) and a hook package (`hooks/*.js`, installed into
  * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`). The files are the
@@ -10,7 +10,10 @@
  * (id and titles) is code; install / uninstall / scan live in core's state layer.
  *
  * Versions are dates with a sequence number, `YYYY-MM-DD.N` (see PLUGIN_VERSION_PATTERN and
- * compareVersions): a plugin's manifest and every skill it ships carry the same string.
+ * compareVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
+ * carries only `name` and `description`, and the loader stamps the plugin's version and UI short
+ * descriptions into each skill's metadata and installable content (the installed copy carries the
+ * full frontmatter, generated — the way hooks.json is).
  *
  * Docs: packages/docs/content/skills.{zh,en}.md (site path /docs/skills) documents the plugin
  * format, the versions and the built-in library.
@@ -19,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** A skill's frontmatter metadata: name / description / version, plus the optional UI short descriptions (description itself is English-only). */
+/** A skill's metadata. A library SKILL.md's frontmatter carries only `name` and `description`; the short descriptions and `version` are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
   /** Skill name (matches its containing directory name). */
   name: string;
@@ -162,8 +165,8 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/** Root directory of library files: the package's `plugins/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
-const PLUGINS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "plugins");
+/** Root directory of library files: the package's `library/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
+const PLUGINS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "library");
 
 /**
  * Recursively collects a directory's files as text keyed by POSIX-relative path, skipping the
@@ -212,6 +215,38 @@ function readSkillDir(dir: string, name: string): LibrarySkill | undefined {
     content,
     ...(icon !== undefined ? { icon } : {}),
     ...(files !== undefined ? { files } : {}),
+  };
+}
+
+/**
+ * Resolves a library skill against its plugin's manifest: the plugin's version and UI short
+ * descriptions fill the metadata (a library SKILL.md carries only `name` and `description`),
+ * and the installable `content` gets the full frontmatter regenerated in canonical field
+ * order — the installed copy is self-describing (update checks read its `version`, the UI its
+ * short descriptions) the same way an installed hook package's hooks.json is generated.
+ */
+function stampSkill(
+  skill: LibrarySkill,
+  plugin: { shortDescription?: string; shortDescriptionZh?: string; version: string },
+): LibrarySkill {
+  const shortDescription = skill.shortDescription ?? plugin.shortDescription;
+  const shortDescriptionZh = skill.shortDescriptionZh ?? plugin.shortDescriptionZh;
+  const front = [
+    "---",
+    `name: ${skill.name}`,
+    `description: ${skill.description}`,
+    ...(shortDescription !== undefined ? [`short_description: ${shortDescription}`] : []),
+    ...(shortDescriptionZh !== undefined ? [`short_description_zh: ${shortDescriptionZh}`] : []),
+    `version: ${plugin.version}`,
+    "---",
+  ].join("\n");
+  const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
+  return {
+    ...skill,
+    ...(shortDescription !== undefined ? { shortDescription } : {}),
+    ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+    version: plugin.version,
+    content: `${front}${body}`,
   };
 }
 
@@ -298,12 +333,18 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
     version,
     ...(typeof manifest.category === "string" ? { category: manifest.category } : {}),
     preinstall: manifest.preinstall !== false,
-    skills,
+    skills: skills.map((skill) =>
+      stampSkill(skill, {
+        ...(shortDescription !== undefined ? { shortDescription } : {}),
+        ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+        version,
+      }),
+    ),
     ...(hooks !== undefined ? { hooks } : {}),
   };
 }
 
-/** Reads every plugin in the library (one per subdirectory under `plugins/` with a plugin.json), sorted by name. */
+/** Reads every plugin in the library (one per subdirectory under `library/` with a plugin.json), sorted by name. */
 export function loadLibraryPlugins(): LibraryPlugin[] {
   const plugins: LibraryPlugin[] = [];
   for (const entry of fs.readdirSync(PLUGINS_ROOT, { withFileTypes: true })) {

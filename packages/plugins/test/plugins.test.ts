@@ -1,5 +1,5 @@
 /**
- * The plugin library's file source of truth and its loader: plugins read from `plugins/`
+ * The plugin library's file source of truth and its loader: plugins read from `library/`
  * (manifest fields, the skills and hook packages they ship), the version scheme, the
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
@@ -22,7 +22,7 @@ import {
   type PluginCategory,
 } from "../src/index.js";
 
-const pluginsRoot = path.resolve(import.meta.dirname, "../plugins");
+const pluginsRoot = path.resolve(import.meta.dirname, "../library");
 
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
@@ -50,15 +50,26 @@ describe("loadLibraryPlugins", () => {
     }
   });
 
-  it("a skill plugin carries its SKILL.md verbatim, its icon, and the same version as its manifest", async () => {
+  it("stamps the plugin's metadata into each skill: slim file frontmatter, full installable frontmatter", async () => {
     for (const plugin of loadLibraryPlugins()) {
       for (const skill of plugin.skills) {
         const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
-        expect(skill.content).toBe(await fs.readFile(path.join(dir, "SKILL.md"), "utf8"));
+        const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
+        // The library file carries only name + description; plugin.json is the metadata holder.
+        const fileFront = /^---\n([\s\S]*?)\n---/.exec(file)![1]!;
+        expect(fileFront, `${plugin.name}/${skill.name} file frontmatter`).not.toMatch(
+          /^(version|short_description|short_description_zh):/m,
+        );
+        // The installable content regenerates the frontmatter with the plugin's fields and
+        // keeps the body verbatim.
+        const meta = parseSkillFrontmatter(skill.content)!;
+        expect(meta.version, `${plugin.name}/${skill.name} version`).toBe(plugin.version);
+        expect(skill.version).toBe(plugin.version);
+        expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
+        expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
         expect(skill.icon, `${plugin.name}/${skill.name} icon.svg`).toBeDefined();
         expect(skill.icon).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
         expect(skill.icon).not.toMatch(/<script/i);
-        expect(skill.version, `${plugin.name}/${skill.name} version`).toBe(plugin.version);
         // Every shipped skill asks before starting when the message only names it.
         expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
           /^## Before you start$/m,
