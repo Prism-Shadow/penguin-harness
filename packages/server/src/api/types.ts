@@ -25,6 +25,7 @@ import type {
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
+import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3502,4 +3503,33 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** One plugin `<root>/plugins.json` lists (GET /api/plugins/installed). */
+export interface InstalledPlugin {
+  /** The package specifier as written in the file. */
+  specifier: string;
+  /** Whether the modules this package declares are all present in the running process. */
+  active: boolean;
+  /** Module names the package declares it adds. */
+  modules: string[];
+  /** Node names the package declares it stands in for. */
+  replaces: string[];
+  /** Why the package could not be read at all (unresolvable, not a plugin package). */
+  error?: string;
+}
+
+export interface InstalledPluginsResponse {
+  plugins: InstalledPlugin[];
+  /** The file the list lives in, named for the page that explains where to edit it by hand. */
+  file: string;
+  /** A listed plugin is not running: plugins load once per process, so a restart applies it. */
+  restartPending: boolean;
+}
+
+/** GET|PUT /api/admin/sandbox — the confinement settings and what can enforce them. */
+export interface SandboxSettingsResponse {
+  settings: SandboxSettingsType;
+  /** Mounted backends and the isolation dimensions each implements; empty = nothing enforces. */
+  backends: Array<{ name: string; dimensions: string[] }>;
 }
