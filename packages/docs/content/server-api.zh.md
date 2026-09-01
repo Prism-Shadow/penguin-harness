@@ -113,6 +113,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /api/projects/:projectId/machines | **服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias, installed, elsewhere?}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
+| POST | /api/projects/:projectId/machines/probe | 询问本 Project 已安装的机器各自的状态（每台一次 ssh 往返，并发 5）并返回带有最新状态的列表 |
 | POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
 | POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 

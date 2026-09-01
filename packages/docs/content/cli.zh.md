@@ -309,6 +309,19 @@ penguin web
 
 两者都把服务作为子进程运行，自己留在后面做托管：终端的 Ctrl+C 会送达服务，命令以服务的退出码退出；当服务请求重启——`penguin update` 替换安装后，Web App 里的「重启并更新」——托管进程会在新版本上重新拉起它，并打印一行提示。经 `tsx` 的开发运行无法被普通 node 重新拉起，改为在本进程内运行服务；此时 Web App 会提示管理员手动重启。
 
+### penguin server status
+
+以单行 JSON 打印本数据根目录的服务状态与本机 id。无论是否有服务在运行它都会作答——依据是数据根目录本身，而不是某个存活的进程：
+
+```bash
+penguin server status
+# {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
+```
+
+`running` 为真要求记录的 pid 存活**且**其端口可建立连接，因此被回收复用的 pid 不会被读成一个活着的服务。`machineId` 在本机从未启动过服务之前是 `null`——该 id 在首次启动时铸出，此后永不改变。数据根目录一如既往由 `PENGUIN_HOME` 选定。
+
+机器页正是通过 ssh 运行这条命令来询问一台机器的状态，这也是它输出 JSON 而非人类散文的原因。
+
 ### penguin server reset-admin-password
 
 忘记 Web 管理员密码时的离线救援。须在服务停止后执行——数据根目录上有服务在运行时会拒绝：

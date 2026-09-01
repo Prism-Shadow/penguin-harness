@@ -18,6 +18,10 @@
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
     },
+    "./machine-status": {
+      "types": "./dist/machine-status.d.ts",
+      "import": "./dist/machine-status.js"
+    },
     "./lock": {
       "types": "./dist/lock.d.ts",
       "import": "./dist/lock.js"

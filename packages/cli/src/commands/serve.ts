@@ -37,6 +37,7 @@ import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
 import { registerResetPasswordCommand } from "./reset-password.js";
+import { registerStatusCommand } from "./server-status.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -344,6 +345,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
   // Bare `penguin server` still starts the service (commander runs the action when no
   // subcommand is named); the subcommand only dispatches on an exact name match.
   registerResetPasswordCommand(server, t);
+  registerStatusCommand(server, t);
 
   program
     .command("web")

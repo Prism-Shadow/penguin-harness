@@ -60,6 +60,40 @@ function connectionOptions(target: RemoteTarget): string[] {
   ];
 }
 
+/**
+ * The far side's program directory, and the launcher inside it that everything here runs.
+ * Absolute, because sshd's non-login shell has no `~/.local/bin` on PATH — the symlink the
+ * installer drops there is for a person at a terminal, not for us.
+ *
+ * `$HOME/.penguin` is where install.sh puts it (`PENGUIN_INSTALL_DIR`, defaulting there),
+ * laid out as bin/ lib/ web/ node/, with the launcher exec'ing `node/bin/node lib/dist/…`
+ * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
+ * a non-interactive ssh, so the default is the only thing this side can assume — the same
+ * assumption detect.ts makes to find the manifest.
+ */
+export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
+
+/**
+ * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
+ *
+ * `bin/penguin` is the released program, and a release only carries the subcommands this
+ * side asks for (`server status`, `auth token`, `server --detach`) once a release has
+ * shipped them. Reaching a machine would then be impossible until the next release —
+ * including for the build that introduces reaching machines at all.
+ *
+ * `dist/penguin-hmr.js` is the entry that loads the CLI out of that machine's own hmr store
+ * (packages/cli/src/penguin-hmr.ts), which is the CLI this server pushed there. It has
+ * shipped in the archive since long before any of this, so a machine installed by any
+ * release can run the current CLI. What it cannot do is run one that was never pushed: a
+ * machine with an empty store answers `no CLI pushed to <root>`, and the remedy is to
+ * install — which replicates the store on its way through (install-server.ts).
+ *
+ * Invoked through the bundled runtime rather than the launcher, because there is no
+ * launcher for this entry. Machines installed from here always carry that runtime: the
+ * install runs install.sh without `--universal`, which is the only mode that omits it.
+ */
+export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
+
 /** `ssh <options> <alias> <remote command>`. */
 export function sshArgs(target: RemoteTarget, remoteCommand: string): string[] {
   return [...connectionOptions(target), target.alias, remoteCommand];

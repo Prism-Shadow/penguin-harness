@@ -113,6 +113,7 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /api/projects/:projectId/machines | The host aliases of the SERVER's own `~/.ssh/config` with what THIS PROJECT has installed on each, the version this server would install, and the running or last install job: `{machines: [{id, alias, installed, elsewhere?}], imageVersion, job}`. `elsewhere` is a host another Project installed — a machine to adopt rather than install |
+| POST | /api/projects/:projectId/machines/probe | Ask this Project's installed machines what they are doing (one ssh round trip each, five at a time) and answer the list with the fresh statuses |
 | POST | /api/projects/:projectId/machines/:machineId/install | Start installing this build on that host and give it to this Project; `202` with the same body, the job now running |
 | POST | /api/projects/:projectId/machines/:machineId/release | Drop that machine from this Project; the install on it stays |
 

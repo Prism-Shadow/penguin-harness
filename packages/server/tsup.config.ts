@@ -20,6 +20,10 @@ export default defineConfig({
     index: "src/index.ts",
     "api/types": "src/api/types.ts",
     lock: "src/lock.ts",
+    // "./machine-status": what `penguin server status` prints. A CONTROLLER runs that command
+    // over ssh to ask a machine what it is, so the reader has to be importable without a
+    // server — see src/machine-status.ts.
+    "machine-status": "src/machine-status.ts",
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "auth-token": "src/auth-token.ts",

@@ -1,6 +1,6 @@
 /**
- * What this server remembers about machines: one row per machine it has installed on, and
- * which machines each Project uses. In web.db, so a hot swap or a restart reads back exactly
+ * What this server remembers about machines: its own identity, one row per machine it has
+ * installed on, and which machines each Project uses. In web.db, so a hot swap or a restart reads back exactly
  * what the last generation wrote — the JSON file this replaces could not survive a schema
  * change, and nothing else this server remembers lives outside the database.
  *
@@ -9,6 +9,7 @@
  * are the table's, not this store's opinion of what matters.
  */
 import type { DatabaseSync } from "node:sqlite";
+import { randomBytes } from "node:crypto";
 
 export interface MachineRow {
   /** `ssh:<alias>` */
@@ -27,8 +28,33 @@ export interface MachineRow {
 /** Everything but the address may be patched; absent fields keep their value. */
 type MachinePatch = Partial<Omit<MachineRow, "address">>;
 
+/**
+ * 12 random bytes as base64url: 16 characters a person can read in a tooltip, 96 bits
+ * against ids minted on machines that never coordinate.
+ */
+const MACHINE_ID_BYTES = 12;
+
 export class MachinesRepo {
   constructor(private readonly db: DatabaseSync) {}
+
+  /**
+   * This server's own id if one has been minted, WITHOUT minting one — `penguin server
+   * status` runs on a data root whose server may never have started, and must not create an
+   * identity as a side effect of the question.
+   */
+  peekOwnId(): string | null {
+    const row = this.db.prepare("SELECT machine_id FROM machine WHERE singleton = 1").get();
+    return row ? (row.machine_id as string) : null;
+  }
+
+  /** This server's own id, minted on first call and stable ever after. */
+  ownId(): string {
+    const existing = this.peekOwnId();
+    if (existing !== null) return existing;
+    const minted = randomBytes(MACHINE_ID_BYTES).toString("base64url");
+    this.db.prepare("INSERT INTO machine (singleton, machine_id) VALUES (1, ?)").run(minted);
+    return minted;
+  }
 
   get(address: string): MachineRow | null {
     const row = this.db.prepare("SELECT * FROM machines WHERE address = ?").get(address);

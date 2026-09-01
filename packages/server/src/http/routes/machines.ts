@@ -2,12 +2,15 @@
  * Machines routes, under a Project (admin only, 403 for non-admins). Relative to
  * `/api/projects/:projectId/machines`:
  *
+ * POST /probe             — refresh the statuses of this Project's machines (one ssh round
+ *                            trip each), then answer the list.
  * POST /:machineId/install — start an install and give the machine to this Project; 202, or
  *                            409 when one runs.
  * POST /:machineId/release — drop it from this Project. The install stays.
- * GET  /                   — the ssh config's host aliases with what this Project has
- *                            installed on each, the version this server would install, and
- *                            the running or last job.
+ * GET  /                   — this machine and the ssh config's host aliases with what this
+ *                            Project has installed on each, the last status probed for each,
+ *                            the version this server would install, and the running or last
+ *                            job.
  *
  * Under a Project because the page is, and because a Project's machines are where that
  * Project's work runs. The machine itself is not project-scoped — one host, one program,
@@ -51,6 +54,11 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/", (c) => c.json(state(c)));
 
+  app.post("/probe", async (c) => {
+    await deps.machines.probeInstalled(requireValidId(c, "projectId"));
+    return c.json(state(c));
+  });
+
   app.post("/:machineId/release", (c) => {
     deps.machines.release(requireValidId(c, "projectId"), c.req.param("machineId"));
     return c.json(state(c));
@@ -66,6 +74,13 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       // in particular is a property of THIS server rather than of the machine picked.
       if (started.why === "busy") {
         throw new HttpError(409, "install_running", "An install is already running.");
+      }
+      if (started.why === "self") {
+        throw new HttpError(
+          409,
+          "self_install",
+          "That is the machine this server runs on. It cannot push this build over the program directory it is running from.",
+        );
       }
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
