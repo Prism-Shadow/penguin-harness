@@ -289,13 +289,6 @@ export class Session {
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
   private readonly commandPolicy?: CommandPolicySource;
-  /**
-   * The level the user pinned (the soft-limited knob): rides every subsequent LLM request
-   * as the per-request override the moment it is set — mid-context included — and shapes
-   * every context opened from then on. Unset until `pinThinkingLevel` is called; the
-   * contexts' own defaults apply meanwhile.
-   */
-  private pinnedLevel?: ThinkingLevelName;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -373,9 +366,6 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
-      // The soft-limited knob: the engine reads the pinned level at every turn request, so
-      // a mid-context re-pin applies from the very next request (see pinThinkingLevel).
-      thinkingLevel: () => this.pinnedLevel,
       // Background completion notices: the engine pulls from the Session's queue at every
       // input-assembly boundary (see pendingNotices for the exactly-once contract). This is
       // the steering delivery path — the notice joins a Task that already exists — so the
@@ -845,8 +835,11 @@ export class Session {
    * Callers: the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`.
    */
   pinThinkingLevel(level: ThinkingLevelName): void {
-    this.pinnedLevel = level;
     this.pinContext?.(level);
+    // The live value is engine-owned state, applied from the next turn request. Before the
+    // engine exists (no run yet) the pinContext call above already made the pin the first
+    // context's base, which is exactly what its requests will use.
+    this.engine?.setThinkingLevel(level);
   }
 
   /**

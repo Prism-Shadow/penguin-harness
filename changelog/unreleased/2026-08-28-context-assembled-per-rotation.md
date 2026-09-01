@@ -85,7 +85,8 @@ approval mode: re-read from the DB per decision, effective immediately).
   `openNextContext({ emit }) => OpenedContext | Promise<OpenedContext>`, with
   `OpenedContext` being `{ llm, sessionMeta?, maxTurns?, compaction? }`; records passed to
   `emit` are yielded on the run stream and written at the head of the rotated Trace file, and
-  the engine seeds the returned LLM's cumulative session counts itself. Code
+  the engine is the sole author of `token_usage.session` — the LLM reports per-request usage
+  only, and `GenerativeModel` no longer carries a `sessionTokens` field. Code
   that constructs `Session` or `ContextEngine` directly returns `{ llm }` where it returned the
   LLM before; the `Agent.createSession` / `resumeSession` path needs no change. `Environment`
   gains `reconfigure({ toolConfig, vault })` and `pendingMcpServerNames()`.
@@ -97,7 +98,8 @@ approval mode: re-read from the DB per decision, effective immediately).
 - SDK: `RunOptions.thinkingLevel`, `SubagentHandle.run`'s `thinkingLevel` and
   `SubagentMessageOptions.thinkingLevel` are removed; a host that changed the level per run
   pins the Session with `Session.pinThinkingLevel(level)` instead, and the level applies from
-  the next LLM request (the engine reads the live pin through `ContextEngineDeps.thinkingLevel`).
+  the next LLM request (the Session forwards the pin into engine-owned state:
+  `ContextEngine.setThinkingLevel`).
 - SDK: `SessionConfig.commandPolicy` takes a source function instead of a static config — the
   composition layer's source answers with the running context's policy, read from
   `.project_config.toml` once per context open. `Session.toolPermission` keeps its synchronous

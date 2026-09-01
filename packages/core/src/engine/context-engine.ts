@@ -35,6 +35,7 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  addTokenCounts,
   emptyTokenCounts,
   isCompleteModelMessage,
   isSessionMeta,
@@ -187,7 +188,7 @@ export interface EngineInitialState {
    * after a restart — both have zero turns and are not the same message to a user.
    */
   fromCompaction?: boolean;
-  /** Carried-over Session cumulative token counts (handed to the new object when compaction swaps it in). */
+  /** Carried-over Session cumulative token counts (the engine resumes its own accumulator from them). */
   sessionTokens?: TokenCounts;
   /** Most recent token_usage's request.total (the context usage figure, keeps compaction threshold checks continuous). */
   lastRequestTotal?: number;
@@ -242,16 +243,6 @@ export interface ContextEngineDeps {
   openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
-  /**
-   * The Session's live thinking level, evaluated at every turn request and sent as the
-   * per-request override when defined. This is the one soft-limited runtime parameter: a
-   * host may move it mid-context (the change costs the provider's cached context, which is
-   * why hosts advise compacting), unlike the prompt/toolset/model, which never change
-   * between a context's open and its close. Compaction requests ignore it and keep the
-   * context's own default — their prefix must stay byte-identical at the moment the
-   * context is largest.
-   */
-  thinkingLevel?: () => ThinkingLevelName | undefined;
   /**
    * The first context's session_meta message: written at the start of each Trace file a
    * compaction's rotation opens, until an `openNextContext` result brings the meta of the context
@@ -464,9 +455,18 @@ export class ContextEngine {
   private sessionTurns = 0;
   /** Whether the current context was produced by a compaction (`startNewContext`); this flag becomes meaningless once a new completed turn occurs. */
   private fromCompaction = false;
+  /**
+   * The Session's current thinking level — the soft-limited runtime parameter as
+   * engine-owned state: `setThinkingLevel` (wired from `Session.pinThinkingLevel`) moves it
+   * mid-context, and every subsequent turn request carries it as the per-request override.
+   * Undefined = no pin: the LLM object's construction default (the context's opening base)
+   * applies. Compaction requests ignore it and keep the context's base — their prefix must
+   * stay byte-identical at the moment the context is largest.
+   */
+  private thinkingLevel?: ThinkingLevelName;
   /** Most recent token_usage's request.total, i.e. the current context usage figure. */
   private lastRequestTotal = 0;
-  /** Most recent token_usage's session cumulative counts, handed to the new LLM object when compaction swaps it in. */
+  /** The Session-cumulative token series — engine-owned: accumulated from each token_usage's request counts and stamped onto the message before it is yielded or written (the LLM's lifetime is one context; the engine's is the Session). */
   private lastSessionTokens: TokenCounts = emptyTokenCounts();
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: OmniMessage | null = null;
@@ -538,12 +538,14 @@ export class ContextEngine {
       this.sessionTurns = init.sessionTurns ?? 0;
       this.fromCompaction = init.fromCompaction ?? false;
       this.lastSessionTokens = init.sessionTokens ?? emptyTokenCounts();
-      // The same continuity seam as a rotation swap-in: on resume the initial LLM starts
-      // from the replay's cumulative counts (the composition layer no longer staples them).
-      if (init.sessionTokens) this.llm.sessionTokens = init.sessionTokens;
       this.lastRequestTotal = init.lastRequestTotal ?? 0;
       this.pendingTraceRotation = init.pendingTraceRotation ?? false;
     }
+  }
+
+  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
+  setThinkingLevel(level: ThinkingLevelName): void {
+    this.thinkingLevel = level;
   }
 
   /**
@@ -1129,7 +1131,7 @@ export class ContextEngine {
         await this.write(startEvt);
         // Iterate manually to capture the generator's **return value** (LLMOutcome); LLM
         // guarantees it never throws.
-        const level = this.deps.thinkingLevel?.();
+        const level = this.thinkingLevel;
         const gen = this.llm.streamGenerate({
           newMessages: input,
           ...(signal ? { signal } : {}),
@@ -1386,13 +1388,23 @@ export class ContextEngine {
     return null;
   }
 
-  /** Records context usage and Session cumulative counts from a token_usage event; returns whether the message is a token_usage. */
+  /**
+   * Records context usage from a token_usage event and stamps the engine-authored session
+   * series onto it; returns whether the message is a token_usage. The engine is the single
+   * author of `token_usage.session`: the LLM reports per-request usage only (its lifetime is
+   * one model context), and this method — on the turn path and the compaction path alike —
+   * accumulates the request counts and overwrites the payload's `session` before the
+   * message is yielded or written.
+   */
   private observeTokenUsage(msg: OmniMessage): boolean {
     if (msg.type !== "event_msg") return false;
     const payload = msg.payload as Partial<TokenUsagePayload>;
     if (payload.type !== "token_usage") return false;
-    if (payload.request) this.lastRequestTotal = payload.request.total;
-    if (payload.session) this.lastSessionTokens = payload.session;
+    if (payload.request) {
+      this.lastRequestTotal = payload.request.total;
+      this.lastSessionTokens = addTokenCounts(this.lastSessionTokens, payload.request);
+      (payload as TokenUsagePayload).session = this.lastSessionTokens;
+    }
     return true;
   }
 
@@ -1652,7 +1664,7 @@ export class ContextEngine {
    * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
    * call with a synthesized failed output).
    * Token usage is counted into the Session
-   * cumulative totals (recorded via observeTokenUsage, for the new object to carry forward).
+   * cumulative totals (accumulated and stamped onto every token_usage via observeTokenUsage).
    */
   private async *runCompactionRequest(
     input: OmniMessage[],
@@ -1799,10 +1811,6 @@ export class ContextEngine {
     // pending, so the next trigger compacts again from a consistent state.
     const opened = await opening;
     this.pendingTraceRotation = true;
-    // Session-cumulative continuity is engine bookkeeping, not the opener's: seed the fresh
-    // LLM with the counts accumulated so far (compaction request usage included), so
-    // token_usage.session never resets across the rotation.
-    opened.llm.sessionTokens = this.lastSessionTokens;
     this.llm = opened.llm;
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;

@@ -1056,9 +1056,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       // nothing, and the context a compaction opens takes the pin as its base.
       session.pinThinkingLevel("xhigh");
       expect(
-        (
-          session as unknown as { engineDeps: { thinkingLevel: () => string | undefined } }
-        ).engineDeps.thinkingLevel(),
+        (session as unknown as { engine: { thinkingLevel?: string } }).engine.thinkingLevel,
       ).toBe("xhigh");
       const { opened } = await openNext(session);
       expect(

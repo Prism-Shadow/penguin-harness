@@ -40,12 +40,7 @@ import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js
 import { goalRoundMessage } from "../src/goal/goal-prompts.js";
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
-import type {
-  ApproveFn,
-  EnvironmentInterface,
-  ThinkingLevelName,
-  ToolPermission,
-} from "../src/interfaces/index.js";
+import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
 const PNG_DATA_URL =
@@ -1037,10 +1032,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 });
 
 describe("ContextEngine live thinking level (the soft-limited runtime parameter)", () => {
-  it("reads deps.thinkingLevel at every turn request — reconnects included — and compaction requests keep the context default", async () => {
+  it("applies setThinkingLevel to every turn request — reconnects included — while compaction requests keep the context default", async () => {
     const levels: (string | undefined)[] = [];
     let calls = 0;
-    let live: ThinkingLevelName | undefined;
     const llm: LLMInterface = {
       async *streamGenerate(params) {
         calls += 1;
@@ -1089,19 +1083,18 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
       environment,
       maxReconnects: 1,
       reconnectBackoffMs: 1,
-      thinkingLevel: () => live,
       openNextContext: () => ({ llm: llm }),
       compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
     });
 
-    live = "high";
+    engine.setThinkingLevel("high");
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(3);
     // Turn attempt + reconnect retry carry the live level; the compaction request does not.
     expect(levels).toEqual(["high", "high", undefined]);
 
     // A re-pin between runs is picked up by the next request without any rotation.
-    live = "low";
+    engine.setThinkingLevel("low");
     const llm2Levels: (string | undefined)[] = [];
     (llm as { streamGenerate: unknown }).streamGenerate = async function* (params: {
       thinkingLevel?: string;

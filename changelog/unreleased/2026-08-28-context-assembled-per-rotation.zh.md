@@ -57,7 +57,8 @@
 - SDK：`SessionConfig.createLLM` 与 `ContextEngineDeps.createLLM` 被
   `openNextContext({ emit }) => OpenedContext | Promise<OpenedContext>` 取代，`OpenedContext` 即
   `{ llm, sessionMeta?, maxTurns?, compaction? }`；传给 `emit` 的记录在运行流上推出并写入轮转出的 Trace
-  文件头部，新 LLM 的 Session 累计 Token 由引擎自行接续。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
+  文件头部；`token_usage.session` 由引擎统一累计并盖章——LLM 只报逐请求用量，`GenerativeModel` 不再持有
+  `sessionTokens` 字段。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
   `Agent.createSession` / `resumeSession` 的代码无需改动。`Environment` 新增 `reconfigure({ toolConfig, vault })`
   与 `pendingMcpServerNames()`。
 - SDK：`loadOrInitAgentState` 并入 `loadAgentState`——创建或装载行为改传 `init: {}`（或 `init: { preset }`）；
@@ -66,7 +67,7 @@
   bootstrap 自己知道。
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
   `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改用 `Session.pinThinkingLevel(level)` 钉住
-  Session，自下一次 LLM 请求起生效（引擎经 `ContextEngineDeps.thinkingLevel` 读取实时钉住值）。
+  Session，自下一次 LLM 请求起生效（钉住值转发为引擎自有状态：`ContextEngine.setThinkingLevel`）。
 - SDK：`SessionConfig.commandPolicy` 改为来源函数、不再是静态配置——组合层的来源返回运行中上下文的策略，
   每个上下文开启时从 `.project_config.toml` 读取一次。`Session.toolPermission` 签名不变（同步），取值为运行中
   上下文的工具集。

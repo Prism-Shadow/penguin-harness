@@ -973,9 +973,6 @@ export class GenerativeModel implements LLMInterface {
   /** Last hard-clamped cap already warned about on stderr (dedupe: retries reuse the same estimate and would repeat the identical line). */
   private lastWarnedCap: number | undefined;
 
-  /** Cumulative session tokens. */
-  sessionTokens: TokenCounts = emptyTokenCounts();
-
   constructor(config: GenerativeModelConfig) {
     // Omit apiKey / baseUrl when undefined, letting AgentHub read them from environment
     // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
@@ -1301,8 +1298,10 @@ export class GenerativeModel implements LLMInterface {
     // (see effectiveMaxTokens). Only a completed request updates it: an interrupted or
     // failed attempt was never committed, so the context did not grow.
     this.lastRequestTotal = requestTokens.total;
-    this.sessionTokens = addTokenCounts(this.sessionTokens, requestTokens);
-    yield tokenUsage(this.sessionTokens, requestTokens);
+    // The session series is not this object's business (its lifetime is one model context):
+    // the engine accumulates and stamps token_usage.session on every message it forwards.
+    // The request counts stand in for consumers running a GenerativeModel without an engine.
+    yield tokenUsage(requestTokens, requestTokens);
     return { status: "completed" };
   }
 

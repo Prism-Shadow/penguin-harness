@@ -245,7 +245,7 @@ interface ApprovalDecisionPayload {
 
 interface TokenUsagePayload {
   type: "token_usage";
-  session: TokenCounts;       // Session 累计
+  session: TokenCounts;       // Session 累计——由引擎统一累计盖章(LLM 只报 `request`)
   request: TokenCounts;       // 本次 Request
 }
 

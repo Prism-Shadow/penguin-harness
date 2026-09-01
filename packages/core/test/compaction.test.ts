@@ -48,7 +48,6 @@ import type {
   OmniMessage,
   SessionMetaPayload,
   TextPayload,
-  TokenCounts,
   TokenUsagePayload,
 } from "../src/omnimessage/index.js";
 import type {
@@ -248,12 +247,12 @@ describe("context compaction", () => {
       .map(textOf);
     expect(textBetween).toEqual(["[summary]the distilled summary[/summary]"]);
 
-    // The engine seeds the new LLM instance with the session's cumulative tokens itself
-    // (compaction request usage included) — the opener is not in the bookkeeping loop.
-    expect((llm2 as { sessionTokens?: TokenCounts }).sessionTokens).toMatchObject({ total: 310 });
-
     // The summary is merged with the next user prompt as the new LLM instance's first input.
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    // The engine authors the session series itself: the new context's token_usage continues
+    // from 310 (compaction request usage included) — nothing is seeded on the LLM object.
+    const usage2 = out2.find((m) => (m.payload as { type?: string }).type === "token_usage")!;
+    expect((usage2.payload as TokenUsagePayload).session.total).toBe(330);
     expect(llm1.calls).toHaveLength(2);
     expect(llm2.calls).toHaveLength(1);
     const firstInput = llm2.calls[0]!.map(textOf);
@@ -1077,11 +1076,11 @@ describe("context compaction", () => {
     expect(usageBetween.map((m) => (m.payload as TokenUsagePayload).request.total)).toEqual([
       160, 170,
     ]);
-    // The engine seeds the new instance with cumulative tokens including the rejected attempts' usage.
-    expect((llm2 as { sessionTokens?: TokenCounts }).sessionTokens).toMatchObject({ total: 480 });
-
-    // The new context opens with the 5th attempt's summary.
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    // The new context opens with the 5th attempt's summary; the engine-authored session
+    // series continues from 480 (the rejected attempts' usage included).
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const usage2 = out2.find((m) => (m.payload as { type?: string }).type === "token_usage")!;
+    expect((usage2.payload as TokenUsagePayload).session.total).toBe(500);
     expect(llm1.calls).toHaveLength(6);
     expect(llm2.calls[0]!.map(textOf)).toEqual([
       "[context_summary]\nfifth attempt wins\n[/context_summary]",

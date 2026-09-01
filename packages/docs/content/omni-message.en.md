@@ -255,7 +255,7 @@ interface ApprovalDecisionPayload {
 
 interface TokenUsagePayload {
   type: "token_usage";
-  session: TokenCounts;       // Session cumulative
+  session: TokenCounts;       // Session cumulative — authored by the engine (the LLM reports `request` only)
   request: TokenCounts;       // this Request
 }
 
