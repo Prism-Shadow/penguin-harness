@@ -996,7 +996,7 @@ export class GenerativeModel implements LLMInterface {
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 300000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
     this.configuredMaxTokens = config.maxTokens;
     this.contextWindow = resolveContextWindow(config.contextWindow);
@@ -1416,5 +1416,12 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   if (config.fastMode === true) {
     uniConfig.fast_mode = true;
   }
+  // Thought summaries, always requested. Two things ride on it: the user gets to watch the
+  // model reason, and — because the request timeout is an idle budget between upstream events
+  // — a reasoning phase that reaches the wire keeps resetting that timer instead of counting
+  // as one long silence. No model rejects the flag (unlike fast_mode): AgentHub maps it where
+  // it exists and drops it where it doesn't, so the only cost of asking is on families that
+  // answer with a summarized thinking stream (Claude) instead of the raw one.
+  uniConfig.thinking_summary = true;
   return uniConfig;
 }

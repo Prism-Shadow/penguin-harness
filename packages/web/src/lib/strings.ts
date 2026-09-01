@@ -536,7 +536,7 @@ export const zh = {
     /** Row description shown only while the stored config is `none`: displayed as-is, never rewritten, and no longer offered as a choice. */
     thinkingLevelNoneKept: "已存的历史档位：新选择不再提供关闭档（多数模型不支持关闭思考）。",
     timeoutMs: "model.timeoutMs",
-    timeoutMsHint: "单次 Request 超时，毫秒",
+    timeoutMsHint: "等待上游下一个事件的空闲上限，毫秒；不是整次请求的总时长上限",
     compaction: "上下文压缩（compaction）",
     maxContextLength: "max_context_length",
     maxContextLengthHint: "触发压缩的上下文阈值",

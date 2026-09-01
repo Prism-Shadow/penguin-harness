@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-08-26";
+export const KERNEL_VERSION = "2026-09-01";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -179,16 +179,20 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   `kill` parameter, `kill_subagent` was removed outright (a subagent session is never
  *   destroyed — `input_subagent` resumes a released id), and `input_subagent` gained `abort`
  *   and now returns the subagent's latest reply: the tools tab moved.
- * - `2026-08-26` (current) — the schedules prompt's default target became the Session the
+ * - `2026-08-26` — the schedules prompt's default target became the Session the
  *   model is already in (`session_id` taken from the Environment section) instead of a fresh
  *   Session per trigger, alongside the hygiene line that bounds a self-directed recurring task
  *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
  *   that must outlive the conversation takes the new-Session form, and a subagent omits the
  *   field): the schedules tab moved.
+ * - `2026-09-01` (current) — `model.timeoutMs` rose to 300000: the value is the idle budget
+ *   between upstream events, and a model that keeps its reasoning off the wire spends its
+ *   whole thinking phase inside the wait for the first one, which 120000 cut short. The
+ *   runtime tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
-  runtime: "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20",
+  runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
@@ -212,8 +216,10 @@ export type KernelSupersededTabHashes = Readonly<Partial<Record<KernelTab, reado
 export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
   // The pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257).
   prompt: ["99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932"],
-  // compaction.max_context_length was 128000, before the rise to 256000 in 2026-08-20.
-  runtime: ["808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c"],
+  runtime: [
+    "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
+    "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20", // model.timeoutMs was 120000, before the rise to 300000
+  ],
   tools: [
     "238440586ad2e075bde04948cf8dc9876301da538aafeb8926cd9c6a5738081b", // before run_subagent's `thinking_level` (#306)
     "c719f2fe8a25bc5c644a4e1a78d26cf960dd0561efc453614af2e395000ed4de", // before `max` joined the ladder
