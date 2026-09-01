@@ -8,7 +8,7 @@ description: Plugins package skills (SKILL.md directories, metadata up front, bo
 The built-in library is a set of **plugins**. A plugin is a directory with a `plugin.json` manifest and the content it ships: **skills** — reusable instructions the model reads on demand — and/or a **hook package** — scripts the harness runs at the loop's hook points (see [The Agent Loop](/agent-loop#stop-hooks)). Installing a plugin puts its skills under `agent_state/skills/` and its hook package under `agent_state/hooks/`, two first-class parts of the Agent State that the rest of this page describes.
 
 ```text
-official/<plugin>/
+plugins/<plugin>/
 ├── plugin.json                # manifest — the plugin's single metadata holder
 ├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
 ├── skills/<name>/SKILL.md     # zero or more skills (reference/… alongside)
@@ -28,7 +28,7 @@ official/<plugin>/
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
 
-The library ships as the npm package `@prismshadow/penguin-plugins`, carrying the raw `official/` directory in the tarball; at runtime the package's files are the source of truth for library content, read on every call.
+Every plugin is its own npm package — `@prismshadow/penguin-plugin-<name>`, `plugins/<name>/` in the repo — and `@prismshadow/penguin-plugins` is the loader that depends on them all and resolves their directories (the desktop build bundles the same directories beside it instead). At runtime the plugin files are the source of truth for library content, read on every call.
 
 ## Anatomy of a Skill
 
@@ -95,21 +95,12 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/plugins/src/
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
-| Software Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
-| | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
-| | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI (one capture-verified keystroke at a time, user messages relayed verbatim) and multi-turn continuity (not preinstalled: install from the library when needed) |
-| AI App Development | `penguin-sdk` | Build agent, AI and RAG applications on the SDK — application code, not Agent State configuration: the createSession/run streaming loop, CLI-wrapped user tools, plus a complete retrieval recipe with chunk-revealing citations |
-| | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
-| | `penguin-orchestration` | Drive PenguinHarness itself from a shell: list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks via the penguin CLI |
-| | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
-| | `vllm` | Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads |
-| | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
-| | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
+| Software Development | `software-development` | Software development end to end — two skills: `software-engineering` (investigate, implement and validate with minimal scope) and `web-design` (the Penguin visual language for generated web UIs) |
+| | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
+| AI App Development | `agent-development` | Agent development on PenguinHarness — four skills: `penguin-sdk` (build agent/AI/RAG apps on the SDK), `unified-llm-api` (call model APIs through `@prismshadow/agenthub`), `penguin-config` (manage model keys, defaults and Vault secrets) and `penguin-orchestration` (drive agents, sessions, costs and schedules from a shell) |
+| | `model-development` | Model development on your own hardware — three skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
-| Agent Tuning | `agent-initialization` | Initialize an Agent's settings from a user requirement by writing AGENTS.md, setting identity metadata and installing needed Skills |
-| | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
-| | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
-| | `agent-optimization` | Improve a specified Agent from a complete current baseline on a frozen Benchmark |
+| Agent Tuning | `agent-tuning` | The tuning loop as four skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated Case) and `agent-optimization` (improve the agent from measured results) |
 | Session Hooks | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the session working toward an objective until it is complete, blocked, or out of token budget (preinstalled) |
 | | `skill-summary` | When a task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
 

@@ -9,9 +9,9 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `src/index.ts`; a plugin w
 | Category | Plugins |
 | --- | --- |
 | Office Productivity | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer` |
-| Software Development | `web-design`, `software-engineering`, `remote-claude-code` |
-| AI App Development | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
-| Agent Tuning | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
+| Software Development | `software-development`, `remote-claude-code` |
+| AI App Development | `agent-development`, `model-development`, `skill-porting` |
+| Agent Tuning | `agent-tuning` |
 | Session Hooks | `goal`, `skill-summary` |
 
 `humanizer`, `remote-claude-code` and `skill-summary` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand. `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `skill-summary` hands a long session's condensed excerpt to a background subagent that folds the findings into the agent's skills.

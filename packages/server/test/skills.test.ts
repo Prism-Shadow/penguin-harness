@@ -122,63 +122,78 @@ describe("skills api", () => {
     await createPlainAgent("bare_agent");
     const url = base("bare_agent");
 
-    // Member installs two Skills: 201 returns the updated list (sorted by name).
+    // Member installs two plugins: 201 returns the updated skill list (sorted by name); a
+    // multi-skill plugin lands every one of its skills.
     const res = await member.post(toPlugins(url), {
-      names: ["penguin-sdk", "agent-initialization"],
+      names: ["data-analysis", "software-development"],
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual(["agent-initialization", "penguin-sdk"]);
+    expect(body.skills.map((s) => s.name)).toEqual([
+      "data-analysis",
+      "software-engineering",
+      "web-design",
+    ]);
     // The installed list likewise passes through the short description and icon
-    // (icon.svg is copied on install, identical to the library's original).
-    const installed = body.skills.find((s) => s.name === "penguin-sdk")!;
+    // (icon.svg is copied on install, identical to the library's resolved icon —
+    // web-design keeps its own file inside the merged plugin).
+    const installed = body.skills.find((s) => s.name === "web-design")!;
     expect(installed.shortDescription).toBeTruthy();
-    expect(installed.icon).toBe(librarySkill("penguin-sdk")!.skill.icon);
+    expect(installed.icon).toBe(librarySkill("web-design")!.skill.icon);
 
     // The on-disk content matches the library's SKILL.md verbatim (including
     // frontmatter), and icon.svg is written alongside it.
     const skillFile = (name: string) =>
       path.join(skillsDir(t.root, projectId, "bare_agent"), name, "SKILL.md");
-    expect(await fs.readFile(skillFile("penguin-sdk"), "utf8")).toBe(
-      librarySkill("penguin-sdk")!.skill.content,
+    expect(await fs.readFile(skillFile("web-design"), "utf8")).toBe(
+      librarySkill("web-design")!.skill.content,
     );
     expect(
       await fs.readFile(
-        path.join(skillsDir(t.root, projectId, "bare_agent"), "penguin-sdk", "icon.svg"),
+        path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg"),
         "utf8",
       ),
-    ).toBe(librarySkill("penguin-sdk")!.skill.icon);
+    ).toBe(librarySkill("web-design")!.skill.icon);
 
-    // Member uninstalls: 204, the whole skills/<name>/ directory disappears, and the list is updated.
-    expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(204);
-    await expect(fs.access(path.dirname(skillFile("penguin-sdk")))).rejects.toThrow();
+    // Member uninstalls one skill: 204, the whole skills/<name>/ directory disappears, and the list is updated.
+    expect((await member.delete(`${url}/web-design`)).status).toBe(204);
+    await expect(fs.access(path.dirname(skillFile("web-design")))).rejects.toThrow();
     const after = (await (await member.get(url)).json()) as AgentSkillsResponse;
-    expect(after.skills.map((s) => s.name)).toEqual(["agent-initialization"]);
+    expect(after.skills.map((s) => s.name)).toEqual(["data-analysis", "software-engineering"]);
 
     // Deleting a Skill that isn't installed (or was already uninstalled) → 404.
-    expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(404);
+    expect((await member.delete(`${url}/web-design`)).status).toBe(404);
   });
 
   it("reinstall is an idempotent update: hand-edited on-disk content is restored to the library content", async () => {
     await createPlainAgent("update_agent");
     const url = base("update_agent");
-    expect((await owner.post(toPlugins(url), { names: ["penguin-cli"] })).status).toBe(201);
+    expect((await owner.post(toPlugins(url), { names: ["agent-development"] })).status).toBe(201);
 
     // Simulate stale/tampered on-disk content.
-    const file = path.join(skillsDir(t.root, projectId, "update_agent"), "penguin-cli", "SKILL.md");
-    await fs.writeFile(file, "---\nname: penguin-cli\nversion: 0\n---\nstale\n", "utf8");
+    const file = path.join(
+      skillsDir(t.root, projectId, "update_agent"),
+      "penguin-config",
+      "SKILL.md",
+    );
+    await fs.writeFile(file, "---\nname: penguin-config\nversion: 0\n---\nstale\n", "utf8");
 
-    const res = await owner.post(toPlugins(url), { names: ["penguin-cli"] });
+    const res = await owner.post(toPlugins(url), { names: ["agent-development"] });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual(["penguin-cli"]);
-    expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-cli")!.skill.content);
+    expect(body.skills.map((s) => s.name)).toEqual([
+      "penguin-config",
+      "penguin-orchestration",
+      "penguin-sdk",
+      "unified-llm-api",
+    ]);
+    expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-config")!.skill.content);
   });
 
   it("unknown skill 404 unknown_skill, with no half-installed state", async () => {
     await createPlainAgent("strict_agent");
     const url = base("strict_agent");
-    const res = await owner.post(toPlugins(url), { names: ["penguin-sdk", "no-such-skill"] });
+    const res = await owner.post(toPlugins(url), { names: ["data-analysis", "no-such-skill"] });
     expect(res.status).toBe(404);
     const err = (await res.json()) as { error: { code: string; message: string } };
     expect(err.error.code).toBe("unknown_plugin");
@@ -191,7 +206,7 @@ describe("skills api", () => {
   it("request body validation 400: names missing / empty array / non-string entries", async () => {
     await createPlainAgent("valid_agent");
     const url = base("valid_agent");
-    for (const body of [{}, { names: [] }, { names: ["penguin-sdk", 1] }, { names: [""] }]) {
+    for (const body of [{}, { names: [] }, { names: ["data-analysis", 1] }, { names: [""] }]) {
       expect((await owner.post(toPlugins(url), body)).status, JSON.stringify(body)).toBe(400);
     }
   });
@@ -254,15 +269,23 @@ describe("skills api", () => {
     const created = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "seeded_agent",
       name: "Seeded",
-      plugins: ["penguin-sdk", "web-design"],
+      plugins: ["agent-development", "software-development"],
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(2);
+    expect(summary.agent.skillCount).toBe(6);
 
-    // The installed list is the same shape a library install produces (name-sorted).
+    // The installed list is the same shape a library install produces (name-sorted):
+    // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
-    expect(listed.skills.map((s) => s.name)).toEqual(["penguin-sdk", "web-design"]);
+    expect(listed.skills.map((s) => s.name)).toEqual([
+      "penguin-config",
+      "penguin-orchestration",
+      "penguin-sdk",
+      "software-engineering",
+      "unified-llm-api",
+      "web-design",
+    ]);
     // Installed through the same writer as the Skills tab: SKILL.md is the library file verbatim.
     const onDisk = await fs.readFile(
       path.join(skillsDir(t.root, projectId, "seeded_agent"), "penguin-sdk", "SKILL.md"),
@@ -534,24 +557,25 @@ describe("skills api", () => {
 
     it("is empty for a freshly installed Skill, and names the library version once it falls behind", async () => {
       await createPlainAgent("bare_updates");
-      expect((await owner.post(plugins("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(
-        201,
-      );
+      expect(
+        (await owner.post(plugins("bare_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(1);
+      expect(fresh.skillCount).toBe(4);
       expect(fresh.pluginUpdates).toEqual([]);
 
-      // Age the installed copy: the library now carries a higher version than the disk does.
+      // Age one installed copy: the library now carries a higher version than the disk does.
+      // The update is reported once, by PLUGIN, however many of its skills lag.
       await setInstalledVersion("bare_updates", "penguin-sdk", "2000-01-01.1");
       const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
       expect(behind.pluginUpdates).toEqual([
-        { name: "penguin-sdk", version: librarySkill("penguin-sdk")!.plugin.version },
+        { name: "agent-development", version: librarySkill("penguin-sdk")!.plugin.version },
       ]);
       // Reinstalling IS the update, so the badge clears with the same request the trail ends on.
-      expect((await owner.post(plugins("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(
-        201,
-      );
+      expect(
+        (await owner.post(plugins("bare_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
       expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.pluginUpdates).toEqual(
         [],
       );

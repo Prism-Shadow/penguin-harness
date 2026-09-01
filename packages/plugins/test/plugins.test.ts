@@ -1,5 +1,5 @@
 /**
- * The plugin library's file source of truth and its loader: plugins read from `official/`
+ * The plugin library's file source of truth and its loader: one npm package per plugin under the repo's `plugins/`
  * (manifest fields, the skills and hook packages they ship), the version scheme, the
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
@@ -22,7 +22,7 @@ import {
   type PluginCategory,
 } from "../src/index.js";
 
-const pluginsRoot = path.resolve(import.meta.dirname, "../official");
+const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
@@ -38,7 +38,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBeGreaterThan(19);
+    expect(plugins.length).toBe(12);
     for (const plugin of plugins) {
       expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       expect(
@@ -77,8 +77,13 @@ describe("loadLibraryPlugins", () => {
         expect(skill.version).toBe(plugin.version);
         expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
         expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
-        // The plugin's icon is stamped onto its skills (none carries a file of its own).
-        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(plugin.icon);
+        // Every skill ends up with an icon: its own icon.svg (merged plugins keep each
+        // constituent's identity icon) or the plugin's, stamped by the loader.
+        const ownIcon = await fs.readFile(path.join(dir, "icon.svg"), "utf8").then(
+          (t) => t,
+          () => undefined,
+        );
+        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(ownIcon ?? plugin.icon);
         // Every shipped skill asks before starting when the message only names it.
         expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
           /^## Before you start$/m,
@@ -111,11 +116,14 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(summary!.hooks!.files)).toEqual(["stop.mjs"]);
   });
 
-  it("a plugin manifest falls back to its first skill's descriptions", () => {
-    const plugin = libraryPlugin("web-design")!;
-    expect(plugin.description).toBe(plugin.skills[0]!.description);
-    expect(plugin.shortDescription).toBe(plugin.skills[0]!.shortDescription);
-    expect(plugin.shortDescriptionZh).toBe(plugin.skills[0]!.shortDescriptionZh);
+  it("a single-skill plugin's manifest may fall back to its skill's descriptions", () => {
+    const plugin = libraryPlugin("data-analysis")!;
+    expect(plugin.description.length).toBeGreaterThan(0);
+    expect(plugin.skills).toHaveLength(1);
+    // Merged plugins carry several skills, each still resolvable by its own name.
+    expect(librarySkill("web-design")?.plugin.name).toBe("software-development");
+    expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
   });
 });
 
@@ -124,7 +132,7 @@ describe("loadPreinstalledPlugins", () => {
     const all = loadLibraryPlugins().map((p) => p.name);
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
-    expect(preinstalled).toContain("web-design");
+    expect(preinstalled).toContain("software-development");
     for (const manual of ["skill-summary", "humanizer", "remote-claude-code"]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
@@ -175,7 +183,6 @@ describe("lookups", () => {
     expect(libraryPlugin("goal")?.name).toBe("goal");
     expect(libraryPlugin("does-not-exist")).toBeUndefined();
     expect(libraryPlugin("../etc")).toBeUndefined();
-    expect(librarySkill("web-design")?.plugin.name).toBe("web-design");
     expect(librarySkill("goal")).toBeUndefined();
     expect(librarySkill("..")).toBeUndefined();
   });

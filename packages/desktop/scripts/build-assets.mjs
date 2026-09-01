@@ -5,8 +5,9 @@
  * only produces this package's own artifacts, in the one layout that serves both a source run
  * and a packaged app:
  *
- * - `official/` — the shipped plugin library. @prismshadow/penguin-plugins reads its plugin
- *   directories from `<its package root>/official`, and bundling puts the reader in `dist/`,
+ * - `official/` — the shipped plugin library, one directory per plugin package copied from
+ *   the repo's `plugins/`. @prismshadow/penguin-plugins reads a bundled `official/` beside
+ *   its `dist/` before falling back to package resolution, and bundling puts the reader in `dist/`,
  *   so the copy lands where that same package-relative lookup finds it. (The server's web-dist
  *   lookup works the same way and is satisfied by electron-builder's file mapping when
  *   packaging; a source run falls back to packages/web/dist on its own.)
@@ -44,10 +45,17 @@ for (const required of [launcherModule, path.join(distDir, "pty-payload.js")]) {
   }
 }
 
-const pluginsSrc = path.resolve(pkgDir, "..", "plugins", "official");
+const pluginsSrc = path.resolve(pkgDir, "..", "..", "plugins");
 const pluginsDest = path.join(pkgDir, "official");
 fs.rmSync(pluginsDest, { recursive: true, force: true });
-fs.cpSync(pluginsSrc, pluginsDest, { recursive: true });
+fs.mkdirSync(pluginsDest, { recursive: true });
+for (const entry of fs.readdirSync(pluginsSrc, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  fs.cpSync(path.join(pluginsSrc, entry.name), path.join(pluginsDest, entry.name), {
+    recursive: true,
+    filter: (src) => !src.includes("node_modules"),
+  });
+}
 
 const repoRoot = path.resolve(pkgDir, "..", "..");
 for (const name of ["install.sh", "install.ps1"]) {

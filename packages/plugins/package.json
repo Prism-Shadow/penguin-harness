@@ -33,10 +33,23 @@
   },
   "files": [
     "dist",
-    "official",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-plugin-agent-development": "workspace:*",
+    "@prismshadow/penguin-plugin-agent-tuning": "workspace:*",
+    "@prismshadow/penguin-plugin-bento-slides": "workspace:*",
+    "@prismshadow/penguin-plugin-data-analysis": "workspace:*",
+    "@prismshadow/penguin-plugin-firecrawl": "workspace:*",
+    "@prismshadow/penguin-plugin-goal": "workspace:*",
+    "@prismshadow/penguin-plugin-humanizer": "workspace:*",
+    "@prismshadow/penguin-plugin-model-development": "workspace:*",
+    "@prismshadow/penguin-plugin-remote-claude-code": "workspace:*",
+    "@prismshadow/penguin-plugin-skill-porting": "workspace:*",
+    "@prismshadow/penguin-plugin-skill-summary": "workspace:*",
+    "@prismshadow/penguin-plugin-software-development": "workspace:*"
   }
 }

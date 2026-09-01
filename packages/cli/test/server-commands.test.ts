@@ -200,14 +200,14 @@ describe("penguin agent / project", () => {
       "--name",
       "Helper",
       "--plugins",
-      "web-design, goal",
+      "software-development, goal",
     ]);
     expect(code).toBe(0);
     const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/agents"));
     expect(create?.body).toMatchObject({
       agentId: "helper",
       name: "Helper",
-      plugins: ["web-design", "goal"],
+      plugins: ["software-development", "goal"],
     });
     expect(out()).toContain(t.agent.created("helper", "default_project"));
   });

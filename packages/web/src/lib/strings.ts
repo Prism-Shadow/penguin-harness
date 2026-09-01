@@ -1114,6 +1114,9 @@ export const zh = {
     /** Search box of the create dialog's plugin picker. */
     searchPlaceholder: "搜索插件",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
+    /** Section labels of the plugin detail Modal. */
+    detailSkills: "技能",
+    detailHooks: "钩子",
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
     quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",

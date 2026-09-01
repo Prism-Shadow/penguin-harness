@@ -1,6 +1,7 @@
 /**
  * Plugin library & Agent-installed hook packages:
  *   GET    /api/plugins                                   # the library by category (any logged-in user)
+ *   GET    /api/plugins/:plugin/skills/:skill             # one skill's SKILL.md content (any logged-in user)
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  *   GET    /api/projects/:p/agents/:a/hooks               # installed hook packages (any member)
  *   DELETE /api/projects/:p/agents/:a/hooks/:name         # uninstall one (any member)
@@ -18,11 +19,12 @@ import {
   listInstalledSkills,
   removeHook,
 } from "@prismshadow/penguin-core";
-import { loadPluginGroups } from "@prismshadow/penguin-plugins";
+import { libraryPlugin, loadPluginGroups } from "@prismshadow/penguin-plugins";
 import type {
   AgentHooksResponse,
   AgentPluginsInstallResponse,
   PluginLibraryResponse,
+  PluginSkillContentResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
@@ -51,6 +53,24 @@ function libraryResponse(): PluginLibraryResponse {
 export function pluginLibraryRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.get("/", (c) => c.json(libraryResponse()));
+  // One skill's full SKILL.md (frontmatter included) for the library detail view's reader.
+  app.get("/:plugin/skills/:skill", (c) => {
+    const pluginName = c.req.param("plugin");
+    const skillName = c.req.param("skill");
+    const plugin = libraryPlugin(pluginName);
+    const skill = plugin?.skills.find((s) => s.name === skillName);
+    if (!plugin || !skill) {
+      throw new HttpError(
+        404,
+        "unknown_skill",
+        `No such library skill: ${pluginName}/${skillName}`,
+      );
+    }
+    return c.json({
+      name: skill.name,
+      content: skill.content,
+    } satisfies PluginSkillContentResponse);
+  });
   return app;
 }
 

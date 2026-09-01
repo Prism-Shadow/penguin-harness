@@ -100,6 +100,7 @@ import type {
   SkillArchiveInstallRequest,
   PluginInstallRequest,
   PluginLibraryResponse,
+  PluginSkillContentResponse,
   QQBindingPutRequest,
   QQBindingResponse,
   QQScanPollResponse,
@@ -1041,6 +1042,12 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
 export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plugins");
+
+/** One library skill's full SKILL.md, for the plugin detail view's reader. */
+export const getPluginSkillContent = (plugin: string, skill: string) =>
+  apiFetch<PluginSkillContentResponse>(
+    `/api/plugins/${encodeURIComponent(plugin)}/skills/${encodeURIComponent(skill)}`,
+  );
 
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed

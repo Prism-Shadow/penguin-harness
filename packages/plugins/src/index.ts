@@ -1,7 +1,9 @@
 /**
  * PenguinHarness plugin library: the built-in plugins and the loader that reads them.
  *
- * A plugin is a directory under the package's `official/` carrying a `plugin.json` manifest, an
+ * A plugin is its own npm package (`@prismshadow/penguin-plugin-<name>`, `plugins/<name>/` in
+ * the repo; the desktop bundle assembles the same directories under `official/` beside dist —
+ * see pluginRoots): a directory carrying a `plugin.json` manifest, an
  * `icon.svg` beside it (every built-in plugin ships one), and
  * any of two kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
  * `agent_state/skills/`) and a hook package (`hooks/*.js`, installed into
@@ -22,6 +24,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 /** A skill's metadata. A library SKILL.md's frontmatter carries only `name` and `description`; the short descriptions and `version` are stamped from plugin.json by the loader (installed copies then carry the full generated frontmatter, which is what the installed-side readers parse). */
 export interface SkillMetadata {
@@ -173,7 +176,51 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
 }
 
 /** Root directory of library files: the package's `official/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
-const PLUGINS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "official");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** npm-name prefix of the per-plugin packages this aggregator depends on. */
+const PLUGIN_PKG_PREFIX = "@prismshadow/penguin-plugin-";
+
+/**
+ * Where the plugin directories live, name → absolute root. Two layouts:
+ * - **bundled**: an `official/` directory beside this package's `dist/` holding one plugin
+ *   directory per plugin — what the desktop build assembles (no node_modules there);
+ * - **package**: each plugin is its own npm package (`@prismshadow/penguin-plugin-<name>`,
+ *   `plugins/<name>/` in the repo), listed in this package's dependencies and resolved
+ *   through Node — the workspace and an npm install both land here.
+ * Read fresh on every call, like the plugin files themselves.
+ */
+function pluginRoots(): Map<string, string> {
+  const roots = new Map<string, string>();
+  const bundled = path.join(PKG_ROOT, "official");
+  if (fs.existsSync(bundled)) {
+    for (const entry of fs.readdirSync(bundled, { withFileTypes: true })) {
+      if (entry.isDirectory()) roots.set(entry.name, path.join(bundled, entry.name));
+    }
+    return roots;
+  }
+  const require = createRequire(path.join(PKG_ROOT, "package.json"));
+  let deps: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    deps = pkg.dependencies ?? {};
+  } catch {
+    return roots;
+  }
+  for (const dep of Object.keys(deps)) {
+    if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
+    try {
+      roots.set(
+        dep.slice(PLUGIN_PKG_PREFIX.length),
+        path.dirname(require.resolve(`${dep}/package.json`)),
+      );
+    } catch {
+      // An unresolvable plugin package is skipped, not fatal: the rest of the library loads.
+    }
+  }
+  return roots;
+}
 
 /**
  * Recursively collects a directory's files as text keyed by POSIX-relative path, skipping the
@@ -281,8 +328,7 @@ interface PluginManifestFile {
 }
 
 /** Reads one plugin directory; undefined without a parseable plugin.json. */
-function readPluginDir(name: string): LibraryPlugin | undefined {
-  const dir = path.join(PLUGINS_ROOT, name);
+function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
   let manifest: PluginManifestFile;
   try {
     manifest = JSON.parse(
@@ -376,12 +422,11 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
   };
 }
 
-/** Reads every plugin in the library (one per subdirectory under `official/` with a plugin.json), sorted by name. */
+/** Reads every plugin in the library (one per plugin package, see pluginRoots), sorted by name. */
 export function loadLibraryPlugins(): LibraryPlugin[] {
   const plugins: LibraryPlugin[] = [];
-  for (const entry of fs.readdirSync(PLUGINS_ROOT, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const plugin = readPluginDir(entry.name);
+  for (const [name, dir] of pluginRoots()) {
+    const plugin = readPluginDir(name, dir);
     if (plugin) plugins.push(plugin);
   }
   return plugins.sort((a, b) => a.name.localeCompare(b.name));
@@ -395,7 +440,8 @@ export function loadPreinstalledPlugins(): LibraryPlugin[] {
 /** Reads a single library plugin by name; undefined when the name has illegal characters (path traversal guard) or the plugin doesn't exist. */
 export function libraryPlugin(name: string): LibraryPlugin | undefined {
   if (!PLUGIN_NAME_PATTERN.test(name)) return undefined;
-  return readPluginDir(name);
+  const dir = pluginRoots().get(name);
+  return dir !== undefined ? readPluginDir(name, dir) : undefined;
 }
 
 /** Finds a library skill by its own name (across every plugin), with the plugin that ships it. */

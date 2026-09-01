@@ -1,0 +1,8 @@
+{
+  "description": "Model development on your own hardware: fine-tune with LlamaFactory, run local models with Ollama, and serve them with vLLM.",
+  "description_zh": "在自己的硬件上做模型开发：用 LlamaFactory 微调、用 Ollama 运行本地模型、用 vLLM 部署服务。",
+  "short_description": "Fine-tune, run and serve models locally.",
+  "short_description_zh": "本地微调、运行与部署模型。",
+  "version": "2026-09-02.1",
+  "category": "ai-app-development"
+}

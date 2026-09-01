@@ -86,13 +86,13 @@ https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 Five plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and skill summaries; agents can also write and optimize their own skills:
 
-| Category             | Plugins                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Office Productivity  | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer`                                                                 |
-| Software Development | `web-design`, `software-engineering`, `remote-claude-code`                                                                |
-| AI App Development   | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
-| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`                                      |
-| Session Hooks        | `goal`, `skill-summary`                                                                                                   |
+| Category             | Plugins                                                     |
+| -------------------- | ----------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer`   |
+| Software Development | `software-development`, `remote-claude-code`                |
+| AI App Development   | `agent-development`, `model-development`, `skill-porting`   |
+| Agent Tuning         | `agent-tuning`                                              |
+| Session Hooks        | `goal`, `skill-summary`                                     |
 
 ## Supported Models
 

@@ -72,15 +72,15 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   await expect(row(page, libraryNames[0])).toHaveAttribute("aria-pressed", "false");
 
   // —— The search box narrows the list, and 全选 then acts on the matches only ——
-  await page.getByPlaceholder("搜索插件").fill("penguin-sdk");
-  await expect(row(page, "penguin-sdk")).toBeVisible();
+  await page.getByPlaceholder("搜索插件").fill("agent-development");
+  await expect(row(page, "agent-development")).toBeVisible();
   await page.getByRole("button", { name: "全选" }).click();
   await expect(pickedCount(page, 1)).toBeVisible();
   await page.getByPlaceholder("搜索插件").fill("");
 
   // A second plugin picked by clicking its row (toggle, panel stays open).
-  await row(page, "web-design").click();
-  await expect(row(page, "web-design")).toHaveAttribute("aria-pressed", "true");
+  await row(page, "software-development").click();
+  await expect(row(page, "software-development")).toHaveAttribute("aria-pressed", "true");
   await expect(pickedCount(page, 2)).toBeVisible();
 
   // Escape closes the picker panel without closing the dialog (the Esc-layer stack).
@@ -95,7 +95,14 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   const installed = await (
     await page.request.get(`${BASE}/api/projects/${projectId}/agents/seeded_agent/skills`)
   ).json();
-  expect(installed.skills.map((s) => s.name).sort()).toEqual(["penguin-sdk", "web-design"]);
+  expect(installed.skills.map((s) => s.name).sort()).toEqual([
+    "penguin-config",
+    "penguin-orchestration",
+    "penguin-sdk",
+    "software-engineering",
+    "unified-llm-api",
+    "web-design",
+  ]);
 
   // The Skills tab shows the same two.
   await page.goto(`${BASE}/agents/seeded_agent?tab=skills`);

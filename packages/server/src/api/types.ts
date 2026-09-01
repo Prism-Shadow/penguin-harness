@@ -3097,6 +3097,12 @@ export interface PluginLibraryResponse {
   groups: PluginGroupItem[];
 }
 
+/** GET /api/plugins/:plugin/skills/:skill: one library skill's full SKILL.md (frontmatter included) for the detail view's reader. */
+export interface PluginSkillContentResponse {
+  name: string;
+  content: string;
+}
+
 /**
  * POST /api/projects/:p/agents/:a/plugins: install library plugins by name — each one's skills
  * and hook package; already-installed ones are overwritten with library content (i.e. updated).

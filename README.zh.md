@@ -86,13 +86,13 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 开箱内置五类插件（[文档](https://penguin.ooo/docs/skills)）——Skill，以及驱动目标模式与技能沉淀的会话钩子；Agent 也能编写并优化自己的 Skill：
 
-| 分类        | 插件                                                                                                                        |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 办公效率    | `data-analysis`、`firecrawl`、`bento-slides`、`humanizer`                                                                   |
-| 软件开发    | `web-design`、`software-engineering`、`remote-claude-code`                                                                   |
-| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`penguin-orchestration`、`agenthub-models`、`vllm`、`ollama`、`llamafactory`、`skill-porting` |
-| Agent 调优  | `agent-initialization`、`benchmark-design`、`agent-evaluation`、`agent-optimization`                                       |
-| 会话钩子    | `goal`、`skill-summary`                                                                                                     |
+| 分类        | 插件                                                      |
+| ----------- | --------------------------------------------------------- |
+| 办公效率    | `data-analysis`、`firecrawl`、`bento-slides`、`humanizer` |
+| 软件开发    | `software-development`、`remote-claude-code`              |
+| AI 应用开发 | `agent-development`、`model-development`、`skill-porting` |
+| Agent 调优  | `agent-tuning`                                            |
+| 会话钩子    | `goal`、`skill-summary`                                   |
 
 ## 支持的模型
 

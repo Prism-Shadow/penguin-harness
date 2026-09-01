@@ -46,14 +46,17 @@ const skillIcon = (name: string) => skillFile(name, "icon.svg");
 
 describe("installSkill / removeSkill", () => {
   it("writes skills/<name>/SKILL.md verbatim with a trailing newline", async () => {
-    const skill = librarySkill("penguin-cli")!.skill;
+    const skill = librarySkill("penguin-config")!.skill;
     await install(skill.name, skill.content);
-    expect(await fs.readFile(skillMd("penguin-cli"), "utf8")).toBe(skill.content);
+    expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(skill.content);
 
     // Content without a trailing newline gets one appended; reinstalling overwrites.
-    await install("penguin-cli", "---\nname: penguin-cli\nversion: 2026-08-01.2\n---\n\nNew body");
-    expect(await fs.readFile(skillMd("penguin-cli"), "utf8")).toBe(
-      "---\nname: penguin-cli\nversion: 2026-08-01.2\n---\n\nNew body\n",
+    await install(
+      "penguin-config",
+      "---\nname: penguin-config\nversion: 2026-08-01.2\n---\n\nNew body",
+    );
+    expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(
+      "---\nname: penguin-config\nversion: 2026-08-01.2\n---\n\nNew body\n",
     );
     expect((await list()).map((s) => s.version)).toEqual(["2026-08-01.2"]);
   });

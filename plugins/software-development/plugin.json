@@ -1,0 +1,8 @@
+{
+  "description": "Software development end to end — disciplined software-engineering practice for real tasks, plus the Penguin visual language for every generated web page and app UI.",
+  "description_zh": "端到端的软件开发——面向真实任务的软件工程实践准则，加上生成网页与应用界面的 Penguin 视觉规范。",
+  "short_description": "Engineering practice and web UI defaults in one plugin.",
+  "short_description_zh": "软件工程实践与网页视觉规范合一。",
+  "version": "2026-09-02.1",
+  "category": "software-development"
+}

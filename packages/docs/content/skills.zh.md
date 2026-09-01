@@ -8,7 +8,7 @@ description: 插件打包 Skill（目录加 SKILL.md，元数据先行、正文�
 内置库由一组**插件**组成。一个插件就是一个目录：一份 `plugin.json` 清单，加上它携带的内容——**Skill**（模型按需读取的可复用指令）和/或一个**钩子包**（harness 在循环固定点上运行的脚本，见[运行循环](/agent-loop#stop-hook)）。安装插件即把它的 Skill 放进 `agent_state/skills/`、钩子包放进 `agent_state/hooks/`——Agent State 里并列的两个一等成员，本页其余部分分别介绍。
 
 ```text
-official/<plugin>/
+plugins/<plugin>/
 ├── plugin.json                # 清单——插件唯一的元数据载体
 ├── icon.svg                   # 插件图标（每个内置插件都有）
 ├── skills/<name>/SKILL.md     # 零个或多个 Skill（reference/… 随行）
@@ -28,7 +28,7 @@ official/<plugin>/
 
 插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
 
-插件库以 npm 包 `@prismshadow/penguin-plugins` 发布，tarball 直接携带原始 `official/` 目录；运行时库内容的事实源同样是包内文件，每次调用直接读取。
+每个插件都是独立的 npm 包——`@prismshadow/penguin-plugin-<name>`，仓库内位于 `plugins/<name>/`——`@prismshadow/penguin-plugins` 是依赖它们全部并解析各自目录的 loader（desktop 构建则把同样的目录打包在旁）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
 
 ## Skill 的形态
 
@@ -91,25 +91,16 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| 办公效率 | `data-analysis` | 完成数据分析任务：有限度地核查证据、明确会改变结论的决策、原生处理产物并在最终输出前验证 |
-| | `firecrawl` | 通过 Firecrawl API 做网页搜索与抓取，输出干净的 Markdown |
-| | `bento-slides` | 编写与修改 Bento 演示：单文件 `.bento.html`、文档即 JSON，把素材映射为图表、morph 转场与状态页 |
-| | `humanizer` | 去除任意语言文本里的 AI 味，改写成书籍、报纸、百科的行文（不预装：需要时从库安装） |
-| 软件开发 | `web-design` | 生成网页与应用 UI 的 Penguin 视觉规范：设计令牌、组件、明暗主题与聊天布局 |
-| | `software-engineering` | 完成软件工程任务：调研与评审代码，以最小范围实现修复、功能与重构，验证改动并报告已验证的结果 |
-| | `remote-claude-code` | 经 SSH 在远程主机上驱动 Claude Code——持久的 expect 会话、带 stdin 修正的无头 `-p`、tmux 驱动的交互式 TUI（逐次按键并截屏核验，用户消息原样转达）与多轮延续（不预装：需要时从库安装） |
-| AI 应用开发 | `penguin-sdk` | 基于 SDK 构建智能体、AI 与 RAG 应用——写的是应用代码而非 Agent State 配置：createSession/run 流式循环、CLI 封装的用户工具，以及带分块引用的完整检索方案 |
-| | `penguin-cli` | 用 penguin CLI 管理模型 API key、默认模型与各 Agent 的 Vault 密钥 |
-| | `penguin-orchestration` | 从 Shell 驱动 PenguinHarness 本身：列出并创建 Agent 与 Session、发送与中途引导消息、查询成本与定时任务 |
-| | `agenthub-models` | 通过 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与向量嵌入 |
-| | `vllm` | 用 vLLM 部署与服务 LLM，暴露 OpenAI 兼容端点并为智能体负载开启工具调用 |
-| | `ollama` | 用 Ollama 部署与服务本地模型：拉取运行后把 OpenAI 兼容端点接给应用与智能体 |
-| | `llamafactory` | 用 LlamaFactory 微调 LLM：登记数据集、按 YAML 配置训练、合并 LoRA 适配器并部署 |
-| | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地目录）的 Skill 经审查与规范化后移植进 Agent |
-| Agent 调优 | `agent-initialization` | 依据用户需求初始化 Agent 设定：编写 AGENTS.md、设置身份元数据、安装所需 Skill |
-| | `benchmark-design` | 为指定 Agent 设计并校准多 Case 能力 Benchmark，建立可追溯的正式基线 |
-| | `agent-evaluation` | 内部叶子工作者：按完整评测协议执行并私下打分恰好一次 Case 运行 |
-| | `agent-optimization` | 在冻结的 Benchmark 上，从完整的当前基线出发改进指定 Agent |
+| 办公效率 | `data-analysis` | 完成数据分析任务：有界的证据检视、显式的改答案决策、原生工件处理与最终输出核验 |
+| | `firecrawl` | 经 Firecrawl API 做网页搜索与抓取，输出干净的 markdown |
+| | `bento-slides` | 编写与编辑 Bento 演示文稿：单文件 `.bento.html`，文档即 JSON，素材映射到图表、morph 转场与状态页 |
+| | `humanizer` | 剥除任意语言散文中的 AI 写作痕迹，改写为书籍、报刊与百科的语体（不预装：需要时从库安装） |
+| 软件开发 | `software-development` | 端到端的软件开发——两个 Skill：`software-engineering`（最小范围的调查、实现与验证）与 `web-design`（生成网页的 Penguin 视觉规范） |
+| | `remote-claude-code` | 经 SSH 在远程主机上运行 Claude Code——持久 expect 会话、headless `-p`、tmux 驱动的交互式 TUI 与多轮延续（不预装：需要时从库安装） |
+| AI 应用开发 | `agent-development` | 基于 PenguinHarness 的智能体开发——四个 Skill：`penguin-sdk`（用 SDK 构建智能体/AI/RAG 应用）、`unified-llm-api`（经 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认模型与 Vault 机密）、`penguin-orchestration`（在 shell 里编排智能体、会话、成本与定时任务） |
+| | `model-development` | 在自己的硬件上做模型开发——三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）、`vllm`（以 OpenAI 兼容端点部署服务） |
+| | `skill-porting` | 从外部来源移植 Skill——插件市场、skills.sh 注册表、GitHub 仓库或本地目录——经审阅与规范化后装入 Agent |
+| Agent 调优 | `agent-tuning` | 调优闭环的四个 Skill：`agent-initialization`（依据需求初始化 Agent）、`benchmark-design`（设计并校准能力 Benchmark）、`agent-evaluation`（隔离执行并评分单个 Case）、`agent-optimization`（根据测得结果改进 Agent） |
 | 会话钩子 | `goal` | [目标模式](/goal-mode)背后的 stop hook：让会话持续朝目标工作，直到完成、受阻或 token 预算耗尽（预装） |
 | | `skill-summary` | 单个任务结束时轮次超过 30，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
 

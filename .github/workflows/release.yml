@@ -144,7 +144,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -562,7 +562,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -589,6 +589,9 @@ jobs:
             sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
             grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
           fi
+          for dir in plugins/*/; do
+            (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
+          done
           (cd packages/plugins && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
@@ -623,8 +626,21 @@ jobs:
           cp LICENSE packages/core/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
+          for dir in plugins/*/; do
+            cp LICENSE "$dir/LICENSE"
+          done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
+          # The per-plugin packages go first: the aggregator's workspace:* deps are rewritten
+          # to their versions at publish time, so they must exist on the registry.
+          for dir in plugins/*/; do
+            name="@prismshadow/penguin-plugin-$(basename "$dir")"
+            if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
+              echo "$name@$V already on the registry, skipping."
+              continue
+            fi
+            pnpm --filter "$name" publish --access public --no-git-checks
+          done
           for pkg in plugins core server cli; do
             name="@prismshadow/penguin-$pkg"
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then

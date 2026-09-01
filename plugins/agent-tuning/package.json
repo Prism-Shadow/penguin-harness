@@ -1,0 +1,21 @@
+{
+  "name": "@prismshadow/penguin-plugin-agent-tuning",
+  "version": "0.2.9",
+  "description": "Agent tuning as a loop: initialize an agent from a requirement, design and calibrate a capability benchmark, run and score isolated cases, and improve the agent from measured results.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/agent-tuning"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

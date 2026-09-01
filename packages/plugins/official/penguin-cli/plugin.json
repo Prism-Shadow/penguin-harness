@@ -1,7 +1,0 @@
-{
-  "description": "Manage model API keys, default models and per-agent vault secrets with the penguin CLI.",
-  "short_description": "Manage models and secrets with the penguin CLI.",
-  "short_description_zh": "用 penguin CLI 管理模型与密钥。",
-  "version": "2026-07-25.1",
-  "category": "ai-app-development"
-}

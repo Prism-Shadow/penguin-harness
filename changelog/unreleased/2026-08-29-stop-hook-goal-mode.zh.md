@@ -30,10 +30,10 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 ## 插件库
 
-- `packages/plugins`（npm `@prismshadow/penguin-plugins`）取代 `packages/skills`：`official/<plugin>/plugin.json` + `skills/<name>/` + `hooks/`。既有 Skill 各自成为单 Skill 插件；两个钩子包归入新的 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；图标是 `plugin.json` 同级的 `icon.svg`（每个内置插件都有——钩子包也不例外——Skill 继承它）；自然数 `version` 与 `updated` 时间戳退场。
+- **每个插件都是独立的 npm 包**：`@prismshadow/penguin-plugin-<name>`，仓库根目录 `plugins/` 下一包一插件（`plugin.json` + `icon.svg` + `skills/<name>/` + `hooks/`）；`@prismshadow/penguin-plugins`（取代 `packages/skills`）成为依赖它们全部的 loader——优先读 dist 旁的 `official/` 打包目录（desktop 形态），否则逐包解析。四组合并为多 Skill 插件：`software-development`（software-engineering＋web-design）、`model-development`（llamafactory＋ollama＋vllm）、`agent-development`（penguin-sdk＋`unified-llm-api`〔原 agenthub-models〕＋`penguin-config`〔原 penguin-cli〕＋penguin-orchestration）、`agent-tuning`（initialization＋benchmark-design＋evaluation＋optimization）；其余仍各自成包，预装口径不变，合并成员的 Skill 目录保留各自的身份图标。两个钩子包归入 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；图标是 `plugin.json` 同级的 `icon.svg`（每个内置插件都有——钩子包也不例外——Skill 继承它）；自然数 `version` 与 `updated` 时间戳退场。
 - Agent State：`agent_state/hooks/<plugin>/` 存放钩子包（由清单生成的 `hooks.json` 加脚本），与 `agent_state/skills/` 并列；状态层新增 `installPlugin`、`installHook`、`removeHook`、`listInstalledHooks`。`default_agent` 预装全部未标 `preinstall: false` 的插件。
 - API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
-- Web App：技能库页改为**插件库**（`/plugins`）——卡片显示插件的 Skill 与钩子点，按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
+- Web App：技能库页改为**插件库**（`/plugins`）——每张卡片带一行语义化元信息（`v<版本> · N 天前更新 · N 个 Agent 在用`，日期直接解析自版本号），点开即详情 Modal：完整描述、插件携带的 Skill（每行可点开简单的 SKILL.md 阅读器，经新增的 `GET /api/plugins/:plugin/skills/:skill` 取全文）与钩子点；按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
 - 设计规格已同步改写（[penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)）。
 
 ## 兼容性

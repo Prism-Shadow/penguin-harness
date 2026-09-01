@@ -73,6 +73,8 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { localizedShortText, localizedText } from "../chat/skill-use";
+import { PluginDetailModal } from "./plugin-detail";
+import { formatRelativeDate } from "../../lib/format";
 import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -634,18 +636,30 @@ function PluginCard({
       ? undefined
       : plugin.skills.find((skill) => currentInstalls.skills.has(skill.name));
 
+  // The card's detail Modal (the model library's card pattern): what the plugin ships,
+  // with a per-skill SKILL.md reader.
+  const [detailOpen, setDetailOpen] = useState(false);
   // Short description takes priority, falling back to the full description
   // when missing (per UI language); title carries the full description for hover reading.
   const description = localizedShortText(locale, plugin);
   const fullDescription = localizedText(locale, plugin.description, plugin.descriptionZh);
-  // Metadata line: version (`YYYY-MM-DD.N`, omitted when the manifest carries none) · usage
-  // count (a plain, readable phrase rather than a bare number badge).
-  const meta = [plugin.version || null, S.plugins.usedByAgents(installedCount)]
+  // Metadata line: version (`YYYY-MM-DD.N`, omitted when the manifest carries none) · how
+  // long ago that version's date is · usage count — plain readable phrases, no badges.
+  const versionDate = plugin.version ? plugin.version.split(".")[0]! : null;
+  const meta = [
+    plugin.version ? `v${plugin.version}` : null,
+    versionDate ? formatRelativeDate(versionDate, locale) : null,
+    S.plugins.usedByAgents(installedCount),
+  ]
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
     <div className="flex h-full items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
-      <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => setDetailOpen(true)}
+        className="min-w-0 flex-1 text-left"
+      >
         {/* Header: the plugin icon centered across the two text rows (rounded tile in the plugin's
             own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
             with the name and short description on one line each to the right. A plugin that
@@ -676,18 +690,15 @@ function PluginCard({
             </p>
           </div>
         </div>
-        {/* Under the header: what the plugin contains ("N skills", one badge per hook point), then
-            the metadata line (e.g. `2026-08-29.1 · used by N agents`). */}
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-          {plugin.skills.length > 0 && <Badge>{S.skills.skillCount(plugin.skills.length)}</Badge>}
-          {plugin.hooks.map((event) => (
-            <Badge key={event}>{S.plugins.hookBadge(event)}</Badge>
-          ))}
-          <span className="min-w-0 truncate" title={meta}>
-            {meta}
-          </span>
-        </div>
-      </div>
+        {/* Metadata line under the header (e.g. `v2026-08-29.1 · updated 3 days ago · used by
+            2 agents`); what the plugin contains lives in the detail Modal this card opens. */}
+        <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
+          {meta}
+        </p>
+      </button>
+      {detailOpen && (
+        <PluginDetailModal plugin={plugin} meta={meta} onClose={() => setDetailOpen(false)} />
+      )}
       {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
           card's right edge (copy goes into aria-label and title). */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">

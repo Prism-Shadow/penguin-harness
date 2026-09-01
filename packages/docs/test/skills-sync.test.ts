@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const pluginsRoot = join(__dirname, "..", "..", "plugins", "official");
+const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 const contentDir = join(__dirname, "..", "content");
 
 const libraryPlugins = readdirSync(pluginsRoot, { withFileTypes: true })

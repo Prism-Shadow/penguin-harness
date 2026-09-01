@@ -99,7 +99,8 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
-| [`packages/plugins`](../packages/plugins) | `@prismshadow/penguin-plugins` | Built-in plugin library: skills (agent creation, benchmarking, evaluation, optimization, …) and session hooks (goal mode, skill summaries) |
+| [`packages/plugins`](../packages/plugins) | `@prismshadow/penguin-plugins` | Plugin-library loader: depends on every plugin package and resolves their directories |
+| [`plugins/*`](../plugins) | `@prismshadow/penguin-plugin-<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
 

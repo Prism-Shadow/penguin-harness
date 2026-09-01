@@ -5,7 +5,7 @@ description: Use when developing PenguinHarness itself — changing packages/{co
 
 # Developing PenguinHarness
 
-PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell (`packages/desktop`), the landing and docs sites, and the shipped plugin library (`packages/plugins`). It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider clients of its own.
+PenguinHarness is a TypeScript monorepo: an Agent SDK (`packages/core`), an HTTP server (`packages/server`), a Web App (`packages/web`), a CLI (`packages/cli`), an Electron shell (`packages/desktop`), the landing and docs sites, and the shipped plugin library — one npm package per plugin under the repo root's `plugins/`, with `packages/plugins` as the loader that depends on them all. It **consumes** LLM providers through `@prismshadow/agenthub` and implements no provider clients of its own.
 
 ## Repo shape — read before your first edit
 
@@ -38,7 +38,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | --- | --- |
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
-| `packages/plugins/plugins/**` | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
+| `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
 | The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
@@ -106,7 +106,7 @@ Release screenshots are captured, not mocked up: drive the app through the Playw
 - A provider group is split only when the vendor genuinely has separate endpoints or billing paths (Qwen Token Plan vs Pay-As-You-Go). One endpoint serving several key types is one group.
 - `resolveModelEnv` mirrors AgentHub's exact routing; a lookalike id must stay unroutable.
 - Adding a model touches the catalog test's exact-order assertions, `packages/web/src/features/models/protocol-path.ts` when the client's request path is not `/chat/completions`, the provider glyph map, and the bilingual `models` / `configuration` docs.
-- **Moving the default reaches further than adding a model.** `defaultProjectConfig()` in `packages/core/src/state/project-config.ts` holds it, and six documented first-run commands pin it by hand — `README.md`, `README.zh.md`, and `quickstart-cli` / `quickstart-sdk` in both languages — each ending `--set-default`, which writes `default_model`. Leave them on the old id and the documented first run silently undoes the change on every fresh install. The `models` and `configuration` samples carry it in two places that must move together, the `default_model` line and the `[[models]]` row it names (a default naming no entry is rejected on load), and `packages/skills/skills/penguin-sdk/SKILL.md` states it in prose.
+- **Moving the default reaches further than adding a model.** `defaultProjectConfig()` in `packages/core/src/state/project-config.ts` holds it, and six documented first-run commands pin it by hand — `README.md`, `README.zh.md`, and `quickstart-cli` / `quickstart-sdk` in both languages — each ending `--set-default`, which writes `default_model`. Leave them on the old id and the documented first run silently undoes the change on every fresh install. The `models` and `configuration` samples carry it in two places that must move together, the `default_model` line and the `[[models]]` row it names (a default naming no entry is rejected on load), and `plugins/agent-development/skills/penguin-sdk/SKILL.md` states it in prose.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync presets", which appends and updates catalog-owned fields but never deletes and never touches the stored default. Say so in the entry.
 
@@ -159,4 +159,4 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such convention.
 - **`knip`, `pnpm run doc-sync`, `pnpm run lint`.** None exist; the real chain is the one above.
 - **Coverage-scoped verification** (`--coverage.include`, per-file thresholds). No coverage gate is configured here, so narrowing means choosing test files, not proving coverage over a source scope.
-- **Adding a skill to `packages/plugins/plugins/`** because it is "a skill". That directory is the shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the bilingual skills pages, the README tables are test-checked, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.
+- **Adding a skill to the repo root's `plugins/`** because it is "a skill". Those packages are the shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the bilingual skills pages, the README tables are test-checked, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.
