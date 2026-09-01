@@ -36,7 +36,12 @@ export function PublishAgentDialog({
   const [gistId, setGistId] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ url: string; files: number; bytes: number } | null>(null);
+  const [result, setResult] = useState<{
+    url: string;
+    files: number;
+    bytes: number;
+    unchanged: boolean;
+  } | null>(null);
   const [showFiles, setShowFiles] = useState(false);
 
   useEffect(() => {
@@ -170,7 +175,9 @@ export function PublishAgentDialog({
             ) : (
               <div className={`rounded-md px-3 py-2 text-xs ${toneStrip.success}`}>
                 <p className={toneInk.success}>
-                  {S.agent.published(result.files, formatBytes(result.bytes))}
+                  {result.unchanged
+                    ? S.agent.publishUnchanged
+                    : S.agent.published(result.files, formatBytes(result.bytes))}
                 </p>
                 <a
                   href={result.url}
