@@ -69,22 +69,63 @@ export async function readPluginList(root: string): Promise<string[]> {
   return list as string[];
 }
 
-/** Resolved against the installation rather than the bundle's location. */
-async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
+/** Where a specifier resolves from, or null when it does not resolve at all. */
+function resolvePlugin(specifier: string): string | null {
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
     try {
-      const resolved = createRequire(entry).resolve(specifier);
-      return { module: await import(pathToFileURL(resolved).href), file: resolved };
+      return createRequire(entry).resolve(specifier);
     } catch {
       // Fall through: a dev checkout resolves the specifier directly.
     }
   }
+  return null;
+}
+
+/** Resolved against the installation rather than the bundle's location. */
+async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
+  const resolved = resolvePlugin(specifier);
+  if (resolved !== null)
+    return { module: await import(pathToFileURL(resolved).href), file: resolved };
   return { module: await import(specifier), file: null };
 }
 
 /** The generated table a plugin package ships beside its package.json. */
 export const IFACES_FILE = "ifaces.json";
+
+/** The `plugin` entry of a package's table: the names its default export lists, read statically by the generator. */
+export interface PluginDeclaration {
+  modules: readonly string[];
+  replaces: readonly string[];
+}
+
+/**
+/**
+ * What a listed specifier DECLARES, read from its generated table alone — the package is never
+ * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
+ * not there, without the runtime having to publish its load report.
+ */
+export async function readPluginDeclaration(
+  specifier: string,
+): Promise<{ modules: string[]; replaces: string[] } | { error: string }> {
+  const resolved = resolvePlugin(specifier);
+  if (resolved === null) return { error: `'${specifier}' does not resolve from this installation` };
+  let read: Awaited<ReturnType<typeof readPackageTable>>;
+  try {
+    read = await readPackageTable(resolved);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  if (read === null) return { error: `no package.json above ${resolved}` };
+  return { modules: [...read.plugin.modules], replaces: [...read.plugin.replaces] };
+}
+
+/** Rewrites the list of plugins this deployment installs; the loader reads it at the next boot. */
+export async function writePluginList(root: string, plugins: readonly string[]): Promise<void> {
+  const file = path.join(root, PLUGINS_FILE);
+  await fs.writeFile(`${file}.tmp`, `${JSON.stringify({ plugins }, null, 2)}\n`);
+  await fs.rename(`${file}.tmp`, file);
+}
 
 /**
  * The package's generated table (`ifaces.json` beside its `package.json`, the nearest one
@@ -93,9 +134,13 @@ export const IFACES_FILE = "ifaces.json";
  * MODULE payload, and a package without one ships no modules (`manifests` empty). Null
  * only when no `package.json` is above the file at all.
  */
-async function readPackageTable(
-  file: string | null,
-): Promise<{ where: string; ifaces: IfaceTable; manifests: ManifestTable } | null> {
+async function readPackageTable(file: string | null): Promise<{
+  where: string;
+  ifaces: IfaceTable;
+  manifests: ManifestTable;
+  /** What the default export names, as the generator read it: the modules added and the nodes stood in for. */
+  plugin: PluginDeclaration;
+} | null> {
   if (file === null) return null;
   let dir = path.dirname(file);
   for (;;) {
@@ -108,16 +153,29 @@ async function readPackageTable(
         text = await fs.readFile(tableFile, "utf8");
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        return { where, ifaces: { ifaces: {}, types: {} }, manifests: {} };
+        return {
+          where,
+          ifaces: { ifaces: {}, types: {} },
+          manifests: {},
+          plugin: { modules: [], replaces: [] },
+        };
       }
       const table = JSON.parse(text) as {
         ifaces?: unknown;
         types?: unknown;
         modules?: unknown;
+        plugin?: unknown;
       };
       const isRecord = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
       if (!isRecord(table.ifaces) || !isRecord(table.types) || !isRecord(table.modules)) {
         throw new Error(`${tableFile}: expected { ifaces, types, modules } (gen-ifaces output)`);
+      }
+      const names = (v: unknown) => Array.isArray(v) && v.every((n) => typeof n === "string");
+      const plugin = (table.plugin ?? {}) as { modules?: unknown; replaces?: unknown };
+      if (!isRecord(plugin) || !names(plugin.modules ?? []) || !names(plugin.replaces ?? [])) {
+        throw new Error(
+          `${tableFile}#plugin: expected { modules: [<name>, …], replaces: [<name>, …] }`,
+        );
       }
       const manifests: Record<string, ModuleDef["manifest"]> = {};
       for (const [name, doc] of Object.entries(table.modules as Record<string, unknown>)) {
@@ -127,6 +185,10 @@ async function readPackageTable(
         where,
         ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
         manifests,
+        plugin: {
+          modules: (plugin.modules ?? []) as string[],
+          replaces: (plugin.replaces ?? []) as string[],
+        },
       };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
