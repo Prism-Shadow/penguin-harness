@@ -180,6 +180,9 @@ async function compileEntry(entry, outfile) {
     // Class decorators (@Module / @Component) are TypeScript syntax Node cannot run: the
     // target makes esbuild lower them, instead of passing them through as esnext.
     target: "es2022",
+    // The plugin catalogue inlines each backend's own README.md as a string (the server's
+    // plugin/builtin-readmes.ts); its bundler config carries the same loader.
+    loader: { ".md": "text" },
     outfile,
     logLevel: "silent",
     banner: { js: ESM_CJS_BANNER },
