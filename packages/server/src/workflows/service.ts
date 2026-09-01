@@ -1,9 +1,9 @@
 /**
  * WorkflowService: boots every workflow folder of an Agent as a module tree of its own.
  *
- * A workflow is an extension package (`package.json#penguin.modules` + a default export
- * pairing the manifests with code, exactly as ../extension/loader.ts reads a platform
- * extension). Its root module must be named `Workflow` and provide `WorkflowMain`; the
+ * A workflow is a plugin package (`package.json#penguin.modules` + a default export pairing
+ * the manifests with code, exactly as ../plugin/loader.ts reads a platform plugin). Its root
+ * module must be named `Workflow` and provide `WorkflowMain`; the
  * server publishes `WorkflowHost` to the tree as module `Host`. The tree is checked
  * against the platform's own interface table before any create() runs, so a workflow
  * that requires something the host does not publish, or provides a handler of the wrong

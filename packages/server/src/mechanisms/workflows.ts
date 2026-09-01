@@ -1,8 +1,8 @@
 /**
  * Workflows: code an Agent keeps in its own directory and the server boots as a module
  * tree of its own — the same manifests, the same interface check and the same
- * `Extension` shape (`package.json#penguin.modules` + a default export) the platform's
- * extensions use. Two interfaces cross the boundary:
+ * `Plugin` shape (`package.json#penguin.modules` + a default export) the platform's plugins
+ * use. Two interfaces cross the boundary:
  *
  * - `WorkflowHost` is what the server PUBLISHES into every workflow tree (the workflow's
  *   manifest requires it `from: "Host"`): a way to run its own Agent, a small state
