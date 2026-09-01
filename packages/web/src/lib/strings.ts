@@ -153,7 +153,8 @@ export const zh = {
     sharingTitle: "分享",
     sharingInfo:
       "把 Agent 的定义（系统配置、提示词、技能、工具、工作流）发布为 GitHub gist，或从 gist 安装。发布需要一个带 gist 权限的 GitHub token，由服务器保存；安装公开 gist 不需要 token。",
-    sharingDesc: "服务器用这个 token 发布 Agent 包；它只写不读，界面只显示是否已配置。",
+    sharingDesc:
+      "服务器优先用它所在机器上 gh CLI 的登录身份发布；没有 gh 时才用这个 token。它只写不读，界面只显示是否已配置。",
     githubToken: "GitHub token",
     githubTokenHint:
       "需要 gist 权限（Fine-grained token: Gists → Read and write）。留空并保存不会改动。",
@@ -615,11 +616,16 @@ export const zh = {
     publishTitle: "发布到 GitHub gist",
     publishDesc:
       "把这个 Agent 的定义作为一组可读的文本文件发布到 gist；别人（或另一台机器）可以从它安装出一个干净的同款 Agent。",
-    publishNoToken: "服务器还没有 GitHub token，无法发布。管理员可在 设置 → 分享 中配置。",
-    publishGistId: "更新已有 gist",
-    publishGistIdPlaceholder: "留空则新建",
-    publishGistIdHint: "填入之前发布得到的 gist 链接或 id，就地更新，链接不变。",
+    publishNoToken:
+      "服务器还没有 GitHub 身份，无法发布：在服务器上用 `gh auth login`（需要 gist 权限）登录，或由管理员在 设置 → 分享 里存一个 token。",
+    publishGistId: "改发布到另一个 gist",
+    publishGistIdPlaceholder: "留空即可",
+    publishGistIdHint:
+      "留空时：已发布过的 Agent 更新它自己的 gist，没发布过的新建一个。填入链接或 id 则改用那个 gist。",
     publishPublic: "公开 gist",
+    publishViaGh: "将以服务器上 gh CLI 已登录的身份发布。",
+    publishViaToken: "将以服务器保存的 GitHub token 发布。",
+    publishUpdates: "将更新：",
     publish: "发布",
     publishUpdate: "更新 gist",
     publishing: "发布中…",
