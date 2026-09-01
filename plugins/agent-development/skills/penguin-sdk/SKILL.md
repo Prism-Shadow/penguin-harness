@@ -346,7 +346,7 @@ http.createServer(async (req, res) => {
 
 ## Workflows: a page and server code the Agent keeps for itself
 
-Inside PenguinHarness an Agent can hold *workflows*: small extension packages in its own directory that the server boots as module trees, serves as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, interfaces checked before any code runs — so a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem while the previous version keeps serving.
+Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in its own directory that the server boots as module trees, serves as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, interfaces checked before any code runs — so a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem while the previous version keeps serving.
 
 Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/`:
 
