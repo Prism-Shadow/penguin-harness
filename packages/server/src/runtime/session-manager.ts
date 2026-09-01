@@ -8,9 +8,12 @@
  *     createSession using the index row's workspace/modelId, yielding a new session_id
  *     and updating the index's primary key; the Task response body always returns the
  *     current actual id;
- *   - Vault effectiveness: a vault update bumps the Agent's config generation
- *     (invalidateAgentRuntimes); runtimes built earlier are discarded on their next
- *     idle access and re-resumed, so the next Task always runs with current values;
+ *   - Credential effectiveness: a Project's models/credentials change bumps every affected
+ *     Agent's config generation (invalidateProjectRuntimes); runtimes built earlier are
+ *     discarded on their next idle access and re-resumed, so the next Task runs with the
+ *     new api_key / base_url. Agent State changes (vault, AGENTS.md, tools, …) take no
+ *     such shortcut: core assembles them into the next model context — at the Session's
+ *     next compaction — exactly as the CLI does, so a running context never changes;
  *   - Per-Session mutual exclusion: only one Task/compaction may be in progress at a
  *     time;
  *   - run/compact drive: consumes the output stream in the background, publishing each
@@ -114,12 +117,17 @@ export interface RuntimeSession {
     opts: {
       approve: ApproveFn;
       signal: AbortSignal;
-      thinkingLevel?: ThinkingLevelName;
       /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
       goal?: { budget?: number };
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
+  /**
+   * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
+   * an assignment applies from the Session's very next LLM request. Optional: test fakes may
+   * omit it.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
   /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
@@ -133,6 +141,7 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
+  /** A tool's permission level from the running context's toolset (core `Session.toolPermission`; strict-tier — rebuilt at rotation). */
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -177,6 +186,8 @@ export interface RuntimeSession {
   setSubagentApprovalFallback?(approve: ApproveFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /** Pins one live child session's thinking level (core `Session.setBackgroundSubagentThinkingLevel`); false when the child is not live. Optional. */
+  setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
   onSubagentState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
@@ -232,7 +243,11 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          return await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          // The row's stored level — the knob position the user last chose — restored onto
+          // the runtime as a plain assignment: it rides the resumed Session's requests.
+          if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
+          return session;
         } catch (err) {
           // The credential key was deleted after the Session was created: only caught
           // here at recovery time; give the same actionable message.
@@ -258,8 +273,10 @@ export function createCoreSessionLoader(
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
-          // The rebuilt Session re-records a known origin in its fresh session_meta.
+          // The rebuilt Session re-records a known origin in its fresh session_meta, and
+          // starts its first context at the row's pinned level.
           ...(knownSource != null ? { source: knownSource } : {}),
+          ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
         if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
@@ -325,12 +342,11 @@ export interface RecallStore {
   files: RecallableFile[];
 }
 
-/** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
+/** One queued follow-up task (`queueIfBusy`): the task input, held until the session is idle. */
 interface QueuedFollowUp {
   /** Recall handle (PendingFollowUpInfo.id), assigned at queue time. */
   id: string;
   input: OmniMessage[];
-  thinkingLevel?: ThinkingLevelName;
   /**
    * Original content for recall, and the content `task_state` shows on the queued line.
    * Always present: a caller that knows more than the input carries (the HTTP route, which
@@ -371,8 +387,7 @@ interface RuntimeEntry {
   /**
    * Queued follow-up tasks (`queueIfBusy`): task inputs accepted while a Task/compaction was
    * in progress, auto-started one at a time (in order) once the session returns to idle —
-   * ordinary tasks with normal semantics, unlike the mid-run steering queue. Each entry
-   * keeps the per-turn thinkingLevel it was posted with (applied at auto-start).
+   * ordinary tasks with normal semantics, unlike the mid-run steering queue.
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
@@ -529,7 +544,7 @@ export class SessionManager {
   private readonly deletingAgents = new Set<string>();
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
-  /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
+  /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail = new LiveTailTracker();
@@ -591,7 +606,6 @@ export class SessionManager {
     sessionId: string,
     childSessionId: string,
     messages: OmniMessage[],
-    thinkingLevel?: ThinkingLevelName,
   ): Promise<SubagentMessageOutcome> {
     const entry = await this.ensureEntry(sessionId);
     entry.lastActivityMs = Date.now();
@@ -602,10 +616,29 @@ export class SessionManager {
         : undefined;
     return (
       (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         ...(resume ? { resume } : {}),
       })) ?? "gone"
     );
+  }
+
+  /**
+   * Sets a Session's thinking level on its loaded runtime (core `Session.thinkingLevel`,
+   * plain state): the row's value is what the loader applies at load, so this only needs to
+   * reach a runtime that is already in the active table — or a live child session, which
+   * has an index row and a panel picker of its own but runs inside its parent's runtime.
+   * The level is soft-limited: it applies from the Session's very next LLM request
+   * (mid-context — the UI advises compacting first, since the change invalidates the
+   * provider's cached context). No-op when nothing is loaded.
+   */
+  setThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
+    const session = this.entries.get(sessionId)?.session;
+    if (session) {
+      session.thinkingLevel = level;
+      return;
+    }
+    for (const entry of this.entries.values()) {
+      if (entry.session.setBackgroundSubagentThinkingLevel?.(sessionId, level)) return;
+    }
   }
 
   /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
@@ -750,13 +783,13 @@ export class SessionManager {
   }
 
   /**
-   * After an Agent's vault is updated: bump the Agent's config generation so every
-   * runtime built before the update is discarded on its next idle access and
-   * re-resumed via the loader — resume re-reads agent_state/.vault.toml, so the next
-   * Task on any of this Agent's Sessions runs with the new values (history is
-   * preserved through the Trace). A Task already in flight is neither aborted nor
-   * hot-swapped: it keeps the values it started with, and its entry is rebuilt on
-   * the first access after it returns to idle (see ensureEntry).
+   * Bumps one Agent's config generation so every runtime built before it is discarded on
+   * its next idle access and re-resumed via the loader (history is preserved through the
+   * Trace). What warrants it is a Session-fixed fact changing under the runtime — the
+   * Project's credentials (see invalidateProjectRuntimes). Agent State changes never do:
+   * core reads them into the next model context itself. A Task already in flight is neither
+   * aborted nor hot-swapped: it keeps the values it started with, and its entry is rebuilt
+   * on the first access after it returns to idle (see ensureEntry).
    */
   invalidateAgentRuntimes(projectId: string, agentId: string): void {
     const key = agentKey(projectId, agentId);
@@ -820,12 +853,10 @@ export class SessionManager {
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).
-   * `opts.thinkingLevel` (optional, validated by the route) rides into this run's
-   * `session.run` options — a per-turn parameter, applied to this Task only.
    * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
    * follow-up instead of 409: it auto-starts as an ordinary next task once the session
-   * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
-   * thinkingLevel for that auto-start. `opts.recall` is that queued message's original
+   * returns to idle (`queued: true` in the result; see startQueuedFollowUp).
+   * `opts.recall` is that queued message's original
    * content — optional, because only the HTTP route knows the parts of it the input does
    * not carry (the pre-attachment text and where each file landed on disk); every other
    * caller's store is read off the input, so a queued follow-up is recallable and shows
@@ -834,7 +865,7 @@ export class SessionManager {
   async startTask(
     sessionId: string,
     input: OmniMessage[],
-    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean; recall?: RecallStore },
+    opts?: { queueIfBusy?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
@@ -845,7 +876,6 @@ export class SessionManager {
         entry.followUps.push({
           id: randomUUID(),
           input,
-          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
           // The original content rides the queue so a recall can hand it back, and so the
           // queued line shows what is waiting (see recallFollowUp). Callers that know more
           // than the input carries pass their own; the rest get it read off the input.
@@ -858,7 +888,7 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
-      this.launchTask(entry, input, opts?.thinkingLevel);
+      this.launchTask(entry, input);
       return { sessionId: entry.sessionId, queued: false };
     });
   }
@@ -878,8 +908,6 @@ export class SessionManager {
       /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
       input: OmniMessage[];
       budget: number;
-      /** Optional per-goal thinking level: rides every round's Task (route-validated). */
-      thinkingLevel?: ThinkingLevelName;
     },
   ): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
@@ -924,12 +952,9 @@ export class SessionManager {
         objective,
         budget: args.budget,
       });
-      // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
-      const thinkingLevel = this.runThinkingLevel(entry.sessionId, args.thinkingLevel);
       const gen = this.goalStream(entry, {
         input: args.input,
         budget: args.budget,
-        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         approve,
         signal: ac.signal,
         ...(goalId !== undefined ? { goalId } : {}),
@@ -952,7 +977,6 @@ export class SessionManager {
     args: {
       input: OmniMessage[];
       budget: number;
-      thinkingLevel?: ThinkingLevelName;
       approve: ApproveFn;
       signal: AbortSignal;
       goalId?: number;
@@ -961,7 +985,6 @@ export class SessionManager {
     const gen = entry.session.run(args.input, {
       approve: args.approve,
       signal: args.signal,
-      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
       goal: { budget: args.budget },
     });
     let round = 0;
@@ -1035,27 +1058,8 @@ export class SessionManager {
     });
   }
 
-  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
-  /**
-   * Thinking level for one run: the level the request carried wins, else the level pinned
-   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
-   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
-   * a queued follow-up that carried no level of its own picks up the pin as it stands when
-   * it finally starts, and a pin set mid-run applies from the next run.
-   */
-  private runThinkingLevel(
-    sessionId: string,
-    requested?: ThinkingLevelName,
-  ): ThinkingLevelName | undefined {
-    return requested ?? this.deps.sessions.findById(sessionId)?.thinkingLevel ?? undefined;
-  }
-
-  private launchTask(
-    entry: RuntimeEntry,
-    input: OmniMessage[],
-    requestedThinkingLevel?: ThinkingLevelName,
-  ): void {
-    const thinkingLevel = this.runThinkingLevel(entry.sessionId, requestedThinkingLevel);
+  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run. Caller holds the session lock and has verified idle. */
+  private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
     entry.status = "running";
@@ -1078,7 +1082,6 @@ export class SessionManager {
     const gen = entry.session.run(input, {
       approve,
       signal: ac.signal,
-      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
     });
     // This call's input user text is the whole title source: drive persists its first
     // words as the immediate fallback and hands it to the LLM as the generation material
@@ -1107,7 +1110,7 @@ export class SessionManager {
         const entry = this.entries.get(sessionId);
         if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
         const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input, next.thinkingLevel);
+        this.launchTask(entry, next.input);
       });
     } catch (err) {
       this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1222,10 +1225,7 @@ export class SessionManager {
    * `not_pending`, because the two mean different things to the user — a follow-up became a
    * task of its own, a steering message reached the model mid-run.
    */
-  recallFollowUp(
-    sessionId: string,
-    followUpId: string,
-  ): { recall: RecallStore; thinkingLevel?: ThinkingLevelName } {
+  recallFollowUp(sessionId: string, followUpId: string): { recall: RecallStore } {
     const entry = this.entries.get(sessionId);
     const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
     const queued = i >= 0 ? entry!.followUps[i]! : undefined;
@@ -1239,10 +1239,7 @@ export class SessionManager {
     entry.followUps.splice(i, 1);
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
-    return {
-      recall: queued.recall,
-      ...(queued.thinkingLevel !== undefined ? { thinkingLevel: queued.thinkingLevel } : {}),
-    };
+    return { recall: queued.recall };
   }
 
   /**
@@ -1533,8 +1530,8 @@ export class SessionManager {
       if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
         return existing;
       }
-      // Built before the last vault update: discard once idle and fall through to a
-      // fresh load (resume re-reads the vault). A busy entry is returned as-is — the
+      // Built before the last credential change: discard once idle and fall through to a
+      // fresh load (resume re-reads the Project config). A busy entry is returned as-is — the
       // in-flight run keeps its values and assertIdle rejects the new Task anyway;
       // it is rebuilt on the first access after it finishes.
       if (
@@ -1554,7 +1551,7 @@ export class SessionManager {
         "Session does not exist or you do not have access.",
       );
     }
-    // Captured before the (awaited) load: a vault update racing with the load leaves
+    // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
     const session = await this.deps.loader.load(row);
@@ -1562,6 +1559,10 @@ export class SessionManager {
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A thinking-level PATCH that landed during the (awaited) load updated the row but found
+    // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
+    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
       // Self-heal produced a new session_id: update the index's primary key; the SSE

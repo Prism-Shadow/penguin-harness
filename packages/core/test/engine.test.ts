@@ -33,7 +33,12 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces/index.js";
-import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessage/index.js";
+import type {
+  OmniMessage,
+  TextPayload,
+  TokenUsagePayload,
+  ToolCallPayload,
+} from "../src/omnimessage/index.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
@@ -536,6 +541,31 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(fedBack).toBeDefined();
   });
 
+  it("stamps the Session token series onto token_usage before it is yielded or written", async () => {
+    // The LLM reports per-request counts only (12 then 20 here; its session slot is a
+    // stand-in) and the engine authors the cumulative series. Consumers serialize at yield
+    // time (an SSE wire) and the Trace serializes inside the write, so the stamp must land
+    // before either — an in-memory reference fixed up later would hide the difference.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_series" });
+    const engine = new ContextEngine({ llm, environment, trace });
+    const yielded: number[] = [];
+    for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
+      const p = msg.payload as { type?: string };
+      if (p.type !== "token_usage") continue;
+      yielded.push((JSON.parse(JSON.stringify(p)) as TokenUsagePayload).session.total);
+    }
+    expect(yielded).toEqual([12, 32]);
+    const written = (await readTrace(trace.currentPath()))
+      .filter((m) => (m.payload as { type?: string }).type === "token_usage")
+      .map((m) => (m.payload as TokenUsagePayload).session.total);
+    expect(written).toEqual([12, 32]);
+  });
+
   it("engine maxTurns fallback is -1 (unlimited) when the option is omitted (direct SDK construction)", () => {
     const engine = new ContextEngine({
       llm: new FakeLLM(),
@@ -1029,8 +1059,10 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     ).toBe(false);
     expect(recorded.filter((m) => (m.payload as { text?: string }).text === "go")).toHaveLength(1);
   });
+});
 
-  it("forwards RunOptions.thinkingLevel to every LLM request of the run (reconnects included); compaction keeps the default", async () => {
+describe("ContextEngine live thinking level (the soft-limited runtime parameter)", () => {
+  it("applies setThinkingLevel to every turn request — reconnects included — while compaction requests keep the context default", async () => {
     const levels: (string | undefined)[] = [];
     let calls = 0;
     const llm: LLMInterface = {
@@ -1038,14 +1070,14 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         calls += 1;
         levels.push(params.thinkingLevel);
         if (calls === 1) {
-          // First attempt drops: the reconnect retry must carry the same per-turn level.
+          // First attempt drops: the reconnect retry re-reads the live level.
           yield assistantText("half", "retryable");
           return { status: "retryable" };
         }
         if (calls === 2) {
           // Retry completes with usage above the compaction threshold → a Task-boundary
-          // summarize compaction issues one more request (the engine's, not this run's turn):
-          // it must NOT carry the per-turn override.
+          // summarize compaction issues one more request (the engine's, not a turn): it
+          // must NOT carry the live override — its prefix stays the context's own.
           yield assistantText("recovered");
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1065,29 +1097,44 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         return { status: "completed" };
       },
     };
-    const environment = new Environment({
-      workspaceDir: workspace,
-      toolConfig: execCommandToolConfig(),
-    });
+    const environment: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool() {
+        // No tool ever runs in this test.
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
     const engine = new ContextEngine({
       llm,
       environment,
       maxReconnects: 1,
       reconnectBackoffMs: 1,
-      createLLM: () => llm,
+      openNextContext: () => ({ llm: llm }),
       compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
     });
 
-    const all: OmniMessage[] = [];
-    for await (const msg of engine.run([userText("go")], {
-      approve: allowAll,
-      thinkingLevel: "high",
-    })) {
-      all.push(msg);
-    }
+    engine.setThinkingLevel("high");
+    await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(3);
-    // Turn attempt + reconnect retry carry the run's level; the compaction request does not.
+    // Turn attempt + reconnect retry carry the live level; the compaction request does not.
     expect(levels).toEqual(["high", "high", undefined]);
+
+    // A re-pin between runs is picked up by the next request without any rotation.
+    engine.setThinkingLevel("low");
+    const llm2Levels: (string | undefined)[] = [];
+    (llm as { streamGenerate: unknown }).streamGenerate = async function* (params: {
+      thinkingLevel?: string;
+    }) {
+      llm2Levels.push(params.thinkingLevel);
+      yield assistantText("again");
+      return { status: "completed" };
+    };
+    await collectRun(engine, [userText("next")], allowAll);
+    expect(llm2Levels).toEqual(["low"]);
   });
 });
 
@@ -3050,7 +3097,7 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     const engine = new ContextEngine({
       llm: oldLLM,
       environment: steeringEnvironment(),
-      createLLM: () => newLLM,
+      openNextContext: () => ({ llm: newLLM }),
       compaction: {
         maxContextLength: 1000,
         maxSessionTurns: -1,

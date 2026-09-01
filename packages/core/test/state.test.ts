@@ -41,7 +41,7 @@ import {
   resetSystemConfigToDefaults,
   getModel,
   isValidVaultKey,
-  loadOrInitAgentState,
+  loadAgentState,
   loadProjectConfig,
   memoryDir,
   scratchpadDir,
@@ -100,7 +100,7 @@ describe("paths / resolveRoot", () => {
   });
 });
 
-describe("loadOrInitAgentState", () => {
+describe("loadAgentState", () => {
   // Timeout: initialization writes the full layout — 15 library skills plus the example
   // benchmark, dozens of small files — and this first init test also pays the cold-I/O cost
   // (first-touch reads of the skills package, Defender scans) on Windows runners, where a
@@ -110,7 +110,7 @@ describe("loadOrInitAgentState", () => {
     "initializes an empty agent directory with the full state layout",
     { timeout: 20_000 },
     async () => {
-      const state = await loadOrInitAgentState();
+      const state = await loadAgentState({ init: {} });
       expect(state.root).toBe(tmpRoot);
       expect(state.projectId).toBe(DEFAULT_PROJECT_ID);
       expect(state.agentId).toBe(DEFAULT_AGENT_ID);
@@ -225,8 +225,8 @@ describe("loadOrInitAgentState", () => {
   );
 
   it("loads an existing agent directory and returns the same system prompt", async () => {
-    const first = await loadOrInitAgentState();
-    const second = await loadOrInitAgentState();
+    const first = await loadAgentState({ init: {} });
+    const second = await loadAgentState({ init: {} });
     expect(second.systemConfig.system_prompt).toBe(first.systemConfig.system_prompt);
     expect(second.systemConfig.system_prompt).toContain("PenguinHarness");
     expect(second.agentsMd).toBe(first.agentsMd);
@@ -235,7 +235,7 @@ describe("loadOrInitAgentState", () => {
   });
 
   it("respects custom agentId / projectId", async () => {
-    const state = await loadOrInitAgentState({ agentId: "agent_x", projectId: "proj_y" });
+    const state = await loadAgentState({ init: {}, agentId: "agent_x", projectId: "proj_y" });
     expect(state.agentId).toBe("agent_x");
     expect(state.projectId).toBe("proj_y");
     expect(await exists(systemConfigPath(tmpRoot, "proj_y", "agent_x"))).toBe(true);
@@ -244,7 +244,7 @@ describe("loadOrInitAgentState", () => {
 
 describe("buildToolConfig", () => {
   it("exposes command, file, subagent (rw) and image (r) tools", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
     expect(cfg.customTools.map((t) => t.name)).toEqual([
@@ -330,7 +330,7 @@ describe("buildToolConfig", () => {
   });
 
   it("selectBuiltinToolsForModel picks the matching image tool per model kind", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const all = buildToolConfig(state).customTools;
     // Vision model: read_image is kept, describe_image is filtered out; unannotated tools are unaffected.
     const forVision = selectBuiltinToolsForModel(all, true);
@@ -404,7 +404,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
     (t.parameters as { required?: string[] }).required;
 
   it("keeps the config-declared description property when call_description is missing or true (defaults)", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const cfg = buildToolConfig(state);
     for (const name of ["exec_command", "input_command", "run_subagent", "input_subagent"]) {
       const tool = cfg.customTools.find((t) => t.name === name)!;
@@ -490,7 +490,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
 
 describe("assembleSystemPrompt", () => {
   it("renders default system prompt placeholders", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const prompt = assembleSystemPrompt(
       state,
       sessionEnvironment("/tmp/penguin-ws", "session-test-1", {
@@ -523,7 +523,7 @@ describe("assembleSystemPrompt", () => {
   });
 
   it("default prompt carries the port and API-key guardrails", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const prompt = assembleSystemPrompt(state);
     // The wording of these rules is tuned freely; what must not drift is what they never say.
     // Ports: the service numbers are deliberately not listed, so a model cannot read one out
@@ -679,7 +679,7 @@ describe("assembleSystemPrompt", () => {
   });
 
   it("does not auto-inject other Agent State files", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     await fs.writeFile(
       path.join(memoryDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "note.md"),
       "MEMORY_SHOULD_NOT_BE_IN_PROMPT",
@@ -691,7 +691,7 @@ describe("assembleSystemPrompt", () => {
       "utf8",
     );
 
-    const reloaded = await loadOrInitAgentState();
+    const reloaded = await loadAgentState({ init: {} });
     const prompt = assembleSystemPrompt(reloaded);
 
     expect(prompt).not.toContain("MEMORY_SHOULD_NOT_BE_IN_PROMPT");
@@ -699,7 +699,7 @@ describe("assembleSystemPrompt", () => {
   });
 
   it("replaces generated Session environment field placeholders when provided", async () => {
-    const state = await loadOrInitAgentState();
+    const state = await loadAgentState({ init: {} });
     const env = sessionEnvironment(
       "/tmp/penguin-ws",
       "session-test-1",
@@ -873,7 +873,7 @@ describe("assembleSystemPrompt", () => {
 
 describe("resetSystemConfigToDefaults", () => {
   it("replaces everything with the current defaults, keeping only name/description/version", async () => {
-    await loadOrInitAgentState();
+    await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     // An old on-disk config: custom prompt/runtime/tools plus a key outside the schema.
     await fs.writeFile(
@@ -915,14 +915,14 @@ describe("resetSystemConfigToDefaults", () => {
     expect(written.tools).toEqual(defaults.tools);
 
     // The file on disk round-trips to the same object; out-of-schema keys are gone.
-    const reloaded = await loadOrInitAgentState();
+    const reloaded = await loadAgentState({ init: {} });
     expect(reloaded.systemConfig).toEqual(written);
     expect("custom_extra_key" in reloaded.systemConfig).toBe(false);
     expect(reloaded.systemConfig.system_prompt).toContain("App Data Dir: {{PROJECT_DIR}}");
   });
 
   it("normalizes an invalid version to 1 and keeps a missing name/description absent", async () => {
-    await loadOrInitAgentState();
+    await loadAgentState({ init: {} });
     const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(configPath, "system_prompt: old\nversion: nonsense\n", "utf8");
     const written = await resetSystemConfigToDefaults(
@@ -1794,12 +1794,12 @@ describe("defensive config parsing", () => {
   it("throws a clear error when system_config.yaml is empty or corrupt", async () => {
     // First initialize normally, then empty out system_config.yaml; reloading should throw a
     // clear error rather than producing an undefined-laden message.
-    await loadOrInitAgentState();
+    await loadAgentState({ init: {} });
     const cfgPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(cfgPath, "", "utf8");
-    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|Invalid|corrupted/);
+    await expect(loadAgentState({ init: {} })).rejects.toThrow(/system_prompt|Invalid|corrupted/);
 
     await fs.writeFile(cfgPath, "just a string, not a mapping", "utf8");
-    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|Invalid|corrupted/);
+    await expect(loadAgentState({ init: {} })).rejects.toThrow(/system_prompt|Invalid|corrupted/);
   });
 });

@@ -41,6 +41,8 @@ export type {
   CompactionSettings,
   ContextEngineDeps,
   EngineInitialState,
+  OpenContextOptions,
+  OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";

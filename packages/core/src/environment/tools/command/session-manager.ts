@@ -193,8 +193,8 @@ export class CommandSessionManager {
     maxTasks: MAX_SESSIONS,
   });
 
-  /** Agent vault environment variables: injected into the child process on every spawn (values never enter the model context, only the environment). */
-  private readonly vault: Record<string, string>;
+  /** Agent vault environment variables: injected into the child process on every spawn (values never enter the model context, only the environment). Replaced per model context, see `setVault`. */
+  private vault: Record<string, string>;
   /**
    * Proxy policy for the child environment (see {@link ProxyEnvPolicy}: strip the proxy
    * variables, inject an explicit proxy over the inherited ones, or null = pass
@@ -219,6 +219,16 @@ export class CommandSessionManager {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
     this.controlEnv = opts?.controlEnv;
+  }
+
+  /**
+   * Replaces the vault injected into commands spawned from now on — a new model context
+   * re-reads the Agent's vault (see Environment.reconfigure). Sessions already running keep
+   * the environment they were spawned with: a process environment cannot be changed after
+   * the fact.
+   */
+  setVault(vault: Record<string, string>): void {
+    this.vault = vault;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */

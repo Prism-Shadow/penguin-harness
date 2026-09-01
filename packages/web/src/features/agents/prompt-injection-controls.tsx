@@ -137,7 +137,7 @@ export function usePromptInjection({
     try {
       const res = await api.putAgentConfig(projectId, agentId, featurePatch({ enabled: next }));
       applyConfig(res.config);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -159,7 +159,7 @@ export function usePromptInjection({
       const dto = await insert(projectId, agentId);
       setState(dto);
       setPrompt(dto.prompt);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -174,7 +174,7 @@ export function usePromptInjection({
         .putAgentConfig(projectId, agentId, featurePatch({ prompt }))
         .then((res) => {
           applyConfig(res.config);
-          toastSuccess(S.common.saved);
+          toastSuccess(S.agent.savedTakesEffect);
           onConfigChanged?.();
         })
         .catch((e: unknown) => toastError(apiErrorText(e)));

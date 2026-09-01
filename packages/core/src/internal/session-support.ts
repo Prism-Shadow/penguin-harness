@@ -14,10 +14,32 @@ import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { modelVisiblePath } from "./model-visible-path.js";
 import { workspacesDir } from "../state/index.js";
 import { attachedImageLine, isWholeOriginBlock, userText } from "../omnimessage/index.js";
-import type { OmniMessage } from "../omnimessage/index.js";
+import type { McpServerConnectResult, OmniMessage } from "../omnimessage/index.js";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
 export type SessionEnvironment = SessionEnvironmentValues;
+
+/**
+ * The `mcp_connect_end` arguments for a finished connect phase, from the per-server outcomes:
+ * one failed server makes the phase `fatal`, with the unavailable names in the message. Shared
+ * by the two places a connect phase is bracketed — the Session's first-run bootstrap and the
+ * context a compaction opens — so both ends read the same.
+ */
+export function mcpConnectOutcome(results: McpServerConnectResult[]): {
+  status: "completed" | "fatal";
+  results: McpServerConnectResult[];
+  errorCode?: "connect_failed";
+  errorMessage?: string;
+} {
+  const failed = results.filter((r) => r.status !== "completed").map((r) => r.server);
+  return {
+    status: failed.length > 0 ? "fatal" : "completed",
+    results,
+    ...(failed.length > 0
+      ? { errorCode: "connect_failed" as const, errorMessage: `unavailable: ${failed.join(", ")}` }
+      : {}),
+  };
+}
 
 /** Generate a Session id of the form `session-YYYY-MM-DD-HH-mm-ss-<8-hex>` (local timezone, zero-padded: 4-digit year, 2 digits for the rest; hex from randomUUID). */
 export function formatSessionId(date: Date = new Date()): string {

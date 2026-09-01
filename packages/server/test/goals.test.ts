@@ -147,7 +147,7 @@ describe("SessionManager.startGoal", () => {
     db.close();
   });
 
-  type RunOpts = { thinkingLevel?: string; goal?: { budget?: number } };
+  type RunOpts = { goal?: { budget?: number } };
 
   /**
    * Fake session: `run` asserts it was called in goal mode and emits the whole goal stream
@@ -170,10 +170,7 @@ describe("SessionManager.startGoal", () => {
       skipReconnectWait: () => false,
       async *run(input: OmniMessage[], opts) {
         runs.push(input);
-        runOpts.push({
-          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-          ...(opts.goal !== undefined ? { goal: opts.goal } : {}),
-        });
+        runOpts.push({ ...(opts.goal !== undefined ? { goal: opts.goal } : {}) });
         yield* stream(input);
       },
       async *compact() {},
@@ -207,16 +204,12 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, {
-      input: [userText(text)],
-      budget: -1,
-      thinkingLevel: "high",
-    });
+    await manager.startGoal(ROW.sessionId, { input: [userText(text)], budget: -1 });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // One run call carries the whole goal: the input verbatim, the per-goal thinking
-    // level, and the goal option (core loops the rounds internally).
-    expect(session.runOpts).toEqual([{ thinkingLevel: "high", goal: { budget: -1 } }]);
+    // One run call carries the whole goal: the input verbatim and the goal option (core
+    // loops the rounds internally).
+    expect(session.runOpts).toEqual([{ goal: { budget: -1 } }]);
 
     const server = events
       .filter((e) => e.event === "server_event")

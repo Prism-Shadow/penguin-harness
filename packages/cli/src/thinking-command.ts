@@ -6,17 +6,15 @@
  * mirroring the web pickers: "none" stays a valid stored config value but is never offered
  * for selection (many models cannot disable thinking).
  *
- * Semantics (aligned with the web active-session picker and core's tri-state option):
- * - `--thinking <level>` pins the Session's default level at creation
- *   (`createSession.thinkingLevel`, so spawned subagent sessions follow it too). Under
- *   chat `--resume` the Session already exists — the flag becomes the initial per-turn
- *   override instead (the thinking level is a per-turn run parameter, so this is allowed
- *   where `--workspace` / `--model-id` are not).
- * - `/thinking <level>` sets a per-turn override carried on every subsequent run
- *   (`RunOptions.thinkingLevel`); it never writes back to the Agent config.
- * - `/thinking` bare shows the level the next turn will run at, and names its source: the
- *   Session's own default, or the per-turn override (plus the default it replaces). The two
- *   differ in reach — only the Session's level is inherited by spawned subagent sessions.
+ * Semantics (aligned with the web active-session picker; the thinking level is the
+ * SOFT-limited runtime parameter):
+ * - `--thinking <level>` pins the Session (a PATCH on it, so spawned subagent sessions
+ *   follow it too). Core applies the pin from the Session's next LLM request, and every
+ *   context opened from then on defaults to it.
+ * - `/thinking <level>` re-pins the Session the same way; the reply advises `/compact`
+ *   first, because a mid-context change invalidates the provider's cached context. It
+ *   never writes back to the Agent config.
+ * - `/thinking` bare shows the Session's pinned level, else the Agent's configured level.
  */
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 import type { DefaultChatThinkingLevel, ThinkingLevelName } from "@prismshadow/penguin-core";

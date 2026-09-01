@@ -37,7 +37,7 @@ What travels *alongside* it is the **control plane**, deliberately not message-s
 | Control-plane item | Where | Why it is not a message |
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
-| `thinkingLevel` | `RunOptions` → `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. |
+| `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter — the soft-limited knob); unset, the LLM object's construction default — the context's opening level — applies (`RunOptions` carries no level). |
 | `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call; the answer is a three-value enum the engine turns into an `approval_decision` message the moment it has it. |
 | `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is statically guaranteed to exist; "the last message yielded must be a `request_end`" would only ever be a runtime convention. The engine writes that `request_end` from it. |
 
@@ -232,7 +232,6 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
-  thinkingLevel?: ThinkingLevelName;   // this run's thinking level (per-turn; compaction requests unaffected)
 }
 ```
 

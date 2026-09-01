@@ -236,10 +236,10 @@ export function SkillsPage() {
       if (on) {
         const res = await api.installAgentSkills(projectId, agentId, [name]);
         calibrateAgent(agentId, res.skills);
-        toastSuccess(S.skills.installedToast(name, agentName));
+        toastSuccess(`${S.skills.installedToast(name, agentName)}${S.agent.takesEffectSuffix}`);
       } else {
         await api.removeAgentSkill(projectId, agentId, name);
-        toastSuccess(S.skills.uninstalledToast(name, agentName));
+        toastSuccess(`${S.skills.uninstalledToast(name, agentName)}${S.agent.takesEffectSuffix}`);
       }
     } catch (e) {
       // A 404 on uninstall means "was already not installed": the target

@@ -50,10 +50,9 @@ export function vaultRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const req = parseVaultUpdate(await readJson(c));
     const res = await deps.agentConfigService.updateVault(projectId, agentId, req);
-    // Effective-value semantics: no hot swap into a Task already in flight, but every
-    // runtime built before this update is invalidated — the next Task on any Session
-    // of this Agent re-resumes and picks up the new vault values.
-    deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    // No runtime invalidation: like every Agent State change, the new values reach a
+    // running Session at its next compaction (core reads the vault into each model
+    // context), and a new Session immediately — the same timing the CLI has.
     return c.json(res);
   });
 

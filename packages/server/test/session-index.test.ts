@@ -768,17 +768,6 @@ describe("session-index", () => {
     expect(list.sessions.find((s) => s.sessionId === session.sessionId)?.tracePath).toBeUndefined();
   });
 
-  it("rejects an invalid per-task thinkingLevel with 400 (five names only)", async () => {
-    await configureModels();
-    const res = await api.post(base(), {});
-    const { session } = (await res.json()) as SessionCreateResponse;
-    const bad = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
-      input: [{ type: "text", text: "hi" }],
-      thinkingLevel: "ultra",
-    });
-    expect(bad.status).toBe(400);
-  });
-
   it("rejects a malformed goal.budget with 400", async () => {
     await configureModels();
     const res = await api.post(base(), {});

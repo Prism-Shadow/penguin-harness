@@ -226,8 +226,7 @@ describe("Session input-image wiring", () => {
     });
     session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
       modelHasVision: false,
@@ -258,8 +257,7 @@ describe("Session input-image wiring", () => {
     };
     session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
       modelHasVision: true,

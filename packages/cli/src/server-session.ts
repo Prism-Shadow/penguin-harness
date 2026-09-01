@@ -76,6 +76,15 @@ export async function createServerSession(
   return res.session;
 }
 
+/** PATCHes the Session's thinking level: the pin core applies from the Session's next LLM request. */
+export async function pinThinkingLevel(
+  client: ServerClient,
+  sessionId: string,
+  level: string,
+): Promise<void> {
+  await client.request("PATCH", `/api/sessions/${enc(sessionId)}`, { thinkingLevel: level });
+}
+
 export async function getSessionInfo(
   client: ServerClient,
   sessionId: string,

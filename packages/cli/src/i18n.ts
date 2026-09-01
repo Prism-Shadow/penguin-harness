@@ -447,7 +447,7 @@ export interface Messages {
     tokens?: { total: string; delta: string },
     errorMessage?: string,
   ): string;
-  /** mcp_connect_begin event: the first run is connecting the configured MCP servers. */
+  /** mcp_connect_begin event: the configured MCP servers are being connected (the first run, or a new context after compaction). */
   mcpConnectStart(servers: string[]): string;
   /** mcp_connect_end event, one line: total wall time; `failures` carries "server (reason)" per failed connect (empty = all ok); `aborted` = the user interrupted mid-connect. */
   mcpConnectStop(
@@ -473,18 +473,9 @@ export interface Messages {
   goalBudgetInvalid(value: string): string;
   /** run's --goal given an empty/whitespace -m (the objective must be non-empty text). */
   goalObjectiveEmpty(): string;
-  /**
-   * `/thinking` with no argument and no override in effect: the level the next turn will run
-   * at is the Session's own default (pinned by `--thinking` at creation, else the config chain).
-   */
-  thinkingCurrentDefault(level: string): string;
-  /**
-   * `/thinking` with no argument while a per-turn override is in effect: the level the next
-   * turn will run at, plus the Session default it overrides — the two are a real distinction
-   * (only the Session default reaches spawned subagent sessions).
-   */
-  thinkingCurrentOverride(level: string, sessionDefault: string): string;
-  /** `/thinking <level>` accepted: subsequent turns carry the override (never written to the config). */
+  /** `/thinking` with no argument: the level this Session is pinned to (by `--thinking` or `/thinking`), else the Agent's configured level. */
+  thinkingCurrent(level: string): string;
+  /** `/thinking <level>` accepted: the Session is pinned to it, effective from the next request; the reply advises compacting first — a mid-context change invalidates the provider's cached context (never written to the Agent config). */
   thinkingSet(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
@@ -1018,12 +1009,10 @@ const en: Messages = {
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
   goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
-  thinkingCurrentDefault: (level) =>
-    `[thinking] level: ${level} (this Session's default) — change with /thinking <low|medium|high|xhigh|max>`,
-  thinkingCurrentOverride: (level, sessionDefault) =>
-    `[thinking] level: ${level} (override for this chat's turns; this Session's default is ${sessionDefault}) — change with /thinking <low|medium|high|xhigh|max>`,
+  thinkingCurrent: (level) =>
+    `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
   thinkingSet: (level) =>
-    `[thinking] level set to ${level} for this chat's subsequent turns (the Agent config is unchanged)`,
+    `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingInvalid: (value) =>
     `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
@@ -1063,8 +1052,10 @@ const en: Messages = {
   visionModelCleared: () => "It was also the vision model; that setting is now unset.",
   modelListTitle: () => "Configured models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
-  vaultSet: (key) => `Saved vault entry ${key}.`,
-  vaultRemoved: (key) => `Removed vault entry ${key}.`,
+  vaultSet: (key) =>
+    `Saved vault entry ${key}. New conversations pick it up right away; running ones after their next compaction.`,
+  vaultRemoved: (key) =>
+    `Removed vault entry ${key}. New conversations pick it up right away; running ones after their next compaction.`,
   vaultKeyMissing: (key) => `Vault entry ${key} does not exist.`,
   vaultListTitle: () => "Vault environment variables (values masked):",
   vaultListEmpty: () => "The vault is empty. Add one with `penguin config vault set`.",
@@ -1511,11 +1502,10 @@ const zh: Messages = {
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
   goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
-  thinkingCurrentDefault: (level) =>
-    `[思考] 当前等级：${level}（本 Session 的缺省值）——用 /thinking <low|medium|high|xhigh|max> 修改`,
-  thinkingCurrentOverride: (level, sessionDefault) =>
-    `[思考] 当前等级：${level}（本次对话后续轮次的覆盖值；本 Session 缺省为 ${sessionDefault}）——用 /thinking <low|medium|high|xhigh|max> 修改`,
-  thinkingSet: (level) => `[思考] 等级已设为 ${level}，本次对话后续轮次生效（不改动 Agent 配置）`,
+  thinkingCurrent: (level) =>
+    `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
+  thinkingSet: (level) =>
+    `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
@@ -1549,8 +1539,9 @@ const zh: Messages = {
   visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
   modelListTitle: () => "已配置的模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",
-  vaultSet: (key) => `已保存 vault 条目 ${key}。`,
-  vaultRemoved: (key) => `已删除 vault 条目 ${key}。`,
+  vaultSet: (key) => `已保存 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,
+  vaultRemoved: (key) =>
+    `已删除 vault 条目 ${key}。新对话立即生效；进行中的对话在下一次压缩后生效。`,
   vaultKeyMissing: (key) => `vault 条目 ${key} 不存在。`,
   vaultListTitle: () => "vault 环境变量（值已掩码）：",
   vaultListEmpty: () => "vault 为空。用 `penguin config vault set` 添加。",

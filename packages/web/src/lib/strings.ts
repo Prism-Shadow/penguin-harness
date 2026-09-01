@@ -448,6 +448,14 @@ export const zh = {
   },
 
   agent: {
+    /**
+     * Toast after a save on this page: when the change reaches a Session. Core assembles the
+     * Agent State into each model context, so a running conversation sees it only after its
+     * next compaction; a new conversation starts with it.
+     */
+    savedTakesEffect: "已保存。新对话立即生效；进行中的对话在下一次压缩后生效。",
+    /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
+    takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
     create: "创建 Agent",
     createTitle: "创建 Agent",
@@ -1192,6 +1200,8 @@ export const zh = {
   },
 
   chat: {
+    /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
+    thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",

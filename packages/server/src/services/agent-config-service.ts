@@ -37,6 +37,7 @@ import {
   resolveMCPServer,
   saveAgentVault,
   systemConfigPath,
+  THINKING_LEVEL_NAMES,
 } from "@prismshadow/penguin-core";
 import type {
   MCPServerConfig,
@@ -67,14 +68,6 @@ import {
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 
-const THINKING_LEVELS: readonly ThinkingLevelName[] = [
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -332,7 +325,7 @@ export class AgentConfigService {
       );
       setIfProvided(
         ["model", "thinking_level"],
-        optionalEnum(model, "thinkingLevel", THINKING_LEVELS),
+        optionalEnum(model, "thinkingLevel", THINKING_LEVEL_NAMES),
       );
       setIfProvided(
         ["model", "timeoutMs"],

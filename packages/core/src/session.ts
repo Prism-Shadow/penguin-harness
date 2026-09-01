@@ -20,20 +20,13 @@
 import {
   abortEvent,
   buildBackgroundTaskDoneMessage,
-  mcpConnectBegin,
   mcpConnectEnd,
   sessionMeta,
-  toolListReady,
   userText,
 } from "./omnimessage/index.js";
-import type {
-  McpServerConnectResult,
-  OmniMessage,
-  SessionMetaPayload,
-  TokenCounts,
-  ToolDefinition,
-} from "./omnimessage/index.js";
+import type { OmniMessage, SessionMetaPayload } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
+import { pumpOpener } from "./internal/merge-queue.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
@@ -44,12 +37,13 @@ import type {
   SubagentMessageOptions,
   SubagentMessageOutcome,
   BackgroundTaskDoneEvent,
-  CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
+  ThinkingLevelName,
   ToolPermission,
 } from "./interfaces/index.js";
 import { withCommandPolicy } from "./internal/command-policy.js";
+import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
@@ -57,44 +51,53 @@ import type {
   CompactAvailability,
   CompactionSettings,
   EngineInitialState,
+  OpenContextOptions,
+  OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's tool_list_ready event. */
+  /** Session metadata: the first context's runtime configuration (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source) — a context a compaction opens brings its own through `openNextContext`; the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
   /**
-   * Lazy session bootstrap, run at the start of the first run: resolves the toolset —
-   * the Environment's first listTools connects any configured MCP Servers — and builds
-   * the session LLM from it; `mcp` carries the per-server connect outcomes for the
-   * mcp_connect_end event. Kept out of Session construction so creating a Session is
-   * instant and the connect wait streams as visible events instead. An aborted attempt
-   * is cancelled via `cancelBootstrap` — the next run calls this again and reconnects
-   * from scratch.
+   * Opens the Session's FIRST context, lazily at the start of the first run: resolves the
+   * toolset — the Environment's first listTools connects any configured MCP Servers — and
+   * builds that context's LLM. The records it produces on the way — the
+   * `mcp_connect_begin` / `mcp_connect_end` pair around a connect, then the
+   * `tool_list_ready` carrying the toolset — are published through `opts.emit` and stream
+   * live from `run`: the same shape as `openNextContext`, because opening the first context
+   * and opening a later one are one procedure in the composition layer. Kept out of
+   * Session construction so creating a Session is instant and the connect wait streams as
+   * visible events instead. An aborted attempt is cancelled via `cancelBootstrap` — the
+   * next run calls this again and reconnects from scratch.
    */
-  bootstrap: () => Promise<{
-    tools: ToolDefinition[];
-    llm: LLMInterface;
-    mcp: McpServerConnectResult[];
-  }>;
+  bootstrap: (opts: OpenContextOptions) => Promise<{ llm: LLMInterface }>;
   /** Cancels an in-flight bootstrap on user abort (the composition layer wires Environment.cancelMcpConnect). */
   cancelBootstrap?: () => void;
-  /** Names of the configured MCP Servers (config order): non-empty brackets the bootstrap in mcp_connect_begin/end events; empty emits none. */
-  mcpServers: string[];
   environment: EnvironmentInterface;
   trace?: TraceSink;
-  /** Maximum LLM turns per Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
+  /** Maximum LLM turns per Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `openNextContext` opens brings its own. */
   maxTurns?: number;
-  /** Creates a new LLM object after compaction (carries over the Session's accumulated Token count); context compaction is unavailable if not provided. */
-  createLLM?: (sessionTokens: TokenCounts) => LLMInterface;
+  /**
+   * Opens a fresh model context after compaction (see ContextEngineDeps.openNextContext): the new
+   * LLM object, with the session_meta and engine settings of the context it opened — the
+   * composition layer assembles them from the Agent State as it is then — and the records it
+   * produced while opening (its MCP connect pair and tool_list_ready, through `opts.emit`).
+   * The Session adopts the meta as its current one (`metaMessage`); the engine yields the
+   * records live, writes meta and records at the head of the rotated Trace file, and seeds
+   * the new LLM's cumulative session counts itself. Context compaction is unavailable if not
+   * provided.
+   */
+  openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
+
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
    * `generateTitle`; if not provided, `generateTitle` returns null.
    */
   createBareLLM?: () => LLMInterface;
-  /** Context compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `createLLM`. */
+  /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openNextContext`, and a context that one opens brings its own. */
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
@@ -122,14 +125,16 @@ export interface SessionConfig {
    */
   goalFilePath?: string;
   /**
-   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`): a
-   * snapshot taken when the Agent built this Session, so the Agent's own file tools cannot
-   * reach the effective copy. `run` wraps the injected approval callback with it — the
-   * refusal happens at the approval boundary, above every approval mode and below no
-   * Human implementation. Absent = the factory rule set applies; `{ enabled: false }` opts
-   * out. Docs: /docs/configuration § "Command policy".
+   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
+   * SOURCE answering with the running context's policy: command policy is strict-tier —
+   * the composition layer reads it from disk once per context open, so an edit applies at
+   * the next rotation. `run` wraps the injected approval callback with it — the refusal
+   * happens at the approval boundary, above every approval mode and below no Human
+   * implementation.
+   * Absent, or a source yielding nothing = the factory rule set applies;
+   * `{ enabled: false }` opts out. Docs: /docs/configuration § "Command policy".
    */
-  commandPolicy?: CommandPolicyConfig;
+  commandPolicy?: CommandPolicySource;
 }
 
 /** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
@@ -261,7 +266,6 @@ export class Session {
   private abortedBootstrapRecords: OmniMessage[] = [];
   private readonly bootstrap: SessionConfig["bootstrap"];
   private readonly cancelBootstrap: (() => void) | undefined;
-  private readonly mcpServers: string[];
   /** Engine dependencies minus the LLM (which the bootstrap provides); kept whole so ensureReady can construct the engine late. */
   private readonly engineDeps: Omit<
     ConstructorParameters<typeof ContextEngine>[0],
@@ -269,12 +273,15 @@ export class Session {
   >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
-  private readonly meta: OmniMessage;
+  /** session_meta of the context that is running: the first context's at construction, re-stamped by each context `openNextContext` opens (see `metaMessage`). */
+  private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
+  /** The Session's thinking level — buffered here until the engine exists, engine state afterwards (see the `thinkingLevel` accessors). */
+  private level?: ThinkingLevelName;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
-  private readonly commandPolicy?: CommandPolicyConfig;
+  private readonly commandPolicy?: CommandPolicySource;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -316,22 +323,32 @@ export class Session {
     this.metaWritten = config.metaAlreadyWritten ?? false;
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
+
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
-    this.mcpServers = config.mcpServers;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
     // produced the LLM: everything else it needs is captured here.
     this.engineDeps = {
       environment: config.environment,
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
-      // Context compaction: new LLM factory + resolved settings + writes session_meta (and
-      // tool_list_ready) at the start of the new Trace file after splitting.
-      ...(config.createLLM ? { createLLM: config.createLLM } : {}),
+      // Context compaction: the new-context factory + resolved settings; the engine writes the
+      // context's session_meta (and tool_list_ready) at the start of the new Trace file after
+      // splitting. The factory is wrapped so the Session's own meta follows the opened context:
+      // `metaMessage` must describe the context that is running, not the one that was.
+      ...(config.openNextContext
+        ? {
+            openNextContext: async (opts: OpenContextOptions): Promise<OpenedContext> => {
+              const opened = await config.openNextContext!(opts);
+              if (opened.sessionMeta) this.meta = opened.sessionMeta;
+              return opened;
+            },
+          }
+        : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
@@ -483,77 +500,72 @@ export class Session {
   }
 
   /**
-   * First-run bootstrap: writes `session_meta`, resolves the toolset and builds the
-   * engine — streaming the phase as it happens. With MCP Servers configured, the connect
-   * + discovery wait is bracketed by one `mcp_connect_begin` / `mcp_connect_end` pair
-   * (overall status + per-server outcomes; the wall time is the pair's timestamp
-   * difference). The resolved toolset then flows as one `tool_list_ready` event — split
-   * out of session_meta precisely so the meta never has to wait for this phase.
+   * First-run bootstrap: writes `session_meta`, opens the first context and builds the
+   * engine — streaming the phase as it happens. The bootstrap publishes its records
+   * through `emit` — with MCP Servers configured, the `mcp_connect_begin` /
+   * `mcp_connect_end` pair around the connect + discovery wait (overall status +
+   * per-server outcomes; the wall time is the pair's timestamp difference), then the
+   * `tool_list_ready` carrying the resolved toolset (split out of session_meta precisely
+   * so the meta never has to wait for this phase) — and a merge queue turns them into
+   * live yields here while it runs: the same pump the engine's post-compaction opener
+   * uses, because opening the first context and opening a later one are one procedure.
    *
-   * The three messages are yielded live here, but their Trace writes are DEFERRED to the
-   * engine (ContextEngineDeps.bootstrapRecords): the engine writes them right after this
-   * run's input, so the connect phase belongs to the new turn in the Trace — after the
-   * user's message — instead of dangling before it (their earlier timestamps keep the
+   * The records are yielded live, but their Trace writes are DEFERRED to the engine
+   * (ContextEngineDeps.bootstrapRecords / toolList): the engine writes them right after
+   * this run's input, so the connect phase belongs to the new turn in the Trace — after
+   * the user's message — instead of dangling before it (their earlier timestamps keep the
    * file chronological, since the input message was created before the connect began).
    *
    * Returns false when `signal` aborts mid-bootstrap: the attempt is CANCELLED
    * (`cancelBootstrap` → the provider aborts pending connects and resets — the next run
-   * reconnects from scratch), the pair closes with `status: "aborted"`, and a standard
-   * abort event follows. The aborted records are stashed (abortedBootstrapRecords) for
-   * the caller, which writes the turn to the Trace itself — input first, then the pair
-   * and the abort — since no engine exists to do it; the input is also carried
-   * (carryOverInput) so the next run delivers it to the model without re-writing it.
-   * No-op returning true once the engine exists; a rejected
-   * bootstrap (unreadable resume history, LLM construction) throws to the caller, and a
-   * later run retries with a fresh attempt.
+   * reconnects from scratch), a connect the abort cut short is closed with a
+   * `status: "aborted"` end, and a standard abort event follows. The records are stashed
+   * (abortedBootstrapRecords) for the caller, which writes the turn to the Trace itself —
+   * input first, then the records — since no engine exists to do it; the input is also
+   * carried (carryOverInput) so the next run delivers it to the model without re-writing
+   * it. No-op returning true once the engine exists; a rejected bootstrap (unreadable
+   * resume history, LLM construction) throws to the caller, and a later run retries with
+   * a fresh attempt.
    */
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
     await this.ensureMetaWritten();
     if (this.engine) return true;
     const records: OmniMessage[] = [];
-    if (this.mcpServers.length > 0) {
-      const begin = mcpConnectBegin(this.mcpServers);
-      yield begin;
-      records.push(begin);
-    }
-    const work = this.bootstrap();
-    const outcome = await raceAbort(work, signal);
-    if (outcome === "aborted") {
-      this.cancelBootstrap?.();
-      // The cancelled attempt settles on its own (rejection expected); keep it from
-      // surfacing as an unhandled rejection.
-      work.catch(() => {});
-      // Stashed (not written here) so the caller can put the run's INPUT first — the
-      // Trace stays chronological: input, pair, abort.
-      this.abortedBootstrapRecords = records.length > 0 ? [...records] : [];
-      if (this.mcpServers.length > 0) {
-        const end = mcpConnectEnd({ status: "aborted", results: [] });
-        yield end;
-        this.abortedBootstrapRecords.push(end);
+    const { queue, result: work } = pumpOpener((emit) => this.bootstrap({ emit }));
+    for (;;) {
+      const res = await raceAbort(queue.next(), signal);
+      if (res === "aborted") {
+        this.cancelBootstrap?.();
+        // The cancelled attempt settles on its own (rejection expected); anything it
+        // publishes after this point is dropped, exactly as its return value is.
+        work.catch(() => {});
+        // Stashed (not written here) so the caller can put the run's INPUT first — the
+        // Trace stays chronological: input, records, abort.
+        this.abortedBootstrapRecords = [...records];
+        // A connect the abort cut short never published its end: close the pair.
+        const hasType = (t: string): boolean =>
+          records.some((m) => (m.payload as { type?: string }).type === t);
+        if (hasType("mcp_connect_begin") && !hasType("mcp_connect_end")) {
+          const end = mcpConnectEnd({ status: "aborted", results: [] });
+          yield end;
+          this.abortedBootstrapRecords.push(end);
+        }
+        const aborted = abortEvent("user_abort");
+        yield aborted;
+        this.abortedBootstrapRecords.push(aborted);
+        return false;
       }
-      const aborted = abortEvent("user_abort");
-      yield aborted;
-      this.abortedBootstrapRecords.push(aborted);
-      return false;
+      if (res.value === null) break;
+      records.push(res.value);
+      yield res.value;
     }
-    const { tools, llm, mcp } = outcome.value;
-    if (this.mcpServers.length > 0) {
-      const failed = mcp.filter((r) => r.status !== "completed").map((r) => r.server);
-      const end = mcpConnectEnd({
-        status: failed.length > 0 ? "fatal" : "completed",
-        results: mcp,
-        ...(failed.length > 0
-          ? {
-              errorCode: "connect_failed" as const,
-              errorMessage: `unavailable: ${failed.join(", ")}`,
-            }
-          : {}),
-      });
-      yield end;
-      records.push(end);
-    }
-    const toolsMsg = toolListReady(tools);
-    yield toolsMsg;
+    const { llm } = await work;
+    // The opener's toolset record rides as the engine's `toolList` (first-run write +
+    // rotation rewrite); the connect pair — everything else — as bootstrapRecords.
+    const toolsMsg = records.findLast(
+      (m) => (m.payload as { type?: string }).type === "tool_list_ready",
+    );
+    const connectRecords = records.filter((m) => m !== toolsMsg);
     // One-shot skip list: inputs carried from an aborted bootstrap were already written
     // to the Trace by the abort path — the engine re-delivers them (model context) but
     // must not re-write them. Exact-envelope match, each consumed once.
@@ -574,22 +586,23 @@ export class Session {
             ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
           }
         : baseTrace;
-    // toolsMsg rides as `toolList` alone (first-run write + rotation rewrite); the
-    // records array carries only the connect pair — one message, one carrier.
     this.engine = new ContextEngine({
       ...this.engineDeps,
       ...(trace !== undefined ? { trace } : {}),
       llm,
-      toolList: toolsMsg,
-      bootstrapRecords: records,
+      ...(toolsMsg !== undefined ? { toolList: toolsMsg } : {}),
+      bootstrapRecords: connectRecords,
     });
+    // A level assigned before the first run was buffered on the Session: hand it to the
+    // engine now that it exists, ahead of the first turn request.
+    if (this.level !== undefined) this.engine.setThinkingLevel(this.level);
     return true;
   }
 
   /**
    * The goal-mode branch of `run`: validates the input, folds any attached images into the
    * objective, then drives the goal loop, running each round through the single-Task path with
-   * the same per-call options (approval, signal, thinking level). The loop's terminal
+   * the same per-call options (approval, signal). The loop's terminal
    * `goal_finished` event is additionally written to the Trace (best-effort, like session_meta)
    * so the goal's end survives with its conversation.
    *
@@ -741,7 +754,7 @@ export class Session {
     // nothing to compact (the server renders this reason as a 409 `nothing_to_compact`).
     const init = this.engineDeps.initialState;
     return compactAvailability({
-      configured: Boolean(this.engineDeps.compaction && this.engineDeps.createLLM),
+      configured: Boolean(this.engineDeps.compaction && this.engineDeps.openNextContext),
       sessionTurns: init?.sessionTurns ?? 0,
       fromCompaction: init?.fromCompaction ?? false,
     });
@@ -795,12 +808,37 @@ export class Session {
     });
   }
 
-  /** Queries a tool's permission level (for the frontend to determine permission mode); returns undefined for unknown tools. */
+  /**
+   * The Session's thinking level — the SOFT-limited runtime parameter as plain state: an
+   * assignment rides the very next LLM request (mid-context, even mid-Task), unlike the
+   * prompt, toolset and model, which never change between a context's open and its close —
+   * and nothing records it in the Trace. The live value is engine state
+   * (`ContextEngine.setThinkingLevel`), buffered on the Session until the engine exists;
+   * contexts keep their opening base (the creation option, else the Agent config) for
+   * compaction requests and as the fallback while nothing was ever assigned. The cost of
+   * the softness is the provider's cached context — changing the level invalidates the
+   * cached messages — so a host lets the user know at the picker that compacting first is
+   * recommended (the Web menu note, the CLI `/thinking` reply).
+   * Callers: the Web App's in-chat picker (PATCH), the CLI's `--thinking` / `/thinking`.
+   */
+  get thinkingLevel(): ThinkingLevelName | undefined {
+    return this.level;
+  }
+  set thinkingLevel(level: ThinkingLevelName) {
+    this.level = level;
+    this.engine?.setThinkingLevel(level);
+  }
+
+  /**
+   * A tool's permission level (what the read-only approval mode auto-approves by);
+   * undefined for unknown tools. Strict-tier: answers from the running context's toolset —
+   * rebuilt at every rotation — so a permission edit applies when the next context opens.
+   */
   toolPermission(name: string): ToolPermission | undefined {
     return this.environment.toolPermission(name);
   }
 
-  /** This Session's session_meta message (used e.g. by host tools to forward nested-session metadata to a parent session). */
+  /** The running context's session_meta message — the first context's until a compaction opens another (used e.g. by host tools to forward nested-session metadata to a parent session). */
   get metaMessage(): OmniMessage {
     return this.meta;
   }
@@ -853,6 +891,11 @@ export class Session {
   /** Host-initiated abort of one child session's current run — the session survives for follow-ups (see EnvironmentInterface.abortBackgroundSubagentRun). */
   abortBackgroundSubagentRun(childSessionId: string): boolean {
     return this.environment.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
+  /** Host-initiated pin of one live child session's thinking level — the child's own `thinkingLevel`, applied from its next LLM request (see EnvironmentInterface.setBackgroundSubagentThinkingLevel); false when the child is not live. */
+  setBackgroundSubagentThinkingLevel(childSessionId: string, level: ThinkingLevelName): boolean {
+    return this.environment.setBackgroundSubagentThinkingLevel?.(childSessionId, level) ?? false;
   }
 
   /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */

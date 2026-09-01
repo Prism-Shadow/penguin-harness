@@ -7,6 +7,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { SystemConfig } from "../src/index.js";
+import { systemConfigPath } from "../src/state/paths.js";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -19,7 +22,7 @@ import {
   ensureUserMemoryDir,
   ensureWorkspaceMemoryDir,
   isTemporaryWorkspace,
-  loadOrInitAgentState,
+  loadAgentState,
   memoryDir,
   memoryScopeDir,
   parseMemoryFrontmatter,
@@ -52,7 +55,7 @@ afterEach(async () => {
 
 /** Loads a default Agent State under the temp root (creates it on first call). */
 async function agentState(): Promise<AgentState> {
-  return loadOrInitAgentState({ root });
+  return loadAgentState({ init: {}, root });
 }
 
 /** The effective system prompt a created Session recorded in its session_meta. */
@@ -470,7 +473,12 @@ describe("{{MEMORY}} rendering", () => {
 
   it("is left out of the Session prompt when the Agent config disables Memory", async () => {
     const agent = await createAgent({ root });
-    agent.state.systemConfig.memory = { ...agent.state.systemConfig.memory, enabled: false };
+    // On disk: a Session's context is assembled from the Agent State as it is on disk, never
+    // from the Agent object's load-time snapshot.
+    const configFile = systemConfigPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    const cfg = parseYaml(await fs.readFile(configFile, "utf8")) as SystemConfig;
+    cfg.memory = { ...cfg.memory, enabled: false };
+    await fs.writeFile(configFile, stringifyYaml(cfg), "utf8");
     const session = await agent.createSession({ workspaceDir: workspace });
     expect(sessionPrompt(session)).not.toContain(USER_LINE);
     expect(sessionPrompt(session)).not.toContain(WORKSPACE_LINE);

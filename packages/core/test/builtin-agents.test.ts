@@ -17,7 +17,7 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   listInstalledSkills,
-  loadOrInitAgentState,
+  loadAgentState,
   provisionProjectAgents,
   skillsDir,
 } from "../src/state/index.js";
@@ -45,7 +45,7 @@ const skillMdPath = (agentId: string, skillName: string): string =>
 
 describe("Skill installation policy", () => {
   it("a plain new Agent preinstalls no Skills and AGENTS.md is an empty file (guidance lives in the template's Suggested workflows)", async () => {
-    const state = await loadOrInitAgentState({ agentId: "some_agent" });
+    const state = await loadAgentState({ init: {}, agentId: "some_agent" });
     expect(await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, "some_agent")).toEqual([]);
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
@@ -60,7 +60,7 @@ describe("Skill installation policy", () => {
   });
 
   it("a default_agent created directly without a preset (e.g. first CLI run) likewise gets the library's preinstalled set", async () => {
-    await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
+    await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
     const names = (await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).map(
       (s) => s.name,
     );
@@ -80,7 +80,7 @@ describe("provisionProjectAgents", () => {
     expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID]);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
-    const state = await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
+    const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
     expect(state.systemConfig.name).toBe("General Agent");
     expect(state.systemConfig.description).toBeTruthy();
     expect(state.agentsMd).toBe("");
@@ -111,7 +111,7 @@ describe("provisionProjectAgents", () => {
 
   it("an existing Agent is not overwritten (the preset only applies at initialization)", async () => {
     const custom = "# AGENTS.md\n\nContent the user edited themselves\n";
-    await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
+    await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
     await fs.writeFile(agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), custom, "utf8");
 
     await provisionProjectAgents();
@@ -126,7 +126,7 @@ describe("provisionProjectAgents", () => {
 
 describe("App Data Dir / Agent ID placeholders", () => {
   it("assembleSystemPrompt injects App Data Dir and Agent ID (Skill lookup uses app-data-dir-relative paths, no .penguin dependency)", async () => {
-    const state = await loadOrInitAgentState({ agentId: "env_agent" });
+    const state = await loadAgentState({ init: {}, agentId: "env_agent" });
     // Skill data provided (an empty list) so the {{SKILLS}} section — home of the skill
     // lookup path convention this test pins — renders.
     const prompt = assembleSystemPrompt(
