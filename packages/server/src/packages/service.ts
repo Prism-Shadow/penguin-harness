@@ -169,9 +169,17 @@ export class AgentPackageService implements AgentPackages {
     } else {
       existing = remembered;
     }
+    const files: Record<string, { content: string } | null> = gistFilesOf(pkg.manifest, pkg.files);
+    if (existing !== null) {
+      // A gist update only adds and overwrites: a file the package no longer has (renamed,
+      // deleted, or named by an older separator) stays until it is explicitly nulled out.
+      // Without this a published Agent accumulates every file it ever had.
+      const current = await this.gistFileNames(existing);
+      for (const name of current) if (!(name in files)) files[name] = null;
+    }
     const body: Record<string, unknown> = {
       description: `Penguin Agent: ${pkg.manifest.name} (${agentId})`,
-      files: gistFilesOf(pkg.manifest, pkg.files),
+      files,
     };
     const send = async (target: string | null): Promise<GistResponse> => {
       // `public` is honoured only on creation — GitHub ignores it on an update, and a
@@ -306,6 +314,33 @@ export class AgentPackageService implements AgentPackages {
     }
   }
 
+  /**
+   * One gist, read with whatever identity there is: a stored token reads directly, else gh
+   * reads (which reaches a private gist too), and with neither the anonymous read still
+   * serves any public gist.
+   */
+  private async fetchGist(id: string): Promise<GistResponse> {
+    if (this.token() === null && (await this.gh.available())) {
+      try {
+        return (await this.gh.api(`/gists/${id}`, "GET")) as GistResponse;
+      } catch (err) {
+        throw err instanceof GhError ? new HttpError(404, "not_found", `gh: ${err.message}`) : err;
+      }
+    }
+    const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
+    return (await res.json()) as GistResponse;
+  }
+
+  /** The file names a gist currently holds; empty when it cannot be read (the publish then creates). */
+  private async gistFileNames(id: string): Promise<string[]> {
+    try {
+      const gist = await this.fetchGist(id);
+      return gist.files === undefined || gist.files === null ? [] : Object.keys(gist.files);
+    } catch {
+      return [];
+    }
+  }
+
   private token(): string | null {
     const raw = this.settings.get(GITHUB_TOKEN_KEY);
     if (raw === null) return null;
@@ -365,19 +400,7 @@ export class AgentPackageService implements AgentPackages {
       }
     }
     const id = source.id;
-    // A stored token reads directly; otherwise gh reads (reaching a private gist too); with
-    // neither, the anonymous read still serves any public gist.
-    let body: GistResponse;
-    if (this.token() === null && (await this.gh.available())) {
-      try {
-        body = (await this.gh.api(`/gists/${id}`, "GET")) as GistResponse;
-      } catch (err) {
-        throw err instanceof GhError ? new HttpError(404, "not_found", `gh: ${err.message}`) : err;
-      }
-    } else {
-      const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
-      body = (await res.json()) as GistResponse;
-    }
+    const body = await this.fetchGist(id);
     const files = body.files;
     if (files === undefined || files === null || typeof files !== "object") {
       throw new HttpError(502, "github_bad_response", "GitHub returned an unexpected gist.");
