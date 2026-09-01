@@ -1,7 +1,7 @@
 /**
  * Where an Agent's workflows live and how their versions are kept.
  *
- *   <agentDir>/workflows/<id>/package.json   `penguin.modules` manifests (an extension package)
+ *   <agentDir>/workflows/<id>/package.json   `penguin.modules` manifests (a plugin package)
  *   <agentDir>/workflows/<id>/index.mjs      default export `{ modules: { <Name>: { create } } }`
  *   <agentDir>/workflows/<id>/ui/            optional static UI, served as the workflow's tab
  *   <agentDir>/workflows/<id>/state.json     the workflow's own document (WorkflowHost.getState)
