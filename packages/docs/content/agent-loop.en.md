@@ -106,6 +106,8 @@ Every LLM-side failure except `auth` triggers an in-run reconnect — `timeout` 
 
 ## Compaction
 
+Compaction does more than shorten the history: **every compaction rotates in a brand-new model context**. Once it completes, the Agent's entire runtime configuration is reassembled from the Agent State as it is at that moment — exactly like a new Session's first context — and the Trace starts a new file (one Trace file always equals one model context). An edit you (or the model itself) make to the Agent's configuration mid-conversation therefore takes effect after the next compaction.
+
 Compaction settings are filled in from `system_config.yaml` by the composition layer:
 
 ```ts
