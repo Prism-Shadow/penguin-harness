@@ -103,7 +103,7 @@ interface GenerativeModelConfig {
   maxTokens?: number;
   fastMode?: boolean;              // 单模型快速模式(AgentHub fast_mode;溢价快速档位),默认关闭
   thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh" | "max"
-  requestTimeoutMs?: number;       // 单次 Request 超时,默认 120000;<=0 关闭
+  requestTimeoutMs?: number;       // Request 的空闲超时:等待上游下一个事件的上限,默认 300000;<=0 关闭
   toolCallIds?: ToolCallIdAllocator;   // Session 级 tool_call_id 唯一性登记表(压缩重建时传同一实例)
 }
 ```
@@ -114,6 +114,7 @@ interface GenerativeModelConfig {
 
 - 网关**有状态**地维护会话历史，每轮只接收新消息；恢复 Session 时经一次性的 `setHistory` 重放已提交历史；
 - 内部的 `EventTranslator` 把网关流式事件翻译为 `partial_*` 分片 + 完整消息，逐条原样保留不透明的 `fidelity` 保真负载；分段与网关自身的聚合一致——thinking 块由其 fidelity 负载闭合，连续相同的 fidelity 归为同一块(OpenAI 兼容客户端给每条增量盖同一个 `{ reasoning_field }`，不能因此切块)，text 段遇到不同的 `fidelity.phase` 即切分、遇到 `fidelity.signature` 即闭合，合并时 fidelity 键累积；完整消息按 thinking → text → tool_call 顺序落盘；
+- 每次请求都向网关索取思考摘要(`thinking_summary`)，没有 Provider 会因此报错——没有对应能力的家族由网关丢弃该字段，Claude 系则据此把思考切为摘要展示。它除了让读者看得见模型在想什么，也让推理阶段持续有事件到达，而这正是 `requestTimeoutMs` 计的东西：计时只在等待上游下一个事件时进行、收到任一事件即归零，消费侧的时间(向前端产出、等待审批、写 Trace)一概不计——它约束的是沉默，不是回复的长度;
 - `ToolCallIdAllocator` 处理个别 Provider 用函数名充当调用 id 的情况(入站追加 `#n`、出站剥离)，作用域覆盖整个 Session;
 - Provider 协议差异(工具调用格式、思考内容、流式事件)全部在网关内抹平，见[模型与 Provider](/models)。
 

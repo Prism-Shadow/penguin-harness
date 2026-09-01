@@ -563,7 +563,7 @@ export const en: Strings = {
     thinkingLevelNoneKept:
       "Stored legacy tier: new selections no longer offer the off tier (many models cannot disable thinking).",
     timeoutMs: "model.timeoutMs",
-    timeoutMsHint: "Per-request timeout, ms",
+    timeoutMsHint: "Idle budget between upstream events, ms — not a cap on the whole request",
     compaction: "Context compaction",
     maxContextLength: "max_context_length",
     maxContextLengthHint: "Context threshold that triggers compaction",

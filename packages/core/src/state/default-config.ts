@@ -948,7 +948,13 @@ export function defaultSystemConfig(): SystemConfig {
     model: {
       max_tokens: 32000,
       thinking_level: "medium",
-      timeoutMs: 120000,
+      // Idle budget between two upstream events, not a cap on how long a response may take
+      // (see GenerativeModelConfig.requestTimeoutMs). It has to cover the wait for the FIRST
+      // event, which is where a model that keeps its reasoning off the wire spends its whole
+      // thinking phase: requests ask for thought summaries so most models stream something,
+      // but the ones that accept the flag and return nothing still go silent, and 120s used
+      // to cut them off mid-thought.
+      timeoutMs: 300000,
     },
     compaction: {
       max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,

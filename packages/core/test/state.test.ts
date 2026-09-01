@@ -217,7 +217,7 @@ describe("loadOrInitAgentState", () => {
       expect(tpl.indexOf(SCHEDULES_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
       expect(state.systemConfig.model?.max_tokens).toBe(32000);
       expect(state.systemConfig.model?.thinking_level).toBe("medium");
-      expect(state.systemConfig.model?.timeoutMs).toBe(120000);
+      expect(state.systemConfig.model?.timeoutMs).toBe(300000);
       expect(state.systemConfig.tools?.mcpServers).toEqual([]);
       expect(Object.hasOwn(state.systemConfig, "description")).toBe(false);
       expect(Object.hasOwn(state.systemConfig, "subagents")).toBe(false);

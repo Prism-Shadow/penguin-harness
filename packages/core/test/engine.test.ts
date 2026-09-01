@@ -1819,15 +1819,18 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
+    // Every attempt streams text before failing, so the consecutive ladder resets on each of
+    // them: the absolute per-turn ceiling is what ends this run.
     const engine = new ContextEngine({
       llm,
       environment,
       maxReconnects: 1,
+      maxTurnAttempts: 2,
       reconnectBackoffMs: 0,
     });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(2); // Initial attempt + maxReconnects(1) retries.
+    expect(calls).toBe(2); // Initial attempt + one retry, then the ceiling.
     // No abort event — abort marks a user interruption; the last failure's request_end
     // (retryable, no retry_in_ms since no retry is planned) is the terminal record.
     expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
@@ -2122,6 +2125,82 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(last.retry_in_ms).toBeUndefined();
   });
 
+  it("received content restarts the ladder; a fruitless tail is what runs the budget out", async () => {
+    // Attempts 1-2 stream text before dropping — the shape of a socket that dies mid-response
+    // (UND_ERR_SOCKET). Each of them proves the connection worked and the model was writing,
+    // so the consecutive budget goes back to zero and the next wait is the base again. Only
+    // the two attempts that come back with nothing accumulate, and those are what exhausts
+    // maxReconnects: four attempts, of which two counted.
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls <= 2) yield assistantText("partial...", "retryable");
+        return { status: "retryable" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 10,
+      reconnectBackoffMaxMs: 15,
+    });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(4);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { attempt?: number; retry_in_ms?: number };
+    }[];
+    // The announced waits show the reset: base, base again (the ladder restarted after each
+    // productive attempt), then the climb over the fruitless tail, then none.
+    expect(ends.map((e) => e.payload.retry_in_ms)).toEqual([10, 10, 15, undefined]);
+    // The ordinal counts every attempt and never rewinds when the ladder does — a counter
+    // that went backwards mid-turn would read as a lost attempt.
+    expect(ends.map((e) => e.payload.attempt)).toEqual([1, 2, 3, 4]);
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+  });
+
+  it("the absolute ceiling stops an endpoint that streams a little and drops every time", async () => {
+    // Every attempt produces content, so the consecutive ladder resets every time and would
+    // never run out; maxTurnAttempts is the only thing between this turn and an unbounded
+    // retry loop that pays for the whole context on each pass.
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        yield assistantText("partial...", "retryable");
+        return { status: "retryable" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      maxTurnAttempts: 4,
+      reconnectBackoffMs: 1,
+    });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(4);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { attempt?: number; retry_in_ms?: number };
+    }[];
+    // The ladder stays on its first rung throughout (each attempt resets it): the count, not
+    // the backoff, is what ends the run.
+    expect(ends.map((e) => e.payload.retry_in_ms)).toEqual([1, 1, 1, undefined]);
+    expect(ends.map((e) => e.payload.attempt)).toEqual([1, 2, 3, 4]);
+    expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
+  });
+
   it("skipReconnectWait wakes the backoff early ('retry now'): attempt numbering unchanged; no-op without a wait", async () => {
     let calls = 0;
     const llm: LLMInterface = {
@@ -2414,12 +2493,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
-    // maxReconnects=1 -> exhausted after attempt 2; the original input is stashed as carry-over
-    // for the next run.
+    // Both failed attempts produce content (a tool call, then thinking), which resets the
+    // consecutive ladder; maxTurnAttempts=2 is therefore the budget that runs out after
+    // attempt 2, stashing the original input as carry-over for the next run.
     const engine = new ContextEngine({
       llm,
       environment,
       maxReconnects: 1,
+      maxTurnAttempts: 2,
       reconnectBackoffMs: 0,
     });
 
