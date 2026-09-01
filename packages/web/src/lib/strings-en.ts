@@ -634,11 +634,12 @@ export const en: Strings = {
     publishGistId: "Publish to a different gist",
     publishGistIdPlaceholder: "Leave empty",
     publishGistIdHint:
-      "Empty: an Agent that was published before updates its own gist, one that wasn't gets a new one. A link or id publishes to that gist instead.",
+      "Empty: updates this Agent's own gist when something changed, and spends no request when nothing did; an Agent that was never published gets a new gist. A link or id publishes to that gist instead, and always writes — use it when the gist was deleted or edited on GitHub.",
     publishPublic: "Public gist",
     publishViaGh: "Publishes as the `gh` CLI logged in on the server.",
     publishViaToken: "Publishes with the GitHub token stored on the server.",
     publishUpdates: "Updates:",
+    publishUnchanged: "The gist already held exactly this: nothing was written.",
     publish: "Publish",
     publishUpdate: "Update gist",
     publishing: "Publishing…",

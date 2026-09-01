@@ -32,6 +32,7 @@ import type { HttpFetch } from "../services/update-check-service.js";
 import {
   encodingFor,
   flattenPath,
+  gistDescription,
   gistFilesOf,
   gistIdOf,
   isPackagedPath,
@@ -39,6 +40,7 @@ import {
   isSafePackagePath,
   manifestOf,
   MAX_PACKAGE_BYTES,
+  packageDigest,
   PackageFormatError,
   packageFromTree,
   parsePackage,
@@ -93,6 +95,7 @@ export class AgentPackageService implements AgentPackages {
         url:
           typeof parsed.url === "string" ? parsed.url : `https://gist.github.com/${parsed.gistId}`,
         publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : "",
+        ...(typeof parsed.digest === "string" ? { digest: parsed.digest } : {}),
       };
     } catch {
       return null;
@@ -146,7 +149,7 @@ export class AgentPackageService implements AgentPackages {
     projectId: string,
     agentId: string,
     options: { gistId?: string; public: boolean },
-  ): Promise<{ gistId: string; url: string; files: number; bytes: number }> {
+  ): Promise<{ gistId: string; url: string; files: number; bytes: number; unchanged: boolean }> {
     const method = await this.publishMethod();
     if (method === null) {
       throw new HttpError(
@@ -169,18 +172,46 @@ export class AgentPackageService implements AgentPackages {
     } else {
       existing = remembered;
     }
+    const description = gistDescription(pkg.manifest);
+    const digest = packageDigest(description, pkg.files);
+    const record = await this.publishedGist(projectId, agentId);
+    const unchangedResult = {
+      gistId: existing ?? "",
+      url: record?.url ?? "",
+      files: pkg.files.length,
+      bytes: pkg.bytes,
+      unchanged: true,
+    };
+    // Nothing to say: the gist this Agent published to already holds exactly this content,
+    // by the digest recorded with it. No request is made at all. Naming a target explicitly
+    // skips this — that is how a gist edited or deleted on GitHub is published over.
+    const named = options.gistId !== undefined && options.gistId !== "";
+    if (!named && existing !== null && existing === record?.gistId && record.digest === digest) {
+      return { ...unchangedResult, url: record.url };
+    }
+
     const files: Record<string, { content: string } | null> = gistFilesOf(pkg.manifest, pkg.files);
+    let live: GistResponse | null = null;
     if (existing !== null) {
       // A gist update only adds and overwrites: a file the package no longer has (renamed,
       // deleted, or named by an older separator) stays until it is explicitly nulled out.
       // Without this a published Agent accumulates every file it ever had.
-      const current = await this.gistFileNames(existing);
-      for (const name of current) if (!(name in files)) files[name] = null;
+      live = await this.fetchGist(existing).catch(() => null);
+      for (const name of Object.keys(live?.files ?? {})) if (!(name in files)) files[name] = null;
+      // The record may be missing or stale (a first publish after an upgrade, another
+      // machine's publish): compare the gist's own content before spending a write.
+      if (live !== null && sameContent(live, files) && liveDescription(live) === description) {
+        const url = typeof live.html_url === "string" ? live.html_url : (record?.url ?? "");
+        await this.rememberGist(projectId, agentId, {
+          gistId: existing,
+          url,
+          publishedAt: record?.publishedAt ?? this.clock.now().toISOString(),
+          digest,
+        });
+        return { ...unchangedResult, gistId: existing, url };
+      }
     }
-    const body: Record<string, unknown> = {
-      description: `Penguin Agent: ${pkg.manifest.name} (${agentId})`,
-      files,
-    };
+    const body: Record<string, unknown> = { description, files };
     const send = async (target: string | null): Promise<GistResponse> => {
       // `public` is honoured only on creation — GitHub ignores it on an update, and a
       // gist's visibility cannot be changed after the fact.
@@ -235,9 +266,10 @@ export class AgentPackageService implements AgentPackages {
       gistId: id,
       url,
       publishedAt: this.clock.now().toISOString(),
+      digest,
     });
     this.log.line(`[packages] published ${projectId}/${agentId} to ${url} (via ${method})`);
-    return { gistId: id, url, files: pkg.files.length, bytes: pkg.bytes };
+    return { gistId: id, url, files: pkg.files.length, bytes: pkg.bytes, unchanged: false };
   }
 
   async preview(source: string, kind?: string): Promise<PackagePreview> {
@@ -329,16 +361,6 @@ export class AgentPackageService implements AgentPackages {
     }
     const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
     return (await res.json()) as GistResponse;
-  }
-
-  /** The file names a gist currently holds; empty when it cannot be read (the publish then creates). */
-  private async gistFileNames(id: string): Promise<string[]> {
-    try {
-      const gist = await this.fetchGist(id);
-      return gist.files === undefined || gist.files === null ? [] : Object.keys(gist.files);
-    } catch {
-      return [];
-    }
   }
 
   private token(): string | null {
@@ -456,6 +478,31 @@ export class AgentPackageService implements AgentPackages {
     }
     return res;
   }
+}
+
+/** A gist's description as GitHub returned it. */
+function liveDescription(gist: GistResponse): string {
+  return typeof (gist as { description?: unknown }).description === "string"
+    ? (gist as { description: string }).description
+    : "";
+}
+
+/** Whether a gist already holds exactly these files, with exactly this content. */
+function sameContent(
+  gist: GistResponse,
+  files: Record<string, { content: string } | null>,
+): boolean {
+  const live = gist.files ?? {};
+  const wanted = Object.entries(files).filter(([, v]) => v !== null) as Array<
+    [string, { content: string }]
+  >;
+  if (Object.keys(live).length !== wanted.length) return false;
+  for (const [name, value] of wanted) {
+    const found = live[name];
+    if (found === undefined || found.truncated === true) return false;
+    if (typeof found.content !== "string" || found.content !== value.content) return false;
+  }
+  return true;
 }
 
 /** Every file under `dir`, as posix-relative paths. */
