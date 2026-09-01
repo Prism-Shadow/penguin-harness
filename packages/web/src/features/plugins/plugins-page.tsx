@@ -37,11 +37,12 @@
  *   which is why the page fetches both lists per Agent. Uninstall takes the plugin apart the
  *   same way: one DELETE per skill and one for the hook package.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type {
   AgentSummary,
   HookItem,
+  InstalledPluginsResponse,
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
@@ -196,7 +197,7 @@ export function pluginUpdatePlan(
   return { perAgent, plugins: [...plugins].sort() };
 }
 import { InstalledPluginsDialog } from "./installed-dialog";
-import { toneSurface } from "../../lib/tone";
+import { toneInk, toneSurface } from "../../lib/tone";
 
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
@@ -214,6 +215,8 @@ export function PluginsPage() {
   const [bulkRunning, setBulkRunning] = useState(false);
 
   const [installedOpen, setInstalledOpen] = useState(false);
+  /** Bumped when the installed-plugins dialog closes, so the catalogue re-reads what it wrote. */
+  const [installedTick, setInstalledTick] = useState(0);
   const [groups, setGroups] = useState<PluginGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
@@ -472,7 +475,10 @@ export function PluginsPage() {
         </div>
         <InstalledPluginsDialog
           open={installedOpen}
-          onClose={() => setInstalledOpen(false)}
+          onClose={() => {
+            setInstalledOpen(false);
+            setInstalledTick((n) => n + 1);
+          }}
           isAdmin={user?.isAdmin === true}
         />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
@@ -611,7 +617,7 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
-      <RegistrySection />
+      <RegistrySection isAdmin={user?.isAdmin === true} installedTick={installedTick} />
     </div>
   );
 }
@@ -939,9 +945,36 @@ function InstallRow({
  * Read-only discovery: installing an indexed plugin is an install-side operation
  * (plugins.json under the data root), not a Web App one.
  */
-function RegistrySection() {
+function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; installedTick: number }) {
   const [plugins, setPlugins] = useState<PluginIndexEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What this deployment installs, so a catalogue row can say what it is for this server. */
+  const [installed, setInstalled] = useState<InstalledPluginsResponse | null>(null);
+  const [installBusy, setInstallBusy] = useState(false);
+
+  const reloadInstalled = useCallback(() => {
+    api.getInstalledPlugins().then(setInstalled, () => setInstalled(null));
+  }, []);
+  useEffect(reloadInstalled, [reloadInstalled, installedTick]);
+
+  /** Writes the list; the running process is untouched until it restarts. */
+  const writeInstalled = async (next: string[]) => {
+    if (installBusy) return;
+    setInstallBusy(true);
+    try {
+      setInstalled(await api.putInstalledPlugins(next));
+      toastSuccess(S.common.saved);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setInstallBusy(false);
+    }
+  };
+  const specifiers = (installed?.plugins ?? []).map((p) => p.specifier);
+  const stateOf = (name: string): "none" | "pending" | "active" => {
+    const row = installed?.plugins.find((p) => p.specifier === name);
+    return row === undefined ? "none" : row.active ? "active" : "pending";
+  };
   /**
    * Sources that answered with nothing. A published index that is down shortens this listing
    * instead of emptying it (the server merges tolerantly), so the section has to say so — a
@@ -992,7 +1025,18 @@ function RegistrySection() {
         <div className="mt-4 flex flex-col gap-2.5">
           {plugins.map((plugin) => (
             // Versions are distinct index entries (typst-style flat index), so the key needs both halves.
-            <RegistryRow key={`${plugin.name}@${plugin.version}`} plugin={plugin} />
+            <RegistryRow
+              key={`${plugin.name}@${plugin.version}`}
+              plugin={plugin}
+              state={stateOf(plugin.name)}
+              busy={installBusy}
+              onInstall={isAdmin ? () => void writeInstalled([...specifiers, plugin.name]) : null}
+              onRemove={
+                isAdmin
+                  ? () => void writeInstalled(specifiers.filter((s) => s !== plugin.name))
+                  : null
+              }
+            />
           ))}
         </div>
       )}
@@ -1002,53 +1046,91 @@ function RegistrySection() {
 
 /**
  * One index entry as a row: icon tile + specifier/version, description, and a license +
- * keywords metadata row. The whole row is the link — a plugin has one destination, so a
- * separate "open" affordance would only add a second target for the same action.
+ * keywords metadata row. The row itself is the link — a plugin has one destination — and the
+ * install control sits BESIDE that link rather than inside it: a button nested in an anchor is
+ * invalid markup, and the click would have two meanings.
+ *
+ * The button says what the deployment's own state is, not what the catalogue holds: not
+ * installed → Install, installed but not loaded → the restart it is waiting for, running →
+ * Remove. Installing writes plugins.json; it does not load anything (see installed-dialog).
  */
-function RegistryRow({ plugin }: { plugin: PluginIndexEntry }) {
+function RegistryRow({
+  plugin,
+  state,
+  busy,
+  onInstall,
+  onRemove,
+}: {
+  plugin: PluginIndexEntry;
+  state: "none" | "pending" | "active";
+  busy: boolean;
+  onInstall: (() => void) | null;
+  onRemove: (() => void) | null;
+}) {
   return (
-    <Link
-      to={`/plugins/registry/${plugin.name}`}
-      className="block rounded-md border border-gray-200 bg-white p-4 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-          <GlyphIcon d={NAV_ICONS.plugins} size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span
-              className="min-w-0 truncate font-mono text-[13px] font-semibold"
-              title={`${S.pluginRegistry.specifierHint}: ${plugin.name}`}
-            >
-              {plugin.name}
-            </span>
-            <span className="shrink-0 font-mono text-xs text-gray-400">v{plugin.version}</span>
+    <div className="rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
+      <Link
+        to={`/plugins/registry/${plugin.name}`}
+        className="block rounded-md p-4 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <GlyphIcon d={NAV_ICONS.plugins} size={18} />
           </div>
-          <p
-            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-            title={plugin.description}
-          >
-            {plugin.description}
-          </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span
+                className="min-w-0 truncate font-mono text-[13px] font-semibold"
+                title={`${S.pluginRegistry.specifierHint}: ${plugin.name}`}
+              >
+                {plugin.name}
+              </span>
+              <span className="shrink-0 font-mono text-xs text-gray-400">v{plugin.version}</span>
+            </div>
+            <p
+              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+              title={plugin.description}
+            >
+              {plugin.description}
+            </p>
+          </div>
+          <GlyphIcon
+            d="M9 6l6 6-6 6"
+            size={14}
+            className="shrink-0 text-gray-300 dark:text-gray-600"
+          />
         </div>
-        <GlyphIcon
-          d="M9 6l6 6-6 6"
-          size={14}
-          className="shrink-0 text-gray-300 dark:text-gray-600"
-        />
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
-        {(plugin.keywords ?? []).map((keyword) => (
-          <span
-            key={keyword}
-            className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-          >
-            {keyword}
-          </span>
-        ))}
-      </div>
-    </Link>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
+          {(plugin.keywords ?? []).map((keyword) => (
+            <span
+              key={keyword}
+              className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+            >
+              {keyword}
+            </span>
+          ))}
+        </div>
+      </Link>
+      {(onInstall !== null || state !== "none") && (
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-4 py-2 text-xs dark:border-gray-800">
+          {state === "pending" && (
+            <span className={toneInk.attention}>{S.plugins.installedRestart}</span>
+          )}
+          {state === "active" && <span className={toneInk.success}>{S.plugins.stateActive}</span>}
+          {state === "none"
+            ? onInstall !== null && (
+                <Button variant="secondary" size="sm" disabled={busy} onClick={onInstall}>
+                  {S.plugins.install}
+                </Button>
+              )
+            : onRemove !== null && (
+                <Button variant="secondary" size="sm" disabled={busy} onClick={onRemove}>
+                  {S.plugins.uninstall}
+                </Button>
+              )}
+        </div>
+      )}
+    </div>
   );
 }
