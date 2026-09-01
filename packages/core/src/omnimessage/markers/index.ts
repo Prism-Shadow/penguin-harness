@@ -11,9 +11,7 @@
  *   - **origin blocks** (`origin-blocks.ts`): `[use_skills]`, `[handoff_from]`,
  *     `[scheduled_task]`, `[model_switch_from]` — prefixed to a user message by the hosts
  *     (Web composer, server scheduler) and collapsed into a banner when rendered;
- *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message;
- *   - **goal** (`goal-block.ts`): `[goal]`, the goal-mode round protocol block prefixed to
- *     each round's input by the goal hook (line-anchored close — see the module).
+ *   - **steering** (`steering.ts`): `[user_steering]`, a mid-run user message.
  *
  * `attachment-lines.ts` is the one exception to the block form: `[attached image: …]` /
  * `[attached file: …]` are single lines **appended after** a user message, naming a file the
@@ -42,5 +40,4 @@ export * from "./attachment-lines.js";
 export * from "./engine-blocks.js";
 export * from "./origin-blocks.js";
 export * from "./steering.js";
-export * from "./goal-block.js";
 export * from "./strip.js";

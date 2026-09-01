@@ -38,11 +38,14 @@ import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 
-/** A goal round's input as the goal plugin composes it: the protocol block, then the objective. */
-function goalRoundText(round: number, objective: string): string {
-  return `[goal]\nround: ${round}\nThis message was sent automatically by goal mode.\nDo not modify the goal file unless the goal is complete or the blocked audit is satisfied.\n[/goal]\n\n${objective}`;
+/** A hook-injected input the way a host records it: plain protocol text, stamped `sender: "harness"`. */
+function harnessProtocolText(round: number): string {
+  return `This message was sent automatically by goal mode (round ${round}).\nDo not modify the goal file unless the goal is complete or the blocked audit is satisfied.`;
 }
-import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
+import {
+  buildBackgroundTaskDoneMessage,
+  parseUserSteeringText,
+} from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
 
@@ -726,11 +729,12 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(texts.join("\n")).not.toContain("[turn_aborted]");
   });
 
-  it("downgrades a goal round's protocol in the [turn_aborted] transcript (auth exit path)", async () => {
-    // An aborted/failed goal round's input rides into the next task via flatten carry-over;
-    // its [goal] protocol ("the system sends the next round automatically", the file rules)
-    // is stale the moment the goal ends and must not re-enter the model as live instructions.
-    const goalInput = goalRoundText(1, "fix the tests");
+  it("omits a harness-injected input from the [turn_aborted] transcript (auth exit path)", async () => {
+    // An aborted/failed round's injected input rides into the next task via flatten
+    // carry-over; its protocol ("the system sends the next round automatically", the file
+    // rules) is stale the moment the run ends and must not re-enter the model as live
+    // instructions. The stamp — not the text — is what marks it.
+    const goalInput = harnessProtocolText(1);
     const received: OmniMessage[][] = [];
     let calls = 0;
     const llm: LLMInterface = {
@@ -758,25 +762,25 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     });
     const engine = new ContextEngine({ llm, environment });
 
-    await collectRun(engine, [userText(goalInput)], allowAll);
+    await collectRun(engine, [userText("fix the tests"), userText(goalInput, "harness")], allowAll);
     await collectRun(engine, [userText("unrelated new task")], allowAll);
 
     expect(received).toHaveLength(2);
     const texts = received[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
     const joined = texts.join("\n");
-    // The transcript survives (interrupted-work context), the protocol does not.
+    // The transcript survives (interrupted-work context) — the user's own text included —
+    // the injected protocol does not.
     expect(joined).toContain("[turn_aborted]");
-    expect(joined).toContain("goal round 1 of an ended goal run");
+    expect(joined).toContain("harness-injected message of an ended run");
     expect(joined).toContain("fix the tests");
-    expect(joined).not.toContain("[goal]");
     expect(joined).not.toContain("Do not modify the goal file");
     expect(joined).toContain("unrelated new task");
   });
 
-  it("downgrades a goal round held raw in carry-over (pre-dispatch abort path)", async () => {
+  it("downgrades a harness-injected input held raw in carry-over (pre-dispatch abort path)", async () => {
     // Aborted before the Request went out: the input is held AS-IS (not flattened) — without
-    // the downgrade, the full [goal] block would be re-sent verbatim as current input.
-    const goalInput = goalRoundText(2, "fix the tests");
+    // the downgrade, the full protocol text would be re-sent verbatim as current input.
+    const goalInput = harnessProtocolText(2);
     const received: OmniMessage[][] = [];
     const llm: LLMInterface = {
       async *streamGenerate(params) {
@@ -799,16 +803,53 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await collectRun(engine, [userText(goalInput)], allowAll, controller.signal);
+    await collectRun(engine, [userText(goalInput, "harness")], allowAll, controller.signal);
     await collectRun(engine, [userText("unrelated new task")], allowAll);
 
     expect(received).toHaveLength(1);
     const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     const joined = texts.join("\n");
-    expect(joined).toContain("goal round 2 of an ended goal run");
-    expect(joined).toContain("fix the tests");
-    expect(joined).not.toContain("[goal]");
+    expect(joined).toContain("harness-injected message of an ended run");
+    expect(joined).not.toContain("Do not modify the goal file");
     expect(joined).toContain("unrelated new task");
+  });
+
+  it("a carried background completion notice keeps its report (no downgrade)", async () => {
+    // Notices share the harness stamp but are reports, not loop instructions: re-sending
+    // one after an abort keeps useful context and misleads no one.
+    const notice = buildBackgroundTaskDoneMessage(
+      { kind: "command", id: "proc-1", status: "completed", detail: "exit code 0" },
+      "Background command finished",
+    );
+    const received: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        received.push(params.newMessages);
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const controller = new AbortController();
+    controller.abort();
+
+    await collectRun(engine, [userText(notice, "harness")], allowAll, controller.signal);
+    await collectRun(engine, [userText("next task")], allowAll);
+
+    expect(received).toHaveLength(1);
+    const joined = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
+    expect(joined).toContain("Background command finished");
+    expect(joined).not.toContain("harness-injected message of an ended run");
   });
 
   it("never writes the flatten carry-over to trace (case B): synthesized carry-over is memory-only", async () => {

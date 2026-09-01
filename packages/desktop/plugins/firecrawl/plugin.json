@@ -1,7 +1,0 @@
-{
-  "description": "Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
-  "short_description": "Web search and page scraping via Firecrawl.",
-  "short_description_zh": "用 Firecrawl 做网络搜索与页面抓取。",
-  "version": "2026-07-20.1",
-  "category": "office-productivity"
-}

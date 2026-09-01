@@ -1,18 +1,12 @@
 /**
  * Goal-mode logic for the chat UI (pure, unit-tested).
  *
- * The `[goal]` block is the goal loop's per-round protocol prefix (core goal-prompts.ts);
- * the message stream collapses it into a round notice and renders the body after it — the
- * user's original round-1 input (skill blocks and all), or the re-injected objective — like
- * any other user message. The Trace page still shows the raw block. Parsing is core's
- * `parseGoalMessage` (line-anchored close; see markers/goal-block.ts), re-exported so chat
- * components keep a single import site.
- *
- * Budget input parsing mirrors the CLI's `/goal:<budget>` grammar: a positive number with an
- * optional k/m suffix; an empty input means no budget (UNLIMITED_BUDGET).
+ * Round inputs carry no goal-specific text protocol: the plugin's messages arrive as
+ * ordinary user texts stamped `sender: "harness"` and render like any other user message
+ * (message-item.tsx adds the origin caption). Budget input parsing mirrors the CLI's
+ * `/goal:<budget>` grammar: a positive number with an optional k/m suffix; an empty input
+ * means no budget (UNLIMITED_BUDGET).
  */
-export { parseGoalMessage } from "@prismshadow/penguin-core/omnimessage";
-export type { GoalRoundMessage } from "@prismshadow/penguin-core/omnimessage";
 
 /** Mirrors core's UNLIMITED_BUDGET (kept local: the constant is not part of the omnimessage bundle). */
 export const UNLIMITED_BUDGET = -1;
@@ -21,7 +15,7 @@ export const UNLIMITED_BUDGET = -1;
 export const GOAL_ICON =
   "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
 
-/** What the goal banner shows (fed from goal_* server events, or the Session's GOAL.yaml via GET /goal on load). */
+/** What the goal banner shows (fed from goal_* server events, or the Session's GOAL.json via GET /goal on load). */
 export interface GoalBannerState {
   objective: string;
   status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";

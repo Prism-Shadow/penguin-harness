@@ -41,8 +41,8 @@ function run(
   return { out: text ? JSON.parse(text) : undefined, status: res.status, stderr: res.stderr };
 }
 
-const start = (objective: string, budget = -1, body = objective) =>
-  run("start.mjs", { session_id: "s1", scratchpad_dir: scratchpad, objective, body, budget });
+const start = (objective: string, budget = -1) =>
+  run("start.mjs", { session_id: "s1", scratchpad_dir: scratchpad, objective, budget });
 const stop = () => run("stop.mjs", { hook: "stop", session_id: "s1", trace_path: tracePath });
 
 const meta = () => ({
@@ -52,6 +52,11 @@ const meta = () => ({
 const user = (text: string) => ({
   type: "model_msg",
   payload: { type: "text", role: "user", text },
+});
+// A round's protocol input the way the host records it: stamped `sender: "harness"`.
+const harness = (text: string) => ({
+  type: "model_msg",
+  payload: { type: "text", role: "user", text, sender: "harness" },
 });
 const assistant = (text: string, stop_reason?: string) => ({
   type: "model_msg",
@@ -85,9 +90,8 @@ async function setStatus(status: string): Promise<void> {
 }
 
 describe("start.mjs", () => {
-  it("writes GOAL.json and prints the round-1 message with the verbatim body", async () => {
-    const body = "[use_skills]\nskills: web-design\n[/use_skills]\n\nship the landing page";
-    const { out, status } = start("ship the landing page", 500, body);
+  it("writes GOAL.json and prints the round-1 protocol message", async () => {
+    const { out, status } = start("ship the landing page", 500);
     expect(status).toBe(0);
     expect(await readGoal()).toEqual({
       objective: "ship the landing page",
@@ -97,10 +101,15 @@ describe("start.mjs", () => {
       tokens_used: 0,
     });
     const input = (out as { input: string }).input;
-    expect(input.startsWith("[goal]\nround: 1\n")).toBe(true);
+    // Plain text, no marker block: round 1 points at the user's own message instead of
+    // restating the objective (the host sends this right behind it, stamped as harness).
+    expect(input).toContain("sent automatically by goal mode");
+    expect(input).toContain("The objective is the user message above");
+    // No restatement paragraph on round 1 (the embedded file content still shows the field).
+    expect(input).not.toContain("The user-provided objective");
+    expect(input).not.toContain("[goal]");
     expect(input).toContain('"status": "active"');
     expect(input).toContain('"budget": 500');
-    expect(input.endsWith(`\n[/goal]\n\n${body}`)).toBe(true);
   });
 
   it("rejects an empty objective and treats a non-positive budget as none", async () => {
@@ -129,7 +138,7 @@ describe("stop.mjs", () => {
     await writeTrace([
       meta(),
       usage(999),
-      user((started as { input: string }).input),
+      harness((started as { input: string }).input),
       assistant("working"),
       usage(100, 40),
       requestEnd("completed"),
@@ -143,8 +152,12 @@ describe("stop.mjs", () => {
       output: { status: "active", round: 2, tokens_used: 210, budget: 1000 },
     });
     const input = (out as { input: string }).input;
-    expect(input.startsWith("[goal]\nround: 2\n")).toBe(true);
-    expect(input.endsWith("\n[/goal]\n\nobj")).toBe(true);
+    // Later rounds restate the objective from the file (the original message may be far
+    // behind or compacted) — still plain text, no marker block.
+    expect(input).toContain("sent automatically by goal mode");
+    expect(input).toContain("obj");
+    expect(input).toContain('"round": 2');
+    expect(input).not.toContain("[goal]");
     expect(await readGoal()).toMatchObject({ status: "active", round: 2, tokens_used: 210 });
   });
 
@@ -152,7 +165,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj");
     await writeTrace([
       meta(),
-      user((started as { input: string }).input),
+      harness((started as { input: string }).input),
       assistant("all green"),
       usage(50),
     ]);
@@ -175,7 +188,7 @@ describe("stop.mjs", () => {
       const { out: started } = start("obj");
       await writeTrace([
         meta(),
-        user((started as { input: string }).input),
+        harness((started as { input: string }).input),
         assistant("partial"),
         usage(5),
         ...tail,
@@ -189,7 +202,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj");
     await writeTrace([
       meta(),
-      user((started as { input: string }).input),
+      harness((started as { input: string }).input),
       requestEnd("retryable"),
       assistant("recovered"),
       usage(5),
@@ -202,7 +215,7 @@ describe("stop.mjs", () => {
     const { out: started } = start("obj", 100);
     await writeTrace([
       meta(),
-      user((started as { input: string }).input),
+      harness((started as { input: string }).input),
       assistant("spent"),
       usage(120),
     ]);
@@ -218,7 +231,7 @@ describe("stop.mjs", () => {
     });
     expect(wrap.input).toContain("reached its token budget");
     expect(wrap.reason).toContain("wrap-up");
-    await writeTrace([meta(), user(wrap.input), assistant("summary"), usage(10)]);
+    await writeTrace([meta(), harness(wrap.input), assistant("summary"), usage(10)]);
     expect(stop().out).toMatchObject({
       decision: "stop",
       output: { status: "budget_limited", round: 2, tokens_used: 130 },
@@ -227,11 +240,33 @@ describe("stop.mjs", () => {
 
   it("honors a truthful complete during the wrap-up round", async () => {
     const { out: started } = start("obj", 100);
-    await writeTrace([meta(), user((started as { input: string }).input), usage(120)]);
+    await writeTrace([meta(), harness((started as { input: string }).input), usage(120)]);
     const wrap = stop().out as { input: string };
-    await writeTrace([meta(), user(wrap.input), usage(10)]);
+    await writeTrace([meta(), harness(wrap.input), usage(10)]);
     await setStatus("complete");
     expect(stop().out).toMatchObject({ decision: "stop", output: { status: "complete" } });
+  });
+
+  it("a background completion notice inside the round does not reset the usage window", async () => {
+    const { out: started } = start("obj", 1000);
+    const notice =
+      "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished";
+    await writeTrace([
+      meta(),
+      harness((started as { input: string }).input),
+      assistant("working"),
+      usage(100),
+      requestEnd("completed"),
+      // Steered into the round mid-Task: harness-stamped, but a report — not a boundary.
+      harness(notice),
+      assistant("absorbed the report"),
+      usage(50),
+      requestEnd("completed"),
+    ]);
+    expect(stop().out).toMatchObject({
+      decision: "continue",
+      output: { round: 2, tokens_used: 150 },
+    });
   });
 
   it("counts the whole file when a compaction rotated the round's input away", async () => {

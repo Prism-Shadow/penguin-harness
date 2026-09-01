@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// Starts a goal: writes the Session's GOAL.json and prints the round-1 message.
+// Starts a goal: writes the Session's GOAL.json and prints the round-1 protocol message.
 //
-// stdin:  { "session_id", "scratchpad_dir", "objective", "body", "budget" }
+// stdin:  { "session_id", "scratchpad_dir", "objective", "budget" }
 //         objective = the user's text with leading marker blocks stripped (what later rounds
-//         re-inject and the file records); body = the verbatim round-1 text (skill-invocation
-//         blocks and all); budget = tokens for the whole goal, -1 or absent = none.
-// stdout: { "input": "<[goal] block + body>" }
+//         restate and the file records); budget = tokens for the whole goal, -1 or absent =
+//         none.
+// stdout: { "input": "<round-1 protocol message>" } — the host sends it right AFTER the
+//         user's own message (and any images), stamped `sender: "harness"`; the protocol
+//         text points back at that message as the objective.
 //
 // The host runs this when a user starts a goal (the harness server does so for the `goal`
 // field of POST /tasks); the stop hook (stop.mjs) drives every later round.
@@ -23,5 +25,6 @@ const budget = Number.isFinite(input.budget) && input.budget > 0 ? Math.round(in
 const goalFile = path.join(scratchpadDir, GOAL_FILE);
 const goal = { objective, status: "active", budget, round: 1, tokens_used: 0 };
 writeGoal(goalFile, goal);
-const body = typeof input.body === "string" && input.body.trim() ? input.body : objective;
-process.stdout.write(`${JSON.stringify({ input: roundMessage(goal, goalFile, body) })}\n`);
+process.stdout.write(
+  `${JSON.stringify({ input: roundMessage(goal, goalFile, { firstRound: true }) })}\n`,
+);

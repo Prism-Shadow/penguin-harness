@@ -1,7 +1,7 @@
 /**
  * Goal-mode server tests: SessionManager.startGoal driving core goal mode through one
  * `session.run(input, { goal })` call with a fake Session (no real LLM requests) — the round
- * and terminal server events derived from the stream's `[goal]` inputs and goal hook events.
+ * and terminal server events derived from the stream's harness-injected inputs and goal hook events.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -42,9 +42,9 @@ function usage(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: 0, total };
 }
 
-/** A goal round's injected input, as core composes it (block + body). */
-function roundInput(round: number, body: string): OmniMessage {
-  return userText(`[goal]\nround: ${round}\nprotocol lines\n[/goal]\n\n${body}`);
+/** A goal round's injected input, as the host records it: plain protocol text, stamped `sender: "harness"`. */
+function roundInput(round: number): OmniMessage {
+  return userText(`goal round ${round} protocol lines`, "harness");
 }
 
 /** The goal hook's answer, as core records it: the file's state after the decision. */
@@ -82,9 +82,9 @@ describe("SessionManager.startGoal", () => {
   type RunOpts = { thinkingLevel?: string };
 
   /**
-   * Fake session: `run` emits the whole goal stream the way core would — per-round `[goal]`
-   * inputs and work, the goal hook's answers after each round (the hook loop is core's and
-   * the decisions are the goal plugin's; both are tested where they live).
+   * Fake session: `run` emits the whole goal stream the way core would — per-round
+   * harness-stamped inputs and work, the goal hook's answers after each round (the hook
+   * loop is core's and the decisions are the goal plugin's; both are tested where they live).
    */
   function goalFakeSession(
     stream: (input: OmniMessage[]) => OmniMessage[],
@@ -131,11 +131,11 @@ describe("SessionManager.startGoal", () => {
   it("drives one goal-mode run, mapping the round inputs and the hook's answers to goal events", async () => {
     const text = buildSkillsMessage(["web-design"], "make it work");
     const session = goalFakeSession((input) => [
-      roundInput(1, (input[0]!.payload as { text: string }).text),
+      ...input,
       assistantText("round 1 work"),
       tokenUsage(usage(100), usage(100)),
       goalHook("continue", "active", 2, 100),
-      roundInput(2, "make it work"),
+      roundInput(2),
       assistantText("round 2 work"),
       tokenUsage(usage(200), usage(200)),
       goalHook("stop", "complete", 2, 300),
@@ -145,7 +145,7 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText(text)],
+      input: [userText(text), roundInput(1)],
       objective: "make it work",
       budget: -1,
       thinkingLevel: "high",
@@ -173,19 +173,20 @@ describe("SessionManager.startGoal", () => {
       used: 300,
     });
 
-    // The round inputs were published on the message stream (no `event:` name) for live viewers.
+    // The inputs were published on the message stream (no `event:` name) for live viewers:
+    // the user's own message verbatim — the [use_skills] block included — and both rounds'
+    // harness-stamped protocol messages.
     const published = events
       .filter((e) => e.event === undefined)
       .map((e) => JSON.parse(e.data) as OmniMessage)
-      .filter(
-        (m) =>
-          m.type === "model_msg" &&
-          (m.payload as { role?: string }).role === "user" &&
-          ((m.payload as { text?: string }).text ?? "").startsWith("[goal]"),
-      );
-    expect(published).toHaveLength(2);
-    // Round 1 carries the caller's input verbatim — the [use_skills] block included.
+      .filter((m) => m.type === "model_msg" && (m.payload as { role?: string }).role === "user");
+    expect(published).toHaveLength(3);
     expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
+    expect(published.map((m) => (m.payload as { sender?: string }).sender ?? "user")).toEqual([
+      "user",
+      "harness",
+      "harness",
+    ]);
   });
 
   it("records the objective without the attached images: the display copy stays path-free", async () => {
@@ -211,15 +212,37 @@ describe("SessionManager.startGoal", () => {
     );
   });
 
+  it("a background completion notice inside a round is not a round boundary", async () => {
+    const notice = userText(
+      "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished",
+      "harness",
+    );
+    const session = goalFakeSession((input) => [
+      ...input,
+      assistantText("working"),
+      notice,
+      assistantText("absorbed"),
+      goalHook("stop", "complete", 1, 10),
+    ]);
+    const manager = makeManager(session);
+    const events: ChannelEvent[] = [];
+    channels.get(ROW.sessionId).subscribe((e) => events.push(e));
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj"), roundInput(1)],
+      objective: "obj",
+      budget: -1,
+    });
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+    const rounds = serverEvents(events).filter((e) => e.type === "goal_round");
+    expect(rounds).toEqual([expect.objectContaining({ round: 1 })]);
+  });
+
   it("409s while a goal is running (mutual exclusion)", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    const session = goalFakeSession(() => [
-      roundInput(1, "obj"),
-      goalHook("stop", "complete", 1, 0),
-    ]);
+    const session = goalFakeSession(() => [roundInput(1), goalHook("stop", "complete", 1, 0)]);
     const orig = session.run.bind(session);
     session.run = async function* (input, opts) {
       yield* orig(input, opts);
@@ -241,7 +264,7 @@ describe("SessionManager.startGoal", () => {
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {
     const session = goalFakeSession(() => []);
     session.run = async function* () {
-      yield roundInput(1, "obj");
+      yield roundInput(1);
       yield goalHook("stop", "complete", 1, 42);
       throw new Error("post-terminal hiccup");
     };
@@ -263,7 +286,7 @@ describe("SessionManager.startGoal", () => {
   it("closes the goal as aborted when the stream ends without the hook's terminal event", async () => {
     // A cut-off run (infrastructure failure upstream) must not leave the banner active.
     const session = goalFakeSession(() => [
-      roundInput(1, "obj"),
+      roundInput(1),
       assistantText("partial work"),
       tokenUsage(usage(50), usage(50)),
     ]);

@@ -14,7 +14,12 @@
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
  * notice — the messages endpoint still holds the full history for `penguin logs`.
  */
-import { isEventMessage, isGoalRoundInput, isModelMessage } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHarnessInput,
+  isModelMessage,
+  parseBackgroundTaskDoneMessage,
+} from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import { ServerClient } from "./client.js";
 import type { SseFrame } from "./client.js";
@@ -253,7 +258,12 @@ export async function watchTask(
       aborted = true;
     }
     if (opts.goal) {
-      if (isGoalRoundInput(msg)) {
+      // A harness-injected input is a round boundary: round 1's protocol message (sent
+      // right behind the objective), then every stop-hook continue. Background completion
+      // notices share the stamp but ride inside a round — same exclusion as the server's
+      // goal_round events.
+      const text = (msg.payload as { text?: string }).text ?? "";
+      if (isHarnessInput(msg) && parseBackgroundTaskDoneMessage(text) === null) {
         if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
         round++;
         segmentStartedAt = Date.now();

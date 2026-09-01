@@ -5,11 +5,27 @@
  * those server events rather than the hook events, so this is the only place the plugin's
  * record shape is interpreted.
  */
-import { isEventMessage } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHarnessInput,
+  parseBackgroundTaskDoneMessage,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** The name the goal plugin's hook package answers under. */
 export const GOAL_HOOK_NAME = "goal";
+
+/**
+ * Whether a goal stream message starts a round: a harness-injected input (round 1's
+ * protocol message, then every stop-hook continue) that is not a background-task completion
+ * notice — those share the harness stamp but ride inside a round as reports. Same exclusion
+ * as the goal plugin's own Trace windowing.
+ */
+export function isGoalRoundInput(msg: OmniMessage): boolean {
+  if (!isHarnessInput(msg)) return false;
+  const text = (msg.payload as { text?: string }).text ?? "";
+  return parseBackgroundTaskDoneMessage(text) === null;
+}
 
 /** The four ways a goal ends: the two the model may claim, and the two the hook decides. */
 export const GOAL_OUTCOMES = ["complete", "blocked", "budget_limited", "aborted"] as const;

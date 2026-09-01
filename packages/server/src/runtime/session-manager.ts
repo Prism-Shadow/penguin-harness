@@ -31,7 +31,6 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
-  isGoalRoundInput,
   isSessionMeta,
   parseUserSteeringText,
   stripLeadingMarkerBlocks,
@@ -62,7 +61,7 @@ import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
-import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
+import { goalOutcomeOf, goalProgressOf, isGoalRoundInput } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -869,7 +868,7 @@ export class SessionManager {
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input: the plugin's composed `[goal]` message (images may ride along). */
+      /** Round-1 input: the user's own message(s), then the plugin's protocol message stamped `sender: "harness"`. */
       input: OmniMessage[];
       /** The user's own objective text (leading marker blocks stripped): the goal_started event and the title material. */
       objective: string;
@@ -918,8 +917,9 @@ export class SessionManager {
   }
 
   /**
-   * Taps a goal run's stream for `drive`: round boundaries (the `[goal]` inputs the plugin
-   * composed) become goal_round events, and the goal hook's `stop` event becomes the
+   * Taps a goal run's stream for `drive`: round boundaries (the harness-injected inputs —
+   * round 1's protocol message, then every stop-hook continue) become goal_round events,
+   * and the goal hook's `stop` event becomes the
    * goal_finished server event. `used` is what the hook last recorded in its event's
    * `output` — the same number its budget check used — so the UI never shows a different
    * figure. A stream that ends without the hook's terminal event (a cut-off run, an
@@ -972,7 +972,7 @@ export class SessionManager {
       }
       if (!finished) this.finishAborted(entry, round, used);
     } catch (err) {
-      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the goal
+      // Core throws only on infrastructure failures: close the goal
       // as aborted, then let drive's defensive catch record the error. Guarded on
       // `finished`: a throw after the terminal event must not publish a contradicting event.
       if (!finished) this.finishAborted(entry, round, used);

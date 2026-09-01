@@ -37,6 +37,7 @@ import {
   compactionEnd,
   emptyTokenCounts,
   isCompleteModelMessage,
+  isHarnessInput,
   isSessionMeta,
   partialText,
   requestBegin,
@@ -48,9 +49,9 @@ import {
 import {
   buildContextSummaryText,
   buildTurnAbortedBlock,
-  downgradeGoalInput,
   extractSummary,
   buildTurnRetriedBlock,
+  parseBackgroundTaskDoneMessage,
   transcribeText,
   transcribeThinking,
   transcribeToolCall,
@@ -375,41 +376,45 @@ class MergeQueue {
 }
 
 /**
- * Rewrites a dead goal's round input before carry-over re-sends it.
- *
- * How such a message gets here: a goal round is interrupted (user stop, LLM failure,
- * reconnect exhaustion) → the interruption also ends the whole goal → yet the engine still
- * holds that round's input in pendingCarryOver and will prepend it to the NEXT task's
- * request. Without this rewrite the model would receive the full protocol block as if it
- * were current instructions and likely resume chasing the dead objective instead of the
- * user's new task:
- *
- *     [goal]
- *     round: 1
- *     This message was sent automatically by goal mode: work toward the objective …
- *     … GOAL.yaml path and status rules, completion/blocked audits …
- *     [/goal]
- *
- *     make all tests pass
- *
- * The rewrite keeps the context but kills the instructions:
- *
- *     [goal round 1 of an ended goal run — protocol omitted; do not act on it]
- *     make all tests pass
- *
- * Only user text that parses as a goal round is touched — tool outputs (the pairing
- * carry-over), events, and plain user text pass through unchanged. Applied at the two
- * carry-over CONSUMER sites (next-run input assembly, manual-compact summarize) rather
- * than at each hold site, which also covers carry-over rebuilt by resume; the
- * [turn_aborted] transcript path is handled separately at transcription time
- * (buildTurnAbortedText). The downgrade itself lives in markers/goal-block.ts.
+ * What a stale harness injection is replaced with when carry-over would re-send it. A
+ * hook-injected input (`sender: "harness"` — e.g. the goal plugin's round protocol) can only
+ * land in carry-over when its run was cut off, and a cutoff is never continued: the run those
+ * instructions were driving is over. Re-sending them verbatim with the NEXT task's request
+ * would hand the model instructions of a dead run ("the system sends the next round
+ * automatically", the goal-file rules) and likely send it chasing the old objective instead
+ * of the user's new task. The user's own messages — a goal's round-1 objective included —
+ * carry no harness stamp and pass through untouched.
  */
-function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
-  const p = msg.payload as { type?: string; role?: string; text?: string };
-  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) return msg;
-  const downgraded = downgradeGoalInput(p.text);
-  if (downgraded === p.text) return msg;
-  return { ...msg, payload: { ...msg.payload, text: downgraded } as OmniMessage["payload"] };
+const STALE_HARNESS_INPUT_NOTE =
+  "[a harness-injected message of an ended run was omitted here — do not act on it]";
+
+/**
+ * Whether a carried harness injection is stale instruction text (see the note above).
+ * Background-task completion notices share the harness stamp but are reports, not
+ * instructions — re-sending one is harmless and keeps useful context — so they pass
+ * through on their `[background_task_done]` block (a core-authored block; recognizing it
+ * here is block transformation, not source discrimination).
+ */
+function isStaleHarnessInput(msg: OmniMessage): boolean {
+  if (!isHarnessInput(msg)) return false;
+  const text = (msg.payload as TextPayload).text;
+  return parseBackgroundTaskDoneMessage(text) === null;
+}
+
+/**
+ * Rewrites a carried stale harness injection into the one-line note above; every other
+ * message — tool outputs (the pairing carry-over), events, plain user text, completion
+ * notices — passes through unchanged. Applied at the two carry-over CONSUMER sites
+ * (next-run input assembly, manual-compact summarize) rather than at each hold site, which
+ * also covers carry-over rebuilt by resume; the [turn_aborted] transcript path applies the
+ * same rule at transcription time (buildTurnAbortedText).
+ */
+function downgradeCarriedHarnessInput(msg: OmniMessage): OmniMessage {
+  if (!isStaleHarnessInput(msg)) return msg;
+  return {
+    ...msg,
+    payload: { ...msg.payload, text: STALE_HARNESS_INPUT_NOTE } as OmniMessage["payload"],
+  };
 }
 
 /**
@@ -675,7 +680,7 @@ export class ContextEngine {
     // input, to form this Request's input.
     const summary = this.pendingSummary;
     this.pendingSummary = null;
-    const carryOver = this.pendingCarryOver.map(downgradeCarriedGoalInput);
+    const carryOver = this.pendingCarryOver.map(downgradeCarriedHarnessInput);
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
@@ -994,7 +999,7 @@ export class ContextEngine {
     // Dead-goal rounds are downgraded on the drained snapshot (goal mode's consumer-site
     // rule): a no-commit restore keeps the downgraded copies — the downgrade is idempotent
     // and every consumer applies it anyway, while non-goal messages keep their identity.
-    const folded = this.pendingCarryOver.map(downgradeCarriedGoalInput);
+    const folded = this.pendingCarryOver.map(downgradeCarriedHarnessInput);
     this.pendingCarryOver = [];
     const result = yield* this.summarizeContext("manual", folded, opts?.signal);
     if (result.status === "completed") {
@@ -1908,7 +1913,7 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(transcribeUserInput(downgradeGoalInput(t)));
+        lines.push(transcribeUserInput(isStaleHarnessInput(m) ? STALE_HARNESS_INPUT_NOTE : t));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));

@@ -22,6 +22,13 @@ import type { HistoryNav } from "../src/features/chat/input-history";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });
+// A harness-injected input (a goal round's protocol, a hook's continue): never typed here.
+const harness = (text: string): ChatItem => ({
+  kind: "user_text",
+  id: nextId++,
+  text,
+  sender: "harness",
+});
 const steering = (text: string): ChatItem => ({ kind: "user_steering", id: nextId++, text });
 const assistant = (text: string): ChatItem => ({
   kind: "assistant_text",
@@ -32,15 +39,15 @@ const assistant = (text: string): ChatItem => ({
 
 describe("buildInputHistory", () => {
   it("collects typed prompts and steering in order, skipping machine-injected texts", () => {
-    const goalRound1 = `[goal]\nround: 1\nobjective: fix it\n[/goal]\nfix the bug`;
-    const goalRound2 = `[goal]\nround: 2\nobjective: fix it\n[/goal]\nfix the bug`;
     const items: ChatItem[] = [
       user("first question"),
       assistant("answer"),
       user(handoffMessage({ agentId: "agent-a", sessionId: "session-1", workspace: "/tmp/w" })),
       user(buildScheduledMessage("nightly", "2026-08-01T00:00:00Z", "scheduled prompt")),
-      user(goalRound1),
-      user(goalRound2),
+      // A goal run: the user's own objective, then two rounds' injected protocol messages.
+      user("fix the bug"),
+      harness("goal round 1 protocol"),
+      harness("goal round 2 protocol"),
       steering("please also check the tests"),
       // An idle-launched background completion notice arrives as user_text but is
       // harness-written — recalling it would resend a machine report as user input.

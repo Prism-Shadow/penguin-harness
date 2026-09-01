@@ -284,6 +284,11 @@ describe("Session stop hooks", () => {
           : null,
     );
     expect(kinds.filter(Boolean)).toEqual(["hook:continue", "user:again", "hook:stop"]);
+    // The injected input carries the harness stamp — hosts key round/origin display on it.
+    const injected = stream.find(
+      (m) => m.type === "model_msg" && (m.payload as { text?: string }).text === "again",
+    );
+    expect((injected!.payload as { sender?: string }).sender).toBe("harness");
     // Both hook events reached the Trace.
     const hookWrites = writes.filter((m) => isEventMessage(m) && m.payload.type === "hook");
     expect(hookWrites.map((m) => (m.payload as HookPayload).decision)).toEqual([

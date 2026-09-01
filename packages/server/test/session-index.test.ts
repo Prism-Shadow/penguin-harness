@@ -813,10 +813,14 @@ describe("session-index", () => {
       goal: {},
     });
     expect(withText.status).toBe(202);
+    // The user's own messages verbatim, then the plugin's round-1 protocol message stamped
+    // as harness-injected.
     expect(started[0]?.map((m) => (m.payload as { type: string }).type)).toEqual([
       "text",
       "image_url",
+      "text",
     ]);
+    expect((started[0]?.at(-1)?.payload as { sender?: string }).sender).toBe("harness");
     // A file attachment is the one input a goal cannot take, images notwithstanding: nothing
     // folds it into the objective every round re-injects, so it is refused before any upload
     // is written to disk (startGoal is never reached).

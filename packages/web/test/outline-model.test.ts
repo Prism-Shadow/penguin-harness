@@ -27,6 +27,13 @@ import {
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });
+// A harness-injected input (a goal round's protocol): opens no entry, separates user runs.
+const harness = (text: string): ChatItem => ({
+  kind: "user_text",
+  id: nextId++,
+  text,
+  sender: "harness",
+});
 const image = (): ChatItem => ({ kind: "user_image", id: nextId++, imageUrl: "blob:x" });
 const steering = (text: string): ChatItem => ({ kind: "user_steering", id: nextId++, text });
 const assistant = (text: string, streaming = false): ChatItem => ({
@@ -117,12 +124,12 @@ describe("buildOutline", () => {
     expect(outline[1]).toMatchObject({ question: report, answer: "reacted" });
   });
 
-  it("keeps one entry per goal run (later rounds merge into round 1) and includes scheduled turns", () => {
-    const round = (n: number) => `[goal]\nround: ${n}\nobjective: o\n[/goal]\ndo the thing`;
+  it("keeps one entry per goal run (harness rounds merge into the objective) and includes scheduled turns", () => {
     const items: ChatItem[] = [
-      user(round(1)),
+      user("do the thing"),
+      harness("goal round 1 protocol"),
       assistant("round 1 reply"),
-      user(round(2)),
+      harness("goal round 2 protocol"),
       assistant("round 2 reply"),
       user(buildScheduledMessage("nightly", "2026-08-01T00:00:00Z", "scheduled prompt")),
       assistant("scheduled reply"),

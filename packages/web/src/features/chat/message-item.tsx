@@ -22,7 +22,6 @@ import { ToolCallCard } from "./tool-call-card";
 import { SubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
 import { McpConnectBanner } from "./mcp-connect-banner";
-import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
@@ -34,7 +33,6 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-handoff";
-import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
@@ -199,17 +197,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       if (backgroundDone) {
         return <BackgroundDoneBanner done={backgroundDone.done} body={backgroundDone.rest} />;
       }
-      // A goal round's [goal] protocol prefix: collapsed into a round notice; the body after
-      // it (round 1: the user's original input, skill blocks and all; later rounds: the
-      // objective) continues down the normal parsing chain (the Trace shows the raw block).
-      const goalRound = parseGoalMessage(item.text);
-      const afterGoal = goalRound ? goalRound.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
-      const scheduled = parseScheduledMessage(afterGoal);
+      const scheduled = parseScheduledMessage(item.text);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
-      // (goal -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
+      // (scheduled -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : afterGoal;
+      const afterScheduled = scheduled ? scheduled.rest : item.text;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
@@ -218,23 +211,20 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
       // files come out of the same pass and collapse into one banner naming them.
       const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
-      // Every goal round reads like a normal user message: the body in a user bubble with
-      // the round notice beneath (the system IS re-sending the user's request each round) —
-      // the objective's images included, since they ride it as path lines.
-      if (goalRound) {
-        return (
-          <>
-            {skills && <SkillsBanner names={skills.skills} />}
-            <GoalRoundBanner round={goalRound.round} objective={text} images={images} />
-          </>
-        );
-      }
       return (
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
+              {/* A harness-injected input (a stop hook's continue, the goal plugin's round
+                  protocol) reads like any other user message — no special block, no
+                  collapsing — with only this origin caption saying who sent it. */}
+              {item.sender === "harness" && (
+                <div className="mb-1 text-xs text-gray-400 dark:text-gray-500">
+                  {S.chat.harnessInjected}
+                </div>
+              )}
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
                 {/* wrap-anywhere: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing; unlike break-words it also shrinks min-content, so a pathological token can't stretch the flex bubble itself. Normal words still only break when a token can't fit on a line. */}
                 <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">

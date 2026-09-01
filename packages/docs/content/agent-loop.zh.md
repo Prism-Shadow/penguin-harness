@@ -102,12 +102,12 @@ exit    非零 = 失败（stderr 末尾成为 reason）；超时（缺省 60 秒
 `trace_path` 是正在写入的 Trace 文件——当前上下文分段；压缩会换新文件——无 Trace 的 Session 缺省。规则：
 
 - 每个 Task 结束后按注册顺序逐个执行；每个非空回答都记为一条 [`hook` 事件](/omni-message#event_msg)——`hook`、`name`（钩子包名）、`decision`、`reason`、`output`——推到流上并写入 Trace；注入的输入不在事件里，它是紧随其后的那条 user 消息；
-- 第一个 `continue` 生效：其输入先 yield 到流上（普通运行从不 yield 自己的输入，宿主据此渲染注入的那条），再在同一次 `run` 调用内驱动下一个 Task；无人 `continue` 则调用返回；
+- 第一个 `continue` 生效：其输入带上 [`sender: "harness"`](/omni-message#model_msg) 标记先 yield 到流上（普通运行从不 yield 自己的输入，宿主据此渲染注入的那条——说明消息来自 harness 的是这一标记，而不是文本内容），再在同一次 `run` 调用内驱动下一个 Task；无人 `continue` 则调用返回；
 - 被掐断之后、或 signal 已中止时，`continue` 只记录、不执行——用户的中断压过一切 hook；
 - `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的那个），以该 prompt 为第一条 user 消息；它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上；
 - hook 失败——崩溃、打印的不是 JSON、或超时——以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
 
-插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的 `[goal]` 消息。**`skill-summary`** 插件是另一个（不预装）：当前 Trace 文件里自上一条它记下的摘要事件以来累积了 20 个完成的轮次时（Trace 就是它唯一的状态——重启不影响，压缩换文件则从新文件重新计窗），它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。没有安装任何 Skill 的 Agent 不会触发。
+插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的协议消息。**`skill-summary`** 插件是另一个（不预装）：当前 Trace 文件里自上一条它记下的摘要事件以来累积了 20 个完成的轮次时（Trace 就是它唯一的状态——重启不影响，压缩换文件则从新文件重新计窗），它把这个窗口浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与窗口内调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 运行中插话(Steering)
 

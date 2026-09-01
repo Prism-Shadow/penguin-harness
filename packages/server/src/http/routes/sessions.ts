@@ -945,7 +945,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
           row.sessionId,
         ),
         objective,
-        body: text,
         budget: goal.budget,
       })) as { input?: unknown } | undefined;
       if (typeof started?.input !== "string" || !started.input) {
@@ -955,9 +954,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
           "The goal plugin's start script gave no round-1 message.",
         );
       }
-      const images = messages.filter((m) => (m.payload as { type?: string }).type !== "text");
+      // Round 1 is the user's own message(s) exactly as typed — text and images, no
+      // wrapping — followed by the plugin's protocol message stamped as harness-injected
+      // (the protocol text points back at the user message as the objective). Later rounds
+      // are the stop hook's continues, which core stamps the same way.
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input: [userText(started.input), ...images],
+        input: [...messages, userText(started.input, "harness")],
         objective,
         budget: goal.budget,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),

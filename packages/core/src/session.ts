@@ -421,7 +421,7 @@ export class Session {
       // engine would only hold the injected input as carry-over and leak it into the
       // user's next message.
       if (outcome.next === null || cutoff !== null || opts?.signal?.aborted) return cutoff;
-      input = [userText(outcome.next)];
+      input = [userText(outcome.next, "harness")];
       yield input[0]!;
     }
   }

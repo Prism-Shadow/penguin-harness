@@ -1,7 +1,0 @@
-{
-  "description": "Initialize an Agent's settings from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.",
-  "short_description": "Initialize an agent from a requirement.",
-  "short_description_zh": "依据需求初始化一个 Agent 的设置。",
-  "version": "2026-08-21.1",
-  "category": "agent-tuning"
-}

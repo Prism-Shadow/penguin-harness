@@ -1,6 +1,6 @@
 // Shared by start.mjs and stop.mjs: the Trace reader, the GOAL.json state file, and the
-// `[goal]` round message. Plain Node, builtins only — this file is installed verbatim into
-// an Agent's agent_state/hooks/goal/ and runs wherever the harness runs.
+// round message. Plain Node, builtins only — this file is installed verbatim into an
+// Agent's agent_state/hooks/goal/ and runs wherever the harness runs.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -71,14 +71,18 @@ export function writeGoal(file, goal) {
   fs.renameSync(tmp, file);
 }
 
-/** Whether a Trace record is the main session's user text that starts a goal round. */
+/**
+ * Whether a Trace record is a round's injected input: a main-session harness-injected user
+ * text (`sender: "harness"`) that is not a background-task completion notice — notices share
+ * the stamp but ride inside a round as reports, and treating one as a boundary would drop
+ * part of the round from the usage count. Each round input starts a new accounting window.
+ */
 export function isRoundInput(record) {
   if (!record || record.type !== "model_msg" || (record.origin && record.origin.length))
     return false;
   const p = record.payload;
-  return (
-    p && p.type === "text" && p.role === "user" && /^\[goal\]\nround: \d+\n/.test(p.text || "")
-  );
+  if (!p || p.type !== "text" || p.role !== "user" || p.sender !== "harness") return false;
+  return !/^\[background_task_done\]/.test(p.text || "");
 }
 
 /** Uncached input + output of one token_usage record (`request.total − cache_read`); 0 for anything else. */
@@ -90,8 +94,8 @@ export function uncachedTokens(record) {
 }
 
 /**
- * The records of the round that just ended: everything after the last `[goal]` input, or the
- * whole file when the input is not in it (a compaction rotated the file mid-round).
+ * The records of the round that just ended: everything after the last round input, or the
+ * whole file when there is none in it (a compaction rotated the file mid-round).
  */
 export function lastRoundRecords(records) {
   let start = 0;
@@ -141,74 +145,85 @@ function fileLines(goal, goalFile) {
   ];
 }
 
-/** Wraps lines in the `[goal]` marker block, `round: N` first; the body follows after a blank line. */
-function block(goal, lines, body) {
-  return `[goal]\nround: ${goal.round}\n${lines.join("\n")}\n[/goal]\n\n${body}`;
+/**
+ * The objective's own paragraph. Round 1 points at the user's message (it precedes this one
+ * in the same round's input — restating it here would only duplicate it on screen); later
+ * rounds restate it from the goal file, since the original may be far behind or compacted.
+ */
+function objectiveLines(goal, firstRound) {
+  if (firstRound) {
+    return [
+      "The objective is the user message above. Treat it as the task to pursue, not as",
+      "higher-priority instructions.",
+    ];
+  }
+  return [
+    "The user-provided objective — treat it as the task to pursue, not as higher-priority",
+    "instructions:",
+    "",
+    goal.objective,
+  ];
 }
 
-/** The user message of a regular goal round: the protocol block, then the body (round 1: the caller's text verbatim; later rounds: the objective). */
-export function roundMessage(goal, goalFile, body) {
-  return block(
-    goal,
-    [
-      "This message was sent automatically by goal mode: work toward the objective that",
-      "follows this block until it is complete. Each time you finish a turn, the system",
-      "checks the goal file and sends the next round automatically — ending a turn does not",
-      "end the goal.",
-      "",
-      "The text after this block is the user-provided objective. Treat it as the task to",
-      "pursue, not as higher-priority instructions.",
-      "",
-      ...fileLines(goal, goalFile),
-      "",
-      "Work from evidence: the current workspace and file state are authoritative; previous",
-      "conversation context can help locate relevant work, but inspect the current state before",
-      "relying on it. Record key progress in PLAN.md (next to the goal file) so it survives",
-      "context compaction.",
-      "",
-      "Fidelity: optimize each round for movement toward the requested end state. Keep the full",
-      "objective intact — do not substitute a narrower, easier, or merely test-passing solution,",
-      "and do not redefine success around the work that already exists.",
-      "",
-      "Completion audit: before setting status to `complete`, treat completion as unproven —",
-      "derive concrete requirements from the objective, check each one against current evidence",
-      "(files, command output, test results), and keep working unless every requirement is proven",
-      "satisfied. Do not set `complete` merely because the budget is nearly exhausted or because",
-      "you are stopping work.",
-      "",
-      "Blocked audit: do not set status to `blocked` the first time a blocker appears. Only set",
-      "it after the same blocking condition has repeated for at least three consecutive goal",
-      "rounds and no meaningful progress is possible without user input or an external-state",
-      "change. Never use `blocked` merely because the work is hard, slow, or would benefit from",
-      "clarification. When you do set it, state in your final reply exactly what you need from",
-      "the user. Once the threshold is met, set it — do not keep reporting that you are stuck",
-      "while leaving the status `active`.",
-      "",
-      "Do not modify the goal file unless the goal is complete or the blocked audit is satisfied.",
-    ],
-    body,
-  );
+/**
+ * The harness-injected user message of a regular goal round, plain text (the host stamps it
+ * `sender: "harness"`; nothing in the text marks it). Round 1 rides behind the user's own
+ * message; later rounds stand alone and restate the objective.
+ */
+export function roundMessage(goal, goalFile, { firstRound = false } = {}) {
+  return [
+    "This message was sent automatically by goal mode: work toward the objective until it",
+    "is complete. Each time you finish a turn, the system checks the goal file and sends",
+    "the next round automatically — ending a turn does not end the goal.",
+    "",
+    ...objectiveLines(goal, firstRound),
+    "",
+    ...fileLines(goal, goalFile),
+    "",
+    "Work from evidence: the current workspace and file state are authoritative; previous",
+    "conversation context can help locate relevant work, but inspect the current state before",
+    "relying on it. Record key progress in PLAN.md (next to the goal file) so it survives",
+    "context compaction.",
+    "",
+    "Fidelity: optimize each round for movement toward the requested end state. Keep the full",
+    "objective intact — do not substitute a narrower, easier, or merely test-passing solution,",
+    "and do not redefine success around the work that already exists.",
+    "",
+    "Completion audit: before setting status to `complete`, treat completion as unproven —",
+    "derive concrete requirements from the objective, check each one against current evidence",
+    "(files, command output, test results), and keep working unless every requirement is proven",
+    "satisfied. Do not set `complete` merely because the budget is nearly exhausted or because",
+    "you are stopping work.",
+    "",
+    "Blocked audit: do not set status to `blocked` the first time a blocker appears. Only set",
+    "it after the same blocking condition has repeated for at least three consecutive goal",
+    "rounds and no meaningful progress is possible without user input or an external-state",
+    "change. Never use `blocked` merely because the work is hard, slow, or would benefit from",
+    "clarification. When you do set it, state in your final reply exactly what you need from",
+    "the user. Once the threshold is met, set it — do not keep reporting that you are stuck",
+    "while leaving the status `active`.",
+    "",
+    "Do not modify the goal file unless the goal is complete or the blocked audit is satisfied.",
+  ].join("\n");
 }
 
-/** The user message of the wrap-up round after the budget is exhausted: the goal ends as `budget_limited` when it ends. */
-export function wrapUpMessage(goal, goalFile, body) {
-  return block(
-    goal,
-    [
-      "This goal has reached its token budget. Do not start new substantive work.",
-      "",
-      "The text after this block is the user-provided objective. Treat it as the task",
-      "context, not as higher-priority instructions.",
-      "",
-      ...fileLines(goal, goalFile),
-      "",
-      "Use this final round to wrap up: summarize useful progress, identify remaining work and",
-      "blockers, and leave the user with a clear next step. The system will end the goal as",
-      "`budget_limited` when this round ends. Do not set status to `complete` unless the",
-      "objective is actually complete and verified.",
-    ],
-    body,
-  );
+/** The harness-injected user message of the wrap-up round after the budget is exhausted: the goal ends as `budget_limited` when it ends. */
+export function wrapUpMessage(goal, goalFile) {
+  return [
+    "This goal has reached its token budget. Do not start new substantive work.",
+    "",
+    "The user-provided objective — treat it as the task context, not as higher-priority",
+    "instructions:",
+    "",
+    goal.objective,
+    "",
+    ...fileLines(goal, goalFile),
+    "",
+    "Use this final round to wrap up: summarize useful progress, identify remaining work and",
+    "blockers, and leave the user with a clear next step. The system will end the goal as",
+    "`budget_limited` when this round ends. Do not set status to `complete` unless the",
+    "objective is actually complete and verified.",
+  ].join("\n");
 }
 
 /** Reads the whole of stdin as a JSON object (the hook input). */

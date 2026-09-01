@@ -1884,10 +1884,8 @@ Scenarios:
     /** Toast for the 409 a goal-mode send gets while the goal plugin is not installed on the agent. */
     goalPluginMissing:
       "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
-    goalRoundBanner: (round: number): string => `Goal · round ${round}`,
-    /** Later rounds collapse the objective's images into this chip (round 1 shows them in full). */
-    goalRoundImages: (count: number): string =>
-      count === 1 ? "1 attached image" : `${count} attached images`,
+    /** Origin caption above a harness-injected user message (a stop hook's continue, a goal round's protocol). */
+    harnessInjected: "Injected by the harness",
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
     goalStatus: {
       active: "running",

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Goal mode's stop hook: consulted after every Task of a run. Reads the Session's Trace to
-// find its GOAL.json and this round's token usage, then either injects the next `[goal]`
-// round or ends the goal.
+// find its GOAL.json and this round's token usage, then either injects the next round's
+// protocol message (the host stamps it `sender: "harness"`) or ends the goal.
 //
 // stdin:  { "hook": "stop", "session_id", "trace_path" }
 // stdout: nothing when no goal is live on this Session; otherwise
@@ -98,7 +98,7 @@ if (goal.status === "complete" || goal.status === "blocked") {
   const compose = wrapUp ? wrapUpMessage : roundMessage;
   emit({
     decision: "continue",
-    input: compose(goal, goalFile, goal.objective),
+    input: compose(goal, goalFile),
     reason: `round ${goal.round}${wrapUp ? " (wrap-up: budget reached)" : ""} · ${tokens(goal)}`,
     output: record(goal),
   });
