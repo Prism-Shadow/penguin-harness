@@ -621,11 +621,12 @@ export const zh = {
     publishGistId: "改发布到另一个 gist",
     publishGistIdPlaceholder: "留空即可",
     publishGistIdHint:
-      "留空时：已发布过的 Agent 更新它自己的 gist，没发布过的新建一个。填入链接或 id 则改用那个 gist。",
+      "留空时：内容有变化才更新这个 Agent 自己的 gist，没变化则不发请求；从未发布过则新建。填入链接或 id 会改用那个 gist，并强制发布一次（gist 被删或被手改时用它）。",
     publishPublic: "公开 gist",
     publishViaGh: "将以服务器上 gh CLI 已登录的身份发布。",
     publishViaToken: "将以服务器保存的 GitHub token 发布。",
     publishUpdates: "将更新：",
+    publishUnchanged: "gist 已经是这个内容，未做改动（也没有调用 API）。",
     publish: "发布",
     publishUpdate: "更新 gist",
     publishing: "发布中…",
