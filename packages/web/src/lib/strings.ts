@@ -18,10 +18,9 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    plugins: "插件库",
     models: "模型库",
     machines: "机器",
-    extensions: "扩展市场",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -1345,22 +1344,22 @@ export const zh = {
     },
   },
 
-  extensions: {
-    pageTitle: "扩展市场",
-    empty: "暂无扩展",
+  pluginRegistry: {
+    pageTitle: "插件市场",
+    empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
-    specifierHint: "写入 extensions.json 的包名",
-    back: "返回扩展市场",
+    specifierHint: "写入 plugins.json 的包名",
+    back: "返回插件市场",
     readme: "说明文档",
-    noReadme: "该扩展暂无说明文档。",
-    notFound: "找不到这个扩展。",
+    noReadme: "该插件暂无说明文档。",
+    notFound: "找不到这个插件。",
     repository: "源码仓库",
     homepage: "主页",
     authors: "作者",
     license: "许可证",
     copySpecifier: "复制包名",
     copied: "已复制",
-    installHint: "安装方式：把包名写入数据目录下的 extensions.json。",
+    installHint: "安装方式：把包名写入数据目录下的 plugins.json。",
   },
 
   skills: {

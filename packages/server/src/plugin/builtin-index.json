@@ -1,6 +1,6 @@
 [
   {
-    "name": "@prismshadow/penguin-extension-sandbox-bwrap",
+    "name": "@prismshadow/penguin-plugin-sandbox-bwrap",
     "version": "0.2.2",
     "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "authors": ["Prism Shadow"],
@@ -10,7 +10,7 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-extension-sandbox-seatbelt",
+    "name": "@prismshadow/penguin-plugin-sandbox-seatbelt",
     "version": "0.2.2",
     "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "authors": ["Prism Shadow"],
@@ -20,7 +20,7 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-extension-sandbox-mxc",
+    "name": "@prismshadow/penguin-plugin-sandbox-mxc",
     "version": "0.2.2",
     "description": "Windows sandbox backend for PenguinHarness over Microsoft MXC (Microsoft eXecution Containers): filesystem confinement, network isolation and path masking via the processcontainer backend.",
     "authors": ["Prism Shadow"],
@@ -30,7 +30,7 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-extension-sandbox-dsh",
+    "name": "@prismshadow/penguin-plugin-sandbox-dsh",
     "version": "0.2.2",
     "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
     "authors": ["Prism Shadow"],
