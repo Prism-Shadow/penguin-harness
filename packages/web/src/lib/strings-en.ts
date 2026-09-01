@@ -145,7 +145,7 @@ export const en: Strings = {
     sharingInfo:
       "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
     sharingDesc:
-      "The server publishes Agent packages with this token. It is write-only: the page shows whether one is stored, never the value.",
+      "The server publishes as the `gh` CLI logged in on its machine when there is one; this token is the fallback. It is write-only: the page shows whether one is stored, never the value.",
     githubToken: "GitHub token",
     githubTokenHint:
       "Needs the gist scope (fine-grained token: Gists → Read and write). Leaving it empty and saving changes nothing.",
@@ -630,12 +630,15 @@ export const en: Strings = {
     publishDesc:
       "Publishes this Agent's definition as a set of readable text files; anyone (or another machine) can install a clean copy of the same Agent from it.",
     publishNoToken:
-      "The server has no GitHub token, so it cannot publish. An admin sets one under Settings → Sharing.",
-    publishGistId: "Update an existing gist",
-    publishGistIdPlaceholder: "Empty creates a new one",
+      "The server has no GitHub identity yet: log in with `gh auth login` (scope `gist`) on the server, or have an admin store a token under Settings → Sharing.",
+    publishGistId: "Publish to a different gist",
+    publishGistIdPlaceholder: "Leave empty",
     publishGistIdHint:
-      "Paste the link or id from an earlier publish to update it in place; the link stays the same.",
+      "Empty: an Agent that was published before updates its own gist, one that wasn't gets a new one. A link or id publishes to that gist instead.",
     publishPublic: "Public gist",
+    publishViaGh: "Publishes as the `gh` CLI logged in on the server.",
+    publishViaToken: "Publishes with the GitHub token stored on the server.",
+    publishUpdates: "Updates:",
     publish: "Publish",
     publishUpdate: "Update gist",
     publishing: "Publishing…",

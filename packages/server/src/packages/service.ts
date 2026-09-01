@@ -24,6 +24,8 @@ import type {
   AgentPackages,
   PackageFile,
   PackagePreview,
+  PublishedGist,
+  PublishMethod,
 } from "../mechanisms/packages.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { HttpFetch } from "../services/update-check-service.js";
@@ -42,11 +44,13 @@ import {
   parsePackage,
 } from "./format.js";
 import { fetchSource, parseSource, type SourceKind } from "./sources.js";
+import { GhCli, GhError } from "./gh.js";
 
 /** Server setting holding the GitHub token used to publish (never returned to a client). */
 export const GITHUB_TOKEN_KEY = "github_token";
 
-const GIST_API = "https://api.github.com/gists";
+const GIST_HOST = "https://api.github.com";
+const GIST_API = `${GIST_HOST}/gists`;
 const GITHUB_HEADERS = {
   accept: "application/vnd.github+json",
   "user-agent": "penguin-server",
@@ -68,9 +72,31 @@ export class AgentPackageService implements AgentPackages {
   @Use() private readonly settings!: Settings;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly agents!: AgentLifecycle;
+  @Use() private readonly gh!: GhCli;
 
-  canPublish(): boolean {
-    return this.token() !== null;
+  /**
+   * The machine's own `gh` login wins over a stored token: it is the credential the user
+   * already manages, the harness never copies it, and `gh auth logout` revokes it.
+   */
+  async publishMethod(): Promise<PublishMethod> {
+    if (await this.gh.available()) return "gh";
+    return this.token() === null ? null : "token";
+  }
+
+  async publishedGist(projectId: string, agentId: string): Promise<PublishedGist | null> {
+    try {
+      const raw = await fs.readFile(this.publishRecordPath(projectId, agentId), "utf8");
+      const parsed = JSON.parse(raw) as Partial<PublishedGist>;
+      if (typeof parsed.gistId !== "string" || parsed.gistId === "") return null;
+      return {
+        gistId: parsed.gistId,
+        url:
+          typeof parsed.url === "string" ? parsed.url : `https://gist.github.com/${parsed.gistId}`,
+        publishedAt: typeof parsed.publishedAt === "string" ? parsed.publishedAt : "",
+      };
+    } catch {
+      return null;
+    }
   }
 
   async pack(projectId: string, agentId: string): Promise<AgentPackage> {
@@ -121,22 +147,26 @@ export class AgentPackageService implements AgentPackages {
     agentId: string,
     options: { gistId?: string; public: boolean },
   ): Promise<{ gistId: string; url: string; files: number; bytes: number }> {
-    const token = this.token();
-    if (token === null) {
+    const method = await this.publishMethod();
+    if (method === null) {
       throw new HttpError(
         400,
-        "github_token_missing",
-        "Publishing needs a GitHub token with the `gist` scope; an admin sets one in server settings.",
+        "github_auth_missing",
+        "Publishing needs a GitHub identity: log in with the `gh` CLI on the server (`gh auth login`, scope `gist`), or store a token in server settings.",
       );
     }
     const pkg = await this.pack(projectId, agentId);
+    // The same Agent updates the same gist: the caller may name one, otherwise the record
+    // kept beside the Agent decides, and only a first publish creates.
     let existing: string | null = null;
-    if (options.gistId !== undefined) {
+    if (options.gistId !== undefined && options.gistId !== "") {
       try {
         existing = gistIdOf(options.gistId);
       } catch (err) {
         throw new HttpError(400, "invalid_gist", (err as Error).message);
       }
+    } else {
+      existing = (await this.publishedGist(projectId, agentId))?.gistId ?? null;
     }
     const body: Record<string, unknown> = {
       description: `Penguin Agent: ${pkg.manifest.name} (${agentId})`,
@@ -145,22 +175,39 @@ export class AgentPackageService implements AgentPackages {
     // `public` is honoured only on creation — GitHub ignores it on an update, and a gist's
     // visibility cannot be changed after the fact.
     if (existing === null) body["public"] = options.public;
-    const res = await this.github(
-      existing === null ? GIST_API : `${GIST_API}/${existing}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
-      token,
-    );
-    const gist = (await res.json()) as GistResponse;
+    const apiPath = existing === null ? "/gists" : `/gists/${existing}`;
+    let gist: GistResponse;
+    if (method === "gh") {
+      try {
+        gist = (await this.gh.api(apiPath, "POST", body)) as GistResponse;
+      } catch (err) {
+        if (err instanceof GhError)
+          throw new HttpError(400, "github_rejected", `gh: ${err.message}`);
+        throw err;
+      }
+    } else {
+      const res = await this.github(
+        `${GIST_HOST}${apiPath}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        this.token(),
+      );
+      gist = (await res.json()) as GistResponse;
+    }
     const id = typeof gist.id === "string" ? gist.id : null;
     const url = typeof gist.html_url === "string" ? gist.html_url : null;
     if (id === null || url === null) {
       throw new HttpError(502, "github_bad_response", "GitHub returned an unexpected gist.");
     }
-    this.log.line(`[packages] published ${projectId}/${agentId} to ${url}`);
+    await this.rememberGist(projectId, agentId, {
+      gistId: id,
+      url,
+      publishedAt: this.clock.now().toISOString(),
+    });
+    this.log.line(`[packages] published ${projectId}/${agentId} to ${url} (via ${method})`);
     return { gistId: id, url, files: pkg.files.length, bytes: pkg.bytes };
   }
 
@@ -213,6 +260,30 @@ export class AgentPackageService implements AgentPackages {
   }
 
   // ---- internals ------------------------------------------------------------------
+
+  /**
+   * Where an Agent's published gist is remembered: a dotfile inside the Agent directory, so
+   * it travels with the Agent on disk, is never packaged (dotfiles are excluded), and makes
+   * a republish from any browser or machine update the same gist instead of making another.
+   */
+  private publishRecordPath(projectId: string, agentId: string): string {
+    return path.join(agentDir(this.paths.root, projectId, agentId), ".penguin-publish.json");
+  }
+
+  private async rememberGist(
+    projectId: string,
+    agentId: string,
+    record: PublishedGist,
+  ): Promise<void> {
+    try {
+      await fs.writeFile(
+        this.publishRecordPath(projectId, agentId),
+        `${JSON.stringify(record, null, 2)}\n`,
+      );
+    } catch {
+      // A convenience: the publish already happened, and the response carries the gist.
+    }
+  }
 
   private token(): string | null {
     const raw = this.settings.get(GITHUB_TOKEN_KEY);
@@ -273,8 +344,19 @@ export class AgentPackageService implements AgentPackages {
       }
     }
     const id = source.id;
-    const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
-    const body = (await res.json()) as GistResponse;
+    // A stored token reads directly; otherwise gh reads (reaching a private gist too); with
+    // neither, the anonymous read still serves any public gist.
+    let body: GistResponse;
+    if (this.token() === null && (await this.gh.available())) {
+      try {
+        body = (await this.gh.api(`/gists/${id}`, "GET")) as GistResponse;
+      } catch (err) {
+        throw err instanceof GhError ? new HttpError(404, "not_found", `gh: ${err.message}`) : err;
+      }
+    } else {
+      const res = await this.github(`${GIST_API}/${id}`, { method: "GET" }, this.token());
+      body = (await res.json()) as GistResponse;
+    }
     const files = body.files;
     if (files === undefined || files === null || typeof files !== "object") {
       throw new HttpError(502, "github_bad_response", "GitHub returned an unexpected gist.");

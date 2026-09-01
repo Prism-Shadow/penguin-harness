@@ -123,6 +123,7 @@ import { WorkflowPrompt, WorkflowRoutes } from "./workflows/routes.js";
 import { AgentPackages } from "./mechanisms/packages.js";
 import { AgentPackageService } from "./packages/service.js";
 import { PackageRoutes } from "./packages/routes.js";
+import { GhCliRunner } from "./packages/gh.js";
 import {
   ErrorLog,
   Errors,
@@ -374,7 +375,7 @@ export class ApiModule {}
 export class WorkflowsModule {}
 
 @Module({
-  children: [AgentPackageService, PackageRoutes],
+  children: [GhCliRunner, AgentPackageService, PackageRoutes],
   exports: [AgentPackages],
 })
 export class PackagesModule {}
