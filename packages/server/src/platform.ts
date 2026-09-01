@@ -102,6 +102,8 @@ import { MeRoutes } from "./http/routes/me.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
+import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
+import { AdminSandboxRoutes } from "./http/routes/admin-sandbox.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -361,6 +363,8 @@ export class MessagingHubModule {}
     VersionRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
+    InstalledPluginRoutes,
+    AdminSandboxRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
