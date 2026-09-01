@@ -1,9 +1,9 @@
 /**
- * Extension registries: WHERE extension index entries come from. A registry is one source
- * of `ExtensionIndexEntry` rows — the shared index format every registry speaks (see
+ * Plugin registries: WHERE plugin index entries come from. A registry is one source
+ * of `PluginIndexEntry` rows — the shared index format every registry speaks (see
  * api/types.ts; the schema follows typst/packages' `index.json`: a flat array of
  * per-version entries). Discovery only: installing an entry stays the operator's
- * `extensions.json` edit (extension/loader.ts), and nothing here imports extension code.
+ * `plugins.json` edit (plugin/loader.ts), and nothing here imports plugin code.
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
@@ -12,16 +12,16 @@
  *     validator, so a remote index is trusted no further than the embedded one.
  *
  * The deployment's registry list is fixed to the builtin one for now; additional
- * sources plug in as more `ExtensionRegistry` values.
+ * sources plug in as more `PluginRegistry` values.
  */
-import type { ExtensionIndexEntry } from "../api/types.js";
+import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import { BUILTIN_READMES } from "./builtin-readmes.js";
 
-/** One source of extension index entries; `source` identifies it for display and errors. */
-export interface ExtensionRegistry {
+/** One source of plugin index entries; `source` identifies it for display and errors. */
+export interface PluginRegistry {
   readonly source: string;
-  index(): Promise<ExtensionIndexEntry[]>;
+  index(): Promise<PluginIndexEntry[]>;
   /**
    * Long-form documentation for one entry, or null when this source has none for it.
    *
@@ -36,7 +36,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** Validates one raw entry; returns null instead of throwing so the caller can name the index position. */
-function asIndexEntry(value: unknown): ExtensionIndexEntry | null {
+function asIndexEntry(value: unknown): PluginIndexEntry | null {
   if (typeof value !== "object" || value === null) return null;
   const e = value as Record<string, unknown>;
   if (
@@ -55,23 +55,23 @@ function asIndexEntry(value: unknown): ExtensionIndexEntry | null {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
-  return value as ExtensionIndexEntry;
+  return value as PluginIndexEntry;
 }
 
 /**
  * Validates a whole index document. Strict, not per-entry-tolerant: an index is one
  * publisher's single artifact, so a malformed row means the artifact is broken —
- * unlike extensions.json entries, which are independent operator choices skipped one
+ * unlike plugins.json entries, which are independent operator choices skipped one
  * by one.
  */
-export function parseExtensionIndex(data: unknown, source: string): ExtensionIndexEntry[] {
+export function parsePluginIndex(data: unknown, source: string): PluginIndexEntry[] {
   if (!Array.isArray(data)) {
-    throw new Error(`extension index from ${source} is not an array`);
+    throw new Error(`plugin index from ${source} is not an array`);
   }
   return data.map((raw, i) => {
     const entry = asIndexEntry(raw);
     if (entry === null) {
-      throw new Error(`extension index from ${source} has a malformed entry at index ${i}`);
+      throw new Error(`plugin index from ${source} has a malformed entry at index ${i}`);
     }
     return entry;
   });
@@ -79,38 +79,38 @@ export function parseExtensionIndex(data: unknown, source: string): ExtensionInd
 
 export const BUILTIN_REGISTRY_SOURCE = "builtin";
 
-/** The registry embedded in this package: the workspace's own extension packages. */
-export function builtinExtensionRegistry(): ExtensionRegistry {
+/** The registry embedded in this package: the workspace's own plugin packages. */
+export function builtinPluginRegistry(): PluginRegistry {
   return {
     source: BUILTIN_REGISTRY_SOURCE,
     // Validated like any other source: a broken embedded index should fail loudly
     // in tests rather than serve garbage.
-    index: () => Promise.resolve(parseExtensionIndex(builtinIndex, BUILTIN_REGISTRY_SOURCE)),
+    index: () => Promise.resolve(parsePluginIndex(builtinIndex, BUILTIN_REGISTRY_SOURCE)),
     readme: (name) => Promise.resolve(BUILTIN_READMES[name] ?? null),
   };
 }
 
 /** A registry behind an `index.json` URL; `fetchImpl` is injectable for tests. */
-export function httpExtensionRegistry(
+export function httpPluginRegistry(
   indexUrl: string,
   fetchImpl: typeof fetch = fetch,
-): ExtensionRegistry {
+): PluginRegistry {
   return {
     source: indexUrl,
     index: async () => {
       const res = await fetchImpl(indexUrl);
       if (!res.ok) {
-        throw new Error(`extension index from ${indexUrl} answered HTTP ${res.status}`);
+        throw new Error(`plugin index from ${indexUrl} answered HTTP ${res.status}`);
       }
       let data: unknown;
       try {
         data = await res.json();
       } catch (err) {
         throw new Error(
-          `extension index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+          `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return parseExtensionIndex(data, indexUrl);
+      return parsePluginIndex(data, indexUrl);
     },
     // The shared index format carries no readme location, so a remote source has none to
     // offer yet. Null rather than a guessed URL: inventing one would have the Web App

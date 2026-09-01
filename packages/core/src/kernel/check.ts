@@ -11,13 +11,8 @@
  *   3. every `provides` names an interface the table actually carries.
  *
  * Visibility is lexical: a module sees its siblings, its ancestors and their siblings —
- * not another subtree's internals, and not itself. Anything the host publishes (the
- * runtime's capabilities) is visible everywhere, as a virtual root-level sibling.
- *
- * Ancestors are visible to CONTRIBUTE to (a child fills its parent's slots), not to
- * REQUIRE from: a parent is created after its children, so its api does not exist when
- * a child is created. The booter orders it so; the check refuses the requirement here,
- * before any code runs, rather than letting it surface as a dependency cycle at boot.
+ * not another subtree's internals. Anything the host publishes (the runtime's
+ * capabilities) is visible everywhere, as a virtual root-level sibling.
  */
 import { type } from "arktype";
 import type { Json } from "./json.js";
@@ -47,7 +42,7 @@ export type Problem =
 interface Located {
   path: string;
   manifest: Manifest;
-  /** Module names this module may wire to or contribute to. */
+  /** Module names this module may wire to. */
   visible: Set<string>;
   /** Module names above this one — never a provider for it (their exports face outward). */
   ancestors: Set<string>;
@@ -132,8 +127,6 @@ export function checkTree(
         problems.push({ path: m.path, kind: "unknown-iface", alias, ref: need.iface });
         continue;
       }
-      const requirable = (from: string) =>
-        (m.visible.has(from) && !m.ancestors.has(from)) || from in published;
       const candidates =
         need.from !== undefined
           ? [need.from]
@@ -146,7 +139,8 @@ export function checkTree(
       const declared: string[] = [];
       let lastMismatch: { from: string; method: string; why: string } | null = null;
       for (const from of candidates) {
-        if (!requirable(from)) continue;
+        const visibleHere = m.visible.has(from) || from in published;
+        if (!visibleHere) continue;
         const offered = provides[from];
         if (offered === undefined) continue;
         let satisfied = false;
@@ -164,19 +158,13 @@ export function checkTree(
       if (matches.length === 1 || declared.length === 1) continue;
       if (need.from !== undefined) {
         const from = need.from;
-        if (!requirable(from) || provides[from] === undefined) {
+        if (!(m.visible.has(from) || from in published) || provides[from] === undefined) {
           problems.push({
             path: m.path,
             kind: "unresolved",
             alias,
             from,
-            why: m.ancestors.has(from)
-              ? "an ancestor — created after its children, so its api is not there yet"
-              : from === mf.name
-                ? "itself"
-                : byName.has(from)
-                  ? "not visible from here"
-                  : "no such module",
+            why: byName.has(from) ? "not visible from here" : "no such module",
           });
         } else if (lastMismatch !== null) {
           problems.push({ path: m.path, kind: "mismatch", alias, ...lastMismatch });

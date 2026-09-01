@@ -41,7 +41,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   // Mirrors tsup's `.md` text loader: the builtin registry imports each backend's own
-  // README.md (see src/extension/builtin-readmes.ts), and vite has no such loader of its own.
+  // README.md (see src/plugin/builtin-readmes.ts), and vite has no such loader of its own.
   plugins: [
     {
       name: "markdown-as-text",
