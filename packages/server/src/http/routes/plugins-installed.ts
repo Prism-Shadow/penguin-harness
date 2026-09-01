@@ -2,8 +2,10 @@
  * The plugins this deployment installs — what `<root>/plugins.json` lists, and which of them
  * the process actually holds:
  *
- *   GET /api/plugins/installed              the list, joined with what loaded (any logged-in user)
- *   PUT /api/plugins/installed { plugins }  rewrite the list (admin)
+ *   GET  /api/plugins/installed                 the list, joined with what loaded (any member)
+ *   POST /api/plugins/installed { specifier }   npm-install the package, then list it (admin)
+ *   PUT  /api/plugins/installed { plugins }     rewrite the list itself (admin)
+ *   DELETE /api/plugins/installed?specifier=…   drop it from the list and from disk (admin)
  *
  * Installed and ACTIVE are different facts, reported separately. The list is a file the
  * platform reads and writes at any time; loading happens once per process, in the RUNTIME
@@ -30,6 +32,11 @@ import {
   readPluginList,
   writePluginList,
 } from "../../plugin/loader.js";
+import {
+  installPluginPackage,
+  PluginInstallError,
+  removePluginPackage,
+} from "../../plugin/install.js";
 import { pluginHostFrom } from "../../plugin/host.js";
 
 export interface InstalledPluginsDeps {
@@ -52,7 +59,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const loaded = deps.loadedModules();
     const plugins: InstalledPlugin[] = [];
     for (const specifier of listed) {
-      const declared = await readPluginDeclaration(specifier);
+      const declared = await readPluginDeclaration(specifier, deps.root);
       if ("error" in declared) {
         plugins.push({
           specifier,
@@ -83,10 +90,59 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 
   app.get("/", async (c) => c.json(await view()));
 
-  app.put("/", async (c) => {
+  const requireAdmin = (c: { var: AppEnv["Variables"] }) => {
     if (!c.var.user.isAdmin) {
       throw new HttpError(403, "admin_required", "Only an admin can perform this operation.");
     }
+  };
+
+  /** A package specifier, optionally with a version range — never a path or a URL. */
+  const specifierOf = (value: unknown): string => {
+    const s = typeof value === "string" ? value.trim() : "";
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[^\s/]+)?$/.test(s)) {
+      throw new HttpError(400, "bad_request", "specifier must be an npm package name.");
+    }
+    return s;
+  };
+
+  app.post("/", async (c) => {
+    requireAdmin(c);
+    const specifier = specifierOf((await readJson(c)).specifier);
+    // The package first, the list second: a listed plugin that is not on disk is exactly the
+    // state this route exists to avoid, and npm failing must leave the deployment unchanged.
+    try {
+      await installPluginPackage(deps.root, specifier);
+    } catch (err) {
+      if (err instanceof PluginInstallError) {
+        throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+      }
+      throw err;
+    }
+    // `pkg@1.2.3` installs that version but is LISTED by name: the list names what to load,
+    // and a pinned range in it would be read as part of the package name at load time.
+    const at = specifier.lastIndexOf("@");
+    const name = at > 0 ? specifier.slice(0, at) : specifier;
+    const listed = await readPluginList(deps.root);
+    if (!listed.includes(name)) await writePluginList(deps.root, [...listed, name]);
+    return c.json(await view());
+  });
+
+  app.delete("/", async (c) => {
+    requireAdmin(c);
+    const specifier = specifierOf(c.req.query("specifier"));
+    const listed = await readPluginList(deps.root);
+    await writePluginList(
+      deps.root,
+      listed.filter((s) => s !== specifier),
+    );
+    // The package goes too: leaving it on disk would keep a removed plugin loadable by a
+    // hand-edited list, and the prefix is the harness's to keep tidy.
+    await removePluginPackage(deps.root, specifier);
+    return c.json(await view());
+  });
+
+  app.put("/", async (c) => {
+    requireAdmin(c);
     const body = await readJson(c);
     const list = body.plugins;
     if (!Array.isArray(list) || list.some((s) => typeof s !== "string" || s.trim() === "")) {
