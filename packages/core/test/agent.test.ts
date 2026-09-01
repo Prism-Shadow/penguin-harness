@@ -286,15 +286,15 @@ describe("Agent.createSession session source (session_meta origin marker)", () =
 });
 
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
-  // A context's level is the LLM object's construction default (nothing overrides it per
-  // request), and session_meta records it as the context's `thinking_level`.
+  // A context's level is the LLM object's construction default (the Session's live pin
+  // overrides it per request); nothing is recorded — the level is a per-request parameter.
   const defaultLevelOf = async (session: unknown): Promise<unknown> => {
     await bootstrapped(session);
     return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
       .deps.llm.defaultThinkingLevel;
   };
 
-  it("falls back to the Agent config for the llm default; session_meta records the level", async () => {
+  it("falls back to the Agent config for the llm default", async () => {
     const agent = await createAgent();
     // The seeded Agent config pins thinking_level "medium" — the only source when no option is given.
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
@@ -302,10 +302,6 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      // The context's level, fixed for its lifetime, is part of its session_meta.
-      expect(
-        (session.metaMessage.payload as unknown as Record<string, unknown>).thinking_level,
-      ).toBe("medium");
       expect(await defaultLevelOf(session)).toBe("medium");
       expect(mapThinkingLevel("medium")).toBeDefined(); // the name maps onto the wire enum
     } finally {
@@ -982,7 +978,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("records the context's thinking level in session_meta and re-reads the config default at the next context", async () => {
+  it("session_meta records no level; the config default and a null pin shape only the LLM base", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-meta");
     await fs.mkdir(ws, { recursive: true });
@@ -990,12 +986,16 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
 
     // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
-    // without a level and says so.
+    // without a level. Neither is recorded: the level is a per-request parameter.
     const configured = await agent.createSession({ workspaceDir: ws });
     const unlevelled = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
     try {
-      expect(levelOf(configured)).toBe("medium");
-      expect(levelOf(unlevelled)).toBe("default");
+      await bootstrapped(configured);
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(levelOf(configured)).toBeUndefined();
+      await bootstrapped(unlevelled);
+      expect(lastBuilt()!.thinkingLevel).toBeUndefined();
+      expect(levelOf(unlevelled)).toBeUndefined();
     } finally {
       configured.dispose();
       unlevelled.dispose();
@@ -1040,7 +1040,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
-  it("pinThinkingLevel re-stamps a first context that has not started, and otherwise applies live while the meta keeps the opening record", async () => {
+  it("pinThinkingLevel is a per-request parameter: the live getter serves it, nothing is recorded, and the next context takes it as base", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-pin");
     await fs.mkdir(ws, { recursive: true });
@@ -1049,29 +1049,27 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
 
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      // Before the first run: the first context takes the pin — meta and LLM alike.
+      // A pin before the first run reaches the initial context's LLM base (assembly already
+      // happened at createSession; the runtime adopts the pin until the context starts).
       session.pinThinkingLevel("high");
-      expect(levelOf(session)).toBe("high");
+      expect(levelOf(session)).toBeUndefined();
       await bootstrapped(session);
       expect(lastBuilt()!.thinkingLevel).toBe("high");
 
-      // The level is the SOFT-limited parameter: a re-pin rides the very next LLM request
-      // (the engine reads the live getter per turn), while session_meta keeps recording
-      // what the context OPENED with; the new default also lands in the context a
-      // compaction opens.
+      // A re-pin rides the very next LLM request via the live getter; the meta records
+      // nothing, and the context a compaction opens takes the pin as its base.
       session.pinThinkingLevel("xhigh");
       expect(
         (
           session as unknown as { engineDeps: { thinkingLevel: () => string | undefined } }
         ).engineDeps.thinkingLevel(),
       ).toBe("xhigh");
-      expect(levelOf(session)).toBe("high");
       const { opened } = await openNext(session);
-      expect((opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level).toBe(
-        "xhigh",
-      );
+      expect(
+        (opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level,
+      ).toBeUndefined();
       expect(lastBuilt()!.thinkingLevel).toBe("xhigh");
-      expect(levelOf(session)).toBe("xhigh");
+      expect(levelOf(session)).toBeUndefined();
     } finally {
       session.dispose();
     }

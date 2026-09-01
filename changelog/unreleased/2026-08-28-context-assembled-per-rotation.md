@@ -27,18 +27,19 @@ approval mode: re-read from the DB per decision, effective immediately).
 
 - Three openers assemble a context the same way: Session creation, a completed compaction
   (summarize and discard alike), and a resume that finds its latest Trace file closed by a
-  completed compaction. A resume of an open context keeps the prompt and the thinking level its
-  file recorded — the replayed history was produced under that prefix — and takes tools,
+  completed compaction. A resume of an open context keeps the prompt its file recorded — the
+  replayed history was produced under that prefix — and takes tools,
   Environment, vault and run settings from the current Agent State, as before (the Trace records
   no executable configuration).
-- The thinking level is the soft-limited tier: a context opens at the Session's pinned level —
-  the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`, the SDK's new
-  `Session.pinThinkingLevel` — or, unpinned, at the Agent config's `model.thinking_level`, and
-  records what it opened with as `session_meta.thinking_level` (`"default"` for none). A re-pin
-  applies from the very next LLM request, mid-context included; because that invalidates the
-  provider's cached context, the change points remind the user first (the web picker's menu
-  note, the CLI `/thinking` reply) that compacting is recommended. Compaction requests keep the
-  context's own level — their prefix must stay byte-identical. Nothing rides a run or a task.
+- The thinking level is the soft-limited tier — a purely per-request parameter: every LLM
+  request takes the Session's pinned level — the Web App's in-chat picker, the CLI's
+  `--thinking` / `/thinking`, the SDK's new `Session.pinThinkingLevel` — or, unpinned, the
+  Agent config's `model.thinking_level` as read when the context opened. A re-pin applies
+  from the very next LLM request, mid-context included, and nothing is recorded in the Trace;
+  because a change invalidates the provider's cached context, the change points remind the
+  user first (the web picker's menu note, the CLI `/thinking` reply) that compacting is
+  recommended. Compaction requests keep the context's opening base — their prefix must stay
+  byte-identical. Nothing rides a run or a task.
 - Per-tool `r`/`rw` permissions and the command policy are strict-tier as well:
   `Session.toolPermission` answers from the running context's toolset (rebuilt at every
   rotation, MCP `permission` overrides included), and the command policy is read from
@@ -103,9 +104,8 @@ approval mode: re-read from the DB per decision, effective immediately).
 - HTTP API: `TaskCreateRequest.thinkingLevel` and the subagent message's `thinkingLevel` are
   no longer read (a client still sending them is ignored), and `RecalledMessageResponse` no
   longer carries one. `PATCH /sessions/:id { thinkingLevel }` is the way to set a level; it
-  applies from the Session's next model context.
-- Traces: no format change and nothing to migrate. `session_meta` gains `thinking_level`; a
-  file written before it exists resolves the level as a new context would. A Trace file's
+  applies from the Session's very next LLM request.
+- Traces: no format change and nothing to migrate. A Trace file's
   `session_meta.system_prompt` has always been the prompt that file's context ran with; it now
   differs between the files of one Session when the Agent State changed in between, and a
   rotated file's head carries the context's connect pair before its `tool_list_ready`. A reader

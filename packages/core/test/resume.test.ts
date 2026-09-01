@@ -485,12 +485,13 @@ describe("agent.resumeSession system prompt per context", () => {
     }
   });
 
-  it("keeps the recorded thinking level for an open context — the config, a pin before the first run, and a legacy meta each resolve as the prefix rule says", async () => {
-    const levelOf = (session: { metaMessage: OmniMessage }) =>
-      (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+  it("ignores a legacy recorded thinking level on resume: the level is a per-request parameter", async () => {
     const withLevel = (level: string): OmniMessage => {
       const meta = metaFor(SID, workspace);
-      return { ...meta, payload: { ...meta.payload, thinking_level: level } } as OmniMessage;
+      return {
+        ...meta,
+        payload: { ...meta.payload, thinking_level: level },
+      } as unknown as OmniMessage;
     };
     const traceRecords = (meta: OmniMessage): OmniMessage[] => [
       meta,
@@ -500,33 +501,17 @@ describe("agent.resumeSession system prompt per context", () => {
       requestEnd("completed"),
     ];
     const agent = await createAgent({});
-    // The Agent config says "medium"; the running context recorded "xhigh" and keeps it —
-    // its history was produced under that prefix — and a pin arriving before the first run
-    // reaches only the next context.
+    // A legacy file recording "xhigh" does not shape the resumed context: the meta assembled
+    // for it records no level at all — the level resolves per request from the pin and the
+    // Agent config, exactly as on any other open.
     await writeTraceFile(tmpRoot, SID, traceRecords(withLevel("xhigh")));
-    const recorded = await agent.resumeSession({ sessionId: SID });
+    const session = await agent.resumeSession({ sessionId: SID });
     try {
-      expect(levelOf(recorded)).toBe("xhigh");
-      recorded.pinThinkingLevel("low");
-      expect(levelOf(recorded)).toBe("xhigh");
+      expect(
+        (session.metaMessage.payload as { thinking_level?: string }).thinking_level,
+      ).toBeUndefined();
     } finally {
-      recorded.dispose();
-    }
-    // A context that recorded "default" ran without a level and resumes without one.
-    await writeTraceFile(tmpRoot, SID, traceRecords(withLevel("default")));
-    const unlevelled = await agent.resumeSession({ sessionId: SID });
-    try {
-      expect(levelOf(unlevelled)).toBe("default");
-    } finally {
-      unlevelled.dispose();
-    }
-    // A meta from before the level was recorded resolves it like a new context: the config.
-    await writeTraceFile(tmpRoot, SID, traceRecords(metaFor(SID, workspace)));
-    const legacy = await agent.resumeSession({ sessionId: SID });
-    try {
-      expect(levelOf(legacy)).toBe("medium");
-    } finally {
-      legacy.dispose();
+      session.dispose();
     }
   });
 

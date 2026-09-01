@@ -103,12 +103,9 @@ export interface SessionConfig {
   /**
    * Records a re-pinned thinking level with the composition layer (see
    * `Session.pinThinkingLevel` — the Session itself applies the level to live requests):
-   * `level` becomes the default of every context opened from now on and, when `adoptNow` is
-   * true and the initial context has not started, re-stamps that context — returning its
-   * updated session_meta, which the Session adopts as its own; null when nothing was
-   * re-stamped.
+   * `level` becomes the base of every context opened from now on.
    */
-  pinThinkingLevel?: (level: ThinkingLevelName, adoptNow: boolean) => SessionMetaPayload | null;
+  pinThinkingLevel?: (level: ThinkingLevelName) => void;
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
    * the session; no tools, no system prompt, thinking off): used for meta-requests such as
@@ -119,8 +116,6 @@ export interface SessionConfig {
   compaction?: CompactionSettings;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
-  /** Session resume of an open context: the initial context is the recorded one, mid-life — a pin arriving before the first run must not re-stamp its session_meta (the requests still take the pin: the level is soft). */
-  initialContextOpen?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
   initialEngineState?: EngineInitialState;
   /** Session resume: the full historical messages of the current context (for rendering, including interrupted turns and their markers), for frontend display. */
@@ -297,9 +292,6 @@ export class Session {
   private meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
   private readonly pinContext?: SessionConfig["pinThinkingLevel"];
-  private readonly initialContextOpen: boolean;
-  /** Whether a run (or a compaction) has started: from then on the initial context's request prefix is in use. */
-  private runsStarted = false;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
@@ -353,7 +345,6 @@ export class Session {
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
     if (config.pinThinkingLevel) this.pinContext = config.pinThinkingLevel;
-    this.initialContextOpen = config.initialContextOpen ?? false;
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
@@ -564,7 +555,6 @@ export class Session {
    * a fresh attempt.
    */
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
-    this.runsStarted = true;
     await this.ensureMetaWritten();
     if (this.engine) return true;
     const records: OmniMessage[] = [];
@@ -854,21 +844,19 @@ export class Session {
   }
 
   /**
-   * Pins the Session's thinking level — the SOFT-limited runtime parameter: it applies from
-   * the very next LLM request (mid-context, even mid-Task), unlike the prompt, toolset and
-   * model, which never change between a context's open and its close. The cost of the
-   * softness is the provider's cached context — changing the thinking level invalidates the
-   * cached messages — so a host lets the user know at the picker that compacting first is
+   * Pins the Session's thinking level — the SOFT-limited runtime parameter, a pure
+   * per-request value: it rides the very next LLM request (mid-context, even mid-Task),
+   * unlike the prompt, toolset and model, which never change between a context's open and
+   * its close — and nothing records it in the Trace. The cost of the softness is the
+   * provider's cached context — changing the thinking level invalidates the cached
+   * messages — so a host lets the user know at the picker that compacting first is
    * recommended (the Web menu note, the CLI `/thinking` reply). The pin also becomes the
-   * default of every context opened from now on, and a Session whose first context has not
-   * started yet — no run issued, and not a resumed open context — takes it for that first
-   * context's session_meta too (`thinking_level` records what a context OPENED with).
+   * base level of every context opened from now on.
    * Callers: the Web App's in-chat picker, the CLI's `--thinking` / `/thinking`.
    */
   pinThinkingLevel(level: ThinkingLevelName): void {
     this.pinnedLevel = level;
-    const meta = this.pinContext?.(level, !this.runsStarted && !this.initialContextOpen);
-    if (meta) this.meta = sessionMeta(meta);
+    this.pinContext?.(level);
   }
 
   /**

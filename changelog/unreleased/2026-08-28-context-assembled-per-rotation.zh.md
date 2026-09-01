@@ -20,13 +20,13 @@
 ## 细节
 
 - 三处开启以同一流程装配上下文：Session 创建、完成的压缩（summarize 与 discard 皆然）、以及恢复时发现最新
-  Trace 文件已被完成的压缩收尾。恢复未关闭的上下文时沿用该文件记录的提示词与思考等级——注入的历史正是在该
-  前缀下产生的——工具、Environment、vault 与运行参数一如既往取自当前 Agent State（Trace 不记录可执行配置）。
-- 思考等级属软限制层：上下文以 Session 钉住的等级开启——Web 对话内选择器、CLI 的 `--thinking` / `/thinking`、
-  SDK 新增的 `Session.pinThinkingLevel`——未钉住则取 Agent 配置的 `model.thinking_level`，并把**开启时**的等级
-  记录为 `session_meta.thinking_level`（无等级记为 `"default"`）。重新钉住自下一次 LLM 请求即生效、允许中途更
-  换；因为这会使提供商的缓存失效，调节入口在调节之前提醒建议先压缩（Web 选择器菜单脚注、CLI `/thinking` 回
-  执）。压缩请求保持上下文自身的等级——其前缀必须逐字节不变。运行与 Task 请求都不携带等级。
+  Trace 文件已被完成的压缩收尾。恢复未关闭的上下文时沿用该文件记录的提示词——注入的历史正是在该前缀下产生
+  的——工具、Environment、vault 与运行参数一如既往取自当前 Agent State（Trace 不记录可执行配置）。
+- 思考等级属软限制层——纯粹的每请求参数：每次 LLM 请求取 Session 钉住的等级——Web 对话内选择器、CLI 的
+  `--thinking` / `/thinking`、SDK 新增的 `Session.pinThinkingLevel`——未钉住则取上下文开启时读到的 Agent 配置
+  `model.thinking_level`。重新钉住自下一次 LLM 请求即生效、允许中途更换，且不在 Trace 中留任何记录；因为更换
+  会使提供商的缓存失效，调节入口在调节之前提醒建议先压缩（Web 选择器菜单脚注、CLI `/thinking` 回执）。压缩
+  请求保持上下文开启时的基准等级——其前缀必须逐字节不变。运行与 Task 请求都不携带等级。
 - 工具的 `r`/`rw` 权限与命令策略同属严格层：`Session.toolPermission` 取运行中上下文的工具集（随轮换重建，
   MCP 条目的 `permission` 覆盖一并烤入），命令策略在每个上下文开启时从 `.project_config.toml` 读取一次——
   审批决策不再读任何文件。不限制层只余审批模式，逐次决策从 DB 重读、修改即刻生效。
@@ -71,10 +71,9 @@
   每个上下文开启时从 `.project_config.toml` 读取一次。`Session.toolPermission` 签名不变（同步），取值为运行中
   上下文的工具集。
 - HTTP API：`TaskCreateRequest.thinkingLevel` 与子会话消息的 `thinkingLevel` 不再读取（仍发送的客户端被忽略），
-  `RecalledMessageResponse` 不再携带它。设置等级的方式是 `PATCH /sessions/:id { thinkingLevel }`，从该 Session
-  的下一个模型上下文生效。
-- Trace：格式不变，无需迁移。`session_meta` 新增 `thinking_level`；早于该字段的文件像新上下文一样解析等级。
-  Trace 文件的 `session_meta.system_prompt` 一直是该文件所属上下文实际所用的提示词；现在当 Agent State 在两次
+  `RecalledMessageResponse` 不再携带它。设置等级的方式是 `PATCH /sessions/:id { thinkingLevel }`，自该 Session
+  的下一次 LLM 请求生效。
+- Trace：格式不变，无需迁移。Trace 文件的 `session_meta.system_prompt` 一直是该文件所属上下文实际所用的提示词；现在当 Agent State 在两次
   上下文之间发生变化时，同一 Session 的各文件会记录不同的值，且轮转出的文件头部在 `tool_list_ready` 之前多出
   该上下文的连接事件对。把首个文件的提示词或工具集当作整个 Session 唯一一份的读取方，应改为读取正在渲染的那个
   文件。
