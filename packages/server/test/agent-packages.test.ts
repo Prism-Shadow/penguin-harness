@@ -200,7 +200,7 @@ describe("agent packages", () => {
     const files = github.gists.get(published.gistId)!;
     // Flattened names, and the manifest that maps them back.
     expect(Object.keys(files)).toContain("penguin-agent.json");
-    expect(Object.keys(files)).toContain("workflows--todo--ui--index.html");
+    expect(Object.keys(files)).toContain("workflows\\todo\\ui\\index.html");
     expect(JSON.stringify(files)).not.toContain("SENTINEL_STATE_9f3");
 
     // Republishing updates the same gist rather than making a second one — with no id from
@@ -236,6 +236,44 @@ describe("agent packages", () => {
     await expect(fs.stat(path.join(copy, "agent_state/.vault.toml"))).rejects.toThrow();
   });
 
+  it("still reads a package published with the older `--` file names", async () => {
+    github.gists.set("01dbee", {
+      "penguin-agent.json": {
+        content: JSON.stringify({
+          format: 1,
+          agentId: "legacy_agent",
+          name: "Legacy",
+          description: "published before the backslash separator",
+          packagedBy: "0.2.8",
+          packagedAt: "2026-08-30T00:00:00.000Z",
+          files: [
+            { path: "agent_state/AGENTS.md", file: "agent_state--AGENTS.md", encoding: "utf8" },
+          ],
+        }),
+      },
+      "agent_state--AGENTS.md": { content: "# legacy\n" },
+    });
+    const previewRes = await owner.post("/api/agent-packages/preview", { source: "01dbee" });
+    expect(previewRes.status, await previewRes.clone().text()).toBe(200);
+    const preview = (await previewRes.json()) as AgentPackagePreviewResponse;
+    expect(preview.manifest.name).toBe("Legacy");
+    expect(
+      (
+        await owner.post("/api/agent-packages/install", {
+          source: "01dbee",
+          projectId: PROJECT,
+          agentId: "legacy_agent",
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      await fs.readFile(
+        path.join(agentDir(t.root, PROJECT, "legacy_agent"), "agent_state/AGENTS.md"),
+        "utf8",
+      ),
+    ).toBe("# legacy\n");
+  });
+
   it("refuses a gist that is not a package, and one whose paths escape the Agent", async () => {
     github.gists.set("abcde01", { "notes.txt": { content: "hello" } });
     const notPackage = await owner.post("/api/agent-packages/preview", { gist: "abcde01" });
@@ -251,10 +289,10 @@ describe("agent packages", () => {
           description: "",
           packagedBy: "0",
           packagedAt: "now",
-          files: [{ path: "../../escape.txt", file: "..--..--escape.txt", encoding: "utf8" }],
+          files: [{ path: "../../escape.txt", file: "..\\..\\escape.txt", encoding: "utf8" }],
         }),
       },
-      "..--..--escape.txt": { content: "pwned" },
+      "..\\..\\escape.txt": { content: "pwned" },
     });
     const escaping = await owner.post("/api/agent-packages/preview", { gist: "e0e0e0" });
     expect(escaping.status).toBe(400);
