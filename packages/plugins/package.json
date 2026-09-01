@@ -33,7 +33,7 @@
   },
   "files": [
     "dist",
-    "library",
+    "official",
     "LICENSE"
   ],
   "publishConfig": {

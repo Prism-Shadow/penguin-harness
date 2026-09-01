@@ -5,8 +5,8 @@
  * only produces this package's own artifacts, in the one layout that serves both a source run
  * and a packaged app:
  *
- * - `library/` — the shipped plugin library. @prismshadow/penguin-plugins reads its plugin
- *   directories from `<its package root>/library`, and bundling puts the reader in `dist/`,
+ * - `official/` — the shipped plugin library. @prismshadow/penguin-plugins reads its plugin
+ *   directories from `<its package root>/official`, and bundling puts the reader in `dist/`,
  *   so the copy lands where that same package-relative lookup finds it. (The server's web-dist
  *   lookup works the same way and is satisfied by electron-builder's file mapping when
  *   packaging; a source run falls back to packages/web/dist on its own.)
@@ -44,8 +44,8 @@ for (const required of [launcherModule, path.join(distDir, "pty-payload.js")]) {
   }
 }
 
-const pluginsSrc = path.resolve(pkgDir, "..", "plugins", "library");
-const pluginsDest = path.join(pkgDir, "library");
+const pluginsSrc = path.resolve(pkgDir, "..", "plugins", "official");
+const pluginsDest = path.join(pkgDir, "official");
 fs.rmSync(pluginsDest, { recursive: true, force: true });
 fs.cpSync(pluginsSrc, pluginsDest, { recursive: true });
 
@@ -102,5 +102,5 @@ fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 
 console.log(
-  `[build-assets] done: library/, dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
+  `[build-assets] done: official/, dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
 );

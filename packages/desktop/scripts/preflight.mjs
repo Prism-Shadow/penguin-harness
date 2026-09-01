@@ -20,7 +20,7 @@ for (const [what, rel] of [
   // Where the server bundle's `require("node-pty")` lands; without it every terminal
   // session fails to spawn, and only once the user opens a terminal panel.
   ["the staged node-pty package", "dist/node_modules/node-pty/package.json"],
-  ["the plugin library copy", "library"],
+  ["the plugin library copy", "official"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {

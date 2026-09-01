@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const hooksDir = path.resolve(import.meta.dirname, "../library/goal/hooks");
+const hooksDir = path.resolve(import.meta.dirname, "../official/goal/hooks");
 
 let root: string;
 let scratchpad: string;

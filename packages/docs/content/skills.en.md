@@ -8,7 +8,7 @@ description: Plugins package skills (SKILL.md directories, metadata up front, bo
 The built-in library is a set of **plugins**. A plugin is a directory with a `plugin.json` manifest and the content it ships: **skills** — reusable instructions the model reads on demand — and/or a **hook package** — scripts the harness runs at the loop's hook points (see [The Agent Loop](/agent-loop#stop-hooks)). Installing a plugin puts its skills under `agent_state/skills/` and its hook package under `agent_state/hooks/`, two first-class parts of the Agent State that the rest of this page describes.
 
 ```text
-library/<plugin>/
+official/<plugin>/
 ├── plugin.json                # manifest — the plugin's single metadata holder
 ├── skills/<name>/SKILL.md     # zero or more skills (icon.svg, reference/… alongside)
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
@@ -27,7 +27,7 @@ library/<plugin>/
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
 
-The library ships as the npm package `@prismshadow/penguin-plugins`, carrying the raw `library/` directory in the tarball; at runtime the package's files are the source of truth for library content, read on every call.
+The library ships as the npm package `@prismshadow/penguin-plugins`, carrying the raw `official/` directory in the tarball; at runtime the package's files are the source of truth for library content, read on every call.
 
 ## Anatomy of a Skill
 

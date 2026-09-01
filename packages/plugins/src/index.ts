@@ -1,7 +1,7 @@
 /**
  * PenguinHarness plugin library: the built-in plugins and the loader that reads them.
  *
- * A plugin is a directory under the package's `library/` carrying a `plugin.json` manifest and
+ * A plugin is a directory under the package's `official/` carrying a `plugin.json` manifest and
  * any of two kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
  * `agent_state/skills/`) and a hook package (`hooks/*.js`, installed into
  * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`). The files are the
@@ -165,8 +165,8 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/** Root directory of library files: the package's `library/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
-const PLUGINS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "library");
+/** Root directory of library files: the package's `official/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
+const PLUGINS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "official");
 
 /**
  * Recursively collects a directory's files as text keyed by POSIX-relative path, skipping the
@@ -344,7 +344,7 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
   };
 }
 
-/** Reads every plugin in the library (one per subdirectory under `library/` with a plugin.json), sorted by name. */
+/** Reads every plugin in the library (one per subdirectory under `official/` with a plugin.json), sorted by name. */
 export function loadLibraryPlugins(): LibraryPlugin[] {
   const plugins: LibraryPlugin[] = [];
   for (const entry of fs.readdirSync(PLUGINS_ROOT, { withFileTypes: true })) {

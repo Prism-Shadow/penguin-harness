@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const script = path.resolve(import.meta.dirname, "../library/skill-summary/hooks/stop.mjs");
+const script = path.resolve(import.meta.dirname, "../official/skill-summary/hooks/stop.mjs");
 
 let root: string;
 let agentState: string;

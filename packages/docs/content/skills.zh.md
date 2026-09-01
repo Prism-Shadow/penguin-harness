@@ -8,7 +8,7 @@ description: 插件打包 Skill（目录加 SKILL.md，元数据先行、正文�
 内置库由一组**插件**组成。一个插件就是一个目录：一份 `plugin.json` 清单，加上它携带的内容——**Skill**（模型按需读取的可复用指令）和/或一个**钩子包**（harness 在循环固定点上运行的脚本，见[运行循环](/agent-loop#stop-hook)）。安装插件即把它的 Skill 放进 `agent_state/skills/`、钩子包放进 `agent_state/hooks/`——Agent State 里并列的两个一等成员，本页其余部分分别介绍。
 
 ```text
-library/<plugin>/
+official/<plugin>/
 ├── plugin.json                # 清单——插件唯一的元数据载体
 ├── skills/<name>/SKILL.md     # 零个或多个 Skill（icon.svg、reference/… 随行）
 └── hooks/*.mjs                # 至多一个钩子包：纯 Node 脚本
@@ -27,7 +27,7 @@ library/<plugin>/
 
 插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
 
-插件库以 npm 包 `@prismshadow/penguin-plugins` 发布，tarball 直接携带原始 `library/` 目录；运行时库内容的事实源同样是包内文件，每次调用直接读取。
+插件库以 npm 包 `@prismshadow/penguin-plugins` 发布，tarball 直接携带原始 `official/` 目录；运行时库内容的事实源同样是包内文件，每次调用直接读取。
 
 ## Skill 的形态
 

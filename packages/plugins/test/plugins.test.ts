@@ -1,5 +1,5 @@
 /**
- * The plugin library's file source of truth and its loader: plugins read from `library/`
+ * The plugin library's file source of truth and its loader: plugins read from `official/`
  * (manifest fields, the skills and hook packages they ship), the version scheme, the
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
@@ -22,7 +22,7 @@ import {
   type PluginCategory,
 } from "../src/index.js";
 
-const pluginsRoot = path.resolve(import.meta.dirname, "../library");
+const pluginsRoot = path.resolve(import.meta.dirname, "../official");
 
 /** Minimal LibraryPlugin for groupPlugins unit tests. */
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
