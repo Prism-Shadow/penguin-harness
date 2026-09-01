@@ -614,9 +614,8 @@ export function isEventMessage(msg: OmniMessage): msg is EventMessage {
  * Whether this is a main-session user text the harness injected (`sender: "harness"`) — a
  * stop hook's `continue` input, a host-composed companion message such as the goal plugin's
  * round protocol, or a background-task completion notice. Hosts key origin display on this
- * stamp; a consumer that means only the loop-driving injections (round boundaries, the
- * stale-carry-over downgrade) additionally excludes the notices by their
- * `[background_task_done]` block.
+ * stamp; a consumer that means only the loop-driving injections (round boundaries)
+ * additionally excludes the notices by their `[background_task_done]` block.
  */
 export function isHarnessInput(msg: OmniMessage): boolean {
   if (msg.origin && msg.origin.length > 0) return false;

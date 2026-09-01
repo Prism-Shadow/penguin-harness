@@ -21,7 +21,6 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 - 核心不再知道目标是什么——`session.run` 的 `goal` 选项、目标文件辅助函数、`goalOutcomeOf` 连同 `[goal]` 标记本身（`goal-block` 标记模块）全部移除。轮消息就是纯文本 user 消息：没有协议块，来源只由 `sender: "harness"` 标记承载。插件（`default_agent` 预装）带 `start.mjs`（写下 `GOAL.json`——`objective`、`status`、`budget`、`round`、`tokens_used`，钩子对终态动过手后再加 `ended`——并组装第一轮的协议消息）与 `stop.mjs`（每个 Task 结束后从 Trace 读本轮用量——窗口自本轮注入输入起算，完成回报虽共用标记但不是边界——沿用原判定顺序——模型裁决 → 掐断 → 收尾轮 → 100 轮兜底 → 预算 → 下一轮——并重写文件）。
 - 服务端对 `goal: { budget }` 先查钩子包是否已装（未装 `409 goal_plugin_not_installed`），运行 `agent_state/hooks/goal/start.mjs`，把你的消息原样在前（文本与图片，一字不动）、它打印的协议消息带 harness 标记随后提交；后续轮从目标文件复述目标文本。`GET /goal` 读 `GOAL.json`（钩子尚未结束的文件在 Session 空闲时读作 `aborted`）。`goal_*` 服务端事件、聊天页 banner、`/goal` 命令与 `penguin run --goal` 行为不变——`goal_round` 与 CLI 的轮次行改为统计 harness 注入的输入而非解析文本；CLI 从 `goal_finished` 服务端事件读结局。文件附件被拒绝。
 - 在没装插件的 Agent 上发起目标时，Web App 弹出提示。轮消息按普通用户消息渲染，上方一行「由 harness 注入」小注——「目标 · 第 N 轮」的折叠不复存在；输入历史与对话索引凭标记跳过 harness 注入的输入（后台完成回报保留自己的轮次）。
-- 被打断的运行滞留在 carry-over 里的 harness 注入，在消费点被替换为一行过期注记（goal 专属的降级就此泛化）；完成回报原样通过——它是报告，不是指令。
 
 ## `skill-summary` 插件
 

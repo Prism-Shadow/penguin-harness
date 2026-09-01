@@ -37,7 +37,6 @@ import {
   compactionEnd,
   emptyTokenCounts,
   isCompleteModelMessage,
-  isHarnessInput,
   isSessionMeta,
   partialText,
   requestBegin,
@@ -51,7 +50,6 @@ import {
   buildTurnAbortedBlock,
   extractSummary,
   buildTurnRetriedBlock,
-  parseBackgroundTaskDoneMessage,
   transcribeText,
   transcribeThinking,
   transcribeToolCall,
@@ -376,48 +374,6 @@ class MergeQueue {
 }
 
 /**
- * What a stale harness injection is replaced with when carry-over would re-send it. A
- * hook-injected input (`sender: "harness"` — e.g. the goal plugin's round protocol) can only
- * land in carry-over when its run was cut off, and a cutoff is never continued: the run those
- * instructions were driving is over. Re-sending them verbatim with the NEXT task's request
- * would hand the model instructions of a dead run ("the system sends the next round
- * automatically", the goal-file rules) and likely send it chasing the old objective instead
- * of the user's new task. The user's own messages — a goal's round-1 objective included —
- * carry no harness stamp and pass through untouched.
- */
-const STALE_HARNESS_INPUT_NOTE =
-  "[a harness-injected message of an ended run was omitted here — do not act on it]";
-
-/**
- * Whether a carried harness injection is stale instruction text (see the note above).
- * Background-task completion notices share the harness stamp but are reports, not
- * instructions — re-sending one is harmless and keeps useful context — so they pass
- * through on their `[background_task_done]` block (a core-authored block; recognizing it
- * here is block transformation, not source discrimination).
- */
-function isStaleHarnessInput(msg: OmniMessage): boolean {
-  if (!isHarnessInput(msg)) return false;
-  const text = (msg.payload as TextPayload).text;
-  return parseBackgroundTaskDoneMessage(text) === null;
-}
-
-/**
- * Rewrites a carried stale harness injection into the one-line note above; every other
- * message — tool outputs (the pairing carry-over), events, plain user text, completion
- * notices — passes through unchanged. Applied at the two carry-over CONSUMER sites
- * (next-run input assembly, manual-compact summarize) rather than at each hold site, which
- * also covers carry-over rebuilt by resume; the [turn_aborted] transcript path applies the
- * same rule at transcription time (buildTurnAbortedText).
- */
-function downgradeCarriedHarnessInput(msg: OmniMessage): OmniMessage {
-  if (!isStaleHarnessInput(msg)) return msg;
-  return {
-    ...msg,
-    payload: { ...msg.payload, text: STALE_HARNESS_INPUT_NOTE } as OmniMessage["payload"],
-  };
-}
-
-/**
  * LLM outcomes that reconnect in-run: exactly `retryable`. The classification lives in the
  * LLM interface (see LLMOutcome) — transport drops, timeouts, 408/429/5xx, malformed
  * responses and everything unclassifiable come back `retryable`, while definitive provider
@@ -680,7 +636,7 @@ export class ContextEngine {
     // input, to form this Request's input.
     const summary = this.pendingSummary;
     this.pendingSummary = null;
-    const carryOver = this.pendingCarryOver.map(downgradeCarriedHarnessInput);
+    const carryOver = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
@@ -996,10 +952,7 @@ export class ContextEngine {
     //   - something committed: the carry-over is **consumed** — it lives in the committed
     //     history now and must never be resent; only the repair stash (unanswered tool_call
     //     pairing left by a final rejection, already in pendingCarryOver) remains pending.
-    // Dead-goal rounds are downgraded on the drained snapshot (goal mode's consumer-site
-    // rule): a no-commit restore keeps the downgraded copies — the downgrade is idempotent
-    // and every consumer applies it anyway, while non-goal messages keep their identity.
-    const folded = this.pendingCarryOver.map(downgradeCarriedHarnessInput);
+    const folded = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const result = yield* this.summarizeContext("manual", folded, opts?.signal);
     if (result.status === "completed") {
@@ -1913,7 +1866,7 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(transcribeUserInput(isStaleHarnessInput(m) ? STALE_HARNESS_INPUT_NOTE : t));
+        lines.push(transcribeUserInput(t));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));

@@ -28,8 +28,8 @@
  * parse marker text to tell where a message came from: source decisions there ride on
  * structured facts only — payload fields such as `sender`, and the explicit queue/state that
  * delivered the message — so core BUILDS markers but never branches on them. Transforming a
- * protocol block core itself authored (the goal-round downgrade, the compaction `[summary]`
- * extraction) is not source discrimination and stays legitimate.
+ * protocol block core itself authored (the compaction `[summary]` extraction) is not source
+ * discrimination and stays legitimate.
  *
  * Everything here is pure string work: no OmniMessage envelopes, no I/O — the callers wrap
  * the result in `userText(...)` (or match against a payload's text) themselves.
