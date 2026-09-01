@@ -102,7 +102,7 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries); the loader lives in `packages/core` |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
-| [`extensions/*`](../extensions)           | `@prismshadow/penguin-extension-*` | Extension packages a deployment installs and lists in `extensions.json` — outside `packages/` because nothing in the harness depends on one                        |
+| [`packages/plugins/*`](../packages/plugins) | `@prismshadow/penguin-plugin-*` | Plugin packages a deployment installs and lists in `plugins.json` — a directory of their own because nothing else in the harness depends on one                        |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime
@@ -155,7 +155,7 @@ pnpm test:e2e                                        # core live-model e2e, need
   GitHub's auto-generated notes.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
   `changelog/unreleased/` also bumps the root and every workspace `package.json`
-  (`packages/*` and `extensions/*`)
+  (`packages/*` and `packages/plugins/*`)
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
   version. The release workflow refuses a tag push whose version does not match the
   repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a

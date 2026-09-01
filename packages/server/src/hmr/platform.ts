@@ -30,7 +30,7 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import type { SandboxProviderSource, SandboxSettings } from "@prismshadow/penguin-core/extension";
+import type { SandboxProviderSource, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { SandboxService } from "../sandbox/index.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
@@ -40,10 +40,10 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "@prismshadow/penguin-core/extension";
-import type { HarnessContext } from "../extension/index.js";
-import { extensionHostFrom } from "../extension/host.js";
-import { instantiateWorkflows, WorkflowFactories } from "../extension/workflow.js";
+import type { PenguinInterface } from "@prismshadow/penguin-core/plugin";
+import type { HarnessContext } from "../plugin/index.js";
+import { pluginHostFrom } from "../plugin/host.js";
+import { instantiateWorkflows, WorkflowFactories } from "../plugin/workflow.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -211,15 +211,15 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // and must not adopt them. It does not dispose them either: that happens at the
     // commit below, so a failed boot leaves them for the recovered predecessor.
     terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
-    // The extension seam (see ../extension/index.ts): the definition view first, then the
-    // instance context, with the workflows built in between — so an extension that registers
+    // The plugin seam (see ../plugin/index.ts): the definition view first, then the
+    // instance context, with the workflows built in between — so a plugin that registers
     // one always sees it instantiated in the App it registered into. The host is CLAIMED
-    // from the registry, never imported (see extensionHostFrom).
-    const extensions = extensionHostFrom(ctx.resources);
-    // Sandbox backends arrive as extensions through iface.sandbox (see ../extension/);
+    // from the registry, never imported (see pluginHostFrom).
+    const plugins = pluginHostFrom(ctx.resources);
+    // Sandbox backends arrive as plugins through iface.sandbox (see ../plugin/);
     // duplicates are refused, and the service routes policies by capability.
     const sandboxProviders = new Map<string, SandboxProviderSource>();
-    const extIface: PenguinInterface = {
+    const pluginIface: PenguinInterface = {
       workflow: new WorkflowFactories(),
       tool: new Map(),
       sandbox: {
@@ -231,7 +231,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         },
       },
     };
-    extensions.emit("initialize", extIface);
+    plugins.emit("initialize", pluginIface);
     // "Which commands run confined, under which policy, by which backend" is policy —
     // the whole capability lives in ../sandbox/ and reaches deployed machines by push;
     // only core's spawn seam is mechanism. The confiner reaches core as a plain argument
@@ -244,17 +244,17 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // that had confinement on.
     if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
     // Typed as HarnessContext, not the bare contract: `terminals` is this harness's own
-    // (see ../extension/index.ts). Handlers receive it as PenguinContext and reach that
+    // (see ../plugin/index.ts). Handlers receive it as PenguinContext and reach that
     // member only by casting, which is where the dependency on this embedder gets stated.
-    const extContext: HarnessContext = {
-      workflows: instantiateWorkflows(extIface.workflow),
+    const pluginContext: HarnessContext = {
+      workflows: instantiateWorkflows(pluginIface.workflow),
       terminals,
       sandbox: {
         configure: (settings) => sandbox.configure(settings),
         settings: () => sandbox.currentSettings(),
       },
     };
-    extensions.emit("create", extContext);
+    plugins.emit("create", pluginContext);
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;

@@ -1,10 +1,11 @@
 packages:
   - "packages/*"
   - "plugins/*"
-  # Extension packages a deployment installs and lists in extensions.json. They live
-  # outside packages/ because they are not part of the harness: nothing under packages/
-  # depends on one, and the platform bundle carries none of them.
-  - "extensions/*"
+  # Plugin packages a deployment installs and lists in plugins.json. They sit in a
+  # directory of their own because they are not part of the harness: nothing else under
+  # packages/ depends on one, and the platform bundle carries none of them. packages/*
+  # does not reach them — packages/plugins has no package.json of its own.
+  - "packages/plugins/*"
 # Dependency pins. pnpm 11 reads overrides ONLY from here — the package.json
 # "pnpm.overrides" block it used to honour is silently ignored, which resolved a second
 # copy of each of these.
@@ -32,7 +33,7 @@ allowBuilds:
   # electron-winstaller's script fetches Squirrel.Windows binaries; the desktop package
   # targets NSIS only, so the script is deliberately not run.
   electron-winstaller: false
-  # koffi (a transitive dependency of the DSH sandbox extension package, never of the
+  # koffi (a transitive dependency of the DSH sandbox plugin package, never of the
   # harness itself) ships per-platform prebuilds; its build script is only a fallback
   # compile and the prebuilt binding loads fine without it. Deliberately skipped, like
   # electron-winstaller.
@@ -40,7 +41,7 @@ allowBuilds:
   # node-pty compiles its native pty binding (node-gyp) on install; without this the
   # terminal server has no pty and every session fails to spawn. The allow entry is
   # per-package-name, so it also builds the second, beta copy @microsoft/mxc-sdk pulls
-  # in — harmless, and that copy is never loaded (the MXC extension only asks the SDK to
+  # in — harmless, and that copy is never loaded (the MXC plugin only asks the SDK to
   # BUILD a config; it spawns the runner through the harness, never through a pty).
   node-pty: true
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which

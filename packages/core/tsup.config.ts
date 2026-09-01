@@ -12,9 +12,9 @@ export default defineConfig({
     // producers and parsers without pulling the rest of the SDK surface.
     "src/omnimessage/markers/index.ts",
     "src/interfaces/index.ts",
-    // The extension contract: types only, so an extension package compiles against the SDK
+    // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
-    "src/extension/index.ts",
+    "src/plugin/index.ts",
     "src/state/model-catalog.ts",
     // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
     "src/kernel/index.ts",
