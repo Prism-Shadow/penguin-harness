@@ -19,6 +19,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
+import { pluginsPrefix } from "./install.js";
 import type { Plugin, PluginModule } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 
@@ -64,22 +65,35 @@ export async function readPluginList(root: string): Promise<string[]> {
   return list as string[];
 }
 
-/** Where a specifier resolves from, or null when it does not resolve at all. */
-function resolvePlugin(specifier: string): string | null {
+/**
+ * Where a specifier resolves from, or null when it does not resolve at all.
+ *
+ * The data root's own prefix comes first (`<root>/plugins`, what the Plugins page installs
+ * into): it is the one location the harness can write, and a package there is the one the
+ * operator asked this deployment for. The installation is the fallback, which is how a plugin
+ * shipped with the build, or installed globally beside it, still resolves.
+ */
+function resolvePlugin(specifier: string, root?: string): string | null {
+  const from: string[] = [];
+  if (root !== undefined && root !== "") from.push(path.join(pluginsPrefix(root), "package.json"));
   const entry = process.argv[1];
-  if (typeof entry === "string" && entry.length > 0) {
+  if (typeof entry === "string" && entry.length > 0) from.push(entry);
+  for (const base of from) {
     try {
-      return createRequire(entry).resolve(specifier);
+      return createRequire(base).resolve(specifier);
     } catch {
-      // Fall through: a dev checkout resolves the specifier directly.
+      // Try the next base; a dev checkout resolves the specifier directly (see importPlugin).
     }
   }
   return null;
 }
 
-/** Resolved against the installation rather than the bundle's location. */
-async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
-  const resolved = resolvePlugin(specifier);
+/** Resolved against the data root and the installation, never the bundle's location. */
+async function importPlugin(
+  specifier: string,
+  root: string,
+): Promise<{ module: unknown; file: string | null }> {
+  const resolved = resolvePlugin(specifier, root);
   if (resolved !== null)
     return { module: await import(pathToFileURL(resolved).href), file: resolved };
   return { module: await import(specifier), file: null };
@@ -92,9 +106,14 @@ async function importPlugin(specifier: string): Promise<{ module: unknown; file:
  */
 export async function readPluginDeclaration(
   specifier: string,
+  root?: string,
 ): Promise<{ modules: string[]; replaces: string[] } | { error: string }> {
-  const resolved = resolvePlugin(specifier);
-  if (resolved === null) return { error: `'${specifier}' does not resolve from this installation` };
+  const resolved = resolvePlugin(specifier, root);
+  if (resolved === null) {
+    return {
+      error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins or the installation resolves it)`,
+    };
+  }
   let read: Awaited<ReturnType<typeof readPackageManifests>>;
   try {
     read = await readPackageManifests(resolved);
@@ -199,7 +218,7 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     try {
-      const { module, file } = await importPlugin(specifier);
+      const { module, file } = await importPlugin(specifier, root);
       const read = await readPackageManifests(file);
       if (read === null) {
         failed.set(specifier, "not a plugin package: no package.json#penguin above it");
