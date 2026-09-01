@@ -30,7 +30,7 @@ export const FOLDER_OPEN_ICON =
 export const AGENT_GROUP_ICON =
   "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01";
 
-/** Clock (lucide clock, drawn as one path): the "most recent" sort option, and the collapsed rail's last-conversation entry (app-layout.tsx) — one mark for recency on both surfaces. */
+/** Clock (lucide clock, drawn as one path), the "most recent" sort option. */
 export const CLOCK_ICON = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2";
 
 /**
