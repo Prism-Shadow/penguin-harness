@@ -132,7 +132,7 @@ stdout  空 = 无意见；否则
 
 ### User-prompt hook
 
-第三个点 `user_prompt` 用来扩展提交的 Prompt：宿主在接受某个流程的用户 Prompt 时运行它，回答里的 `context` 紧随用户自己的消息之后、以 harness 标记发出（渲染为紧凑的折叠卡片）。[目标模式的启动](/goal-mode)是唯一的内置用途：goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令——服务端对 `goal: { budget }` 运行它，它写下 `GOAL.json` 并以第一轮协议消息作答。
+第三个点 `user_prompt` 用来扩展提交的 Prompt。钩子只在 core 里运行：宿主在接受某个流程的用户 Prompt 时经 `Session.runUserPromptHook(name, prompt, extras)` 触发它——Session 自己补上 id 与 scratchpad 目录——回答里的 `context` 紧随用户自己的消息之后、以 harness 标记发出（渲染为紧凑的折叠卡片）。[目标模式的启动](/goal-mode)是唯一的内置用途：goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令——服务端对 `goal: { budget }` 请 Session 运行它，它写下 `GOAL.json` 并以第一轮协议消息作答。
 
 ```text
 stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …宿主附加字段（goal 为 "budget"） }

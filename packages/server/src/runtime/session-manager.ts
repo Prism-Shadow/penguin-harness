@@ -128,6 +128,16 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
+  /**
+   * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
+   * run in core and nowhere else); null = the package is not installed or names no such
+   * command. Optional: test fakes may omit it, reading as not installed.
+   */
+  runUserPromptHook?(
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<{ context?: string } | null>;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -854,6 +864,27 @@ export class SessionManager {
       this.launchTask(entry, input, opts?.thinkingLevel);
       return { sessionId: entry.sessionId, queued: false };
     });
+  }
+
+  /**
+   * Runs the named package's `user_prompt` hook on a Session — the core-owned execution
+   * behind a host flow's prompt expansion (the goal route calls it before startGoal).
+   * Ensures the runtime entry so the core Session exists; null = not installed (the
+   * route's 409 cue).
+   */
+  async runUserPromptHook(
+    sessionId: string,
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<{ context?: string } | null> {
+    // The entry is resolved under the lock; the script itself runs outside it, so a slow
+    // hook (up to its timeout) never blocks the session's other operations.
+    const session = await this.withLock(sessionId, async () => {
+      this.assertOpen();
+      return (await this.ensureEntry(sessionId)).session;
+    });
+    return (await session.runUserPromptHook?.(name, prompt, extras)) ?? null;
   }
 
   /**

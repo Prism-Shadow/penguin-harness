@@ -24,6 +24,7 @@ import { hookEvent, isEventMessage } from "../omnimessage/index.js";
 import type { HookPayload, OmniMessage } from "../omnimessage/index.js";
 import type { ApproveFn } from "../interfaces/index.js";
 import type { PreToolUseHook } from "./tool-hook.js";
+import type { UserPromptHook } from "./prompt-hook.js";
 
 /** What a stop hook is told: where the Session's record is. */
 export interface StopHookInput {
@@ -75,6 +76,8 @@ export interface SessionHooks {
   stop?: StopHook[];
   /** Consulted by the engine before each tool call's approval (see tool-hook.ts). */
   preToolUse?: PreToolUseHook[];
+  /** Run by `Session.runUserPromptHook` when the host accepts a prompt for a package's flow (see prompt-hook.ts). */
+  userPrompt?: UserPromptHook[];
   /** How a `subagent` answer is honored; without it the request is recorded as unhonored. */
   spawnSubagent?: HookSubagentSpawner;
 }

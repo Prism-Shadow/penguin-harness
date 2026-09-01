@@ -8,20 +8,24 @@
  * stdin:  `{ "hook": "stop", "session_id": "…", "trace_path": "/abs/…_001.jsonl" }` for a
  *         stop hook (`trace_path` absent for a Trace-less Session); a pre_tool_use hook
  *         additionally gets `tool_name`, `tool_call_id` and `arguments` (the raw argument
- *         JSON string).
+ *         JSON string); a user_prompt hook gets `scratchpad_dir`, `prompt` and the host's
+ *         flow extras instead of `trace_path`.
  * stdout: empty = no opinion; otherwise the point's result as JSON — a StopHookResult
  *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`) or a
  *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`).
  * exit:   non-zero = failure (stderr's tail becomes the reason).
  *
- * `runHookScript` is the generic runner — the server uses it for a hook package's other
- * scripts too (the goal plugin's start script) — and `scriptStopHook` /
- * `scriptPreToolUseHook` adapt one installed command into the in-process interfaces.
+ * Hooks run in core and nowhere else — hosts trigger them through Session APIs (the goal
+ * start goes through `Session.runUserPromptHook`), never by spawning scripts themselves.
+ * `runHookScript` is the generic runner behind the adapters (`scriptStopHook` /
+ * `scriptPreToolUseHook` / `scriptUserPromptHook`), each turning one installed command into
+ * the point's in-process interface.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
 import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
+import type { UserPromptHook, UserPromptHookInput, UserPromptHookResult } from "./prompt-hook.js";
 
 /** Seconds a script may run before it is killed, when its manifest names none. */
 export const DEFAULT_HOOK_TIMEOUT_S = 60;
@@ -158,6 +162,44 @@ export function parsePreToolUseResult(value: unknown): PreToolUseHookResult | un
     result.output = output;
   }
   return result;
+}
+
+/** Narrows a script's parsed stdout to a UserPromptHookResult: a non-string context reads as nothing to add. */
+export function parseUserPromptResult(value: unknown): UserPromptHookResult | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  return typeof v.context === "string" ? { context: v.context } : {};
+}
+
+/** One installed user-prompt command as a UserPromptHook: `command` relative to `dir`, the hook package's directory. */
+export function scriptUserPromptHook(
+  name: string,
+  dir: string,
+  command: string,
+  timeoutS?: number,
+): UserPromptHook {
+  const script = path.resolve(dir, command);
+  return {
+    name,
+    async run(input: UserPromptHookInput): Promise<UserPromptHookResult | void> {
+      const answer = await runHookScript(
+        script,
+        {
+          hook: "user_prompt",
+          session_id: input.sessionId,
+          scratchpad_dir: input.scratchpadDir,
+          prompt: input.prompt,
+          ...(input.extras ?? {}),
+        },
+        {
+          cwd: dir,
+          ...(timeoutS !== undefined ? { timeoutS } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
+        },
+      );
+      return parseUserPromptResult(answer);
+    },
+  };
 }
 
 /** One installed pre-tool-use command as a PreToolUseHook: `command` relative to `dir`, the hook package's directory. */

@@ -43,7 +43,7 @@ import {
   resumeTrace,
 } from "./trace/index.js";
 import { Session } from "./session.js";
-import { scriptPreToolUseHook, scriptStopHook } from "./hooks/script-hook.js";
+import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import {
   createTempWorkspace,
@@ -1049,10 +1049,16 @@ export class Agent {
         scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout),
       ),
     );
-    if (stop.length === 0 && preToolUse.length === 0) return undefined;
+    const userPrompt = installed.flatMap((hook) =>
+      (hook.user_prompt ?? []).map((cmd) =>
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+      ),
+    );
+    if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;
     return {
       ...(stop.length > 0 ? { stop } : {}),
       ...(preToolUse.length > 0 ? { preToolUse } : {}),
+      ...(userPrompt.length > 0 ? { userPrompt } : {}),
       spawnSubagent: async (request: HookSubagentRequest, approve?: ApproveFn) => {
         const handle = await runner.spawn({
           ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),

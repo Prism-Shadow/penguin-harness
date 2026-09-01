@@ -13,7 +13,7 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 - 一次 `run` 调用的每个 Task 结束后，Session 咨询 Agent 已安装的钩子包（仅顶层 Session），把各自的 `stop` 命令作为子进程运行，stdin 只给 `{ hook, session_id, trace_path }`。token 用量、轮次、Task 的结束方式、状态文件都由脚本从 Trace 推导。
 - 脚本回答 `continue`（附下一个 Task 的 user 文本 `input`）、`stop`、`subagent` 请求（`{ prompt, agent_id? }`——Session 派生一个游离的后台子会话，继承本次运行的审批回调，记下其 Session id），或什么都不答。每个非空回答成为一条通用的 `hook` 事件消息——`hook`、`name`（钩子包名）、`decision`、`reason`、标量 `output`——推到流上并写入 Trace；注入的输入是紧随其后的那条 user 消息，带 `sender: "harness"` 标记——宿主渲染与判定来源全凭这一结构化标记，没有任何文本协议。第一个 `continue` 在同一次 `run` 内驱动下一个 Task；被掐断或 signal 已中止时，`continue` 只记录、不执行。崩溃、打印非 JSON 或超时（缺省 60 秒）的脚本只记录、按无意见处理。
-- 第三个钩子点 **`user_prompt`**：扩展提交的 Prompt——宿主在接受它所属流程的用户 Prompt 时运行，回答的 `context` 带 harness 标记紧随用户消息发出。目标模式的启动即内置用途——goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令。
+- 第三个钩子点 **`user_prompt`**：扩展提交的 Prompt。钩子只在 core 里运行：宿主在接受它所属流程的用户 Prompt 时经 `Session.runUserPromptHook` 触发，回答的 `context` 带 harness 标记紧随用户消息发出。目标模式的启动即内置用途——goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令。
 - 第二个钩子点 **`pre_tool_use`**：每个工具调用审批之前运行（`hooks.json` 的 `pre_tool_use` 命令；stdin 额外带 `tool_name`、`tool_call_id` 与原始 `arguments` JSON）——`deny` 不咨询审批直接拒绝，模型在工具输出里读到钩子名与理由；`allow` 免审放行，但命令策略仍压过它（钩子包在 Agent 可写的状态里）；没有内置插件使用此点，留给自定义守卫。
 - SDK 嵌入方仍可注册进程内 hook（`SessionConfig.hooks.stop` / `.preToolUse`）；子进程运行器（`runHookScript`）导出给要调用钩子包其它脚本的宿主。
 - Trace 页渲染 `hook` 事件；CLI 为每个非 goal 的 hook 回答打印一行暗色文字。

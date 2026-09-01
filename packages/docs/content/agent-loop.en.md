@@ -139,7 +139,7 @@ No built-in plugin ships one; the point is there for custom guards — a project
 
 ### User-prompt hooks
 
-The third point, `user_prompt`, expands a submitted prompt: the host runs it when it accepts a user prompt for the flow the package owns, and the answer's `context` is sent right behind the user's own message as a harness-stamped message (rendered as a compact collapsed card). [Goal mode's start](/goal-mode) is the one shipped use: the goal plugin's `start.mjs` is its `user_prompt` command — the server runs it for `goal: { budget }`, it writes `GOAL.json` and answers with round 1's protocol message.
+The third point, `user_prompt`, expands a submitted prompt. Hooks run in core and nowhere else: the host triggers this one through `Session.runUserPromptHook(name, prompt, extras)` when it accepts a user prompt for the flow the package owns — the Session supplies its own id and scratchpad directory — and the answer's `context` is sent right behind the user's own message as a harness-stamped message (rendered as a compact collapsed card). [Goal mode's start](/goal-mode) is the one shipped use: the goal plugin's `start.mjs` is its `user_prompt` command — the server asks the Session to run it for `goal: { budget }`, it writes `GOAL.json` and answers with round 1's protocol message.
 
 ```text
 stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …host extras (goal: "budget") }

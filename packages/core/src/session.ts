@@ -38,6 +38,7 @@ import { runStopHooks } from "./hooks/stop-hook.js";
 import type { HookSubagentSpawner, SessionHooks, StopHook } from "./hooks/stop-hook.js";
 import { runPreToolUseHooks } from "./hooks/tool-hook.js";
 import type { PreToolUseHook } from "./hooks/tool-hook.js";
+import type { UserPromptHook, UserPromptHookResult } from "./hooks/prompt-hook.js";
 import type {
   ApproveFn,
   RunCutoff,
@@ -268,6 +269,7 @@ export class Session {
   /** Stop hooks every `run` of this Session consults, and the spawner for their subagent answers (see SessionConfig.hooks). */
   private readonly stopHooks: readonly StopHook[];
   private readonly preToolUseHooks: readonly PreToolUseHook[];
+  private readonly userPromptHooks: readonly UserPromptHook[];
   private readonly spawnSubagent?: HookSubagentSpawner;
   private readonly commandPolicy?: CommandPolicyConfig;
   private metaWritten = false;
@@ -315,6 +317,7 @@ export class Session {
     this.modelHasVision = config.modelHasVision;
     this.stopHooks = config.hooks?.stop ?? [];
     this.preToolUseHooks = config.hooks?.preToolUse ?? [];
+    this.userPromptHooks = config.hooks?.userPrompt ?? [];
     if (config.hooks?.spawnSubagent) this.spawnSubagent = config.hooks.spawnSubagent;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
@@ -376,6 +379,31 @@ export class Session {
    * max_turns cap) or an aborted signal ends the call; the return value is the last Task's
    * cutoff, exactly as for a single Task.
    */
+  /**
+   * Runs the named package's `user_prompt` hook — hooks run in core and nowhere else; the
+   * host calls this when it accepts a user prompt for the flow the package owns (the server
+   * does for a goal start, with `extras: { budget }`). The Session supplies its own id and
+   * scratchpad directory; the answer's `context` is the text the host sends right behind
+   * the user's message, stamped `sender: "harness"`. Returns null when the package is not
+   * installed or names no `user_prompt` command (the host's cue to refuse the flow); an
+   * empty answer is `{}`. No `hook` event is recorded — the expansion message is the record.
+   */
+  async runUserPromptHook(
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<UserPromptHookResult | null> {
+    const hook = this.userPromptHooks.find((h) => h.name === name);
+    if (!hook) return null;
+    const result = await hook.run({
+      sessionId: this.sessionId,
+      scratchpadDir: this.imagesDir,
+      prompt,
+      ...(extras !== undefined ? { extras } : {}),
+    });
+    return result ?? {};
+  }
+
   async *run(
     newMessages: OmniMessage[],
     opts?: SessionRunOptions,

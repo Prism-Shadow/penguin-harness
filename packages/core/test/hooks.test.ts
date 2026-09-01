@@ -13,6 +13,7 @@ import {
   runStopHooks,
   scriptPreToolUseHook,
   scriptStopHook,
+  scriptUserPromptHook,
   tokenUsage,
   toolCall,
   toolCallOutput,
@@ -234,6 +235,61 @@ describe("script pre-tool-use hooks", () => {
   it("parsePreToolUseResult drops unknown decisions", () => {
     expect(parsePreToolUseResult({ decision: "continue", reason: "r" })).toEqual({ reason: "r" });
     expect(parsePreToolUseResult("nope")).toBeUndefined();
+  });
+});
+
+describe("Session user-prompt hook", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-prompt-hook-"));
+  });
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs the named package's hook with the Session's own id and scratchpad, null when absent", async () => {
+    const script = path.join(dir, "expand.mjs");
+    await fs.writeFile(
+      script,
+      [
+        'import fs from "node:fs";',
+        'const input = JSON.parse(fs.readFileSync(0, "utf8"));',
+        "process.stdout.write(JSON.stringify({",
+        "  context: `${input.hook}/${input.session_id}/${input.prompt}/${input.budget} @ ${input.scratchpad_dir}`,",
+        "}));",
+      ].join("\n"),
+    );
+    const meta: SessionMetaPayload = {
+      session_id: "session-1",
+      provider: "custom",
+      model_id: "m1",
+      model_context_window: 1000,
+      system_prompt: "sp",
+      agent_state: dir,
+      workspace: dir,
+    };
+    const scratchpad = path.join(dir, "scratchpad", "session-1");
+    const session = new Session({
+      meta,
+      bootstrap: async () => {
+        throw new Error("not used");
+      },
+      mcpServers: [],
+      environment: {
+        listTools: async () => [],
+        // eslint-disable-next-line require-yield
+        executeTool: async function* () {
+          throw new Error("not used");
+        },
+        toolPermission: () => undefined,
+      },
+      imagesDir: scratchpad,
+      modelHasVision: true,
+      hooks: { userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs")] },
+    });
+    const result = await session.runUserPromptHook("goal", "ship it", { budget: 500 });
+    expect(result?.context).toBe(`user_prompt/session-1/ship it/500 @ ${scratchpad}`);
+    expect(await session.runUserPromptHook("not-installed", "x")).toBeNull();
   });
 });
 
