@@ -37,6 +37,16 @@ export interface PackageManifest {
   files: Array<Pick<PackageFile, "path" | "file" | "encoding">>;
 }
 
+/** How this server can publish: through the machine's `gh` CLI, a stored token, or not at all. */
+export type PublishMethod = "gh" | "token" | null;
+
+/** The gist an Agent was published to, remembered next to the Agent itself. */
+export interface PublishedGist {
+  gistId: string;
+  url: string;
+  publishedAt: string;
+}
+
 export interface AgentPackage {
   manifest: PackageManifest;
   files: PackageFile[];
@@ -82,6 +92,11 @@ export abstract class AgentPackages extends Interface<{
     agentId: string,
     kind?: string,
   ): Promise<{ agentId: string }>;
-  /** Whether a GitHub token is configured (publishing needs one; reading a public gist does not). */
-  canPublish(): boolean;
+  /**
+   * How publishing would authenticate: `gh` when the machine's CLI is logged in, `token`
+   * when one is stored, null when neither — reading a public gist needs neither.
+   */
+  publishMethod(): Promise<PublishMethod>;
+  /** The gist this Agent was published to before, so a republish updates it. */
+  publishedGist(projectId: string, agentId: string): Promise<PublishedGist | null>;
 }>() {}
