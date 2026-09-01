@@ -3600,6 +3600,8 @@ export interface AgentPackagePublishResponse {
   url: string;
   files: number;
   bytes: number;
+  /** The gist already held exactly this: nothing was written, and no API call was spent. */
+  unchanged: boolean;
 }
 
 /** How an Agent package source is read (see the server's packages/sources.ts). */
