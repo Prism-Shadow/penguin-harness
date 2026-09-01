@@ -1137,6 +1137,20 @@ describe("config helpers", () => {
     expect("max_tokens" in uncapped).toBe(false);
   });
 
+  it("defaults the request idle budget to 300s (a silent reasoning phase fits inside it)", () => {
+    // The budget is the wait for the NEXT upstream event, and a model that keeps its
+    // reasoning off the wire spends its whole thinking phase inside the first-event gap.
+    const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
+    expect((model as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(300000);
+    // An explicit value still wins, and <=0 still disables the timer.
+    const explicit = new GenerativeModel({
+      modelId: "claude-sonnet-4-6",
+      tools: [],
+      requestTimeoutMs: 5000,
+    });
+    expect((explicit as unknown as { requestTimeoutMs: number }).requestTimeoutMs).toBe(5000);
+  });
+
   it("omits tools when empty and never sets tool_choice (strict endpoints reject both)", () => {
     // Empty tool list (connectivity probe, bare/meta LLM, vision describer): the `tools` key
     // must be absent, not `[]` — AgentHub forwards any defined array verbatim, and strict
@@ -1160,6 +1174,17 @@ describe("config helpers", () => {
     expect("fast_mode" in off).toBe(false);
     const unset = buildUniConfig({ modelId: "m", tools: [] });
     expect("fast_mode" in unset).toBe(false);
+  });
+
+  it("always asks for thought summaries (they keep a reasoning phase on the wire)", () => {
+    // Unconditional, unlike fast_mode: no client rejects the flag — AgentHub maps it where the
+    // provider has one and drops it where it doesn't. Beyond showing the user the reasoning,
+    // it keeps events arriving while the model thinks, which is what the request timeout (an
+    // idle budget between upstream events) actually measures.
+    expect(buildUniConfig({ modelId: "m", tools: [] }).thinking_summary).toBe(true);
+    expect(
+      buildUniConfig({ modelId: "m", tools: [], thinkingLevel: "none" }).thinking_summary,
+    ).toBe(true);
   });
 });
 

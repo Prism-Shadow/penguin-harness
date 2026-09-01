@@ -271,6 +271,11 @@ jobs:
 
           "EVSIGN_CLIENT=$client" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # The same check the local pack scripts run: electron-builder skips an absent
+      # `from:` source in silence, and a tree without the web build is a 404 app.
+      - name: Preflight the packed tree's inputs
+        run: node packages/desktop/scripts/preflight.mjs
+
       - name: Build packages
         env:
           EVSIGN_REQUIRE: ${{ runner.os == 'Windows' && inputs.require_windows_signing && 'true' || 'false' }}

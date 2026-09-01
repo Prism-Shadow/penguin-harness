@@ -213,6 +213,14 @@ export interface ContextEngineDeps {
    */
   maxReconnects?: number;
   /**
+   * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
+   * or not it received anything. Defaults to 20. It only binds once received content has
+   * reset the consecutive ladder (`maxReconnects`) at least once, and exists solely to keep
+   * that reset from turning an endpoint that streams a few tokens and drops into an endless
+   * retry loop.
+   */
+  maxTurnAttempts?: number;
+  /**
    * Exponential backoff base (ms): the wait before reconnect retry N is
    * `base × 2^(N−1)`, capped at `reconnectBackoffMaxMs` (see reconnectDelayMs).
    * Defaults to 2000.
@@ -354,8 +362,29 @@ interface TurnResult {
   toolCalls: OmniMessage<ToolCallPayload>[];
   /** Complete thinking/text segments produced by the model this turn (including partial segments finalized on interruption), for carry-over flattening. */
   assistantSegments: OmniMessage[];
+  /**
+   * Whether this attempt received anything at all from the LLM stream. It is what the
+   * reconnect loop resets its ladder on: one message is proof the connection was established
+   * and the model was producing. Deliberately wider than the collected arrays — a drop
+   * mid-tool-call synthesizes a tool_call that is never dispatched and so never reaches
+   * `toolCalls`, yet those bytes did arrive.
+   */
+  receivedContent: boolean;
   /** Terminal state of this turn's LLM request (completed / failed / aborted / timeout / malformed). */
   outcome: LLMOutcome;
+}
+
+/**
+ * A turn's retry bookkeeping, threaded into `runTurn` so its `request_end` can announce the
+ * next attempt's planned backoff. `attempts` counts every attempt the turn has made so far
+ * (the ordinal hosts render, and what the absolute ceiling measures); `consecutive` counts
+ * only the tail of them that came back having received nothing — the backoff rung, and what
+ * `maxReconnects` measures. The two diverge as soon as an attempt receives content: see the
+ * reconnect loop in runToCompletion.
+ */
+interface TurnRetryState {
+  attempts: number;
+  consecutive: number;
 }
 
 /**
@@ -408,6 +437,12 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
  * set explicitly (issue #170 — a compaction request is an ordinary LLM request and gets the
  * turn loop's patience; compaction additionally routes a committed-but-unusable summary
  * through the same budget, see summarizeContext).
+ *
+ * One rule is the turn loop's alone: received content resets its ladder. Compaction cannot
+ * borrow it precisely because of that extra class — its budget also covers responses that
+ * were committed but unusable (an empty summary, or tool calls), where "produced content" is
+ * not evidence of progress at all, and resetting on it would turn issue #83's guard into a
+ * loop that re-asks a model already answering wrong, at maximum context, forever.
  */
 const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
 
@@ -431,6 +466,7 @@ export class ContextEngine {
   private maxTurns: number;
   private compaction: CompactionSettings | undefined;
   private readonly maxReconnects: number;
+  private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
   private readonly reconnectBackoffMaxMs: number;
   private readonly compactionMaxReconnects: number;
@@ -523,6 +559,7 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
+    this.maxTurnAttempts = deps.maxTurnAttempts ?? 20;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
@@ -756,7 +793,11 @@ export class ContextEngine {
       // GenerativeModel precisely so it never reaches this loop.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
-      let reconnects = 0;
+      // Two counters, because the ladder and the ceiling answer different questions (see
+      // TurnRetryState): `attempts` is every attempt this turn has made, `consecutive` only
+      // the tail that received nothing. Both live and die with the turn.
+      let attempts = 0;
+      let consecutive = 0;
       let turn: TurnResult;
 
       for (;;) {
@@ -765,7 +806,8 @@ export class ContextEngine {
         // it decides retry/resend purely from `outcome`. The retry count so far is threaded
         // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
         // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, reconnects);
+        turn = yield* this.runTurn(attemptInput, approve, signal, { attempts, consecutive });
+        attempts += 1;
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -805,11 +847,20 @@ export class ContextEngine {
         // request_end(retryable) followed by the next request_begin.
         failedTurns.push(turn);
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
+        // Received content resets the ladder. An attempt the stream sent anything to had a
+        // working connection and a model writing into it, so its drop is a fresh transport
+        // fault — not the n-th piece of evidence that this endpoint is unreachable. A socket
+        // that dies twice in one turn shouldn't add up to a reason to stop while
+        // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
+        // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
+        // that streams a few tokens and drops, every single time, would otherwise be retried
+        // forever.
+        if (turn.receivedContent) consecutive = 0;
         // Exhausted: give up without an abort event — abort marks a user interruption,
         // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
         // since no retry is planned) is the terminal record frontends and observability
         // read; `attempt` and `error_message` ride on it.
-        if (reconnects >= this.maxReconnects) {
+        if (consecutive >= this.maxReconnects || attempts >= this.maxTurnAttempts) {
           this.pendingCarryOver = attemptInput;
           return {
             kind: "llm_failure",
@@ -819,8 +870,8 @@ export class ContextEngine {
               : {}),
           };
         }
-        reconnects += 1;
-        if (!(await this.backoff(reconnects, signal))) {
+        consecutive += 1;
+        if (!(await this.backoff(consecutive, signal))) {
           this.pendingCarryOver = attemptInput;
           yield* this.emitAbort("backoff_interrupted");
           return { kind: "abort", errorCode: "backoff_interrupted" };
@@ -1102,8 +1153,8 @@ export class ContextEngine {
     input: OmniMessage[],
     approve: ApproveFn,
     signal?: AbortSignal,
-    /** Retries already performed for this turn (from the caller's reconnect loop): lets request_end announce the NEXT attempt's planned backoff. */
-    reconnectsSoFar = 0,
+    /** This turn's retry bookkeeping from the caller's reconnect loop: lets request_end announce the NEXT attempt's planned backoff (and announce none once a budget is spent). */
+    retry: TurnRetryState = { attempts: 0, consecutive: 0 },
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -1117,6 +1168,8 @@ export class ContextEngine {
     const assistantSegments: OmniMessage[] = [];
     // This turn's LLM terminal state: taken from streamGenerate's generator return value.
     let outcome: LLMOutcome = { status: "completed" };
+    // Set by the first message the stream yields (see TurnResult.receivedContent).
+    let receivedContent = false;
 
     // Driver task: consumes the LLM stream + approves one at a time + dispatches tool
     // execution. It is itself a producer.
@@ -1146,19 +1199,28 @@ export class ContextEngine {
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
-            const retryInMs = this.plannedRetryDelayMs(
-              outcome,
-              reconnectsSoFar,
-              this.maxReconnects,
-              RETRY_STATUSES,
-            );
+            // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
+            // attempt that received content restarts the ladder at its first rung, and either
+            // budget running out means no retry is planned at all.
+            const retryInMs =
+              retry.attempts + 1 >= this.maxTurnAttempts
+                ? undefined
+                : this.plannedRetryDelayMs(
+                    outcome,
+                    receivedContent ? 0 : retry.consecutive,
+                    this.maxReconnects,
+                    RETRY_STATUSES,
+                  );
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
-              // The authoritative attempt ordinal (1-based, within this retry run); a clean
-              // first-try completion stays unstamped so the common case adds no noise.
-              ...(outcome.status !== "completed" || reconnectsSoFar > 0
-                ? { attempt: reconnectsSoFar + 1 }
+              // The authoritative attempt ordinal (1-based, within this retry run): the
+              // turn's TOTAL attempt count, which never rewinds when received content resets
+              // the backoff ladder — hosts render "attempt N", and a counter that went
+              // backwards mid-turn would read as a lost attempt. A clean first-try completion
+              // stays unstamped so the common case adds no noise.
+              ...(outcome.status !== "completed" || retry.attempts > 0
+                ? { attempt: retry.attempts + 1 }
                 : {}),
               ...(retryInMs !== undefined ? { retryInMs } : {}),
             });
@@ -1167,6 +1229,7 @@ export class ContextEngine {
             break;
           }
           const msg = res.value;
+          receivedContent = true;
           queue.push(msg);
           await this.write(msg);
           // token_usage means "this Request completed normally": record the context usage /
@@ -1274,7 +1337,7 @@ export class ContextEngine {
       const out = byId.get(id);
       if (out) orderedOutputs.push(out);
     }
-    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, outcome };
+    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, receivedContent, outcome };
   }
 
   /**

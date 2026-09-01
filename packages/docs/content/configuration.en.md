@@ -147,7 +147,7 @@ Manage it from the Security policy tab of Project Settings in the Web App (owner
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the level each model context opens at unless the Session pins one — fixed for the context, so a change lands at the next compaction |
-| `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
+| `model.timeoutMs` | `300000` | **Idle** budget for a Request (milliseconds): the longest wait for the next upstream event, reset by every event — not a cap on the request's total duration. It bounds the connect + first-event wait and the gaps between events; a model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, which is what the default leaves room for |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction; the effective threshold is the smaller of this and the model's `context_window` − 2048, so a small-window model compacts inside its window while a window above 258048 fires at this number (an entry with no `context_window` assumes a 128000 window) |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -183,7 +183,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 120000
+  timeoutMs: 300000
 
 compaction:
   max_context_length: 256000

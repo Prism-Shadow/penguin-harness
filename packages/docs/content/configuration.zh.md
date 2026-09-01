@@ -147,7 +147,7 @@ enabled = false
 | `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；每个模型上下文开启时采用的档位（Session 钉住的档位优先），上下文内固定，修改在下一次压缩后生效 |
-| `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
+| `model.timeoutMs` | `300000` | 单次 Request 的**空闲**超时（毫秒）：等待上游下一个事件的上限，收到任一事件即归零重计，不是整次请求的总时长上限。它约束的是连接建立与首个事件的等待、以及流式过程中的事件间隔——思考不外露的模型整段推理都落在「首个事件」这一段里，缺省值为此留足余量 |
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -183,7 +183,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 120000
+  timeoutMs: 300000
 
 compaction:
   max_context_length: 256000
