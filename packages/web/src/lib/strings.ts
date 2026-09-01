@@ -1284,6 +1284,9 @@ export const zh = {
     restartPending: "有已安装但未加载的插件：重启服务器后生效。",
     uninstall: "移除",
     install: "安装",
+    installing: "安装中…",
+    /** The deployment-level install: the package is on the machine, the process still runs the old set. */
+    deploymentInstalledToast: (name: string) => `已安装 ${name}；重启服务器后加载`,
     addLabel: "添加插件",
     fileHint: (file: string) => `写入数据根目录下的 ${file}`,
     pageTitle: "插件库",
