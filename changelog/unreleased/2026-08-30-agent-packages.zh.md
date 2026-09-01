@@ -16,7 +16,7 @@ gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SK
 
 ## 路由
 
-`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布。**一个 Agent 只对应一个 gist**：它发布到的 gist 记录在自己身边（Agent 目录下的 `.penguin-publish.json`，是 dotfile，因此永远不会被打包），重新发布时调用方什么都不用传就会更新那个 gist。`gistId` 可覆盖目标；只有首次发布才会新建。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
+`GET /api/projects/:p/agents/:a/package` 展示将要发布的内容（清单、大小、服务器是否能发布）。`POST …/package/publish { gistId?, public? }`（owner）发布。**一个 Agent 只对应一个 gist**：它发布到的 gist 记录在自己身边（Agent 目录下的 `.penguin-publish.json`，是 dotfile，因此永远不会被打包），重新发布时调用方什么都不用传就会更新那个 gist。`gistId` 可覆盖目标；只有首次发布才会新建。若记住的 gist 已在 GitHub 上被删除，下一次发布会新建一个，而不是失败。`POST /api/agent-packages/preview { gist }` 读取并校验 gist、不写任何东西；`POST /api/agent-packages/install { gist, projectId, agentId }`（owner）安装。gist 可用链接或裸 id 指定。
 
 ## 其他来源
 
