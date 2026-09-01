@@ -45,6 +45,8 @@ export interface PublishedGist {
   gistId: string;
   url: string;
   publishedAt: string;
+  /** Hash of what was published; a republish of the same thing skips the API entirely. */
+  digest?: string;
 }
 
 export interface AgentPackage {
@@ -77,7 +79,14 @@ export abstract class AgentPackages extends Interface<{
     projectId: string,
     agentId: string,
     options: { gistId?: string; public: boolean },
-  ): Promise<{ gistId: string; url: string; files: number; bytes: number }>;
+  ): Promise<{
+    gistId: string;
+    url: string;
+    files: number;
+    bytes: number;
+    /** True when the gist already held exactly this, so nothing was written. */
+    unchanged: boolean;
+  }>;
   /**
    * Reads a source and validates it as a package, without writing anything. A source is a
    * gist link or id, `npm:<name>[@version]`, a GitHub repository or release (URL or
