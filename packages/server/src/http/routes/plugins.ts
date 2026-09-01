@@ -1,13 +1,20 @@
 /**
- * Plugin library & Agent-installed hook packages:
- *   GET    /api/plugins                                   # the library by category (any logged-in user)
- *   GET    /api/plugins/:plugin/files                     # the files a plugin ships, for the detail view's browser (any logged-in user)
+ * Plugins: the library this build ships, the registry a deployment lists, and what an
+ * Agent has installed.
+ *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
+ *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
+ *   GET    /api/plugins/registry                          # the deployment's plugin index (plugins.json under the data root)
+ *   GET    /api/plugins/registry/readme?name=…            # one indexed entry's long-form readme
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  *   GET    /api/projects/:p/agents/:a/hooks               # installed hook packages (any member)
  *   DELETE /api/projects/:p/agents/:a/hooks/:name         # uninstall one (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts); reinstalling overwrites with
  * library content (i.e. an update). Installed skills keep their own routes (skills.ts).
+ *
+ * Library and registry are two views of one kind of thing — a package of skills and/or
+ * hooks. The library is what this build carries; the registry is what the deployment can
+ * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -34,6 +41,8 @@ import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { PluginIndexResponse, PluginReadmeResponse } from "../../api/types.js";
+import { builtinPluginRegistry } from "../../plugin/registry.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -190,5 +199,54 @@ export class PluginRoutes {
     this.libraryRoutes = pluginLibraryRoutes();
     this.pluginRoutes = agentPluginsRoutes(deps);
     this.hookRoutes = agentHooksRoutes(deps);
+  }
+}
+
+export function pluginRegistryRoutes(): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const registry = builtinPluginRegistry();
+  app.get("/", async (c) => {
+    const body: PluginIndexResponse = { plugins: await registry.index() };
+    return c.json(body);
+  });
+  app.get("/readme", async (c) => {
+    const name = c.req.query("name");
+    if (name === undefined || name === "") {
+      return c.json({ error: { code: "bad_request", message: "name is required" } }, 400);
+    }
+    // Only entries this deployment actually lists: the readme map is keyed by specifier,
+    // and answering for an unlisted name would make the endpoint a probe of what exists.
+    const listed = (await registry.index()).some((e) => e.name === name);
+    if (!listed) {
+      return c.json({ error: { code: "not_found", message: "no such plugin" } }, 404);
+    }
+    const body: PluginReadmeResponse = { name, readme: await registry.readme(name) };
+    return c.json(body);
+  });
+  return app;
+}
+
+/**
+ * The registry the Plugins page reads beside the built-in library: deployment-global, and
+ * nested under /api/plugins/registry so both views answer under one prefix. The specifier
+ * is a query parameter on `readme`, not a path segment, because it is scoped
+ * (`@scope/name`) and would otherwise have to survive two rounds of slash encoding.
+ */
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "PluginRegistryRoutes.routes",
+        prefix: "/api/plugins/registry",
+        auth: "user",
+        order: 69,
+      },
+    ],
+  },
+})
+export class PluginRegistryRoutes {
+  @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = pluginRegistryRoutes();
   }
 }
