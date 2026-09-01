@@ -64,18 +64,55 @@ export async function readPluginList(root: string): Promise<string[]> {
   return list as string[];
 }
 
-/** Resolved against the installation rather than the bundle's location. */
-async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
+/** Where a specifier resolves from, or null when it does not resolve at all. */
+function resolvePlugin(specifier: string): string | null {
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
     try {
-      const resolved = createRequire(entry).resolve(specifier);
-      return { module: await import(pathToFileURL(resolved).href), file: resolved };
+      return createRequire(entry).resolve(specifier);
     } catch {
       // Fall through: a dev checkout resolves the specifier directly.
     }
   }
+  return null;
+}
+
+/** Resolved against the installation rather than the bundle's location. */
+async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
+  const resolved = resolvePlugin(specifier);
+  if (resolved !== null)
+    return { module: await import(pathToFileURL(resolved).href), file: resolved };
   return { module: await import(specifier), file: null };
+}
+
+/**
+ * What a listed specifier DECLARES, read from its package.json alone — the package is never
+ * imported. Lets a surface say which plugin a loaded module came from, and why a listed one is
+ * not there, without the runtime having to publish its load report.
+ */
+export async function readPluginDeclaration(
+  specifier: string,
+): Promise<{ modules: string[]; replaces: string[] } | { error: string }> {
+  const resolved = resolvePlugin(specifier);
+  if (resolved === null) return { error: `'${specifier}' does not resolve from this installation` };
+  let read: Awaited<ReturnType<typeof readPackageManifests>>;
+  try {
+    read = await readPackageManifests(resolved);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  if (read === null) return { error: "not a plugin package: no package.json#penguin above it" };
+  return {
+    modules: read.manifests.map((m) => m.name),
+    replaces: read.replaces.map((m) => m.name),
+  };
+}
+
+/** Rewrites the list of plugins this deployment installs; the loader reads it at the next boot. */
+export async function writePluginList(root: string, plugins: readonly string[]): Promise<void> {
+  const file = path.join(root, PLUGINS_FILE);
+  await fs.writeFile(`${file}.tmp`, `${JSON.stringify({ plugins }, null, 2)}\n`);
+  await fs.rename(`${file}.tmp`, file);
 }
 
 /**
