@@ -3,7 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** fix
 - **Scope:** `core`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#571](https://github.com/Prism-Shadow/penguin-harness/pull/571)
 
 [English](2026-09-01-llm-idle-timeout-and-retry-ladder.md)
 
