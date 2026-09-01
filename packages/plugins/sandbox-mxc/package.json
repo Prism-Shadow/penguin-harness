@@ -1,0 +1,39 @@
+{
+  "name": "@prismshadow/penguin-plugin-sandbox-mxc",
+  "version": "0.2.2",
+  "private": true,
+  "type": "module",
+  "description": "Windows sandbox backend for PenguinHarness over Microsoft MXC (Microsoft eXecution Containers): filesystem confinement, network isolation and path masking via the processcontainer backend.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "peerDependencies": {
+    "@microsoft/mxc-sdk": ">=0.7.0 <1"
+  },
+  "peerDependenciesMeta": {
+    "@microsoft/mxc-sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@microsoft/mxc-sdk": "0.7.0",
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}

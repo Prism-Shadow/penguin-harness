@@ -9,14 +9,14 @@ import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
-import type { PenguinContext } from "@prismshadow/penguin-core/extension";
-import { ExtensionHost, EXTENSIONS_RESOURCE_ID } from "../src/extension/host.js";
+import type { PenguinContext } from "@prismshadow/penguin-core/plugin";
+import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import type {
   SandboxDimension,
   SandboxPolicy,
   SandboxProvider,
-} from "@prismshadow/penguin-core/extension";
+} from "@prismshadow/penguin-core/plugin";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
 const OPTS = { cwd: "/work/project/sub", workspaceDir: "/work/project" };
@@ -160,8 +160,8 @@ describe("sandbox service — capability routing across backends", () => {
 
 describe("sandbox settings ride the parked context across a swap", () => {
   /**
-   * Boots the packaged platform over a fresh registry carrying one observer extension, and
-   * returns what a extension sees at "create" — the surface an actual consumer has. The
+   * Boots the packaged platform over a fresh registry carrying one observer plugin, and
+   * returns what a plugin sees at "create" — the surface an actual consumer has. The
    * confiner itself is same-generation wiring into buildAppDeps (no caps published here,
    * so no business surface boots); enforcement is covered by the service tests above.
    */
@@ -171,10 +171,10 @@ describe("sandbox settings ride the parked context across a swap", () => {
     // terminals-only boot legal (see capabilities.ts's RuntimeClaim). The sandbox floor is
     // business-independent, so this is all these tests need behind the platform.
     resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     let seen: PenguinContext | null = null;
     await host.use({ activate: (extCtx) => extCtx.on("create", (ctx) => (seen = ctx)) });
-    resources.register(EXTENSIONS_RESOURCE_ID, host);
+    resources.register(PLUGINS_RESOURCE_ID, host);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const inst = await boot(
       packagedPlatform.impl,
