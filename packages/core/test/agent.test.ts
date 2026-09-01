@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
+import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
 import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
 import {
@@ -861,7 +861,6 @@ describe("Agent.createSession skill metadata injection", () => {
 });
 
 describe("Agent model contexts are assembled from the Agent State on disk, at every context open", () => {
-  const ZERO: TokenCounts = { cache_read: 0, cache_write: 0, output: 0, total: 0 };
   const promptOf = (session: { metaMessage: OmniMessage }): string =>
     (session.metaMessage.payload as { system_prompt: string }).system_prompt;
   const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
@@ -873,10 +872,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       session as {
         engine: {
           deps: {
-            openNextContext: (
-              tokens: TokenCounts,
-              opts: OpenContextOptions,
-            ) => Promise<OpenedContext>;
+            openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
           };
         };
       }
@@ -886,7 +882,7 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     session: unknown,
   ): Promise<{ opened: OpenedContext; records: OmniMessage[] }> {
     const records: OmniMessage[] = [];
-    const opened = await openerOf(session)(ZERO, { emit: (msg) => records.push(msg) });
+    const opened = await openerOf(session)({ emit: (msg) => records.push(msg) });
     return { opened, records };
   }
   /** The config the most recently constructed GenerativeModel was given. */

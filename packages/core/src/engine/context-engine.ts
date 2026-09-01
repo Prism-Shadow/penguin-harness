@@ -121,7 +121,7 @@ export interface OpenedContext {
   compaction?: CompactionSettings;
 }
 
-/** What {@link ContextEngineDeps.openNextContext} is called with besides the token counts. */
+/** What {@link ContextEngineDeps.openNextContext} is called with. */
 export interface OpenContextOptions {
   /**
    * Publishes a record the opener produces while opening — the `mcp_connect_begin` /
@@ -231,18 +231,15 @@ export interface ContextEngineDeps {
    */
   compactionMaxReconnects?: number;
   /**
-   * Opens a fresh model context after compaction: the new LLM object, carrying forward the
-   * Session cumulative token counts passed in (token_usage.session stays continuous across
-   * compaction), plus whatever the opener re-read for the new context — its session_meta and
-   * its engine settings (see {@link OpenedContext}) — and, through `opts.emit`, the records it
-   * produced while opening (see {@link OpenContextOptions}). May rebuild the toolset and
-   * connect MCP servers, hence possibly async and possibly slow; the engine yields the emitted
-   * records live meanwhile. Context compaction is unavailable if this is not provided.
+   * Opens a fresh model context after compaction: the new LLM object, plus whatever the
+   * opener re-read for the new context — its session_meta and its engine settings (see
+   * {@link OpenedContext}) — and, through `opts.emit`, the records it produced while opening
+   * (see {@link OpenContextOptions}). May rebuild the toolset and connect MCP servers, hence
+   * possibly async and possibly slow; the engine yields the emitted records live meanwhile.
+   * Session token continuity is the engine's own bookkeeping — it seeds the returned LLM's
+   * `sessionTokens` itself. Context compaction is unavailable if this is not provided.
    */
-  openNextContext?: (
-    sessionTokens: TokenCounts,
-    opts: OpenContextOptions,
-  ) => OpenedContext | Promise<OpenedContext>;
+  openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
   /**
@@ -541,6 +538,9 @@ export class ContextEngine {
       this.sessionTurns = init.sessionTurns ?? 0;
       this.fromCompaction = init.fromCompaction ?? false;
       this.lastSessionTokens = init.sessionTokens ?? emptyTokenCounts();
+      // The same continuity seam as a rotation swap-in: on resume the initial LLM starts
+      // from the replay's cumulative counts (the composition layer no longer staples them).
+      if (init.sessionTokens) this.llm.sessionTokens = init.sessionTokens;
       this.lastRequestTotal = init.lastRequestTotal ?? 0;
       this.pendingTraceRotation = init.pendingTraceRotation ?? false;
     }
@@ -1763,7 +1763,7 @@ export class ContextEngine {
 
   /**
    * Opens a new model context after successful compaction: swaps in the LLM object
-   * `openNextContext` returns (carrying forward the Session cumulative token counts), adopts
+   * `openNextContext` returns (seeding it with the Session cumulative token counts), adopts
    * whatever the opened context brings — its session_meta and toolset records for the rotated
    * Trace file's head, its engine settings — and resets the Session turn count and context
    * usage counter. The records the opener emits while opening (its MCP connect pair, its
@@ -1779,9 +1779,7 @@ export class ContextEngine {
     queue.addProducer();
     const opening = (async (): Promise<OpenedContext> => {
       try {
-        return await this.deps.openNextContext!(this.lastSessionTokens, {
-          emit: (msg) => queue.push(msg),
-        });
+        return await this.deps.openNextContext!({ emit: (msg) => queue.push(msg) });
       } finally {
         queue.removeProducer();
       }
@@ -1801,6 +1799,10 @@ export class ContextEngine {
     // pending, so the next trigger compacts again from a consistent state.
     const opened = await opening;
     this.pendingTraceRotation = true;
+    // Session-cumulative continuity is engine bookkeeping, not the opener's: seed the fresh
+    // LLM with the counts accumulated so far (compaction request usage included), so
+    // token_usage.session never resets across the rotation.
+    opened.llm.sessionTokens = this.lastSessionTokens;
     this.llm = opened.llm;
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;

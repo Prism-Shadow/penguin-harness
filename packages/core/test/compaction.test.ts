@@ -202,7 +202,6 @@ describe("context compaction", () => {
       [{ messages: [assistantText("answer two"), usage(20, 330)] }],
       "llm2",
     );
-    let factoryTokens: TokenCounts | null = null;
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact" });
     const engine = new ContextEngine({
       llm: llm1,
@@ -210,10 +209,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      openNextContext: (tokens) => {
-        factoryTokens = tokens;
-        return { llm: llm2 };
-      },
+      openNextContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -252,8 +248,9 @@ describe("context compaction", () => {
       .map(textOf);
     expect(textBetween).toEqual(["[summary]the distilled summary[/summary]"]);
 
-    // The new LLM instance carries over the session's cumulative tokens (including compaction request usage).
-    expect(factoryTokens).toMatchObject({ total: 310 });
+    // The engine seeds the new LLM instance with the session's cumulative tokens itself
+    // (compaction request usage included) — the opener is not in the bookkeeping loop.
+    expect((llm2 as { sessionTokens?: TokenCounts }).sessionTokens).toMatchObject({ total: 310 });
 
     // The summary is merged with the next user prompt as the new LLM instance's first input.
     await collect(engine.run([userText("task two")], { approve: allowAll }));
@@ -383,7 +380,7 @@ describe("context compaction", () => {
       // context's toolset record takes the bootstrap path — after the input, not at a head.
       bootstrapRecords: [],
       compaction: settings(),
-      openNextContext: async (_tokens, { emit }) => {
+      openNextContext: async ({ emit }) => {
         opened += 1;
         if (opened === 2) return { llm: llm3 };
         emit(connectBegin);
@@ -1052,15 +1049,11 @@ describe("context compaction", () => {
       "llm1",
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("fresh"), usage(20, 500)] }], "llm2");
-    let factoryTokens: TokenCounts | null = null;
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      openNextContext: (tokens) => {
-        factoryTokens = tokens;
-        return { llm: llm2 };
-      },
+      openNextContext: () => ({ llm: llm2 }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -1084,8 +1077,8 @@ describe("context compaction", () => {
     expect(usageBetween.map((m) => (m.payload as TokenUsagePayload).request.total)).toEqual([
       160, 170,
     ]);
-    // Session cumulative tokens carried into the new instance include the rejected attempts' usage.
-    expect(factoryTokens).toMatchObject({ total: 480 });
+    // The engine seeds the new instance with cumulative tokens including the rejected attempts' usage.
+    expect((llm2 as { sessionTokens?: TokenCounts }).sessionTokens).toMatchObject({ total: 480 });
 
     // The new context opens with the 5th attempt's summary.
     await collect(engine.run([userText("task two")], { approve: allowAll }));

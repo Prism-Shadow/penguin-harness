@@ -82,9 +82,10 @@ approval mode: re-read from the DB per decision, effective immediately).
 ## Compatibility
 
 - SDK: `SessionConfig.createLLM` and `ContextEngineDeps.createLLM` are replaced by
-  `openNextContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>`, with
+  `openNextContext({ emit }) => OpenedContext | Promise<OpenedContext>`, with
   `OpenedContext` being `{ llm, sessionMeta?, maxTurns?, compaction? }`; records passed to
-  `emit` are yielded on the run stream and written at the head of the rotated Trace file. Code
+  `emit` are yielded on the run stream and written at the head of the rotated Trace file, and
+  the engine seeds the returned LLM's cumulative session counts itself. Code
   that constructs `Session` or `ContextEngine` directly returns `{ llm }` where it returned the
   LLM before; the `Agent.createSession` / `resumeSession` path needs no change. `Environment`
   gains `reconfigure({ toolConfig, vault })` and `pendingMcpServerNames()`.

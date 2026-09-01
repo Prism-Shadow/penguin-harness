@@ -24,12 +24,7 @@ import {
   sessionMeta,
   userText,
 } from "./omnimessage/index.js";
-import type {
-  OmniMessage,
-  SessionMetaPayload,
-  TokenCounts,
-  ToolDefinition,
-} from "./omnimessage/index.js";
+import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { MergeQueue } from "./internal/merge-queue.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
@@ -89,17 +84,15 @@ export interface SessionConfig {
   maxTurns?: number;
   /**
    * Opens a fresh model context after compaction (see ContextEngineDeps.openNextContext): the new
-   * LLM object carrying over the Session's accumulated Token count, with the session_meta and
-   * engine settings of the context it opened — the composition layer assembles them from the
-   * Agent State as it is then — and the records it produced while opening (its MCP connect
-   * pair and tool_list_ready, through `opts.emit`). The Session adopts the meta as its current
-   * one (`metaMessage`); the engine yields the records live and writes meta and records at
-   * the head of the rotated Trace file. Context compaction is unavailable if not provided.
+   * LLM object, with the session_meta and engine settings of the context it opened — the
+   * composition layer assembles them from the Agent State as it is then — and the records it
+   * produced while opening (its MCP connect pair and tool_list_ready, through `opts.emit`).
+   * The Session adopts the meta as its current one (`metaMessage`); the engine yields the
+   * records live, writes meta and records at the head of the rotated Trace file, and seeds
+   * the new LLM's cumulative session counts itself. Context compaction is unavailable if not
+   * provided.
    */
-  openNextContext?: (
-    sessionTokens: TokenCounts,
-    opts: OpenContextOptions,
-  ) => OpenedContext | Promise<OpenedContext>;
+  openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
   /**
    * Records a re-pinned thinking level with the composition layer (see
    * `Session.pinThinkingLevel` — the Session itself applies the level to live requests):
@@ -363,11 +356,8 @@ export class Session {
       // `metaMessage` must describe the context that is running, not the one that was.
       ...(config.openNextContext
         ? {
-            openNextContext: async (
-              sessionTokens: TokenCounts,
-              opts: OpenContextOptions,
-            ): Promise<OpenedContext> => {
-              const opened = await config.openNextContext!(sessionTokens, opts);
+            openNextContext: async (opts: OpenContextOptions): Promise<OpenedContext> => {
+              const opened = await config.openNextContext!(opts);
               if (opened.sessionMeta) this.meta = opened.sessionMeta;
               return opened;
             },

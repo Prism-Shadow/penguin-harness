@@ -69,7 +69,6 @@ import type {
   MessageOrigin,
   OmniMessage,
   SessionMetaPayload,
-  TokenCounts,
   ToolCallPayload,
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
@@ -224,7 +223,7 @@ interface SessionRuntime {
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
    * the context alongside its engine settings.
    */
-  openNextContext: (sessionTokens: TokenCounts, opts: OpenContextOptions) => Promise<OpenedContext>;
+  openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
   commandPolicy: () => CommandPolicyConfig | undefined;
   /** See SessionConfig.pinThinkingLevel. */
@@ -659,7 +658,6 @@ export class Agent {
           );
         }
       }
-      r.llm.sessionTokens = resumed.sessionTokens;
       return r;
     };
 
@@ -1088,16 +1086,11 @@ export class Agent {
     // records live and writes them at the head of the rotated Trace file. An Agent State
     // that cannot be assembled (a config that no longer parses) throws: the run fails with
     // that error and the engine keeps the old context.
-    const openNextContext = async (
-      sessionTokens: TokenCounts,
-      { emit }: OpenContextOptions,
-    ): Promise<OpenedContext> => {
+    const openNextContext = async ({ emit }: OpenContextOptions): Promise<OpenedContext> => {
       const next = await this.assembleContext(spec);
       current = next;
       environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
       const { llm } = await openAssembled(next, emit);
-      // Carries over the Session's cumulative Token counts, so token_usage.session stays continuous across compaction.
-      llm.sessionTokens = sessionTokens;
       return {
         llm,
         sessionMeta: sessionMeta(next.meta),

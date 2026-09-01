@@ -55,9 +55,9 @@
 ## 兼容性
 
 - SDK：`SessionConfig.createLLM` 与 `ContextEngineDeps.createLLM` 被
-  `openNextContext(sessionTokens, { emit }) => OpenedContext | Promise<OpenedContext>` 取代，`OpenedContext` 即
+  `openNextContext({ emit }) => OpenedContext | Promise<OpenedContext>` 取代，`OpenedContext` 即
   `{ llm, sessionMeta?, maxTurns?, compaction? }`；传给 `emit` 的记录在运行流上推出并写入轮转出的 Trace
-  文件头部。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
+  文件头部，新 LLM 的 Session 累计 Token 由引擎自行接续。直接构造 `Session` 或 `ContextEngine` 的代码，原先返回 LLM 的地方改为返回 `{ llm }`；走
   `Agent.createSession` / `resumeSession` 的代码无需改动。`Environment` 新增 `reconfigure({ toolConfig, vault })`
   与 `pendingMcpServerNames()`。
 - SDK：`loadOrInitAgentState` 并入 `loadAgentState`——创建或装载行为改传 `init: {}`（或 `init: { preset }`）；

@@ -12,6 +12,7 @@ import type { ErrorCode, OmniMessage, StopReason, ToolDefinition } from "../omni
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
+import type { TokenCounts } from "../omnimessage/index.js";
 
 /**
  * GenerativeModel initialization config.
@@ -128,4 +129,11 @@ export interface LLMOutcome {
  */
 export interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  /**
+   * Cumulative Session token counts folded into each emitted `token_usage.session`. Mutable
+   * continuity seam: the engine seeds it when it swaps in a newly opened context's LLM (and
+   * at construction on resume), so the series never resets across compaction.
+   * Implementations that don't track usage may leave it undefined.
+   */
+  sessionTokens?: TokenCounts;
 }
