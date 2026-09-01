@@ -1318,6 +1318,10 @@ export const en: Strings = {
     restartPending: "A plugin is installed but not loaded: restart the server to apply it.",
     uninstall: "Remove",
     install: "Install",
+    installing: "Installing…",
+    /** The deployment-level install: the package is on the machine, the process still runs the old set. */
+    deploymentInstalledToast: (name: string) =>
+      `Installed ${name}; it loads when the server restarts`,
     addLabel: "Add a plugin",
     fileHint: (file: string) => `Written to ${file} in the data root`,
     pageTitle: "Plugin library",

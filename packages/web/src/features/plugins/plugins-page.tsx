@@ -945,24 +945,31 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
   const [error, setError] = useState<string | null>(null);
   /** What this deployment installs, so a catalogue row can say what it is for this server. */
   const [installed, setInstalled] = useState<InstalledPluginsResponse | null>(null);
-  const [installBusy, setInstallBusy] = useState(false);
+  /** The row whose install or removal is running: npm is one at a time. */
+  const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
 
   const reloadInstalled = useCallback(() => {
     api.getInstalledPlugins().then(setInstalled, () => setInstalled(null));
   }, []);
   useEffect(reloadInstalled, [reloadInstalled, installedTick]);
 
-  /** Writes the list; the running process is untouched until it restarts. */
-  const writeInstalled = async (next: string[]) => {
-    if (installBusy) return;
-    setInstallBusy(true);
+  /**
+   * Installs the package into the data root and then lists it — writing the list alone would
+   * name a package that is not on the machine, which is exactly the state the row would then
+   * have to report as broken. The running process is untouched until it restarts.
+   */
+  const runInstall = async (specifier: string, install: boolean) => {
+    if (pendingSpecifier !== null) return;
+    setPendingSpecifier(specifier);
     try {
-      setInstalled(await api.putInstalledPlugins(next));
-      toastSuccess(S.common.saved);
+      setInstalled(
+        install ? await api.installPlugin(specifier) : await api.uninstallPlugin(specifier),
+      );
+      toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
-      setInstallBusy(false);
+      setPendingSpecifier(null);
     }
   };
   const specifiers = (installed?.plugins ?? []).map((p) => p.specifier);
@@ -1024,13 +1031,10 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
               key={`${plugin.name}@${plugin.version}`}
               plugin={plugin}
               state={stateOf(plugin.name)}
-              busy={installBusy}
-              onInstall={isAdmin ? () => void writeInstalled([...specifiers, plugin.name]) : null}
-              onRemove={
-                isAdmin
-                  ? () => void writeInstalled(specifiers.filter((s) => s !== plugin.name))
-                  : null
-              }
+              busy={pendingSpecifier === plugin.name}
+              blocked={pendingSpecifier !== null && pendingSpecifier !== plugin.name}
+              onInstall={isAdmin ? () => void runInstall(plugin.name, true) : null}
+              onRemove={isAdmin ? () => void runInstall(plugin.name, false) : null}
             />
           ))}
         </div>
@@ -1056,12 +1060,16 @@ function RegistryRow({
   plugin,
   state,
   busy,
+  blocked,
   onInstall,
   onRemove,
 }: {
   plugin: PluginIndexEntry;
   state: "none" | "pending" | "active";
+  /** This row's own install or removal is running. */
   busy: boolean;
+  /** Another row's is: one npm at a time, so the rest are held rather than queued. */
+  blocked: boolean;
   onInstall: (() => void) | null;
   onRemove: (() => void) | null;
 }) {
@@ -1126,15 +1134,15 @@ function RegistryRow({
         <div className="flex shrink-0 flex-col items-end justify-center gap-1 py-3 pr-4 pl-1">
           {state === "none"
             ? onInstall !== null && (
-                <Button variant="primary" size="sm" disabled={busy} onClick={onInstall}>
-                  {S.plugins.install}
+                <Button variant="primary" size="sm" disabled={busy || blocked} onClick={onInstall}>
+                  {busy ? S.plugins.installing : S.plugins.install}
                 </Button>
               )
             : chip}
           {state !== "none" && onRemove !== null && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || blocked}
               onClick={onRemove}
               className="text-[11px] text-gray-400 underline-offset-2 transition-colors duration-150 hover:text-red-600 hover:underline disabled:opacity-60 dark:text-gray-500 dark:hover:text-red-400"
             >
