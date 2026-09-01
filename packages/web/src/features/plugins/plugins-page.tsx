@@ -195,13 +195,15 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
+import { InstalledPluginsDialog } from "./installed-dialog";
 import { toneSurface } from "../../lib/tone";
 
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
   const navigate = useNavigate();
   const { locale } = useLocale();
-  const userId = useAuth().user?.userId ?? null;
+  const { user } = useAuth();
+  const userId = user?.userId ?? null;
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
@@ -211,6 +213,7 @@ export function PluginsPage() {
   const [pendingBulk, setPendingBulk] = useState<PluginUpdatePlan | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
 
+  const [installedOpen, setInstalledOpen] = useState(false);
   const [groups, setGroups] = useState<PluginGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
@@ -450,10 +453,28 @@ export function PluginsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-          {S.plugins.pageTitle}
-          <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
-        </h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            {S.plugins.pageTitle}
+            <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
+          </h1>
+          {/* What this deployment installs and actually runs, as opposed to the library and the
+              registry listed below. */}
+          <Button
+            variant="secondary"
+            size="icon"
+            title={S.plugins.installedTitle}
+            aria-label={S.plugins.installedTitle}
+            onClick={() => setInstalledOpen(true)}
+          >
+            <GlyphIcon d={NAV_ICONS.plugins} size={ICON_SIZE.iconButton} />
+          </Button>
+        </div>
+        <InstalledPluginsDialog
+          open={installedOpen}
+          onClose={() => setInstalledOpen(false)}
+          isAdmin={user?.isAdmin === true}
+        />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody

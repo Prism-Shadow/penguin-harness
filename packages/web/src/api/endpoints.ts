@@ -151,6 +151,8 @@ import type {
   AgentPackagePublishResponse,
   AgentPackagePreviewResponse,
   AgentPackageSourceKind,
+  InstalledPluginsResponse,
+  SandboxSettingsResponse,
   VersionRollbackResponse,
   VersionResponse,
   WorkspaceFilesResponse,
@@ -1322,3 +1324,20 @@ export const installAgentPackage = (body: {
   projectId: string;
   agentId: string;
 }) => apiFetch<{ agentId: string }>("/api/agent-packages/install", { method: "POST", body });
+
+// ---- Plugins this deployment installs, and the confinement agent commands run under ----
+export const getInstalledPlugins = () =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed");
+/** Admin only; the list applies at the next server start (plugins load once per process). */
+export const putInstalledPlugins = (plugins: readonly string[]) =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+    method: "PUT",
+    body: { plugins },
+  });
+export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
+/** Applies to the next command spawn; no restart. */
+export const adminPutSandbox = (body: {
+  mode: string;
+  network: "none" | null;
+  maskPaths: string[];
+}) => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox", { method: "PUT", body });

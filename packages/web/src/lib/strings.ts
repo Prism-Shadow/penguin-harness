@@ -151,6 +151,20 @@ export const zh = {
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "分享",
+    sandboxTitle: "沙盒",
+    sandboxInfo:
+      "Agent 执行命令时的封禁策略。真正实施封禁的是插件提供的后端（Linux 用 bwrap、macOS 用 Seatbelt、Windows 用 MXC、或 DSH）；没有后端时选了模式也不会有任何约束。设置随平台寄存，热更新后仍然有效。",
+    sandboxMode: "封禁模式",
+    sandboxModeHint: "改动对下一次命令启动生效，无需重启。",
+    sandboxModeOff: "关闭（完全访问）",
+    sandboxModeWorkspace: "仅工作区可写",
+    sandboxModeReadOnly: "只读",
+    sandboxNetwork: "断开网络",
+    sandboxMaskPaths: "屏蔽路径",
+    sandboxMaskPathsHint: "每行一个路径；这些路径对被封禁的命令不可见。仅在启用封禁时可填。",
+    sandboxBackends: "可用后端",
+    sandboxNoBackend:
+      "这台部署没有沙盒后端：选择模式不会产生任何实际约束，先在插件页安装一个对应平台的后端。",
     sharingInfo:
       "把 Agent 的定义（系统配置、提示词、技能、工具、工作流）发布为 GitHub gist，或从 gist 安装。发布需要一个带 gist 权限的 GitHub token，由服务器保存；安装公开 gist 不需要 token。",
     sharingDesc:
@@ -1259,6 +1273,18 @@ export const zh = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
+    installedTitle: "已安装的插件",
+    installedDesc:
+      "plugins.json 列出的插件，以及本进程实际在跑的那些。插件在服务器启动时加载一次，所以改动会在下次重启后生效。",
+    installedEmpty: "还没有安装任何插件。",
+    stateActive: "运行中",
+    stateInactive: "未加载",
+    replacesLabel: "替换",
+    restartPending: "有已安装但未加载的插件：重启服务器后生效。",
+    uninstall: "移除",
+    install: "安装",
+    addLabel: "添加插件",
+    fileHint: (file: string) => `写入数据根目录下的 ${file}`,
     pageTitle: "插件库",
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
