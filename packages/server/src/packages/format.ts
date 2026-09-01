@@ -5,6 +5,7 @@
  * Pure functions over paths and strings — the file system and the network live in
  * service.ts, so the rules that decide what is shared can be tested on their own.
  */
+import { createHash } from "node:crypto";
 import type { PackageFile, PackageManifest } from "../mechanisms/packages.js";
 
 export const PACKAGE_FORMAT = 1;
@@ -96,6 +97,33 @@ export function manifestOf(
     packagedAt,
     files: files.map(({ path, file, encoding }) => ({ path, file, encoding })),
   };
+}
+
+/**
+ * The gist's title. GitHub shows a gist's description wherever it is listed, so this is the
+ * line a person scanning their gists reads: the Agent's name, what it says about itself, and
+ * a constant tail that marks the gist as an Agent package (and makes them searchable).
+ */
+export function gistDescription(manifest: Pick<PackageManifest, "name" | "description">): string {
+  const summary = manifest.description.replace(/\s+/g, " ").trim();
+  const short = summary.length > 100 ? `${summary.slice(0, 99)}…` : summary;
+  const name = manifest.name.trim() === "" ? "Agent" : manifest.name.trim();
+  return short === ""
+    ? `${name} · PenguinHarness Agent`
+    : `${name} — ${short} · PenguinHarness Agent`;
+}
+
+/**
+ * What a publish would put on GitHub, as one hash: the title and every file's name and
+ * content. Recorded with the gist, so a republish that would change nothing can say so
+ * without calling the API at all.
+ */
+export function packageDigest(description: string, files: readonly PackageFile[]): string {
+  const h = createHash("sha256").update(description).update("\0");
+  for (const f of [...files].sort((a, b) => a.file.localeCompare(b.file))) {
+    h.update(f.file).update("\0").update(f.content).update("\0");
+  }
+  return h.digest("hex").slice(0, 16);
 }
 
 /** The gist body: the manifest plus one file per packaged path. */
