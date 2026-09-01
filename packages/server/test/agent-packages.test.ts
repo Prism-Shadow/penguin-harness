@@ -14,6 +14,7 @@ import type {
   AgentPackagePublishResponse,
   AgentPackageResponse,
 } from "../src/api/types.js";
+import { GhError } from "../src/packages/gh.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -278,13 +279,17 @@ describe("agent packages", () => {
 
   it("publishes through the server's gh login when there is one, and needs no token", async () => {
     const calls: Array<{ path: string; method: string; body: unknown }> = [];
+    let minted = 0;
     const gh = await createTestApp({
       fetch: github.fetch,
       gh: {
         available: async () => true,
         api: async (path: string, method: string, body?: unknown) => {
           calls.push({ path, method, body });
-          const id = path === "/gists" ? "beef01" : path.split("/").pop()!;
+          const target = path === "/gists" ? null : path.split("/").pop()!;
+          if (target !== null && !github.gists.has(target))
+            throw new GhError("HTTP 404: Not Found");
+          const id = target ?? `beef0${++minted}`;
           github.gists.set(id, (body as { files: Record<string, { content: string }> }).files);
           return { id, html_url: `https://gist.github.com/u/${id}` };
         },
@@ -319,6 +324,14 @@ describe("agent packages", () => {
         await ghOwner.get(`/api/projects/${PROJECT}/agents/${AGENT}/package`)
       ).json()) as AgentPackageResponse;
       expect(after.publishedGist?.gistId).toBe(first.gistId);
+
+      // The remembered gist was deleted on GitHub: the next publish creates a new one
+      // rather than failing on a target that no longer exists.
+      github.gists.delete(first.gistId);
+      const recreated = (await (
+        await ghOwner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})
+      ).json()) as AgentPackagePublishResponse;
+      expect(recreated.gistId).not.toBe(first.gistId);
       // The record lives beside the Agent, and is a dotfile so it never travels in a package.
       expect(after.manifest.files.some((f) => f.path.includes(".penguin-publish"))).toBe(false);
     } finally {
