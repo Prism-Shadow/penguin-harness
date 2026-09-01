@@ -3080,7 +3080,7 @@ export interface PluginItem {
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The icon of the plugin's first skill, when it has one (hook-only plugins carry none; the frontend shows a hook glyph). */
+  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one); the frontend falls back to a glyph without it. */
   icon?: string;
 }
 

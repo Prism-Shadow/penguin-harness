@@ -10,7 +10,8 @@ The built-in library is a set of **plugins**. A plugin is a directory with a `pl
 ```text
 official/<plugin>/
 ├── plugin.json                # manifest — the plugin's single metadata holder
-├── skills/<name>/SKILL.md     # zero or more skills (icon.svg, reference/… alongside)
+├── icon.svg                   # the plugin's icon (every built-in plugin ships one)
+├── skills/<name>/SKILL.md     # zero or more skills (reference/… alongside)
 └── hooks/*.mjs                # at most one hook package: plain Node scripts
 ```
 
@@ -31,7 +32,7 @@ The library ships as the npm package `@prismshadow/penguin-plugins`, carrying th
 
 ## Anatomy of a Skill
 
-A Skill is a directory containing a `SKILL.md`, optionally with a custom `icon.svg` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
+A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Its icon is the plugin's `icon.svg`, stamped in at load time — a skill directory may still carry its own `icon.svg` to override it (user-authored skills keep working that way). The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
 
 A library `SKILL.md`'s frontmatter carries only two fields — everything else lives in `plugin.json`:
 

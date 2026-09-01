@@ -7,7 +7,7 @@
  * within a group form a grid, generously sized: two per row from the sm breakpoint up, one per
  * row on narrow screens. Each card = a rounded icon tile centered against the two text rows
  * (its color comes from skillTileColor — a per-name palette hashed from the plugin name; DTO
- * icon = the raw icon.svg of the plugin's first skill, rendered inline once it passes
+ * icon = the plugin's raw icon.svg (beside plugin.json), rendered inline once it passes
  * sanitize, otherwise the default book icon — or the hook glyph for a plugin that ships no
  * skill) + a name (monospace) and short description on the right, one line each
  * (single-line truncation, falling back to the full description when missing) + a line below

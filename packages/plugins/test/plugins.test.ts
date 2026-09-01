@@ -52,6 +52,10 @@ describe("loadLibraryPlugins", () => {
 
   it("stamps the plugin's metadata into each skill: slim file frontmatter, full installable frontmatter", async () => {
     for (const plugin of loadLibraryPlugins()) {
+      // Every built-in plugin ships an icon.svg beside plugin.json.
+      expect(plugin.icon, `${plugin.name} icon.svg`).toBeDefined();
+      expect(plugin.icon).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
+      expect(plugin.icon).not.toMatch(/<script/i);
       for (const skill of plugin.skills) {
         const dir = path.join(pluginsRoot, plugin.name, "skills", skill.name);
         const file = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
@@ -67,9 +71,8 @@ describe("loadLibraryPlugins", () => {
         expect(skill.version).toBe(plugin.version);
         expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
         expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
-        expect(skill.icon, `${plugin.name}/${skill.name} icon.svg`).toBeDefined();
-        expect(skill.icon).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
-        expect(skill.icon).not.toMatch(/<script/i);
+        // The plugin's icon is stamped onto its skills (none carries a file of its own).
+        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(plugin.icon);
         // Every shipped skill asks before starting when the message only names it.
         expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
           /^## Before you start$/m,

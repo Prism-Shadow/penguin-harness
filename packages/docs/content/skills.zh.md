@@ -10,7 +10,8 @@ description: 插件打包 Skill（目录加 SKILL.md，元数据先行、正文�
 ```text
 official/<plugin>/
 ├── plugin.json                # 清单——插件唯一的元数据载体
-├── skills/<name>/SKILL.md     # 零个或多个 Skill（icon.svg、reference/… 随行）
+├── icon.svg                   # 插件图标（每个内置插件都有）
+├── skills/<name>/SKILL.md     # 零个或多个 Skill（reference/… 随行）
 └── hooks/*.mjs                # 至多一个钩子包：纯 Node 脚本
 ```
 
@@ -31,7 +32,7 @@ official/<plugin>/
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标，以及 `SKILL.md` 引用的其他文件（例如它链接到的 `reference/` 子目录）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。图标即插件的 `icon.svg`，读取时盖章进来——Skill 目录也可以自带 `icon.svg` 覆盖（用户自建 Skill 沿用此方式）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
 
 库内 `SKILL.md` 的 frontmatter 只有两个字段——其余全部放在 `plugin.json`：
 

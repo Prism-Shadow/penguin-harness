@@ -1,7 +1,8 @@
 /**
  * PenguinHarness plugin library: the built-in plugins and the loader that reads them.
  *
- * A plugin is a directory under the package's `official/` carrying a `plugin.json` manifest and
+ * A plugin is a directory under the package's `official/` carrying a `plugin.json` manifest, an
+ * `icon.svg` beside it (every built-in plugin ships one), and
  * any of two kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
  * `agent_state/skills/`) and a hook package (`hooks/*.js`, installed into
  * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`). The files are the
@@ -39,7 +40,7 @@ export interface SkillMetadata {
 /** A skill in the library: metadata + full SKILL.md content (including frontmatter, written as-is on install). */
 export interface LibrarySkill extends SkillMetadata {
   content: string;
-  /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
+  /** Raw `icon.svg` content: the skill directory's own file when present, else the plugin's `icon.svg` stamped by the loader (copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
   icon?: string;
   /**
    * Optional auxiliary files the SKILL.md references (e.g. `reference/API.md`), keyed by
@@ -93,6 +94,8 @@ export interface LibraryPlugin {
   category?: string;
   /** Whether default_agent gets this plugin at creation (plugin.json `preinstall`, default true). */
   preinstall: boolean;
+  /** Raw `icon.svg` beside plugin.json — every built-in plugin ships one; stamped onto skills that carry none of their own. */
+  icon?: string;
   skills: LibrarySkill[];
   hooks?: LibraryHooks;
 }
@@ -227,7 +230,12 @@ function readSkillDir(dir: string, name: string): LibrarySkill | undefined {
  */
 function stampSkill(
   skill: LibrarySkill,
-  plugin: { shortDescription?: string; shortDescriptionZh?: string; version: string },
+  plugin: {
+    shortDescription?: string;
+    shortDescriptionZh?: string;
+    version: string;
+    icon?: string;
+  },
 ): LibrarySkill {
   const shortDescription = skill.shortDescription ?? plugin.shortDescription;
   const shortDescriptionZh = skill.shortDescriptionZh ?? plugin.shortDescriptionZh;
@@ -241,10 +249,12 @@ function stampSkill(
     "---",
   ].join("\n");
   const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
+  const icon = skill.icon ?? plugin.icon;
   return {
     ...skill,
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+    ...(icon !== undefined ? { icon } : {}),
     version: plugin.version,
     content: `${front}${body}`,
   };
@@ -305,6 +315,12 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
       command: c.command,
       ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
     }));
+  let icon: string | undefined;
+  try {
+    icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
+  } catch {
+    // Built-in plugins all ship one; a custom layout without it falls back in the UI.
+  }
   const hooksDir = path.join(dir, "hooks");
   const hookFiles = fs.existsSync(hooksDir) ? readDirFiles(hooksDir, []) : undefined;
   const hooks: LibraryHooks | undefined =
@@ -333,10 +349,12 @@ function readPluginDir(name: string): LibraryPlugin | undefined {
     version,
     ...(typeof manifest.category === "string" ? { category: manifest.category } : {}),
     preinstall: manifest.preinstall !== false,
+    ...(icon !== undefined ? { icon } : {}),
     skills: skills.map((skill) =>
       stampSkill(skill, {
         ...(shortDescription !== undefined ? { shortDescription } : {}),
         ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+        ...(icon !== undefined ? { icon } : {}),
         version,
       }),
     ),

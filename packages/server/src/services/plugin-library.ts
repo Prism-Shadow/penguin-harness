@@ -60,7 +60,7 @@ export function toHookItem(hook: HookManifest): HookItem {
 
 /** A library plugin as the listing describes it. */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
-  const icon = plugin.skills.find((s) => s.icon !== undefined)?.icon;
+  const icon = plugin.icon ?? plugin.skills.find((s) => s.icon !== undefined)?.icon;
   return {
     name: plugin.name,
     description: plugin.description,
