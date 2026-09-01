@@ -836,13 +836,13 @@ export class ContextEngine {
         failedTurns.push(turn);
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
         // Received content resets the ladder. An attempt the stream sent anything to had a
-        // working connection and a model writing into it, so its drop is a
-        // fresh transport fault — not the n-th piece of evidence that this endpoint is
-        // unreachable. A socket that dies twice in one turn shouldn't add up to a reason to
-        // stop while `[turn_retried]` carries the accumulated output into every retry and the
-        // turn keeps inching forward. What keeps this bounded is the ceiling below, not the
-        // ladder: an endpoint that streams a few tokens and drops, every time, would
-        // otherwise be retried forever.
+        // working connection and a model writing into it, so its drop is a fresh transport
+        // fault — not the n-th piece of evidence that this endpoint is unreachable. A socket
+        // that dies twice in one turn shouldn't add up to a reason to stop while
+        // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
+        // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
+        // that streams a few tokens and drops, every single time, would otherwise be retried
+        // forever.
         if (turn.receivedContent) consecutive = 0;
         // Exhausted: give up without an abort event — abort marks a user interruption,
         // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
