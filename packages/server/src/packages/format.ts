@@ -9,8 +9,15 @@ import type { PackageFile, PackageManifest } from "../mechanisms/packages.js";
 
 export const PACKAGE_FORMAT = 1;
 export const MANIFEST_FILE = "penguin-agent.json";
-/** Path separator inside a gist file name: gists have no directories. */
-export const PATH_SEP = "--";
+/**
+ * Path separator inside a gist file name. A gist has no directories, and its API refuses a
+ * file name containing `/` outright (422) — but a backslash it accepts and stores verbatim,
+ * so paths read as paths on the gist page and any other character, `-` included, stays part
+ * of a name.
+ */
+export const PATH_SEP = "\\";
+/** The separator packages published before the backslash used; still read, never written. */
+export const LEGACY_PATH_SEP = "--";
 /** Cap on one package (gist files are text; GitHub itself starts truncating around 1MB each). */
 export const MAX_PACKAGE_BYTES = 5 * 1024 * 1024;
 
@@ -38,15 +45,24 @@ export function isPackagedPath(rel: string): boolean {
   return true;
 }
 
-/** `agent_state/skills/a/SKILL.md` → `agent_state--skills--a--SKILL.md`. */
+/** `agent_state/skills/a/SKILL.md` → `agent_state\skills\a\SKILL.md`. */
 export function flattenPath(rel: string): string {
   return rel.replaceAll("\\", "/").split("/").join(PATH_SEP);
 }
 
-/** Whether a path can round-trip through a flattened gist file name. */
+/** The same path as an older package would have named it (`--` between segments). */
+export function legacyFlattenPath(rel: string): string {
+  return rel.replaceAll("\\", "/").split("/").join(LEGACY_PATH_SEP);
+}
+
+/**
+ * Whether a path can round-trip through a flattened gist file name. A backslash is the
+ * separator, and every path this server produces uses `/`, so a name that carries a literal
+ * backslash cannot be told from a nested path and is refused.
+ */
 export function isRoundTrippable(rel: string): boolean {
-  const p = rel.replaceAll("\\", "/");
-  return !p.includes(PATH_SEP) && p.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+  if (rel.includes(PATH_SEP)) return false;
+  return rel.split("/").every((s) => s !== "" && s !== "." && s !== "..");
 }
 
 /** A packaged path is safe to write: relative, no traversal, under an included prefix. */
@@ -135,7 +151,9 @@ export function parsePackage(
     if (!isSafePackagePath(entry.path)) {
       throw new PackageFormatError(`Package refused: '${entry.path}' is not a packageable path.`);
     }
-    if (entry.file !== flattenPath(entry.path)) {
+    // A package published before the backslash separator names its files with `--`; both
+    // spellings are read, only the current one is written.
+    if (entry.file !== flattenPath(entry.path) && entry.file !== legacyFlattenPath(entry.path)) {
       throw new PackageFormatError(
         `Package refused: '${entry.file}' does not match the path it claims ('${entry.path}').`,
       );

@@ -10,7 +10,7 @@ Agent 现在可以作为*包*分享：它的定义——`agent_state/`（系统�
 
 ## 格式
 
-gist 没有目录，因此路径被压平成文件名（`agent_state/skills/x/SKILL.md` → `agent_state--skills--x--SKILL.md`），由 `penguin-agent.json` 携带清单（格式 `1`、Agent 的 id / 名称 / 描述、打包它的 harness 版本、每个文件的路径与编码）。文本原样存放，gist 页面上可读可 diff；二进制文件用 base64。一个包上限 5 MB；含 `--` 的路径无法打包（无法往返还原）。
+gist 没有目录——它的 API 直接拒绝含 `/` 的文件名——因此路径用反斜杠压平成文件名（`agent_state/skills/x/SKILL.md` → `agent_state\skills\x\SKILL.md`），GitHub 接受并原样保存，由 `penguin-agent.json` 携带清单（格式 `1`、Agent 的 id / 名称 / 描述、打包它的 harness 版本、每个文件的路径与编码）。文本原样存放，gist 页面上可读可 diff；二进制文件用 base64。一个包上限 5 MB；含反斜杠的文件名无法打包（无法往返还原）。用早先 `--` 分隔符发布的包仍然可读。
 
 安装前逐项校验，任何字节都不会提前写入：清单格式、每条路径必须是相对路径、不能越界、必须落在可打包前缀之下、文件名必须与路径一致、GitHub 未截断文件。Agent 先按正常生命周期创建，文件随后写入；失败则删掉半成品。
 

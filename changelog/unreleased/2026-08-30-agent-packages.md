@@ -10,7 +10,7 @@ An Agent can now be shared as a *package*: its definition — `agent_state/` (sy
 
 ## Format
 
-A gist has no directories, so paths flatten into file names (`agent_state/skills/x/SKILL.md` → `agent_state--skills--x--SKILL.md`) and `penguin-agent.json` carries the manifest (format `1`, the Agent's id, name and description, the harness version that packaged it, and every file with its path and encoding). Text ships verbatim so the gist page reads and diffs; binary files are base64. A package is capped at 5 MB, and a path containing `--` cannot be packaged (it would not round-trip).
+A gist has no directories — its API refuses a file name containing `/` outright — so paths flatten into file names with a backslash (`agent_state/skills/x/SKILL.md` → `agent_state\skills\x\SKILL.md`), which GitHub accepts and stores verbatim, and `penguin-agent.json` carries the manifest (format `1`, the Agent's id, name and description, the harness version that packaged it, and every file with its path and encoding). Text ships verbatim so the gist page reads and diffs; binary files are base64. A package is capped at 5 MB, and a file name containing a backslash cannot be packaged (it would not round-trip). Packages published with the earlier `--` separator are still read.
 
 Installing validates every entry before a byte is written: the manifest's format, that each path is relative, escapes nothing and lies under a packaged prefix, that the file name matches its path, and that GitHub did not truncate the file. The Agent is created through the normal lifecycle first and the files written into it after; a failure removes the half-made Agent.
 

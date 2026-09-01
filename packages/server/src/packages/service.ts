@@ -111,7 +111,7 @@ export class AgentPackageService implements AgentPackages {
         throw new HttpError(
           400,
           "unpackageable_path",
-          `'${rel}' cannot be packaged: a path may not contain '--'.`,
+          `'${rel}' cannot be packaged: a file name may not contain a backslash.`,
         );
       }
       const content = await fs.readFile(path.join(dir, rel));
