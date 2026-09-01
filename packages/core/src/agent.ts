@@ -215,9 +215,7 @@ interface SessionRuntime {
    * stays instant and the records stream on the run. The same opening procedure as
    * `openNextContext`: only what is being opened differs.
    */
-  bootstrap: (
-    opts: OpenContextOptions,
-  ) => Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }>;
+  bootstrap: (opts: OpenContextOptions) => Promise<{ llm: GenerativeModel }>;
   /**
    * Opens the context that follows a completed compaction (see ContextEngineDeps.openNextContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
@@ -236,8 +234,6 @@ interface SessionRuntime {
  * moment the context opened; immutable for the context's lifetime.
  */
 interface AssembledContext {
-  /** The Agent State the context was assembled from — a fresh load, never the Agent object's snapshot. */
-  state: AgentState;
   systemPrompt: string;
   /** The vault's values, for the Environment's command subprocesses; only the key names enter the prompt. */
   vault: Record<string, string>;
@@ -295,17 +291,21 @@ export class Agent {
    * A Session's default thinking level when no explicit per-session level is given — the
    * resolution chain (the single rule, keep both sites on it): the Agent's explicit
    * `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
-   * `"medium"` (the documented Agent default). Read against the Agent State a context is
-   * assembled from, so the default follows the config into each new context. Mirrored by
+   * `"medium"` (the documented Agent default). Read against the Agent State and the Project
+   * config a context is assembled from, so the default follows both files into each new
+   * context. Mirrored by
    * the web draft picker's DISPLAY (web features/chat/thinking-level.ts
    * `effectiveThinkingLevel`): the picker shows this effective value, and a pick writes
    * through to the AGENT config — the project default is only ever a fallback, never
    * overwritten from there.
    */
-  private configuredThinkingLevel(state: AgentState): ThinkingLevelName {
+  private configuredThinkingLevel(
+    state: AgentState,
+    projectConfig: ProjectConfig,
+  ): ThinkingLevelName {
     return (
       state.systemConfig.model?.thinking_level ??
-      this.projectConfig.default_chat?.thinking_level ??
+      projectConfig.default_chat?.thinking_level ??
       "medium"
     );
   }
@@ -341,8 +341,10 @@ export class Agent {
     const state = await loadAgentState({ root, projectId, agentId });
     const vault = await loadAgentVault(root, projectId, agentId);
     // Strict-tier alongside the Agent State even though it is Project-owned: the command
-    // policy this context runs under is the one on disk at its open.
-    const commandPolicy = (await loadProjectConfig(root, projectId)).command_policy;
+    // policy this context runs under (and the Project half of the thinking-level chain) is
+    // the one on disk at its open.
+    const projectConfig = await loadProjectConfig(root, projectId);
+    const commandPolicy = projectConfig.command_policy;
     let systemPrompt = opts.systemPrompt;
     if (systemPrompt === undefined) {
       const installedSkills = await listInstalledSkills(root, projectId, agentId);
@@ -402,7 +404,8 @@ export class Agent {
     // "medium", see configuredThinkingLevel). A per-request parameter, not part of the
     // prefix: this is only the base the Session's live pin overrides, and nothing records it.
     const pin = spec.thinkingLevel;
-    const thinkingLevel = pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state));
+    const thinkingLevel =
+      pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state, projectConfig));
 
     // Compaction config: defaults are filled in here; an unknown mode falls back to
     // summarize (the default).
@@ -433,7 +436,6 @@ export class Agent {
     };
 
     return {
-      state,
       systemPrompt,
       vault,
       toolConfig,
@@ -930,6 +932,9 @@ export class Agent {
         steer(messages) {
           return childSession.steer(messages);
         },
+        setThinkingLevel(level) {
+          childSession.thinkingLevel = level;
+        },
         dispose() {
           childSession.dispose();
         },
@@ -1056,7 +1061,7 @@ export class Agent {
     const openAssembled = async (
       context: AssembledContext,
       emit: OpenContextOptions["emit"],
-    ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> => {
+    ): Promise<{ llm: GenerativeModel }> => {
       const pending = environment.pendingMcpServerNames();
       if (pending.length > 0) emit(mcpConnectBegin(pending));
       const tools = await environment.listTools();
@@ -1064,13 +1069,11 @@ export class Agent {
         emit(mcpConnectEnd(mcpConnectOutcome(environment.mcpConnectResults())));
       }
       emit(toolListReady(tools));
-      return { tools, llm: buildLLM(context, tools) };
+      return { llm: buildLLM(context, tools) };
     };
 
     // The first context's opener (see SessionRuntime.bootstrap).
-    const bootstrap = async (
-      opts: OpenContextOptions,
-    ): Promise<{ tools: ToolDefinition[]; llm: GenerativeModel }> =>
+    const bootstrap = async (opts: OpenContextOptions): Promise<{ llm: GenerativeModel }> =>
       openAssembled(current, opts.emit);
 
     // The context that follows a completed compaction: assembled anew from the Agent State

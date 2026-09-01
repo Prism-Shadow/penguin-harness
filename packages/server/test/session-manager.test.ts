@@ -304,6 +304,52 @@ describe("session-manager", () => {
     expect(fake.thinkingLevel).toBe("xhigh");
   });
 
+  it("setThinkingLevel reaches a live child session through its parent's runtime", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const childPins: [string, string][] = [];
+    const fake: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      setBackgroundSubagentThinkingLevel: (childSessionId, level) => {
+        if (childSessionId !== "child-1") return false;
+        childPins.push([childSessionId, level]);
+        return true;
+      },
+    };
+    const manager = makeManager(loaderOf(fake));
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // A child has an index row and a panel picker of its own but no entry: the PATCH lands
+    // on the child Session inside the parent runtime. An unknown id stays a no-op.
+    manager.setThinkingLevel("child-1", "high");
+    manager.setThinkingLevel("child-nowhere", "low");
+    expect(childPins).toEqual([["child-1", "high"]]);
+  });
+
+  it("a thinking-level PATCH racing the runtime load reaches the loaded runtime", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const fake: RuntimeSession = { ...approvalFakeSession("session-1"), thinkingLevel: undefined };
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    // The loader applies the row it was handed — a snapshot taken before the await.
+    const loader: SessionLoader = {
+      load: async (row) => {
+        await gate;
+        if (row.thinkingLevel) fake.thinkingLevel = row.thinkingLevel;
+        return fake;
+      },
+    };
+    const manager = makeManager(loader);
+    const started = manager.startTask("session-1", [userText("a")]);
+    // The PATCH route's two writes land while the load is in flight: the row updates, the
+    // runtime assignment finds no entry yet.
+    sessions.updateThinkingLevel("session-1", "xhigh");
+    manager.setThinkingLevel("session-1", "xhigh");
+    release();
+    await started;
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(fake.thinkingLevel).toBe("xhigh");
+  });
+
   it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     let noticeCb: (() => void) | null = null;
@@ -468,7 +514,7 @@ describe("session-manager", () => {
         agent_state: dir,
         workspace: dir,
       },
-      bootstrap: async () => ({ tools: await environment.listTools(), llm }),
+      bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(dir, "images"),
       modelHasVision: true,

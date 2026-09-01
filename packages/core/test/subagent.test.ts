@@ -666,11 +666,14 @@ describe("subagent steering and per-run abort", () => {
     /** Each round's raw input messages (the contract's own shape — sender included). */
     inputs: OmniMessage[][];
     steers: OmniMessage[][];
+    /** Levels pinned on the child through the handle, in order. */
+    pins: string[];
     release: () => void;
   } {
     const prompts: string[] = [];
     const inputs: OmniMessage[][] = [];
     const steers: OmniMessage[][] = [];
+    const pins: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const runner: SubagentRunner = {
@@ -700,12 +703,15 @@ describe("subagent steering and per-run abort", () => {
             steers.push(messages);
             return true;
           },
+          setThinkingLevel(level) {
+            pins.push(level);
+          },
           dispose() {},
         };
         return handle;
       },
     };
-    return { runner, prompts, inputs, steers, release: () => release() };
+    return { runner, prompts, inputs, steers, pins, release: () => release() };
   }
 
   it("queues a mid-run prompt as a steering message with the parent_agent sender", async () => {
@@ -842,6 +848,10 @@ describe("subagent steering and per-run abort", () => {
       expect(payload.text).toBe("from the panel");
       expect(payload.sender).toBeUndefined();
 
+      // A host pin (the subagent panel's picker) reaches the live child through its handle.
+      expect(env.setBackgroundSubagentThinkingLevel(HOP, "high")).toBe(true);
+      expect(child.pins).toEqual(["high"]);
+
       // Host abort ends the round; the settle pings the state listener and the listing flips.
       expect(env.abortBackgroundSubagentRun(HOP)).toBe(true);
       await until(() => env.listBackgroundSubagents()[0]?.running === false);
@@ -867,6 +877,7 @@ describe("subagent steering and per-run abort", () => {
 
       expect(await env.sendToBackgroundSubagent("session-unknown", [userText("x")])).toBe("gone");
       expect(env.abortBackgroundSubagentRun("session-unknown")).toBe(false);
+      expect(env.setBackgroundSubagentThinkingLevel("session-unknown", "low")).toBe(false);
     } finally {
       env.dispose();
     }

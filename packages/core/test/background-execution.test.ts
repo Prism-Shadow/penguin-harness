@@ -758,7 +758,7 @@ describe("Session background notices", () => {
     const session = new Session({
       meta: META,
       ...IMAGES,
-      bootstrap: async () => ({ tools: [], llm: new ReplyLLM() }),
+      bootstrap: async () => ({ llm: new ReplyLLM() }),
       environment,
     });
     let signaled = 0;
@@ -791,7 +791,7 @@ describe("Session background notices", () => {
     const session = new Session({
       meta: META,
       ...IMAGES,
-      bootstrap: async () => ({ tools: [], llm: new ReplyLLM() }),
+      bootstrap: async () => ({ llm: new ReplyLLM() }),
       environment,
     });
     fire({ ...DONE_EVENT, status: "stopped", detail: "stopped by SIGTERM" });
@@ -809,7 +809,7 @@ describe("Session background notices", () => {
     const session = new Session({
       meta: META,
       ...IMAGES,
-      bootstrap: async () => ({ tools: [], llm }),
+      bootstrap: async () => ({ llm }),
       environment,
     });
     fire(DONE_EVENT); // no listener registered: stays queued

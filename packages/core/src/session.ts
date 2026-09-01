@@ -24,9 +24,9 @@ import {
   sessionMeta,
   userText,
 } from "./omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "./omnimessage/index.js";
+import type { OmniMessage, SessionMetaPayload } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
-import { MergeQueue } from "./internal/merge-queue.js";
+import { pumpOpener } from "./internal/merge-queue.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
@@ -72,10 +72,7 @@ export interface SessionConfig {
    * visible events instead. An aborted attempt is cancelled via `cancelBootstrap` — the
    * next run calls this again and reconnects from scratch.
    */
-  bootstrap: (opts: OpenContextOptions) => Promise<{
-    tools: ToolDefinition[];
-    llm: LLMInterface;
-  }>;
+  bootstrap: (opts: OpenContextOptions) => Promise<{ llm: LLMInterface }>;
   /** Cancels an in-flight bootstrap on user abort (the composition layer wires Environment.cancelMcpConnect). */
   cancelBootstrap?: () => void;
   environment: EnvironmentInterface;
@@ -534,18 +531,7 @@ export class Session {
     await this.ensureMetaWritten();
     if (this.engine) return true;
     const records: OmniMessage[] = [];
-    const queue = new MergeQueue();
-    queue.addProducer();
-    const work = (async () => {
-      try {
-        return await this.bootstrap({ emit: (msg) => queue.push(msg) });
-      } finally {
-        queue.removeProducer();
-      }
-    })();
-    // A rejection is re-thrown by the await below; this branch only keeps it from being
-    // reported as unhandled while the queue is still being pumped.
-    void work.catch(() => {});
+    const { queue, result: work } = pumpOpener((emit) => this.bootstrap({ emit }));
     for (;;) {
       const res = await raceAbort(queue.next(), signal);
       if (res === "aborted") {
@@ -905,6 +891,11 @@ export class Session {
   /** Host-initiated abort of one child session's current run — the session survives for follow-ups (see EnvironmentInterface.abortBackgroundSubagentRun). */
   abortBackgroundSubagentRun(childSessionId: string): boolean {
     return this.environment.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+  }
+
+  /** Host-initiated pin of one live child session's thinking level — the child's own `thinkingLevel`, applied from its next LLM request (see EnvironmentInterface.setBackgroundSubagentThinkingLevel); false when the child is not live. */
+  setBackgroundSubagentThinkingLevel(childSessionId: string, level: ThinkingLevelName): boolean {
+    return this.environment.setBackgroundSubagentThinkingLevel?.(childSessionId, level) ?? false;
   }
 
   /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */

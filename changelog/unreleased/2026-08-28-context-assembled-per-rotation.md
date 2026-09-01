@@ -57,7 +57,7 @@ approval mode: re-read from the DB per decision, effective immediately).
   `mcp_connect_begin` / `mcp_connect_end` pair the first run streams (naming just those servers),
   followed by the new `tool_list_ready`; the engine yields them live.
 - Each Trace file a compaction's rotation opens starts with the `session_meta` recording the
-  prompt and level its context runs with, then the connect pair (if any) and the toolset record;
+  prompt its context runs with, then the connect pair (if any) and the toolset record;
   `Session.metaMessage` follows the running context.
 - An Agent State that cannot be assembled when a context opens (a `system_config.yaml` that no
   longer parses) fails the run with that error and the engine stays on the old context — the same
@@ -92,7 +92,7 @@ approval mode: re-read from the DB per decision, effective immediately).
   gains `reconfigure({ toolConfig, vault })` and `pendingMcpServerNames()`.
 - SDK: `loadOrInitAgentState` is folded into `loadAgentState` — pass `init: {}` (or
   `init: { preset }`) for the create-or-load behavior; without `init` a missing Agent throws.
-  `SessionConfig.bootstrap` now takes `{ emit }` and returns `{ tools, llm }` (no `mcp`
+  `SessionConfig.bootstrap` now takes `{ emit }` and returns `{ llm }` (no `tools` or `mcp`
   field), publishing its connect pair and toolset record through `emit`; the
   `SessionConfig.mcpServers` field is gone — the bootstrap knows what it is connecting.
 - SDK: `RunOptions.thinkingLevel`, `SubagentHandle.run`'s `thinkingLevel` and

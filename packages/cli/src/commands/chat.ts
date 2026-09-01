@@ -44,6 +44,7 @@ import {
   getSessionInfo,
   getSessionMessages,
   listAgentSessions,
+  pinThinkingLevel,
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
@@ -155,14 +156,13 @@ export function registerChatCommand(program: Command, t: Messages): void {
               ? { approvalMode: caller.approvalMode }
               : {}),
         });
-        // `--thinking` on a new chat pins the Session default (sticky server-side, so
-        // spawned subagent sessions follow it — the same effect creation-time pinning
-        // had); with no flag, the caller's level pins the same way.
+        // `--thinking` on a new chat pins the Session (sticky server-side: it rides every
+        // later request of this Session; a subagent it spawns inherits the level its
+        // parent's context opened with, not the pin — run_subagent's own argument sets a
+        // child's level); with no flag, the caller's level pins the same way.
         const pin = flagThinking ?? caller?.thinkingLevel;
         if (pin) {
-          await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
-            thinkingLevel: pin,
-          });
+          await pinThinkingLevel(client, session.sessionId, pin);
           session = { ...session, thinkingLevel: pin };
         }
       }
@@ -173,9 +173,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // cached context. `--thinking` under `--resume` pins the existing Session the same
       // way; `/thinking <level>` re-pins.
       if (opts.resume !== undefined && flagThinking) {
-        await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
-          thinkingLevel: flagThinking,
-        });
+        await pinThinkingLevel(client, session.sessionId, flagThinking);
         session = { ...session, thinkingLevel: flagThinking };
       }
       const sessionThinkingLevel = (): string =>
@@ -473,9 +471,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
               out.write(`${t.thinkingCurrent(sessionThinkingLevel())}\n`);
             } else {
               try {
-                await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
-                  thinkingLevel: parsed.level,
-                });
+                await pinThinkingLevel(client, session.sessionId, parsed.level);
                 session = { ...session, thinkingLevel: parsed.level };
                 out.write(`${t.thinkingSet(parsed.level)}\n`);
               } catch (err) {
@@ -528,11 +524,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
               // Carry the current session's pinned thinking level over (whether it came
               // from --thinking or from the calling session's context).
               const pin = session.thinkingLevel;
-              if (pin) {
-                await client.request("PATCH", `/api/sessions/${next.sessionId}`, {
-                  thinkingLevel: pin,
-                });
-              }
+              if (pin) await pinThinkingLevel(client, next.sessionId, pin);
               if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
               session = pin ? { ...next, thinkingLevel: pin } : next;
               renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });

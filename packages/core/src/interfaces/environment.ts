@@ -130,19 +130,13 @@ export interface SubagentHandle {
    * handle without it simply reports "not steerable".
    */
   steer?(messages: OmniMessage[]): boolean;
+  /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
+  setThinkingLevel?(level: ThinkingLevelName): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void;
 }
 
-/**
- * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
- * `thinking_level` argument): the selectable tiers only — never `"none"`, mirroring the
- * user-facing pickers (many models cannot disable thinking; see the web picker's
- * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
- * argument inherits the parent Session's effective level, so a parent genuinely running
- * without a level still passes that down.
- */
-/** Every thinking level name, the `ThinkingLevelName` vocabulary as a runtime list (validating a recorded or wire value). */
+/** Every thinking level name, the `ThinkingLevelName` vocabulary as a runtime list (validating a wire value — the server's PATCH and Agent-config routes). */
 export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
   "none",
   "low",
@@ -152,6 +146,14 @@ export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
   "max",
 ];
 
+/**
+ * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
+ * `thinking_level` argument): the selectable tiers only — never `"none"`, mirroring the
+ * user-facing pickers (many models cannot disable thinking; see the web picker's
+ * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
+ * argument inherits the parent Session's effective level, so a parent genuinely running
+ * without a level still passes that down.
+ */
 export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
   "low",
   "medium",
@@ -446,6 +448,13 @@ export interface EnvironmentInterface {
    * never destroyed. False when the child is unknown or idle. Optional.
    */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /**
+   * Host-initiated pin of one live child session's thinking level (the child-session
+   * equivalent of assigning `Session.thinkingLevel`: applied from the child's next LLM
+   * request). False when the child is not live — a released child is revived through the
+   * host's loader, which restores the pin it stores. Optional.
+   */
+  setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /**
    * Attaches the single listener for subagent run-state changes (a round starting or
    * settling on any live child). The host re-reads `listBackgroundSubagents` on each ping —

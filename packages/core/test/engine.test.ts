@@ -33,7 +33,12 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces/index.js";
-import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessage/index.js";
+import type {
+  OmniMessage,
+  TextPayload,
+  TokenUsagePayload,
+  ToolCallPayload,
+} from "../src/omnimessage/index.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
@@ -534,6 +539,31 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     expect(fedBack).toBeDefined();
+  });
+
+  it("stamps the Session token series onto token_usage before it is yielded or written", async () => {
+    // The LLM reports per-request counts only (12 then 20 here; its session slot is a
+    // stand-in) and the engine authors the cumulative series. Consumers serialize at yield
+    // time (an SSE wire) and the Trace serializes inside the write, so the stamp must land
+    // before either — an in-memory reference fixed up later would hide the difference.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_series" });
+    const engine = new ContextEngine({ llm, environment, trace });
+    const yielded: number[] = [];
+    for await (const msg of engine.run([userText("go")], { approve: allowAll })) {
+      const p = msg.payload as { type?: string };
+      if (p.type !== "token_usage") continue;
+      yielded.push((JSON.parse(JSON.stringify(p)) as TokenUsagePayload).session.total);
+    }
+    expect(yielded).toEqual([12, 32]);
+    const written = (await readTrace(trace.currentPath()))
+      .filter((m) => (m.payload as { type?: string }).type === "token_usage")
+      .map((m) => (m.payload as TokenUsagePayload).session.total);
+    expect(written).toEqual([12, 32]);
   });
 
   it("engine maxTurns fallback is -1 (unlimited) when the option is omitted (direct SDK construction)", () => {

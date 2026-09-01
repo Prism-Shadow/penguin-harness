@@ -35,7 +35,12 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApproveFn, RunCutoff, SubagentHandle } from "../../../interfaces/index.js";
+import type {
+  ApproveFn,
+  RunCutoff,
+  SubagentHandle,
+  ThinkingLevelName,
+} from "../../../interfaces/index.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -151,8 +156,7 @@ export class ManagedSubagentSession {
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
    * `messages` is the round's input in the same OmniMessage shape `steer` takes — the caller
    * owns their `sender`, so a model dispatch and a human's panel message stay distinguishable
-   * in the child's Trace. `opts.thinkingLevel` pins this round only (a host follow-up's per-turn picker);
-   * `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
+   * in the child's Trace. `opts.suppressDoneReport` keeps the settle watcher quiet for this round — a HOST-initiated
    * round is the user's own conversation with the child, not work the model dispatched, so the
    * parent must not receive a completion notice for it. Throws if already disposed or still
    * running (converted to an explanatory output by the caller).
@@ -191,6 +195,13 @@ export class ManagedSubagentSession {
     // settling round must not additionally fire a completion report at the parent.
     this.reportCurrentRun = false;
     this.runCtrl?.abort();
+    return true;
+  }
+
+  /** Pins the child's thinking level (see SubagentHandle.setThinkingLevel); false when the session is dead or the handle predates the pin. */
+  setThinkingLevel(level: ThinkingLevelName): boolean {
+    if (this.killed || !this.handle.setThinkingLevel) return false;
+    this.handle.setThinkingLevel(level);
     return true;
   }
 

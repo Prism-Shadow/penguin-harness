@@ -41,6 +41,7 @@ import type {
   SubagentMessageOptions,
   SubagentMessageOutcome,
   SubagentRunner,
+  ThinkingLevelName,
   ToolConfig,
   ToolDefinition,
   ToolExecutionRequest,
@@ -187,16 +188,14 @@ export class Environment implements EnvironmentInterface {
       backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
     };
     this.equip(config.toolConfig);
+    this.mcp = this.newMcpProvider(config.toolConfig.mcpServers);
   }
 
   /**
-   * Assembles the toolset of a model context from its configuration: the tools supported by
-   * the registry become BuiltinTool instances (unrecognized tool names are skipped — neither
-   * exposed to the LLM nor executable), and MCP Servers bridge in lazily — construction only
-   * records the config; connecting and tool discovery happen on the first
-   * listTools()/executeTool() (see McpToolProvider). The vault is deliberately not handed to
-   * the MCP bridge: server processes see only the SDK's safe env defaults plus the entry's
-   * own env.
+   * Assembles the builtin half of a model context's toolset from its configuration: the
+   * tools supported by the registry become BuiltinTool instances (unrecognized tool names
+   * are skipped — neither exposed to the LLM nor executable). The MCP half is the provider:
+   * `newMcpProvider` at construction, `reconfigure`'s reconciliation of the live one later.
    */
   private equip(toolConfig: ToolConfig): void {
     this.toolConfig = toolConfig;
@@ -205,10 +204,18 @@ export class Environment implements EnvironmentInterface {
       const factory = BUILTIN_TOOL_FACTORIES[def.name];
       if (factory) this.tools.set(def.name, factory(def, this.services));
     }
-    this.mcp =
-      toolConfig.mcpServers.length > 0
-        ? new McpToolProvider(toolConfig.mcpServers, { workspaceDir: this.workspaceDir })
-        : null;
+  }
+
+  /**
+   * The MCP bridge for a server list (null without servers). MCP Servers bridge in lazily —
+   * construction only records the config; connecting and tool discovery happen on the first
+   * listTools()/executeTool() (see McpToolProvider). The vault is deliberately not handed to
+   * it: server processes see only the SDK's safe env defaults plus the entry's own env.
+   */
+  private newMcpProvider(servers: ToolConfig["mcpServers"]): McpToolProvider | null {
+    return servers.length > 0
+      ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
+      : null;
   }
 
   /**
@@ -224,21 +231,16 @@ export class Environment implements EnvironmentInterface {
    * sessions, the listeners, the Workspace and the scratchpad — are untouched. Concrete-class
    * surface, not part of EnvironmentInterface.
    */
-  reconfigure(config: { toolConfig: ToolConfig; vault?: Record<string, string> }): void {
+  reconfigure(config: { toolConfig: ToolConfig; vault: Record<string, string> }): void {
     const servers = config.toolConfig.mcpServers;
     if (this.mcp && servers.length > 0) {
       this.mcp.reconfigure(servers);
     } else {
       this.mcp?.closeQuietly();
-      this.mcp =
-        servers.length > 0
-          ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
-          : null;
+      this.mcp = this.newMcpProvider(servers);
     }
-    const mcp = this.mcp;
     this.equip(config.toolConfig);
-    this.mcp = mcp;
-    this.commandSessions.setVault(config.vault ?? {});
+    this.commandSessions.setVault(config.vault);
   }
 
   /** Configured MCP servers the next listTools() will contact — those without a live connection (never connected, failed, or changed by `reconfigure`); empty once every configured server is connected. Concrete-class surface for the composition layer's connect events. */
@@ -404,6 +406,11 @@ export class Environment implements EnvironmentInterface {
     return session.abortRun();
   }
 
+  /** Host-initiated pin of one live child session's thinking level (see EnvironmentInterface.setBackgroundSubagentThinkingLevel). */
+  setBackgroundSubagentThinkingLevel(childSessionId: string, level: ThinkingLevelName): boolean {
+    return this.subagentSessions.bySessionId(childSessionId)?.setThinkingLevel(level) ?? false;
+  }
+
   /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener). */
   setSubagentStateListener(listener: () => void): void {
     this.subagentSessions.setStateListener(() => {
@@ -460,11 +467,6 @@ export class Environment implements EnvironmentInterface {
       }));
     if (!this.mcp) return builtin;
     return [...builtin, ...(await this.mcp.listTools())];
-  }
-
-  /** Names of the validly configured MCP servers (config order; empty without MCP). Concrete-class surface for the composition layer's connect events — not part of EnvironmentInterface. */
-  mcpServerNames(): string[] {
-    return this.mcp?.serverNames() ?? [];
   }
 
   /** Per-server MCP connect outcomes, populated by the first listTools(); empty before it or without MCP. Feeds the mcp_connect_end event. */

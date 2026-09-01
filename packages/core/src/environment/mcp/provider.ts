@@ -87,11 +87,10 @@ export interface McpToolProviderOptions {
   warn?: (message: string) => void;
 }
 
-/** One connected server: its client, the tools discovered on it, and the executable wrappers built from the usable ones (registered into the toolset in config order, see `rebuildRegistry`). */
+/** One connected server: its client and the executable wrappers built from the usable tools discovered on it (registered into the toolset in config order, see `rebuildRegistry`). */
 interface McpConnection {
   server: ResolvedMCPServer;
   client: Client;
-  tools: Tool[];
   wrappers: BuiltinTool[];
 }
 
@@ -192,11 +191,6 @@ export class McpToolProvider {
   async listTools(): Promise<ToolDefinition[]> {
     await this.ensure();
     return this.defs;
-  }
-
-  /** Names of the (validly configured) servers of the current context, in config order. */
-  serverNames(): string[] {
-    return this.servers.map((s) => s.name);
   }
 
   /**
@@ -318,7 +312,9 @@ export class McpToolProvider {
                 transport: server.transport.kind,
                 status: "completed",
                 duration_ms: durationMs(),
-                tools: conn.tools.length,
+                // What actually joined the toolset (duplicates and LLM-unusable names are
+                // skipped), keeping the count consistent with tool_list_ready.
+                tools: conn.wrappers.length,
               },
             };
           } catch (err) {
@@ -359,9 +355,6 @@ export class McpToolProvider {
         continue;
       }
       this.connections.push(conn);
-      // The reported count is what actually joined the toolset (duplicates and
-      // LLM-unusable names are skipped), keeping it consistent with tool_list_ready.
-      result.tools = conn.wrappers.length;
     }
     this.rebuildRegistry();
   }
@@ -452,7 +445,7 @@ export class McpToolProvider {
         const wrapper = this.wrap(server, client, tool, seen);
         if (wrapper) wrappers.push(wrapper);
       }
-      return { server, client, tools: listed.tools, wrappers };
+      return { server, client, wrappers };
     } catch (err) {
       await client.close().catch(() => {});
       await transport.close().catch(() => {});

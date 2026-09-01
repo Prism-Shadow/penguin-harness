@@ -218,7 +218,7 @@ describe("Environment.executeTool — vault env injection", () => {
       expect((await env.listTools()).map((t) => t.name)).toEqual(["exec_command"]);
 
       // A context without exec_command: the tool is neither listed nor executable.
-      env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] } });
+      env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] }, vault: {} });
       expect(await env.listTools()).toEqual([]);
       expect(env.toolPermission("exec_command")).toBeUndefined();
       const gone = await collect(
@@ -255,8 +255,8 @@ describe("Environment.executeTool — vault env injection", () => {
       const last = messages[messages.length - 1]!.payload as { output?: string };
       expect(last.output).toContain("k=new-value added=added");
 
-      // An omitted vault clears it.
-      env.reconfigure({ toolConfig: makeToolConfig() });
+      // An empty vault clears it (the vault is replaced as a whole, never merged).
+      env.reconfigure({ toolConfig: makeToolConfig(), vault: {} });
       const cleared = await collect(
         env.executeTool({
           toolCall: toolCall({

@@ -428,7 +428,7 @@ describe("Session applies the policy at the approval boundary", () => {
     // No commandPolicy in the config: the factory rule set applies, on.
     const session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm }),
+      bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
@@ -489,7 +489,7 @@ describe("Session applies the policy at the approval boundary", () => {
     };
     const session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm }),
+      bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,

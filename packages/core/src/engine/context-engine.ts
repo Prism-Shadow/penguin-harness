@@ -83,7 +83,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
-import { MergeQueue } from "../internal/merge-queue.js";
+import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -1230,12 +1230,14 @@ export class ContextEngine {
           }
           const msg = res.value;
           receivedContent = true;
+          // token_usage means "this Request completed normally": record the context usage /
+          // Session cumulative counts — stamped onto the message BEFORE it is yielded or
+          // written, so the stream and the Trace carry the Session series rather than the
+          // LLM's per-request stand-in — and increment the Session turn count (counted per
+          // LLM Request, across Tasks; used for compaction threshold checks).
+          if (this.observeTokenUsage(msg)) this.sessionTurns += 1;
           queue.push(msg);
           await this.write(msg);
-          // token_usage means "this Request completed normally": record the context usage /
-          // Session cumulative counts, and increment the Session turn count (counted per LLM
-          // Request, across Tasks; used for compaction threshold checks).
-          if (this.observeTokenUsage(msg)) this.sessionTurns += 1;
           // Collect complete thinking/text segments (including partial segments finalized on
           // interruption), for carry-over flatten.
           if (
@@ -1801,8 +1803,9 @@ export class ContextEngine {
         };
       }
       const msg = res.value;
-      await this.write(msg);
+      // Stamped with the Session series before the write, exactly like a turn's (runTurn).
       if (this.observeTokenUsage(msg)) usage = msg;
+      await this.write(msg);
       // Streamed compaction progress (issue #290): the summary's own text rides the output
       // stream between the paired compaction events — partial_text fragments verbatim (all
       // three phases, so the server's live tail opens and closes its fragment and a join
@@ -1850,18 +1853,7 @@ export class ContextEngine {
   private async *startNewContext(): AsyncGenerator<OmniMessage> {
     // The opener publishes records through a callback; a merge queue turns them into this
     // generator's live yields while the opener is still running.
-    const queue = new MergeQueue();
-    queue.addProducer();
-    const opening = (async (): Promise<OpenedContext> => {
-      try {
-        return await this.deps.openNextContext!({ emit: (msg) => queue.push(msg) });
-      } finally {
-        queue.removeProducer();
-      }
-    })();
-    // A rejection is re-thrown by the await below; this branch only keeps it from being
-    // reported as unhandled while the queue is still being drained.
-    void opening.catch(() => {});
+    const { queue, result: opening } = pumpOpener((emit) => this.deps.openNextContext!({ emit }));
     const records: OmniMessage[] = [];
     for (;;) {
       const msg = await queue.next();

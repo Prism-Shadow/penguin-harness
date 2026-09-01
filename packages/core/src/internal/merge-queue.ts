@@ -6,8 +6,8 @@ import type { OmniMessage } from "../omnimessage/index.js";
  * the queue is drained. It is the engine's merge point for a turn's concurrent streams
  * (the LLM consumer plus N tool executions — see /docs/message-flow § "The merge point:
  * MergeQueue"), and the same pump turns a context opener's published records into live
- * yields: the engine's post-compaction `openNextContext` and the Session's first-run
- * bootstrap deliver through one mechanism.
+ * yields (see `pumpOpener`): the engine's post-compaction `openNextContext` and the Session's
+ * first-run bootstrap deliver through one mechanism.
  */
 export class MergeQueue {
   private items: OmniMessage[] = [];
@@ -49,4 +49,30 @@ export class MergeQueue {
       });
     }
   }
+}
+
+/**
+ * Runs a context opener — a procedure that publishes records through an `emit` callback while
+ * it works — behind a MergeQueue the caller drains: each record becomes a queue item the
+ * moment it is published, the queue closes when the opener settles, and the opener's outcome
+ * is `result`. A rejection is deferred to that promise (never reported as unhandled while the
+ * queue is still being drained), so the caller pumps the queue to its end, then awaits
+ * `result`. The engine's post-compaction open and the Session's first-run bootstrap are the
+ * two pumps.
+ */
+export function pumpOpener<T>(open: (emit: (msg: OmniMessage) => void) => T | Promise<T>): {
+  queue: MergeQueue;
+  result: Promise<T>;
+} {
+  const queue = new MergeQueue();
+  queue.addProducer();
+  const result = (async () => {
+    try {
+      return await open((msg) => queue.push(msg));
+    } finally {
+      queue.removeProducer();
+    }
+  })();
+  void result.catch(() => {});
+  return { queue, result };
 }

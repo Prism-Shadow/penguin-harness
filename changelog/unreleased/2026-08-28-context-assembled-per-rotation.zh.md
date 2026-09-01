@@ -37,8 +37,8 @@
   的 Session 不会每轮重启 Server——被删除或改动的关闭，只有新增、改动或上次失败的 Server 才连接，等待期间流式
   发出与首次运行相同的 `mcp_connect_begin` / `mcp_connect_end` 事件对（只列这些 Server），随后是新的
   `tool_list_ready`，由引擎实时推出。
-- 压缩轮转出的每个 Trace 文件都以记录该上下文实际所用提示词与思考等级的 `session_meta` 开头，随后是连接事件
-  对（如有）与工具集记录；`Session.metaMessage` 随运行中的上下文更新。
+- 压缩轮转出的每个 Trace 文件都以记录该上下文实际所用提示词的 `session_meta` 开头，随后是连接事件对（如有）
+  与工具集记录；`Session.metaMessage` 随运行中的上下文更新。
 - 上下文开启时 Agent State 装配失败（例如 `system_config.yaml` 已无法解析）则本次运行以该错误结束、引擎保持
   旧上下文——与新建 Session 遇到的是同一个错误；不做静默回退。
 - Agent State 装载收敛为一个函数：`loadAgentState`——带 `init` 即创建或装载入口（`createAgent` 与内置 Agent
@@ -62,8 +62,8 @@
   `Agent.createSession` / `resumeSession` 的代码无需改动。`Environment` 新增 `reconfigure({ toolConfig, vault })`
   与 `pendingMcpServerNames()`。
 - SDK：`loadOrInitAgentState` 并入 `loadAgentState`——创建或装载行为改传 `init: {}`（或 `init: { preset }`）；
-  不带 `init` 时 Agent 缺失即抛错。`SessionConfig.bootstrap` 改为接受 `{ emit }`、返回 `{ tools, llm }`（不再有
-  `mcp` 字段），连接事件对与工具集记录经 `emit` 发布；`SessionConfig.mcpServers` 字段随之删除——要连什么由
+  不带 `init` 时 Agent 缺失即抛错。`SessionConfig.bootstrap` 改为接受 `{ emit }`、返回 `{ llm }`（不再有
+  `tools` 与 `mcp` 字段），连接事件对与工具集记录经 `emit` 发布；`SessionConfig.mcpServers` 字段随之删除——要连什么由
   bootstrap 自己知道。
 - SDK：移除 `RunOptions.thinkingLevel`、`SubagentHandle.run` 的 `thinkingLevel` 与
   `SubagentMessageOptions.thinkingLevel`；原先逐次运行改等级的宿主改为给 `Session.thinkingLevel` 赋值——纯状态，

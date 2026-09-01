@@ -119,7 +119,7 @@ describe("chat /thinking (the Session's pinned thinking level, applied per model
     expect(anyTaskCarriesLevel(0)).toBe(false);
   });
 
-  it("--thinking pins the Session (a PATCH — sticky, so subagents follow); tasks carry no level", async () => {
+  it("--thinking pins the Session (a PATCH — sticky across tasks); tasks carry no level", async () => {
     const out = await driveChat(["/thinking", "go", "/exit"], ["--thinking", "xhigh"]);
     const session = [...server.sessions.values()][0]!;
     expect(session.patches).toContainEqual({ thinkingLevel: "xhigh" });

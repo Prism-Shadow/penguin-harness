@@ -10,8 +10,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
+import {
+  THINKING_LEVEL_NAMES,
+  imageUrlMessage,
+  scratchpadDir,
+  userText,
+} from "@prismshadow/penguin-core";
+import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
@@ -84,16 +89,6 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "deny-all",
   "read-only",
   "always-ask",
-];
-
-/** The valid thinking level names (SessionPatchRequest.thinkingLevel). */
-const THINKING_LEVELS: readonly ThinkingLevelName[] = [
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
 ];
 
 /** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
@@ -549,7 +544,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
-    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;

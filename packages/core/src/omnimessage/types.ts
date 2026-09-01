@@ -106,9 +106,9 @@ export interface ToolDefinition {
  * assembled system prompt is fixed per context — a context is assembled from the Agent State
  * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), so
  * each file's meta carries the prompt its context actually ran with; the context's toolset
- * follows as the `tool_list_ready` record. The thinking level is fixed per context as well
- * and recorded here: everything that shapes the request prefix — model, prompt, toolset,
- * thinking level — holds from a context's open to its close.
+ * follows as the `tool_list_ready` record. Everything that shapes the request prefix — model,
+ * prompt, toolset — holds from a context's open to its close; the thinking level is not part
+ * of it (a per-request parameter, deliberately not recorded — see the note in the body).
  */
 export interface SessionMetaPayload {
   session_id: string;

@@ -139,11 +139,11 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
 
   it("closes the previous context's servers and connects the new list on the next listTools", async () => {
     expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx__echo");
-    expect(env.mcpServerNames()).toEqual(["fx"]);
+    expect(env.pendingMcpServerNames()).toEqual([]);
 
     // A context without servers: nothing listed, the old tool names no longer resolve.
-    env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] } });
-    expect(env.mcpServerNames()).toEqual([]);
+    env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] }, vault: {} });
+    expect(env.pendingMcpServerNames()).toEqual([]);
     expect(env.mcpConnectResults()).toEqual([]);
     expect(await env.listTools()).toEqual([]);
     const gone = finalPayload(await runTool(env, "mcp__fx__echo", { text: "x" }));
@@ -154,8 +154,9 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     // the tools come back under the new prefix and execute.
     env.reconfigure({
       toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+      vault: {},
     });
-    expect(env.mcpServerNames()).toEqual(["fx2"]);
+    expect(env.pendingMcpServerNames()).toEqual(["fx2"]);
     expect(env.mcpConnectResults()).toEqual([]);
     expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
     expect(env.mcpConnectResults()).toEqual([
@@ -170,6 +171,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
     // and the connection keeps serving.
     env.reconfigure({
       toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+      vault: {},
     });
     expect(env.pendingMcpServerNames()).toEqual([]);
     expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
@@ -183,6 +185,7 @@ describe("Environment.reconfigure with MCP Servers (a new model context's server
         customTools: [],
         mcpServers: [{ ...fixtureEntry({ env: { FIXTURE_SECRET: "v2" } }), name: "fx2" }],
       },
+      vault: {},
     });
     expect(env.pendingMcpServerNames()).toEqual(["fx2"]);
     await env.listTools();
@@ -444,7 +447,7 @@ describe("MCP over stdio — per-server permission override", () => {
     const provider = new McpToolProvider([fixtureEntry({ permission: "readonly" })], { warn });
     try {
       expect(await provider.listTools()).toEqual([]);
-      expect(provider.serverNames()).toEqual([]);
+      expect(provider.pendingServerNames()).toEqual([]);
       expect(warn).toHaveBeenCalledWith(
         expect.stringMatching(/MCP server "fx" skipped: "permission" must be "auto", "r" or "rw"/),
       );

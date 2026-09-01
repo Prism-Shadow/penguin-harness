@@ -357,13 +357,16 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     } finally {
       explicit.dispose();
     }
-    // No explicit level and no project default -> the built-in "medium".
-    const bare = await createAgent();
-    delete bare.projectConfig.default_chat;
+    // No explicit level and no project default -> the built-in "medium". Both halves of
+    // the chain are read from disk when a context opens, so the SAME Agent object sees the
+    // Project config edited underneath it.
+    const noDefault = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    delete noDefault.default_chat;
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, noDefault);
     await patchSystemConfig((cfg) => {
       delete cfg.model?.thinking_level;
     });
-    const builtin = await bare.createSession({ workspaceDir: ws });
+    const builtin = await agent.createSession({ workspaceDir: ws });
     try {
       expect(await defaultLevelOf(builtin)).toBe("medium");
     } finally {

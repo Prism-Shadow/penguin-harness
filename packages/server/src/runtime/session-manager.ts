@@ -186,6 +186,8 @@ export interface RuntimeSession {
   setSubagentApprovalFallback?(approve: ApproveFn): void;
   /** Aborts one child session's current run, keeping the session (core `Session.abortBackgroundSubagentRun`); false when unknown or idle. Optional. */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /** Pins one live child session's thinking level (core `Session.setBackgroundSubagentThinkingLevel`); false when the child is not live. Optional. */
+  setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
   onSubagentState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
@@ -622,14 +624,21 @@ export class SessionManager {
   /**
    * Sets a Session's thinking level on its loaded runtime (core `Session.thinkingLevel`,
    * plain state): the row's value is what the loader applies at load, so this only needs to
-   * reach a runtime that is already in the active table. The level is soft-limited: it
-   * applies from the Session's very next LLM request (mid-context — the UI advises
-   * compacting first, since the change invalidates the provider's cached context). No-op
-   * when nothing is loaded.
+   * reach a runtime that is already in the active table — or a live child session, which
+   * has an index row and a panel picker of its own but runs inside its parent's runtime.
+   * The level is soft-limited: it applies from the Session's very next LLM request
+   * (mid-context — the UI advises compacting first, since the change invalidates the
+   * provider's cached context). No-op when nothing is loaded.
    */
   setThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
     const session = this.entries.get(sessionId)?.session;
-    if (session) session.thinkingLevel = level;
+    if (session) {
+      session.thinkingLevel = level;
+      return;
+    }
+    for (const entry of this.entries.values()) {
+      if (entry.session.setBackgroundSubagentThinkingLevel?.(sessionId, level)) return;
+    }
   }
 
   /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
@@ -943,7 +952,6 @@ export class SessionManager {
         objective,
         budget: args.budget,
       });
-      // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
       const gen = this.goalStream(entry, {
         input: args.input,
         budget: args.budget,
@@ -1050,14 +1058,7 @@ export class SessionManager {
     });
   }
 
-  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
-  /**
-   * Thinking level for one run: the level the request carried wins, else the level pinned
-   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
-   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
-   * a queued follow-up that carried no level of its own picks up the pin as it stands when
-   * it finally starts, and a pin set mid-run applies from the next run.
-   */
+  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run. Caller holds the session lock and has verified idle. */
   private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
@@ -1558,6 +1559,10 @@ export class SessionManager {
     // don't rebuild the entry (avoids reviving an orphaned Trace).
     this.assertSessionNotDeleting(row.sessionId);
     this.assertAgentNotDeleting(row.sessionId);
+    // A thinking-level PATCH that landed during the (awaited) load updated the row but found
+    // no entry to assign, and the loader applied the snapshot's level: re-read the pin.
+    const pin = this.deps.sessions.findById(row.sessionId)?.thinkingLevel;
+    if (pin && pin !== row.thinkingLevel) session.thinkingLevel = pin;
     let currentId = row.sessionId;
     if (session.sessionId !== row.sessionId) {
       // Self-heal produced a new session_id: update the index's primary key; the SSE
