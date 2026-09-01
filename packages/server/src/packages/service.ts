@@ -158,6 +158,7 @@ export class AgentPackageService implements AgentPackages {
     const pkg = await this.pack(projectId, agentId);
     // The same Agent updates the same gist: the caller may name one, otherwise the record
     // kept beside the Agent decides, and only a first publish creates.
+    const remembered = (await this.publishedGist(projectId, agentId))?.gistId ?? null;
     let existing: string | null = null;
     if (options.gistId !== undefined && options.gistId !== "") {
       try {
@@ -166,36 +167,56 @@ export class AgentPackageService implements AgentPackages {
         throw new HttpError(400, "invalid_gist", (err as Error).message);
       }
     } else {
-      existing = (await this.publishedGist(projectId, agentId))?.gistId ?? null;
+      existing = remembered;
     }
     const body: Record<string, unknown> = {
       description: `Penguin Agent: ${pkg.manifest.name} (${agentId})`,
       files: gistFilesOf(pkg.manifest, pkg.files),
     };
-    // `public` is honoured only on creation — GitHub ignores it on an update, and a gist's
-    // visibility cannot be changed after the fact.
-    if (existing === null) body["public"] = options.public;
-    const apiPath = existing === null ? "/gists" : `/gists/${existing}`;
-    let gist: GistResponse;
-    if (method === "gh") {
-      try {
-        gist = (await this.gh.api(apiPath, "POST", body)) as GistResponse;
-      } catch (err) {
-        if (err instanceof GhError)
-          throw new HttpError(400, "github_rejected", `gh: ${err.message}`);
-        throw err;
+    const send = async (target: string | null): Promise<GistResponse> => {
+      // `public` is honoured only on creation — GitHub ignores it on an update, and a
+      // gist's visibility cannot be changed after the fact.
+      const payload = target === null ? { ...body, public: options.public } : body;
+      const apiPath = target === null ? "/gists" : `/gists/${target}`;
+      if (method === "gh") {
+        try {
+          return (await this.gh.api(apiPath, "POST", payload)) as GistResponse;
+        } catch (err) {
+          if (err instanceof GhError) {
+            const gone = /not found|404/i.test(err.message);
+            throw new HttpError(
+              gone ? 404 : 400,
+              gone ? "not_found" : "github_rejected",
+              `gh: ${err.message}`,
+            );
+          }
+          throw err;
+        }
       }
-    } else {
       const res = await this.github(
         `${GIST_HOST}${apiPath}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
         },
         this.token(),
       );
-      gist = (await res.json()) as GistResponse;
+      return (await res.json()) as GistResponse;
+    };
+
+    let gist: GistResponse;
+    try {
+      gist = await send(existing);
+    } catch (err) {
+      // The remembered gist may have been deleted on GitHub since. Only what the server
+      // remembered is retried as a new gist — a target the caller named is theirs to fix.
+      const gone = err instanceof HttpError && err.status === 404;
+      if (!gone || existing === null || remembered !== existing) throw err;
+      this.log.line(
+        `[packages] ${projectId}/${agentId}: gist ${existing} is gone, creating a new one`,
+      );
+      gist = await send(null);
     }
     const id = typeof gist.id === "string" ? gist.id : null;
     const url = typeof gist.html_url === "string" ? gist.html_url : null;
