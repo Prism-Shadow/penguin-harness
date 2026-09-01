@@ -250,15 +250,15 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
-| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable): every later run that carries no level of its own uses it instead of the Agent config's, and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned) |
+| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal instead (409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the Agent): it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/goal-mode) |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead (409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the Agent): it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/goal-mode) |
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
 | DELETE | /steer/:steerId | Recall an undelivered steering message (ids ride `task_state`'s `pendingSteering`): withdraws it from the queue → 200 with its original content `{text, images, files}` (files read back from the scratchpad as data URLs, their disk copies deleted) so the composer can restore it for editing; 409 `not_pending` once it was delivered to the model |
-| DELETE | /follow-ups/:followUpId | Recall a queued follow-up task (ids ride `task_state`'s `pendingFollowUps`): removes it before it auto-starts → 200 with its original content `{text, images, files, thinkingLevel?}` — every queued follow-up carries that content, however it was queued; 409 `follow_up_started` once it already started |
+| DELETE | /follow-ups/:followUpId | Recall a queued follow-up task (ids ride `task_state`'s `pendingFollowUps`): removes it before it auto-starts → 200 with its original content `{text, images, files}` — every queued follow-up carries that content, however it was queued; 409 `follow_up_started` once it already started |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
@@ -383,9 +383,8 @@ Key request bodies (explicit keys):
 // POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // Thinking level for this Task (a per-turn parameter, one of the six names; 400 otherwise);
-  // omitted = falls back to the Session's pinned level, then to the Agent config
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  // The thinking level is not a task parameter: it belongs to the model context — pin it on
+  // the Session with PATCH, and each context the Session opens runs at the pinned level
 }
 type TaskInputPart =
   | { type: "text"; text: string }

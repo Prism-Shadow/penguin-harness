@@ -211,7 +211,7 @@ export function AgentSettingsPage() {
       try {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
-        toastSuccess(S.common.saved);
+        toastSuccess(S.agent.savedTakesEffect);
         // Name/description changes affect the breadcrumb and list display; a builtin-tools
         // change moves the card's tool count.
         if (

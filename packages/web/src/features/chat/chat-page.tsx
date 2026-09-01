@@ -27,7 +27,6 @@ import type {
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
-  TaskCreateRequest,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -507,10 +506,11 @@ export function ChatPage() {
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
-  // config's level while sends omit thinkingLevel (auto-follow — the server/core fallback
-  // applies, so Agent-config edits keep taking effect). A pin is DURABLE: it survives a
-  // reload, shows up in a second tab, and the server applies it to every later run of this
-  // Session. It is still never written through to the Agent config (that stays draft-only).
+  // config's level (auto-follow — each model context reads the config, so Agent-config edits
+  // keep taking effect). A pin is DURABLE: it survives a reload, shows up in a second tab,
+  // and core applies it from the Session's next LLM request on (soft-limited — the picker's
+  // menu advises compacting first, since the change invalidates the model's cached
+  // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
@@ -981,15 +981,11 @@ export function ChatPage() {
     async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
       if (!selected) return false;
       try {
-        // An explicitly picked per-turn thinking level rides on each task; "" (untouched)
-        // sends nothing — the server/core falls back to the Agent config, so config edits
-        // keep taking effect mid-session until the user pins a level.
+        // No thinking level rides a task: the level belongs to the model context (pinned on
+        // the Session through PATCH, see applyTurnThinkingLevel).
         const res = await api.postTask(selected.sessionId, {
           input,
           ...(goal ? { goal } : {}),
-          ...(turnThinkingLevel
-            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
-            : {}),
         });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
@@ -1117,13 +1113,7 @@ export function ChatPage() {
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, {
-          input,
-          queueIfBusy: true,
-          ...(turnThinkingLevel
-            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
-            : {}),
-        });
+        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -1169,11 +1159,10 @@ export function ChatPage() {
   );
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
-  // returned row into the session store (the picker reads it back from there). Modeled on
+  // returned row into the session store (the picker reads it back from there); it applies
+  // from the next LLM request (the picker's menu advises compacting first). Modeled on
   // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have. Declared above the recall
-  // callbacks because one of them lists it as a dependency, which is evaluated during
-  // render rather than when the callback runs.
+  // was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(
     (level: string) => {
       if (!selected) return;
@@ -1211,18 +1200,16 @@ export function ChatPage() {
     async (followUpId: string) => {
       if (!selected) return null;
       try {
-        const res = await api.recallFollowUp(selected.sessionId, followUpId);
-        // The follow-up was queued with a per-turn thinking level: restore it with the draft,
-        // so an unedited resend goes out exactly as it was queued. The level now lives on the
-        // Session (#310), so restoring it pins it there rather than in local state.
-        if (res.thinkingLevel) applyTurnThinkingLevel(res.thinkingLevel);
-        return res;
+        // A queued follow-up carries no thinking level of its own: the level lives on the
+        // Session and applies per model context, so a resend goes out at whatever the Session
+        // is pinned to.
+        return await api.recallFollowUp(selected.sessionId, followUpId);
       } catch (e) {
         toastError(apiErrorText(e));
         return null;
       }
     },
-    [selected, applyTurnThinkingLevel],
+    [selected],
   );
 
   const onApprove = useCallback(

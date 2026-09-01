@@ -67,7 +67,11 @@ if (dirs.length === 0) {
 }
 
 for (const app of dirs) {
-  for (const rel of ["bin/penguin", "bin/penguin.cmd", "dist/penguin.js"]) {
+  // The Web App travels by a `from: ../web/dist` mapping that electron-builder skips
+  // WITHOUT complaint when the source is absent — a pack run before the web build shipped
+  // an app whose every page was a 404. The shell now refuses to start such a build
+  // (src/web-dist.ts); this catches it before anything is uploaded.
+  for (const rel of ["bin/penguin", "bin/penguin.cmd", "dist/penguin.js", "web-dist/index.html"]) {
     const file = path.join(app, ...rel.split("/"));
     if (!fs.existsSync(file)) {
       problems.push(`${app}: ${rel} is missing from the packed app.`);

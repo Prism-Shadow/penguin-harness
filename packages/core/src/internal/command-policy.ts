@@ -16,8 +16,11 @@
  *
  * The config lives in `.project_config.toml` (`[command_policy]`) — Project-owned on purpose:
  * security policy belongs to the Project, not to Agent State the Agent itself can rewrite.
- * The Session receives a parsed snapshot at creation, so the running Session's policy cannot
- * be edited from inside the Session.
+ * The Session receives a policy SOURCE — a getter answering with the policy of the model
+ * context it is running, read from disk once when each context opens: command policy is
+ * strict-tier, so an edit applies when the next context opens (rotation), never mid-file.
+ * The getter is still consulted per decision, which is what hands the tool calls after a
+ * mid-run rotation the new context's policy without any reload machinery.
  *
  * The rules are **data, not code**: every rule (name / pattern / description / enabled) is
  * project-editable, and the factory set (state/command-policy-defaults.ts) is *seeded* into
@@ -147,16 +150,27 @@ export function vetoForToolCall(
   return evaluateCommandPolicy(text, policy);
 }
 
+/** Where the policy comes from at decision time: a getter answering with the running context's policy (see SessionConfig.commandPolicy) — consulted per approval, so a mid-run rotation swaps what later calls see. */
+export type CommandPolicySource = () => CommandPolicyConfig | undefined;
+
 /**
  * Wraps an approval callback with the policy: a vetoed call answers `"forbidden"` here and
  * `approve` is never reached, so no approval mode — and no Human implementation — can let
  * it through. `"forbidden"` is the decision's own third value: the engine renders it as
  * the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
  * user."), and the `approval_decision` event carries it — the model's text and the Trace
- * both name the decider.
+ * both name the decider. The `source` getter is consulted at every decision (no source, or
+ * a source yielding nothing, applies the factory rule set); a source that cannot be read
+ * fails toward the factory rules rather than waving the call through.
  */
-export function withCommandPolicy(approve: ApproveFn, policy?: CommandPolicyConfig): ApproveFn {
+export function withCommandPolicy(approve: ApproveFn, source?: CommandPolicySource): ApproveFn {
   return async (toolCall) => {
+    let policy: CommandPolicyConfig | undefined;
+    try {
+      policy = source?.();
+    } catch {
+      policy = undefined;
+    }
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
     if (veto) return "forbidden";
     return approve(toolCall);

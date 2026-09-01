@@ -58,9 +58,6 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
       expect(payloadType(last)).toBe("token_usage");
       const usage = last.payload as { request: { total: number } };
       expect(usage.request.total).toBeGreaterThan(0);
-
-      // Session-cumulative tokens are also recorded on the instance.
-      expect(model.sessionTokens.total).toBeGreaterThan(0);
     },
     // Live calls have inherent network/server jitter: allow a generous timeout and retries so
     // one slow API call doesn't fail CI (assertions stay strict; only transient timeouts are tolerated).

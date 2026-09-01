@@ -171,7 +171,7 @@ export function McpServersSection({
         config: { mcpServers: next },
       });
       setServers(res.config.mcpServers);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       return null;
     } catch (e) {
       return apiErrorText(e);

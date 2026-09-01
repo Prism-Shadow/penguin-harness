@@ -1,0 +1,22 @@
+# Rotating development and tuning headline
+
+- **Date:** 2026-08-31
+- **Type:** feature
+- **Scope:** `landing`
+- **PR:** [#560](https://github.com/Prism-Shadow/penguin-harness/pull/560)
+
+[中文版](2026-08-31-landing-rotating-headline.zh.md)
+
+Added an alternating phrase to the homepage headline: “auto-dev” / “auto-tuning” in English and “自动开发” / “自动调优” in Chinese.
+
+## Headline animation
+
+- Alternated the highlighted phrases every five seconds, holding each phrase still for 4.3 seconds before a 700ms upward transition.
+- Clipped the moving phrases to a single line, keeping the outgoing and incoming text from overlapping.
+- Reserved space for both phrases to keep the surrounding headline stable.
+- Provided both phrases as static screen-reader text and displayed them together when reduced motion was enabled.
+
+## Homepage copy
+
+- Updated the case-study heading to “One sentence to an AI app that thinks and runs” and its Chinese counterpart.
+- Shortened the platform summary to “Cross-Platform Deployment” / “跨平台部署” and unified its label as “Linux · Windows · macOS” in both languages.

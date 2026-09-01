@@ -902,10 +902,11 @@ export class StreamRenderer {
         );
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_begin") {
-        // Paired MCP connect events (first run only): begin shows which servers are being
-        // contacted so the pre-first-request wait is never a silent hang. The begin
-        // timestamp is kept so the end line can report the wall time (messages carry
-        // their own timestamps; the payload holds no duplicate duration).
+        // Paired MCP connect events (the first run, and every context a compaction opens):
+        // begin shows which servers are being contacted so the wait before the next
+        // request is never a silent hang. The begin timestamp is kept so the end line can
+        // report the wall time (messages carry their own timestamps; the payload holds no
+        // duplicate duration).
         const p = payload as McpConnectBeginPayload;
         this.mcpConnectStartMs = Date.parse(msg.timestamp);
         this.finishLine();

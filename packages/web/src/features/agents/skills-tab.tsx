@@ -173,7 +173,7 @@ export function SkillsTab({
     setBusy(true);
     try {
       await api.removeAgentSkill(projectId, agentId, removing);
-      toastSuccess(S.skills.uninstalledToast(removing, agentName));
+      toastSuccess(`${S.skills.uninstalledToast(removing, agentName)}${S.agent.takesEffectSuffix}`);
       await load();
       // The agent card's skill count changed; refresh the list provider too.
       void reloadAgents();
@@ -246,7 +246,7 @@ export function SkillsTab({
       });
       setOverwriting(null);
       setImportOpen(false);
-      toastSuccess(S.skills.importDoneToast);
+      toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
       await load();
       // The agent card's skill count changed; refresh the list provider too.
       void reloadAgents();

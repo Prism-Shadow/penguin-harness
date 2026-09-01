@@ -28,7 +28,7 @@ import {
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
 import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { readTrace } from "../src/trace/index.js";
-import { tracesDir } from "../src/state/paths.js";
+import { agentsMdPath, tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
 // The default project config ships with this model ((provider, model_id) pair reference; model_id is the upstream id).
@@ -217,49 +217,6 @@ describe("agent.resumeSession", () => {
     const again = await agent.resumeSession({ sessionId: SID });
     again.dispose();
     expect((await readTrace(file)).length).toBe(closed.length);
-  });
-
-  it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {
-    // session_meta no longer carries a thinking level (it became a per-turn run parameter);
-    // a `thinking_level` still present in an OLD trace's meta JSON is deliberately ignored —
-    // resume always reads this Agent's current config, so a resumed legacy subagent session
-    // falls back to the config level instead of keeping the level it inherited at spawn
-    // time. The seeded Agent config here pins "medium".
-    const agent = await createAgent({});
-    expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
-    const levelOf = async (session: unknown): Promise<unknown> => {
-      // The LLM only exists after the lazy first-run bootstrap — drive it before reading.
-      const gen = (session as { ensureReady(): AsyncGenerator<unknown> }).ensureReady();
-      for await (const _ of gen) {
-        // drain
-      }
-      return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
-        .deps.llm.defaultThinkingLevel;
-    };
-
-    const recorded = metaFor(SID, workspace);
-    // A legacy trace: inject the retired field loosely into the on-disk meta JSON.
-    (recorded.payload as unknown as Record<string, unknown>).thinking_level = "xhigh";
-    await writeTraceFile(tmpRoot, SID, [recorded, userText("hello")]);
-    const ignored = await agent.resumeSession({ sessionId: SID });
-    expect(await levelOf(ignored)).toBe("medium");
-    // The rebuilt meta holds invariants only: the legacy field is never re-recorded either.
-    expect(
-      "thinking_level" in (ignored.metaMessage.payload as unknown as Record<string, unknown>),
-    ).toBe(false);
-
-    // A current trace (no field) — and the legacy literal "default" — read the Agent config too.
-    const SID2 = "session-2026-07-06-11-00-00-abcdef02";
-    await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
-    const fallback = await agent.resumeSession({ sessionId: SID2 });
-    expect(await levelOf(fallback)).toBe("medium");
-
-    const SID3 = "session-2026-07-06-12-00-00-abcdef03";
-    const legacyDefault = metaFor(SID3, workspace);
-    (legacyDefault.payload as unknown as Record<string, unknown>).thinking_level = "default";
-    await writeTraceFile(tmpRoot, SID3, [legacyDefault, userText("hi")]);
-    const viaDefault = await agent.resumeSession({ sessionId: SID3 });
-    expect(await levelOf(viaDefault)).toBe("medium");
   });
 
   it("does not write pairing placeholders to the trace file (resume is side-effect free)", async () => {
@@ -487,5 +444,97 @@ describe("setHistory injection", () => {
     model.setHistory([userText("hello"), assistantText("hi")]);
     const client = (model as unknown as { client: { getHistory(): unknown[] } }).client;
     expect(client.getHistory()).toHaveLength(2);
+  });
+});
+
+describe("agent.resumeSession system prompt per context", () => {
+  const SID = "session-2026-07-06-13-00-00-abcdef11";
+  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+    (session.metaMessage.payload as { system_prompt: string }).system_prompt;
+
+  it("opens a context closed by a completed compaction with the current AGENTS.md, not the closed file's recorded prompt", async () => {
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      tokenUsage(usage(150), usage(150)),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]carry on[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]);
+    await fs.writeFile(
+      agentsMdPath(tmpRoot, "default_project", "default_agent"),
+      "EDITED BEFORE RESUME",
+      "utf8",
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      // The closed context is opened here for the first time — nothing was produced under any
+      // prompt yet — so it gets the prompt assembled now, as the compaction would have opened it.
+      expect(promptOf(session)).toContain("EDITED BEFORE RESUME");
+      expect(promptOf(session)).not.toBe("ORIGINAL SYSTEM PROMPT");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("ignores a legacy recorded thinking level on resume: the level is a per-request parameter", async () => {
+    const withLevel = (level: string): OmniMessage => {
+      const meta = metaFor(SID, workspace);
+      return {
+        ...meta,
+        payload: { ...meta.payload, thinking_level: level },
+      } as unknown as OmniMessage;
+    };
+    const traceRecords = (meta: OmniMessage): OmniMessage[] => [
+      meta,
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi there"),
+      requestEnd("completed"),
+    ];
+    const agent = await createAgent({});
+    // A legacy file recording "xhigh" does not shape the resumed context: the meta assembled
+    // for it records no level at all — the level resolves per request from the pin and the
+    // Agent config, exactly as on any other open.
+    await writeTraceFile(tmpRoot, SID, traceRecords(withLevel("xhigh")));
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(
+        (session.metaMessage.payload as { thinking_level?: string }).thinking_level,
+      ).toBeUndefined();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("keeps the recorded prompt for an open context: its replayed history was produced under it", async () => {
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi there"),
+      requestEnd("completed"),
+    ]);
+    await fs.writeFile(
+      agentsMdPath(tmpRoot, "default_project", "default_agent"),
+      "EDITED BEFORE RESUME",
+      "utf8",
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(promptOf(session)).toBe("ORIGINAL SYSTEM PROMPT");
+    } finally {
+      session.dispose();
+    }
   });
 });

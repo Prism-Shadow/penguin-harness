@@ -168,7 +168,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 `run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 驱动；子 Agent 的待审批项会在轮询等待期间浮出。`input_subagent` 覆盖四种手势：`prompt` 为空仅轮询；子会话**运行中**发 `prompt` 即中途插话（与用户对主会话的运行中 steering 同一机制——在子会话下一步以 `[user_steering]` 消息送达，写入子 Trace、sender 记为 `parent_agent`）；空闲时发 `prompt` 即在同一会话上续跑一轮；`abort: true` 只停止子会话**当前这一轮**——会话保留、可继续插话或续跑，与 `prompt` 同给即打断并改道。`input_subagent` 每次访问的模型面输出是子会话**最近一条完整回复**——「它最后说了什么」的幂等快照，而非增量排空。传 `run_in_background: true` 则启动即返回 `subagent_id`，模型发起的每轮完成都以自动 user message 送达（面板发起的轮与被显式 abort 的轮不回报；见[后台完成回报](#后台完成回报)）。**Subagent 没有 kill**：与主 Agent 一样，子会话永不销毁——释放空闲会话只是腾出并发额度，已释放的 `subagent_id` 在再次收到消息时**自动复活**（模型访问与面板走同一条 resume 路径）。
 
-Web App 的智能体面板用**与主对话相同的 composer**（子会话变体）驱动选中的子会话：正文、技能与 slash 技能命令、per-turn 思考等级（作用于这条消息开启的一轮）、上下文圆环（子会话自身用量）、锁定模型徽标，以及审批模式选择——它读写的是父会话的模式，子会话审批本就按其判定。发消息就是对子会话的一次用户输入，无论其状态如何：运行中即插话，空闲即续跑一轮，会话已被释放则**复活**——服务端按 resume 口径恢复该子 Session（沿用其历史、模型与 Workspace）并重新纳管，对话直接继续。操作按钮的停止面只中止子会话当前这一轮。这一切与 `input_subagent` 收敛到 core 的同一通道；面板的运行标识以服务端实况为准，不再从对话文本推断。
+Web App 的智能体面板用**与主对话相同的 composer**（子会话变体）驱动选中的子会话：正文、技能与 slash 技能命令、思考等级选择器（钉在子会话上，从其下一个模型上下文生效）、上下文圆环（子会话自身用量）、锁定模型徽标，以及审批模式选择——它读写的是父会话的模式，子会话审批本就按其判定。发消息就是对子会话的一次用户输入，无论其状态如何：运行中即插话，空闲即续跑一轮，会话已被释放则**复活**——服务端按 resume 口径恢复该子 Session（沿用其历史、模型与 Workspace）并重新纳管，对话直接继续。操作按钮的停止面只中止子会话当前这一轮。这一切与 `input_subagent` 收敛到 core 的同一通道；面板的运行标识以服务端实况为准，不再从对话文本推断。
 
 ```ts
 // run_subagent
@@ -246,7 +246,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 | --- | --- |
 | SDK | 每次 `session.run` 传入 `approve` 回调；未注入时引擎默认全部拒绝(保守策略，避免无人值守下误放行) |
 | CLI | `--approve` 四种模式：allow-all(默认)/ deny-all / read-only / always-ask;read-only 自动放行 `permission: "r"` 的工具，其余转人工 |
-| Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读，改模式立即生效；人工决策经 API 送达 |
+| Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读审批模式（修改即刻生效）；工具的 `r`/`rw` 取自运行中上下文的工具集——权限修改在下一次轮换（压缩）生效；人工决策经 API 送达 |
 
 deny 会合成一条 `aborted` 的 `tool_call_output` 供模型据此调整策略——`Tool call denied by user.`，被[命令策略](/configuration#沙箱安全策略)拒绝时为 `Tool call denied by policy.`，策略命中因此不会被读成「有人取消了」。见 [ApproveFn](/interfaces#approvefn)。每次决策都以 `approval_decision` 事件写入 Trace（策略拦截即记 `forbidden`），构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
 
@@ -300,7 +300,7 @@ tools:
 
 行为口径：
 
-- 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态；end 带总体 status 与逐 Server 结果），完成后以 `tool_list_ready` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）；这三条消息在 Trace 中写在本轮输入之后，归属新轮次。运行中打断即**取消**本次连接，下次 `run()` 重新连接。发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
+- 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态；end 带总体 status 与逐 Server 结果），完成后以 `tool_list_ready` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）；这三条消息在 Trace 中写在本轮输入之后，归属新轮次。运行中打断即**取消**本次连接，下次 `run()` 重新连接。发现结果是当前模型上下文内的快照：`tools/list_changed` 通知被忽略；压缩开启下一个上下文时，Server 按当时的配置重新连接，同样以这对事件框定（见[上下文压缩](/agent-loop)）。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
 - 发现的工具以 `mcp__<server>__<tool>` 进入统一工具命名空间，与内置工具走同一条[执行契约](#执行契约)（超时、截断、打断）与[审批](#审批)流程。
 - 权限映射：缺省的 `permission: auto` 下，Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。把条目的 `permission` 设为 `r` 或 `rw`，则该 Server 的**全部**工具一律按此取值，覆盖注解——大量 Server 从不设置 `readOnlyHint`、因而整体落到 `rw`，这个字段就是为它们准备的。
 - `permission` 的边界：它固定该 Server 每个工具对外报出的等级，而读这个等级的审批模式只有一个。`read-only` 下 `r` 工具自动放行、`rw` 工具需人工确认；`allow-all` / `deny-all` / `always-ask` 根本不查询它，标成 `rw` 的条目在这些模式下也不会多出一次审批。除此之外该字段什么都不做：不为 Server 提供沙箱，不限制其工具运行时的行为，不会发给 Server、也不向 Server 核验，Server 依旧拥有其 transport 赋予的全部能力。把一个实际能写的 Server 标为 `r`，撤掉的就是 `read-only` 本会索要的那次确认。

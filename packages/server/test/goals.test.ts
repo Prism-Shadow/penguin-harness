@@ -79,7 +79,7 @@ describe("SessionManager.startGoal", () => {
     db.close();
   });
 
-  type RunOpts = { thinkingLevel?: string };
+  type RunOpts = Record<string, never>;
 
   /**
    * Fake session: `run` emits the goal stream the way core would — the run's own initial
@@ -104,9 +104,8 @@ describe("SessionManager.startGoal", () => {
       skipReconnectWait: () => false,
       async *run(input: OmniMessage[], opts) {
         runs.push(input);
-        runOpts.push({
-          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-        });
+        void opts;
+        runOpts.push({});
         yield* stream(input);
       },
       async *compact() {},
@@ -149,13 +148,13 @@ describe("SessionManager.startGoal", () => {
       input: [userText(text), roundInput(1)],
       objective: "make it work",
       budget: -1,
-      thinkingLevel: "high",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // One run call carries the whole goal: the input verbatim and the per-goal thinking
-    // level (the plugin's stop hook drives the rounds inside it).
-    expect(session.runOpts).toEqual([{ thinkingLevel: "high" }]);
+    // One run call carries the whole goal — the input verbatim, no extra run options: the
+    // plugin's stop hook drives the rounds inside it, and the thinking level is the
+    // Session's own soft state rather than a per-run parameter.
+    expect(session.runOpts).toEqual([{}]);
 
     const server = serverEvents(events);
     // The published objective is the one the route passed (the user's own text, markers stripped).

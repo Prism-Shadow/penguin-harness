@@ -97,6 +97,7 @@ export class ApprovalRegistry {
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
+  /** A tool's permission level, from the running context's toolset (core Session.toolPermission): strict-tier — a permission edit applies when the next context opens. */
   toolPermission: (name: string) => "r" | "rw" | undefined;
   registry: ApprovalRegistry;
   publishRequest: (pending: PendingApproval) => void;

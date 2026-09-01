@@ -343,8 +343,32 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
   });
 
   it("a disabled policy delegates every call, vetoed or not", async () => {
-    const guarded = withCommandPolicy(async () => "allow", { enabled: false });
+    const guarded = withCommandPolicy(
+      async () => "allow",
+      () => ({ enabled: false }),
+    );
     expect(await guarded(call("rm -rf /") as never)).toBe("allow");
+  });
+
+  it("consults the policy source at every decision, so a mid-run rotation swaps what later calls see", async () => {
+    // The source answers with the running context's policy from memory; consulting it per
+    // call is what hands the tool calls after a mid-run rotation the new context's policy.
+    let policy: { enabled: boolean } = { enabled: false };
+    const guarded = withCommandPolicy(
+      async () => "allow",
+      () => policy,
+    );
+    expect(await guarded(call("rm -rf /") as never)).toBe("allow");
+    policy = { enabled: true };
+    expect(await guarded(call("rm -rf /") as never)).toBe("forbidden");
+    // A source that cannot be read fails toward the factory rules, never toward allow.
+    const failing = withCommandPolicy(
+      async () => "allow",
+      () => {
+        throw new Error("unreadable");
+      },
+    );
+    expect(await failing(call("rm -rf /") as never)).toBe("forbidden");
   });
 });
 
@@ -404,8 +428,7 @@ describe("Session applies the policy at the approval boundary", () => {
     // No commandPolicy in the config: the factory rule set applies, on.
     const session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
@@ -466,12 +489,11 @@ describe("Session applies the policy at the approval boundary", () => {
     };
     const session = new Session({
       meta: meta(),
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment,
       imagesDir: path.join(tmp, "images"),
       modelHasVision: true,
-      commandPolicy: { enabled: false },
+      commandPolicy: () => ({ enabled: false }),
     });
 
     for await (const _ of session.run([userText("clean up")], {

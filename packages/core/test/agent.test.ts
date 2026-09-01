@@ -14,7 +14,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { OmniMessage } from "../src/omnimessage/index.js";
+import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
+import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
 import {
   addModel,
   createAgent,
@@ -88,6 +91,18 @@ afterEach(async () => {
 // effectiveMaxContextLength moved to llm/context-limits.ts; its derivation (window-derived
 // compaction threshold, issue #218) is covered in test/context-limits.test.ts.
 
+/**
+ * Edits the default Agent's on-disk `system_config.yaml`: a Session runs on the Agent State as
+ * it is on disk when each of its model contexts opens, never on the Agent object's load-time
+ * snapshot — so a test that wants a config to take effect writes it here.
+ */
+async function patchSystemConfig(patch: (cfg: SystemConfig) => void): Promise<void> {
+  const file = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+  const cfg = parseYaml(await fs.readFile(file, "utf8")) as SystemConfig;
+  patch(cfg);
+  await fs.writeFile(file, stringifyYaml(cfg), "utf8");
+}
+
 /** Drains the session's lazy first-run bootstrap so the engine (and its LLM) exists for inspection. */
 async function bootstrapped(session: unknown): Promise<void> {
   const gen = (session as { ensureReady(): AsyncGenerator<unknown> }).ensureReady();
@@ -153,10 +168,9 @@ describe("Agent.createSession workspace handling", () => {
 
   it("passes model timeout from system_config to GenerativeModel", async () => {
     const agent = await createAgent();
-    agent.state.systemConfig.model = {
-      ...(agent.state.systemConfig.model ?? {}),
-      timeoutMs: 3456,
-    };
+    await patchSystemConfig((cfg) => {
+      cfg.model = { ...(cfg.model ?? {}), timeoutMs: 3456 };
+    });
     const ws = path.join(tmpRoot, "ws-timeout");
     await fs.mkdir(ws, { recursive: true });
 
@@ -272,15 +286,15 @@ describe("Agent.createSession session source (session_meta origin marker)", () =
 });
 
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
-  // The session's default level lives on the LLM object (per-request overrides fall back to
-  // it); session_meta holds per-session invariants only and never records a thinking level.
+  // A context's level is the LLM object's construction default (the Session's live pin
+  // overrides it per request); nothing is recorded — the level is a per-request parameter.
   const defaultLevelOf = async (session: unknown): Promise<unknown> => {
     await bootstrapped(session);
     return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
       .deps.llm.defaultThinkingLevel;
   };
 
-  it("falls back to the Agent config for the llm default; session_meta records no level", async () => {
+  it("falls back to the Agent config for the llm default", async () => {
     const agent = await createAgent();
     // The seeded Agent config pins thinking_level "medium" — the only source when no option is given.
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
@@ -288,10 +302,6 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      // session_meta contains ONLY per-session invariants: the thinking level is per-turn.
-      expect(
-        "thinking_level" in (session.metaMessage.payload as unknown as Record<string, unknown>),
-      ).toBe(false);
       expect(await defaultLevelOf(session)).toBe("medium");
       expect(mapThinkingLevel("medium")).toBeDefined(); // the name maps onto the wire enum
     } finally {
@@ -320,7 +330,9 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
     const agent = await createAgent();
     // A hand-edited config without a level (the seeded default pins "medium").
-    delete agent.state.systemConfig.model?.thinking_level;
+    await patchSystemConfig((cfg) => {
+      delete cfg.model?.thinking_level;
+    });
     const ws = path.join(tmpRoot, "ws-thinking-project");
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
@@ -345,11 +357,16 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     } finally {
       explicit.dispose();
     }
-    // No explicit level and no project default -> the built-in "medium".
-    const bare = await createAgent();
-    delete bare.projectConfig.default_chat;
-    delete bare.state.systemConfig.model?.thinking_level;
-    const builtin = await bare.createSession({ workspaceDir: ws });
+    // No explicit level and no project default -> the built-in "medium". Both halves of
+    // the chain are read from disk when a context opens, so the SAME Agent object sees the
+    // Project config edited underneath it.
+    const noDefault = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    delete noDefault.default_chat;
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, noDefault);
+    await patchSystemConfig((cfg) => {
+      delete cfg.model?.thinking_level;
+    });
+    const builtin = await agent.createSession({ workspaceDir: ws });
     try {
       expect(await defaultLevelOf(builtin)).toBe("medium");
     } finally {
@@ -420,10 +437,9 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
 
   it("inherits the parent's model pair, thinking level, and workspace when the args omit them", async () => {
     const agent = await createAgent();
-    agent.state.systemConfig.model = {
-      ...(agent.state.systemConfig.model ?? {}),
-      thinking_level: "high",
-    };
+    await patchSystemConfig((cfg) => {
+      cfg.model = { ...(cfg.model ?? {}), thinking_level: "high" };
+    });
     const ws = path.join(tmpRoot, "ws-inherit");
     await fs.mkdir(ws, { recursive: true });
     // The parent runs a NON-default model: the Project default (deepseek pair) must not leak in.
@@ -500,10 +516,9 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
 
   it("pins an explicit spawn-time thinking level over inheritance (run_subagent's thinking_level)", async () => {
     const agent = await createAgent();
-    agent.state.systemConfig.model = {
-      ...(agent.state.systemConfig.model ?? {}),
-      thinking_level: "high",
-    };
+    await patchSystemConfig((cfg) => {
+      cfg.model = { ...(cfg.model ?? {}), thinking_level: "high" };
+    });
     const ws = path.join(tmpRoot, "ws-thinking-override");
     await fs.mkdir(ws, { recursive: true });
     const parent = await agent.createSession({ workspaceDir: ws });
@@ -558,10 +573,9 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     // config (thinking "medium") and the Project default model must both lose to the parent.
     await createAgent({ agentId: "helper_agent" });
     const agent = await createAgent();
-    agent.state.systemConfig.model = {
-      ...(agent.state.systemConfig.model ?? {}),
-      thinking_level: "xhigh",
-    };
+    await patchSystemConfig((cfg) => {
+      cfg.model = { ...(cfg.model ?? {}), thinking_level: "xhigh" };
+    });
     const ws = path.join(tmpRoot, "ws-inherit-cross");
     await fs.mkdir(ws, { recursive: true });
     const parent = await agent.createSession({
@@ -843,6 +857,279 @@ describe("Agent.createSession skill metadata injection", () => {
       // Only metadata is injected; the model reads the body on demand.
       expect(meta.system_prompt).not.toContain("SKILL_BODY_NOT_IN_PROMPT");
       expect(meta.system_prompt).not.toContain("{{SKILL_METADATA}}");
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Agent model contexts are assembled from the Agent State on disk, at every context open", () => {
+  const promptOf = (session: { metaMessage: OmniMessage }): string =>
+    (session.metaMessage.payload as { system_prompt: string }).system_prompt;
+  const mdFile = () => agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+  const typeOf = (msg: OmniMessage | undefined): string | undefined =>
+    (msg?.payload as { type?: string } | undefined)?.type;
+  /** The engine-facing context opener (the Session's wrapper around the Agent's factory), reachable once the first-run bootstrap has resolved the toolset. */
+  const openerOf = (session: unknown) =>
+    (
+      session as {
+        engine: {
+          deps: {
+            openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
+          };
+        };
+      }
+    ).engine.deps.openNextContext;
+  /** Opens the Session's next context through its opener, collecting the records the opener publishes. */
+  async function openNext(
+    session: unknown,
+  ): Promise<{ opened: OpenedContext; records: OmniMessage[] }> {
+    const records: OmniMessage[] = [];
+    const opened = await openerOf(session)({ emit: (msg) => records.push(msg) });
+    return { opened, records };
+  }
+  /** The config the most recently constructed GenerativeModel was given. */
+  const lastBuilt = () =>
+    capturedLLMConfigs.list.at(-1) as
+      { systemPrompt?: string; tools?: { name: string }[]; thinkingLevel?: string } | undefined;
+  const toolNames = (tools: { name: string }[] | undefined): string[] =>
+    (tools ?? []).map((t) => t.name);
+  /** The vault the Environment's command session registry injects at every spawn. */
+  const environmentVaultOf = (session: unknown): Record<string, string> =>
+    (session as { environment: { commandSessions: { vault: Record<string, string> } } }).environment
+      .commandSessions.vault;
+
+  it("createSession assembles from disk, not from the Agent's load-time snapshot", async () => {
+    const agent = await createAgent();
+    await fs.writeFile(mdFile(), "EDITED AFTER LOAD", "utf8");
+    await patchSystemConfig((cfg) => {
+      cfg.max_turns = 7;
+    });
+    const ws = path.join(tmpRoot, "ws-md-disk");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(promptOf(session)).toContain("EDITED AFTER LOAD");
+      expect(
+        (session as unknown as { engineDeps: { maxTurns?: number } }).engineDeps.maxTurns,
+      ).toBe(7);
+      // The Agent object's copies are the load-time snapshot; no Session runs on them.
+      expect(agent.state.agentsMd).not.toContain("EDITED AFTER LOAD");
+      expect(agent.state.systemConfig.max_turns).not.toBe(7);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the context opened after compaction is rebuilt whole — prompt, toolset, vault, run settings — and its records describe it", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-rebuild");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      expect(toolNames(lastBuilt()!.tools)).toContain("write_file");
+      expect(environmentVaultOf(session)).toEqual({});
+      expect(promptOf(session)).not.toContain("EDITED DURING THE OLD CONTEXT");
+
+      // Everything edited during the old context — by the model working on its own
+      // configuration, or by hand in the Agent settings.
+      await fs.writeFile(mdFile(), "EDITED DURING THE OLD CONTEXT", "utf8");
+      await setVaultEntry(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, "NEW_API_KEY", "shh");
+      await patchSystemConfig((cfg) => {
+        cfg.tools = {
+          ...(cfg.tools ?? {}),
+          builtin: (cfg.tools?.builtin ?? []).filter((t) => t.name !== "write_file"),
+        };
+        cfg.compaction = { ...(cfg.compaction ?? {}), mode: "discard" };
+        cfg.max_turns = 3;
+        cfg.model = { ...(cfg.model ?? {}), thinking_level: "high" };
+      });
+
+      const { opened, records } = await openNext(session);
+
+      // The new LLM object carries the re-assembled prompt, the re-read toolset and the
+      // config's model defaults…
+      const after = lastBuilt()!;
+      expect(after.systemPrompt).toContain("EDITED DURING THE OLD CONTEXT");
+      expect(after.systemPrompt).toContain("NEW_API_KEY");
+      expect(toolNames(after.tools)).not.toContain("write_file");
+      expect(toolNames(after.tools)).toContain("read_file");
+      expect(after.thinkingLevel).toBe("high");
+      // …the vault's values went straight into the Environment's command environment…
+      expect(environmentVaultOf(session)).toEqual({ NEW_API_KEY: "shh" });
+      // …the engine settings follow the re-read config…
+      expect(opened.maxTurns).toBe(3);
+      expect(opened.compaction?.mode).toBe("discard");
+      // …the meta the rotated Trace file opens with records exactly that prompt (the Session's
+      // own meta follows the running context), and the toolset record is published for the
+      // file head and the live stream.
+      const recorded = (opened.sessionMeta!.payload as { system_prompt: string }).system_prompt;
+      expect(recorded).toBe(after.systemPrompt);
+      expect(promptOf(session)).toBe(recorded);
+      expect(records.map(typeOf)).toEqual(["tool_list_ready"]);
+      expect(toolNames((records[0]!.payload as { tools: { name: string }[] }).tools)).toEqual(
+        toolNames(after.tools),
+      );
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("session_meta records no level; the config default and a null pin shape only the LLM base", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-meta");
+    await fs.mkdir(ws, { recursive: true });
+    const levelOf = (session: { metaMessage: OmniMessage }) =>
+      (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+
+    // The seeded config pins "medium"; a `null` pin (a subagent whose parent has none) runs
+    // without a level. Neither is recorded: the level is a per-request parameter.
+    const configured = await agent.createSession({ workspaceDir: ws });
+    const unlevelled = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
+    try {
+      await bootstrapped(configured);
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(levelOf(configured)).toBeUndefined();
+      await bootstrapped(unlevelled);
+      expect(lastBuilt()!.thinkingLevel).toBeUndefined();
+      expect(levelOf(unlevelled)).toBeUndefined();
+    } finally {
+      configured.dispose();
+      unlevelled.dispose();
+    }
+  });
+
+  it("toolPermission and the command policy are strict-tier: an edit lands at the next context open, not mid-context", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-strict-permission");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const policyOf = () =>
+      (
+        session as unknown as { commandPolicy?: () => { enabled?: boolean } | undefined }
+      ).commandPolicy?.();
+    try {
+      await bootstrapped(session);
+      expect(session.toolPermission("read_file")).toBe("r");
+      const openedWith = policyOf();
+      await patchSystemConfig((cfg) => {
+        cfg.tools = {
+          ...(cfg.tools ?? {}),
+          builtin: (cfg.tools?.builtin ?? []).map((t) =>
+            t.name === "read_file" ? { ...t, permission: "rw" as const } : t,
+          ),
+        };
+      });
+      await fs.writeFile(
+        projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID),
+        "[command_policy]\nenabled = false\n",
+        "utf8",
+      );
+      // The running context's toolset and policy stand until rotation…
+      expect(session.toolPermission("read_file")).toBe("r");
+      expect(policyOf()).toBe(openedWith);
+      // …and the next context opens with both edits.
+      await openNext(session);
+      expect(session.toolPermission("read_file")).toBe("rw");
+      expect(policyOf()).toEqual({ enabled: false });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("thinkingLevel is plain engine state: an assignment rides requests while contexts keep their config base", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-pin");
+    await fs.mkdir(ws, { recursive: true });
+    const levelOf = (session: { metaMessage: OmniMessage }) =>
+      (session.metaMessage.payload as { thinking_level?: string }).thinking_level;
+    const engineLevelOf = (session: unknown) =>
+      (session as { engine: { thinkingLevel?: string } }).engine.thinkingLevel;
+
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      // Assigned before the first run: buffered on the Session, handed to the engine when
+      // it is built. The context's own base stays the config default ("medium").
+      session.thinkingLevel = "high";
+      expect(session.thinkingLevel).toBe("high");
+      expect(levelOf(session)).toBeUndefined();
+      await bootstrapped(session);
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(engineLevelOf(session)).toBe("high");
+
+      // Reassigned mid-session: engine state for every subsequent request; the context a
+      // compaction opens still bases on the creation option and the config, and the meta
+      // records nothing.
+      session.thinkingLevel = "xhigh";
+      expect(engineLevelOf(session)).toBe("xhigh");
+      const { opened } = await openNext(session);
+      expect(
+        (opened.sessionMeta!.payload as { thinking_level?: string }).thinking_level,
+      ).toBeUndefined();
+      expect(lastBuilt()!.thinkingLevel).toBe("medium");
+      expect(session.thinkingLevel).toBe("xhigh");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("reconnects the new context's MCP Servers, bracketing the connect with the same event pair the first run uses", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-mcp-rotate");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    // The provider warns on stderr about the unreachable server; keep the test output clean.
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await bootstrapped(session);
+      // A server added during the old context. Its command cannot be spawned, so the connect
+      // fails fast — and the outcome is recorded rather than hidden.
+      await patchSystemConfig((cfg) => {
+        cfg.tools = {
+          ...(cfg.tools ?? {}),
+          mcpServers: [{ name: "ghost", config: { command: "penguin-no-such-mcp-server" } }],
+        };
+      });
+
+      const { records } = await openNext(session);
+
+      expect(records.map(typeOf)).toEqual([
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "tool_list_ready",
+      ]);
+      expect((records[0]!.payload as { servers: string[] }).servers).toEqual(["ghost"]);
+      const end = records[1]!.payload as {
+        status: string;
+        results: { server: string; status: string }[];
+      };
+      expect(end.status).toBe("fatal");
+      expect(end.results).toEqual([expect.objectContaining({ server: "ghost", status: "fatal" })]);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining('MCP server "ghost" unavailable'),
+      );
+    } finally {
+      stderr.mockRestore();
+      session.dispose();
+    }
+  });
+
+  it("an Agent State that cannot be assembled fails the context open outright — no silent fallback", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-unreadable");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const before = promptOf(session);
+      // system_config.yaml no longer parses — an edit gone wrong mid-context.
+      await fs.writeFile(systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "");
+
+      await expect(openNext(session)).rejects.toThrow("Invalid Agent State config");
+      // Nothing was adopted: the Session still describes the context that is running.
+      expect(promptOf(session)).toBe(before);
     } finally {
       session.dispose();
     }

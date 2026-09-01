@@ -105,10 +105,11 @@ describe("penguin run", () => {
     expect(session.tasks[0]!.goal).toEqual({ budget: 500_000 });
   });
 
-  it("--thinking rides the task body", async () => {
+  it("--thinking pins the Session before the task (a PATCH); the task body carries no level", async () => {
     await cli(["run", "-m", "q", "--thinking", "high"]);
     const session = [...server.sessions.values()][0]!;
-    expect(session.tasks[0]!.thinkingLevel).toBe("high");
+    expect(session.patches).toContainEqual({ thinkingLevel: "high" });
+    expect("thinkingLevel" in (session.tasks[0] as object)).toBe(false);
   });
 });
 
@@ -294,7 +295,7 @@ describe("penguin schedule ls", () => {
 });
 
 describe("caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
-  it("run inherits workspace/model/approve from the calling session and thinking rides the task", async () => {
+  it("run inherits workspace/model/approve from the calling session and pins its thinking level on the new session", async () => {
     const caller = server.addSession({
       sessionId: "session-2026-08-25-10-00-00-ca11e001",
       workspace: "/callers/workdir",
@@ -315,7 +316,7 @@ describe("caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
       client: "cli",
     });
     const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
-    expect(created.tasks[0]!.thinkingLevel).toBe("high");
+    expect(created.patches).toContainEqual({ thinkingLevel: "high" });
   });
 
   it("an explicit flag overrides its own field only (the rest still inherit)", async () => {
@@ -340,7 +341,7 @@ describe("caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => {
       approvalMode: "always-ask",
     });
     const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
-    expect(created.tasks[0]!.thinkingLevel).toBe("low"); // flag wins
+    expect(created.patches).toContainEqual({ thinkingLevel: "low" }); // flag wins
   });
 
   it("a failed caller lookup warns (dim, stderr) and falls back to the plain defaults", async () => {

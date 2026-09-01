@@ -274,7 +274,6 @@ describe("Session user-prompt hook", () => {
       bootstrap: async () => {
         throw new Error("not used");
       },
-      mcpServers: [],
       environment: {
         listTools: async () => [],
         // eslint-disable-next-line require-yield
@@ -348,8 +347,7 @@ describe("Session stop hooks", () => {
     };
     return new Session({
       meta,
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment: extra.environment ?? fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,
@@ -358,7 +356,7 @@ describe("Session stop hooks", () => {
         ...(extra.preToolUse ? { preToolUse: extra.preToolUse } : {}),
         ...(extra.spawnSubagent ? { spawnSubagent: extra.spawnSubagent } : {}),
       },
-      ...(extra.commandPolicy ? { commandPolicy: extra.commandPolicy } : {}),
+      ...(extra.commandPolicy ? { commandPolicy: () => extra.commandPolicy } : {}),
       ...(extra.trace ? { trace: extra.trace } : {}),
     });
   }
@@ -567,13 +565,12 @@ describe("Session pre-tool-use hooks", () => {
     };
     return new Session({
       meta,
-      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm }),
       environment: runningEnv,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,
       hooks: { preToolUse },
-      ...(commandPolicy ? { commandPolicy } : {}),
+      ...(commandPolicy ? { commandPolicy: () => commandPolicy } : {}),
     });
   }
 

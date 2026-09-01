@@ -272,7 +272,13 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop..."
+          # The web package is not a dependency of the desktop package (the app carries its
+          # build by an electron-builder file mapping, not an import), so `desktop...` alone
+          # leaves it unbuilt — and the mapping then silently packs nothing.
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-web"
+
+      - name: Preflight the packed tree's inputs
+        run: node packages/desktop/scripts/preflight.mjs
 
       - name: Build unpacked runtime
         env:

@@ -44,6 +44,7 @@ import {
   callerSessionContext,
   createServerSession,
   getSessionInfo,
+  pinThinkingLevel,
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
@@ -161,10 +162,12 @@ export function registerRunCommand(program: Command, t: Messages): void {
         }
       }
 
+      // The level is pinned on the Session, never sent with the task: core applies it from
+      // the Session's next LLM request (and every context opened from then on).
       const effectiveThinking = thinking ?? callerThinking;
+      if (effectiveThinking) await pinThinkingLevel(client, session.sessionId, effectiveThinking);
       const taskBody = {
         input: [{ type: "text", text: String(opts.message) }],
-        ...(effectiveThinking ? { thinkingLevel: effectiveThinking } : {}),
         ...(goalBudget !== null ? { goal: { budget: goalBudget } } : {}),
       };
 

@@ -30,6 +30,7 @@ import {
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
 import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
+import { STAT_ICONS } from "../src/lib/stat-icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -44,7 +45,7 @@ describe("HOVER_ROW_ACTIONS", () => {
   });
 
   it("does not carry rename, pin, delete or the messaging binding — those live in the menu", () => {
-    for (const action of ["rename", "pin", "delete", "messaging"]) {
+    for (const action of ["rename", "pin", "delete", "messaging", "copy"]) {
       expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain(action);
     }
   });
@@ -55,6 +56,7 @@ describe("contextMenuActions", () => {
     expect([...contextMenuActions(true)]).toEqual([
       "pin",
       "rename",
+      "copy",
       "messaging",
       "archive",
       "delete",
@@ -62,7 +64,13 @@ describe("contextMenuActions", () => {
   });
 
   it("drops only pin on rows where pinning cannot reorder anything (folder rows)", () => {
-    expect([...contextMenuActions(false)]).toEqual(["rename", "messaging", "archive", "delete"]);
+    expect([...contextMenuActions(false)]).toEqual([
+      "rename",
+      "copy",
+      "messaging",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
@@ -76,6 +84,13 @@ describe("contextMenuActions", () => {
   it("keeps rename reachable in every state", () => {
     expect(contextMenuActions(true)).toContain("rename");
     expect(contextMenuActions(false)).toContain("rename");
+  });
+
+  it("offers the id copy on every row, including the folder rows that cannot pin", () => {
+    // The id is what a person carries out of the app — into the CLI, a bug report, a
+    // trace lookup — and an archived or scheduled Session is exactly when it is wanted.
+    expect(contextMenuActions(true)).toContain("copy");
+    expect(contextMenuActions(false)).toContain("copy");
   });
 });
 
@@ -113,7 +128,7 @@ describe("the hover buttons' CSS contract", () => {
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
-    const all: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "delete"];
+    const all: SessionRowAction[] = ["pin", "rename", "copy", "messaging", "archive", "delete"];
     for (const action of all) {
       const item = sessionRowMenuItem(action, RESTING);
       expect(item.label).toBeTruthy();
@@ -123,13 +138,21 @@ describe("sessionRowMenuItem", () => {
   });
 
   it("gives the actions distinct glyphs, so a row is not read by its label alone", () => {
-    const icons = (["pin", "rename", "messaging", "archive", "delete"] as SessionRowAction[]).map(
-      (a) => sessionRowMenuItem(a, RESTING).icon,
-    );
+    const icons = (
+      ["pin", "rename", "copy", "messaging", "archive", "delete"] as SessionRowAction[]
+    ).map((a) => sessionRowMenuItem(a, RESTING).icon);
     expect(new Set(icons).size).toBe(icons.length);
     // Remote control wears the same paper plane the session row flies while it is relaying:
     // the action and the mark it produces are one feature.
-    expect(icons).toEqual([PIN_ICON, PENCIL_ICON, MESSAGING_RELAY_ICON, ARCHIVE_ICON, TRASH_ICON]);
+    expect(icons).toEqual([
+      PIN_ICON,
+      PENCIL_ICON,
+      // The same glyph the details card's copy button shows, so one value has one mark.
+      STAT_ICONS.copy,
+      MESSAGING_RELAY_ICON,
+      ARCHIVE_ICON,
+      TRASH_ICON,
+    ]);
   });
 
   it("flips archive's label and glyph on an archived row", () => {
@@ -158,6 +181,7 @@ describe("sessionRowMenuItem", () => {
     expect(sessionRowMenuItem("archive", RESTING).label).toBe(en.chat.archiveSession);
     expect(sessionRowMenuItem("delete", RESTING).label).toBe(en.chat.deleteSession);
     expect(sessionRowMenuItem("rename", RESTING).label).toBe(en.chat.renameSession);
+    expect(sessionRowMenuItem("copy", RESTING).label).toBe(en.chat.copySessionId);
     expect(sessionRowMenuItem("messaging", RESTING).label).toBe(en.messaging.bindAction);
     // The hover buttons are icon-only, so their label IS their accessible name: an English
     // row must not fall back to the zh catalog and leave a Chinese name on the button.

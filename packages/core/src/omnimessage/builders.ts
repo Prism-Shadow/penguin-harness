@@ -372,7 +372,7 @@ export function toolListReady(tools: ToolDefinition[]): OmniMessage<ToolListRead
   return event({ type: "tool_list_ready", tools });
 }
 
-/** mcp_connect begin event: brackets open on the first run's MCP connect + discovery phase (emitted only when servers are configured). */
+/** mcp_connect begin event: brackets open on an MCP connect + discovery phase — the first run's, or a new context's after compaction (emitted only when servers are configured). */
 export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginPayload> {
   return event({ type: "mcp_connect_begin", servers });
 }

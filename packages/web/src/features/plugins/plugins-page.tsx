@@ -311,7 +311,9 @@ export function PluginsPage() {
       if (on) {
         const res = await api.installAgentPlugins(projectId, agentId, [plugin.name]);
         setAgentInstalls(agentId, installsOf(res.skills, res.hooks));
-        toastSuccess(S.plugins.installedToast(plugin.name, agentName));
+        toastSuccess(
+          `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+        );
       } else {
         // A 404 on a part means "was already not installed": the target state is already
         // reached for that part, so it does not fail the uninstall (otherwise the row would be
@@ -328,7 +330,9 @@ export function PluginsPage() {
             ? [api.uninstallAgentHook(projectId, agentId, plugin.name).catch(gone)]
             : []),
         ]);
-        toastSuccess(S.plugins.uninstalledToast(plugin.name, agentName));
+        toastSuccess(
+          `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+        );
       }
     } catch (e) {
       setAgentInstalls(agentId, prev);

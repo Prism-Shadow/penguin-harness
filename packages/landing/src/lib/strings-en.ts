@@ -49,7 +49,7 @@ export const en: Strings = {
 
   hero: {
     platformLead: "Open-source, local-first multi-agent app ",
-    platformAccent: "development",
+    platformActions: ["auto-dev", "auto-tuning"],
     platformTail: " platform",
     automationLead: "Fully automated ",
     automationActions: ["creation", "optimization", "deployment"],
@@ -58,7 +58,7 @@ export const en: Strings = {
     cliInstall: "Command-line install",
     stats: [
       { value: "1000+ Models", label: "Support for Major Providers" },
-      { value: "Cross-Platform Local Deployment", label: "Linux · Windows · macOS" },
+      { value: "Cross-Platform Deployment", label: "Linux · Windows · macOS" },
       { value: "100% Open Source", label: "Apache 2.0 Licensed" },
       { value: "First Self-Improving Harness", label: "Native Agent Self-Evolution Engine" },
     ],
@@ -290,7 +290,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     eyebrow: "Cases",
-    title: "Generate a runnable agent app in one sentence",
+    title: "One sentence to an AI app that thinks and runs",
     subtitle:
       "Hand the requirement to an agent and get a runnable result end to end — more cases are on the way.",
     tabs: [

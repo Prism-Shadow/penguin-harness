@@ -2,8 +2,7 @@
  * Integration tests for the panel's subagent endpoints and the child-liveness broadcast:
  *   - POST /api/sessions/:id/subagents/:childSessionId/message — a user input on the child,
  *     whatever its state: {outcome:"steered"} while it runs, {outcome:"started"} while idle,
- *     {outcome:"resumed"} when the released child was revived; the optional thinkingLevel
- *     rides through to the round the message starts, and the resume option carries the
+ *     {outcome:"resumed"} when the released child was revived; the resume option carries the
  *     child's owning agent from its session row; 404 subagent_gone when nothing can be
  *     revived, 409 subagent_busy when the child cannot take the message, 400 without text;
  *   - POST /api/sessions/:id/subagents/:childSessionId/abort — 202 when a run was aborted,
@@ -149,7 +148,6 @@ describe("session subagent routes and liveness", () => {
 
     const idle = await api.post(`/api/sessions/${SID}/subagents/${CHILD_IDLE}/message`, {
       text: "one more round",
-      thinkingLevel: "high",
     });
     expect(idle.status).toBe(200);
     expect((await idle.json()) as SubagentMessageResponse).toEqual({ outcome: "started" });
@@ -157,8 +155,7 @@ describe("session subagent routes and liveness", () => {
     expect(sent).toHaveLength(2);
     expect(sent[0]!.childSessionId).toBe(CHILD_RUNNING);
     expect(sent[0]!.text).toBe("focus on the tests");
-    // The per-turn thinking level rides through to core.
-    expect(sent[1]!.opts?.thinkingLevel).toBe("high");
+    expect(sent[1]!.text).toBe("one more round");
   });
 
   it("message: a released child with a session row revives (outcome resumed, owning agent resolved)", async () => {

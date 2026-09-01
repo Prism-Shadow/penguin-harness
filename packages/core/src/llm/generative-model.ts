@@ -973,9 +973,6 @@ export class GenerativeModel implements LLMInterface {
   /** Last hard-clamped cap already warned about on stderr (dedupe: retries reuse the same estimate and would repeat the identical line). */
   private lastWarnedCap: number | undefined;
 
-  /** Cumulative session tokens. */
-  sessionTokens: TokenCounts = emptyTokenCounts();
-
   constructor(config: GenerativeModelConfig) {
     // Omit apiKey / baseUrl when undefined, letting AgentHub read them from environment
     // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
@@ -996,7 +993,7 @@ export class GenerativeModel implements LLMInterface {
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 300000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
     this.configuredMaxTokens = config.maxTokens;
     this.contextWindow = resolveContextWindow(config.contextWindow);
@@ -1301,8 +1298,10 @@ export class GenerativeModel implements LLMInterface {
     // (see effectiveMaxTokens). Only a completed request updates it: an interrupted or
     // failed attempt was never committed, so the context did not grow.
     this.lastRequestTotal = requestTokens.total;
-    this.sessionTokens = addTokenCounts(this.sessionTokens, requestTokens);
-    yield tokenUsage(this.sessionTokens, requestTokens);
+    // The session series is not this object's business (its lifetime is one model context):
+    // the engine accumulates and stamps token_usage.session on every message it forwards.
+    // The request counts stand in for consumers running a GenerativeModel without an engine.
+    yield tokenUsage(requestTokens, requestTokens);
     return { status: "completed" };
   }
 
@@ -1416,5 +1415,12 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   if (config.fastMode === true) {
     uniConfig.fast_mode = true;
   }
+  // Thought summaries, always requested. Two things ride on it: the user gets to watch the
+  // model reason, and — because the request timeout is an idle budget between upstream events
+  // — a reasoning phase that reaches the wire keeps resetting that timer instead of counting
+  // as one long silence. No model rejects the flag (unlike fast_mode): AgentHub maps it where
+  // it exists and drops it where it doesn't, so the only cost of asking is on families that
+  // answer with a summarized thinking stream (Claude) instead of the raw one.
+  uniConfig.thinking_summary = true;
   return uniConfig;
 }

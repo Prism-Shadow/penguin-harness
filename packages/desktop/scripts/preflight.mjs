@@ -1,8 +1,10 @@
 /**
- * Dev preflight for `pnpm --dir packages/desktop start` (and the root `pnpm desktop`):
- * verify everything a source run needs, and fail with the actual fix instead of a bare
- * ENOENT from the utilityProcess fork or an empty plugin library. A source run loads the
- * same bundles a packaged app does, so all of them have to exist first.
+ * Preflight for `pnpm --dir packages/desktop start` (and the root `pnpm desktop`) and for
+ * every `pack*` script: verify everything a source run needs, and fail with the actual fix
+ * instead of a bare ENOENT from the utilityProcess fork or an empty plugin library. A source
+ * run loads the same bundles a packaged app does, so all of them have to exist first — and
+ * a pack needs the same set, because electron-builder copies what exists and says nothing
+ * about a `from:` source that does not (the web build above all).
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
