@@ -3314,9 +3314,9 @@ export interface MachineInfo {
    */
   alias: string;
   /**
-   * The last install THIS server carried out there, remembered on disk so it survives a
-   * restart, a hot push, and installing on some other machine. Null when this server has
-   * never installed there.
+   * The last install THIS server carried out there FOR THIS PROJECT, remembered in web.db so
+   * it survives a restart, a hot push, and installing on some other machine. Null when this
+   * Project has never installed there — a host another Project did is `elsewhere` below.
    *
    * A record of what was done, not a survey of the far side: a machine wiped by hand still
    * reads as installed until the next install probes it and corrects the record. Asking the
@@ -3324,6 +3324,17 @@ export interface MachineInfo {
    * the config-text list exists to avoid.
    */
   installed: { version: string; at: string } | null;
+  /**
+   * Installed by this server, but for a DIFFERENT Project — so not this Project's machine,
+   * and not a host nobody has touched either. Absent in every other case, including when it
+   * IS this Project's (where `installed` carries the same record).
+   *
+   * Reported rather than folded into `installed` because the two lead to different actions:
+   * one is a machine to use, the other is a machine to adopt, which costs a row and no ssh.
+   * Reported rather than hidden because a row that silently looked uninstalled would send
+   * someone to spend a 30 MB transfer re-doing what is already done.
+   */
+  elsewhere?: { version: string; at: string };
 }
 
 /**
