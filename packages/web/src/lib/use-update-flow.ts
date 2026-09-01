@@ -74,6 +74,12 @@ const store = createStore<FlowState>(() => ({
 /** The flow for the current caches and local state — the one computation every surface renders. */
 function currentFlow(): UpdateFlow {
   const s = store.getState();
+  // Nothing this session can act on (a browser signed into a desktop-mode server, and the
+  // beat before the owner has read the session): the flow stays `unknown`, so the row, the
+  // badge and the modal all render nothing. It must not fall through to the release flow —
+  // the avatar's dot reads this without a mode gate of its own, and a dot leading to a menu
+  // with no update row is exactly the dead end update-badges.ts forbids.
+  if (s.mode === "none") return { kind: "unknown" };
   // The armed client check is the shell store's own flag: it spins the flow until the
   // shell's `checking` frame lands, exactly as `checking` does for the release lookup.
   if (s.mode === "client") {
@@ -132,8 +138,12 @@ export async function downloadUpdate(): Promise<void> {
       // the gap until the shell's `downloading` frame lands.
       return;
     }
+    // The status the POST answers with is the whole truth from here on — including a run
+    // that is already over (no CLI to run answers `done`/`unsupported` at once). Keeping
+    // the local flag past it would render `downloading` forever: releaseFlow reads the
+    // flag before the finished job, and only a RUNNING job is ever polled.
     const job = await api.startUpdateJob();
-    store.setState({ job });
+    store.setState({ job, downloadRequested: false });
   } catch (e) {
     toastError(S.update.requestFailed(apiErrorText(e)));
     store.setState({ downloadRequested: false });
@@ -194,6 +204,22 @@ export function useUpdateFlowOwner(): void {
   }, [mode, isAdmin]);
 
   const state = useStore(store);
+  // A run still in flight from before this page load (or from another tab): "continue in
+  // background" has to survive a reload, and only the server knows what is running. A
+  // FINISHED run is deliberately not adopted — its outcome was already reported where it
+  // was started, and resurrecting it here would answer every later page load with a stale
+  // failure instead of the release still on offer. Admin-only (so is the endpoint), once
+  // per mount; a failure leaves the flow on the check, which it would have shown anyway.
+  useEffect(() => {
+    if (mode !== "release" || !isAdmin) return;
+    void api
+      .getUpdateJob()
+      .then((job) => {
+        if (job.state === "running" && store.getState().job === null) store.setState({ job });
+      })
+      .catch(() => undefined);
+  }, [mode, isAdmin]);
+
   // The shell's snapshot: polled while the modal is open, and on its own while a check or
   // download moves (use-desktop-update's own rule), so a download sent to the background
   // still reports through the row. One passive refresh on load raises a badge for a release
@@ -301,7 +327,20 @@ export function useUpdateFlowOwner(): void {
     const before = getVersionInfo().version?.version ?? null;
     const startedAt = Date.now();
     let sawDown = false;
+    const giveUp = (): void => {
+      store.setState({ restart: "manual" });
+      toastError(S.update.restartTimedOut);
+    };
     const timer = setInterval(() => {
+      // The deadline is checked on every tick, not only on a failed one. A poll that keeps
+      // SUCCEEDING is the case that hangs: the restart window fell between two ticks and
+      // the relaunched server reports the same version (the update was already installed,
+      // so `penguin update` only reinstalled it), or the restart never happened at all —
+      // `sawDown` then stays false and nothing here would ever end the wait.
+      if (Date.now() - startedAt > RESTART_TIMEOUT_MS) {
+        giveUp();
+        return;
+      }
       void api
         .getVersion()
         .then((res) => {
@@ -309,10 +348,6 @@ export function useUpdateFlowOwner(): void {
         })
         .catch(() => {
           sawDown = true;
-          if (Date.now() - startedAt > RESTART_TIMEOUT_MS) {
-            store.setState({ restart: "manual" });
-            toastError(S.update.restartTimedOut);
-          }
         });
     }, RESTART_POLL_MS);
     return () => clearInterval(timer);
