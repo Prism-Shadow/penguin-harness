@@ -28,7 +28,11 @@ import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/pe
 import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { WorkflowInfo } from "../mechanisms/workflows.js";
-import type { PackageManifest as PackageManifestType } from "../mechanisms/packages.js";
+import type {
+  PackageManifest as PackageManifestType,
+  PublishedGist as PublishedGistType,
+  PublishMethod as PublishMethodType,
+} from "../mechanisms/packages.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3257,6 +3261,8 @@ export type {
   PackageFile,
   PackageManifest,
   PackagePreview,
+  PublishedGist,
+  PublishMethod,
 } from "../mechanisms/packages.js";
 export type {
   WorkflowInfo,
@@ -3580,8 +3586,12 @@ export interface ContributionsResponse {
 export interface AgentPackageResponse {
   manifest: PackageManifestType;
   bytes: number;
-  /** Whether the server has a GitHub token; false = the publish button explains why not. */
+  /** Whether the server has any GitHub identity; false = the publish button explains why not. */
   canPublish: boolean;
+  /** Which identity it would publish with: the server machine's `gh` login, or a stored token. */
+  publishVia: PublishMethodType;
+  /** The gist this Agent was published to before — a republish updates it. */
+  publishedGist: PublishedGistType | null;
 }
 
 /** POST …/package/publish — the gist it landed in. */

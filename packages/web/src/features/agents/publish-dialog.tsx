@@ -1,10 +1,11 @@
 /**
- * Publish an Agent's definition to a GitHub gist. The dialog first shows exactly what
- * would be sent — the file list, its size, and that state, memory and the vault are not in
- * it — then publishes. A gist published before is remembered per Agent (localStorage) and
- * offered as the target, so republishing updates the same URL instead of minting another.
- * Without a server-side token the dialog says so and points at the admin setting rather
- * than failing on the button.
+ * Publish an Agent's definition to a GitHub gist. The dialog first shows exactly what would
+ * be sent — the file list, its size, and that state, memory and the vault are not in it —
+ * then publishes. The gist an Agent was published to is remembered BY THE SERVER, beside the
+ * Agent, so a republish updates that same gist from any browser or machine; the field is
+ * there only to point a publish at a different gist. Which GitHub identity the server would
+ * use (the machine's `gh` login, or a stored token) is shown, and when it has neither the
+ * dialog says how to give it one instead of failing on the button.
  */
 import { useEffect, useState } from "react";
 import type { AgentPackageResponse } from "@prismshadow/penguin-server/api";
@@ -19,16 +20,6 @@ import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk, toneStrip } from "../../lib/tone";
 
-const gistKey = (projectId: string, agentId: string) => `penguin.agentGist.${projectId}.${agentId}`;
-
-function rememberedGist(projectId: string, agentId: string): string {
-  try {
-    return localStorage.getItem(gistKey(projectId, agentId)) ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export function PublishAgentDialog({
   open,
   onClose,
@@ -41,6 +32,7 @@ export function PublishAgentDialog({
   agentId: string;
 }) {
   const [pkg, setPkg] = useState<AgentPackageResponse | null>(null);
+  /** Empty = publish to the Agent's remembered gist (or create the first one). */
   const [gistId, setGistId] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -52,7 +44,7 @@ export function PublishAgentDialog({
     setPkg(null);
     setResult(null);
     setShowFiles(false);
-    setGistId(rememberedGist(projectId, agentId));
+    setGistId("");
     let cancelled = false;
     api
       .getAgentPackage(projectId, agentId)
@@ -75,13 +67,9 @@ export function PublishAgentDialog({
         ...(gistId.trim() !== "" ? { gistId: gistId.trim() } : {}),
         public: isPublic,
       });
-      try {
-        localStorage.setItem(gistKey(projectId, agentId), res.gistId);
-      } catch {
-        // Remembering the gist is a convenience; publishing already happened.
-      }
-      setGistId(res.gistId);
       setResult(res);
+      // Refresh the view so the remembered gist is the server's, not this dialog's guess.
+      api.getAgentPackage(projectId, agentId).then(setPkg, () => undefined);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -89,7 +77,8 @@ export function PublishAgentDialog({
     }
   };
 
-  const updating = gistId.trim() !== "";
+  const target = gistId.trim() !== "" ? gistId.trim() : (pkg?.publishedGist?.gistId ?? null);
+  const updating = target !== null;
   return (
     <Modal
       open={open}
@@ -138,6 +127,24 @@ export function PublishAgentDialog({
               )}
             </div>
             <p className="text-xs text-gray-500">{S.agent.packageExcludes}</p>
+            {pkg.canPublish && pkg.publishVia !== null && (
+              <p className="text-xs text-gray-500">
+                {pkg.publishVia === "gh" ? S.agent.publishViaGh : S.agent.publishViaToken}
+              </p>
+            )}
+            {pkg.publishedGist !== null && result === null && (
+              <p className="text-xs text-gray-500">
+                {S.agent.publishUpdates}{" "}
+                <a
+                  href={pkg.publishedGist.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all font-mono underline-offset-2 hover:underline"
+                >
+                  {pkg.publishedGist.url}
+                </a>
+              </p>
+            )}
             {!pkg.canPublish && (
               <div className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
                 {S.agent.publishNoToken}
