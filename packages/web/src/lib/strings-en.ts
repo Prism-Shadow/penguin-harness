@@ -142,6 +142,21 @@ export const en: Strings = {
     proxyAddressPlaceholder: "Empty = follow system proxy",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "Sharing",
+    sandboxTitle: "Sandbox",
+    sandboxInfo:
+      "The confinement agent commands run under. What enforces it is a backend contributed by a plugin (bwrap on Linux, Seatbelt on macOS, MXC on Windows, or DSH); with none installed, choosing a mode confines nothing. The settings park with the platform, so they survive a hot update.",
+    sandboxMode: "Confinement mode",
+    sandboxModeHint: "Applies to the next command spawn; no restart.",
+    sandboxModeOff: "Off (full access)",
+    sandboxModeWorkspace: "Workspace write only",
+    sandboxModeReadOnly: "Read-only",
+    sandboxNetwork: "Cut off the network",
+    sandboxMaskPaths: "Masked paths",
+    sandboxMaskPathsHint:
+      "One path per line; hidden from confined commands. Only while confinement is on.",
+    sandboxBackends: "Backends",
+    sandboxNoBackend:
+      "This deployment has no sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
     sharingInfo:
       "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
     sharingDesc:
@@ -1292,6 +1307,18 @@ export const en: Strings = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
+    installedTitle: "Installed plugins",
+    installedDesc:
+      "What plugins.json lists, and which of them this process is running. Plugins load once when the server starts, so a change here takes effect at the next restart.",
+    installedEmpty: "No plugins installed yet.",
+    stateActive: "running",
+    stateInactive: "not loaded",
+    replacesLabel: "replaces",
+    restartPending: "A plugin is installed but not loaded: restart the server to apply it.",
+    uninstall: "Remove",
+    install: "Install",
+    addLabel: "Add a plugin",
+    fileHint: (file: string) => `Written to ${file} in the data root`,
     pageTitle: "Plugin library",
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
