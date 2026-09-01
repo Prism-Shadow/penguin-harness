@@ -126,7 +126,12 @@ describe("agent packages", () => {
 
   beforeEach(async () => {
     github = fakeGithub();
-    t = await createTestApp({ fetch: github.fetch });
+    // No `gh` on this server unless a test says otherwise: the token path stays the default
+    // under test, and the gh path is exercised where it is the subject.
+    t = await createTestApp({
+      fetch: github.fetch,
+      gh: { available: async () => false, api: async () => ({}) },
+    });
     const a = await provisionUser(t.app, "owner");
     owner = apiClient(t.app, a.cookie);
     expect((await owner.post("/api/projects", { projectId: PROJECT, name: "pkg" })).status).toBe(
@@ -170,7 +175,7 @@ describe("agent packages", () => {
     expect(paths.some((p) => p.startsWith("agent_state/memory/"))).toBe(false);
     expect(paths.some((p) => p.includes("vault"))).toBe(false);
     expect(paths.some((p) => p.startsWith("workspaces/"))).toBe(false);
-    // No token configured yet: the UI is told, rather than the button failing later.
+    // No identity configured yet: the UI is told, rather than the button failing later.
     expect(canPublish).toBe(false);
     expect(
       (await owner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})).status,
@@ -197,11 +202,10 @@ describe("agent packages", () => {
     expect(Object.keys(files)).toContain("workflows--todo--ui--index.html");
     expect(JSON.stringify(files)).not.toContain("SENTINEL_STATE_9f3");
 
-    // Republishing updates the same gist rather than making a second one.
+    // Republishing updates the same gist rather than making a second one — with no id from
+    // the caller at all, because the server remembered it.
     const again = (await (
-      await owner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {
-        gistId: published.url,
-      })
+      await owner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})
     ).json()) as AgentPackagePublishResponse;
     expect(again.gistId).toBe(published.gistId);
     expect(github.gists.size).toBe(1);
@@ -270,6 +274,56 @@ describe("agent packages", () => {
     expect((await owner.post("/api/agent-packages/preview", { gist: "deadbeef" })).status).toBe(
       404,
     );
+  });
+
+  it("publishes through the server's gh login when there is one, and needs no token", async () => {
+    const calls: Array<{ path: string; method: string; body: unknown }> = [];
+    const gh = await createTestApp({
+      fetch: github.fetch,
+      gh: {
+        available: async () => true,
+        api: async (path: string, method: string, body?: unknown) => {
+          calls.push({ path, method, body });
+          const id = path === "/gists" ? "beef01" : path.split("/").pop()!;
+          github.gists.set(id, (body as { files: Record<string, { content: string }> }).files);
+          return { id, html_url: `https://gist.github.com/u/${id}` };
+        },
+      },
+    });
+    try {
+      const a = await provisionUser(gh.app, "owner");
+      const ghOwner = apiClient(gh.app, a.cookie);
+      expect(
+        (await ghOwner.post("/api/projects", { projectId: PROJECT, name: "pkg" })).status,
+      ).toBe(201);
+      const view = (await (
+        await ghOwner.get(`/api/projects/${PROJECT}/agents/${AGENT}/package`)
+      ).json()) as AgentPackageResponse;
+      expect(view.canPublish).toBe(true);
+      expect(view.publishVia).toBe("gh");
+      expect(view.publishedGist).toBeNull();
+
+      const first = (await (
+        await ghOwner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})
+      ).json()) as AgentPackagePublishResponse;
+      expect(calls[0]).toMatchObject({ path: "/gists", method: "POST" });
+      // Republishing needs no id from the caller: the server remembers this Agent's gist.
+      const again = (await (
+        await ghOwner.post(`/api/projects/${PROJECT}/agents/${AGENT}/package/publish`, {})
+      ).json()) as AgentPackagePublishResponse;
+      expect(again.gistId).toBe(first.gistId);
+      expect(calls[1]).toMatchObject({ path: `/gists/${first.gistId}`, method: "POST" });
+      expect(github.gists.size).toBe(1);
+
+      const after = (await (
+        await ghOwner.get(`/api/projects/${PROJECT}/agents/${AGENT}/package`)
+      ).json()) as AgentPackageResponse;
+      expect(after.publishedGist?.gistId).toBe(first.gistId);
+      // The record lives beside the Agent, and is a dotfile so it never travels in a package.
+      expect(after.manifest.files.some((f) => f.path.includes(".penguin-publish"))).toBe(false);
+    } finally {
+      await gh.cleanup();
+    }
   });
 
   it("installs from npm, a GitHub release, a GitHub repository, a tarball URL and a git clone", async () => {
