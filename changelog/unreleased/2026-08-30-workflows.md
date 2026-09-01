@@ -6,7 +6,7 @@
 
 [中文版](2026-08-30-workflows.zh.md)
 
-An Agent can now keep *workflows* in its own directory: `workflows/<id>/` holds an extension package — `package.json#penguin.modules` manifests, an `index.mjs` default export pairing them with code, an optional `ui/` — that the server boots as a module tree of its own, checked against the server's interface table before any code runs. It is the same mechanism the server is built from and that user extensions use: a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem, and the previous version keeps serving.
+An Agent can now keep *workflows* in its own directory: `workflows/<id>/` holds a plugin package — `package.json#penguin.modules` manifests, an `index.mjs` default export pairing them with code, an optional `ui/` — that the server boots as a module tree of its own, checked against the server's interface table before any code runs. It is the same mechanism the server is built from and that plugins use: a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem, and the previous version keeps serving.
 
 ## Contract
 
