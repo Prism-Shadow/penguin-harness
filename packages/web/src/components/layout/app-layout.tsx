@@ -90,7 +90,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-    { to: "/extensions", label: S.nav.extensions, icon: NAV_ICONS.extensions },
+    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
   ];

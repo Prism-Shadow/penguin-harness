@@ -37,7 +37,7 @@ export default defineConfig({
     "plugin/index": "src/plugin/index.ts",
   },
   // The four sandbox backends' own README.md files, inlined as strings by the builtin
-  // registry (see src/extension/builtin-readmes.ts). A catalogue entry's prose lives in the
+  // registry (see src/plugin/builtin-readmes.ts). A catalogue entry's prose lives in the
   // package it describes; this is how it reaches the bundle without a dependency on it.
   loader: { ".md": "text" },
   format: ["esm"],

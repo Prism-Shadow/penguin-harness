@@ -40,7 +40,7 @@
         }
       },
       {
-        "id": "web.plugins",
+        "id": "web.pages.plugins",
         "key": "plugins",
         "path": "/plugins",
         "nav": "main",
@@ -48,6 +48,17 @@
         "released": true,
         "renderer": {
           "builtin": "PluginsPage"
+        }
+      },
+      {
+        "id": "web.pages.plugin-detail",
+        "key": "plugin-detail",
+        "path": "/plugins/registry/*",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "PluginDetailPage"
         }
       },
       {
@@ -59,28 +70,6 @@
         "released": true,
         "renderer": {
           "builtin": "ModelsPage"
-        }
-      },
-      {
-        "id": "web.pages.extensions",
-        "key": "extensions",
-        "path": "/extensions",
-        "nav": "main",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "ExtensionsPage"
-        }
-      },
-      {
-        "id": "web.pages.extension-detail",
-        "key": "extension-detail",
-        "path": "/extensions/*",
-        "nav": "none",
-        "admin": false,
-        "released": true,
-        "renderer": {
-          "builtin": "ExtensionDetailPage"
         }
       },
       {
