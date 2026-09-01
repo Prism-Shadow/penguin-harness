@@ -56,10 +56,7 @@ export async function installPluginPackage(
       { cwd: prefix, timeout: INSTALL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: process.env },
     );
   } catch (err) {
-    const detail =
-      (err as { stderr?: string }).stderr?.trim().split("\n").filter(Boolean).at(-1) ??
-      (err as Error).message;
-    throw new PluginInstallError(detail);
+    throw new PluginInstallError(npmReason((err as { stderr?: string }).stderr, err as Error));
   }
   return readInstalledVersion(prefix, specifier);
 }
@@ -90,6 +87,21 @@ async function readInstalledVersion(prefix: string, specifier: string): Promise<
   } catch {
     return null;
   }
+}
+
+/**
+ * The line of npm's stderr worth showing. npm ends every failure with "A complete log of this
+ * run can be found in …", so the last line is the one line that never says anything; the
+ * reason is the first `npm error` line that is not that pointer, not a bare code, and not the
+ * empty continuation lines npm pads the block with.
+ */
+function npmReason(stderr: string | undefined, err: Error): string {
+  const lines = (stderr ?? "")
+    .split("\n")
+    .map((l) => l.replace(/^npm (error|ERR!)\s*/, "").trim())
+    .filter((l) => l !== "" && !/^A complete log/.test(l) && !/^code [A-Z0-9]+$/.test(l));
+  const reason = lines.find((l) => l.length > 8);
+  return reason ?? err.message;
 }
 
 /** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
