@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#596](https://github.com/Prism-Shadow/penguin-harness/pull/596)
 
 [中文版](2026-09-02-evaluation-center.zh.md)
 
