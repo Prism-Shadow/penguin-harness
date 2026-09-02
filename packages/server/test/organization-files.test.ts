@@ -3,6 +3,7 @@
  * through its serializer and parser, hand-edit tolerance is the same set of rules the API
  * writes under, and the timezone arithmetic behind budget periods and chat days is exact.
  */
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   extractMentionTokens,
@@ -252,8 +253,9 @@ describe("tickets", () => {
     expect(slugify("Launch the Site! v2")).toBe("launch-the-site-v2");
     expect(slugify("上线站点")).toBe("");
     expect(ticketMonth("2026-09-02-site")).toBe("2026-09");
+    // Joined the way the store joins it, so the assertion holds on Windows too.
     expect(ticketPath("/org", "2026-09-02-site", "review")).toBe(
-      "/org/tickets/2026-09/review/2026-09-02-site.md",
+      path.join("/org", "tickets", "2026-09", "review", "2026-09-02-site.md"),
     );
   });
 });
