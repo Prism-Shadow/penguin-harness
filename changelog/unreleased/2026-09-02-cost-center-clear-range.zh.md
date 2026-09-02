@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
 [English](2026-09-02-cost-center-clear-range.md)
 

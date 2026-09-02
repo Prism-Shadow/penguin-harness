@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
 [English](2026-09-02-discount-badge-wording.md)
 

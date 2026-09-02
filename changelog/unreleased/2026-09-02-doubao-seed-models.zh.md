@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `model-catalog`, `docs`
+- **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
 [English](2026-09-02-doubao-seed-models.md)
 

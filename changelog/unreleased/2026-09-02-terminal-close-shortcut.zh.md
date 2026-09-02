@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
 [English](2026-09-02-terminal-close-shortcut.md)
 
