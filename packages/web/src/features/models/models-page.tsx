@@ -623,7 +623,7 @@ export function ModelsPage() {
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
-  // Vision model used for describe_image proxy-reads (describes images for session models with vision=false).
+  // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
@@ -3199,7 +3199,7 @@ function ModelDialog({
                 (read-only, so no cell at all); custom models toggle it here — an iOS-style
                 switch sitting inline right next to the label (per owner: no full-row stretch,
                 no standing explanation text). Only the OFF state shows one small muted line:
-                images are then read via the configured vision proxy model (describe_image). */}
+                images are then read via the configured vision proxy model (read_file hands them to it). */}
             {showVision && (
               <div className={toggleCellClass}>
                 {/* Detect sits inline after the switch — the protocol control's idiom, but next

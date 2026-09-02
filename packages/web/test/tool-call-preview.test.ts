@@ -39,6 +39,14 @@ describe("previewArguments", () => {
     ).toBe("$ rm -rf build");
   });
 
+  it("previews the historical image tools by their source argument (old Traces)", () => {
+    expect(previewArguments("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
+    expect(
+      previewArguments("describe_image", '{"source":"https://x.test/a/b/c.png","prompt":"?"}'),
+    ).toBe("…/b/c.png");
+    expect(headerSubtitle("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
+  });
+
   it("falls back to the single-line raw arguments for other tools", () => {
     expect(previewArguments("search", '{"q": "a\n b"}')).toBe('{"q": "a b"}');
   });

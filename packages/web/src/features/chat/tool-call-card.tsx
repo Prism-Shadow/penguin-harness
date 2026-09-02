@@ -47,6 +47,21 @@ const DESCRIBED_TOOLS = new Set([
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
 
 /**
+ * Tool names Traces carried before `read_file` absorbed image reading (2026-09-02): their
+ * image argument was `source`, previewed here like a file path so an old Trace's card still
+ * reads sensibly. Display-only — nothing assembles these tools any more. Removable once
+ * Traces written before that date no longer need rendering.
+ */
+const LEGACY_IMAGE_TOOLS = new Set(["read_image", "describe_image"]);
+
+/** The path-like argument a tool is previewed by: `file_path` for the file tools, `source` for the historical image tools. */
+function pathArgument(name: string): string | null {
+  if (FILE_TOOLS.has(name)) return "file_path";
+  if (LEGACY_IMAGE_TOOLS.has(name)) return "source";
+  return null;
+}
+
+/**
  * Shortens a path for one-line display: at most one parent directory plus the filename
  * (`…/parent/file.ts`); paths already within that shape are shown as-is (same rule as the
  * CLI's tool-render). The full path stays in the expanded arguments block.
@@ -70,8 +85,9 @@ export function previewArguments(name: string, argsJson: string): string {
     const cmd = extractStringField(argsJson, "cmd");
     if (cmd !== null) return `$ ${cmd.value.replace(/\s+/g, " ").trim()}`;
   }
-  if (FILE_TOOLS.has(name)) {
-    const filePath = extractStringField(argsJson, "file_path");
+  const pathArg = pathArgument(name);
+  if (pathArg !== null) {
+    const filePath = extractStringField(argsJson, pathArg);
     if (filePath !== null) return shortenPath(filePath.value.replace(/\s+/g, " ").trim());
   }
   return argsJson.replace(/\s+/g, " ").trim();
@@ -106,8 +122,9 @@ export function headerSubtitle(name: string, argsJson: string, settled = true): 
     }
     if (DESCRIBED_TOOLS.has(name)) return null;
   }
-  if (FILE_TOOLS.has(name)) {
-    const filePath = extractStringField(argsJson, "file_path");
+  const pathArg = pathArgument(name);
+  if (pathArg !== null) {
+    const filePath = extractStringField(argsJson, pathArg);
     if (filePath !== null) {
       if (!filePath.complete && !settled) return null;
       const line = filePath.value.replace(/\s+/g, " ").trim();
@@ -381,7 +398,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>
           )}
-          {/* Tool output images (e.g. read_image): shown as thumbnails, click to zoom (ZoomableImage). */}
+          {/* Tool output images (e.g. read_file on an image): shown as thumbnails, click to zoom (ZoomableImage). */}
           {item.images && item.images.length > 0 && (
             <div className="flex flex-wrap gap-2 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
               {item.images.map((src, i) => (
