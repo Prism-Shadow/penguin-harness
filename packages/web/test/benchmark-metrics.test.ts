@@ -5,10 +5,14 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  defaultTargetScore,
+  latestScore,
+  matchesBenchmarkQuery,
   modelSeries,
   scoreScale,
   scoreValues,
   seriesValues,
+  sparklineSeries,
 } from "../src/features/benchmark/benchmark-metrics";
 
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
@@ -137,5 +141,48 @@ describe("modelSeries / seriesValues (curves split by model ID and thinking leve
     expect(series).toHaveLength(1);
     expect(series[0]!.key).toBe("");
     expect(series[0]!.indices).toEqual([0, 1]);
+  });
+});
+
+describe("row helpers: latestScore / sparklineSeries / defaultTargetScore", () => {
+  const timed = [
+    { time: "2026-07-14T09:30:00Z", score: 60 },
+    { time: "2026-07-15T09:30:00Z", score: Number.NaN },
+    { time: "2026-07-16T09:30:00Z", score: 72.35 },
+  ];
+
+  it("latestScore reports the newest finite Score, its change from the previous finite one, and its time", () => {
+    expect(latestScore(timed)).toEqual({ score: 72.35, delta: 72.35 - 60, time: timed[2]!.time });
+    expect(latestScore([timed[0]!])).toEqual({ score: 60, delta: null, time: timed[0]!.time });
+    expect(latestScore([])).toBeNull();
+    expect(latestScore([timed[1]!])).toBeNull();
+  });
+
+  it("sparklineSeries keeps finite Scores in scoreboard order and skips malformed ones", () => {
+    expect(sparklineSeries(timed)).toEqual([60, 72.35]);
+    expect(sparklineSeries([])).toEqual([]);
+  });
+
+  it("defaultTargetScore is ten above the baseline as a whole number, capped at 100, and 80 without one", () => {
+    expect(defaultTargetScore(72.35)).toBe(83);
+    expect(defaultTargetScore(95)).toBe(100);
+    expect(defaultTargetScore(null)).toBe(80);
+  });
+});
+
+describe("matchesBenchmarkQuery", () => {
+  const benchmark = { id: "report-writing-v1", title: "Report writing", description: "Hard cases" };
+  const agent = { agentId: "report-writer", name: "Report Writer" };
+
+  it("matches case-insensitively on the title, description, id, and the agent's name or id", () => {
+    expect(matchesBenchmarkQuery(benchmark, agent, "WRITING")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agent, "hard")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agent, "-v1")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agent, "report writer")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agent, "customer")).toBe(false);
+  });
+
+  it("a blank query matches everything", () => {
+    expect(matchesBenchmarkQuery({ id: "x", title: "x" }, { agentId: "a" }, "   ")).toBe(true);
   });
 });
