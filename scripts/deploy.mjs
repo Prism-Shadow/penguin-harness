@@ -30,6 +30,7 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { buildBuiltinPlugins, prefixLayout } from "./build-plugins.mjs";
 import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -244,6 +245,14 @@ async function readNativeAssets() {
   // install a machine at all. Same set the packaged build copies into dist/; see the module.
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = await fsp.readFile(path.join(ROOT, from));
+  }
+  // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): bundled self-contained,
+  // from cache when unchanged, so a push carries the plugins of the revision it was built from.
+  const built = await buildBuiltinPlugins({ log });
+  for (const [rel, source] of prefixLayout(built)) {
+    files[`plugins/${rel}`] =
+      source.text !== undefined ? Buffer.from(source.text) : await fsp.readFile(source.path);
   }
   return { files, exec };
 }

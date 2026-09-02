@@ -25,6 +25,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 
@@ -71,21 +72,58 @@ export async function readPluginList(root: string): Promise<string[]> {
 }
 
 /**
- * Where a specifier resolves from, or null when it does not resolve at all.
+ * Where plugins are looked for, in order. Each is an npm prefix (`<dir>/package.json` +
+ * `<dir>/node_modules/…`) except the installation entry, which resolves as the running
+ * program does:
  *
- * The data root's own prefix comes first (`<root>/plugins`, what the Plugins page installs
- * into): it is the one location the harness can write, and a package there is the one the
- * operator asked this deployment for. The installation is the fallback, which is how a plugin
- * shipped with the build, or installed globally beside it, still resolves.
+ *   1. `<root>/plugins` — what the Plugins page installs; the operator's explicit choice.
+ *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
+ *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
+ *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
+ *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
+ *   4. the installation entry — a plugin installed globally beside the program.
+ *
+ * A prefix marked `builtin` is one the harness ships, not one the operator installed.
  */
-function resolvePlugin(specifier: string, root?: string): string | null {
-  const from: string[] = [];
-  if (root !== undefined && root !== "") from.push(path.join(pluginsPrefix(root), "package.json"));
+export interface PluginBase {
+  file: string;
+  builtin: boolean;
+}
+
+export function pluginBases(root: string | undefined, assetsDir: string | null): PluginBase[] {
+  const bases: PluginBase[] = [];
+  if (root !== undefined && root !== "") {
+    bases.push({ file: path.join(pluginsPrefix(root), "package.json"), builtin: false });
+  }
+  if (assetsDir !== null) {
+    bases.push({ file: path.join(assetsDir, "plugins", "package.json"), builtin: true });
+  }
   const entry = process.argv[1];
-  if (typeof entry === "string" && entry.length > 0) from.push(entry);
-  for (const base of from) {
+  if (typeof entry === "string" && entry.length > 0) {
+    bases.push({
+      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
+      builtin: true,
+    });
+    bases.push({ file: entry, builtin: false });
+  }
+  return bases;
+}
+
+/** The assets directory of the committed version, read from harness.json without a host. */
+export async function committedAssetsDir(root: string): Promise<string | null> {
+  const manifest = await readManifest(root);
+  const dir = manifest?.assets?.dir;
+  return typeof dir === "string" ? path.join(root, "hmr", dir) : null;
+}
+
+/** Where a specifier resolves from — the file and the base that found it — or null. */
+function resolvePlugin(
+  specifier: string,
+  bases: readonly PluginBase[],
+): { file: string; base: PluginBase } | null {
+  for (const base of bases) {
     try {
-      return createRequire(base).resolve(specifier);
+      return { file: createRequire(base.file).resolve(specifier), base };
     } catch {
       // Try the next base; a dev checkout resolves the specifier directly (see importPlugin).
     }
@@ -93,14 +131,55 @@ function resolvePlugin(specifier: string, root?: string): string | null {
   return null;
 }
 
+/**
+ * The builtin plugins a set of bases holds: every package under a builtin prefix's
+ * node_modules (scoped or not) whose package.json declares `penguin`. These load without
+ * being listed in plugins.json — they are part of the build, and a sandbox backend that does
+ * not apply to this platform answers its probe with null rather than failing.
+ */
+export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Promise<string[]> {
+  const names: string[] = [];
+  for (const base of bases) {
+    if (!base.builtin) continue;
+    const modules = path.join(path.dirname(base.file), "node_modules");
+    let top: string[];
+    try {
+      top = await fs.readdir(modules);
+    } catch {
+      continue;
+    }
+    const candidates: string[] = [];
+    for (const name of top) {
+      if (name.startsWith(".")) continue;
+      if (name.startsWith("@")) {
+        for (const inner of await fs.readdir(path.join(modules, name)).catch(() => [])) {
+          candidates.push(`${name}/${inner}`);
+        }
+      } else {
+        candidates.push(name);
+      }
+    }
+    for (const name of candidates) {
+      try {
+        await fs.access(path.join(modules, ...name.split("/"), "package.json"));
+        if (!names.includes(name)) names.push(name);
+      } catch {
+        // Not a package.
+      }
+    }
+  }
+  return names.sort();
+}
+
 /** Resolved against the data root and the installation, never the bundle's location. */
 async function importPlugin(
   specifier: string,
-  root: string,
+  bases: readonly PluginBase[],
 ): Promise<{ module: unknown; file: string | null }> {
-  const resolved = resolvePlugin(specifier, root);
-  if (resolved !== null)
-    return { module: await import(pathToFileURL(resolved).href), file: resolved };
+  const resolved = resolvePlugin(specifier, bases);
+  if (resolved !== null) {
+    return { module: await import(pathToFileURL(resolved.file).href), file: resolved.file };
+  }
   return { module: await import(specifier), file: null };
 }
 
@@ -121,22 +200,26 @@ export interface PluginDeclaration {
  */
 export async function readPluginDeclaration(
   specifier: string,
-  root?: string,
-): Promise<{ modules: string[]; replaces: string[] } | { error: string }> {
-  const resolved = resolvePlugin(specifier, root);
+  bases: readonly PluginBase[],
+): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+  const resolved = resolvePlugin(specifier, bases);
   if (resolved === null) {
     return {
-      error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins or the installation resolves it)`,
+      error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins, the shipped plugins or the installation resolves it)`,
     };
   }
   let read: Awaited<ReturnType<typeof readPackageTable>>;
   try {
-    read = await readPackageTable(resolved);
+    read = await readPackageTable(resolved.file);
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }
-  if (read === null) return { error: `no package.json above ${resolved}` };
-  return { modules: [...read.plugin.modules], replaces: [...read.plugin.replaces] };
+  if (read === null) return { error: `no package.json above ${resolved.file}` };
+  return {
+    modules: [...read.plugin.modules],
+    replaces: [...read.plugin.replaces],
+    builtin: resolved.base.builtin,
+  };
 }
 
 /** Rewrites the list of plugins this deployment installs; the loader reads it at the next boot. */
@@ -246,11 +329,15 @@ function asPlugin(module: unknown): Plugin | null {
  */
 export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
-  const specifiers = await readPluginList(root);
+  const bases = pluginBases(root, await committedAssetsDir(root));
+  // The builtin plugins load unlisted; plugins.json adds to them. A listed builtin is one
+  // entry, not two.
+  const builtin = await discoverBuiltinPlugins(bases);
+  const specifiers = [...new Set([...builtin, ...(await readPluginList(root))])];
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     try {
-      const { module, file } = await importPlugin(specifier, root);
+      const { module, file } = await importPlugin(specifier, bases);
       const read = await readPackageTable(file);
       if (read === null) {
         failed.set(specifier, `no package.json above ${file}`);

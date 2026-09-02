@@ -27,7 +27,9 @@ import { HttpError } from "../errors.js";
 import { readJson } from "../validate.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import {
+  discoverBuiltinPlugins,
   PLUGINS_FILE,
+  pluginBases,
   readPluginDeclaration,
   readPluginList,
   writePluginList,
@@ -41,6 +43,8 @@ import { pluginHostFrom } from "../../plugin/host.js";
 
 export interface InstalledPluginsDeps {
   root: string;
+  /** The current version's assets, where the builtin plugins a push carried live. */
+  assetsDir: () => string | null;
   /** Every module the process's plugin host holds, by name. */
   loadedModules: () => ReadonlySet<string>;
 }
@@ -57,13 +61,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
     });
     const loaded = deps.loadedModules();
+    const bases = pluginBases(deps.root, deps.assetsDir());
+    // Builtins first, then the listed ones — the same order the loader loads them in, and a
+    // listed builtin appears once, as builtin.
+    const builtin = await discoverBuiltinPlugins(bases);
     const plugins: InstalledPlugin[] = [];
-    for (const specifier of listed) {
-      const declared = await readPluginDeclaration(specifier, deps.root);
+    for (const specifier of [...new Set([...builtin, ...listed])]) {
+      const declared = await readPluginDeclaration(specifier, bases);
       if ("error" in declared) {
         plugins.push({
           specifier,
           active: false,
+          builtin: false,
           modules: [],
           replaces: [],
           error: declared.error,
@@ -76,6 +85,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         // A package that declares nothing cannot be shown as active by its modules; it is
         // installed and contributes nothing, which is what the row then says.
         active: names.length > 0 && names.every((n) => loaded.has(n)),
+        builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
       });
@@ -176,6 +186,7 @@ export class InstalledPluginRoutes {
     const hmr = this.hmr;
     this.routes = installedPluginRoutes({
       root: this.config.root,
+      assetsDir: () => hmr.assetsDir(),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.
       loadedModules: () =>
