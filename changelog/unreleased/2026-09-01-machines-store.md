@@ -3,6 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** refactor
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#565](https://github.com/Prism-Shadow/penguin-harness/pull/565)
 - **Breaking:** yes — the machines routes moved under a Project, and `machines-installs.json` is read no longer
 
 [中文版](2026-09-01-machines-store.zh.md)
@@ -20,4 +21,4 @@ What this server has installed on which machine moves out of `<data root>/machin
 
 `<data root>/machines-installs.json` is **not read** and not migrated. A server that installed on machines under 0.2.9 comes up with an empty **Installed machines** list; the file is left on disk untouched. Re-installing is the recovery and is cheap: every step is idempotent, and a machine that already carries this version is a no-op that only rewrites the record.
 
-The default Project inherits every machine present in the new store, so once a record exists it does not need adopting a second time.
+A machine belongs to the Project that installs it, and nothing is inherited — the default Project included — so re-install from the Project that should have it. A Project that is deleted takes its machine list with it; the installs themselves stay.

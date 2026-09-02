@@ -5,7 +5,7 @@
  * change, and nothing else this server remembers lives outside the database.
  *
  * `MachineRow` mirrors the table rather than the columns written today: the DDL lands in one
- * migration, and the fields nothing reads yet (a machine's own id, the forward held to it)
+ * migration, and the fields nothing reads yet (a machine's own id, the session held to it)
  * are the table's, not this store's opinion of what matters.
  */
 import type { DatabaseSync } from "node:sqlite";
@@ -18,10 +18,9 @@ export interface MachineRow {
   /** What this server last installed there; null when it never has. */
   version: string | null;
   installedAt: string | null;
-  /** The local port of the forward held to it, and the ssh child holding it, while alive. */
-  forwardPort: number | null;
-  forwardPid: number | null;
-  /** The port its server was bound to over there when the forward was raised. */
+  /** The ssh session this server holds to it — recorded so a successor generation can close it. */
+  sessionPid: number | null;
+  /** The port its server was bound to over there, as of the last connect. */
   remotePort: number | null;
 }
 
@@ -48,23 +47,21 @@ export class MachinesRepo {
         machineId: null,
         version: null,
         installedAt: null,
-        forwardPort: null,
-        forwardPid: null,
+        sessionPid: null,
         remotePort: null,
       }),
       ...patch,
     };
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, forward_port, forward_pid, remote_port) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, session_pid, remote_port) VALUES (?, ?, ?, ?, ?, ?)",
       )
       .run(
         address,
         next.machineId,
         next.version,
         next.installedAt,
-        next.forwardPort,
-        next.forwardPid,
+        next.sessionPid,
         next.remotePort,
       );
   }
@@ -90,8 +87,7 @@ function toRow(row: Record<string, unknown>): MachineRow {
     machineId: (row.machine_id as string | null) ?? null,
     version: (row.version as string | null) ?? null,
     installedAt: (row.installed_at as string | null) ?? null,
-    forwardPort: (row.forward_port as number | null) ?? null,
-    forwardPid: (row.forward_pid as number | null) ?? null,
+    sessionPid: (row.session_pid as number | null) ?? null,
     remotePort: (row.remote_port as number | null) ?? null,
   };
 }

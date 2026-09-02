@@ -3325,9 +3325,9 @@ export interface MachineInfo {
    */
   installed: { version: string; at: string } | null;
   /**
-   * Installed by this server, but for a DIFFERENT Project — so not this Project's machine,
-   * and not a host nobody has touched either. Absent in every other case, including when it
-   * IS this Project's (where `installed` carries the same record).
+   * Installed by this server, but not this Project's machine — another Project's, or nobody's
+   * since it was released — and so not a host nobody has touched either. Absent in every
+   * other case, including when it IS this Project's (where `installed` carries the same record).
    *
    * Reported rather than folded into `installed` because the two lead to different actions:
    * one is a machine to use, the other is a machine to adopt, which costs a row and no ssh.

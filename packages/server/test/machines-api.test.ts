@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MachinesResponse } from "../src/api/types.js";
+import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
@@ -70,10 +71,22 @@ describe("machines API", () => {
   let machinesRoot: string;
   /** The store the service records installs and memberships in; this suite reads it back. */
   let machinesRepo: MachinesRepo;
+  let store: DatabaseSync;
 
   const boot = async (over: Partial<MachinesEffects> = {}) => {
     machinesRoot = await makeTempRoot();
-    machinesRepo = new MachinesRepo(openDatabase(":memory:"));
+    // The store is the service's own here, not the App's, so it needs the Project row the
+    // membership table's foreign key points at — a membership follows its Project out.
+    store = openDatabase(":memory:");
+    store
+      .prepare(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
+      )
+      .run("admin", "x", "2026-08-24T00:00:00.000Z");
+    store
+      .prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES (?, ?, ?)")
+      .run("default_project", "admin", "2026-08-24T00:00:00.000Z");
+    machinesRepo = new MachinesRepo(store);
     t = await createTestApp({
       machines: new MachinesService(machinesRoot, machinesRepo, effects(over)),
     });
@@ -306,6 +319,23 @@ describe("machines API", () => {
       await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect((await listed()).find((m) => m.id === "ssh:nas")?.installed?.version).toBe("8.8.8");
+    });
+
+    it("a deleted Project takes its machine list with it, and leaves the install alone", async () => {
+      await boot();
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.members(PROJECT)).toEqual(["ssh:nas"]);
+
+      // The membership row is the Project's and follows it out (ON DELETE CASCADE), so a
+      // Project later recreated under the same id does not inherit a dead one's machines.
+      // The install record is the machine's, and stays.
+      store.prepare("DELETE FROM projects WHERE project_id = ?").run(PROJECT);
+      expect(machinesRepo.members(PROJECT)).toBeNull();
+      expect(recordsInStore()["ssh:nas"]).toEqual({
+        version: "9.9.9",
+        at: "2026-08-24T12:00:00.000Z",
+      });
     });
 
     it("a failed install records nothing", async () => {

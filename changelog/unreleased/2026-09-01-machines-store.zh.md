@@ -3,6 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** refactor
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#565](https://github.com/Prism-Shadow/penguin-harness/pull/565)
 - **Breaking:** yes — machines 路由移到 Project 之下，且 `machines-installs.json` 不再被读取
 
 [English](2026-09-01-machines-store.md)
@@ -20,4 +21,4 @@
 
 `<data root>/machines-installs.json` **不会被读取**，也不会被迁移。在 0.2.9 下装过机器的服务端升上来后，**已安装机器**列表是空的；该文件原样留在磁盘上。重新安装即可恢复，代价很低：每一步都幂等，已经是该版本的机器只是一次 no-op，仅重写记录。
 
-默认 Project 会继承新存储中已有的全部机器，因此记录一旦存在就不需要再纳入一次。
+机器归属于安装它的那个 Project，没有任何继承——默认 Project 也不例外——所以请从应当拥有它的 Project 重新安装。Project 被删除时会带走自己的机器列表；机器上的安装本身保持不动。

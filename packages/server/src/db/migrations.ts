@@ -198,8 +198,7 @@ export const MIGRATIONS: readonly Migration[] = [
           machine_id   TEXT,
           version      TEXT,
           installed_at TEXT,
-          forward_port INTEGER,
-          forward_pid  INTEGER,
+          session_pid  INTEGER,
           remote_port  INTEGER
         );
         CREATE TABLE IF NOT EXISTS machine_project (
@@ -209,7 +208,7 @@ export const MIGRATIONS: readonly Migration[] = [
       `);
     },
     // LOSES this server's own machine id (every stored reference to it on other machines
-    // then points at nothing), what was installed where, the forwards held, and which
+    // then points at nothing), what was installed where, the sessions held, and which
     // machines each Project used.
     down(db) {
       db.exec(`

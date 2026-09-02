@@ -25,7 +25,6 @@
  * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
  * 30 MB transfer to reach the same place.
  */
-import { DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
 import { listHostAliases, resolveTarget } from "./targets.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
@@ -75,27 +74,18 @@ export class MachinesService {
     };
   }
 
-  /** Every machine this server has installed on, whichever Project asked for it. */
-  #installed(): string[] {
-    return this.repo
-      .all()
-      .filter((row) => row.version !== null)
-      .map((row) => row.address);
-  }
-
   /**
-   * The addresses a Project uses.
+   * The addresses a Project uses: exactly its own list, empty until an install gives it one.
    *
-   * A Project with no list written yet is not the same as one with an empty list. The
-   * default Project INHERITS every machine this server has installed on — it is the Project
-   * every server seeds, and the one an install made before any Project owned machines would
-   * have belonged to. Every other Project starts empty, which is the honest answer for a
-   * Project that has never been given one.
+   * Nothing is inherited, the default Project included. The store starts empty (the JSON
+   * file it replaces is not read), so there is nothing for a first Project to inherit — and
+   * an inheritance that materialised on the Project's first write made the answer depend on
+   * whether that write had happened yet. A machine belongs to the Project that installed it
+   * or adopted it, and to no other; one released by every Project reads as `elsewhere` for
+   * all of them, which is what makes it adoptable again.
    */
   #members(projectId: string): string[] {
-    const listed = this.repo.members(projectId);
-    if (listed !== null) return listed;
-    return projectId === DEFAULT_PROJECT_ID ? this.#installed() : [];
+    return this.repo.members(projectId) ?? [];
   }
 
   #setMember(projectId: string, address: string, member: boolean): void {
@@ -108,8 +98,8 @@ export class MachinesService {
 
   /**
    * The ssh config's host aliases, answered for one Project: `installed` means installed FOR
-   * THIS PROJECT, and a host installed for another one is reported through `elsewhere`.
-   * Empty when there is no config, which is not an error.
+   * THIS PROJECT, and a host this server installed on but this Project does not use is
+   * reported through `elsewhere`. Empty when there is no config, which is not an error.
    */
   list(projectId: string): MachineInfo[] {
     const members = new Set(this.#members(projectId));
