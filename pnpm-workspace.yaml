@@ -31,9 +31,9 @@ allowBuilds:
   # targets NSIS only, so the script is deliberately not run.
   electron-winstaller: false
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which
-# would resolve agenthub back to 0.4.7 and lose the GLM image input that the glm-5.3-flash
-# preset's vision flag rests on. This package is first-party, so the exemption carries no
-# third-party risk.
-# Remove the entry at the next agenthub bump — by then 0.4.8 is long past the age gate.
+# would resolve agenthub back to the previous release and lose the fix the bump is for.
+# This package is first-party, so the exemption carries no third-party risk.
+# Every bump lands inside the age gate, so the entry names the pinned version and moves
+# with each bump rather than being removed.
 minimumReleaseAgeExclude:
-  - "@prismshadow/agenthub@0.4.8"
+  - "@prismshadow/agenthub@0.4.9"
