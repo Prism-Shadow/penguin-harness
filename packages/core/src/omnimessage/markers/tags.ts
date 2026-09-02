@@ -17,8 +17,6 @@ export const MARKER_TAGS = {
   summary: "summary",
   /** Mid-run user message delivered between turns (Session.steer). */
   userSteering: "user_steering",
-  /** Goal-mode round protocol block prefixed to each round's input (the goal hook). */
-  goal: "goal",
   /** Skill invocation block prefixed to a user message (Web composer). */
   useSkills: "use_skills",
   /** `/agent` handoff origin block, first message of the delegated conversation (Web). */
@@ -53,6 +51,5 @@ export const TITLE_NOISE_TAGS: readonly string[] = [
   MARKER_TAGS.handoffFrom,
   MARKER_TAGS.scheduledTask,
   MARKER_TAGS.modelSwitchFrom,
-  MARKER_TAGS.goal,
   MARKER_TAGS.backgroundTaskDone,
 ];

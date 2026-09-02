@@ -69,7 +69,6 @@ describe("marker block primitives", () => {
       MARKER_TAGS.handoffFrom,
       MARKER_TAGS.scheduledTask,
       MARKER_TAGS.modelSwitchFrom,
-      MARKER_TAGS.goal,
       MARKER_TAGS.backgroundTaskDone,
     ]);
   });

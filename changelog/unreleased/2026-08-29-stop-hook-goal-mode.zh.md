@@ -42,7 +42,7 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 - **既有已装 Skill 带的是自然数版本**，会读作空版本，因此插件库会把它们各报一次可更新；从库重装即带上日期版本。
 - **既有 Agent 没有任何钩子包**——不会向已存在的 Agent 自动安装。这样的 Agent 上发起目标会收到 `409 goal_plugin_not_installed`，直到从插件库装上 `goal` 插件；此后新建的 `default_agent` 自带。
 - **`goal_finished` 与 `goal` 运行选项不复存在**（连同上一轮迭代的 `goal_state` 表一起移除）；`goal_*` 服务端事件不变。早期版本的 Trace 仍带 `goal_finished` 记录，读取方把它当作未知事件。
-- **`[goal]` 标记不复存在**——`parseGoalMessage`、`isGoalRoundInput`、`downgradeGoalInput` 与 `GoalRoundMessage` 不再导出。旧 Trace 中带 `[goal]` 块的轮消息按纯文本渲染（块原样可见、没有轮次小注），照常开对话索引条目、照常进输入历史；新的轮消息改带 `sender: "harness"` 标记。
+- **`[goal]` 标记不复存在**——`parseGoalMessage`、`isGoalRoundInput`、`downgradeGoalInput` 与 `GoalRoundMessage` 不再导出，`MARKER_TAGS` 也不再有 `goal` 标签。旧 Trace 中带 `[goal]` 块的轮消息按纯文本渲染（块原样可见、没有轮次小注），照常开对话索引条目、照常进输入历史；新的轮消息改带 `sender: "harness"` 标记。
 - **`system_config.yaml` 的 `hooks.skill_summary`** 不再读取：装上 `continual-learning` 插件就是开关。
 - **此前安装的 Skill 与钩子包没有图标**（当时没有任何东西把图标写在它们旁边），其行显示书本或钩子图形，直到从库重装或更新该插件——那会把插件图标写到位。
 - Agent 创建的 `skills: string[]` 字段与 CLI 的 `--skills` 改为 `plugins` / `--plugins`。
