@@ -21,6 +21,7 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 - CLI：`penguin org` 命令族——`ls`、`create`、`show`、`chart`、`hire`、`employee set`、`leave`、`desk show|renew`、`calendar ls|add|update|rm`、`ticket ls|show|create|move|assign|block|unblock|progress|start|attach`、`chat tail|send`、`finance`——作为 API 的瘦客户端，处处支持 `--json`。
 - Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、六个页面（概览、组织图、日历、工单、财务、群聊）、按组织分组并带工位 / 工单子夹的会话列表、开发模式下的「组织」自动子夹、对话中的 `[org_trigger]` 横幅，以及设置页上的两个开关。
 - 创建选项：新建组织时可指定 **Model**（已配置的成对引用，员工条目未指定时工位与工单会话都用它）与**公司工作区**（一个已存在的绝对目录，替代组织目录内的 `workspace/` 作为公共工作区）；二者都是 `org_config.toml` 的字段，可在组织设置里修改，也可经 `penguin org create --workspace … --model-id … --provider …` 指定。
+- 决策关口：CEO 只提案、董事会拍板——初始化会话先发一份完整提案（使命理解、首批工单、招募角色及预算与 Model、工作区划分）并结束本轮；招募、预算、拒绝他人的工单、跳过审核关闭 P0/P1 工单、任何触及组织之外的动作以及结构变更都要等创建者在群聊里确认。员工把这类事项上报给 CEO。写进 `company-ceo` / `company-employee` Skill、初始化会话与组织手册。
 - 排班规则：CEO / 人事 Skill、初始化会话与组织手册把日程当作排班表——按角色定节奏（CEO 每日、人事每三天、财务每周）、每位员工各占一个时刻、每人只有一条常设日程项、绝不 `--start-at now`。
 - 插件：新增独立分类（Agent Company / Agent 公司）下的 `agent-company` 插件（`preinstall: false`），携带 `company-employee`、`company-ceo`、`company-hr`、`company-finance` 四个 Skill；CEO 与每位招募的 Agent 都会连同 `agent-development` 一起安装它。
 - 文档：新增「公司模式」指南（含 Marketplace 案例走读）、`penguin org` 参考，以及服务端 API 参考里的组织路由。

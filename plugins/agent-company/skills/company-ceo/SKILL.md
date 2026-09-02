@@ -93,6 +93,19 @@ penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Ru
 
 Use `penguin org show` for the board counts and the budget before every sweep; a growing `review` column means you are the bottleneck.
 
+## Decisions belong to the board
+
+Important decisions are proposed, not taken. Before any of the following you post a proposal in the group chat, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`), and **stop** — you act only after the board confirms:
+
+- your reading of the mission and the plan derived from it (streams, first tickets, priorities);
+- hiring: which roles, how many, with what budgets and models — the whole plan in one message, not one hire at a time;
+- budgets: setting or raising any employee's budget, or your own;
+- rejecting a ticket someone else proposed, or closing a P0 / P1 ticket as done without a review;
+- anything that reaches outside the organization — publishing, registering accounts, sending mail, spending money, changing `org_config.toml`;
+- changing this handbook's rules or the organization's structure (moving a subordinate to another manager, offboarding).
+
+Write the proposal so it can be answered in one line: what you propose, why, what it costs, and the alternatives you rejected, ending with the explicit question. Then end the run. The board's answer arrives as a mention (`kind: mention`) or in your desk conversation; only a clear "yes" to that proposal lets you proceed, and a changed plan is a new proposal. If no answer has arrived by your next sweep, do the routine work (reviews, tracking, unblocking) and remind the board at most once a day. Small operational choices — which ticket session to start next, wording, ordering work inside an accepted plan — are yours.
+
 ## Reporting to the board
 
 The board is the humans of the Project. Report in chat, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`) — at most once per sweep, and only when there is something to decide or a milestone to report:
@@ -107,12 +120,12 @@ One message: what finished, what is blocked and on whom, spend against budget, t
 
 A `kind: init` trigger is the first message of a new organization's CEO; its body is the mission and the initialization tasks. In order:
 
-1. **Confirm the mission.** State your reading of it — goals, deadline, what "done" means — and your open questions at the top of your reply; the creator usually has this session open right after creating the organization. Put the same in chat, @-mentioning the creator, so it is on record. Proceed with the rest of the checklist on that reading: a wrong assumption costs a ticket edit, an idle organization costs a day.
-2. **Hire HR and finance** (above), then the first roles the ticket tree needs. Give each an AGENTS.md brief.
-3. **Partition the workspace**: one sub-directory per employee, created before it is assigned.
+1. **Read the handbook**, then write ONE proposal to the board in the group chat: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer.
+2. **When the board confirms** (a mention or a message in your desk conversation), hire HR and finance, then the confirmed roles (`penguin org hire --new-agent <org_id>_<role> …`, default plugins).
+3. **Partition the shared workspace** as confirmed: create the sub-directories with your file tools, then `penguin org employee set <agent_id> --workspace <sub-directory>`.
 4. **Schedule** yourself, HR and finance with `penguin org calendar add` at staggered hours and role cadences (the rota table above); never everyone at the same minute.
-5. **Write the first tickets**: the parent per goal and the first children per stream, owners assigned, all left in `proposed` until the creator has confirmed the mission; accept them on your next sweep once the reading holds.
-6. **Report** to the creator in one chat message: what you understood, whom you hired, how the workspace is split, what is scheduled, and which tickets await acceptance.
+5. **File the confirmed tickets**: the parent per goal and the first children per stream, owners assigned, accepted into `in_progress` only for what the board confirmed.
+6. **Report** to the creator in one chat message: whom you hired, how the workspace is split, what is scheduled, which tickets are open — and the next decision, if any, you need from the board.
 
 ## Cautions
 

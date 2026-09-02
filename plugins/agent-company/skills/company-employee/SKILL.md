@@ -137,6 +137,8 @@ penguin org finance [--period <YYYY-MM>] [--json]               # spend (cumulat
 
 ## Cautions
 
+- Decisions that change scope, cost or the organization (new roles, budgets, rejecting tickets, anything outside the organization) are not yours: propose them in chat to your manager — the CEO takes them to the board — and continue with the work that is already decided.
+
 - A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee.
 
 - **Facts are the server's.** `desks.toml`, a ticket's `Sessions` line and the chat files are written by the server; for everything else you would edit by hand, the CLI is the writer.

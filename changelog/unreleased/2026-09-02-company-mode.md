@@ -67,6 +67,12 @@ budget marks) and each user's chat read cursor.
   existing absolute directory used as the shared workspace instead of the organization's own
   `workspace/`); both are `org_config.toml` fields, editable in the organization settings and
   through `penguin org create --workspace … --model-id … --provider …`.
+- Decision gate: the CEO proposes and the board decides — the initialization run posts one
+  proposal (mission reading, first tickets, hiring plan with budgets and model, workspace
+  split) and ends; hiring, budgets, rejecting others' tickets, closing P0/P1 tickets without
+  review, anything outside the organization and structural changes wait for the creator's
+  confirmation in chat. Employees escalate such matters to the CEO. Encoded in the
+  `company-ceo` / `company-employee` skills, the init run and the handbook.
 - Scheduling guidance: the CEO/HR skills, the initialization run and the handbook schedule
   the calendar as a rota — role cadences (CEO daily, HR every three days, finance weekly),
   a distinct hour per employee, one recurring event per employee, never `--start-at now`.

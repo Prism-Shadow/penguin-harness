@@ -207,6 +207,9 @@ describe("organization runtime", () => {
     expect(parsed?.origin.kind).toBe("init");
     expect(parsed?.origin.org).toBe(ORG);
     expect(parsed?.rest).toContain("Mission: Build a plugin marketplace");
+    // The board decides: the init run proposes and stops before hiring anything.
+    expect(parsed?.rest).toContain("END THIS RUN");
+    expect(parsed?.rest).toContain("@user:alice");
     expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO} 的工位`);
     expect(cache.ownerOfSession(started[0]!.sessionId)).toMatchObject({
       orgId: ORG,

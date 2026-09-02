@@ -78,6 +78,16 @@ members; write \`@agent:<id>\` or \`@user:<id>\` when both exist.
   --reason … --by …\` and stop working on it. Blocked tickets are skipped by the sweep until unblocked.
 - Closing a ticket notifies its \`Notify\` list and the initiator.
 
+## Decisions belong to the board
+
+The CEO proposes; the board (the creator, \`user:${input.createdBy}\`) decides. Before hiring
+(which roles, budgets, models), before setting or raising a budget, before rejecting someone
+else's ticket or closing a P0 / P1 ticket without review, before anything that reaches outside
+the organization (publishing, accounts, money) and before changing this handbook or the
+organization's structure, the CEO posts one clear proposal in the group chat mentioning the
+board and stops until the answer comes back. Employees raise such matters to their manager;
+the CEO takes them to the board. Routine work inside an accepted plan needs no confirmation.
+
 ## Chat etiquette
 
 - Mention someone only for a decision, a blocker, or a completion report. Never \`@all\` for chatter.

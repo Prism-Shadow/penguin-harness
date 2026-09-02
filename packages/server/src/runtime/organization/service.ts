@@ -1479,13 +1479,14 @@ function initBody(org: LoadedOrg): string {
   return [
     `Mission: ${org.config.mission}`,
     "",
-    "You are the CEO of a brand-new organization and this is its initialization run. Work through the following, in order, and report as you go:",
-    `1. Read the handbook, then confirm your understanding of the mission with the board (${board}) in the group chat (\`penguin org chat send -m "@${board} …"\`) and ask what is unclear.`,
-    `2. Hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the roles the mission needs.`,
-    "3. Partition the shared workspace: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
+    "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
+    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the group chat — \`penguin org chat send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
+    "2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — `penguin org hire --new-agent " +
+      `${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
+    "3. Partition the shared workspace as confirmed: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
-    "5. Turn the mission into a first batch of tickets in `proposed` (`penguin org ticket create …`), one parent ticket for the project-level goal and children per stream.",
-    `6. Report to the board in the group chat, mentioning @${board}.`,
+    "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream.",
+    `6. Report to the board in the group chat, mentioning @${board}, and name the next decision you need, if any.`,
   ].join("\n");
 }
 
