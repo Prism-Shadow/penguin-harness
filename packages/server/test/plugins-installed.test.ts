@@ -35,6 +35,15 @@ describe("installed plugins", () => {
     expect(res.restartPending).toBe(false);
   });
 
+  it("a plugin the build ships is offered, not installed", async () => {
+    // The shipped set is a tag for the catalogue: nothing appears as installed, and nothing
+    // loads, until plugins.json names it. (A test app ships none, so the set is empty; the
+    // load-time half of this is plugin-loader.test.ts.)
+    const res = await view();
+    expect(res.shipped).toEqual([]);
+    expect(res.plugins).toEqual([]);
+  });
+
   it("says a listed plugin is not active, and why when it cannot even be read", async () => {
     await fs.writeFile(listFile(), JSON.stringify({ plugins: ["@acme/not-installed"] }));
     const res = await view();
