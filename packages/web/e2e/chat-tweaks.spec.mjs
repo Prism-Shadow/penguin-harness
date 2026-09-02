@@ -95,7 +95,7 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.locator('button[title="Session 信息"]').click();
   await expect(page.getByText(sessionId, { exact: true }).first()).toBeVisible();
-  const copyBtn = page.getByRole("button", { name: "复制 Session id" });
+  const copyBtn = page.getByRole("button", { name: "复制 Session ID" });
   await copyBtn.click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(sessionId);
   // Feedback at the button: tooltip flips while copied; the accessible name (aria-label)
@@ -107,7 +107,7 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   // while the button itself stays icon-only, as asserted right above.
   await expect(page.getByText("已复制", { exact: true })).toHaveCount(1);
   // …and both halves clear once the copied flash ends (1.5s).
-  await expect(copyBtn).toHaveAttribute("title", "复制 Session id", { timeout: 5_000 });
+  await expect(copyBtn).toHaveAttribute("title", "复制 Session ID", { timeout: 5_000 });
   await expect(page.getByText("已复制", { exact: true })).toHaveCount(0);
   // The section label above the id is not the feedback target — it stays "Session id".
   await expect(page.getByText("Session id", { exact: true })).toBeVisible();

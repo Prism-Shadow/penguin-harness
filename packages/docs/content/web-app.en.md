@@ -46,7 +46,7 @@ The sidebar's conversation list groups by Workspace or by Agent. Grouping and so
 A row's actions come at two levels:
 
 - **Hovering** a row replaces the trailing last-active time with two icon buttons — archive and delete. They are reachable from the keyboard too: tabbing onto either one reveals it;
-- **Right-clicking** a row opens the full menu at the pointer: pin, rename, archive, delete. A **long press** on touch and **Shift+F10** on the keyboard open the same menu, since neither hover nor a secondary click exists there. Escape, a click elsewhere, or scrolling the list dismisses it; the browser's own context menu is taken over on conversation rows only, and stays as usual everywhere else on the page.
+- **Right-clicking** a row opens the full menu at the pointer: pin, rename, remote control, archive, copy Session ID, delete. A **long press** on touch and **Shift+F10** on the keyboard open the same menu, since neither hover nor a secondary click exists there. Escape, a click elsewhere, or scrolling the list dismisses it; the browser's own context menu is taken over on conversation rows only, and stays as usual everywhere else on the page.
 
 Pinning is offered only in the active list — the archived, subagent and scheduled folders leave it out — and a pinned conversation sorts to the top of its group. The choice is remembered per Project in the browser.
 
