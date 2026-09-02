@@ -1,48 +1,40 @@
 /**
- * The org chart: the reporting line as a tree with the CEO at the root (layout in
- * org-chart-tree.ts, the subagent topology's algorithm), each node an employee — avatar,
- * name, title, live state dot, this period's spend against its budget, the workspace tail.
- * Clicking a node opens the employee's desk session; the node's menu holds the personnel
- * actions (hire a subordinate, set budget, change the reporting line, set the workspace, a
- * new desk session, leave), every one of which confirms before it writes the chart file.
+ * The org chart: the reporting line as a top-down tree with the CEO at the top centre
+ * (layout in org-chart-tree.ts), each node an employee card (chart-card.tsx). Clicking a
+ * card opens the employee's desk session; the card's menu holds the personnel actions —
+ * hire a subordinate, set budget, change the reporting line, set the workspace, a new desk
+ * session, leave — every one of which confirms before it writes the chart file.
+ *
+ * The drawing centres itself when narrower than the page and scrolls sideways when wider.
+ * A wide chart opens shrunk to fit the page's width; the header's zoom control steps
+ * between 60% and 120%, and its readout puts the chart back to fit.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { formatMoney } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk } from "../../lib/tone";
+import { toneInk, toneStrip } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Dropdown } from "../../components/ui/dropdown";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
-  ELLIPSIS_ICON,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-import { BudgetBar, EmployeeStateDot, INVALID_ICON } from "./shared";
-import { budgetTone } from "./finance-tree";
-import {
-  CHART_NODE_H,
-  CHART_NODE_W,
-  buildChartTree,
-  layoutChart,
-  workspaceTail,
-} from "./org-chart-tree";
+import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
+import { ZOOM_MAX, ZOOM_MIN, fitZoom, stepZoom } from "./chart-view";
+import { ChartCard, ChartLegend } from "./chart-card";
 import { EmployeeEditDialog, HireDialog } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
 
@@ -55,6 +47,9 @@ const MENU_ICONS = {
   renewDesk: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6",
   leave: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
 } as const;
+
+/** The header's zoom buttons (24x24 line paths): a minus and a plus. */
+const ZOOM_ICONS = { out: "M5 12h14", in: "M12 5v14M5 12h14" } as const;
 
 export function OrgChartPage() {
   const { projectId, orgId, org } = useOrg();
@@ -74,6 +69,28 @@ export function OrgChartPage() {
     employee: OrgEmployeeItem;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The chosen zoom; null is fit-to-width, the default. */
+  const [zoom, setZoom] = useState<number | null>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+
+  // The frame's width decides the fit zoom; a ResizeObserver keeps it current through
+  // sidebar collapses and window resizes. A callback ref, because the frame mounts only
+  // once the chart has arrived.
+  const observer = useRef<ResizeObserver | null>(null);
+  const frameRef = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (el === null) return;
+    setFrameWidth(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width !== undefined) setFrameWidth(width);
+    });
+    ro.observe(el);
+    observer.current = ro;
+  }, []);
+  useEffect(() => () => observer.current?.disconnect(), []);
 
   const load = useCallback(async () => {
     try {
@@ -83,10 +100,19 @@ export function OrgChartPage() {
       setError(apiErrorText(e));
     }
   }, [projectId, orgId]);
-  const { runs, budget } = company.versions;
+  // A run starting or ending moves a state dot, a ticket change can attach a session to an
+  // employee, and a budget event pauses one: reload on those, never on a timer.
+  const { runs, tickets, budget } = company.versions;
   useEffect(() => {
     void load();
-  }, [load, runs, budget]);
+  }, [load, runs, tickets, budget]);
+
+  const layout = useMemo(
+    () => (chart === null ? null : layoutOrgTree(chart.employees, chart.ceoAgentId)),
+    [chart],
+  );
+  const scale = layout === null ? 1 : (zoom ?? fitZoom(frameWidth, layout.width));
+  const percent = Math.round(scale * 100);
 
   const openDesk = async (employee: OrgEmployeeItem) => {
     try {
@@ -130,7 +156,7 @@ export function OrgChartPage() {
       </OrgPage>
     );
   }
-  if (chart === null) {
+  if (chart === null || layout === null) {
     return (
       <OrgPage title={S.nav.org.chart} info={S.company.chart.info}>
         <OrgPageSkeleton />
@@ -139,8 +165,6 @@ export function OrgChartPage() {
   }
 
   const byId = new Map(chart.employees.map((e) => [e.agentId, e]));
-  const { nodes, orphans } = buildChartTree(chart.employees, chart.ceoAgentId);
-  const layout = layoutChart(nodes);
 
   const menuRow = (
     icon: string,
@@ -169,187 +193,164 @@ export function OrgChartPage() {
     </button>
   );
 
-  const renderNode = (employee: OrgEmployeeItem, x: number, y: number) => {
-    const isCeo = employee.agentId === chart.ceoAgentId;
-    const tone = budgetTone(employee.spend.ratio);
-    const spend =
-      employee.budget === undefined
-        ? formatMoney(employee.spend.cumulative, currency)
-        : S.company.spendOfBudget(
-            formatMoney(employee.spend.cumulative, currency),
-            formatMoney(employee.budget, currency),
-          );
-    return (
-      <div
-        key={employee.agentId}
-        style={{ left: x, top: y, width: CHART_NODE_W, height: CHART_NODE_H }}
-        className={`absolute flex items-stretch rounded-md border bg-white dark:bg-gray-900 ${
-          employee.invalid !== undefined
-            ? "border-red-300 dark:border-red-800"
-            : "border-gray-200 dark:border-gray-700"
-        }`}
+  const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean) => (
+    <>
+      {menuRow(MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
+      {menuRow(MENU_ICONS.budget, S.company.chart.setBudget, () =>
+        setEditFor({ employee, edit: "budget" }),
+      )}
+      {!isCeo &&
+        menuRow(MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
+          setEditFor({ employee, edit: "reportsTo" }),
+        )}
+      {menuRow(MENU_ICONS.workspace, S.company.chart.setWorkspace, () =>
+        setEditFor({ employee, edit: "workspace" }),
+      )}
+      {menuRow(MENU_ICONS.renewDesk, S.company.chart.renewDesk, () =>
+        setConfirm({ kind: "renew", employee }),
+      )}
+      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+      {isCeo ? (
+        <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
+          {S.company.chart.ceoCannotLeave}
+        </span>
+      ) : (
+        menuRow(
+          MENU_ICONS.leave,
+          S.company.chart.leave,
+          () => setConfirm({ kind: "leave", employee }),
+          true,
+        )
+      )}
+    </>
+  );
+
+  const zoomControl = (
+    <div className="flex items-center" role="group" aria-label={S.company.chart.zoom}>
+      <Button
+        size="icon"
+        variant="ghost"
+        title={S.company.chart.zoomOut}
+        aria-label={S.company.chart.zoomOut}
+        disabled={scale <= ZOOM_MIN}
+        onClick={() => setZoom(stepZoom(scale, -1))}
       >
-        <button
-          type="button"
-          title={
-            employee.invalid !== undefined
-              ? `${employee.name} · ${employee.invalid}`
-              : `${employee.name} · ${S.company.openDesk}`
-          }
-          onClick={() => void openDesk(employee)}
-          className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 rounded-l-md px-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
-        >
-          <span className="flex w-full min-w-0 items-center gap-1.5">
-            <AgentAvatar
-              id={employee.agentId}
-              name={employee.name}
-              size={18}
-              className="shrink-0 rounded"
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
-              {employee.name}
-            </span>
-            {isCeo && <Badge tone="brand">{S.company.ceo}</Badge>}
-            <EmployeeStateDot state={employee.state} />
-          </span>
-          <span className="flex w-full min-w-0 items-center gap-1.5 pl-[24px] text-[11px] text-gray-500 dark:text-gray-400">
-            <span className="min-w-0 truncate">{employee.title}</span>
-            <span className={`shrink-0 tabular-nums ${tone === "muted" ? "" : toneInk[tone]}`}>
-              {spend}
-            </span>
-          </span>
-          <span className="flex w-full min-w-0 items-center gap-1 pl-[24px] font-mono text-[10px] text-gray-400 dark:text-gray-500">
-            <GlyphIcon d={FOLDER_ICON} size={10} />
-            <span
-              className="min-w-0 truncate"
-              title={employee.resolvedWorkspace ?? employee.workspace}
-            >
-              {workspaceTail(employee.workspace)}
-            </span>
-            {employee.invalid !== undefined && (
-              <span className={`ml-auto shrink-0 ${toneInk.danger}`} title={employee.invalid}>
-                <GlyphIcon d={INVALID_ICON} size={10} />
-                <span className="sr-only">{S.company.chart.invalidEntry}</span>
-              </span>
-            )}
-          </span>
-        </button>
-        {/* The node menu: the personnel actions, in the overflow-menu style of the session rows. */}
-        <Dropdown
-          open={menuFor === employee.agentId}
-          setOpen={(v) => setMenuFor(v ? employee.agentId : null)}
-          portal={{ direction: "down", align: "right" }}
-          menuClass="w-44"
-          className="flex shrink-0 items-center"
-          button={
-            <button
-              type="button"
-              title={S.company.chart.nodeMenu}
-              aria-label={`${employee.name} · ${S.company.chart.nodeMenu}`}
-              aria-haspopup="menu"
-              aria-expanded={menuFor === employee.agentId}
-              onClick={() => setMenuFor(menuFor === employee.agentId ? null : employee.agentId)}
-              className="flex h-full w-7 items-center justify-center rounded-r-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            >
-              <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.groupHeaderAction} filled />
-            </button>
-          }
-        >
-          {menuRow(MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
-          {menuRow(MENU_ICONS.budget, S.company.chart.setBudget, () =>
-            setEditFor({ employee, edit: "budget" }),
-          )}
-          {!isCeo &&
-            menuRow(MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
-              setEditFor({ employee, edit: "reportsTo" }),
-            )}
-          {menuRow(MENU_ICONS.workspace, S.company.chart.setWorkspace, () =>
-            setEditFor({ employee, edit: "workspace" }),
-          )}
-          {menuRow(MENU_ICONS.renewDesk, S.company.chart.renewDesk, () =>
-            setConfirm({ kind: "renew", employee }),
-          )}
-          <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-          {isCeo ? (
-            <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
-              {S.company.chart.ceoCannotLeave}
-            </span>
-          ) : (
-            menuRow(
-              MENU_ICONS.leave,
-              S.company.chart.leave,
-              () => setConfirm({ kind: "leave", employee }),
-              true,
-            )
-          )}
-        </Dropdown>
-      </div>
-    );
-  };
+        <GlyphIcon d={ZOOM_ICONS.out} size={ICON_SIZE.iconButton} />
+      </Button>
+      <button
+        type="button"
+        title={S.company.chart.zoomFit}
+        aria-label={`${S.company.chart.zoomFit} · ${percent}%`}
+        onClick={() => setZoom(null)}
+        className="min-w-11 rounded-md px-1 py-1 text-center text-xs text-gray-600 tabular-nums transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+      >
+        {percent}%
+      </button>
+      <Button
+        size="icon"
+        variant="ghost"
+        title={S.company.chart.zoomIn}
+        aria-label={S.company.chart.zoomIn}
+        disabled={scale >= ZOOM_MAX}
+        onClick={() => setZoom(stepZoom(scale, 1))}
+      >
+        <GlyphIcon d={ZOOM_ICONS.in} size={ICON_SIZE.iconButton} />
+      </Button>
+    </div>
+  );
 
   return (
-    <OrgPage title={S.nav.org.chart} info={S.company.chart.info} wide>
-      {nodes.length === 0 ? (
+    <OrgPage
+      title={S.nav.org.chart}
+      info={S.company.chart.info}
+      wide
+      {...(layout.nodes.length > 0 ? { actions: zoomControl } : {})}
+    >
+      {/* A refresh that failed while a chart is on screen: say so above it, keep the chart. */}
+      {error !== null && (
+        <div
+          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs ${toneStrip.danger}`}
+        >
+          <span>{S.company.chart.refreshFailed(error)}</span>
+          <Button size="sm" onClick={() => void load()}>
+            {S.common.retry}
+          </Button>
+        </div>
+      )}
+      {layout.detached.length > 0 && (
+        <div className={`mb-3 rounded-md border px-3 py-1.5 text-xs ${toneStrip.attention}`}>
+          {S.company.chart.detachedNotice(layout.detached.length)}
+        </div>
+      )}
+      {layout.nodes.length === 0 ? (
         <EmptyState title={S.company.chart.empty} />
       ) : (
-        <div className="overflow-x-auto pb-2">
-          <div className="relative" style={{ width: layout.width, height: layout.height }}>
-            <svg
-              width={layout.width}
-              height={layout.height}
-              className="absolute inset-0 text-gray-300 dark:text-gray-700"
-              aria-hidden
+        <>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <ChartLegend />
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+              {S.company.chart.employeeCount(chart.employees.length)}
+            </span>
+          </div>
+          <div ref={frameRef} className="overflow-x-auto pb-3">
+            {/* The scaled box takes the drawing's on-screen size, so `mx-auto` centres it when the frame is wider and the frame scrolls when it is not. */}
+            <div
+              className="mx-auto"
+              style={{ width: layout.width * scale, height: layout.height * scale }}
             >
-              {layout.edges.map((edge) => (
-                <path
-                  key={`${edge.fromId}>${edge.toId}`}
-                  d={edge.path}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-              ))}
-            </svg>
-            {layout.nodes.map(({ node, x, y }) => {
-              const employee = byId.get(node.id);
-              return employee === undefined ? null : renderNode(employee, x, y);
-            })}
-          </div>
-        </div>
-      )}
-      {orphans.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className={`text-xs ${toneInk.danger}`}>{S.company.chart.invalidEntry}</p>
-          <div className="relative flex flex-wrap gap-3">
-            {orphans.map((id) => {
-              const employee = byId.get(id);
-              return employee === undefined ? null : (
-                <div
-                  key={id}
-                  className="relative"
-                  style={{ width: CHART_NODE_W, height: CHART_NODE_H }}
+              <div
+                className="relative origin-top-left"
+                style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}
+              >
+                <svg
+                  width={layout.width}
+                  height={layout.height}
+                  className="absolute inset-0 text-gray-300 dark:text-gray-700"
+                  aria-hidden
                 >
-                  {renderNode(employee, 0, 0)}
-                </div>
-              );
-            })}
+                  {layout.edges.map((edge) => (
+                    <path
+                      key={`${edge.fromId}>${edge.toId}`}
+                      d={edge.path}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    />
+                  ))}
+                </svg>
+                {layout.detachedTop !== null && (
+                  <p
+                    className={`absolute right-0 left-0 text-center text-[11px] font-medium ${toneInk.danger}`}
+                    style={{ top: layout.detachedTop - CHART_DETACHED_LABEL_H }}
+                  >
+                    {S.company.chart.detached}
+                  </p>
+                )}
+                {layout.nodes.map((node) => {
+                  const employee = byId.get(node.id);
+                  if (employee === undefined) return null;
+                  const isCeo = employee.agentId === chart.ceoAgentId;
+                  return (
+                    <ChartCard
+                      key={node.id}
+                      employee={employee}
+                      isCeo={isCeo}
+                      currency={currency}
+                      x={node.x}
+                      y={node.y}
+                      detached={node.detached}
+                      menuOpen={menuFor === node.id}
+                      setMenuOpen={(open) => setMenuFor(open ? node.id : null)}
+                      menu={nodeMenu(employee, isCeo)}
+                      onOpen={() => void openDesk(employee)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
-      {/* The CEO's own budget bar under the chart: the whole organization's spend. */}
-      {(() => {
-        const ceo = byId.get(chart.ceoAgentId);
-        return ceo === undefined ? null : (
-          <div className="mt-4 max-w-md">
-            <BudgetBar
-              cost={ceo.spend.cumulative}
-              currency={currency}
-              {...(ceo.budget !== undefined ? { budget: ceo.budget } : {})}
-              {...(ceo.spend.ratio !== undefined ? { ratio: ceo.spend.ratio } : {})}
-            />
-          </div>
-        );
-      })()}
 
       {hireFor !== null && (
         <HireDialog

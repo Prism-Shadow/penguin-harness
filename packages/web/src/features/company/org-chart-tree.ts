@@ -1,9 +1,14 @@
 /**
  * The org chart's tree and layout (pure, unit tested): the reporting line as a tree rooted at
- * the CEO, laid out as a layered tree — depth = column, leaves take successive rows, a parent
- * centres on its children, edges are orthogonal elbows between node midlines. The same
- * algorithm the subagent topology view uses, over employees instead of sessions; node boxes
- * are fixed-size so the layout needs no text measurement.
+ * the CEO, laid out top-down the way an org chart reads — the root at the top centre, each
+ * depth one row lower, siblings side by side, a parent centred over its children. Every
+ * subtree owns a horizontal band as wide as its widest generation, so bands never overlap
+ * and a deep subtree pushes its cousins outward instead of stacking on them. Node boxes are
+ * fixed-size, so the layout needs no text measurement and is the same in a test as on screen.
+ *
+ * Employees whose reporting line never reaches the CEO — the manager left, or the line loops —
+ * are not dropped: they go to a "detached" row under the tree, without edges, so the page can
+ * mark them and offer the reporting-line fix.
  */
 
 export interface ChartTreeNode {
@@ -15,13 +20,13 @@ export interface ChartTreeNode {
 /**
  * The tree in DFS preorder from the CEO (children in the chart's own order), plus the
  * employees whose reporting chain never reaches the CEO — a cycle, or a manager that left
- * the chart — listed apart so the page can show them with a danger mark instead of dropping
- * them.
+ * the chart — listed apart. A missing CEO leaves everyone detached rather than inventing a
+ * root.
  */
 export function buildChartTree(
   employees: ReadonlyArray<{ agentId: string; reportsTo: string | null }>,
   ceoAgentId: string,
-): { nodes: ChartTreeNode[]; orphans: string[] } {
+): { nodes: ChartTreeNode[]; detached: string[] } {
   const childrenOf = new Map<string, string[]>();
   for (const e of employees) {
     if (e.reportsTo === null || e.agentId === ceoAgentId) continue;
@@ -39,8 +44,8 @@ export function buildChartTree(
     for (const child of childrenOf.get(id) ?? []) walk(child, id, depth + 1);
   };
   if (hasCeo) walk(ceoAgentId, null, 0);
-  const orphans = employees.map((e) => e.agentId).filter((id) => !seen.has(id));
-  return { nodes, orphans };
+  const detached = employees.map((e) => e.agentId).filter((id) => !seen.has(id));
+  return { nodes, detached };
 }
 
 /** Every employee in `rootId`'s subtree, itself included — the ids a reporting-line change must not pick as the new manager. */
@@ -71,33 +76,74 @@ export function managerCandidates<T extends { agentId: string; reportsTo: string
   return employees.filter((e) => !excluded.has(e.agentId));
 }
 
-export const CHART_NODE_W = 236;
-export const CHART_NODE_H = 66;
-export const CHART_GAP_X = 44;
-export const CHART_GAP_Y = 12;
-export const CHART_PAD = 8;
+/** Card box (px). Fixed so the layout is text-free; the card fits name + title, state + workspace + spend, and a ratio bar. */
+export const CHART_NODE_W = 240;
+export const CHART_NODE_H = 92;
+/** Between sibling cards, and between one generation's bottom and the next one's top. */
+export const CHART_GAP_X = 48;
+export const CHART_GAP_Y = 64;
+/** Breathing room around the whole drawing. */
+export const CHART_PAD = 16;
+/** Corner radius of a connector's two elbows (shrinks when the horizontal run is shorter). */
+export const CHART_EDGE_RADIUS = 8;
+/** Room above the detached row for its label. */
+export const CHART_DETACHED_LABEL_H = 24;
 
-export interface PlacedChartNode {
-  node: ChartTreeNode;
+export interface OrgTreeNode extends ChartTreeNode {
+  /** Top-left corner of the card. */
   x: number;
   y: number;
+  /** In the detached row rather than the tree. */
+  detached: boolean;
 }
 
-export interface PlacedChartEdge {
+export interface OrgTreeEdge {
   fromId: string;
   toId: string;
+  /** SVG path: parent bottom centre, down to the rail, along it, down to the child's top centre. */
   path: string;
 }
 
-export interface ChartLayout {
+export interface OrgTreeLayout {
   width: number;
   height: number;
-  nodes: PlacedChartNode[];
-  edges: PlacedChartEdge[];
+  nodes: OrgTreeNode[];
+  edges: OrgTreeEdge[];
+  /** Ids in the detached row, in chart order (empty when every employee hangs off the CEO). */
+  detached: string[];
+  /** The detached row's top edge; null without one. */
+  detachedTop: number | null;
 }
 
-/** Layered tree layout over buildChartTree's nodes (root included; child order = node order). */
-export function layoutChart(nodes: readonly ChartTreeNode[]): ChartLayout {
+/** An orthogonal connector with rounded elbows: down from (x1, y1) to the rail, along it, down to (x2, y2). */
+export function connectorPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  railY: number,
+): string {
+  if (x1 === x2) return `M ${x1} ${y1} V ${y2}`;
+  const dir = x2 > x1 ? 1 : -1;
+  const r = Math.min(CHART_EDGE_RADIUS, Math.abs(x2 - x1) / 2, (railY - y1) / 2, (y2 - railY) / 2);
+  return (
+    `M ${x1} ${y1} V ${railY - r} Q ${x1} ${railY} ${x1 + dir * r} ${railY}` +
+    ` H ${x2 - dir * r} Q ${x2} ${railY} ${x2} ${railY + r} V ${y2}`
+  );
+}
+
+/**
+ * Top-down layout of the reporting tree. Widths first: a leaf is one card wide, a parent as
+ * wide as its children's bands plus the gaps between them. Then positions: children are
+ * placed left to right inside the parent's band, and the parent's x is the midpoint of its
+ * first and last child's, so its stem meets the rail in the middle. The tree and the
+ * detached row are each centred on the wider of the two.
+ */
+export function layoutOrgTree(
+  employees: ReadonlyArray<{ agentId: string; reportsTo: string | null }>,
+  ceoAgentId: string,
+): OrgTreeLayout {
+  const { nodes, detached } = buildChartTree(employees, ceoAgentId);
   const childrenOf = new Map<string, ChartTreeNode[]>();
   for (const n of nodes) {
     if (n.parentId === null) continue;
@@ -105,51 +151,95 @@ export function layoutChart(nodes: readonly ChartTreeNode[]): ChartLayout {
     if (list) list.push(n);
     else childrenOf.set(n.parentId, [n]);
   }
-  const rowOf = new Map<string, number>();
-  let nextLeafRow = 0;
-  const assignRow = (node: ChartTreeNode): number => {
-    const kids = childrenOf.get(node.id) ?? [];
-    let row: number;
-    if (kids.length === 0) {
-      row = nextLeafRow++;
-    } else {
-      const rows = kids.map(assignRow);
-      row = (rows[0]! + rows[rows.length - 1]!) / 2;
-    }
-    rowOf.set(node.id, row);
-    return row;
-  };
-  for (const n of nodes) if (n.parentId === null) assignRow(n);
 
-  const placed: PlacedChartNode[] = nodes.map((node) => ({
-    node,
-    x: CHART_PAD + node.depth * (CHART_NODE_W + CHART_GAP_X),
-    y: CHART_PAD + (rowOf.get(node.id) ?? 0) * (CHART_NODE_H + CHART_GAP_Y),
+  const bandOf = new Map<string, number>();
+  const measure = (node: ChartTreeNode): number => {
+    const kids = childrenOf.get(node.id) ?? [];
+    const band =
+      kids.length === 0
+        ? CHART_NODE_W
+        : kids.reduce((acc, k) => acc + measure(k), 0) + (kids.length - 1) * CHART_GAP_X;
+    bandOf.set(node.id, band);
+    return band;
+  };
+  const root = nodes.find((n) => n.parentId === null);
+  const treeW = root === undefined ? 0 : measure(root);
+  const maxDepth = nodes.reduce((acc, n) => Math.max(acc, n.depth), 0);
+  const treeH = root === undefined ? 0 : (maxDepth + 1) * CHART_NODE_H + maxDepth * CHART_GAP_Y;
+
+  const rowW =
+    detached.length === 0
+      ? 0
+      : detached.length * CHART_NODE_W + (detached.length - 1) * CHART_GAP_X;
+  const innerW = Math.max(treeW, rowW);
+  const treeLeft = CHART_PAD + (innerW - treeW) / 2;
+  const rowLeft = CHART_PAD + (innerW - rowW) / 2;
+
+  const xOf = new Map<string, number>();
+  const place = (node: ChartTreeNode, left: number): void => {
+    const kids = childrenOf.get(node.id) ?? [];
+    if (kids.length === 0) {
+      xOf.set(node.id, left);
+      return;
+    }
+    let cursor = left;
+    for (const k of kids) {
+      place(k, cursor);
+      cursor += bandOf.get(k.id)! + CHART_GAP_X;
+    }
+    const first = xOf.get(kids[0]!.id)!;
+    const last = xOf.get(kids[kids.length - 1]!.id)!;
+    xOf.set(node.id, (first + last) / 2);
+  };
+  if (root !== undefined) place(root, treeLeft);
+
+  const detachedTop =
+    detached.length === 0
+      ? null
+      : CHART_PAD + treeH + (treeH > 0 ? CHART_GAP_Y : 0) + CHART_DETACHED_LABEL_H;
+
+  const placed: OrgTreeNode[] = nodes.map((node) => ({
+    ...node,
+    x: Math.round(xOf.get(node.id) ?? treeLeft),
+    y: CHART_PAD + node.depth * (CHART_NODE_H + CHART_GAP_Y),
+    detached: false,
   }));
-  const byId = new Map(placed.map((p) => [p.node.id, p]));
-  const edges: PlacedChartEdge[] = [];
+  detached.forEach((id, i) => {
+    placed.push({
+      id,
+      parentId: null,
+      depth: maxDepth + 1,
+      x: Math.round(rowLeft + i * (CHART_NODE_W + CHART_GAP_X)),
+      y: detachedTop!,
+      detached: true,
+    });
+  });
+
+  const byId = new Map(placed.map((p) => [p.id, p]));
+  const edges: OrgTreeEdge[] = [];
   for (const p of placed) {
-    if (p.node.parentId === null) continue;
-    const from = byId.get(p.node.parentId);
+    if (p.parentId === null) continue;
+    const from = byId.get(p.parentId);
     if (!from) continue;
-    const x1 = from.x + CHART_NODE_W;
-    const y1 = from.y + CHART_NODE_H / 2;
-    const x2 = p.x;
-    const y2 = p.y + CHART_NODE_H / 2;
-    const midX = x1 + CHART_GAP_X / 2;
+    const x1 = from.x + CHART_NODE_W / 2;
+    const y1 = from.y + CHART_NODE_H;
+    const x2 = p.x + CHART_NODE_W / 2;
+    const y2 = p.y;
     edges.push({
-      fromId: from.node.id,
-      toId: p.node.id,
-      path: y1 === y2 ? `M ${x1} ${y1} H ${x2}` : `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`,
+      fromId: from.id,
+      toId: p.id,
+      path: connectorPath(x1, y1, x2, y2, y1 + CHART_GAP_Y / 2),
     });
   }
-  const maxDepth = nodes.reduce((acc, n) => Math.max(acc, n.depth), 0);
-  const rows = Math.max(1, nextLeafRow);
+
+  const bottom = detachedTop === null ? CHART_PAD + treeH : detachedTop + CHART_NODE_H;
   return {
-    width: CHART_PAD * 2 + (maxDepth + 1) * CHART_NODE_W + maxDepth * CHART_GAP_X,
-    height: CHART_PAD * 2 + rows * CHART_NODE_H + (rows - 1) * CHART_GAP_Y,
+    width: innerW + CHART_PAD * 2,
+    height: (innerW === 0 ? 0 : bottom) + CHART_PAD,
     nodes: placed,
     edges,
+    detached,
+    detachedTop,
   };
 }
 
