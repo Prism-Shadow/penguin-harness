@@ -51,6 +51,7 @@ import {
 import { Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
+import { hookPackageEnabled } from "./plugins/index.js";
 import type { SessionConfig } from "./session.js";
 import {
   createTempWorkspace,
@@ -1150,8 +1151,9 @@ export class Agent {
 
   /**
    * The hooks of a top-level Session: every hook package installed in the Agent's
-   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a
-   * script (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
+   * `agent_state/hooks/` whose manifest does not switch it off (read fresh per Session, like
+   * skills), each command run as a script (hooks/script-hook.ts), plus the spawner that
+   * honors a hook's `subagent` answer —
    * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
    * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
    * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
@@ -1162,11 +1164,11 @@ export class Agent {
     child: boolean,
   ): Promise<SessionHooks | undefined> {
     if (child) return undefined;
-    const installed = await listInstalledHooks(
-      this.state.root,
-      this.state.projectId,
-      this.state.agentId,
-    );
+    // A package switched off in its manifest stays installed — listed, exportable — but is
+    // left out here, the one place a Session's hooks are assembled.
+    const installed = (
+      await listInstalledHooks(this.state.root, this.state.projectId, this.state.agentId)
+    ).filter(hookPackageEnabled);
     const stop = installed.flatMap((hook) =>
       hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
     );
