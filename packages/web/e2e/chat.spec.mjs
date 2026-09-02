@@ -293,9 +293,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Rendered iframe present; the localStorage script ran on the preview origin → #shim-ok appended.
   await expect(page.locator("iframe")).toBeVisible();
   await expect(page.frameLocator("iframe").locator("#shim-ok")).toHaveText("1");
-  // The list and the preview are mutually exclusive: the toolbar only appears after
-  // returning to the list (which also triggers #59's return-refresh).
-  await page.getByRole("button", { name: "返回列表" }).click();
+  // The tree stays beside the open preview, and the toolbar (breadcrumbs + Details) sits
+  // above both — nothing to go back to.
   await expect(page.getByText("demo.html").first()).toBeVisible();
   // Workspace path is hidden until the 详情 ("Details") toggle is used.
   const workspaceAbs = sess.session.workspace;
