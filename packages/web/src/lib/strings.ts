@@ -1278,6 +1278,7 @@ export const zh = {
       "plugins.json 列出的插件，以及本进程实际在跑的那些。插件在服务器启动时加载一次，所以改动会在下次重启后生效。",
     installedEmpty: "还没有安装任何插件。",
     stateActive: "运行中",
+    builtin: "内置",
     installedRestart: "待重启",
     stateInactive: "未加载",
     replacesLabel: "替换",

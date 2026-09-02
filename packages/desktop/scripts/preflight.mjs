@@ -30,6 +30,7 @@ for (const [what, rel] of [
   ...Object.keys(pkg.dependencies)
     .filter((dep) => dep.startsWith("@penguinharness/"))
     .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/plugin.json`]),
+  ["the builtin plugins", "plugins"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {
