@@ -1766,6 +1766,15 @@ Scenarios:
     contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
+    contextTopFiles: "Top 5 files",
+    contextTopFilesHint:
+      "Ranked by the context each file's read_file / edit_file / write_file calls and results occupy (files inside the Workspace show their relative path)",
+    contextRankTools: "Tools",
+    contextRankFiles: "Files",
+    contextNoFileTraffic: "No file traffic in this context",
+    contextFileReads: (n: number): string => `${n} ${n === 1 ? "read" : "reads"}`,
+    contextFileEdits: (n: number): string => `${n} ${n === 1 ? "edit" : "edits"}`,
+    contextFileWrites: (n: number): string => `${n} ${n === 1 ? "write" : "writes"}`,
     contextUnknownHint:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",

@@ -16,7 +16,8 @@
  * Given a `sessionId` the ring becomes a button that discloses the panel, which answers what the
  * ring cannot: what the context is full of. The server splits the Session's newest Trace shard —
  * one shard is one complete model context — into six parts and ranks the tools whose traffic
- * occupies the most of it. Those figures come from a character heuristic, not a tokenizer (this
+ * occupies the most of it, and the files the file tools named; a switch above the ranking picks
+ * which of the two it lists. Those figures come from a character heuristic, not a tokenizer (this
  * project bundles none), so only their **shares** are used: each part is drawn as its share of
  * `now`, the measured occupancy the ring itself shows. The parts therefore always add up to the
  * figure in the panel header, and the estimate's absolute error never reaches the display; the
@@ -36,16 +37,21 @@
  * the page, so there is never room below.
  */
 import { useEffect, useId, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
 import { getSessionContext } from "../../api/endpoints";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { FILE_EDIT_ICON, FILE_ICON, FILE_WRITE_ICON } from "../../components/ui/icons";
+import { Segmented } from "../../components/ui/segmented";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { resolveContextWindow } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { contextComposition } from "./context-parts";
-import type { ContextPartKey } from "./context-parts";
+import type { ContextFileShare, ContextPartKey } from "./context-parts";
 
 /**
  * Panel geometry. The width is applied inline rather than as a `w-*` class because the same
@@ -56,7 +62,7 @@ import type { ContextPartKey } from "./context-parts";
  */
 const PANEL_WIDTH = 300;
 const PANEL_MAX_WIDTH = "calc(100vw - 32px)";
-const PANEL_HEIGHT = 264;
+const PANEL_HEIGHT = 370;
 
 /** Smallest painted width (px) of the filled run, so a context with a few hundred tokens in it still shows a mark rather than nothing. */
 const MIN_FILL_PX = 2;
@@ -66,6 +72,15 @@ const MARK_OVERHANG_PX = 4;
 
 type PanelState =
   { status: "loading" } | { status: "failed" } | { status: "ready"; data: SessionContextResponse };
+
+/** Which Top 5 the panel's ranking lists. */
+type RankingView = "tools" | "files";
+
+/**
+ * The ranking view picked last, kept for the tab session: the panel unmounts on every close, and
+ * a reader comparing contexts should not have to flip back to Files each time it opens.
+ */
+let lastRankingView: RankingView = "tools";
 
 export function ContextGauge({
   now,
@@ -198,9 +213,15 @@ function ContextPanel({
   // The figures in the header above stay live — they come from the ring's own props — so what
   // holds still is the composition breakdown, for as long as the panel is left open.
   const [state, setState] = useState<PanelState>({ status: "loading" });
-  // Row id under the pointer — a part key, or `tool:<name>` for the ranking below. One piece of
-  // state for both lists, so a hovered tool row cannot also dim the bar it has no segment in.
+  // Row id under the pointer — a part key, or `tool:<name>` / `file:<path>` for the ranking
+  // below. One piece of state for both lists, so a hovered ranking row cannot also dim the bar
+  // it has no segment in.
   const [hovered, setHovered] = useState<string | null>(null);
+  const [ranking, setRanking] = useState<RankingView>(lastRankingView);
+  const pickRanking = (view: RankingView) => {
+    lastRankingView = view;
+    setRanking(view);
+  };
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
@@ -317,25 +338,74 @@ function ContextPanel({
 
           {composition.tools.length > 0 && (
             <>
-              <p
-                title={S.chat.contextTopToolsHint}
-                className="mt-2 border-t border-gray-100 pt-1.5 text-gray-400 dark:border-gray-800 dark:text-gray-500"
-              >
-                {S.chat.contextTopTools}
-              </p>
-              <ul className="mt-1 space-y-0.5">
-                {composition.tools.map((t) => (
-                  <ShareRow
-                    key={t.name}
-                    label={t.name}
-                    mono
-                    tokens={t.tokens}
-                    percent={t.percent}
-                    highlighted={hovered === `tool:${t.name}`}
-                    onHover={(on) => setHovered(on ? `tool:${t.name}` : null)}
+              {/* The heading names the ranking on show and its tooltip says what it is ordered
+                  by; the switch beside it swaps both. A context with tool traffic but no file
+                  traffic keeps the switch, so the Files view can say so itself. */}
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-gray-800">
+                <p
+                  title={
+                    ranking === "tools" ? S.chat.contextTopToolsHint : S.chat.contextTopFilesHint
+                  }
+                  className="min-w-0 truncate text-gray-400 dark:text-gray-500"
+                >
+                  {ranking === "tools" ? S.chat.contextTopTools : S.chat.contextTopFiles}
+                </p>
+                <div className="w-24 shrink-0">
+                  <Segmented
+                    cols={2}
+                    value={ranking}
+                    onChange={pickRanking}
+                    options={[
+                      { value: "tools", label: S.chat.contextRankTools },
+                      { value: "files", label: S.chat.contextRankFiles },
+                    ]}
                   />
-                ))}
-              </ul>
+                </div>
+              </div>
+              {ranking === "tools" ? (
+                <ul className="mt-1 space-y-0.5">
+                  {composition.tools.map((t) => (
+                    <ShareRow
+                      key={t.name}
+                      label={t.name}
+                      mono
+                      tokens={t.tokens}
+                      percent={t.percent}
+                      highlighted={hovered === `tool:${t.name}`}
+                      onHover={(on) => setHovered(on ? `tool:${t.name}` : null)}
+                    />
+                  ))}
+                </ul>
+              ) : composition.files.length === 0 ? (
+                <p className="mt-1 text-gray-400 dark:text-gray-500">
+                  {S.chat.contextNoFileTraffic}
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-0.5">
+                  {composition.files.map((f) => (
+                    <ShareRow
+                      key={f.path}
+                      title={f.path}
+                      label={
+                        <>
+                          <span className="font-medium text-gray-700 dark:text-gray-200">
+                            {f.name}
+                          </span>
+                          {f.dir !== "" && (
+                            <span className="ml-1 text-gray-400 dark:text-gray-500">{f.dir}</span>
+                          )}
+                        </>
+                      }
+                      mono
+                      meta={<FileOps ops={f.ops} />}
+                      tokens={f.tokens}
+                      percent={f.percent}
+                      highlighted={hovered === `file:${f.path}`}
+                      onHover={(on) => setHovered(on ? `file:${f.path}` : null)}
+                    />
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </>
@@ -354,21 +424,27 @@ const PART_LABELS: Record<ContextPartKey, () => string> = {
   toolResults: () => S.chat.contextPartToolResults,
 };
 
-/** One `swatch · label · ~tokens · percent` line, shared by the six parts and the tool ranking. */
+/** One `swatch · label · meta · ~tokens · percent` line, shared by the six parts and both rankings. */
 function ShareRow({
   label,
+  title,
   swatch,
+  meta,
   tokens,
   percent,
   mono = false,
   highlighted = false,
   onHover,
 }: {
-  label: string;
-  /** Legend colour of the matching bar segment; absent for the tool ranking, which has no segment. */
+  label: ReactNode;
+  /** Tooltip of the label; a string label is its own. */
+  title?: string;
+  /** Legend colour of the matching bar segment; absent for the rankings, which have no segment. */
   swatch?: string;
+  /** A slot between the label and the figures: the file ranking's op counts. */
+  meta?: ReactNode;
   tokens: number;
-  /** Already a whole percent (apportioned for the parts, rounded for the tools) — not re-rounded here. */
+  /** Already a whole percent (apportioned for the parts, rounded for the rankings) — not re-rounded here. */
   percent: number;
   mono?: boolean;
   highlighted?: boolean;
@@ -386,11 +462,12 @@ function ShareRow({
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
       )}
       <span
-        title={label}
+        title={title ?? (typeof label === "string" ? label : undefined)}
         className={`min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300 ${mono ? "font-mono" : ""}`}
       >
         {label}
       </span>
+      {meta}
       <span className="shrink-0 font-mono font-medium text-gray-900 dark:text-gray-100">
         ~{humanizeTokens(tokens)}
       </span>
@@ -398,5 +475,31 @@ function ShareRow({
         {percent}%
       </span>
     </li>
+  );
+}
+
+/**
+ * The op counts beside a file row: a glyph and a count per file tool that named the file, zero
+ * counts left out. The glyphs are the ones the file summary card and the memory-changes card
+ * draw, so a read, an edit and a write look the same here as there.
+ */
+function FileOps({ ops }: { ops: ContextFileShare["ops"] }) {
+  const counts = [
+    { key: "read", d: FILE_ICON, n: ops.read, title: S.chat.contextFileReads(ops.read) },
+    { key: "edit", d: FILE_EDIT_ICON, n: ops.edit, title: S.chat.contextFileEdits(ops.edit) },
+    { key: "write", d: FILE_WRITE_ICON, n: ops.write, title: S.chat.contextFileWrites(ops.write) },
+  ].filter((c) => c.n > 0);
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-gray-400 dark:text-gray-500">
+      {counts.map((c) => (
+        <span key={c.key} title={c.title} className={`flex items-center ${ICON_GAP.tight}`}>
+          <GlyphIcon d={c.d} size={ICON_SIZE.inlineGlyph} />
+          <span aria-hidden className="font-mono">
+            {c.n}
+          </span>
+          <span className="sr-only">{c.title}</span>
+        </span>
+      ))}
+    </span>
   );
 }

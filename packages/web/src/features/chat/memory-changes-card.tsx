@@ -17,15 +17,14 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
+import { FILE_EDIT_ICON, FILE_WRITE_ICON } from "../../components/ui/icons";
 import { scopeGlyph } from "./memory-view";
 
 const MAX_VISIBLE = 3;
 
-/** Open book (the card's mark, same as the Memory panel's), page-with-plus (full write), pencil (in-place edit). */
+/** Open book: the card's mark, same as the Memory panel's. */
 const MEMORY_ICON =
   "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
-const WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
-const EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
 
 export function MemoryChangesCard({
   rows,
@@ -62,7 +61,10 @@ export function MemoryChangesCard({
           title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
           className="shrink-0 text-gray-400"
         >
-          <GlyphIcon d={row.op === "write" ? WRITE_ICON : EDIT_ICON} size={ICON_SIZE.inlineGlyph} />
+          <GlyphIcon
+            d={row.op === "write" ? FILE_WRITE_ICON : FILE_EDIT_ICON}
+            size={ICON_SIZE.inlineGlyph}
+          />
         </span>
       </>
     );
