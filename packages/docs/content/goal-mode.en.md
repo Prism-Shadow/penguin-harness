@@ -18,7 +18,7 @@ Start a goal from any of the three surfaces:
 | CLI one-shot | `penguin run --goal [budget] -m "<objective>"`; exit code 0 only when the goal completes |
 | Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget } }` (budget `-1` or omitted = unlimited) |
 
-Under the hood the server runs the installed `agent_state/hooks/goal/start.mjs` with `{ session_id, scratchpad_dir, objective, body, budget }` and submits the round-1 message it prints as an ordinary Task; the stop hook takes it from there. In the SDK, a goal is therefore a plain `session.run` on an Agent with the plugin installed, started by writing the goal file the same way (or by calling the script).
+Under the hood the server asks the Session to run the goal package's `user_prompt` hook — the installed `agent_state/hooks/goal/start.mjs`, fed `{ hook: "user_prompt", session_id, scratchpad_dir, prompt, budget }` on stdin — and starts the goal run with your message exactly as typed followed by the `{ context }` it prints, stamped `sender: "harness"`; the stop hook takes it from there. In the SDK, a goal is therefore a plain `session.run` on an Agent with the plugin installed, started by writing the goal file the same way (`Session.runUserPromptHook("goal", …)`, or the script directly).
 
 ## The goal file: GOAL.json
 

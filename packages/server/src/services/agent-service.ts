@@ -31,10 +31,10 @@ import {
 } from "@prismshadow/penguin-core";
 import {
   comparePluginVersions,
-  libraryPlugin,
-  librarySkill,
+  loadLibraryPlugins,
   parseSkillFrontmatter,
 } from "@prismshadow/penguin-core";
+import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
@@ -127,7 +127,10 @@ export class AgentService {
       known.set(agentId, row);
     }
 
-    // Meta reads and mtime stats for each Agent run in parallel (Promise.all preserves the sorted order).
+    // The plugin library is read once for the whole list (every Agent is checked against the
+    // same files). Meta reads and mtime stats for each Agent run in parallel (Promise.all
+    // preserves the sorted order).
+    const library = loadLibraryPlugins();
     const sorted = [...known.values()].sort((a, b) =>
       a.createdAt === b.createdAt
         ? a.agentId.localeCompare(b.agentId)
@@ -143,7 +146,7 @@ export class AgentService {
             this.configUpdatedAt(projectId, row.agentId),
             this.vaultKeyCount(projectId, row.agentId),
             this.scheduleCount(projectId, row.agentId),
-            this.installedPlugins(projectId, row.agentId),
+            this.installedPlugins(projectId, row.agentId, library),
             this.memoryCount(projectId, row.agentId),
           ]);
         return {
@@ -199,12 +202,14 @@ export class AgentService {
    * by it), so that — not a frontmatter `name` — is what the library is looked up by: a skill
    * by the plugin that ships it, a hook package by the plugin of the same name. A skill the
    * library does not carry (installed from a zip or a picked directory) has no library version
-   * to be behind and is never an update. Every failure degrades to "not installed" / "no
-   * update": a card hint must not be the thing that makes the Agent list fail.
+   * to be behind and is never an update. An unreadable skill degrades to "not installed" / "no
+   * update": a card hint must not be the thing that makes the Agent list fail. The library is
+   * the caller's, read once per listing rather than once per installed skill.
    */
   private async installedPlugins(
     projectId: string,
     agentId: string,
+    library: readonly LibraryPlugin[],
   ): Promise<{ skillCount: number; hookCount: number; updates: PluginUpdateRef[] }> {
     const base = skillsDir(this.root, projectId, agentId);
     let dirents: Dirent[] = [];
@@ -226,22 +231,19 @@ export class AgentService {
           }
         }),
     );
-    let hooks: Array<{ name: string; version: string }> = [];
-    try {
-      hooks = await listInstalledHooks(this.root, projectId, agentId);
-    } catch {
-      // Unreadable hooks/: counts as none installed.
-    }
+    const hooks = await listInstalledHooks(this.root, projectId, agentId);
+    const byPlugin = new Map(library.map((p) => [p.name, p] as const));
+    const bySkill = new Map(library.flatMap((p) => p.skills.map((s) => [s.name, p] as const)));
     const updates = new Map<string, string>();
     for (const skill of skills) {
       if (skill === null) continue;
-      const plugin = librarySkill(skill.name)?.plugin;
+      const plugin = bySkill.get(skill.name);
       if (plugin && comparePluginVersions(plugin.version, skill.version) > 0) {
         updates.set(plugin.name, plugin.version);
       }
     }
     for (const hook of hooks) {
-      const plugin = libraryPlugin(hook.name);
+      const plugin = byPlugin.get(hook.name);
       if (plugin && comparePluginVersions(plugin.version, hook.version) > 0) {
         updates.set(plugin.name, plugin.version);
       }
@@ -422,7 +424,7 @@ export class AgentService {
     const meta = await this.agentConfig.readCardMeta(projectId, agentId);
     const cardName = archive !== undefined ? (meta.name ?? agentId) : displayName;
     const cardDescription = archive !== undefined ? meta.description : description;
-    const installed = await this.installedPlugins(projectId, agentId);
+    const installed = await this.installedPlugins(projectId, agentId, loadLibraryPlugins());
     return {
       agentId,
       name: cardName,

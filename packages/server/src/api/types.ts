@@ -1489,7 +1489,6 @@ export interface GoalStateView {
   budget: number;
   used: number;
   rounds: number;
-  updatedAt: string;
 }
 
 export interface GoalResponse {
@@ -3061,7 +3060,7 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
-  /** The plugin's raw icon.svg, written beside the manifest at install time; absent for a package installed before icons travelled with it (the frontend draws the hook glyph). */
+  /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
   icon?: string;
 }
 
@@ -3074,8 +3073,6 @@ export interface PluginItem {
   shortDescriptionZh?: string;
   /** `YYYY-MM-DD.N`. */
   version: string;
-  /** Whether default_agent gets it at creation. */
-  preinstall: boolean;
   /** The plugin's skills (metadata only). */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */

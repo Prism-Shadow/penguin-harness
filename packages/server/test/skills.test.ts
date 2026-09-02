@@ -104,15 +104,13 @@ describe("skills api", () => {
       }
     }
     const goal = plugins.find((p) => p.name === "goal")!;
-    expect(goal).toMatchObject({ preinstall: true, hooks: ["user_prompt", "stop"], skills: [] });
+    expect(goal).toMatchObject({ hooks: ["user_prompt", "stop"], skills: [] });
     expect(goal.descriptionZh).toBeTruthy();
     expect("files" in goal).toBe(false);
     expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
-      preinstall: false,
       hooks: ["stop"],
     });
     expect(plugins.find((p) => p.name === "humanizer")).toMatchObject({
-      preinstall: false,
       hooks: [],
     });
   });

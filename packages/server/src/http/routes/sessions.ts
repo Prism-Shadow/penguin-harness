@@ -47,6 +47,7 @@ import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/previ
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
+import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint } from "../sse.js";
 import {
@@ -899,36 +900,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (attachments.length > 0) {
         throw badRequest("goal mode accepts text and images only (no file attachments).");
       }
-      // The goal plugin owns the protocol: its user_prompt hook writes the Session's goal
-      // file and expands the submitted prompt with the round-1 protocol message; its stop
-      // hook then drives every later round. Hooks run in core and nowhere else — the route
-      // only asks the Session (via the manager) to run the goal package's hook; null means
-      // the package is not installed or names no user_prompt command, and without it there
-      // is nothing to drive the rounds.
+      // The goal plugin owns the protocol — its user_prompt hook writes the goal file and
+      // composes round 1, its stop hook drives every later round; the manager runs the
+      // start under the session lock, so a goal is never started over a running one.
       const objective = stripLeadingMarkerBlocks(text).trim() || text;
-      const started = await deps.manager.runUserPromptHook(row.sessionId, "goal", objective, {
-        budget: goal.budget,
-      });
-      if (started === null) {
-        throw new HttpError(
-          409,
-          "goal_plugin_not_installed",
-          "Goal mode needs the goal plugin installed on this agent.",
-        );
-      }
-      if (typeof started.context !== "string" || !started.context) {
-        throw new HttpError(
-          500,
-          "goal_start_failed",
-          "The goal plugin's user_prompt hook gave no round-1 context.",
-        );
-      }
-      // Round 1 is the user's own message(s) exactly as typed — text and images, no
-      // wrapping — followed by the hook's expansion context stamped as harness-injected
-      // (the protocol text points back at the user message as the objective). Later rounds
-      // are the stop hook's continues, which core stamps the same way.
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input: [...messages, userText(started.context, "harness")],
+        messages,
         objective,
         budget: goal.budget,
       });
@@ -1084,45 +1061,33 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // The Session's most recent goal run, read from the goal plugin's file in its scratchpad
-  // (for restoring the chat page's goal banner on load). A goal lives only inside its run: a
-  // file the hook has not ended while the Session is not running was left behind by a crash
-  // or a kill, and reads as `aborted`.
+  // (for restoring the chat page's goal banner on load). The file is agent-writable (the
+  // model edits `status`), so its fields are checked rather than trusted. A goal lives only
+  // inside its run: a live status while the Session is not running was left behind by a
+  // crash or a kill, and reads as `aborted`.
   app.get("/:sessionId/goal", async (c) => {
     const row = resolveSession(c);
     const file = path.join(
       sessionScratchpadDir(deps.config.root, row.projectId, row.agentId, row.sessionId),
       "GOAL.json",
     );
-    let g: {
-      objective?: unknown;
-      status?: unknown;
-      budget?: unknown;
-      round?: unknown;
-      tokens_used?: unknown;
-      ended?: unknown;
-    };
-    let updatedAt: string;
+    let g: Record<string, unknown>;
     try {
-      const [raw, stat] = await Promise.all([fs.readFile(file, "utf8"), fs.stat(file)]);
-      g = JSON.parse(raw) as typeof g;
-      updatedAt = stat.mtime.toISOString();
+      const parsed: unknown = JSON.parse(await fs.readFile(file, "utf8"));
+      if (parsed === null || typeof parsed !== "object") throw new Error("not an object");
+      g = parsed as Record<string, unknown>;
     } catch {
       return c.json({ goal: null } satisfies GoalResponse);
     }
-    if (g === null || typeof g !== "object") return c.json({ goal: null } satisfies GoalResponse);
-    const outcomes = ["complete", "blocked", "budget_limited", "aborted"];
     const status = typeof g.status === "string" ? g.status : "blocked";
     const running = deps.manager.statusOf(row.sessionId) === "running";
-    const view: GoalStateView["status"] =
-      g.ended === true && outcomes.includes(status)
-        ? (status as GoalStateView["status"])
-        : status === "active" || status === "wrapping_up"
-          ? running
-            ? "active"
-            : "aborted"
-          : outcomes.includes(status)
-            ? (status as GoalStateView["status"])
-            : "blocked";
+    const view: GoalStateView["status"] = isGoalOutcome(status)
+      ? status
+      : status === "active" || status === "wrapping_up"
+        ? running
+          ? "active"
+          : "aborted"
+        : "blocked";
     return c.json({
       goal: {
         objective: typeof g.objective === "string" ? g.objective : "",
@@ -1130,7 +1095,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         budget: typeof g.budget === "number" ? g.budget : -1,
         used: typeof g.tokens_used === "number" ? g.tokens_used : 0,
         rounds: typeof g.round === "number" ? g.round : 0,
-        updatedAt,
       },
     } satisfies GoalResponse);
   });

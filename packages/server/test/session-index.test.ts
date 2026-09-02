@@ -791,7 +791,7 @@ describe("session-index", () => {
     // after the test closed its database.
     const started: OmniMessage[][] = [];
     t.deps.manager.startGoal = async (sessionId, args) => {
-      started.push(args.input);
+      started.push(args.messages);
       return { sessionId };
     };
     const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
@@ -802,14 +802,12 @@ describe("session-index", () => {
       goal: {},
     });
     expect(withText.status).toBe(202);
-    // The user's own messages verbatim, then the plugin's round-1 protocol message stamped
-    // as harness-injected.
+    // The user's own messages verbatim (the manager appends the plugin's round-1 protocol
+    // message behind them).
     expect(started[0]?.map((m) => (m.payload as { type: string }).type)).toEqual([
       "text",
       "image_url",
-      "text",
     ]);
-    expect((started[0]?.at(-1)?.payload as { sender?: string }).sender).toBe("harness");
     // A file attachment is the one input a goal cannot take, images notwithstanding: nothing
     // folds it into the objective every round re-injects, so it is refused before any upload
     // is written to disk (startGoal is never reached).

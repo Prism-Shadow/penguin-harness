@@ -1,7 +1,7 @@
 /**
- * Stop hooks — functions the Session runs after every Task of one `run` call, at the one
- * hook point the agent loop has today: **stop**, the moment a Task ends (the model's final
- * reply with no tool call, or a cutoff — user abort, LLM failure, the max_turns cap).
+ * Stop hooks — functions the Session runs after every Task of one `run` call, at the
+ * **stop** hook point: the moment a Task ends (the model's final reply with no tool call,
+ * or a cutoff — user abort, LLM failure, the max_turns cap).
  *
  * A hook is told only where to look — the Session id and the Trace file being written —
  * and derives everything else (token usage, turn counts, how the Task ended, its own state
@@ -20,9 +20,10 @@
  * directly. The loop that consults them is `Session.run`.
  * Docs: /docs/agent-loop § "Stop hooks".
  */
-import { hookEvent, isEventMessage } from "../omnimessage/index.js";
-import type { HookPayload, OmniMessage } from "../omnimessage/index.js";
+import { hookEvent } from "../omnimessage/index.js";
+import type { OmniMessage } from "../omnimessage/index.js";
 import type { ApproveFn } from "../interfaces/index.js";
+import { errorMessage, failedAnswer } from "./answer.js";
 import type { PreToolUseHook } from "./tool-hook.js";
 import type { UserPromptHook } from "./prompt-hook.js";
 
@@ -65,11 +66,23 @@ export interface StopHook {
   run(input: StopHookInput): Promise<StopHookResult | void>;
 }
 
-/** Spawns the background child Session a hook asked for and returns its session id; `approve` is the run's approval callback, which the child inherits. */
+/**
+ * What honoring a subagent request yields: the child's session id, and its origin-stamped
+ * `session_meta` for the parent stream — the record a host registers a child session from
+ * (the server gives it a session row and lists it with the other subagent sessions), so the
+ * id on the event leads somewhere. Null when the runner's handle predates the upfront-meta
+ * seam.
+ */
+export interface HookSubagentSpawned {
+  sessionId: string;
+  meta: OmniMessage | null;
+}
+
+/** Spawns the background child Session a hook asked for; `approve` is the run's approval callback, which the child inherits. */
 export type HookSubagentSpawner = (
   request: HookSubagentRequest,
   approve?: ApproveFn,
-) => Promise<string>;
+) => Promise<HookSubagentSpawned>;
 
 /** The hooks a Session is built with (`SessionConfig.hooks`): one list per hook point, plus the spawner hook answers may need. */
 export interface SessionHooks {
@@ -83,20 +96,15 @@ export interface SessionHooks {
 }
 
 /**
- * A message's contribution to a run's token accounting: uncached input + output of one
- * request (`request.total − cache_read`), from any session. Cache reads cost money too, just
- * a small fraction of the uncached-input price, so leaving them out keeps the number an
- * honest estimate without per-model price tables. Hook scripts count the Trace the same way.
+ * What one pass over the stop hooks produced: the messages to record and stream, in order,
+ * and the first `continue`'s input (null = the run ends). Behind a hook's `hook` event comes
+ * the origin-stamped session_meta of a child it spawned — stream material only (the Trace
+ * writer drops origin-stamped messages, as it does for a tool-spawned child's). The parent
+ * Trace keeps no pointer to the child: a hook's child is detached by design, out of the
+ * parent's nested subagent view; the event's `output.session_id` is its record there.
  */
-export function uncachedTokens(msg: OmniMessage): number {
-  if (!isEventMessage(msg) || msg.payload.type !== "token_usage") return 0;
-  const { total, cache_read } = msg.payload.request;
-  return Math.max(0, total - cache_read);
-}
-
-/** What one pass over the stop hooks produced: the events to record, in hook order, and the first `continue`'s input (null = the run ends). */
 export interface StopHooksOutcome {
-  events: OmniMessage<HookPayload>[];
+  events: OmniMessage[];
   next: string | null;
 }
 
@@ -104,34 +112,37 @@ export interface StopHooksOutcome {
  * Runs the stop hooks in registration order and turns every non-void answer into a `hook`
  * event. The first `continue` that carries an input decides the continuation; later ones are
  * recorded but not honored. A `subagent` request is handed to `spawn` and the child's session
- * id recorded on the event (`output.session_id`); a failed spawn, or no spawner, is recorded
- * in the reason. A throwing hook is recorded with the error as its reason.
+ * id recorded on the event (`output.session_id`), with the child's session_meta following the
+ * event; a failed spawn, or no spawner, is recorded in the reason. A throwing hook is
+ * recorded with the error as its reason.
  */
 export async function runStopHooks(
   hooks: readonly StopHook[],
   input: StopHookInput,
-  spawn?: (request: HookSubagentRequest) => Promise<string>,
+  spawn?: (request: HookSubagentRequest) => Promise<HookSubagentSpawned>,
 ): Promise<StopHooksOutcome> {
-  const events: OmniMessage<HookPayload>[] = [];
+  const events: OmniMessage[] = [];
   let next: string | null = null;
   for (const hook of hooks) {
     let result: StopHookResult | void;
     try {
       result = await hook.run(input);
     } catch (err) {
-      result = { reason: `hook failed: ${errorMessage(err)}` };
+      result = failedAnswer(err);
     }
     if (!result) continue;
     if (result.decision === "continue" && next === null && result.input) next = result.input;
     let output = result.output;
     let reason = result.reason;
+    const childRecords: OmniMessage[] = [];
     if (result.subagent) {
       if (!spawn) {
         reason = `${reason ? `${reason} · ` : ""}subagent not spawned: no spawner`;
       } else {
         try {
-          const sessionId = await spawn(result.subagent);
-          output = { ...output, session_id: sessionId };
+          const child = await spawn(result.subagent);
+          output = { ...output, session_id: child.sessionId };
+          if (child.meta) childRecords.push(child.meta);
         } catch (err) {
           reason = `${reason ? `${reason} · ` : ""}subagent not spawned: ${errorMessage(err)}`;
         }
@@ -145,11 +156,8 @@ export async function runStopHooks(
         ...(reason !== undefined ? { reason } : {}),
         ...(output !== undefined ? { output } : {}),
       }),
+      ...childRecords,
     );
   }
   return { events, next };
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

@@ -58,7 +58,6 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -116,33 +115,38 @@ function installsOf(
 }
 
 /**
- * Whether a plugin is installed on an Agent, meaning ALL of it is: every one of its skills is
- * in the Agent's installed skills and, when it ships a hook package, that package (named after
- * the plugin) is in the Agent's installed hooks. A plugin that ships nothing is installed
- * nowhere — "every skill" would otherwise be vacuously true.
+ * Whether a plugin is installed on an Agent, meaning any part of it is: one of its skills is in
+ * the Agent's installed skills, or (when it ships a hook package) that package — named after
+ * the plugin — is in the Agent's installed hooks. A partial copy counts: an install of an older
+ * version that shipped fewer skills, or one a skill was removed from in the Skills tab, is what
+ * the server lists as behind and what an update (a whole reinstall) completes; "all parts"
+ * would call it not installed and hide the update.
  */
 export function pluginInstalled(plugin: PluginParts, installs: AgentInstalls | undefined): boolean {
   if (installs === undefined) return false;
-  if (plugin.skills.length === 0 && plugin.hooks.length === 0) return false;
   return (
-    plugin.skills.every((skill) => installs.skills.has(skill.name)) &&
-    (plugin.hooks.length === 0 || installs.hooks.has(plugin.name))
+    plugin.skills.some((skill) => installs.skills.has(skill.name)) ||
+    (plugin.hooks.length > 0 && installs.hooks.has(plugin.name))
   );
 }
 
 /**
  * The version of a plugin's installed copy on one Agent, read off its hook package where it has
- * one and off its first skill otherwise (a plugin's parts ship at the plugin's version), or
- * undefined when the plugin is not installed there. Only ever displayed — the "old → new" line
- * of the update confirmation — never compared.
+ * one and off its first installed skill otherwise (a plugin's parts ship at the plugin's
+ * version), or undefined when the plugin is not installed there. Only ever displayed — the
+ * "old → new" line of the update confirmation — never compared.
  */
 export function installedPluginVersion(
   plugin: PluginParts,
   installs: AgentInstalls | undefined,
 ): string | undefined {
-  if (installs === undefined || !pluginInstalled(plugin, installs)) return undefined;
+  if (installs === undefined) return undefined;
   if (plugin.hooks.length > 0) return installs.hooks.get(plugin.name);
-  return installs.skills.get(plugin.skills[0]!.name);
+  for (const skill of plugin.skills) {
+    const version = installs.skills.get(skill.name);
+    if (version !== undefined) return version;
+  }
+  return undefined;
 }
 
 /**
@@ -156,7 +160,7 @@ export function outdatedAgentIds(
   name: string,
 ): string[] {
   return agents
-    .filter((agent) => (agent.pluginUpdates ?? []).some((update) => update.name === name))
+    .filter((agent) => agent.pluginUpdates.some((update) => update.name === name))
     .map((agent) => agent.agentId);
 }
 
@@ -183,7 +187,7 @@ export function pluginUpdatePlan(
   const perAgent: { agentId: string; names: string[] }[] = [];
   const plugins = new Set<string>();
   for (const agent of agents) {
-    const names = (agent.pluginUpdates ?? []).map((u) => u.name).sort();
+    const names = agent.pluginUpdates.map((u) => u.name).sort();
     if (names.length === 0) continue;
     perAgent.push({ agentId: agent.agentId, names });
     for (const name of names) plugins.add(name);

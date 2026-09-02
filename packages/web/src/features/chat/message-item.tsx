@@ -186,8 +186,15 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
 export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
   switch (item.kind) {
     case "user_text": {
-      // A harness-injected input (a goal round's protocol, a hook's continue or expansion
-      // context): a compact collapsed card, not a user bubble — nothing in it was typed.
+      // Harness-injected completion notice of a run_in_background task: collapsed into a
+      // one-line banner with the report body below it (the raw block shows on the Trace page).
+      // Checked before the generic harness card: the notice carries the same stamp.
+      const backgroundDone = parseBackgroundTaskDoneMessage(item.text);
+      if (backgroundDone) {
+        return <BackgroundDoneBanner done={backgroundDone.done} body={backgroundDone.rest} />;
+      }
+      // Any other harness-injected input (a goal round's protocol, a hook's continue or
+      // expansion context): a compact collapsed card, not a user bubble — nothing in it was typed.
       if (item.sender === "harness") return <HarnessInjectedBanner text={item.text} />;
       // Source block for a chat created via the /agent handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
@@ -195,12 +202,6 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
-      // Harness-injected completion notice of a run_in_background task: collapsed into a
-      // one-line banner with the report body below it (the raw block shows on the Trace page).
-      const backgroundDone = parseBackgroundTaskDoneMessage(item.text);
-      if (backgroundDone) {
-        return <BackgroundDoneBanner done={backgroundDone.done} body={backgroundDone.rest} />;
-      }
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
       const scheduled = parseScheduledMessage(item.text);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body

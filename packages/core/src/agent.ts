@@ -1149,7 +1149,7 @@ export class Agent {
   }
 
   /**
-   * The stop hooks of a top-level Session: every hook package installed in the Agent's
+   * The hooks of a top-level Session: every hook package installed in the Agent's
    * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a
    * script (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
    * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
@@ -1171,12 +1171,12 @@ export class Agent {
       hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
     );
     const preToolUse = installed.flatMap((hook) =>
-      (hook.pre_tool_use ?? []).map((cmd) =>
+      hook.pre_tool_use.map((cmd) =>
         scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout),
       ),
     );
     const userPrompt = installed.flatMap((hook) =>
-      (hook.user_prompt ?? []).map((cmd) =>
+      hook.user_prompt.map((cmd) =>
         scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout),
       ),
     );
@@ -1189,8 +1189,13 @@ export class Agent {
         const handle = await runner.spawn({
           ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),
         });
+        // The child's upfront session_meta goes back to the Session, which streams it behind
+        // the hook event so a host registers the child session (a row, a place in the
+        // subagent listing) the way it does a tool-spawned one; the detached run then skips
+        // its own meta forwarding.
+        const meta = handle.takeMeta?.() ?? null;
         runDetached(handle, [userText(request.prompt, "harness")], approve);
-        return handle.sessionId;
+        return { sessionId: handle.sessionId, meta };
       },
     };
   }

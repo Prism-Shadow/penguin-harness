@@ -108,157 +108,160 @@ export async function runHookScript(
   });
 }
 
-const DECISIONS = new Set(["continue", "stop"]);
+/** A script's parsed stdout as an object; anything else (a scalar, an array, null) reads as no opinion. */
+function objectAnswer(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** A hook's `output` as the contract allows it: the scalar-valued entries of an object answer; undefined for anything else. */
+function scalarRecord(value: unknown): Record<string, string | number | boolean> | undefined {
+  const v = objectAnswer(value);
+  if (!v) return undefined;
+  const output: Record<string, string | number | boolean> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
+      output[k] = val;
+    }
+  }
+  return output;
+}
 
 /**
  * Narrows a script's answer to a StopHookResult: unknown fields are dropped, wrong-typed
- * ones ignored, `output` kept to scalars, `subagent.agent_id` mapped to `agentId`. A
- * non-object answer reads as no opinion.
+ * ones ignored, `output` kept to scalars, `subagent.agent_id` mapped to `agentId`.
  */
 export function parseStopHookResult(value: unknown): StopHookResult | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const v = value as Record<string, unknown>;
+  const v = objectAnswer(value);
+  if (!v) return undefined;
   const result: StopHookResult = {};
-  if (typeof v.decision === "string" && DECISIONS.has(v.decision)) {
-    result.decision = v.decision as "continue" | "stop";
-  }
+  if (v.decision === "continue" || v.decision === "stop") result.decision = v.decision;
   if (typeof v.input === "string") result.input = v.input;
   if (typeof v.reason === "string") result.reason = v.reason;
-  if (v.output !== null && typeof v.output === "object" && !Array.isArray(v.output)) {
-    const output: Record<string, string | number | boolean> = {};
-    for (const [k, val] of Object.entries(v.output as Record<string, unknown>)) {
-      if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
-        output[k] = val;
-      }
-    }
-    result.output = output;
-  }
-  if (v.subagent !== null && typeof v.subagent === "object") {
-    const s = v.subagent as Record<string, unknown>;
-    if (typeof s.prompt === "string" && s.prompt.trim()) {
-      result.subagent = {
-        prompt: s.prompt,
-        ...(typeof s.agent_id === "string" ? { agentId: s.agent_id } : {}),
-      };
-    }
+  const output = scalarRecord(v.output);
+  if (output) result.output = output;
+  const subagent = objectAnswer(v.subagent);
+  if (subagent && typeof subagent.prompt === "string" && subagent.prompt.trim()) {
+    result.subagent = {
+      prompt: subagent.prompt,
+      ...(typeof subagent.agent_id === "string" ? { agentId: subagent.agent_id } : {}),
+    };
   }
   return result;
 }
 
-/** Narrows a script's parsed stdout to a PreToolUseHookResult: unknown decisions and non-scalar output values are dropped, an unusable value reads as no opinion. */
+/** Narrows a script's answer to a PreToolUseHookResult: unknown decisions and non-scalar output values are dropped. */
 export function parsePreToolUseResult(value: unknown): PreToolUseHookResult | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const v = value as Record<string, unknown>;
+  const v = objectAnswer(value);
+  if (!v) return undefined;
   const result: PreToolUseHookResult = {};
   if (v.decision === "allow" || v.decision === "deny") result.decision = v.decision;
   if (typeof v.reason === "string") result.reason = v.reason;
-  if (v.output !== null && typeof v.output === "object" && !Array.isArray(v.output)) {
-    const output: Record<string, string | number | boolean> = {};
-    for (const [k, val] of Object.entries(v.output as Record<string, unknown>)) {
-      if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
-        output[k] = val;
-      }
-    }
-    result.output = output;
-  }
+  const output = scalarRecord(v.output);
+  if (output) result.output = output;
   return result;
 }
 
-/** Narrows a script's parsed stdout to a UserPromptHookResult: a non-string context reads as nothing to add. */
+/** Narrows a script's answer to a UserPromptHookResult: a non-string context reads as nothing to add. */
 export function parseUserPromptResult(value: unknown): UserPromptHookResult | undefined {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const v = value as Record<string, unknown>;
+  const v = objectAnswer(value);
+  if (!v) return undefined;
   return typeof v.context === "string" ? { context: v.context } : {};
 }
 
-/** One installed user-prompt command as a UserPromptHook: `command` relative to `dir`, the hook package's directory. */
+/**
+ * One installed command as a runner: `command` relative to `dir` (the hook package's
+ * directory, which is also the script's cwd), the manifest's timeout, and per call the
+ * stdin object and the run's signal. Undefined fields of the stdin object simply do not
+ * serialize, so an absent `trace_path` is left absent by JSON itself.
+ */
+function scriptRunner(
+  dir: string,
+  command: string,
+  timeoutS: number | undefined,
+): (input: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<unknown> {
+  const script = path.resolve(dir, command);
+  return (input, signal) =>
+    runHookScript(script, input, {
+      cwd: dir,
+      ...(timeoutS !== undefined ? { timeoutS } : {}),
+      ...(signal ? { signal } : {}),
+    });
+}
+
+/** One installed user-prompt command as a UserPromptHook. */
 export function scriptUserPromptHook(
   name: string,
   dir: string,
   command: string,
   timeoutS?: number,
 ): UserPromptHook {
-  const script = path.resolve(dir, command);
+  const run = scriptRunner(dir, command, timeoutS);
   return {
     name,
-    async run(input: UserPromptHookInput): Promise<UserPromptHookResult | void> {
-      const answer = await runHookScript(
-        script,
-        {
-          hook: "user_prompt",
-          session_id: input.sessionId,
-          scratchpad_dir: input.scratchpadDir,
-          prompt: input.prompt,
-          ...(input.extras ?? {}),
-        },
-        {
-          cwd: dir,
-          ...(timeoutS !== undefined ? { timeoutS } : {}),
-          ...(input.signal ? { signal: input.signal } : {}),
-        },
+    async run(input: UserPromptHookInput): Promise<UserPromptHookResult | undefined> {
+      return parseUserPromptResult(
+        await run(
+          {
+            hook: "user_prompt",
+            session_id: input.sessionId,
+            scratchpad_dir: input.scratchpadDir,
+            prompt: input.prompt,
+            ...input.extras,
+          },
+          input.signal,
+        ),
       );
-      return parseUserPromptResult(answer);
     },
   };
 }
 
-/** One installed pre-tool-use command as a PreToolUseHook: `command` relative to `dir`, the hook package's directory. */
+/** One installed pre-tool-use command as a PreToolUseHook. */
 export function scriptPreToolUseHook(
   name: string,
   dir: string,
   command: string,
   timeoutS?: number,
 ): PreToolUseHook {
-  const script = path.resolve(dir, command);
+  const run = scriptRunner(dir, command, timeoutS);
   return {
     name,
-    async run(input: PreToolUseHookInput): Promise<PreToolUseHookResult | void> {
-      const answer = await runHookScript(
-        script,
-        {
-          hook: "pre_tool_use",
-          session_id: input.sessionId,
-          ...(input.tracePath !== undefined ? { trace_path: input.tracePath } : {}),
-          tool_name: input.toolName,
-          tool_call_id: input.toolCallId,
-          arguments: input.argumentsJson,
-        },
-        {
-          cwd: dir,
-          ...(timeoutS !== undefined ? { timeoutS } : {}),
-          ...(input.signal ? { signal: input.signal } : {}),
-        },
+    async run(input: PreToolUseHookInput): Promise<PreToolUseHookResult | undefined> {
+      return parsePreToolUseResult(
+        await run(
+          {
+            hook: "pre_tool_use",
+            session_id: input.sessionId,
+            trace_path: input.tracePath,
+            tool_name: input.toolName,
+            tool_call_id: input.toolCallId,
+            arguments: input.argumentsJson,
+          },
+          input.signal,
+        ),
       );
-      return parsePreToolUseResult(answer);
     },
   };
 }
 
-/** One installed stop-hook command as a StopHook: `command` relative to `dir`, the hook package's directory. */
+/** One installed stop-hook command as a StopHook. */
 export function scriptStopHook(
   name: string,
   dir: string,
   command: string,
   timeoutS?: number,
 ): StopHook {
-  const script = path.resolve(dir, command);
+  const run = scriptRunner(dir, command, timeoutS);
   return {
     name,
-    async run(input: StopHookInput): Promise<StopHookResult | void> {
-      const answer = await runHookScript(
-        script,
-        {
-          hook: "stop",
-          session_id: input.sessionId,
-          ...(input.tracePath !== undefined ? { trace_path: input.tracePath } : {}),
-        },
-        {
-          cwd: dir,
-          ...(timeoutS !== undefined ? { timeoutS } : {}),
-          ...(input.signal ? { signal: input.signal } : {}),
-        },
+    async run(input: StopHookInput): Promise<StopHookResult | undefined> {
+      return parseStopHookResult(
+        await run(
+          { hook: "stop", session_id: input.sessionId, trace_path: input.tracePath },
+          input.signal,
+        ),
       );
-      return parseStopHookResult(answer);
     },
   };
 }

@@ -18,7 +18,7 @@
 #   legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
-#   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
+#   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
 #   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
 #   The publish flow mirrors AgentHub's publish.yml: OIDC trusted publishing (environment: npm +

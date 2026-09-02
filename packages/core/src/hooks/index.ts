@@ -6,9 +6,10 @@
  * installed into an Agent's `agent_state/hooks/` as subprocesses — hooks run in core and
  * nowhere else; hosts trigger them through Session APIs.
  */
-export { runStopHooks, uncachedTokens } from "./stop-hook.js";
+export { runStopHooks } from "./stop-hook.js";
 export type {
   HookSubagentRequest,
+  HookSubagentSpawned,
   HookSubagentSpawner,
   SessionHooks,
   StopHook,

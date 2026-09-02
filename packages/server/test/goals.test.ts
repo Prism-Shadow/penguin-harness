@@ -1,7 +1,8 @@
 /**
- * Goal-mode server tests: SessionManager.startGoal driving core goal mode through one
- * `session.run(input, { goal })` call with a fake Session (no real LLM requests) — the round
- * and terminal server events derived from the stream's harness-injected inputs and goal hook events.
+ * Goal-mode server tests: SessionManager.startGoal running the goal plugin's user_prompt hook
+ * on a fake Session (no real LLM requests, no scripts) and driving one `session.run` — the
+ * round and terminal server events derived from the stream's harness-injected inputs and
+ * goal hook events.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -82,26 +83,35 @@ describe("SessionManager.startGoal", () => {
   type RunOpts = Record<string, never>;
 
   /**
-   * Fake session: `run` emits the goal stream the way core would — the run's own initial
-   * input is NEVER yielded (startGoal publishes it; the tap counts round 1 off the seeded
-   * input), later rounds' harness-stamped injections and the goal hook's answers are (the
-   * hook loop is core's and the decisions are the goal plugin's; both are tested where
-   * they live).
+   * Fake session: `runUserPromptHook` answers the way the goal plugin's start script would
+   * (round 1's protocol text, recorded with what it was asked), and `run` emits the goal
+   * stream the way core would — the run's own initial input is NEVER yielded (startGoal
+   * publishes it; the tap counts round 1 off the seeded input), later rounds'
+   * harness-stamped injections and the goal hook's answers are (the hook loop is core's and
+   * the decisions are the goal plugin's; both are tested where they live).
    */
-  function goalFakeSession(
-    stream: (input: OmniMessage[]) => OmniMessage[],
-  ): RuntimeSession & { runOpts: RunOpts[]; runs: OmniMessage[][] } {
+  function goalFakeSession(stream: (input: OmniMessage[]) => OmniMessage[]): RuntimeSession & {
+    runOpts: RunOpts[];
+    runs: OmniMessage[][];
+    starts: Array<{ name: string; prompt: string; extras: unknown }>;
+  } {
     const runOpts: RunOpts[] = [];
     const runs: OmniMessage[][] = [];
+    const starts: Array<{ name: string; prompt: string; extras: unknown }> = [];
     return {
       sessionId: ROW.sessionId,
       runOpts,
       runs,
+      starts,
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
+      async runUserPromptHook(name, prompt, extras) {
+        starts.push({ name, prompt, extras });
+        return { context: "goal round 1 protocol lines" };
+      },
       async *run(input: OmniMessage[], opts) {
         runs.push(input);
         void opts;
@@ -145,15 +155,23 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText(text), roundInput(1)],
+      messages: [userText(text)],
       objective: "make it work",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // One run call carries the whole goal — the input verbatim, no extra run options: the
-    // plugin's stop hook drives the rounds inside it, and the thinking level is the
-    // Session's own soft state rather than a per-run parameter.
+    // The goal plugin's user_prompt hook is run with the objective and the budget, and one
+    // run call carries the whole goal — the user's message then the hook's context stamped
+    // as harness-injected, no extra run options: the plugin's stop hook drives the rounds
+    // inside it, and the thinking level is the Session's own soft state rather than a
+    // per-run parameter.
+    expect(session.starts).toEqual([
+      { name: "goal", prompt: "make it work", extras: { budget: -1 } },
+    ]);
+    expect(session.runs.map((run) => run.map((m) => m.payload))).toEqual([
+      [userText(text).payload, roundInput(1).payload],
+    ]);
     expect(session.runOpts).toEqual([{}]);
 
     const server = serverEvents(events);
@@ -201,14 +219,15 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
+      messages: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
       objective: "Match this mockup",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // The whole input still reaches core (the images included) — only the published copy differs.
-    expect(session.runs[0]).toHaveLength(2);
+    // The whole input reaches core (the images included, then the protocol message) — only
+    // the published objective differs.
+    expect(session.runs[0]).toHaveLength(3);
     expect(serverEvents(events).find((e) => e.type === "goal_started")?.objective).toBe(
       "Match this mockup",
     );
@@ -229,7 +248,7 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj"), roundInput(1)],
+      messages: [userText("obj")],
       objective: "obj",
       budget: -1,
     });
@@ -251,15 +270,35 @@ describe("SessionManager.startGoal", () => {
     };
     const manager = makeManager(session);
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj"), roundInput(1)],
+      messages: [userText("obj")],
       objective: "obj",
       budget: -1,
     });
     await expect(manager.startTask(ROW.sessionId, [userText("x")])).rejects.toMatchObject({
       status: 409,
     });
+    // A second goal is refused BEFORE its start hook runs: the hook rewrites the goal file
+    // the running goal's stop hook reads, so the idle check has to come first.
+    await expect(
+      manager.startGoal(ROW.sessionId, { messages: [userText("y")], objective: "y", budget: -1 }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(session.starts).toHaveLength(1);
     release();
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+  });
+
+  it("409s goal_plugin_not_installed when the Session has no goal user_prompt hook", async () => {
+    const session = goalFakeSession(() => []);
+    session.runUserPromptHook = async () => null;
+    const manager = makeManager(session);
+    await expect(
+      manager.startGoal(ROW.sessionId, {
+        messages: [userText("obj")],
+        objective: "obj",
+        budget: -1,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "goal_plugin_not_installed" });
+    expect(manager.statusOf(ROW.sessionId)).toBe("idle");
   });
 
   it("a throw after the terminal event does not publish a contradicting outcome", async () => {
@@ -273,7 +312,7 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj"), roundInput(1)],
+      messages: [userText("obj")],
       objective: "obj",
       budget: -1,
     });
@@ -294,7 +333,7 @@ describe("SessionManager.startGoal", () => {
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("obj"), roundInput(1)],
+      messages: [userText("obj")],
       objective: "obj",
       budget: 1000,
     });

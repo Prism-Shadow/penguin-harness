@@ -1874,8 +1874,6 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
-    /** Toast for the 409 a goal-mode send gets while the goal plugin is not installed on the Agent. */
-    goalPluginMissing: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
@@ -2381,6 +2379,7 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
+      goal_plugin_not_installed: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
       not_pending: "该插话已随本轮送达模型，无法撤回。",

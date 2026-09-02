@@ -17,7 +17,6 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
-  type HookCommand,
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
@@ -695,14 +694,15 @@ export async function removeHook(
 /** An installed hook package: its manifest plus the directory its commands resolve against. */
 export interface InstalledHook extends HookManifest {
   dir: string;
-  /** The raw content of `hooks/<name>/icon.svg` (the plugin's icon, written beside the manifest at install time); omitted when missing. */
+  /** The raw content of `hooks/<name>/icon.svg` (the plugin's icon, written beside the manifest at install time); omitted when the plugin ships none. */
   icon?: string;
 }
 
 /**
- * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json`, and
- * reads the optional icon.svg beside it. Tolerant like the skills scan: a directory without a
- * parseable manifest is not a hook package; the directory name is the identity (a manifest
+ * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json` and
+ * reads the optional icon.svg beside it. The manifest is the installer's own output
+ * (installHook writes a HookManifest), so it is read back as one; a directory without a
+ * hooks.json is not a hook package, and the directory name is the identity (a manifest
  * naming something else is corrected). Sorted by name; [] when hooks/ doesn't exist.
  */
 export async function listInstalledHooks(
@@ -723,45 +723,21 @@ export async function listInstalledHooks(
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const dir = path.join(base, entry.name);
-    let manifest: Partial<HookManifest>;
+    let manifest: HookManifest;
     try {
       manifest = JSON.parse(
         await fs.readFile(path.join(dir, "hooks.json"), "utf8"),
-      ) as Partial<HookManifest>;
+      ) as HookManifest;
     } catch {
       continue;
     }
-    if (manifest === null || typeof manifest !== "object") continue;
     let icon: string | undefined;
     try {
       icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");
     } catch {
-      // icon.svg is optional: a package installed before icons were written beside manifests has none.
+      // No icon.svg: the plugin shipped none.
     }
-    const commands = (list?: HookCommand[]): HookCommand[] =>
-      Array.isArray(list)
-        ? list
-            .filter((c) => c && typeof c.command === "string")
-            .map((c) => ({
-              command: c.command,
-              ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
-            }))
-        : [];
-    const preToolUse = commands(manifest.pre_tool_use);
-    const userPrompt = commands(manifest.user_prompt);
-    hooks.push({
-      name: entry.name,
-      description: typeof manifest.description === "string" ? manifest.description : "",
-      ...(typeof manifest.descriptionZh === "string"
-        ? { descriptionZh: manifest.descriptionZh }
-        : {}),
-      version: typeof manifest.version === "string" ? manifest.version : "",
-      stop: commands(manifest.stop),
-      ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
-      ...(userPrompt.length > 0 ? { user_prompt: userPrompt } : {}),
-      dir,
-      ...(icon !== undefined ? { icon } : {}),
-    });
+    hooks.push({ ...manifest, name: entry.name, dir, ...(icon !== undefined ? { icon } : {}) });
   }
   return hooks.sort((a, b) => a.name.localeCompare(b.name));
 }

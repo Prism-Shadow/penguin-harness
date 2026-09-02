@@ -237,14 +237,14 @@ export function PluginDetailModal({
           <div className="max-h-[50vh] min-h-[50vh] overflow-auto p-3">
             {files === null && !error ? (
               <SkeletonList rows={8} />
-            ) : text === undefined ? (
+            ) : current === null || text === undefined ? (
               <p className="text-sm text-gray-400">{error ?? S.common.none}</p>
-            ) : current?.endsWith(".md") ? (
+            ) : current.endsWith(".md") ? (
               <div className="md-body text-sm text-gray-800 dark:text-gray-100">
                 <Md text={stripFrontmatter(text)} />
               </div>
             ) : (
-              <CodeBlock language={languageFor(current ?? "")} code={text} />
+              <CodeBlock language={languageFor(current)} code={text} />
             )}
           </div>
         </section>

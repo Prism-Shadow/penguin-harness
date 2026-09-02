@@ -128,7 +128,7 @@ export function pluginUpdateTodo(
 ): Todo | null {
   const latest = new Map<string, string>();
   for (const agent of agents) {
-    for (const update of agent.pluginUpdates ?? []) {
+    for (const update of agent.pluginUpdates) {
       if (!latest.has(update.name)) latest.set(update.name, update.version);
     }
   }

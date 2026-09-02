@@ -19,6 +19,7 @@
  */
 import { hookEvent } from "../omnimessage/index.js";
 import type { PreToolUseOutcome } from "../interfaces/index.js";
+import { failedAnswer } from "./answer.js";
 
 /** What a pre-tool-use hook is told: the call under decision, and where the Session's record is. */
 export interface PreToolUseHookInput {
@@ -63,10 +64,10 @@ export async function runPreToolUseHooks(
     try {
       result = await hook.run(input);
     } catch (err) {
-      result = { reason: `hook failed: ${errorMessage(err)}` };
+      result = failedAnswer(err);
     }
     if (!result) continue;
-    if (outcome.decision === null && (result.decision === "allow" || result.decision === "deny")) {
+    if (outcome.decision === null && result.decision !== undefined) {
       outcome.decision = result.decision;
       outcome.name = hook.name;
       if (result.reason !== undefined) outcome.reason = result.reason;
@@ -82,8 +83,4 @@ export async function runPreToolUseHooks(
     );
   }
   return outcome;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

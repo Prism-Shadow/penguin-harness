@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(pkgDir, "package.json"));
+const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
 
 const problems = [];
 
@@ -23,9 +24,12 @@ for (const [what, rel] of [
   // session fails to spawn, and only once the user opens a terminal panel.
   ["the staged node-pty package", "dist/node_modules/node-pty/package.json"],
   // The plugin packages are this package's dependencies, linked by `pnpm install`; the
-  // bundled server's loader resolves them from here. Without them every Agent's plugin
-  // library is empty and default_agent is created with nothing installed.
-  ["the plugin library", "node_modules/@penguinharness/goal/plugin.json"],
+  // bundled server's loader resolves them from here and refuses to start with a declared
+  // one missing. Every declared package is checked, so one added to `dependencies` without
+  // a `pnpm install` fails here rather than at the first library read.
+  ...Object.keys(pkg.dependencies)
+    .filter((dep) => dep.startsWith("@penguinharness/"))
+    .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/plugin.json`]),
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {

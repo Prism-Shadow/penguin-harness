@@ -45,8 +45,8 @@ export function toSkillItem(skill: SkillMetadata & { icon?: string }): SkillMeta
 /** The hook points a manifest answers at, in a fixed order. */
 export function hookEvents(manifest: HookManifest): string[] {
   return [
-    ...((manifest.user_prompt?.length ?? 0) > 0 ? ["user_prompt"] : []),
-    ...((manifest.pre_tool_use?.length ?? 0) > 0 ? ["pre_tool_use"] : []),
+    ...(manifest.user_prompt.length > 0 ? ["user_prompt"] : []),
+    ...(manifest.pre_tool_use.length > 0 ? ["pre_tool_use"] : []),
     ...(manifest.stop.length > 0 ? ["stop"] : []),
   ];
 }
@@ -56,7 +56,7 @@ export function toHookItem(hook: HookManifest & { icon?: string }): HookItem {
   return {
     name: hook.name,
     description: hook.description,
-    ...(hook.descriptionZh !== undefined ? { descriptionZh: hook.descriptionZh } : {}),
+    ...(hook.description_zh !== undefined ? { descriptionZh: hook.description_zh } : {}),
     version: hook.version,
     events: hookEvents(hook),
     ...(hook.icon !== undefined ? { icon: hook.icon } : {}),
@@ -94,7 +94,6 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { shortDescriptionZh: plugin.shortDescriptionZh }
       : {}),
     version: plugin.version,
-    preinstall: plugin.preinstall,
     skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),

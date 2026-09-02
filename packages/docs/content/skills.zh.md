@@ -19,8 +19,8 @@ plugins/<plugin>/
 
 | 字段 | 说明 |
 | --- | --- |
-| `description` / `description_zh` | 单行描述（只含钩子的插件必须写英文描述；Skill 插件缺省回退到首个 Skill 的描述） |
-| `short_description` / `short_description_zh` | 卡片短标签（回退到首个 Skill 的） |
+| `description` / `description_zh` | 单行描述（英文必填） |
+| `short_description` / `short_description_zh` | 卡片短标签（可选；缺省显示完整描述） |
 | `version` | `YYYY-MM-DD.N`——日期加当日序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development` 之一；缺失或未知归入「其他」 |
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
@@ -64,18 +64,21 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 ## 钩子包
 
-钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边生成一份 `hooks.json`——清单的身份字段（`name`、`description`、`description_zh`、`version`）加上各钩子点的命令：
+钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边生成一份 `hooks.json`——清单的身份字段（`name`、`description`、`description_zh`、`version`）加上每个钩子点各一份命令清单：
 
 ```json
 {
   "name": "goal",
   "description": "Goal mode: …",
-  "version": "2026-08-29.1",
-  "stop": [{ "command": "stop.mjs", "timeout": 60 }]
+  "description_zh": "目标模式：…",
+  "version": "2026-09-01.1",
+  "stop": [{ "command": "stop.mjs", "timeout": 60 }],
+  "pre_tool_use": [],
+  "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]
 }
 ```
 
-装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
+装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包（正在运行的 Session 保持构建时的那套；安装或卸载钩子包后，服务端会在该 Agent 已缓存的运行时下次空闲访问时重建它们）。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
 
 ## 安装与存放
 

@@ -34,9 +34,11 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  isHookInput,
   isSessionMeta,
   parseUserSteeringText,
   tracesDir,
+  userText,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
@@ -63,7 +65,7 @@ import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
-import { goalOutcomeOf, goalProgressOf, isGoalRoundInput } from "./goal-events.js";
+import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -896,41 +898,23 @@ export class SessionManager {
   }
 
   /**
-   * Runs the named package's `user_prompt` hook on a Session — the core-owned execution
-   * behind a host flow's prompt expansion (the goal route calls it before startGoal).
-   * Ensures the runtime entry so the core Session exists; null = not installed (the
-   * route's 409 cue).
-   */
-  async runUserPromptHook(
-    sessionId: string,
-    name: string,
-    prompt: string,
-    extras?: Record<string, string | number | boolean>,
-  ): Promise<{ context?: string } | null> {
-    // The entry is resolved under the lock; the script itself runs outside it, so a slow
-    // hook (up to its timeout) never blocks the session's other operations.
-    const session = await this.withLock(sessionId, async () => {
-      this.assertOpen();
-      return (await this.ensureEntry(sessionId)).session;
-    });
-    return (await session.runUserPromptHook?.(name, prompt, extras)) ?? null;
-  }
-
-  /**
-   * Start a goal run: like startTask, but the input is the round-1 message the goal plugin's
-   * start script composed (the route ran it and wrote the Session's goal file), and the
-   * plugin's stop hook drives every later round inside this one `session.run` call — so the
-   * Session stays `running` for the whole goal (every round), the existing abort endpoint
-   * interrupts the entire loop and schedules queue behind it as usual. Round inputs are
-   * yielded by core and published like any streamed message; progress additionally goes out
-   * as goal_* server events (the run state itself is the goal file the plugin maintains).
+   * Start a goal run: like startTask, but the goal plugin composes the input and its stop
+   * hook drives every later round inside this one `session.run` call — so the Session
+   * stays `running` for the whole goal (every round), the existing abort endpoint
+   * interrupts the entire loop and schedules queue behind it as usual. The plugin's
+   * `user_prompt` hook (hooks run in core and nowhere else — `Session.runUserPromptHook`)
+   * writes the Session's goal file and answers the round-1 protocol message; it runs under
+   * the session lock AFTER the idle check, since it overwrites the goal file a running goal
+   * is reading. Not installed (null) is the route's 409; an empty answer a 500. Round inputs
+   * are yielded by core and published like any streamed message; progress additionally goes
+   * out as goal_* server events (the run state itself is the goal file the plugin maintains).
    */
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input: the user's own message(s), then the plugin's protocol message stamped `sender: "harness"`. */
-      input: OmniMessage[];
-      /** The user's own objective text (leading marker blocks stripped): the goal_started event and the title material. */
+      /** The user's own message(s) exactly as submitted — text and images, no wrapping. */
+      messages: OmniMessage[];
+      /** The user's own objective text (leading marker blocks stripped): what the plugin records, the goal_started event and the title material. */
       objective: string;
       budget: number;
     },
@@ -942,6 +926,27 @@ export class SessionManager {
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
       const objective = args.objective;
+      const started = await entry.session.runUserPromptHook?.("goal", objective, {
+        budget: args.budget,
+      });
+      if (!started) {
+        throw new HttpError(
+          409,
+          "goal_plugin_not_installed",
+          "Goal mode needs the goal plugin installed on this agent.",
+        );
+      }
+      if (!started.context) {
+        throw new HttpError(
+          500,
+          "goal_start_failed",
+          "The goal plugin's user_prompt hook gave no round-1 context.",
+        );
+      }
+      // Round 1 is the user's own message(s) followed by the hook's expansion context stamped
+      // as harness-injected (the protocol text points back at the user message as the
+      // objective). Later rounds are the stop hook's continues, which core stamps the same way.
+      const input = [...args.messages, userText(started.context, "harness")];
       const ac = new AbortController();
       entry.status = "running";
       entry.abort = ac;
@@ -952,10 +957,10 @@ export class SessionManager {
       // second goal on the session) would not see the user's message or the protocol
       // message until a reload. Append + bootstrap reset for the same abort-mid-bootstrap
       // reasons as launchTask.
-      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
+      entry.pendingInputs = [...entry.pendingInputs, ...input];
       entry.pendingBootstrap = [];
       const channel = this.deps.channels.get(entry.sessionId);
-      for (const msg of args.input) channel.publish(msg);
+      for (const msg of input) channel.publish(msg);
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
       this.publishEvent(entry, {
@@ -965,7 +970,7 @@ export class SessionManager {
         budget: args.budget,
       });
       const gen = this.goalStream(entry, {
-        input: args.input,
+        input,
         budget: args.budget,
         approve,
         signal: ac.signal,
@@ -1004,7 +1009,7 @@ export class SessionManager {
     let finished = false;
     // Round 1's boundary is the seeded input itself: it never comes back out of `gen`.
     for (const msg of args.input) {
-      if (isGoalRoundInput(msg)) {
+      if (isHookInput(msg)) {
         round++;
         this.publishEvent(entry, {
           type: "goal_round",
@@ -1017,7 +1022,7 @@ export class SessionManager {
     }
     try {
       for await (const msg of gen) {
-        if (isGoalRoundInput(msg)) {
+        if (isHookInput(msg)) {
           round++;
           this.publishEvent(entry, {
             type: "goal_round",

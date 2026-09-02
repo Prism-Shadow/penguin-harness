@@ -19,8 +19,8 @@ plugins/<plugin>/
 
 | Field | Meaning |
 | --- | --- |
-| `description` / `description_zh` | One-line description (English required for a hook-only plugin; a skill plugin falls back to its first skill's) |
-| `short_description` / `short_description_zh` | Card labels (fall back to the first skill's) |
+| `description` / `description_zh` | One-line description (English required) |
+| `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
 | `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
@@ -64,18 +64,21 @@ If a message only names a skill without a concrete task, the model is instructed
 
 ## Hook packages
 
-A hook package is the plugin's `hooks/` directory installed as `agent_state/hooks/<plugin>/`, with a generated `hooks.json` beside the scripts — the manifest's identity fields (`name`, `description`, `description_zh`, `version`) plus the commands per hook point:
+A hook package is the plugin's `hooks/` directory installed as `agent_state/hooks/<plugin>/`, with a generated `hooks.json` beside the scripts — the manifest's identity fields (`name`, `description`, `description_zh`, `version`) plus one command list per hook point:
 
 ```json
 {
   "name": "goal",
   "description": "Goal mode: …",
-  "version": "2026-08-29.1",
-  "stop": [{ "command": "stop.mjs", "timeout": 60 }]
+  "description_zh": "目标模式：…",
+  "version": "2026-09-01.1",
+  "stop": [{ "command": "stop.mjs", "timeout": 60 }],
+  "pre_tool_use": [],
+  "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]
 }
 ```
 
-Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points. The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
+Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points (a Session already running keeps the set it was built with; the server rebuilds an Agent's cached runtimes on the next idle access after a hook package is installed or removed). The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
 
 ## Installation and storage
 

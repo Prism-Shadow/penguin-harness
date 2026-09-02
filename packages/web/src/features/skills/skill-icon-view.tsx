@@ -87,7 +87,6 @@ export function SkillTile({
   fallback = BOOK_ICON,
   size = 36,
   glyph = 20,
-  className = "",
 }: {
   icon?: string;
   /** Names the tile's color. */

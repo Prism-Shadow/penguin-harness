@@ -497,11 +497,6 @@ export class ContextEngine {
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
 
-  /** Session cumulative LLM turns so far (completed requests, carried across compactions and resumes). */
-  get turns(): number {
-    return this.sessionTurns;
-  }
-
   /** Whether a `run` is in flight (the Session's notice routing keys on this: a running task delivers notices at the next boundary; an idle one goes through the host). */
   get isTaskRunning(): boolean {
     return this.taskRunning;
@@ -748,7 +743,7 @@ export class ContextEngine {
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
         yield* this.emitMaxTurns();
-        return null;
+        return { kind: "max_turns" };
       }
       turnCount += 1;
 

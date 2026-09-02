@@ -91,11 +91,6 @@ describe("pluginUpdateTodo", () => {
       match: "set",
     });
   });
-
-  it("survives an Agent list from a server that does not send the field", () => {
-    // A newer web against an older runtime: no pluginUpdates key at all, and no crash.
-    expect(pluginUpdateTodo([{} as Pick<AgentSummary, "pluginUpdates">])).toBeNull();
-  });
 });
 
 describe("presetUpdateTodo", () => {

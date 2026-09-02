@@ -18,7 +18,7 @@ description: 给 Agent 一个目标而不是一条消息——goal 插件的 sto
 | CLI 单次运行 | `penguin run --goal [预算] -m "<目标>"`；仅目标完成时退出码为 0 |
 | Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget } }`（budget 为 `-1` 或缺省 = 不限额） |
 
-底层上，服务端以 `{ session_id, scratchpad_dir, objective, body, budget }` 运行已安装的 `agent_state/hooks/goal/start.mjs`，把它打印的第一轮消息当普通 Task 提交；之后由 stop hook 接手。因此在 SDK 里，目标就是装了插件的 Agent 上一次普通的 `session.run`，以同样的方式写下目标文件（或直接调用脚本）来发起。
+底层上，服务端请 Session 运行 goal 包的 `user_prompt` hook——已安装的 `agent_state/hooks/goal/start.mjs`，stdin 收到 `{ hook: "user_prompt", session_id, scratchpad_dir, prompt, budget }`——再以你原样的消息、紧随其后它打印的 `{ context }`（标记 `sender: "harness"`）发起目标运行；之后由 stop hook 接手。因此在 SDK 里，目标就是装了插件的 Agent 上一次普通的 `session.run`，以同样的方式写下目标文件（`Session.runUserPromptHook("goal", …)`，或直接调用脚本）来发起。
 
 ## 目标文件：GOAL.json
 

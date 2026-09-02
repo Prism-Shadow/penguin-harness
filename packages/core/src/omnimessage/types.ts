@@ -440,13 +440,14 @@ export interface CompactionEndPayload extends RetryDetail {
   status: StopReason;
 }
 
-/** A stop hook's decision: `continue` keeps the run going (its injected input follows as the next user message), `stop` lets the run end. */
+/** A hook's decision: at the stop point `continue` keeps the run going (its injected input follows as the next user message) and `stop` lets the run end; at the pre_tool_use point `allow` approves the call without asking and `deny` refuses it. */
 export type HookDecision = "continue" | "stop" | "allow" | "deny";
 
 /**
- * Hook result event: one per non-void answer a hook gave at a hook point — today only
- * `stop`, consulted after every Task of a `run` call (see hooks/stop-hook.ts). Produced by
- * the Session, streamed live and written to the Trace best-effort. `name` is the hook's
+ * Hook result event: one per non-void answer a hook gave at a hook point — `stop`,
+ * consulted after every Task of a `run` call (see hooks/stop-hook.ts), or `pre_tool_use`,
+ * consulted before each tool call's approval (see hooks/tool-hook.ts). Produced by the
+ * Session, streamed live and written to the Trace best-effort. `name` is the hook's
  * registered name (`goal`, `continual-learning`, …); `decision` is absent when the hook only
  * left a record; `output` is the hook's own structured record, scalars only — the goal hook
  * writes `status` / `round` / `tokens_used` / `budget`, the continual-learning hook `session_id`

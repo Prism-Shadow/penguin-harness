@@ -31,11 +31,13 @@ export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "
  * failures emit no abort event, only their terminal request_end / compaction_end records.
  * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;
  * `compaction_failure` a compaction given up mid-task (at a Task boundary the same
- * failure is advisory and the run returns null). The error pair mirrors the terminal
- * record's `error_code` / `error_message`.
+ * failure is advisory and the run returns null); `max_turns` the Task's turn cap — the
+ * engine closes the Task with its own notice and holds the pending input as carry-over for
+ * the next run. The error pair mirrors the terminal record's `error_code` / `error_message`
+ * (none for `max_turns`).
  */
 export interface RunCutoff {
-  kind: "abort" | "llm_failure" | "compaction_failure";
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
   errorCode?: ErrorCode;
   errorMessage?: string;
 }

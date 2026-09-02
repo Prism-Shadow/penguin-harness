@@ -24,6 +24,7 @@ import type {
   EnvironmentInterface,
   HookPayload,
   HookSubagentRequest,
+  HookSubagentSpawned,
   LLMInterface,
   LLMOutcome,
   OmniMessage,
@@ -67,9 +68,14 @@ describe("runStopHooks", () => {
     const { events, next } = await runStopHooks(hooks, stopInput());
     expect(next).toBe("again");
     // No event for a void answer; the injected input never rides an event.
-    expect(events.map((e) => e.payload.name)).toEqual(["broken", "first", "second", "note"]);
+    expect(events.map((e) => (e.payload as HookPayload).name)).toEqual([
+      "broken",
+      "first",
+      "second",
+      "note",
+    ]);
     expect(events[0]!.payload).toMatchObject({ hook: "stop", reason: "hook failed: boom" });
-    expect(events[0]!.payload.decision).toBeUndefined();
+    expect((events[0]!.payload as HookPayload).decision).toBeUndefined();
     expect(events[1]!.payload).toEqual({
       type: "hook",
       hook: "stop",
@@ -77,7 +83,7 @@ describe("runStopHooks", () => {
       decision: "continue",
       reason: "one",
     });
-    expect(events[2]!.payload.output).toEqual({ n: 2 });
+    expect((events[2]!.payload as HookPayload).output).toEqual({ n: 2 });
     expect(JSON.stringify(events)).not.toContain("again");
   });
 
@@ -91,24 +97,35 @@ describe("runStopHooks", () => {
         subagent: { prompt: "review this", agentId: "b" },
       }),
     };
+    const childMeta = {
+      type: "session_meta",
+      origin: ["child-1"],
+      payload: { session_id: "child-1" },
+    } as unknown as OmniMessage;
     const spawned = await runStopHooks([hook], stopInput(), async (req) => {
       asks.push(req);
-      return "child-1";
+      return { sessionId: "child-1", meta: childMeta };
     });
     expect(asks).toEqual([{ prompt: "review this", agentId: "b" }]);
     expect(spawned.events[0]!.payload).toMatchObject({
       reason: "delegated",
       output: { turns: 20, session_id: "child-1" },
     });
+    // Behind the event: the child's own meta, for the host to register it from.
+    expect(spawned.events[1]).toBe(childMeta);
+    expect(spawned.events).toHaveLength(2);
     const unspawned = await runStopHooks([hook], stopInput());
-    expect(unspawned.events[0]!.payload.reason).toBe(
+    expect((unspawned.events[0]!.payload as HookPayload).reason).toBe(
       "delegated · subagent not spawned: no spawner",
     );
     const failed = await runStopHooks([hook], stopInput(), async () => {
       throw new Error("depth limit");
     });
-    expect(failed.events[0]!.payload.reason).toBe("delegated · subagent not spawned: depth limit");
-    expect(failed.events[0]!.payload.output).toEqual({ turns: 20 });
+    expect((failed.events[0]!.payload as HookPayload).reason).toBe(
+      "delegated · subagent not spawned: depth limit",
+    );
+    expect((failed.events[0]!.payload as HookPayload).output).toEqual({ turns: 20 });
+    expect(failed.events).toHaveLength(1);
   });
 });
 
@@ -330,7 +347,10 @@ describe("Session stop hooks", () => {
     llm: LLMInterface,
     extra: {
       trace?: TraceSink;
-      spawnSubagent?: (request: HookSubagentRequest, approve?: unknown) => Promise<string>;
+      spawnSubagent?: (
+        request: HookSubagentRequest,
+        approve?: unknown,
+      ) => Promise<HookSubagentSpawned>;
       preToolUse?: PreToolUseHook[];
       commandPolicy?: CommandPolicyConfig;
       environment?: EnvironmentInterface;
@@ -434,6 +454,11 @@ describe("Session stop hooks", () => {
 
   it("honors a subagent answer through the Session's spawner, passing the run's approval callback", async () => {
     const asks: Array<{ prompt: string; approved: boolean }> = [];
+    const childMeta = {
+      type: "session_meta",
+      origin: ["child-9"],
+      payload: { session_id: "child-9" },
+    } as unknown as OmniMessage;
     const hook: StopHook = {
       name: "review",
       run: async () => ({ reason: "delegated", subagent: { prompt: "look" } }),
@@ -442,7 +467,7 @@ describe("Session stop hooks", () => {
     const session = makeSession([hook], llm, {
       spawnSubagent: async (request, approve) => {
         asks.push({ prompt: request.prompt, approved: approve !== undefined });
-        return "child-9";
+        return { sessionId: "child-9", meta: childMeta };
       },
     });
     const stream: OmniMessage[] = [];
@@ -450,9 +475,11 @@ describe("Session stop hooks", () => {
       stream.push(msg);
     }
     expect(asks).toEqual([{ prompt: "look", approved: true }]);
-    const event = stream.find((m) => isEventMessage(m) && m.payload.type === "hook")!
-      .payload as HookPayload;
-    expect(event.output).toEqual({ session_id: "child-9" });
+    const at = stream.findIndex((m) => isEventMessage(m) && m.payload.type === "hook");
+    expect((stream[at]!.payload as HookPayload).output).toEqual({ session_id: "child-9" });
+    // The child's origin-stamped meta follows the event on the stream — what a host registers
+    // the child session from.
+    expect(stream[at + 1]).toBe(childMeta);
     expect(llm.inputs).toEqual(["hello"]);
   });
 });

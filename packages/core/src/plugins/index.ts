@@ -10,8 +10,10 @@
  * hook package (`hooks/*.mjs`, installed into `agent_state/hooks/<plugin>/` together with a
  * generated `hooks.json`). The files are the runtime source of truth — read and parsed on
  * every call, no caching (files are small, calls are infrequent) — so editing a file takes
- * effect immediately. Only the category manifest (id and titles) is code; install / uninstall
- * / scan live in core's state layer.
+ * effect immediately. They are committed content reached through declared dependencies, so
+ * anything that fails to load is a broken install or a broken plugin and throws with the
+ * path — never a silently smaller library. Only the category manifest (id and titles) is
+ * code; install / uninstall / scan live in core's state layer.
  *
  * Versions are dates with a sequence number, `YYYY-MM-DD.N` (see PLUGIN_VERSION_PATTERN and
  * comparePluginVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
@@ -72,13 +74,14 @@ export interface HookCommand {
 export interface HookManifest {
   name: string;
   description: string;
-  descriptionZh?: string;
+  description_zh?: string;
   version: string;
+  /** Stop commands, consulted after every Task of a run. */
   stop: HookCommand[];
-  /** Pre-tool-use commands, consulted before each tool call's approval; absent = none (older installs carry no field). */
-  pre_tool_use?: HookCommand[];
-  /** User-prompt expansion commands, run by the host when it accepts a prompt for the flow the package owns (goal mode's start); absent = none. */
-  user_prompt?: HookCommand[];
+  /** Pre-tool-use commands, consulted before each tool call's approval. */
+  pre_tool_use: HookCommand[];
+  /** User-prompt expansion commands, run by the host when it accepts a prompt for the flow the package owns (goal mode's start). */
+  user_prompt: HookCommand[];
 }
 
 /** A plugin's hook package as read from the library: the manifest to install and the `hooks/` files (relative path → text). */
@@ -91,11 +94,11 @@ export interface LibraryHooks {
 export interface LibraryPlugin {
   /** Plugin name (its directory name). */
   name: string;
-  /** English one-line description (plugin.json `description`, falling back to the first skill's description). */
+  /** English one-line description (plugin.json `description`). */
   description: string;
   /** Chinese description (plugin.json `description_zh`, optional). */
   descriptionZh?: string;
-  /** UI short descriptions (plugin.json, falling back to the first skill's). */
+  /** UI short descriptions (plugin.json `short_description(_zh)`, optional). */
   shortDescription?: string;
   shortDescriptionZh?: string;
   /** `YYYY-MM-DD.N`. */
@@ -124,8 +127,6 @@ export interface ResolvedPluginGroup extends PluginCategory {
 
 /** Character rule for plugin, skill and hook names (directory names): prevents path traversal (exported for the server's archive-install validation). */
 export const PLUGIN_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
-/** Same rule under its historical name: skill directories follow it too. */
-export const SKILL_NAME_PATTERN = PLUGIN_NAME_PATTERN;
 
 /** Version format: an ISO date and a sequence number, e.g. `2026-08-29.1`. */
 export const PLUGIN_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
@@ -184,11 +185,12 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
  * bundle) — which is exactly whose package.json lists the plugin packages to resolve.
  */
 function packageRoot(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
+  const start = path.dirname(fileURLToPath(import.meta.url));
+  let dir = start;
   for (;;) {
     if (fs.existsSync(path.join(dir, "package.json"))) return dir;
     const parent = path.dirname(dir);
-    if (parent === dir) return dir;
+    if (parent === dir) throw new Error(`No package.json above the plugin loader at ${start}`);
     dir = parent;
   }
 }
@@ -208,26 +210,23 @@ const PLUGIN_PKG_PREFIX = "@penguinharness/";
  */
 function pluginRoots(): Map<string, string> {
   const roots = new Map<string, string>();
-  let names: string[] = [];
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
-      dependencies?: Record<string, string>;
-    };
-    names = Object.keys(pkg.dependencies ?? {});
-  } catch {
-    return roots;
-  }
+  const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
   const require = createRequire(import.meta.url);
-  for (const dep of names) {
+  for (const dep of Object.keys(pkg.dependencies ?? {})) {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
+    let manifest: string;
     try {
-      roots.set(
-        dep.slice(PLUGIN_PKG_PREFIX.length),
-        path.dirname(require.resolve(`${dep}/package.json`)),
+      manifest = require.resolve(`${dep}/package.json`);
+    } catch (err) {
+      // A declared plugin that Node cannot find is a broken install (the deployment did not
+      // carry the package), not a smaller library.
+      throw new Error(
+        `Plugin package ${dep} is declared in ${PKG_ROOT}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
       );
-    } catch {
-      // An unresolvable plugin package is skipped, not fatal: the rest of the library loads.
     }
+    roots.set(dep.slice(PLUGIN_PKG_PREFIX.length), path.dirname(manifest));
   }
   return roots;
 }
@@ -256,29 +255,21 @@ function readDirFiles(dir: string, except: readonly string[]): Record<string, st
 
 /**
  * Reads one skill directory: name from the directory (overriding frontmatter), SKILL.md verbatim,
- * and every other file as auxiliary content. Undefined without a SKILL.md. The icon is not read
- * here: a skill has none of its own, and stampSkill gives it the plugin's.
+ * and every other file as auxiliary content. The icon is not read here: a skill has none of
+ * its own, and stampSkill gives it the plugin's.
  */
-function readSkillDir(dir: string, name: string): LibrarySkill | undefined {
-  let content: string;
-  try {
-    content = fs.readFileSync(path.join(dir, "SKILL.md"), "utf8");
-  } catch {
-    return undefined;
-  }
+function readSkillDir(dir: string, name: string): LibrarySkill {
+  const file = path.join(dir, "SKILL.md");
+  const content = fs.readFileSync(file, "utf8");
+  const meta = parseSkillFrontmatter(content);
+  if (!meta) throw new Error(`Library skill ${file} has no frontmatter with a name`);
   const files = readDirFiles(dir, ["SKILL.md", "icon.svg"]);
-  const meta = parseSkillFrontmatter(content) ?? { name, description: "", version: "" };
-  return {
-    ...meta,
-    name,
-    content,
-    ...(files !== undefined ? { files } : {}),
-  };
+  return { ...meta, name, content, ...(files !== undefined ? { files } : {}) };
 }
 
 /**
  * Resolves a library skill against its plugin: the plugin's version and UI short descriptions
- * fill the metadata (a library SKILL.md carries only `name` and `description`), its icon
+ * are the skill's (a library SKILL.md carries only `name` and `description`), its icon
  * becomes the skill's, and the installable `content` gets the full frontmatter regenerated in
  * canonical field order — the installed copy is self-describing (update checks read its
  * `version`, the UI its short descriptions and icon) the same way an installed hook package's
@@ -293,8 +284,7 @@ function stampSkill(
     icon?: string;
   },
 ): LibrarySkill {
-  const shortDescription = skill.shortDescription ?? plugin.shortDescription;
-  const shortDescriptionZh = skill.shortDescriptionZh ?? plugin.shortDescriptionZh;
+  const { shortDescription, shortDescriptionZh } = plugin;
   const front = [
     "---",
     `name: ${skill.name}`,
@@ -315,73 +305,53 @@ function stampSkill(
   };
 }
 
-/** The raw plugin.json shape (every field optional; the loader fills the defaults). */
+/** The plugin.json shape: the single metadata holder of a plugin (see the module header). */
 interface PluginManifestFile {
-  description?: string;
+  description: string;
   description_zh?: string;
   short_description?: string;
   short_description_zh?: string;
-  version?: string;
+  /** `YYYY-MM-DD.N`. */
+  version: string;
   category?: string;
+  /** Default true. */
   preinstall?: boolean;
+  /** One command list per hook point the plugin's hook package answers at. */
   hooks?: {
-    stop?: Array<{ command?: string; timeout?: number }>;
-    pre_tool_use?: Array<{ command?: string; timeout?: number }>;
-    user_prompt?: Array<{ command?: string; timeout?: number }>;
+    stop?: HookCommand[];
+    pre_tool_use?: HookCommand[];
+    user_prompt?: HookCommand[];
   };
 }
 
-/** Reads one plugin directory; undefined without a parseable plugin.json. */
-function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
-  let manifest: PluginManifestFile;
-  try {
-    manifest = JSON.parse(
-      fs.readFileSync(path.join(dir, "plugin.json"), "utf8"),
-    ) as PluginManifestFile;
-  } catch {
-    return undefined;
+/** Reads one plugin directory. */
+function readPluginDir(name: string, dir: string): LibraryPlugin {
+  const manifestFile = path.join(dir, "plugin.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
+  if (!PLUGIN_VERSION_PATTERN.test(manifest.version)) {
+    throw new Error(`${manifestFile}: version must be YYYY-MM-DD.N, got ${manifest.version}`);
   }
-  if (manifest === null || typeof manifest !== "object") return undefined;
+  const {
+    description,
+    description_zh: descriptionZh,
+    short_description: shortDescription,
+    short_description_zh: shortDescriptionZh,
+    version,
+  } = manifest;
   const skills: LibrarySkill[] = [];
   const skillsDir = path.join(dir, "skills");
   if (fs.existsSync(skillsDir)) {
     for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const skill = readSkillDir(path.join(skillsDir, entry.name), entry.name);
-      if (skill) skills.push(skill);
+      if (entry.isDirectory())
+        skills.push(readSkillDir(path.join(skillsDir, entry.name), entry.name));
     }
     skills.sort((a, b) => a.name.localeCompare(b.name));
   }
-  const first = skills[0];
-  const description =
-    typeof manifest.description === "string" ? manifest.description : (first?.description ?? "");
-  const shortDescription =
-    typeof manifest.short_description === "string"
-      ? manifest.short_description
-      : first?.shortDescription;
-  const shortDescriptionZh =
-    typeof manifest.short_description_zh === "string"
-      ? manifest.short_description_zh
-      : first?.shortDescriptionZh;
-  const version =
-    typeof manifest.version === "string" && PLUGIN_VERSION_PATTERN.test(manifest.version)
-      ? manifest.version
-      : "";
-  const commandList = (list?: Array<{ command?: string; timeout?: number }>): HookCommand[] =>
-    (list ?? [])
-      .filter((c): c is { command: string; timeout?: number } => typeof c?.command === "string")
-      .map((c) => ({
-        command: c.command,
-        ...(typeof c.timeout === "number" ? { timeout: c.timeout } : {}),
-      }));
-  const stop = commandList(manifest.hooks?.stop);
-  const preToolUse = commandList(manifest.hooks?.pre_tool_use);
-  const userPrompt = commandList(manifest.hooks?.user_prompt);
   let icon: string | undefined;
   try {
     icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
   } catch {
-    // Built-in plugins all ship one; a custom layout without it falls back in the UI.
+    // Built-in plugins all ship one; a plugin without it falls back to the kind's glyph in the UI.
   }
   const hooksDir = path.join(dir, "hooks");
   const hookFiles = fs.existsSync(hooksDir) ? readDirFiles(hooksDir, []) : undefined;
@@ -391,13 +361,11 @@ function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
           manifest: {
             name,
             description,
-            ...(typeof manifest.description_zh === "string"
-              ? { descriptionZh: manifest.description_zh }
-              : {}),
+            ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
             version,
-            stop,
-            ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
-            ...(userPrompt.length > 0 ? { user_prompt: userPrompt } : {}),
+            stop: manifest.hooks?.stop ?? [],
+            pre_tool_use: manifest.hooks?.pre_tool_use ?? [],
+            user_prompt: manifest.hooks?.user_prompt ?? [],
           },
           files: hookFiles,
         }
@@ -405,13 +373,11 @@ function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
   return {
     name,
     description,
-    ...(typeof manifest.description_zh === "string"
-      ? { descriptionZh: manifest.description_zh }
-      : {}),
+    ...(descriptionZh !== undefined ? { descriptionZh } : {}),
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
     version,
-    ...(typeof manifest.category === "string" ? { category: manifest.category } : {}),
+    ...(manifest.category !== undefined ? { category: manifest.category } : {}),
     preinstall: manifest.preinstall !== false,
     ...(icon !== undefined ? { icon } : {}),
     skills: skills.map((skill) =>
@@ -428,12 +394,9 @@ function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
 
 /** Reads every plugin in the library (one per plugin package, see pluginRoots), sorted by name. */
 export function loadLibraryPlugins(): LibraryPlugin[] {
-  const plugins: LibraryPlugin[] = [];
-  for (const [name, dir] of pluginRoots()) {
-    const plugin = readPluginDir(name, dir);
-    if (plugin) plugins.push(plugin);
-  }
-  return plugins.sort((a, b) => a.name.localeCompare(b.name));
+  return [...pluginRoots()]
+    .map(([name, dir]) => readPluginDir(name, dir))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The plugins default_agent installs at initialization: every library plugin except those whose manifest sets `preinstall: false`. */
@@ -441,9 +404,8 @@ export function loadPreinstalledPlugins(): LibraryPlugin[] {
   return loadLibraryPlugins().filter((plugin) => plugin.preinstall);
 }
 
-/** Reads a single library plugin by name; undefined when the name has illegal characters (path traversal guard) or the plugin doesn't exist. */
+/** Reads a single library plugin by name; undefined when the library has no such plugin (names are looked up, never joined into a path). */
 export function libraryPlugin(name: string): LibraryPlugin | undefined {
-  if (!PLUGIN_NAME_PATTERN.test(name)) return undefined;
   const dir = pluginRoots().get(name);
   return dir !== undefined ? readPluginDir(name, dir) : undefined;
 }
@@ -452,7 +414,6 @@ export function libraryPlugin(name: string): LibraryPlugin | undefined {
 export function librarySkill(
   name: string,
 ): { plugin: LibraryPlugin; skill: LibrarySkill } | undefined {
-  if (!PLUGIN_NAME_PATTERN.test(name)) return undefined;
   for (const plugin of loadLibraryPlugins()) {
     const skill = plugin.skills.find((s) => s.name === name);
     if (skill) return { plugin, skill };

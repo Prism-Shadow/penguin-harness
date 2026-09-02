@@ -1,7 +1,7 @@
 /**
  * The plugin library page's install questions, pure and unit tested:
- * - `pluginInstalled` / `installedPluginVersion` — a plugin is installed on an Agent only when
- *   ALL of it is there (every skill, plus the hook package when it ships one), read off the two
+ * - `pluginInstalled` / `installedPluginVersion` — a plugin is installed on an Agent when any
+ *   part of it is there (a skill, or the hook package when it ships one), read off the two
  *   installed lists the page fetches per Agent;
  * - `outdatedAgentIds`, the per-plugin reminder's data source — the Agents the SERVER lists as
  *   behind on it (`AgentSummary.pluginUpdates`), since versions are `YYYY-MM-DD.N` strings the
@@ -37,19 +37,21 @@ const installs = (
 });
 
 describe("pluginInstalled", () => {
-  it("needs every skill AND the hook package to count the plugin as installed", () => {
+  it("counts a plugin as installed once any part of it is there, so a partial copy can be updated", () => {
     const whole = installs(
       { plan: "2026-08-01.1", run: "2026-08-01.1" },
       { orchestration: "2026-08-01.1" },
     );
     expect(pluginInstalled(FULL, whole)).toBe(true);
-    // One skill missing, or the hook package missing, is a half-installed plugin, not an installed one.
+    // An older version that shipped one skill fewer, or a copy missing its hook package, is
+    // what the server lists as behind: an installed plugin an update completes.
     expect(
       pluginInstalled(FULL, installs({ plan: "2026-08-01.1" }, { orchestration: "2026-08-01.1" })),
-    ).toBe(false);
+    ).toBe(true);
     expect(pluginInstalled(FULL, installs({ plan: "2026-08-01.1", run: "2026-08-01.1" }, {}))).toBe(
-      false,
+      true,
     );
+    expect(pluginInstalled(FULL, installs({ other: "2026-08-01.1" }, {}))).toBe(false);
   });
 
   it("reads a skill-only plugin off the skills list and a hook-only one off the hooks list", () => {
@@ -61,7 +63,6 @@ describe("pluginInstalled", () => {
 
   it("is false for an Agent with no snapshot yet, and for a plugin that ships nothing", () => {
     expect(pluginInstalled(SKILL_ONLY, undefined)).toBe(false);
-    // "Every skill is installed" would be vacuously true here; an empty plugin is installed nowhere.
     expect(pluginInstalled({ name: "empty", skills: [], hooks: [] }, installs({}, {}))).toBe(false);
   });
 });
@@ -79,14 +80,17 @@ describe("installedPluginVersion", () => {
     );
   });
 
-  it("is undefined where the plugin is not (wholly) installed", () => {
+  it("is undefined where the plugin is not installed, and reads a partial copy's first installed skill", () => {
     expect(installedPluginVersion(SKILL_ONLY, undefined)).toBeUndefined();
     expect(
-      installedPluginVersion(
-        FULL,
-        installs({ plan: "2026-07-01.1" }, { orchestration: "2026-07-02.1" }),
-      ),
+      installedPluginVersion(SKILL_ONLY, installs({ other: "2026-07-01.1" }, {})),
     ).toBeUndefined();
+    expect(
+      installedPluginVersion(
+        { name: "pair", skills: [skill("plan"), skill("run")], hooks: [] },
+        installs({ run: "2026-07-01.1" }, {}),
+      ),
+    ).toBe("2026-07-01.1");
   });
 });
 
@@ -111,12 +115,6 @@ describe("outdatedAgentIds", () => {
     expect(outdatedAgentIds(agents, "web-design")).toEqual(["stale", "also_stale"]);
     expect(outdatedAgentIds(agents, "vllm")).toEqual(["other", "also_stale"]);
     expect(outdatedAgentIds(agents, "goal")).toEqual([]);
-  });
-
-  it("tolerates an Agent list that predates the pluginUpdates field", () => {
-    expect(
-      outdatedAgentIds([{ agentId: "alpha", pluginUpdates: undefined! }], "web-design"),
-    ).toEqual([]);
   });
 });
 
@@ -158,11 +156,5 @@ describe("pluginUpdatePlan", () => {
     ]);
     expect(plan.plugins).toEqual(["shared"]);
     expect(plan.perAgent).toHaveLength(3);
-  });
-
-  it("tolerates an Agent list that predates the pluginUpdates field", () => {
-    expect(pluginUpdatePlan([{ agentId: "alpha", pluginUpdates: undefined! }]).perAgent).toEqual(
-      [],
-    );
   });
 });

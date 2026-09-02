@@ -161,7 +161,7 @@ export interface Messages {
     createId: string;
     createName: string;
     createDescription: string;
-    /** --skills: comma-separated library skill names to seed the new agent with. */
+    /** --plugins: comma-separated library plugin names to seed the new agent with. */
     createPlugins: string;
     created(agentId: string, projectId: string): string;
     colId(): string;

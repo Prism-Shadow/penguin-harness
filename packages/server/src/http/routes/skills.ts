@@ -22,11 +22,7 @@ import {
   replaceSkillDirectory,
   skillsDir,
 } from "@prismshadow/penguin-core";
-import {
-  parseSkillFrontmatter,
-  PLUGIN_VERSION_PATTERN,
-  SKILL_NAME_PATTERN,
-} from "@prismshadow/penguin-core";
+import { parseSkillFrontmatter, PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
@@ -71,7 +67,7 @@ interface ArchiveSkill {
  * directory name always wins). Directory entries are ignored (paths recreate them); every
  * file path is zip-slip-checked and the count/size limits enforced before anything is
  * returned. Frontmatter must parse to a non-null name, and the resolved Skill name must
- * match SKILL_NAME_PATTERN.
+ * match PLUGIN_NAME_PATTERN.
  */
 function parseSkillArchive(archive: Buffer): ArchiveSkill {
   let entries: Record<string, Uint8Array>;
@@ -114,7 +110,7 @@ function parseSkillArchive(archive: Buffer): ArchiveSkill {
     throw badRequest("SKILL.md must start with a frontmatter block that sets `name`.");
   }
   const name = dirName ?? meta.name;
-  if (!SKILL_NAME_PATTERN.test(name)) {
+  if (!PLUGIN_NAME_PATTERN.test(name)) {
     throw badRequest(
       `Invalid skill name ${JSON.stringify(name)}: only letters, digits, "_" and "-" are allowed.`,
     );
@@ -161,12 +157,11 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
 
 /**
  * Version for the export filename: only a frontmatter `version:` that is a real
- * `YYYY-MM-DD.N` yields a `-v<version>` filename suffix — a missing or malformed field must not
- * be baked into a filename as if declared. Uses the parser's own frontmatter rules.
+ * `YYYY-MM-DD.N` yields a `-v<version>` filename suffix — a missing or malformed field (the
+ * parser reads either as "") must not be baked into a filename as if declared.
  */
 function explicitSkillVersion(skillMd: string): string | null {
-  const version = parseSkillFrontmatter(skillMd)?.version ?? "";
-  return PLUGIN_VERSION_PATTERN.test(version) ? version : null;
+  return parseSkillFrontmatter(skillMd)?.version || null;
 }
 
 /** /api/projects/:p/agents/:a/skills: read, import/export and uninstall are all Project-member operations. */

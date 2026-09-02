@@ -1911,9 +1911,6 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
-    /** Toast for the 409 a goal-mode send gets while the goal plugin is not installed on the agent. */
-    goalPluginMissing:
-      "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "Injected by the harness",
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
@@ -2432,6 +2429,8 @@ Scenarios:
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
+      goal_plugin_not_installed:
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
       skill_too_large: "This skill directory exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",

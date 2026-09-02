@@ -104,8 +104,10 @@ describe("loadLibraryPlugins", () => {
       name: "goal",
       version: goal!.version,
       stop: [{ command: "stop.mjs", timeout: 60 }],
+      pre_tool_use: [],
+      user_prompt: [{ command: "start.mjs", timeout: 60 }],
     });
-    expect(goal!.hooks!.manifest.descriptionZh).toBeDefined();
+    expect(goal!.hooks!.manifest.description_zh).toBeDefined();
     expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
     expect(goal!.skills).toEqual([]);
     const learning = libraryPlugin("continual-learning");
@@ -113,7 +115,7 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(learning!.hooks!.files)).toEqual(["stop.mjs"]);
   });
 
-  it("a single-skill plugin's manifest may fall back to its skill's descriptions", () => {
+  it("a single-skill plugin reads as its own; a merged plugin's skills each resolve to it", () => {
     const plugin = libraryPlugin("data-analysis")!;
     expect(plugin.description.length).toBeGreaterThan(0);
     expect(plugin.skills).toHaveLength(1);
