@@ -1,18 +1,27 @@
 /**
  * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
  * landing): create an organization — id, display name, one-sentence mission, the Project it
- * belongs to when the user has several — and an organization's settings: name, mission,
- * timezone, approval mode, pause / resume, and (Project owner only) deletion behind the
- * shared confirmation, whose copy says what stays: the employee Agents and every session.
+ * belongs to when the user has several, the model its sessions run on (the Project default
+ * unless chosen) and the company workspace (the organization's own directory unless one is
+ * picked) — and an organization's settings: name, mission, model, workspace, timezone,
+ * approval mode, pause / resume, and (Project owner only) deletion behind the shared
+ * confirmation, whose copy says what stays: the employee Agents and every session.
+ *
+ * Failures stay inside the dialog: a rejected id lands under the id field, anything else in
+ * a strip above the footer, and a settings load that fails offers its retry in place — the
+ * fields never sit disabled behind a toast that has already gone.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
+  ModelRefDto,
+  ModelsResponse,
   OrgApprovalMode,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
@@ -20,15 +29,145 @@ import { projectDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
-import { FieldLabel } from "../../components/ui/field";
+import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { Badge } from "../../components/ui/badge";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { ICON_GAP } from "../../lib/icon-scale";
+import { modelLabel } from "../chat/model-select";
+import { WorkspaceSelect } from "../chat/workspace-select";
+import { sameModelRef } from "../models/model-grouping";
+import { ErrorLine, OrgStatusPill } from "./shared";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
+
+/** The error codes that are about the id the user typed; every other failure is the form's. */
+const ID_ERROR_CODES = new Set(["org_exists", "invalid_org_id"]);
+
+/** The Project's configured models, loaded once per open; null until they arrive, with the failure kept beside them. */
+function useProjectModels(projectId: string, open: boolean) {
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !projectId) return;
+    let cancelled = false;
+    setModels(null);
+    setError(null);
+    api
+      .getModels(projectId)
+      .then((res) => {
+        if (!cancelled) setModels(res);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId]);
+  return { models, error };
+}
+
+/**
+ * The model field: "Project default" (named after the default when the list says which it
+ * is) or one of the configured models. Options carry the row's index so the paired reference
+ * is never flattened into one string; a stored model that is no longer configured is kept as
+ * its own row rather than silently replaced.
+ */
+function ModelField({
+  models,
+  loadError,
+  value,
+  onChange,
+  disabled,
+}: {
+  models: ModelsResponse | null;
+  loadError: string | null;
+  value: ModelRefDto | null;
+  onChange: (ref: ModelRefDto | null) => void;
+  disabled: boolean;
+}) {
+  const list = models?.models ?? [];
+  const index = value === null ? -1 : list.findIndex((m) => sameModelRef(m, value));
+  const stale = value !== null && index === -1;
+  const defaultInfo =
+    models?.defaultModel === undefined
+      ? undefined
+      : list.find((m) => sameModelRef(m, models.defaultModel));
+  const defaultLabel =
+    defaultInfo !== undefined
+      ? S.company.modelProjectDefaultNamed(modelLabel(defaultInfo))
+      : S.company.modelProjectDefault;
+  const loading = models === null && loadError === null;
+  return (
+    <div>
+      {/* The "?" sits beside the field's own title (Select carries no info slot). */}
+      <span className="mb-1 flex items-center gap-1">
+        <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
+        <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
+      </span>
+      <Select
+        size="sm"
+        aria-label={S.company.modelField}
+        value={stale ? "stale" : index >= 0 ? String(index) : ""}
+        disabled={disabled || loading}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "stale") return;
+          const picked = v === "" ? undefined : list[Number(v)];
+          onChange(
+            picked === undefined ? null : { provider: picked.provider, modelId: picked.modelId },
+          );
+        }}
+      >
+        <option value="">{loading ? S.common.loading : defaultLabel}</option>
+        {stale && <option value="stale">{value.modelId}</option>}
+        {list.map((m, i) => (
+          <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
+            {modelLabel(m)}
+          </option>
+        ))}
+      </Select>
+      {loadError !== null ? (
+        <FieldError>{S.company.modelsLoadFailed}</FieldError>
+      ) : (
+        <FieldHint>{S.company.modelHint}</FieldHint>
+      )}
+    </div>
+  );
+}
+
+/** The company workspace: the chat draft's directory browser in its form shape; empty means the organization's own directory. */
+function WorkspaceField({
+  projectId,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  value: string;
+  onChange: (path: string) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1 flex items-center gap-1">
+        <FieldLabel block={false}>{S.company.workspaceField}</FieldLabel>
+        <InfoPopover label={S.company.workspaceField}>{S.company.workspaceInfo}</InfoPopover>
+      </span>
+      <WorkspaceSelect
+        projectId={projectId}
+        workspace={value}
+        onChange={onChange}
+        variant="form"
+        fieldLabel={S.company.workspaceField}
+        emptyLabel={S.company.workspaceEmpty}
+        menuHint={S.company.workspaceMenuHint}
+        clearLabel={S.company.workspaceClear}
+      />
+      <FieldHint>{S.company.workspaceHint}</FieldHint>
+    </div>
+  );
+}
 
 export function CreateOrganizationDialog({
   open,
@@ -44,9 +183,13 @@ export function CreateOrganizationDialog({
   const [orgId, setOrgId] = useState("");
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
+  const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
+  const [workspace, setWorkspace] = useState("");
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
+  const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { models, error: modelsError } = useProjectModels(projectId, open);
 
   // No draft is kept: the form starts empty every time it opens, in the current Project.
   useEffect(() => {
@@ -55,9 +198,17 @@ export function CreateOrganizationDialog({
     setOrgId("");
     setName("");
     setMission("");
+    setModelRef(null);
+    setWorkspace("");
     setIdError(undefined);
     setMissionError(undefined);
+    setFormError(null);
   }, [open, currentProject, projects]);
+
+  // A model belongs to the Project it was picked in: switching Projects drops the pick.
+  useEffect(() => {
+    setModelRef(null);
+  }, [projectId]);
 
   const submit = async () => {
     const id = orgId.trim();
@@ -75,16 +226,21 @@ export function CreateOrganizationDialog({
     }
     if (bad || !projectId) return;
     setBusy(true);
+    setFormError(null);
     try {
       const detail = await api.createOrganization(projectId, {
         orgId: id,
         mission: mission.trim(),
         ...(name.trim() ? { name: name.trim() } : {}),
+        ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
+        ...(modelRef !== null ? { model: modelRef } : {}),
       });
       toastSuccess(S.company.createdOpeningCeo);
       onCreated(detail);
     } catch (e) {
-      setIdError(apiErrorText(e));
+      const text = apiErrorText(e);
+      if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setIdError(text);
+      else setFormError(text);
     } finally {
       setBusy(false);
     }
@@ -94,14 +250,15 @@ export function CreateOrganizationDialog({
     <Modal
       open={open}
       title={S.company.createTitle}
-      onClose={onClose}
+      onClose={busy ? () => undefined : onClose}
+      widthClass="sm:max-w-lg"
       footer={
         <>
           <Button onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
           <Button variant="primary" disabled={busy} onClick={() => void submit()}>
-            {S.common.create}
+            {busy ? S.company.creating : S.common.create}
           </Button>
         </>
       }
@@ -112,6 +269,7 @@ export function CreateOrganizationDialog({
             size="sm"
             label={S.project.switcher}
             value={projectId}
+            disabled={busy}
             onChange={(e) => setProjectId(e.target.value)}
           >
             {projects.map((p) => (
@@ -130,6 +288,7 @@ export function CreateOrganizationDialog({
           hint={S.company.orgIdHint}
           className="font-mono"
           autoFocus
+          disabled={busy}
           onChange={(e) => {
             setOrgId(e.target.value);
             setIdError(undefined);
@@ -140,6 +299,7 @@ export function CreateOrganizationDialog({
           size="sm"
           value={name}
           hint={S.company.displayNameHint}
+          disabled={busy}
           onChange={(e) => setName(e.target.value)}
         />
         <Textarea
@@ -151,11 +311,21 @@ export function CreateOrganizationDialog({
           error={missionError}
           hint={S.company.missionHint}
           placeholder={S.company.missionPlaceholder}
+          disabled={busy}
           onChange={(e) => {
             setMission(e.target.value);
             setMissionError(undefined);
           }}
         />
+        <ModelField
+          models={models}
+          loadError={modelsError}
+          value={modelRef}
+          onChange={setModelRef}
+          disabled={busy}
+        />
+        <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>
     </Modal>
   );
@@ -181,12 +351,16 @@ export function OrganizationSettingsDialog({
   const isOwner = currentProject?.projectId === projectId && currentProject.role === "owner";
   /** Stored settings as loaded on open (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
   const [timezone, setTimezone] = useState("");
   const [approvalMode, setApprovalMode] = useState<OrgApprovalMode>("allow-all");
+  const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
+  const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const { models, error: modelsError } = useProjectModels(projectId, open);
 
   const adopt = (next: OrganizationSettings) => {
     setSettings(next);
@@ -194,24 +368,31 @@ export function OrganizationSettingsDialog({
     setMission(next.mission);
     setTimezone(next.timezone);
     setApprovalMode(next.approvalMode);
+    setModelRef(next.model ?? null);
+    setWorkspace(next.workspace ?? "");
   };
 
-  useEffect(() => {
-    if (!open) return;
+  const load = useCallback(() => {
     let cancelled = false;
     setSettings(null);
+    setLoadError(null);
     void api
       .getOrganization(projectId, orgId)
       .then((detail) => {
         if (!cancelled) adopt(detail.settings);
       })
       .catch((e: unknown) => {
-        if (!cancelled) toastError(apiErrorText(e));
+        if (!cancelled) setLoadError(apiErrorText(e));
       });
     return () => {
       cancelled = true;
     };
-  }, [open, projectId, orgId]);
+  }, [projectId, orgId]);
+
+  useEffect(() => {
+    if (!open) return;
+    return load();
+  }, [open, load]);
 
   const patch = async (body: OrganizationPatchRequest) => {
     setBusy(true);
@@ -219,8 +400,10 @@ export function OrganizationSettingsDialog({
       adopt(await api.patchOrganization(projectId, orgId, body));
       toastSuccess(S.common.saved);
       onChanged();
+      return true;
     } catch (e) {
       toastError(apiErrorText(e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -233,11 +416,22 @@ export function OrganizationSettingsDialog({
     if (mission.trim() && mission.trim() !== settings.mission) body.mission = mission.trim();
     if (timezone.trim() && timezone.trim() !== settings.timezone) body.timezone = timezone.trim();
     if (approvalMode !== settings.approvalMode) body.approvalMode = approvalMode;
+    // Clearing sends null: the organization returns to the Project default / its own directory.
+    const storedModel = settings.model ?? null;
+    if (!(storedModel === null && modelRef === null) && !sameModelRef(storedModel, modelRef)) {
+      body.model = modelRef;
+    }
+    const nextWorkspace = workspace.trim();
+    if (nextWorkspace !== (settings.workspace ?? "")) {
+      body.workspace = nextWorkspace === "" ? null : nextWorkspace;
+    }
     if (Object.keys(body).length === 0) {
       onClose();
       return;
     }
-    void patch(body).then(onClose);
+    void patch(body).then((ok) => {
+      if (ok) onClose();
+    });
   };
 
   const remove = async () => {
@@ -262,6 +456,7 @@ export function OrganizationSettingsDialog({
         open={open}
         title={S.company.settingsTitle}
         onClose={onClose}
+        widthClass="sm:max-w-lg"
         footer={
           <>
             {isOwner && (
@@ -284,6 +479,9 @@ export function OrganizationSettingsDialog({
         }
       >
         <div className="space-y-3">
+          {loadError !== null && (
+            <ErrorLine message={S.company.settingsLoadFailed} detail={loadError} onRetry={load} />
+          )}
           {/* Status row: the pause / resume is immediate (its own PATCH), not part of Save —
               stopping an organization is a decision, not a draft. */}
           <div className="flex items-center justify-between gap-3">
@@ -294,9 +492,7 @@ export function OrganizationSettingsDialog({
               <InfoPopover label={S.company.status}>{S.company.pauseInfo}</InfoPopover>
             </span>
             <span className="flex items-center gap-2">
-              <Badge tone={paused ? "amber" : "green"}>
-                {paused ? S.company.statusPaused : S.company.statusActive}
-              </Badge>
+              {settings !== null && <OrgStatusPill org={settings} />}
               <Button
                 size="sm"
                 disabled={!hydrated || busy}
@@ -310,7 +506,7 @@ export function OrganizationSettingsDialog({
             label={S.company.displayName}
             size="sm"
             value={name}
-            disabled={!hydrated}
+            disabled={!hydrated || busy}
             onChange={(e) => setName(e.target.value)}
           />
           <Textarea
@@ -318,15 +514,23 @@ export function OrganizationSettingsDialog({
             size="sm"
             rows={3}
             value={mission}
-            disabled={!hydrated}
+            disabled={!hydrated || busy}
             hint={S.company.missionHint}
             onChange={(e) => setMission(e.target.value)}
           />
+          <ModelField
+            models={models}
+            loadError={modelsError}
+            value={modelRef}
+            onChange={setModelRef}
+            disabled={!hydrated || busy}
+          />
+          <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
           <Input
             label={S.company.timezone}
             size="sm"
             value={timezone}
-            disabled={!hydrated}
+            disabled={!hydrated || busy}
             hint={S.company.timezoneHint}
             className="font-mono"
             onChange={(e) => setTimezone(e.target.value)}
@@ -341,7 +545,7 @@ export function OrganizationSettingsDialog({
               size="sm"
               aria-label={S.company.approvalMode}
               value={approvalMode}
-              disabled={!hydrated}
+              disabled={!hydrated || busy}
               onChange={(e) => setApprovalMode(e.target.value as OrgApprovalMode)}
             >
               {APPROVAL_MODES.map((m) => (
