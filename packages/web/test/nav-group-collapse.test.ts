@@ -73,10 +73,10 @@ describe("navKeysFor", () => {
     // /api/machines is admin-gated server-side (it spawns ssh with the server account's
     // keys), so offering a member the row would only ever produce a 403.
     expect([...navKeysFor(false)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
-    // An admin sees the manifest minus what is built but not yet offered — `machines` today,
-    // which is why neither answer contains it and the two are equal for now. The Plugins page
-    // carries the built-in library and the deployment's registry both, under one key.
-    expect([...navKeysFor(true)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
+    // An admin sees the whole manifest, machines included — the row it hides from a member.
+    // The Plugins page carries the built-in library and the deployment's registry both,
+    // under one key.
+    expect([...navKeysFor(true)]).toEqual([...NAV_GROUP_KEYS]);
     expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
   });
 });
