@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
@@ -468,6 +469,141 @@ export const hotPlatform = { id: "boom", iface, impl, context: {} };
  * indistinguishable from the compiled-in default by id alone.
  */
 const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
+
+describe("upgrade assets by manifest: only the blobs the store lacks travel, and nothing kept is collected", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+  const PKG = Buffer.from('{"name":"demo-native"}');
+  const BIN = Buffer.from("\0binary");
+  const README = Buffer.from("# demo\n");
+
+  function payload(id: string, assets: unknown) {
+    return zlib.gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          platform: platformServing([`/api/demo/${id}`], id),
+          cli: MINIMAL_CLI,
+          web: { files: MINIMAL_WEB },
+          assets,
+        }),
+      ),
+    );
+  }
+  const push = (app: Hono<AppEnv>, cookie: string, gz: Buffer) =>
+    app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: gz,
+    });
+  const probe = async (app: Hono<AppEnv>, cookie: string, hashes: string[]) =>
+    (await (
+      await app.request("/api/hmr/assets/probe", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hashes }),
+      })
+    ).json()) as { missing: string[] };
+
+  it("a probe names what is missing, a manifest push ships only that, and the set materializes from the blob store", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // Nothing pushed yet: everything is missing.
+    const before = await probe(t.app, cookie, [sha256(PKG), sha256(BIN)]);
+    expect(before.missing.sort()).toEqual([sha256(PKG), sha256(BIN)].sort());
+
+    // First push, inline (what a pusher without the probe sends): the blobs land in the store.
+    const first = await push(
+      t.app,
+      cookie,
+      payload("v1", {
+        files: {
+          "node_modules/demo-native/package.json": PKG.toString("base64"),
+          "node_modules/demo-native/demo.node": BIN.toString("base64"),
+        },
+        exec: ["node_modules/demo-native/demo.node"],
+      }),
+    );
+    expect(first.status).toBe(200);
+    expect(
+      (await probe(t.app, cookie, [sha256(PKG), sha256(BIN), sha256(README)])).missing,
+    ).toEqual([sha256(README)]);
+
+    // Second push adds one file and ships ONLY it: the other two are named by hash.
+    const second = await push(
+      t.app,
+      cookie,
+      payload("v2", {
+        manifest: {
+          "node_modules/demo-native/package.json": { sha: sha256(PKG) },
+          "node_modules/demo-native/demo.node": { sha: sha256(BIN) },
+          "node_modules/demo-native/README.md": { sha: sha256(README) },
+        },
+        blobs: { [sha256(README)]: README.toString("base64") },
+        exec: ["node_modules/demo-native/demo.node"],
+      }),
+    );
+    expect(second.status, await second.clone().text()).toBe(200);
+    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
+    const sets = await fs.readdir(assetsRoot);
+    expect(sets).toHaveLength(2);
+    const withReadme = sets.find((s) =>
+      fsSync.existsSync(path.join(assetsRoot, s, "node_modules/demo-native/README.md")),
+    )!;
+    expect(
+      await fs.readFile(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node")),
+    ).toEqual(BIN);
+    // The exec bit survives a materialization that read from the blob store.
+    const mode = (
+      await fs.stat(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node"))
+    ).mode;
+    expect(mode & 0o111).not.toBe(0);
+  });
+
+  it("refuses a manifest naming a blob the store does not hold, rather than materializing a hole", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const res = await push(
+      t.app,
+      cookie,
+      payload("v1", {
+        manifest: { "node_modules/demo-native/package.json": { sha: sha256(PKG) } },
+        blobs: {},
+      }),
+    );
+    // A refused push, reported as a bad request (the pusher should send without the probe).
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("does not hold");
+  });
+
+  it("collects blobs no kept assets set records, and keeps the rest", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const blobsDir = path.join(t.root, "hmr", "store", "blobs");
+    // Four pushes with four distinct files: the store keeps current + one rollback, so the
+    // two oldest sets go, and with them the blobs only they referenced.
+    const contents = ["a", "b", "c", "d"].map((x) => Buffer.from(`file ${x}`));
+    for (const [i, content] of contents.entries()) {
+      const res = await push(
+        t.app,
+        cookie,
+        payload(`v${i}`, { files: { "node_modules/x/f": content.toString("base64") } }),
+      );
+      expect(res.status).toBe(200);
+    }
+    const kept = (await fs.readdir(blobsDir)).sort();
+    expect(kept).toContain(sha256(contents[3]!));
+    expect(kept).toContain(sha256(contents[2]!));
+    expect(kept).not.toContain(sha256(contents[0]!));
+    expect(kept).not.toContain(sha256(contents[1]!));
+  });
+});
 
 describe("upgrade boot failure: the previous version is re-booted, not left half-dead", () => {
   let t: TestApp | undefined;

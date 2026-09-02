@@ -973,9 +973,11 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
     }
   };
   const specifiers = (installed?.plugins ?? []).map((p) => p.specifier);
-  const stateOf = (name: string): "none" | "pending" | "active" => {
+  const stateOf = (name: string): "none" | "pending" | "active" | "builtin" => {
     const row = installed?.plugins.find((p) => p.specifier === name);
-    return row === undefined ? "none" : row.active ? "active" : "pending";
+    if (row === undefined) return "none";
+    if (row.builtin) return "builtin";
+    return row.active ? "active" : "pending";
   };
   /**
    * Sources that answered with nothing. A published index that is down shortens this listing
@@ -1065,7 +1067,7 @@ function RegistryRow({
   onRemove,
 }: {
   plugin: PluginIndexEntry;
-  state: "none" | "pending" | "active";
+  state: "none" | "pending" | "active" | "builtin";
   /** This row's own install or removal is running. */
   busy: boolean;
   /** Another row's is: one npm at a time, so the rest are held rather than queued. */
@@ -1074,7 +1076,11 @@ function RegistryRow({
   onRemove: (() => void) | null;
 }) {
   const chip =
-    state === "active" ? (
+    state === "builtin" ? (
+      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        {S.plugins.builtin}
+      </span>
+    ) : state === "active" ? (
       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.success}`}>
         {S.plugins.stateActive}
       </span>
@@ -1139,7 +1145,7 @@ function RegistryRow({
                 </Button>
               )
             : chip}
-          {state !== "none" && onRemove !== null && (
+          {state !== "none" && state !== "builtin" && onRemove !== null && (
             <button
               type="button"
               disabled={busy || blocked}
