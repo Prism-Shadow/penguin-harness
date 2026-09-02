@@ -64,7 +64,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 ## 钩子包
 
-钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边生成一份 `hooks.json`——清单的身份字段（`name`、`description`、`description_zh`、`version`）加上每个钩子点各一份命令清单：
+钩子包就是插件的 `hooks/` 目录，安装为 `agent_state/hooks/<plugin>/`，脚本旁边生成一份 `hooks.json`——清单的身份字段（`name`、`description`、`description_zh`、`version`）、每个钩子点各一份命令清单，以及可选的 `enabled` 开关（缺省即启用）：
 
 ```json
 {
@@ -78,7 +78,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 }
 ```
 
-装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包（正在运行的 Session 保持构建时的那套；安装或卸载钩子包后，服务端会在该 Agent 已缓存的运行时下次空闲访问时重建它们）。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
+装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包（正在运行的 Session 保持构建时的那套；安装、卸载或启停钩子包后，服务端会在该 Agent 已缓存的运行时下次空闲访问时重建它们）。钩子包可以停用而不卸载：Hooks 标签页的开关（仅 Project owner）把 `enabled: false` 写进它的 `hooks.json`，此后新建的 Session 跳过该包，从库更新也保留停用状态。同一标签页可以把已装钩子包打包导出为 zip、再把这样的 zip 导入回来——`hooks.json` 与脚本在 zip 根目录，或在唯一的顶层目录内；清单列出的每条命令都必须指向压缩包内的文件——也可以把导入交给 Agent，由它通读来源、审查脚本后再安装。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
 
 ## 安装与存放
 

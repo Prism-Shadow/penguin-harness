@@ -205,7 +205,10 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | /agents/:agentId/skills | Installed Skills (library installs go through `/plugins`) |
 | DELETE | /agents/:agentId/skills/:name | Uninstall a Skill |
 | POST | /agents/:agentId/plugins | Install library plugins by name — each one's skills and hook package; reinstalling updates. `{ names }` → 201 `{ skills, hooks }`; 404 `unknown_plugin` writes nothing |
-| GET | /agents/:agentId/hooks | Installed hook packages: name, description, version, hook points, the plugin's icon |
+| GET | /agents/:agentId/hooks | Installed hook packages: name, description, version, hook points, whether enabled, the plugin's icon |
+| PATCH | /agents/:agentId/hooks/:name | Switch a hook package on or off (owner only): `{ enabled }` writes the flag into its hooks.json; new Sessions skip a switched-off package |
+| POST | /agents/:agentId/hooks/archive | Install a hook package from a zip: `{dataBase64, overwrite?}` — hooks.json and its scripts at the root or in one top-level directory, every listed command naming a file inside; 409 `hook_exists` without overwrite |
+| GET | /agents/:agentId/hooks/:name/archive | Export an installed hook package as a zip (round-trips through the POST) |
 | GET | `/api/plugins` (global) | The plugin library by category — every plugin with its skills' metadata and hook points (any logged-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | Everything one library plugin ships as text keyed by path — each skill's installable SKILL.md and reference files under `skills/<name>/`, the hook scripts under `hooks/` — for the plugin detail view's file browser (any logged-in user) |
 | DELETE | /agents/:agentId/hooks/:name | Uninstall a hook package |

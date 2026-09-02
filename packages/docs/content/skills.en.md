@@ -64,7 +64,7 @@ If a message only names a skill without a concrete task, the model is instructed
 
 ## Hook packages
 
-A hook package is the plugin's `hooks/` directory installed as `agent_state/hooks/<plugin>/`, with a generated `hooks.json` beside the scripts — the manifest's identity fields (`name`, `description`, `description_zh`, `version`) plus one command list per hook point:
+A hook package is the plugin's `hooks/` directory installed as `agent_state/hooks/<plugin>/`, with a generated `hooks.json` beside the scripts — the manifest's identity fields (`name`, `description`, `description_zh`, `version`), one command list per hook point, and an optional `enabled` switch (absent means enabled):
 
 ```json
 {
@@ -78,7 +78,7 @@ A hook package is the plugin's `hooks/` directory installed as `agent_state/hook
 }
 ```
 
-Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points (a Session already running keeps the set it was built with; the server rebuilds an Agent's cached runtimes on the next idle access after a hook package is installed or removed). The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
+Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points (a Session already running keeps the set it was built with; the server rebuilds an Agent's cached runtimes on the next idle access after a hook package is installed, removed or switched). A package can be switched off without uninstalling it: the Hooks tab's switch (Project owner only) writes `enabled: false` into its `hooks.json`, a Session created from then on skips the package, and a library update keeps a switched-off package off. The same tab exports an installed package as a zip and imports one back — `hooks.json` and the scripts at the zip root, or in exactly one top-level directory; every command the manifest lists must name a file inside the archive — or hands the import to an agent, which reads the source and reviews the scripts before installing. The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
 
 ## Installation and storage
 

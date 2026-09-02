@@ -96,7 +96,7 @@ Web App 里凡是通过表单创建的对象——Agent、模型分组、Benchma
 | Memory | Agent 级开关，以及按作用域分组的全部记忆——用户记忆在前、每个 Workspace 一组，分组可折叠并带添加、导出与导入入口——每行提供查看 / 删除 / 对话编辑 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 管理：表格 + 添加/编辑表单（默认 http，字段随 transport 切换，改动即时保存，服务端按 transport 完整校验；permission 控件把该 Server 工具的审批等级固定为 `auto` / `r` / `rw`，表格列出各 Server 的生效等级）；测试连接与模型页同款——表单内独立按钮测当前条目（toast 报工具数与耗时），区块级按钮逐一测试全部 Server 并在各行显示结果徽标 |
-| Hooks | 已安装的钩子包（agent_state/hooks/）：名称、描述、版本与各自应答的钩子点；可卸载。安装在插件库页完成 |
+| Hooks | 已安装的钩子包（agent_state/hooks/）：每行以包名加紧随其后的钩子点胶囊（只写钩子点名，如 `stop`）开头，其下描述，行尾版本、启停开关（仅 owner——停用的包仍在磁盘上，只是新 Session 跳过它；成员只见状态）、打包导出与卸载。**导入钩子**可以把这样的 zip 导回（同名已装先确认覆盖），或让 Agent 从 URL、本地路径、一段描述或其他工具的钩子配置导入。从插件库安装仍在插件库页完成 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 

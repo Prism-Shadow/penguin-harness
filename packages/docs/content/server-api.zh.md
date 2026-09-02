@@ -205,7 +205,10 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET | /agents/:agentId/skills | 已安装 Skill 列表（从库安装走 `/plugins`） |
 | DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
 | POST | /agents/:agentId/plugins | 按名称安装库内插件——各自的 Skill 与钩子包，重装即更新。`{ names }` → 201 `{ skills, hooks }`；404 `unknown_plugin` 时什么都不写 |
-| GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点、所属插件的图标 |
+| GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点、是否启用、所属插件的图标 |
+| PATCH | /agents/:agentId/hooks/:name | 启停钩子包（仅 owner）：`{ enabled }` 写入其 hooks.json；停用的包新 Session 跳过 |
+| POST | /agents/:agentId/hooks/archive | 从 zip 安装钩子包：`{dataBase64, overwrite?}`——hooks.json 与脚本在根目录或唯一顶层目录内，清单列出的每条命令都须指向包内文件；未带 overwrite 而同名已装时 409 `hook_exists` |
+| GET | /agents/:agentId/hooks/:name/archive | 把已安装的钩子包导出为 zip（可原样经 POST 导回） |
 | GET | `/api/plugins`（全局） | 按分类列出插件库——每个插件带其 Skill 元数据与钩子点（任意已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
 | DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
