@@ -1044,8 +1044,8 @@ export function Sidebar({
    * already there. Otherwise, past ten groups, the freshly added Workspace would sit on a
    * page the user is not looking at and the click would read as a no-op.
    */
-  const addWorkspace = (path: string) => {
-    const next = registerWorkspace(registeredWorkspaces, path);
+  const addWorkspace = (path: string, machineId?: string | null) => {
+    const next = registerWorkspace(registeredWorkspaces, path, machineId ?? undefined);
     if (next === registeredWorkspaces) return;
     applyRegistryChange(next);
     const key = workspaceGroupKey(path);
