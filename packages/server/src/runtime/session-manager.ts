@@ -59,6 +59,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
+  SessionBackgroundTasks,
   SessionStatus,
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
@@ -196,6 +197,8 @@ export interface RuntimeSession {
   setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
   onSubagentState?(listener: () => void): void;
+  /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
+  onBackgroundState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -422,8 +425,15 @@ interface RuntimeEntry {
    * every `task_state`; the rest is the recall handle (see recallSteering).
    */
   pendingSteering: PendingSteeringEntry[];
-  /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
+  /** Timestamp of last activity (refreshed on load / status flip / drive completion / background-task change), used for idle-eviction checks. */
   lastActivityMs: number;
+  /**
+   * Background-task counts as last read from the runtime — at entry creation, then on every
+   * background-state ping. The baseline `session_background` is published against: a ping
+   * that leaves the counts where they were (a foreground-window child settling, an exited
+   * process being removed from the list) publishes nothing.
+   */
+  backgroundTasks: SessionBackgroundTasks;
 }
 
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
@@ -433,6 +443,22 @@ const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
+}
+
+/**
+ * The runtime's background-task counts, read live from its registries: command sessions
+ * whose process is still running (exited rows stay listed until removed and do not count),
+ * and subagent sessions that hold a `subagent_id` — promoted to the background by a yield
+ * window expiring or a `run_in_background` launch — and are mid-round. A child still inside
+ * a foreground collect window has no id yet and is the running Task's own work, not
+ * background work.
+ */
+function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
+  const processes = session.listBackgroundCommands?.().filter((p) => p.running).length ?? 0;
+  const subagents =
+    session.listBackgroundSubagents?.().filter((s) => s.running && s.subagentId !== null).length ??
+    0;
+  return { processes, subagents };
 }
 
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
@@ -582,6 +608,18 @@ export class SessionManager {
     return this.entries.get(sessionId)?.followUps.length ?? 0;
   }
 
+  /**
+   * Background-task counts of a LOADED session, read live (see SessionInfo.backgroundTasks);
+   * undefined when the session is not in the active table or nothing is running — the list
+   * row and the single GET omit the field in both cases.
+   */
+  backgroundTasksOf(sessionId: string): SessionBackgroundTasks | undefined {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return undefined;
+    const counts = backgroundTaskCounts(entry.session);
+    return counts.processes > 0 || counts.subagents > 0 ? counts : undefined;
+  }
+
   /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
   pendingSteeringOf(sessionId: string): PendingSteeringInfo[] {
     return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
@@ -712,6 +750,7 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
+      backgroundTasks: backgroundTaskCounts(session),
     });
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
@@ -728,7 +767,10 @@ export class SessionManager {
    *   same feed SSE relays) and recorded for usage — a background child streams to the
    *   frontend in real time past the launching turn's end, until its terminal state;
    * - subagent run-state changes, republished as `task_state` so the panel's running
-   *   marks track child rounds structurally instead of parsing tool-output text.
+   *   marks track child rounds structurally instead of parsing tool-output text;
+   * - background-task state changes (a command promoted or exited, a subagent promoted,
+   *   settling or released), re-counted and published as `session_background` on the user
+   *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
     session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
@@ -737,6 +779,7 @@ export class SessionManager {
       const entry = this.entries.get(sessionId);
       if (entry) this.publishState(entry, entry.status);
     });
+    session.onBackgroundState?.(() => this.publishBackgroundTasks(sessionId));
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
@@ -1597,6 +1640,7 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
+      backgroundTasks: backgroundTaskCounts(session),
     };
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
@@ -1992,6 +2036,31 @@ export class SessionManager {
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {
     this.deps.channels.get(entry.sessionId).publish(event, "server_event");
+  }
+
+  /**
+   * Re-counts a loaded session's background tasks and, when the counts moved, publishes
+   * `session_background` on the user channel (the list's mark is a user-channel affair like
+   * `session_state`; the open conversation reads the same row). A change is Session
+   * activity for the idle sweep: the entry stays loaded for the usual idle window after its
+   * last background task ends, so the finished process list can still be read. An entry
+   * that already left the table (a delete disposing its runtime) publishes nothing — its
+   * row is gone as well.
+   */
+  private publishBackgroundTasks(sessionId: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    const counts = backgroundTaskCounts(entry.session);
+    const last = entry.backgroundTasks;
+    if (counts.processes === last.processes && counts.subagents === last.subagents) return;
+    entry.backgroundTasks = counts;
+    entry.lastActivityMs = Date.now();
+    this.deps.notifyProjectUsers?.(entry.projectId, {
+      type: "session_background",
+      sessionId: entry.sessionId,
+      processes: counts.processes,
+      subagents: counts.subagents,
+    });
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */

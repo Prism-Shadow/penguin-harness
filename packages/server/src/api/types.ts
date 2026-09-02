@@ -1234,6 +1234,24 @@ export interface SessionInfo {
   tracePath?: string;
   /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
   messagingChannel?: MessagingChannel;
+  /**
+   * Background work the Session's loaded runtime still owns: command sessions running past
+   * their yield window (`exec_command` promotions and `run_in_background` launches) and
+   * background subagent sessions mid-round. Read from the runtime's in-memory registries —
+   * no Trace is consulted — and present only while at least one count is non-zero, so a
+   * Session that is not loaded (a resumed entry starts with empty registries) and one with
+   * nothing running both omit it. Changes are pushed as `session_background` on the user
+   * channel; list rows and the single-session GET carry the same field.
+   */
+  backgroundTasks?: SessionBackgroundTasks;
+}
+
+/** The background-task counts of one Session (see SessionInfo.backgroundTasks). */
+export interface SessionBackgroundTasks {
+  /** Background command sessions whose process is still running. */
+  processes: number;
+  /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
+  subagents: number;
 }
 
 /**
@@ -2238,6 +2256,14 @@ export type ServerEvent =
       lastActiveAt: string;
       hasTrace: boolean;
     }
+  /**
+   * A Session's background-task counts changed: a command promoted to the background, a
+   * process that exited or was stopped, a background subagent starting or settling a round,
+   * a released session. The counts are the row's `backgroundTasks` as they stand after the
+   * change — zeros included, so a list can clear its mark without refetching. Published to
+   * the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
