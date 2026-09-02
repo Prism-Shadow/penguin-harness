@@ -2,11 +2,11 @@
  * What a compaction row shows: the text inside its collapsed body (compaction-summary.ts)
  * and the title above it (the dictionaries' mode-aware `compactionTitle`).
  *
- * The row itself is a StepBanner with the summary as its `children`, so it is collapsed by
- * default and carries the chevron exactly like a thinking block — the reader expands it to
- * watch the summary stream or to read it afterwards. What that body contains is this pure
- * helper's job, and it is what these tests pin (the Web suite runs in a node environment
- * and renders no React).
+ * The row itself is a StepBanner whose body stacks a thinking section and a result section,
+ * each collapsed by default exactly like a thinking block — the reader expands them to watch
+ * the request think and write, or to read the outcome afterwards. What the result section
+ * contains is this pure helper's job, and it is what these tests pin (the Web suite runs in
+ * a node environment and renders no React).
  */
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";

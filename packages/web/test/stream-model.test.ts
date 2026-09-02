@@ -490,6 +490,60 @@ describe("approvals and events", () => {
     expect(after[0]!.text).toBe("next answer");
   });
 
+  it("the span's partial_thinking accumulates the request's thinking onto the running banner, streaming until its stop", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    // A content-free start opens the fragment without leaving an empty draft behind.
+    pushMessage(m, partialThinking("start"));
+    expect(banner.thinkingText).toBeUndefined();
+    expect(banner.thinkingStreaming).toBe(true);
+    pushMessage(m, partialThinking("delta", "what matters "));
+    pushMessage(m, partialThinking("delta", "is the plan"));
+    expect(banner.thinkingText).toBe("what matters is the plan");
+    expect(banner.thinkingStreaming).toBe(true);
+    pushMessage(m, partialThinking("stop"));
+    expect(banner.thinkingStreaming).toBe(false);
+    // The summary follows on its own draft; the thinking is never summary material.
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(m, partialText("stop"));
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    expect(banner.thinkingText).toBe("what matters is the plan");
+    // The span's thinking renders no transcript item of its own.
+    expect(items(m).filter((i) => i.kind === "thinking")).toHaveLength(0);
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    expect(banner).toMatchObject({
+      thinkingText: "what matters is the plan",
+      thinkingStreaming: false,
+    });
+    // After the span, partial_thinking is ordinary model output again: a thinking item.
+    pushMessage(m, partialThinking("start"));
+    pushMessage(m, partialThinking("delta", "next thought"));
+    expect(banner.thinkingText).toBe("what matters is the plan");
+    const after = items(m).filter((i) => i.kind === "thinking") as ThinkingItem[];
+    expect(after).toHaveLength(1);
+    expect(after[0]!.thinking).toBe("next thought");
+  });
+
+  it("the end event settles a thinking fragment whose stop never arrived", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    pushMessage(m, partialThinking("start"));
+    pushMessage(m, partialThinking("delta", "half a thought"));
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    expect(banner).toMatchObject({ thinkingText: "half a thought", thinkingStreaming: false });
+  });
+
   it("history replay rebuilds the banner's summary text from the compaction span's assistant output", () => {
     // Live, the deltas carried the text; the Trace records the same text as the span's
     // complete assistant messages. A reload must show the same summary the live viewer saw.
@@ -505,14 +559,16 @@ describe("approvals and events", () => {
     );
     pushMessage(m, userText("COMPACT NOW")); // the compaction prompt: user text, never summary material
     pushMessage(m, requestBegin());
-    pushMessage(m, thinkingMessage("planning")); // thinking is not summary text either
+    pushMessage(m, thinkingMessage("planning")); // thinking is not summary text: it rebuilds the thinking section
     pushMessage(m, assistantText("[summary]the plan[/summary]"));
     pushMessage(m, requestEnd("completed"));
     pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
     const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
     expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    expect(banner).toMatchObject({ thinkingText: "planning", thinkingStreaming: false });
     // Span-internal messages still render nothing of their own.
     expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+    expect(items(m).filter((i) => i.kind === "thinking")).toHaveLength(0);
   });
 
   it("a compaction the user quit out of is closed as failed on load; the conversation after it renders (issue #288)", () => {
@@ -527,6 +583,7 @@ describe("approvals and events", () => {
     );
     pushMessage(m, userText("COMPACT NOW"));
     pushMessage(m, requestBegin());
+    pushMessage(m, thinkingMessage("weighing the transcript"));
     pushMessage(m, assistantText("[summary]half-writ")); // the draft the crash interrupted
     // ...process died here; the resume closes the span as retryable before writing anything else:
     pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "retryable" }));
@@ -545,25 +602,32 @@ describe("approvals and events", () => {
     expect(cards[0]!.name).toBe("exec");
     expect(cards[0]!.output).toBe("ok");
     // The interrupted compaction reads as failed, and its half-written draft is discarded
-    // rather than shown as if it were the adopted summary.
+    // rather than shown as if it were the adopted summary — the thinking behind it too.
     const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
     expect(banner).toMatchObject({ running: false, status: "retryable" });
     expect(banner.summaryText).toBeUndefined();
+    expect(banner.thinkingText).toBeUndefined();
   });
 
-  it("an aborted compaction discards its partial summary too (live interrupt)", () => {
+  it("an aborted compaction discards its partial summary and thinking too (live interrupt)", () => {
     const m = createStreamModel();
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
     );
+    pushMessage(m, partialThinking("start"));
+    pushMessage(m, partialThinking("delta", "half a thought"));
+    pushMessage(m, partialThinking("stop"));
     pushMessage(m, partialText("start"));
     pushMessage(m, partialText("delta", "[summary]partial draft"));
     const banner = items(m)[0] as CompactionItem;
     expect(banner.summaryText).toBe("[summary]partial draft");
+    expect(banner.thinkingText).toBe("half a thought");
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
     expect(banner.status).toBe("aborted");
     expect(banner.summaryText).toBeUndefined();
+    expect(banner.thinkingText).toBeUndefined();
+    expect(banner.thinkingStreaming).toBeUndefined();
   });
 
   it("a completed compaction keeps its summary for the collapsed body", () => {

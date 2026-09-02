@@ -1793,6 +1793,10 @@ Benchmark：
     mcpConnectAborted: "已中断，下次发送时重新连接",
     /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
+    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    compactionResult: "压缩结果",
+    /** Detail slot of a running summarize row: its thinking and summary are streaming into the collapsed body. */
+    compactionStreaming: "生成中",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";

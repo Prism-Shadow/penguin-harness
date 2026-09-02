@@ -30,11 +30,12 @@
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
  *   - Compaction-internal messages: model_msg within a
- *     compaction_begin↔end range (the compaction prompt and summary output)
+ *     compaction_begin↔end range (the compaction prompt, thinking and summary output)
  *     are never rendered as transcript items and never counted toward Task
- *     segmentation; the summary's own text (live partial_text fragments, or
- *     the span's complete assistant text on rebuild) accumulates onto the
- *     running compaction banner instead (issue #290);
+ *     segmentation; the request's thinking and the summary's own text (live
+ *     partial_thinking / partial_text fragments, or the span's complete thinking
+ *     and assistant text on rebuild) accumulate onto the running compaction
+ *     banner instead (issue #290);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -312,6 +313,16 @@ export interface CompactionItem {
    * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
    */
   summaryText?: string;
+  /**
+   * Raw text of the thinking the compaction request produced ahead of its summary:
+   * accumulated live from the span's own partial_thinking fragments, and rebuilt identically
+   * on history replay from the span's complete thinking messages — the banner shows it in a
+   * collapsed section of its own. Absent when the request produced none (a model that does
+   * not think, or discard mode).
+   */
+  thinkingText?: string;
+  /** True while a thinking fragment of the compaction request is open (the section streams); settled by its stop, or by the end event. */
+  thinkingStreaming?: boolean;
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -618,25 +629,36 @@ export function pushMessage(
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
-    // (the compaction prompt, summary output): never rendered as transcript items, never
-    // counted toward Task segmentation. The summary being written is the one exception
-    // (issue #290): live it arrives as its own partial_text fragments (the engine forwards
-    // them between the paired events; the complete text stays off the stream once partials
-    // carried it), and history rebuild reads the identical content back from the span's
-    // complete assistant text — both accumulate onto the running banner, so a reload shows
-    // the same text the live viewer watched being written.
+    // (the compaction prompt, thinking, summary output): never rendered as transcript items,
+    // never counted toward Task segmentation. The request's thinking and the summary being
+    // written are the exception (issue #290): live they arrive as their own partial_thinking
+    // / partial_text fragments (the engine forwards them between the paired events; the
+    // complete messages stay off the stream once partials carried them), and history rebuild
+    // reads the identical content back from the span's complete thinking and assistant text
+    // — both accumulate onto the running banner, so a reload shows the same text the live
+    // viewer watched being written.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
       if (isPartialPayload(msg.payload)) {
-        const p = msg.payload as { type?: string; text?: string };
+        const p = msg.payload as {
+          type?: string;
+          event_type?: string;
+          text?: string;
+          thinking?: string;
+        };
         if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text);
+        else if (p.type === "partial_thinking") {
+          appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop");
+        }
         // Partials never advance lastTs (same rule as the normal path below).
         return;
       }
       advanceLastTs(model, msg.timestamp);
-      const p = msg.payload as { type?: string; role?: string; text?: string };
+      const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
       if (p.type === "text" && p.role === "assistant" && p.text) {
         appendCompactionSummaryText(model, p.text);
+      } else if (p.type === "thinking" && p.thinking) {
+        appendCompactionThinking(model, p.thinking, false);
       }
       return;
     }
@@ -1629,9 +1651,17 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         }
         // A compaction that did not complete produced no summary — only a half-written
         // draft that was never adopted (a user quitting mid-compaction is the common case,
-        // closed as `failed` when the session next loads). Discard it rather than leave a
-        // truncated summary on screen implying the context was replaced by it.
-        if (p.status !== "completed") delete item.summaryText;
+        // closed as `failed` when the session next loads). Discard it, and the thinking that
+        // led to it, rather than leave a truncated summary on screen implying the context
+        // was replaced by it.
+        if (p.status !== "completed") {
+          delete item.summaryText;
+          delete item.thinkingText;
+          delete item.thinkingStreaming;
+        } else if (item.thinkingStreaming) {
+          // Nothing streams past the end: a fragment whose stop never arrived settles here.
+          item.thinkingStreaming = false;
+        }
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1778,6 +1808,19 @@ function appendCompactionSummaryText(model: StreamModel, text: string): void {
   if (!text) return;
   const item = findLastRunningCompaction(model);
   if (item) item.summaryText = (item.summaryText ?? "") + text;
+}
+
+/**
+ * Appends streamed/replayed thinking onto the running compaction banner and records whether
+ * its fragment is still open (no-op without a running banner). A content-free phase (the
+ * start, the stop) only moves the streaming flag, so a request that never thought leaves no
+ * empty draft behind.
+ */
+function appendCompactionThinking(model: StreamModel, text: string, streaming: boolean): void {
+  const item = findLastRunningCompaction(model);
+  if (!item) return;
+  if (text) item.thinkingText = (item.thinkingText ?? "") + text;
+  item.thinkingStreaming = streaming;
 }
 
 /**
