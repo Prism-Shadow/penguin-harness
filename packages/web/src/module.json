@@ -77,7 +77,7 @@
         "path": "/machines",
         "nav": "main",
         "admin": true,
-        "released": false,
+        "released": true,
         "renderer": {
           "builtin": "MachinesPage"
         }
