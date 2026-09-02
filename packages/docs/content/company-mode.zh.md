@@ -40,8 +40,8 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 
 使命是「做一个 DeepSeek Harness 插件 Marketplace，通过社交媒体和 SEO 把搜索排名做到前三，靠首页限时置顶曝光位盈利」，它会这样跑：
 
-1. 你在组织切换器里新建组织；CEO 的工位随初始化会话打开，在群聊里向你确认它对使命的理解。
-2. CEO 先招募人事与财务，再招募开发与市场，建立 `workspace/site` 和 `workspace/marketing` 并指定给各工位，为每个人安排每日巡检。
+1. 你在组织切换器里新建组织；CEO 的工位随初始化会话打开，在群聊里发出一份提案——它对使命的理解、首批工单、拟招募的角色与预算——然后等你答复。
+2. 你确认后，CEO 先招募人事与财务，再招募开发与市场，建立 `workspace/site` 和 `workspace/marketing` 并指定给各工位，按角色为每个人排定各自的时刻（建站的每日、人事每三天、财务每周）。
 3. 它开出一个 Marketplace 父工单，再按条线开子工单：建站、SEO 做到前三、社交媒体发布、付费置顶位。指派通知送达各负责人的工位。
 4. 下一次巡检为建站工单在 `workspace/site` 里发起工单会话；市场把 SEO 阻塞在建站上（「站点上线前没有可索引的内容」）。
 5. 建站会话完成开发、回写进展、把工单移到审核中；CEO 审核后移到已完成。开发收到通知，市场得知阻塞已解除并解除 SEO 的阻塞。
@@ -57,7 +57,7 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 ```text
 penguin org show                                  # 员工、看板计数、支出对预算
 penguin org hire --new-agent <id> --title <s> --reports-to <agent_id> [--workspace <sub>] [--budget <usd>]
-penguin org calendar add <name> --prompt <s> --start-at now --period 1d
+penguin org calendar add <name> --prompt <s> --start-at 2026-09-03T09:00:00+08:00 --period 1d   # 排班：各占时刻，按角色定节奏
 penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>]
 penguin org ticket start <ticket_id> [-m <note>]  # 发起工单会话，打印会话 id
 penguin org ticket progress <ticket_id> -m <text>

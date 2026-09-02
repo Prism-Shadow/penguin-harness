@@ -40,8 +40,8 @@ Budgets are monthly caps per employee for its own sessions plus every subordinat
 
 The mission *"Build a DeepSeek Harness plugin marketplace, promote it on social media and SEO into the top three results, and earn from paid featured slots on the home page"* plays out like this:
 
-1. You create the organization from the switcher; the CEO's desk opens with an initialization run and confirms its reading of the mission with you in chat.
-2. The CEO hires HR and finance, then a developer and a marketer, creates `workspace/site` and `workspace/marketing`, assigns them, and puts everyone on a daily sweep.
+1. You create the organization from the switcher; the CEO's desk opens with an initialization run that posts one proposal in chat — its reading of the mission, the first tickets, the roles it wants with budgets — and waits for your answer.
+2. You confirm; the CEO hires HR and finance, then a developer and a marketer, creates `workspace/site` and `workspace/marketing`, assigns them, and schedules everyone at their own hour (daily for the builders, every three days for HR, weekly for finance).
 3. It files a parent ticket for the marketplace and children per stream: build the site, SEO to the top three, the social launch, paid featured slots. Assignment notices reach the owners' desks.
 4. The next sweep opens a ticket session for the site in `workspace/site`; the marketer blocks SEO on it ("nothing to index until the site is live").
 5. The site session builds, writes progress, moves the ticket to review; the CEO reviews it to done. The developer is told, the marketer learns its blocker closed and unblocks SEO.
@@ -57,7 +57,7 @@ Inside a desk or ticket session the `penguin org` commands already know the orga
 ```text
 penguin org show                                  # employees, board counts, spend vs budget
 penguin org hire --new-agent <id> --title <s> --reports-to <agent_id> [--workspace <sub>] [--budget <usd>]
-penguin org calendar add <name> --prompt <s> --start-at now --period 1d
+penguin org calendar add <name> --prompt <s> --start-at 2026-09-03T09:00:00+08:00 --period 1d   # a rota: own hour, role cadence
 penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>]
 penguin org ticket start <ticket_id> [-m <note>]  # a ticket session, printed as its id
 penguin org ticket progress <ticket_id> -m <text>
