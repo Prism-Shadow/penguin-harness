@@ -180,6 +180,14 @@ export async function detectRemote(
 
 export type RemoteInstallOutcome =
   | { kind: "already-installed"; version: string; identity: RemoteIdentity }
+  /**
+   * The base release over there already matches; only the pushed state differs. Nothing to
+   * INSTALL — this is a hot update, and the machine has a channel for it that answers
+   * (machines/upgrade.ts). The caller routes it there rather than this path copying the
+   * store over and restarting the process, which replaces a running server without ever
+   * asking whether it can run what it was handed.
+   */
+  | { kind: "state-only"; identity: RemoteIdentity }
   | { kind: "installed"; output: string; identity: RemoteIdentity }
   | { kind: "failed"; step: string; detail: string };
 
@@ -198,6 +206,16 @@ export async function installOnRemote(opts: {
   assets?: () => string | null;
   /** The channel to the machine; a test hands in a scripted one. */
   channel?: MachineChannel;
+  /**
+   * Run the installer even when the release over there already matches.
+   *
+   * For the case the short-circuit below gets wrong: a machine whose PROGRAM is the right
+   * version and whose hmr store this server cannot reach — an empty store, or one holding a
+   * build that cannot receive an update. Nothing about the versions says so, so this is asked
+   * for and never inferred. The installer replicates the store on its way through, which is
+   * what puts the machine back within reach.
+   */
+  forceInstaller?: boolean;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan } = opts;
   const conn = opts.channel ?? connectionTo(target);
@@ -212,9 +230,19 @@ export async function installOnRemote(opts: {
     say(`${identity.platform}-${identity.arch}.`);
   }
 
-  const baseCurrent = identity.installedVersion === plan.baseVersion;
+  const baseCurrent =
+    identity.installedVersion === plan.baseVersion && opts.forceInstaller !== true;
   if (baseCurrent && identity.harness === plan.harness) {
     return { kind: "already-installed", version: plan.version, identity };
+  }
+  if (baseCurrent) {
+    // Same release, different pushed state: a hot update, not an install. Handing it over
+    // as files and restarting the process would swap the code under a server that may not
+    // be able to claim it — a runtime older than the pushed platform warns, falls back to
+    // its packaged default, and carries on serving, so the restart looks like a success
+    // from here and the machine is recorded at a version it is not running. The update
+    // channel asks the machine itself and comes back with its answer, refusals included.
+    return { kind: "state-only", identity };
   }
 
   // Release tags are v-prefixed semver; a base that does not spell one cannot be pinned —

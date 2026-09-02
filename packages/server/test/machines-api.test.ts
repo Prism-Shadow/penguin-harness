@@ -54,6 +54,8 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     startServer: async () => ({ ok: true }),
+    stopServer: async () => ({ ok: true as const }),
+    upgrade: async () => ({ kind: "upgraded", detail: "" }),
     runOn: async () => ({
       code: 0,
       stdout: "---penguin-auth-token---\nremote-token\n",
@@ -294,9 +296,11 @@ describe("machines API", () => {
       await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(machinesRepo.get("ssh:nas")?.platform).toBe("win32");
-      // Before the install nothing was known (null); after it the probe speaks cmd.exe.
+      // Before the install nothing was known (null). The install records what it found
+      // before the restart asks the machine again, so that probe and the explicit one after
+      // both speak cmd.exe.
       await admin.post(`/api/projects/${PROJECT}/machines/probe`);
-      expect(dialects).toEqual([null, "win32"]);
+      expect(dialects).toEqual([null, "win32", "win32"]);
     });
 
     it("re-running an install keeps the machine id the record already carried", async () => {
@@ -311,6 +315,86 @@ describe("machines API", () => {
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(machinesRepo.get("ssh:nas")?.machineId).toBe("kUkIyqU-1GOfXgKD");
+    });
+
+    it("a machine that refuses this build says so, instead of reporting an install", async () => {
+      await boot({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => ({
+          kind: "refused",
+          detail: "this runtime publishes no business capabilities this platform can claim",
+        }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "hand over the pushed build",
+        // The release over there matches, so the installer is skipped and nothing else can
+        // change that machine: installing anyway is the one step left, and it needs a yes.
+        canReplaceProgram: true,
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "no business capabilities",
+      );
+    });
+
+    it("a machine with nothing running on it is done, not failed — its disk already has this", async () => {
+      // A hot swap replaces the code a RUNNING server is serving. With none there is nothing
+      // to swap and nothing wrong: the files are in place for its next start.
+      let asked = false;
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => {
+          asked = true;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(asked).toBe(false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("next starts");
+    });
+
+    it("a machine already carrying this build still gets it handed over: files are not the process", async () => {
+      // `already-installed` is decided from what is on its disk. What runs there is what it
+      // loaded at start — so a machine whose files were brought forward while it ran reports
+      // a version it is not running until the update channel makes the two agree.
+      let asked = false;
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        upgrade: async () => {
+          asked = true;
+          return { kind: "upgraded", detail: "" };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(asked).toBe(true);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: true,
+        installed: "already-installed",
+      });
+    });
+
+    it("answering that offer runs the installer the version check would have skipped", async () => {
+      let forced: boolean | undefined;
+      await boot({
+        install: async (opts) => {
+          forced = opts.forceInstaller;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install", {
+        replaceProgram: true,
+      });
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(forced).toBe(true);
     });
 
     it("a throw from the push path still ends the job", async () => {
@@ -551,6 +635,72 @@ describe("machines API", () => {
       expect(res.status).toBe(409);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe("self_install");
       expect(t.deps.machines.job()).toBeNull();
+    });
+  });
+
+  describe("putting a new build into service", () => {
+    it("restarts a machine whose server was running, so the installed build is the running one", async () => {
+      const calls: string[] = [];
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        stopServer: async () => {
+          calls.push("stop");
+          return { ok: true as const };
+        },
+        startServer: async (_t, port) => {
+          calls.push(`start:${port}`);
+          return { ok: true };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, installed: "installed" });
+      expect(calls).toEqual(["stop", "start:7364"]);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("Stopping its server");
+    });
+
+    it("leaves a machine that was NOT running down — installing is not a decision to serve", async () => {
+      const calls: string[] = [];
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        stopServer: async () => {
+          calls.push("stop");
+          return { ok: true as const };
+        },
+        startServer: async () => {
+          calls.push("start");
+          return { ok: true };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(calls).toEqual([]);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("was not running");
+    });
+
+    it("does not restart when nothing was sent — an unchanged version is a no-op", async () => {
+      const calls: string[] = [];
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        stopServer: async () => {
+          calls.push("stop");
+          return { ok: true as const };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(calls).toEqual([]);
+    });
+
+    it("says so when the server does not come back, instead of reporting a clean install", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
+        startServer: async () => ({ ok: false, detail: "port 7364 already in use" }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("did not come back up");
     });
   });
 
@@ -956,6 +1106,34 @@ describe("machines API", () => {
 
       const reborn = new MachinesService(machinesRoot, LOCAL_ID, machinesRepo, effects());
       expect(reborn.list("default_project").find((m) => m.id === "ssh:nas")?.machineId).toBe(ID);
+    });
+
+    it("a restart records the id the machine minted when it came back", async () => {
+      // A machine mints its id when a server that mints one starts there, so a restart can be
+      // the moment an identity comes into existence. Until this side has heard it the machine
+      // is addressable by nothing — the proxy cannot route to it and the workspace picker
+      // will not offer it — so the restart asks rather than leaving it to the next probe.
+      let id: string | null = null;
+      await boot({
+        // Already carrying this build, so the install path never restarts it: the explicit
+        // restart below is the only thing that brings a new process — and its id — up.
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: id }),
+        stopServer: async () => {
+          id = ID; // It minted one on the way back up.
+          return { ok: true as const };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect((await byId("ssh:nas"))?.machineId).toBeNull();
+
+      await admin.post("/api/projects/default_project/machines/ssh:nas/restart");
+      await waitFor(() => t.deps.machines.job()?.kind === "restart");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
+      expect((await byId("ssh:nas"))?.machineId).toBe(ID);
     });
 
     it("a machine whose server never started stays without one", async () => {

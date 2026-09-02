@@ -237,6 +237,24 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
     // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
     const identity = identityFrom(deps?.authService ?? null);
+    // A push here is a push everywhere: this App booting IS what a hot update produces, so
+    // it hands the same build on to any machine still carrying a different one. Not awaited
+    // — boot must not wait on ssh — and cheap when there is nothing to do, since which
+    // machines are behind is read from the install records, not asked over the network.
+    if (deps !== null) {
+      void deps.machines.syncOutOfDate();
+      // ...and the machines a person installed are reachable without anyone clicking
+      // Connect first. A tunnel is plumbing; having to establish it by hand before a
+      // machine will answer is a chore, not a decision.
+      void deps.machines.autoConnect();
+      // ...and the ones ALREADY connected get this server's Model config, which connecting
+      // is otherwise the only thing that carries. A tunnel outlives a push on purpose, so
+      // autoConnect skips a machine that already has one — leaving a machine connected
+      // before a credential was added here holding a config it can never run anything with.
+      // Cheap when there is nothing to do: unchanged machines are skipped from local disk,
+      // before any ssh.
+      void deps.machines.syncConnectedModels();
+    }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
@@ -255,6 +273,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
     //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - machine tunnels     ssh children + machines-connect.json (pid/port) → adopted by
+    //                         the successor's tunnelPortFor, which checks the pid is alive
     //   - runtime singletons  db / auth / channels / config / proxy / desktop —
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
@@ -290,6 +310,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
       terminals.quiesce();
+      // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
+      // processes that keep forwarding across the swap, and the successor adopts them by the
+      // pid recorded in web.db (machines/service.ts).
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
