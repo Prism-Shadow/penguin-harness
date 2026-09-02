@@ -408,3 +408,21 @@ export function pinnedFirst<T>(
   for (const item of items) (pinned.has(keyOf(item)) ? pin : rest).push(item);
   return [...pin, ...rest];
 }
+
+/**
+ * Splits a group's active conversations into the ones an organization owns — desk and
+ * ticket Sessions, by id — and the rest. Development mode files the organization's rows
+ * into an automatic "organization" folder like the subagent / scheduled folders, so a
+ * scheduler-driven desk does not sit among the user's own conversations; an empty id set
+ * (company mode off, or nothing loaded yet) leaves every row where it was.
+ */
+export function partitionOrgSessions<T extends { sessionId: string }>(
+  active: readonly T[],
+  orgSessionIds: ReadonlySet<string>,
+): { active: T[]; organization: T[] } {
+  if (orgSessionIds.size === 0) return { active: [...active], organization: [] };
+  const own: T[] = [];
+  const organization: T[] = [];
+  for (const s of active) (orgSessionIds.has(s.sessionId) ? organization : own).push(s);
+  return { active: own, organization };
+}

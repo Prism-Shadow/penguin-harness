@@ -224,6 +224,18 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "The Project id last selected.",
   },
   {
+    kind: "exact",
+    key: "penguin.workMode",
+    scope: "browser",
+    why: "Development vs company mode — the MODE, mirrored from ui_prefs; valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.lastOrgKey",
+    scope: "install",
+    why: "The organization last opened in company mode, as <projectId>/<orgId> of this root.",
+  },
+  {
     kind: "family",
     key: "penguin.lastAgentId.",
     scope: "install",

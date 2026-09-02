@@ -220,6 +220,36 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 `provider` 要么成对给出、要么都不给；该二元组会在任务保存时以及调度器对账时对照 Project 模型表校验。
 
+### 组织（公司模式）
+
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写；删除组织仅 owner 可为。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户。这些路由背后的文件见[公司模式](/company-mode)。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409） |
+| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、最近群聊、告警）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone` 与阈值 / 删除（员工 Agent 与会话保留） |
+| GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
+| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?` |
+| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
+| GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
+| GET / PUT | /:orgId/handbook | 组织手册（`README.md`） |
+| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项 |
+| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |
+| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（各节、进展、贡献会话、子工单、上卷成本）/ 更新头部字段与各节 |
+| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
+| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
+| POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}`——追加一条归属于调用方的进展 |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions` |
+| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
+| GET / POST | /:orgId/chat | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析 |
+| POST | /:orgId/chat/read | `{upTo}`——调用方的已读游标 |
+| GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
+| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
+
+`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_chat`（新消息，含 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
+
 ### Session 创建与目录浏览
 
 | 方法 | 路径 | 说明 |

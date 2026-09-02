@@ -1,0 +1,9 @@
+{
+  "description": "Run a Project's agents as a company: the employee protocol every desk and ticket session follows (trigger blocks, the ticket board, group chat etiquette, budgets), plus the CEO, HR and finance playbooks — mission to tickets, hiring and calendars, budgets and cost audits.",
+  "description_zh": "把 Project 里的 Agent 组织成一家公司：每个工位会话与工单会话都遵循的员工协议（触发块、工单看板、群聊礼仪、预算），以及 CEO、人事与财务的操作手册——使命拆解为工单、招募与日程、预算与成本巡检。",
+  "short_description": "Employee protocol plus CEO, HR and finance playbooks.",
+  "short_description_zh": "员工协议与 CEO、人事、财务的操作手册。",
+  "version": "2026-09-02.1",
+  "category": "agent-company",
+  "preinstall": false
+}

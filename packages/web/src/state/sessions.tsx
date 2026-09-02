@@ -36,6 +36,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
+import { isCompanyEvent, publishCompanyEvent } from "./company";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -586,6 +587,16 @@ export function applyUserEvent(
   // Refetch once, on the event that says so, rather than polling for it.
   if (ev.type === "resync_required") {
     void store.getState().reload();
+    return;
+  }
+  // Company-mode notifications fan out to the company store and any mounted organization page
+  // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
+  // not seen, so it refreshes like a schedule firing does.
+  if (isCompanyEvent(ev)) {
+    publishCompanyEvent(ev);
+    if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
+      void store.getState().reload();
+    }
     return;
   }
   // A scheduled task firing may have created a new Session (new-session mode); reload the list

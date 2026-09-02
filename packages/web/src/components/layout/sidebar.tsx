@@ -29,7 +29,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
-import { NavLink, useMatch, useNavigate } from "react-router";
+import { NavLink, useLocation, useMatch, useNavigate } from "react-router";
 import type {
   SessionCategory,
   SessionCategoryCounts,
@@ -59,6 +59,7 @@ import {
   groupSessionsByWorkspace,
   hiddenRowCount,
   matchesSessionQuery,
+  partitionOrgSessions,
   partitionSessions,
   sessionCategory,
   totalCategoryCounts,
@@ -164,6 +165,21 @@ import { openUpdateModal } from "../../lib/use-update-flow";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { Segmented } from "../ui/segmented";
+import { useCompany } from "../../state/company";
+import { OrgSwitcher } from "../../features/company/org-switcher";
+import { OrgSessionList } from "../../features/company/org-session-list";
+import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import {
+  COMPANY_NAV_KEYS,
+  isOrgRoute,
+  orgPagePath,
+  parseOrgKey,
+} from "../../features/company/company-nav";
+import type { WorkMode } from "../../features/company/company-nav";
+
+/** The empty membership set: a time bucket's rows were already split by organization one level up. */
+const NO_ORG_SESSIONS: ReadonlySet<string> = new Set();
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -288,7 +304,8 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
  * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
  * the composite never collides across groups or with plain group keys.
  */
-const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
+const folderKey = (groupKey: string, category: FolderCategory | "organization") =>
+  `${category}\0${groupKey}`;
 
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
@@ -314,6 +331,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout, desktopMode, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
@@ -347,6 +365,11 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
+  const company = useCompany();
+  /** Company mode swaps the Project switcher, the page nav and the session list for their organization forms. */
+  const inCompany = company.workMode === "company";
+  /** The organization the company nav points at: the open one, else the one last opened (the switcher names the same). */
+  const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -610,7 +633,10 @@ export function Sidebar({
    * the same reason. Null outside time mode, so no other mode pays for the two passes.
    */
   const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
-  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeParts.active, Date.now());
+  /** Time mode splits the organization's rows off before bucketing: they get one shared folder below the buckets, like the other folders. */
+  const timeSplit =
+    timeParts === null ? null : partitionOrgSessions(timeParts.active, company.orgSessionIds);
+  const timeGroups = timeSplit === null ? [] : groupSessionsByTime(timeSplit.active, Date.now());
 
   /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders and the whole-list "More" read the summed counts. */
   const projectCounts = totalCategoryCounts(countsByAgent);
@@ -1094,6 +1120,36 @@ export function Sidebar({
     go(`/chat/${s.sessionId}`);
   };
 
+  /** A desk or ticket Session from the company list: the ordinary chat page, the current Agent following the row's employee. */
+  const openOrgSession = (sessionId: string, agentId: string) => {
+    setCurrentAgentId(agentId);
+    go(`/chat/${sessionId}`);
+  };
+
+  /**
+   * The mode switch: company mode enters at `/org` (the organization last opened, else the
+   * first); development mode keeps whatever conversation is open and only leaves an
+   * organization page, which has no development form.
+   */
+  const switchMode = (mode: WorkMode) => {
+    if (mode === company.workMode) return;
+    company.setWorkMode(mode);
+    if (mode === "company") go("/org");
+    else if (isOrgRoute(location.pathname)) go("/chat");
+  };
+
+  /** Open/close the development sidebar's organization folder (nothing to fetch: its rows are already loaded active rows). */
+  const toggleOrgFolder = (groupKey: string) => {
+    if (searching) return;
+    const key = folderKey(groupKey, "organization");
+    setOpenFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   /** agentId → display name (row hint tooltips in workspace mode). */
   const agentNameById = useMemo(
     () => new Map(agents.map((a) => [a.agentId, agentDisplayName(a)])),
@@ -1309,8 +1365,14 @@ export function Sidebar({
     withAgentHint: boolean,
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
+    /** Desk and ticket Session ids of the Project's organizations (time buckets pass none: their rows were split one level up). */
+    orgIds: ReadonlySet<string> = company.orgSessionIds,
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
+    // Development mode files an organization's desk and ticket Sessions into their own folder
+    // below the active list: a scheduler-driven desk is not one of the user's conversations,
+    // and the company sidebar is where it is listed as itself.
+    const split = partitionOrgSessions(parts.active, orgIds);
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1320,7 +1382,7 @@ export function Sidebar({
     // While searching, the display cap is bypassed — every loaded match shows, and
     // "More" hides (it pages the unfiltered list and would read as "more matches",
     // which the server cannot promise).
-    const orderedActive = orderSessionRows(parts.active, (s) => s.sessionId, {
+    const orderedActive = orderSessionRows(split.active, (s) => s.sessionId, {
       pinned: pinnedSessions,
       sortMode: effectiveSortMode,
       order: sessionOrder,
@@ -1345,7 +1407,8 @@ export function Sidebar({
     const hiddenActive = searching
       ? 0
       : hiddenRowCount({
-          shown: shownActive.length,
+          // The organization folder's rows are shown too — they left the active list, not the page.
+          shown: shownActive.length + split.organization.length,
           loaded: parts.active.length,
           total: totals?.active ?? 0,
           fullyLoaded,
@@ -1353,11 +1416,13 @@ export function Sidebar({
     // "Show less" appears once the group is revealed past its first page and there is
     // something for it to hide again.
     const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
+      !searching && cap > SIDEBAR_PAGE_SIZE && split.active.length > SIDEBAR_PAGE_SIZE;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
-    const empty = parts.active.length === 0 && folders.every((f) => f === null);
+    const orgFolder = renderOrgFolder(groupKey, split.organization, withAgentHint);
+    const empty =
+      split.active.length === 0 && orgFolder === null && folders.every((f) => f === null);
     const activePending = pendingLoads.has(loadKey(groupKey, "active"));
     return (
       <>
@@ -1399,11 +1464,32 @@ export function Sidebar({
           />
         )}
 
-        {/* Folders (collapsed by default): subagent first — spawned from the conversations
-            at hand — then scheduled background runs, then archived (archived wins over the
-            origin folders). */}
+        {/* Folders (collapsed by default): the organization's desks and ticket sessions first
+            (they are conversations of this group's Agents too, just not the user's own), then
+            subagent — spawned from the conversations at hand — then scheduled background
+            runs, then archived (archived wins over the origin folders). */}
+        {orgFolder}
         {folders}
       </>
+    );
+  };
+
+  /**
+   * The development sidebar's automatic organization folder: the group's desk and ticket
+   * Sessions, collapsed by default like the other folders. Nothing is fetched on expand — the
+   * rows are active rows already in memory — and while searching it is forced open like the
+   * rest, so a match is never hidden.
+   */
+  const renderOrgFolder = (groupKey: string, rows: SessionInfo[], withAgentHint: boolean) => {
+    if (rows.length === 0) return null;
+    return (
+      <FolderSection
+        label={S.chat.folderGroups.organization(rows.length)}
+        open={searching || openFolders.has(folderKey(groupKey, "organization"))}
+        onToggle={() => toggleOrgFolder(groupKey)}
+      >
+        {renderRows(rows, withAgentHint)}
+      </FolderSection>
     );
   };
 
@@ -1428,14 +1514,57 @@ export function Sidebar({
           ),
         );
 
-  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest, minus the entries this user's role cannot reach). Always mounted — the collapse animates their height to zero and turns them inert. */
-  const navItems: Array<{ to: string; label: string; icon: string }> = navKeysFor(
-    user?.isAdmin === true,
-  ).map((key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }));
+  /** What the company chat entry's badge says: mentions first (they are addressed to the user), else plain unread. */
+  const chatNote =
+    company.chatMentions > 0
+      ? S.company.chat.badgeMentions(company.chatMentions)
+      : company.chatUnread > 0
+        ? S.company.chat.badgeUnread(company.chatUnread)
+        : null;
+
+  /**
+   * Page entries of the collapsible nav group. Development mode: 智能体 → 评估中心, driven by
+   * the NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach. Company
+   * mode: the organization's six pages (COMPANY_NAV_KEYS), the chat entry carrying the
+   * unread / @me badge. Always mounted — the collapse animates their height to zero and
+   * turns them inert.
+   */
+  const navItems: Array<{ to: string; label: string; icon: string; note: string | null }> =
+    inCompany
+      ? navOrg === null
+        ? []
+        : COMPANY_NAV_KEYS.map((key) => ({
+            to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
+            label: S.nav.org[key],
+            icon: COMPANY_NAV_ICONS[key],
+            note: key === "chat" ? chatNote : null,
+          }))
+      : navKeysFor(user?.isAdmin === true).map((key) => ({
+          to: `/${key}`,
+          label: S.nav[key],
+          icon: NAV_ICONS[key],
+          note: navNoteFor(badges, `/${key}`),
+        }));
 
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Project switcher (+ collapse sidebar) */}
+      {/* The work-mode switch, above the Project switcher: 开发 | 公司. Rendered only while
+          company mode is available (the admin master switch and the user's own switch both
+          on); the choice persists per user. */}
+      {company.available && (
+        <div className="shrink-0 px-2 pt-2" role="group" aria-label={S.company.workMode}>
+          <Segmented
+            options={[
+              { value: "dev" as const, label: S.company.modeDev },
+              { value: "company" as const, label: S.company.modeCompany },
+            ]}
+            value={company.workMode}
+            onChange={switchMode}
+            cols={2}
+          />
+        </div>
+      )}
+      {/* Project switcher (+ collapse sidebar); the organization switcher in company mode */}
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2">
         {onCollapse && (
           <button
@@ -1448,67 +1577,71 @@ export function Sidebar({
             <Icon d="M15 6l-6 6 6 6M4 4v16" size={18} />
           </button>
         )}
-        <Dropdown
-          open={projectOpen}
-          setOpen={setProjectOpen}
-          className="min-w-0 flex-1"
-          menuClass="left-0 right-0 top-full mt-1 origin-top"
-          button={
-            <button
-              type="button"
-              onClick={() => setProjectOpen(!projectOpen)}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
-            >
-              <span className="min-w-0 flex-1 truncate text-left">
-                {currentProject ? projectDisplayName(currentProject) : S.common.loading}
-              </span>
-              <span className="text-gray-400">
-                <ChevronDown />
-              </span>
-            </button>
-          }
-        >
-          {projects.map((p) => (
-            <button
-              key={p.projectId}
-              type="button"
-              onClick={() => {
-                setCurrentProjectId(p.projectId);
-                setProjectOpen(false);
-              }}
-              className={`flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                p.projectId === currentProject?.projectId ? "font-semibold" : ""
-              }`}
-            >
-              <span className="truncate">{projectDisplayName(p)}</span>
-              <Badge tone="gray">{p.role}</Badge>
-            </button>
-          ))}
-          <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setProjectOpen(false);
-                setCreateProjectOpen(true);
-              }}
-            >
-              + {S.project.create}
-            </button>
-            {currentProject && (
+        {inCompany ? (
+          <OrgSwitcher {...(onNavigate ? { onNavigate } : {})} />
+        ) : (
+          <Dropdown
+            open={projectOpen}
+            setOpen={setProjectOpen}
+            className="min-w-0 flex-1"
+            menuClass="left-0 right-0 top-full mt-1 origin-top"
+            button={
+              <button
+                type="button"
+                onClick={() => setProjectOpen(!projectOpen)}
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
+              >
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {currentProject ? projectDisplayName(currentProject) : S.common.loading}
+                </span>
+                <span className="text-gray-400">
+                  <ChevronDown />
+                </span>
+              </button>
+            }
+          >
+            {projects.map((p) => (
+              <button
+                key={p.projectId}
+                type="button"
+                onClick={() => {
+                  setCurrentProjectId(p.projectId);
+                  setProjectOpen(false);
+                }}
+                className={`flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                  p.projectId === currentProject?.projectId ? "font-semibold" : ""
+                }`}
+              >
+                <span className="truncate">{projectDisplayName(p)}</span>
+                <Badge tone="gray">{p.role}</Badge>
+              </button>
+            ))}
+            <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
               <button
                 type="button"
                 className={menuItemClass}
                 onClick={() => {
                   setProjectOpen(false);
-                  setProjectSettingsOpen(true);
+                  setCreateProjectOpen(true);
                 }}
               >
-                {S.project.settings}
+                + {S.project.create}
               </button>
-            )}
-          </div>
-        </Dropdown>
+              {currentProject && (
+                <button
+                  type="button"
+                  className={menuItemClass}
+                  onClick={() => {
+                    setProjectOpen(false);
+                    setProjectSettingsOpen(true);
+                  }}
+                >
+                  {S.project.settings}
+                </button>
+              )}
+            </div>
+          </Dropdown>
+        )}
       </div>
 
       {/* New chat: the only pinned entry besides the Project switcher above and the user row
@@ -1520,22 +1653,25 @@ export function Sidebar({
           it, so a scrolled nav entry ended up flush against this pinned button, the two
           labels touching. Outside the scroller the 8px stays put at every scroll offset —
           the same text-to-text rhythm two adjacent nav rows have. */}
-      <div className="shrink-0 px-2 pb-2 pt-2">
-        <button
-          type="button"
-          onClick={() => newChat(defaultAgentId)}
-          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
-            activeSessionId === DRAFT_SESSION_ID
-              ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-              : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-          }`}
-        >
-          <span className="text-gray-500 dark:text-gray-400">
-            <Icon d={NEW_CHAT_ICON} />
-          </span>
-          {S.chat.newSessionMenu}
-        </button>
-      </div>
+      {/* Hidden in company mode: talking to an employee means opening its desk session. */}
+      {!inCompany && (
+        <div className="shrink-0 px-2 pb-2 pt-2">
+          <button
+            type="button"
+            onClick={() => newChat(defaultAgentId)}
+            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
+              activeSessionId === DRAFT_SESSION_ID
+                ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+            }`}
+          >
+            <span className="text-gray-500 dark:text-gray-400">
+              <Icon d={NEW_CHAT_ICON} />
+            </span>
+            {S.chat.newSessionMenu}
+          </button>
+        </div>
+      )}
 
       {/* Scroll area: the page nav and the session list scroll together, so the nav rides up
           as the list is scrolled. It is the sidebar's only shrinkable block — with the nav
@@ -1577,7 +1713,7 @@ export function Sidebar({
                      label text (where it would float over whatever follows the word): at the
                      row's right edge, on the same inset as its horizontal padding, and vertically
                      centred on the row rather than on the line of text. */
-                  const note = navNoteFor(badges, item.to);
+                  const note = item.note;
                   return (
                     <NavLink
                       key={item.to}
@@ -1639,7 +1775,21 @@ export function Sidebar({
           </button>
         </nav>
 
-        {/* Section header: list label + right-aligned controls (icon + tooltip family):
+        {inCompany ? (
+          <>
+            {/* Company mode: the list is grouped by organization (desks and ticket sessions),
+                with none of the development list's grouping, sorting or creation controls —
+                the organization decides the shape. */}
+            <div className="mt-3 px-1 pt-2">
+              <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                {S.chat.sessionList}
+              </span>
+            </div>
+            <OrgSessionList activeSessionId={activeSessionId} onOpen={openOrgSession} />
+          </>
+        ) : (
+          <>
+            {/* Section header: list label + right-aligned controls (icon + tooltip family):
             search, list settings (grouping + sort radios — the old inline grouping
             toggle relocated into this menu), and the mode-dependent create button (the
             created object follows the grouping mode). The search is a mac-style
@@ -1648,135 +1798,135 @@ export function Sidebar({
             takes the full width and the field inside grows leftward over the label's
             place; the magnifier morphs from toggle button into the field's leading
             glyph. No ruled separator at this boundary — see the nav toggle above. */}
-        <div
-          className={`mt-3 grid items-center px-1 pt-2 transition-[grid-template-columns] duration-200 ease-out ${
-            searchOpen ? "grid-cols-[0fr_1fr]" : "grid-cols-[1fr_1fr]"
-          }`}
-        >
-          <span
-            className={`min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
-              searchOpen ? "opacity-0" : "opacity-100"
-            }`}
-          >
-            {S.chat.sessionList}
-          </span>
-          <div className="flex min-w-0 items-center justify-end gap-0.5">
-            {searchOpen ? (
-              /* Expanded field: leading magnifier glyph + input + clear ×, one bordered
+            <div
+              className={`mt-3 grid items-center px-1 pt-2 transition-[grid-template-columns] duration-200 ease-out ${
+                searchOpen ? "grid-cols-[0fr_1fr]" : "grid-cols-[1fr_1fr]"
+              }`}
+            >
+              <span
+                className={`min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
+                  searchOpen ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                {S.chat.sessionList}
+              </span>
+              <div className="flex min-w-0 items-center justify-end gap-0.5">
+                {searchOpen ? (
+                  /* Expanded field: leading magnifier glyph + input + clear ×, one bordered
                  box filling the row (its width rides the column tween). Esc and × both
                  collapse it and drop the filter. */
-              <div className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-300 bg-white px-1.5 transition-colors duration-150 focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-500">
-                <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={SEARCH_ICON} size={12} />
-                </span>
-                <input
-                  autoFocus
-                  value={searchQuery}
-                  placeholder={S.chat.searchSessionsPlaceholder}
-                  aria-label={S.chat.searchSessions}
-                  {...noAutofill}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.stopPropagation();
-                      closeSearch();
-                    }
-                  }}
-                  className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-                />
-                <button
-                  type="button"
-                  title={S.chat.searchClear}
-                  aria-label={S.chat.searchClear}
-                  onClick={closeSearch}
-                  className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+                  <div className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-300 bg-white px-1.5 transition-colors duration-150 focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-500">
+                    <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
+                      <Icon d={SEARCH_ICON} size={12} />
+                    </span>
+                    <input
+                      autoFocus
+                      value={searchQuery}
+                      placeholder={S.chat.searchSessionsPlaceholder}
+                      aria-label={S.chat.searchSessions}
+                      {...noAutofill}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.stopPropagation();
+                          closeSearch();
+                        }
+                      }}
+                      className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+                    />
+                    <button
+                      type="button"
+                      title={S.chat.searchClear}
+                      aria-label={S.chat.searchClear}
+                      onClick={closeSearch}
+                      className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+                    >
+                      <Icon d={CLOSE_ICON} size={11} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title={S.chat.searchSessions}
+                    aria-label={S.chat.searchSessions}
+                    onClick={() => setSearchOpen(true)}
+                    className={headerControlClass(false)}
+                  >
+                    <Icon d={SEARCH_ICON} size={14} />
+                  </button>
+                )}
+                <Dropdown
+                  open={listSettingsOpen}
+                  setOpen={setListSettingsOpen}
+                  portal={{ direction: "down", align: "right" }}
+                  menuClass="w-40"
+                  button={
+                    <button
+                      type="button"
+                      title={S.chat.listSettings}
+                      aria-label={S.chat.listSettings}
+                      aria-haspopup="menu"
+                      aria-expanded={listSettingsOpen}
+                      onClick={() => setListSettingsOpen(!listSettingsOpen)}
+                      className={headerControlClass(listSettingsOpen)}
+                    >
+                      <Icon d={SLIDERS_ICON} size={14} />
+                    </button>
+                  }
                 >
-                  <Icon d={CLOSE_ICON} size={11} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                title={S.chat.searchSessions}
-                aria-label={S.chat.searchSessions}
-                onClick={() => setSearchOpen(true)}
-                className={headerControlClass(false)}
-              >
-                <Icon d={SEARCH_ICON} size={14} />
-              </button>
-            )}
-            <Dropdown
-              open={listSettingsOpen}
-              setOpen={setListSettingsOpen}
-              portal={{ direction: "down", align: "right" }}
-              menuClass="w-40"
-              button={
-                <button
-                  type="button"
-                  title={S.chat.listSettings}
-                  aria-label={S.chat.listSettings}
-                  aria-haspopup="menu"
-                  aria-expanded={listSettingsOpen}
-                  onClick={() => setListSettingsOpen(!listSettingsOpen)}
-                  className={headerControlClass(listSettingsOpen)}
-                >
-                  <Icon d={SLIDERS_ICON} size={14} />
-                </button>
-              }
-            >
-              <p className={menuSectionClass}>{S.chat.groupModeSection}</p>
-              <MenuRadioRow
-                icon={GROUP_MODE_ICONS.workspace}
-                label={S.chat.groupByWorkspace}
-                checked={groupMode === "workspace"}
-                onSelect={() => {
-                  setGroupMode("workspace");
-                  setListSettingsOpen(false);
-                }}
-              />
-              <MenuRadioRow
-                icon={GROUP_MODE_ICONS.agent}
-                label={S.chat.groupByAgent}
-                checked={groupMode === "agent"}
-                onSelect={() => {
-                  setGroupMode("agent");
-                  setListSettingsOpen(false);
-                }}
-              />
-              <MenuRadioRow
-                icon={GROUP_MODE_ICONS.time}
-                label={S.chat.groupByTime}
-                checked={groupMode === "time"}
-                onSelect={() => {
-                  setGroupMode("time");
-                  setListSettingsOpen(false);
-                }}
-              />
-              <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-              <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
-              {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
-              {canDrag && (
-                <MenuRadioRow
-                  icon={SORT_MODE_ICONS.manual}
-                  label={S.chat.sortManual}
-                  checked={sortMode === "manual"}
-                  onSelect={() => {
-                    setSortMode("manual");
-                    setListSettingsOpen(false);
-                  }}
-                />
-              )}
-              <MenuRadioRow
-                icon={SORT_MODE_ICONS.recent}
-                label={S.chat.sortRecent}
-                checked={sortMode === "recent"}
-                onSelect={() => {
-                  setSortMode("recent");
-                  setListSettingsOpen(false);
-                }}
-              />
-            </Dropdown>
-            {/* Mode-dependent create — 具体新建的对象按分组方式决定, the icon following
+                  <p className={menuSectionClass}>{S.chat.groupModeSection}</p>
+                  <MenuRadioRow
+                    icon={GROUP_MODE_ICONS.workspace}
+                    label={S.chat.groupByWorkspace}
+                    checked={groupMode === "workspace"}
+                    onSelect={() => {
+                      setGroupMode("workspace");
+                      setListSettingsOpen(false);
+                    }}
+                  />
+                  <MenuRadioRow
+                    icon={GROUP_MODE_ICONS.agent}
+                    label={S.chat.groupByAgent}
+                    checked={groupMode === "agent"}
+                    onSelect={() => {
+                      setGroupMode("agent");
+                      setListSettingsOpen(false);
+                    }}
+                  />
+                  <MenuRadioRow
+                    icon={GROUP_MODE_ICONS.time}
+                    label={S.chat.groupByTime}
+                    checked={groupMode === "time"}
+                    onSelect={() => {
+                      setGroupMode("time");
+                      setListSettingsOpen(false);
+                    }}
+                  />
+                  <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+                  <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
+                  {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
+                  {canDrag && (
+                    <MenuRadioRow
+                      icon={SORT_MODE_ICONS.manual}
+                      label={S.chat.sortManual}
+                      checked={sortMode === "manual"}
+                      onSelect={() => {
+                        setSortMode("manual");
+                        setListSettingsOpen(false);
+                      }}
+                    />
+                  )}
+                  <MenuRadioRow
+                    icon={SORT_MODE_ICONS.recent}
+                    label={S.chat.sortRecent}
+                    checked={sortMode === "recent"}
+                    onSelect={() => {
+                      setSortMode("recent");
+                      setListSettingsOpen(false);
+                    }}
+                  />
+                </Dropdown>
+                {/* Mode-dependent create — 具体新建的对象按分组方式决定, the icon following
                 suit (folder+ / robot+, a bottom-right plus badge on the entity's glyph):
                 agent grouping opens the Agents page's existing create dialog (route
                 state); workspace grouping opens the SAME directory-browse menu the
@@ -1784,321 +1934,337 @@ export function Sidebar({
                 workspace group immediately, Sessions or not. Time buckets are not
                 something to create into, so that mode starts a plain new conversation
                 and wears the compose glyph without a plus badge. */}
-            {newEntity === "agent" ? (
-              <button
-                type="button"
-                title={newEntityLabel}
-                aria-label={newEntityLabel}
-                onClick={() => {
-                  navigate("/agents", { state: { create: true } });
-                  onNavigate?.();
-                }}
-                className={headerControlClass(false)}
-              >
-                <AddBadgeIcon base={NAV_ICONS.agents} />
-              </button>
-            ) : newEntity === "chat" ? (
-              <button
-                type="button"
-                title={newEntityLabel}
-                aria-label={newEntityLabel}
-                onClick={() => newChat()}
-                className={headerControlClass(false)}
-              >
-                <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.iconButton} />
-              </button>
-            ) : (
-              <WorkspaceSelect
-                // Remount per Project: the picker browses lazily and caches the listing
-                // for its lifetime, so a long-lived instance would show the PREVIOUS
-                // Project's directories after a switch — and register that path into the
-                // new Project's registry.
-                key={currentProjectId ?? "no-project"}
-                projectId={currentProjectId ?? ""}
-                workspace=""
-                onChange={addWorkspace}
-                trigger={(open, toggle) => (
+                {newEntity === "agent" ? (
                   <button
                     type="button"
                     title={newEntityLabel}
                     aria-label={newEntityLabel}
-                    aria-expanded={open}
-                    onClick={toggle}
-                    className={headerControlClass(open)}
+                    onClick={() => {
+                      navigate("/agents", { state: { create: true } });
+                      onNavigate?.();
+                    }}
+                    className={headerControlClass(false)}
                   >
-                    <AddBadgeIcon base={FOLDER_ICON} />
+                    <AddBadgeIcon base={NAV_ICONS.agents} />
                   </button>
+                ) : newEntity === "chat" ? (
+                  <button
+                    type="button"
+                    title={newEntityLabel}
+                    aria-label={newEntityLabel}
+                    onClick={() => newChat()}
+                    className={headerControlClass(false)}
+                  >
+                    <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.iconButton} />
+                  </button>
+                ) : (
+                  <WorkspaceSelect
+                    // Remount per Project: the picker browses lazily and caches the listing
+                    // for its lifetime, so a long-lived instance would show the PREVIOUS
+                    // Project's directories after a switch — and register that path into the
+                    // new Project's registry.
+                    key={currentProjectId ?? "no-project"}
+                    projectId={currentProjectId ?? ""}
+                    workspace=""
+                    onChange={addWorkspace}
+                    trigger={(open, toggle) => (
+                      <button
+                        type="button"
+                        title={newEntityLabel}
+                        aria-label={newEntityLabel}
+                        aria-expanded={open}
+                        onClick={toggle}
+                        className={headerControlClass(open)}
+                      >
+                        <AddBadgeIcon base={FOLDER_ICON} />
+                      </button>
+                    )}
+                  />
                 )}
-              />
-            )}
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {/* Parked draft conversations (unsent new chats, newest first): pinned above both
+            {/* Parked draft conversations (unsent new chats, newest first): pinned above both
             grouping modes — they belong to no Agent or Workspace until sent. Hidden
             entirely while there are none; the search filter applies to their titles too. */}
-        {shownDrafts.length > 0 && (
-          <div className="pt-2.5">
-            <GroupHeader
-              open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
-              onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
-              icon={
-                <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
-                </span>
-              }
-              label={S.chat.draftGroup}
-              uppercase
-              count={shownDrafts.length}
-            />
-            {(searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)) && (
-              <ul className="space-y-0.5">
-                {shownDrafts.map((entry) => (
-                  <DraftRow
-                    key={entry.id}
-                    entry={entry}
-                    active={entry.id === activeSessionId}
-                    onOpen={() => go(`/chat/${entry.id}`)}
-                    onDelete={() => setDeletingDraft(entry)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {groupMode === "agent" ? (
-          loading && agents.length === 0 ? (
-            <SkeletonList rows={5} />
-          ) : (
-            // While searching: every group renders (paging bypassed), zero-match groups
-            // hide, and the rest are forced open — a hit inside a collapsed group would
-            // look like a missing result.
-            groupsOnPage(orderedAgents).map((agent) => {
-              const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
-              if (searching && groupRows.length === 0) return null;
-              const parts = partitionSessions(groupRows);
-              const collapsed = !searching && collapsedGroups.has(agent.agentId);
-              const pinned = pinnedGroups.has(agent.agentId);
-              const drag = groupDragProps(agent.agentId, agentGroupSequence);
-              return (
-                <GroupBlock key={agent.agentId} dropEdge={drag.dropEdge}>
-                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings; also the group's drag handle. */}
-                  <GroupHeader
-                    {...drag.header}
-                    open={!collapsed}
-                    onToggle={() => toggleGroup(agent.agentId)}
-                    icon={
-                      <AgentAvatar
-                        id={agent.agentId}
-                        name={agentDisplayName(agent)}
-                        size={18}
-                        className="shrink-0 rounded"
+            {shownDrafts.length > 0 && (
+              <div className="pt-2.5">
+                <GroupHeader
+                  open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
+                  onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
+                  icon={
+                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                      <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
+                    </span>
+                  }
+                  label={S.chat.draftGroup}
+                  uppercase
+                  count={shownDrafts.length}
+                />
+                {(searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)) && (
+                  <ul className="space-y-0.5">
+                    {shownDrafts.map((entry) => (
+                      <DraftRow
+                        key={entry.id}
+                        entry={entry}
+                        active={entry.id === activeSessionId}
+                        onOpen={() => go(`/chat/${entry.id}`)}
+                        onDelete={() => setDeletingDraft(entry)}
                       />
-                    }
-                    label={agentDisplayName(agent)}
-                    uppercase
-                    actions={
-                      <>
-                        <GroupPinButton pinned={pinned} onToggle={() => togglePin(agent.agentId)} />
-                        {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
-                        <button
-                          type="button"
-                          title={S.chat.newSessionMenu}
-                          aria-label={S.chat.newSessionMenu}
-                          onClick={() => newChat(agent.agentId)}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                        >
-                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
-                        </button>
-                        <button
-                          type="button"
-                          title={S.agent.settings}
-                          onClick={() => go(`/agents/${agent.agentId}`)}
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                        >
-                          <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
-                        </button>
-                      </>
-                    }
-                  />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
-                  {collapsed
-                    ? null
-                    : renderGroupBody(
-                        agent.agentId,
-                        parts,
-                        false,
-                        countsByAgent.get(agent.agentId),
-                        () => [agent.agentId],
-                      )}
-                </GroupBlock>
-              );
-            })
-          )
-        ) : null}
-        {groupMode === "agent" ? groupPagerRow() : null}
-        {groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
-          <SkeletonList rows={5} />
-        ) : orderedWorkspaceGroups.length === 0 && !searching ? (
-          <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-            {S.chat.noSessions}
-          </p>
-        ) : (
-          // Same search treatment as agent mode: paging bypassed, zero-match groups hidden, the rest forced open.
-          groupsOnPage(orderedWorkspaceGroups).map((group) => {
-            const groupRows = filterRows(group.sessions);
-            if (searching && groupRows.length === 0) return null;
-            const parts = partitionSessions(groupRows);
-            const collapsed = !searching && collapsedGroups.has(group.key);
-            const pinned = pinnedGroups.has(group.key);
-            const drag = groupDragProps(group.key, workspaceGroupSequence);
-            /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
-            const counts = workspaceGroupCounts.get(group.key);
-            const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
-            const agentsFor = (category: SessionCategory) => [
-              ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
-            ];
-            return (
-              <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
-                {/* Group header: collapse toggle (folder icon + directory basename + count, full
+            {groupMode === "agent" ? (
+              loading && agents.length === 0 ? (
+                <SkeletonList rows={5} />
+              ) : (
+                // While searching: every group renders (paging bypassed), zero-match groups
+                // hide, and the rest are forced open — a hit inside a collapsed group would
+                // look like a missing result.
+                groupsOnPage(orderedAgents).map((agent) => {
+                  const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
+                  if (searching && groupRows.length === 0) return null;
+                  const parts = partitionSessions(groupRows);
+                  const collapsed = !searching && collapsedGroups.has(agent.agentId);
+                  const pinned = pinnedGroups.has(agent.agentId);
+                  const drag = groupDragProps(agent.agentId, agentGroupSequence);
+                  return (
+                    <GroupBlock key={agent.agentId} dropEdge={drag.dropEdge}>
+                      {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings; also the group's drag handle. */}
+                      <GroupHeader
+                        {...drag.header}
+                        open={!collapsed}
+                        onToggle={() => toggleGroup(agent.agentId)}
+                        icon={
+                          <AgentAvatar
+                            id={agent.agentId}
+                            name={agentDisplayName(agent)}
+                            size={18}
+                            className="shrink-0 rounded"
+                          />
+                        }
+                        label={agentDisplayName(agent)}
+                        uppercase
+                        actions={
+                          <>
+                            <GroupPinButton
+                              pinned={pinned}
+                              onToggle={() => togglePin(agent.agentId)}
+                            />
+                            {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
+                            <button
+                              type="button"
+                              title={S.chat.newSessionMenu}
+                              aria-label={S.chat.newSessionMenu}
+                              onClick={() => newChat(agent.agentId)}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                            >
+                              <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
+                            </button>
+                            <button
+                              type="button"
+                              title={S.agent.settings}
+                              onClick={() => go(`/agents/${agent.agentId}`)}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                            >
+                              <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
+                            </button>
+                          </>
+                        }
+                      />
+
+                      {collapsed
+                        ? null
+                        : renderGroupBody(
+                            agent.agentId,
+                            parts,
+                            false,
+                            countsByAgent.get(agent.agentId),
+                            () => [agent.agentId],
+                          )}
+                    </GroupBlock>
+                  );
+                })
+              )
+            ) : null}
+            {groupMode === "agent" ? groupPagerRow() : null}
+            {groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
+              <SkeletonList rows={5} />
+            ) : orderedWorkspaceGroups.length === 0 && !searching ? (
+              <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                {S.chat.noSessions}
+              </p>
+            ) : (
+              // Same search treatment as agent mode: paging bypassed, zero-match groups hidden, the rest forced open.
+              groupsOnPage(orderedWorkspaceGroups).map((group) => {
+                const groupRows = filterRows(group.sessions);
+                if (searching && groupRows.length === 0) return null;
+                const parts = partitionSessions(groupRows);
+                const collapsed = !searching && collapsedGroups.has(group.key);
+                const pinned = pinnedGroups.has(group.key);
+                const drag = groupDragProps(group.key, workspaceGroupSequence);
+                /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
+                const counts = workspaceGroupCounts.get(group.key);
+                const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
+                const agentsFor = (category: SessionCategory) => [
+                  ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
+                ];
+                return (
+                  <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
+                    {/* Group header: collapse toggle (folder icon + directory basename + count, full
                     path in the tooltip; the count = the group's active conversations only, exact
                     server share, loaded rows win a disagreement — the folders never feed it) +
                     pin + new chat in this Workspace; also the group's drag handle. */}
-                <GroupHeader
-                  {...drag.header}
-                  open={!collapsed}
-                  onToggle={() => toggleGroup(group.key)}
-                  icon={
-                    /* Folder opens and closes with the group */
-                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                      <Icon
-                        d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
-                        size={ICON_SIZE.groupHeaderGlyph}
-                      />
-                    </span>
-                  }
-                  label={group.temp ? S.chat.tempWorkspaces : group.label}
-                  count={
-                    searching
-                      ? parts.active.length
-                      : Math.max(counts?.totals.active ?? 0, parts.active.length)
-                  }
-                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
-                  actions={
-                    <>
-                      <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
-                      <button
-                        type="button"
-                        title={S.chat.newSessionInWorkspace}
-                        aria-label={S.chat.newSessionInWorkspace}
-                        onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                      >
-                        <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
-                      </button>
-                      {/* Manually-added (registry-backed) Workspaces only: rename-alias /
+                    <GroupHeader
+                      {...drag.header}
+                      open={!collapsed}
+                      onToggle={() => toggleGroup(group.key)}
+                      icon={
+                        /* Folder opens and closes with the group */
+                        <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                          <Icon
+                            d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                            size={ICON_SIZE.groupHeaderGlyph}
+                          />
+                        </span>
+                      }
+                      label={group.temp ? S.chat.tempWorkspaces : group.label}
+                      count={
+                        searching
+                          ? parts.active.length
+                          : Math.max(counts?.totals.active ?? 0, parts.active.length)
+                      }
+                      {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                      actions={
+                        <>
+                          <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
+                          {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
+                          <button
+                            type="button"
+                            title={S.chat.newSessionInWorkspace}
+                            aria-label={S.chat.newSessionInWorkspace}
+                            onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                          >
+                            <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
+                          </button>
+                          {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
                             derived groups have no registry entry for these to act on). */}
-                      {registeredPaths.has(group.key) && (
-                        <GroupOverflowMenu
-                          onRename={() => openRenameWorkspace(group.key)}
-                          onDelete={() =>
-                            setDeletingWorkspace({ path: group.key, label: group.label })
-                          }
-                        />
-                      )}
-                    </>
-                  }
-                />
+                          {registeredPaths.has(group.key) && (
+                            <GroupOverflowMenu
+                              onRename={() => openRenameWorkspace(group.key)}
+                              onDelete={() =>
+                                setDeletingWorkspace({ path: group.key, label: group.label })
+                              }
+                            />
+                          )}
+                        </>
+                      }
+                    />
 
-                {/* A workspace group can span Agents: the group body fans folder loads and "More"
+                    {/* A workspace group can span Agents: the group body fans folder loads and "More"
                     out per category to the Agents whose share of THIS group is non-zero (plus the
                     Agents already contributing loaded rows) — the active list and each folder
                     page independently. */}
-                {collapsed
-                  ? null
-                  : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
-              </GroupBlock>
-            );
-          })
-        )}
-        {groupMode === "workspace" ? groupPagerRow() : null}
+                    {collapsed
+                      ? null
+                      : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
+                  </GroupBlock>
+                );
+              })
+            )}
+            {groupMode === "workspace" ? groupPagerRow() : null}
 
-        {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
+            {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
             activity — the same stamp the rows' compact timestamps and the recency sort read,
             so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
             are dropped, and there are at most three, so this mode never paginates its groups.
             The buckets span every Agent and every Workspace: a bucket's "More" only reveals
             further loaded rows, while fetching the next page and reaching the Subagents /
             Scheduled / Archived rows happen once for the whole Project, below. */}
-        {groupMode !== "time" || timeParts === null ? null : loading && sessions.length === 0 ? (
-          <SkeletonList rows={5} />
-        ) : (
-          <>
-            {timeGroups.map((group) => {
-              const collapsed = !searching && collapsedGroups.has(group.key);
-              return (
-                <div key={group.key} className="pt-2.5">
-                  <GroupHeader
-                    open={!collapsed}
-                    onToggle={() => toggleGroup(group.key)}
-                    icon={
-                      <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
-                      </span>
-                    }
-                    label={S.chat.timeGroups[group.bucket]}
-                    uppercase
-                    count={group.sessions.length}
-                  />
-                  {collapsed
-                    ? null
-                    : renderGroupBody(
-                        group.key,
-                        bucketPartition(group.sessions),
-                        true,
-                        undefined,
-                        () => [],
-                      )}
-                </div>
-              );
-            })}
+            {groupMode !== "time" || timeParts === null ? null : loading &&
+              sessions.length === 0 ? (
+              <SkeletonList rows={5} />
+            ) : (
+              <>
+                {timeGroups.map((group) => {
+                  const collapsed = !searching && collapsedGroups.has(group.key);
+                  return (
+                    <div key={group.key} className="pt-2.5">
+                      <GroupHeader
+                        open={!collapsed}
+                        onToggle={() => toggleGroup(group.key)}
+                        icon={
+                          <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                            <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
+                          </span>
+                        }
+                        label={S.chat.timeGroups[group.bucket]}
+                        uppercase
+                        count={group.sessions.length}
+                      />
+                      {collapsed
+                        ? null
+                        : renderGroupBody(
+                            group.key,
+                            bucketPartition(group.sessions),
+                            true,
+                            undefined,
+                            () => [],
+                            NO_ORG_SESSIONS,
+                          )}
+                    </div>
+                  );
+                })}
 
-            {/* Empty only when the shared folders below are empty too (renderGroupBody's own
+                {/* Empty only when the shared folders below are empty too (renderGroupBody's own
                 rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
-            {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
-              <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-                {S.chat.noSessions}
-              </p>
-            )}
+                {timeGroups.length === 0 &&
+                  !searching &&
+                  (timeSplit === null || timeSplit.organization.length === 0) &&
+                  timeFolders.every((f) => f === null) && (
+                    <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                      {S.chat.noSessions}
+                    </p>
+                  )}
 
-            {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
+                {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
                 puts them, so the row that pulls one belongs to the list, not to a bucket —
                 and its label says "conversations" where a bucket's says "more". */}
-            {!searching &&
-              timeParts.active.length < projectCounts.active &&
-              timeMoreAgents.length > 0 && (
-                <MoreRow
-                  label={S.chat.loadMoreSessions}
-                  ariaLabel={S.chat.loadMoreSessions}
-                  pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
-                  onClick={() => trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)}
-                  className="mt-1"
-                />
-              )}
+                {!searching &&
+                  timeParts.active.length < projectCounts.active &&
+                  timeMoreAgents.length > 0 && (
+                    <MoreRow
+                      label={S.chat.loadMoreSessions}
+                      ariaLabel={S.chat.loadMoreSessions}
+                      pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
+                      onClick={() =>
+                        trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)
+                      }
+                      className="mt-1"
+                    />
+                  )}
 
-            {/* The shared, Project-wide folders (see timeFolders). */}
-            <div className="pt-2.5">{timeFolders}</div>
+                {/* The shared, Project-wide folders (see timeFolders), the organization's rows first. */}
+                <div className="pt-2.5">
+                  {timeSplit !== null &&
+                    renderOrgFolder(TIME_FOLDERS_GROUP_KEY, timeSplit.organization, true)}
+                  {timeFolders}
+                </div>
+              </>
+            )}
+
+            {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
+            {searching && !hasSearchMatches && (
+              <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                {S.chat.searchNoMatches}
+              </p>
+            )}
           </>
-        )}
-
-        {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
-        {searching && !hasSearchMatches && (
-          <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-            {S.chat.searchNoMatches}
-          </p>
         )}
       </div>
 

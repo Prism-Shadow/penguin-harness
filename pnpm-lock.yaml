@@ -48,6 +48,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -127,6 +130,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -203,6 +209,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@penguinharness/agent-company':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -535,6 +544,8 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/agent-company: {}
 
   plugins/agent-development: {}
 
@@ -1087,6 +1098,9 @@ packages:
   '@peculiar/webcrypto@1.7.1':
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
+
+  '@penguinharness/agent-company@file:plugins/agent-company':
+    resolution: {directory: plugins/agent-company, type: directory}
 
   '@penguinharness/agent-development@file:plugins/agent-development':
     resolution: {directory: plugins/agent-development, type: directory}
@@ -4778,6 +4792,8 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
+  '@penguinharness/agent-company@file:plugins/agent-company': {}
+
   '@penguinharness/agent-development@file:plugins/agent-development': {}
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
@@ -4839,6 +4855,7 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/continual-learning': file:plugins/continual-learning
@@ -4870,6 +4887,7 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/continual-learning': file:plugins/continual-learning
@@ -4897,6 +4915,7 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/continual-learning': file:plugins/continual-learning

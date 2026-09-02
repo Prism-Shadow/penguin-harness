@@ -220,6 +220,36 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 Schedule writes are owner-only. A task in new-Session mode carries `modelId` and `provider` together or not at all; the pair is checked against the Project's model table when the task is saved and again when the scheduler reconciles it.
 
+### Organizations (company mode)
+
+All paths below are under `/api/projects/:projectId/organizations`. Every route answers 404 while the admin's company-mode switch is off. Any Project member reads and writes; deleting an organization is owner-only. Write bodies may carry `sessionId` — the calling session, which the CLI fills from `PENGUIN_SESSION_ID` — so the file records the employee rather than the token's user. See [Company Mode](/company-mode) for the files behind these routes.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET / POST | / | List organizations / create one: `{orgId, mission, name?, timezone?}` → 201 with the organization detail (creation makes the CEO Agent and opens its desk with an initialization run; 409 when the id or the CEO's Agent id is taken) |
+| GET / PATCH / DELETE | /:orgId | Overview (settings, board counts, today's calendar, pending items, recent chat, alerts) / change name, mission, `status` (`active` / `paused`), `approvalMode`, `timezone`, thresholds / delete (the employee Agents and their sessions stay) |
+| GET | /:orgId/chart | The employee tree with live state, desk and period spend per employee |
+| POST | /:orgId/employees | Hire: `{agentId}` for an existing Agent or `{newAgent: {agentId, name?, description?, plugins?}}`, plus `title`, `reportsTo`, `workspace?`, `budget?`, `duties?`, `model?` |
+| PATCH / DELETE | /:orgId/employees/:agentId | Change title, manager, workspace, budget (`null` clears), duties, model / leave (subordinates move up to the manager; the CEO cannot leave) |
+| GET / POST | /:orgId/employees/:agentId/desk | The desk session (opened when missing) / a renewed desk session |
+| GET / PUT | /:orgId/handbook | The organization handbook (`README.md`) |
+| GET / POST | /:orgId/calendar | Every employee's events with their run state / create: `{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | One event |
+| GET / POST | /:orgId/tickets | The board by column (plus unparsable files) / create: `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |
+| GET / PUT | /:orgId/tickets/:ticketId | Ticket detail (sections, progress, contributing sessions, children, rolled-up cost) / update header fields and sections |
+| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}` — moving into `rejected` needs a reason |
+| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}` — `by` is a ticket id or a principal; the ticket stays in its column |
+| POST | /:orgId/tickets/:ticketId/unblock | Clears the block |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}` — appends a progress line attributed to the caller |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`: a ticket session of that employee, recorded in the ticket's `Sessions` |
+| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}` — records an existing session as contributing |
+| GET / POST | /:orgId/chat | A day's messages (`?date=yyyy-mm-dd`, default today in the organization's timezone) with the caller's unread and mention counts / send `{text, refs?}`; mentions are resolved from the text |
+| POST | /:orgId/chat/read | `{upTo}` — the caller's read cursor |
+| GET | /:orgId/finance | Spend per employee (own and cumulative along the reporting line), per ticket (rolled up along `Parent`), daily trend, alerts; `?period=yyyy-mm` |
+| GET | /:orgId/sessions | The organization's desk sessions and ticket sessions grouped by ticket |
+
+User-level events on `GET /api/events`: `org_run` (a work run or ticket session started), `org_chat` (a new message, mentions included), `org_ticket` (a ticket's status, owner, block or sessions changed), `org_budget` (warned / paused / resumed).
+
 ### Session Creation and Directory Browsing
 
 | Method | Path | Description |

@@ -143,6 +143,38 @@ import type {
   VersionResponse,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
+import type {
+  OrgCalendarItem,
+  OrgCalendarResponse,
+  OrgCalendarUpsertRequest,
+  OrgChartResponse,
+  OrgChatMessage,
+  OrgChatReadRequest,
+  OrgChatResponse,
+  OrgChatSendRequest,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgEmployeePatchRequest,
+  OrgFinanceResponse,
+  OrgHandbookResponse,
+  OrgHireRequest,
+  OrgSessionsResponse,
+  OrgTicketAttachRequest,
+  OrgTicketBlockRequest,
+  OrgTicketCreateRequest,
+  OrgTicketDetail,
+  OrgTicketMoveRequest,
+  OrgTicketProgressRequest,
+  OrgTicketStartRequest,
+  OrgTicketStartResponse,
+  OrgTicketUpdateRequest,
+  OrgTicketsResponse,
+  OrganizationCreateRequest,
+  OrganizationDetail,
+  OrganizationPatchRequest,
+  OrganizationSettings,
+  OrganizationsResponse,
+} from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 
@@ -1215,3 +1247,199 @@ export const desktopUpdateDownload = () =>
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
+
+// ---------------------------------------------------------------------------
+// Company mode: organizations (one wrapper per route of routes/organizations.ts)
+// ---------------------------------------------------------------------------
+
+/** Base path of one Project's organizations, or of one organization when `orgId` is given. */
+const orgBase = (projectId: string, orgId?: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/organizations${
+    orgId === undefined ? "" : `/${encodeURIComponent(orgId)}`
+  }`;
+
+export const listOrganizations = (projectId: string) =>
+  apiFetch<OrganizationsResponse>(orgBase(projectId));
+
+export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
+  apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+
+export const getOrganization = (projectId: string, orgId: string) =>
+  apiFetch<OrganizationDetail>(orgBase(projectId, orgId));
+
+export const patchOrganization = (
+  projectId: string,
+  orgId: string,
+  body: OrganizationPatchRequest,
+) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
+
+export const deleteOrganization = (projectId: string, orgId: string) =>
+  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+
+export const getOrgChart = (projectId: string, orgId: string) =>
+  apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
+
+export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
+  apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
+
+export const patchOrgEmployee = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  body: OrgEmployeePatchRequest,
+) =>
+  apiFetch<OrgEmployeeItem>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`,
+    { method: "PATCH", body },
+  );
+
+export const leaveOrganization = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<void>(`${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+
+/** The employee's desk session, opened on demand (GET creates it when there is none). */
+export const getOrgDesk = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<OrgDeskResponse>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/desk`,
+  );
+
+/** A fresh desk session for the employee (the old one stays as an ordinary Session). */
+export const renewOrgDesk = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<OrgDeskResponse>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/desk`,
+    { method: "POST", body: {} },
+  );
+
+export const getOrgHandbook = (projectId: string, orgId: string) =>
+  apiFetch<OrgHandbookResponse>(`${orgBase(projectId, orgId)}/handbook`);
+
+export const putOrgHandbook = (projectId: string, orgId: string, content: string) =>
+  apiFetch<OrgHandbookResponse>(`${orgBase(projectId, orgId)}/handbook`, {
+    method: "PUT",
+    body: { content },
+  });
+
+export const listOrgCalendar = (projectId: string, orgId: string) =>
+  apiFetch<OrgCalendarResponse>(`${orgBase(projectId, orgId)}/calendar`);
+
+export const createOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  body: OrgCalendarUpsertRequest & { agentId: string; name: string },
+) => apiFetch<OrgCalendarItem>(`${orgBase(projectId, orgId)}/calendar`, { method: "POST", body });
+
+export const updateOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  name: string,
+  body: OrgCalendarUpsertRequest,
+) =>
+  apiFetch<OrgCalendarItem>(
+    `${orgBase(projectId, orgId)}/calendar/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}`,
+    { method: "PUT", body },
+  );
+
+export const deleteOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  name: string,
+) =>
+  apiFetch<void>(
+    `${orgBase(projectId, orgId)}/calendar/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
+
+export const listOrgTickets = (projectId: string, orgId: string) =>
+  apiFetch<OrgTicketsResponse>(`${orgBase(projectId, orgId)}/tickets`);
+
+export const getOrgTicket = (projectId: string, orgId: string, ticketId: string) =>
+  apiFetch<OrgTicketDetail>(`${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}`);
+
+export const createOrgTicket = (projectId: string, orgId: string, body: OrgTicketCreateRequest) =>
+  apiFetch<OrgTicketDetail>(`${orgBase(projectId, orgId)}/tickets`, { method: "POST", body });
+
+export const updateOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketUpdateRequest,
+) =>
+  apiFetch<OrgTicketDetail>(
+    `${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}`,
+    { method: "PUT", body },
+  );
+
+/** `…/tickets/:ticketId/<action>` POST helper shared by the six ticket actions. */
+const ticketAction = <T>(
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  action: string,
+  body: unknown,
+) =>
+  apiFetch<T>(`${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}/${action}`, {
+    method: "POST",
+    body,
+  });
+
+export const moveOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketMoveRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "move", body);
+
+export const blockOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketBlockRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "block", body);
+
+export const unblockOrgTicket = (projectId: string, orgId: string, ticketId: string) =>
+  ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "unblock", {});
+
+export const progressOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketProgressRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "progress", body);
+
+export const startOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketStartRequest = {},
+) => ticketAction<OrgTicketStartResponse>(projectId, orgId, ticketId, "start", body);
+
+export const attachOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketAttachRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "attach", body);
+
+/** One day of the organization's chat (today in its timezone when `date` is omitted). */
+export const getOrgChat = (projectId: string, orgId: string, date?: string) =>
+  apiFetch<OrgChatResponse>(`${orgBase(projectId, orgId)}/chat`, {
+    query: { date },
+  });
+
+export const sendOrgChat = (projectId: string, orgId: string, body: OrgChatSendRequest) =>
+  apiFetch<OrgChatMessage>(`${orgBase(projectId, orgId)}/chat`, { method: "POST", body });
+
+export const readOrgChat = (projectId: string, orgId: string, body: OrgChatReadRequest) =>
+  apiFetch<void>(`${orgBase(projectId, orgId)}/chat/read`, { method: "POST", body });
+
+/** Budget and spend for one `yyyy-mm` period (the current one when omitted). */
+export const getOrgFinance = (projectId: string, orgId: string, period?: string) =>
+  apiFetch<OrgFinanceResponse>(`${orgBase(projectId, orgId)}/finance`, {
+    query: { period },
+  });
+
+export const getOrgSessions = (projectId: string, orgId: string) =>
+  apiFetch<OrgSessionsResponse>(`${orgBase(projectId, orgId)}/sessions`);

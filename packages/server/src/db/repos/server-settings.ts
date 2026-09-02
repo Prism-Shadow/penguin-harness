@@ -32,6 +32,7 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+const COMPANY_MODE_KEY = "companyMode";
 
 export class ServerSettingsRepo {
   constructor(private readonly db: DatabaseSync) {}
@@ -137,6 +138,21 @@ export class ServerSettingsRepo {
    * so no caller has to remember that the two numbers are only meaningful together (the total is
    * never below the per-file cap; the PUT enforces that against the effective post-write pair).
    */
+  /** Company mode master switch (default on): absent row = on. */
+  getCompanyMode(): boolean {
+    const raw = this.get(COMPANY_MODE_KEY);
+    if (raw === null) return true;
+    try {
+      return JSON.parse(raw) !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  setCompanyMode(value: boolean): void {
+    this.set(COMPANY_MODE_KEY, JSON.stringify(value));
+  }
+
   getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
     return {
       attachmentMaxMb: this.getAttachmentMaxMb(),

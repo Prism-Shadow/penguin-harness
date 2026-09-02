@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/agent-company",
+  "version": "0.2.9",
+  "description": "Company mode for PenguinHarness agents: the employee protocol every desk and ticket session follows, plus the CEO, HR and finance playbooks for running an organization on calendar events, tickets, group chat and budgets.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/agent-company"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -22,7 +22,7 @@ plugins/<plugin>/
 | `description` / `description_zh` | One-line description (English required) |
 | `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
 | `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
-| `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
+| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
@@ -106,6 +106,7 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | | `model-development` | Model development on your own hardware — three skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
 | | `agent-tuning` | The tuning loop as four skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated Case) and `agent-optimization` (improve the agent from measured results) |
+| Agent Company | `agent-company` | The employee toolkit of company mode — four skills: `company-employee` (the protocol every desk and ticket session follows: trigger blocks, the ticket board, blocking, chat etiquette, budgets), `company-ceo` (mission to tickets, hiring, workspace partitioning, review, reporting to the board), `company-hr` (calendar coverage, hiring and offboarding, evaluation) and `company-finance` (budgets, the daily audit, alerts and pauses) (not preinstalled: the organization installs it when it creates the CEO and hires employees) |
 
 ## Writing and optimizing Skills
 

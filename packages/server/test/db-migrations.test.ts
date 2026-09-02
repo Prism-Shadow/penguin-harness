@@ -48,9 +48,25 @@ const GOAL_STATE_DDL = `
  * lacked, plus the one table it had that today's declaration dropped. Derived from
  * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
  */
+/** The company-mode tables migration 4 adds: a database from before it never had them. */
+function dropCompanyModeTables(db: DatabaseSync): void {
+  for (const table of [
+    "org_sessions",
+    "org_ticket_sessions",
+    "org_calendar_state",
+    "org_ticket_state",
+    "org_chat_state",
+    "org_chat_reads",
+    "org_budget_state",
+  ]) {
+    db.exec(`DROP TABLE IF EXISTS ${table}`);
+  }
+}
+
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
@@ -62,6 +78,7 @@ function open024(): DatabaseSync {
 function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
   db.exec("PRAGMA user_version = 2");
   return db;
@@ -74,7 +91,8 @@ function withoutRestartOnly<T>(fn: () => T): T {
   try {
     return fn();
   } finally {
-    list.push(...removed);
+    // Back where it was: appending would reorder the list once later migrations exist.
+    list.splice(2, 0, ...removed);
   }
 }
 
@@ -138,11 +156,7 @@ describe("migration mechanism", () => {
       const r = migrate(db);
       expect(r.from).toBe(0);
       expect(r.to).toBe(LATEST_VERSION);
-      expect(r.applied).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-        "drop-goal-state",
-      ]);
+      expect(r.applied).toEqual(MIGRATIONS.map((m) => m.name));
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
@@ -197,10 +211,8 @@ describe("the swap path refuses what a rollback could not survive", () => {
   it("applies swap-safe migrations while a pushed platform boots", () => {
     const db = open024();
     try {
-      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-      ]);
+      const swapSafe = MIGRATIONS.filter((m) => m.swapSafe).map((m) => m.name);
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual(swapSafe);
     } finally {
       db.close();
     }
@@ -215,11 +227,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
       expect(shape(db)).toBe(before);
       expect(schemaVersion(db)).toBe(0);
       // The runtime's own open, which owns the process, may apply it.
-      expect(migrate(db).applied).toEqual([
-        "messaging-bindings",
-        "messaging-delivery-flags",
-        "drop-goal-state",
-      ]);
+      expect(migrate(db).applied).toEqual(MIGRATIONS.map((m) => m.name));
     } finally {
       db.close();
     }
@@ -242,12 +250,13 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state"]);
+      const after029 = MIGRATIONS.filter((m) => m.version > 2).map((m) => m.name);
+      expect(migrate(db).applied).toEqual(after029);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state"]);
+      expect(migrate(fresh).applied).toEqual(after029);
     } finally {
       db.close();
       fresh.close();
@@ -333,10 +342,15 @@ describe("rollbackTo", () => {
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
 
-      const r = rollbackTo(db, LATEST_VERSION - 2);
+      // Back to version 1: everything after it is undone, so the columns migration 2 added are gone.
+      const r = rollbackTo(db, 1);
       expect(r.from).toBe(LATEST_VERSION);
-      expect(r.to).toBe(LATEST_VERSION - 2);
-      expect(r.reverted).toEqual(["drop-goal-state", "messaging-delivery-flags"]);
+      expect(r.to).toBe(1);
+      expect(r.reverted).toEqual(
+        MIGRATIONS.filter((m) => m.version > 1)
+          .map((m) => m.name)
+          .reverse(),
+      );
       const cols = (
         db.prepare("PRAGMA table_info(messaging_bindings)").all() as { name: string }[]
       ).map((c) => c.name);
@@ -371,11 +385,11 @@ describe("rollbackTo", () => {
     try {
       migrate(db);
       const r = rollbackTo(db, 0);
-      expect(r.reverted).toEqual([
-        "drop-goal-state",
-        "messaging-delivery-flags",
-        "messaging-bindings",
-      ]);
+      expect(r.reverted).toEqual(
+        MIGRATIONS.filter((m) => m.version > 0)
+          .map((m) => m.name)
+          .reverse(),
+      );
       expect(
         db
           .prepare(

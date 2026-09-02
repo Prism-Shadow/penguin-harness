@@ -5,7 +5,7 @@
  */
 import type { ButtonHTMLAttributes } from "react";
 import { S } from "../../lib/strings";
-import { AGENT_GROUP_ICON } from "./group-list";
+import { AGENT_GROUP_ICON, CALENDAR_ICON } from "./group-list";
 
 /** Downward caret on Select / OptionMenu / composer dropdown triggers. Color follows currentColor (callers add text-gray-400). */
 export function ChevronDown({ size = 12, className = "" }: { size?: number; className?: string }) {
@@ -220,4 +220,31 @@ export const NAV_ICONS = {
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
   /** Terminal (a `>_` prompt in a window frame). */
   terminal: "M3 5h18v14H3zM7 9l3 3-3 3M13 15h4",
+  /** Company mode's overview (lucide layout-dashboard: four tiles of two heights). */
+  orgOverview:
+    "M4 3h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 12h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM4 16h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z",
+  /** The org chart (lucide network: one box over two, joined by a bus). */
+  orgChart: "M9 3h6v5H9zM2 16h6v5H2zM16 16h6v5h-6zM5 16v-3h14v3M12 13V8",
+  /** The organization calendar: the same calendar the sidebar's time grouping wears. */
+  orgCalendar: CALENDAR_ICON,
+  /** The ticket board (lucide square-kanban: three columns of unequal height in a frame). */
+  orgTickets:
+    "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 7v7M12 7v4M16 7v9",
+  /** Finance (lucide circle-dollar-sign). */
+  orgFinance:
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
+  /**
+   * The organization chat (lucide messages-square: two overlapping bubbles). Deliberately not
+   * the single bubble MESSAGING_ICON draws — that one marks a messaging binding, and one
+   * glyph for two things a row apart would read as one setting.
+   */
+  orgChat:
+    "M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",
 } as const;
+
+/** Company mode (lucide building-2: a tower with wings and windows), the mode switch's second option and the collapsed rail's toggle. */
+export const COMPANY_MODE_ICON =
+  "M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4";
+
+/** Development mode (lucide code: two angle brackets), the mode switch's first option. */
+export const DEV_MODE_ICON = "m16 18 6-6-6-6M8 6l-6 6 6 6";

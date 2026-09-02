@@ -51,6 +51,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
         attachmentLimitMinMb: MIN_ATTACHMENT_MB,
         attachmentLimitMaxMb: MAX_ATTACHMENT_MB,
       },
+      companyMode: deps.serverSettingsRepo.getCompanyMode(),
     } satisfies MeResponse);
   });
 

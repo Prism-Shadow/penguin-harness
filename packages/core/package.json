@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
+    "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-tuning": "workspace:*",
     "@penguinharness/continual-learning": "workspace:*",

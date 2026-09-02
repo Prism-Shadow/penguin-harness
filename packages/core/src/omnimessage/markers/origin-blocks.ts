@@ -215,6 +215,117 @@ export function parseScheduledMessage(
 }
 
 // ---------------------------------------------------------------------------
+// [org_trigger] — a work run or ticket session opened by the company-mode scheduler
+// ---------------------------------------------------------------------------
+
+/** What kind of organization trigger a message carries. */
+export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
+
+/**
+ * Origin info for an organization trigger: the organization, the employee it addresses
+ * (with its title and reporting line for the model's orientation), the trigger kind and the
+ * kind-specific facts. Every field but `org`, `employee` and `kind` is optional so one shape
+ * serves all five kinds; the body after the block is the trigger's content (a calendar
+ * prompt, the quoted chat, a ticket excerpt or the whole ticket).
+ */
+export interface OrgTriggerOrigin {
+  org: string;
+  /** `<agent_id>` or `<agent_id> (<title>, reports to <agent_id>)`. */
+  employee: string;
+  kind: OrgTriggerKind;
+  /** kind=event: the calendar event name. */
+  event?: string;
+  /** kind=event: the fire time (ISO 8601). */
+  firedAt?: string;
+  /** kind=mention: `<message id> from <principal>`. */
+  message?: string;
+  /** kind=ticket_notice / ticket_work: the ticket id. */
+  ticket?: string;
+  /** kind=ticket_notice: assigned | blocked | blocker_closed | done | rejected. */
+  change?: string;
+  /** Cumulative spend against the employee's budget for the period, as the scheduler formatted it. */
+  budget?: string;
+}
+
+const ORG_TRIGGER_KEYS = [
+  "org",
+  "employee",
+  "kind",
+  "event",
+  "fired_at",
+  "message",
+  "ticket",
+  "change",
+  "budget",
+] as const;
+
+/**
+ * Trigger input = an `[org_trigger]` origin block + the trigger body: tells the model the
+ * organization scheduler sent this and which handbook to read first; the frontend collapses
+ * the block into a one-line trigger hint (Trace shows it verbatim). `<app_data_dir>` is a
+ * PRN-020 placeholder the model resolves from its Environment section, never an absolute path.
+ */
+export function buildOrgTriggerMessage(origin: OrgTriggerOrigin, body: string): string {
+  const lines = [
+    `This message was sent automatically by the organization scheduler. Read the organization handbook at <app_data_dir>/organizations/${origin.org}/README.md before acting, then follow its procedures; the trigger's details are listed below and its content follows.`,
+    `org: ${origin.org}`,
+    `employee: ${origin.employee}`,
+    `kind: ${origin.kind}`,
+  ];
+  if (origin.event !== undefined) lines.push(`event: ${origin.event}`);
+  if (origin.firedAt !== undefined) lines.push(`fired_at: ${origin.firedAt}`);
+  if (origin.message !== undefined) lines.push(`message: ${origin.message}`);
+  if (origin.ticket !== undefined) lines.push(`ticket: ${origin.ticket}`);
+  if (origin.change !== undefined) lines.push(`change: ${origin.change}`);
+  if (origin.budget !== undefined) lines.push(`budget: ${origin.budget}`);
+  const block = markerBlock(MARKER_TAGS.orgTrigger, lines.join("\n"));
+  return body === "" ? block : `${block}\n\n${body}`;
+}
+
+const ORG_TRIGGER_PATTERNS = dualFormPatterns(MARKER_TAGS.orgTrigger, "\\n([\\s\\S]*?)\\n");
+
+/**
+ * Inverse of `buildOrgTriggerMessage`: origin info plus the body when the message **starts
+ * with** an `[org_trigger]` block, otherwise null. An unknown `kind` makes the block unparsable
+ * (returned as null) rather than silently reinterpreted.
+ */
+export function parseOrgTriggerMessage(
+  text: string,
+): { origin: OrgTriggerOrigin; rest: string } | null {
+  const m = matchDualForm(ORG_TRIGGER_PATTERNS, text);
+  if (!m || m.index !== 0) return null;
+  const fields = new Map<string, string>(fieldLines(m[1]!, ORG_TRIGGER_KEYS));
+  const org = fields.get("org");
+  const employee = fields.get("employee");
+  const kind = fields.get("kind");
+  if (!org || !employee || !isOrgTriggerKind(kind)) return null;
+  const origin: OrgTriggerOrigin = { org, employee, kind };
+  const event = fields.get("event");
+  if (event !== undefined) origin.event = event;
+  const firedAt = fields.get("fired_at");
+  if (firedAt !== undefined) origin.firedAt = firedAt;
+  const message = fields.get("message");
+  if (message !== undefined) origin.message = message;
+  const ticket = fields.get("ticket");
+  if (ticket !== undefined) origin.ticket = ticket;
+  const change = fields.get("change");
+  if (change !== undefined) origin.change = change;
+  const budget = fields.get("budget");
+  if (budget !== undefined) origin.budget = budget;
+  return { origin, rest: text.slice(m[0].length).replace(/^\n+/, "") };
+}
+
+function isOrgTriggerKind(value: string | undefined): value is OrgTriggerKind {
+  return (
+    value === "init" ||
+    value === "event" ||
+    value === "mention" ||
+    value === "ticket_notice" ||
+    value === "ticket_work"
+  );
+}
+
+// ---------------------------------------------------------------------------
 // [model_switch_from] — the /model command's handoff-style conversation switch
 // ---------------------------------------------------------------------------
 

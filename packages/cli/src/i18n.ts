@@ -243,6 +243,192 @@ export interface Messages {
     colLastFired(): string;
     colStatus(): string;
   };
+  /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
+  org: {
+    desc: string;
+    lsDesc: string;
+    createDesc: string;
+    showDesc: string;
+    chartDesc: string;
+    hireDesc: string;
+    employeeDesc: string;
+    employeeSetDesc: string;
+    leaveDesc: string;
+    deskDesc: string;
+    deskShowDesc: string;
+    deskRenewDesc: string;
+    calendarDesc: string;
+    calendarLsDesc: string;
+    calendarAddDesc: string;
+    calendarUpdateDesc: string;
+    calendarRmDesc: string;
+    ticketDesc: string;
+    ticketLsDesc: string;
+    ticketShowDesc: string;
+    ticketCreateDesc: string;
+    ticketMoveDesc: string;
+    ticketAssignDesc: string;
+    ticketBlockDesc: string;
+    ticketUnblockDesc: string;
+    ticketProgressDesc: string;
+    ticketStartDesc: string;
+    ticketAttachDesc: string;
+    chatDesc: string;
+    chatTailDesc: string;
+    chatSendDesc: string;
+    financeDesc: string;
+    /** --org-id: the organization (defaults to PENGUIN_ORG_ID, the control environment of desk and ticket sessions). */
+    orgId: string;
+    /** create's --org-id: the id to create (never taken from the environment). */
+    newOrgId: string;
+    mission: string;
+    orgName: string;
+    /** hire's --agent-id: employ an existing Agent (XOR --new-agent). */
+    hireAgentId: string;
+    /** hire's --new-agent: create the Agent and employ it. */
+    newAgent: string;
+    newAgentName: string;
+    newAgentDescription: string;
+    /** --skills: the new Agent's library plugins, comma-separated (replaces the default pair). */
+    skills: string;
+    title: string;
+    reportsTo: string;
+    /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
+    employeeWorkspace: string;
+    /** --budget: monthly USD for the employee plus every subordinate. */
+    budget: string;
+    duties: string;
+    /** calendar's --agent-id: the employee the event belongs to (defaults to PENGUIN_AGENT_ID); a filter on `ls`. */
+    calendarAgentId: string;
+    calendarTitle: string;
+    /** ticket ls filters. */
+    statusFilter: string;
+    ownerFilter: string;
+    blockedFilter: string;
+    ticketTitle: string;
+    goal: string;
+    criteria: string;
+    /** --body-file: the whole Markdown body from a file (XOR --goal). */
+    bodyFile: string;
+    owner: string;
+    parent: string;
+    /** --notify: principals told when the ticket ends, comma-separated. */
+    notify: string;
+    priority: string;
+    due: string;
+    /** move's --to: the target column. */
+    moveTo: string;
+    /** move's --reason: required when moving into rejected. */
+    moveReason: string;
+    blockReason: string;
+    /** block's --by: who or which ticket the ticket waits for. */
+    blockedBy: string;
+    progressText: string;
+    /** start's -m: a note appended to the ticket text the session opens with. */
+    startMessage: string;
+    /** start's --workspace: another directory inside the shared workspace (default: the employee's desk workspace). */
+    startWorkspace: string;
+    /** attach's --session: the session to attach (default: the calling session). */
+    attachSession: string;
+    chatDate: string;
+    chatCount: string;
+    chatText: string;
+    refTicket: string;
+    refSession: string;
+    /** finance's --period: yyyy-mm (default: the current month). */
+    period: string;
+    /** No --org-id and no PENGUIN_ORG_ID: there is no default organization. */
+    orgIdMissing(): string;
+    /** hire: --agent-id XOR --new-agent. */
+    hireTargetConflict(): string;
+    /** hire: --name / --description / --skills describe the new Agent only. */
+    newAgentFieldsOnly(): string;
+    budgetInvalid(value: string): string;
+    /** employee set with no field to change. */
+    nothingToSet(): string;
+    /** A --status / --to value that is not a kanban column. */
+    statusInvalid(value: string): string;
+    priorityInvalid(value: string): string;
+    /** ticket create: --goal XOR --body-file. */
+    ticketBodyConflict(): string;
+    criteriaNeedsGoal(): string;
+    bodyFileUnreadable(file: string): string;
+    countInvalid(value: string): string;
+    /** ticket attach outside a session and without --session. */
+    attachSessionMissing(): string;
+    /** Confirmations of the write commands. */
+    created(orgId: string, ceoDeskSessionId: string | undefined): string;
+    hired(agentId: string, title: string, reportsTo: string | null): string;
+    employeeUpdated(agentId: string): string;
+    left(agentId: string): string;
+    desk(
+      agentId: string,
+      sessionId: string,
+      workspace: string,
+      openedAt: string,
+      created: boolean,
+    ): string;
+    deskRenewed(agentId: string, sessionId: string): string;
+    calendarWritten(
+      agentId: string,
+      name: string,
+      enabledText: string,
+      nextFireAt: string | undefined,
+    ): string;
+    calendarRemoved(agentId: string, name: string): string;
+    ticketCreated(ticketId: string, status: string): string;
+    ticketMoved(ticketId: string, status: string): string;
+    ticketAssigned(ticketId: string, owner: string): string;
+    ticketBlocked(ticketId: string): string;
+    ticketUnblocked(ticketId: string): string;
+    progressRecorded(ticketId: string): string;
+    ticketAttached(ticketId: string, sessionId: string): string;
+    chatSent(id: string): string;
+    /** Empty states. */
+    empty(projectId: string): string;
+    calendarEmpty(): string;
+    ticketsEmpty(): string;
+    chatEmpty(date: string): string;
+    /** `show`: one line per fact. */
+    showHead(name: string, orgId: string, status: string): string;
+    showMission(mission: string): string;
+    showEmployees(count: number, running: number, paused: number): string;
+    showBoard(counts: string, blocked: number): string;
+    showSpend(period: string, spend: string): string;
+    showPending(mentions: number, review: number, blockedByMe: number): string;
+    /** An invalid organization / employee / ticket, with the reason (a line in `show`, a cell in tables). */
+    invalid(reason: string): string;
+    /** `ticket show`: the derived state above the file. */
+    ticketHead(
+      ticketId: string,
+      status: string,
+      running: boolean,
+      blocked: string | undefined,
+    ): string;
+    ticketFigures(cost: string, rolledUp: string, sessions: number, children: number): string;
+    financeTotal(period: string, total: string): string;
+    /** stderr note under `finance`: some usage had no pricing, so the total is a lower bound. */
+    unpriced(): string;
+    colEmployees(): string;
+    colRunning(): string;
+    colOpen(): string;
+    colBlocked(): string;
+    colSpend(): string;
+    colNote(): string;
+    /** Chart / finance: the employee's job title. */
+    colJobTitle(): string;
+    /** Tickets: the ticket title. */
+    colTitle(): string;
+    colState(): string;
+    colOwn(): string;
+    colCumulative(): string;
+    colBudget(): string;
+    colNext(): string;
+    colPriority(): string;
+    colOwner(): string;
+    colTicket(): string;
+    colRolledUp(): string;
+  };
   /** Server-connection layer: resolution, auto-start, tokens, streams. */
   client: {
     invalidServerUrl(value: string): string;
@@ -763,6 +949,170 @@ const en: Messages = {
     colLastFired: () => "LAST FIRED",
     colStatus: () => "STATUS",
   },
+  org: {
+    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, chat, finance)",
+    lsDesc: "List the project's organizations",
+    createDesc:
+      "Create an organization: its CEO Agent, the CEO's desk session and the initialization run",
+    showDesc:
+      "Overview: employees and their states, board counts, spend against budget, pending items",
+    chartDesc: "The employee tree with titles, states, spend and budgets",
+    hireDesc:
+      "Employ an Agent: an existing one (--agent-id) or a new one (--new-agent), under --reports-to",
+    employeeDesc: "Manage employees",
+    employeeSetDesc: "Update an employee's entry in the tree (only the given fields change)",
+    leaveDesc: "Remove an employee from the organization (not the CEO); the Agent itself stays",
+    deskDesc: "Desk sessions (one standing session per employee)",
+    deskShowDesc: "The employee's desk session id and Workspace (opens the desk if it has none)",
+    deskRenewDesc: "Open a fresh desk session for the employee (resets its context)",
+    calendarDesc: "Calendar events (schedules that fire into the employee's desk session)",
+    calendarLsDesc: "List the organization's calendar events (one employee's with --agent-id)",
+    calendarAddDesc:
+      "Create a calendar event (writes the event file through the API; enabled by default — use --disabled to opt out)",
+    calendarUpdateDesc:
+      "Update a calendar event (read-modify-write: unspecified fields keep their stored values)",
+    calendarRmDesc: "Delete a calendar event (no prompt)",
+    ticketDesc: "Tickets on the kanban board",
+    ticketLsDesc: "List the board's tickets (filtered locally by --status / --owner / --blocked)",
+    ticketShowDesc: "Show a ticket: the derived figures, then the ticket file",
+    ticketCreateDesc: "Create a ticket in the proposed column",
+    ticketMoveDesc: "Move a ticket to another column (a reason is required for rejected)",
+    ticketAssignDesc: "Set a ticket's owner",
+    ticketBlockDesc: "Mark a ticket blocked (it stays in its column)",
+    ticketUnblockDesc: "Clear a ticket's blocked state",
+    ticketProgressDesc: "Append a progress entry (attributed to the calling session)",
+    ticketStartDesc:
+      "Open a ticket session that works on the ticket in the background; prints the session id",
+    ticketAttachDesc:
+      "Attach an existing session as a contributor (defaults to the calling session)",
+    chatDesc: "The organization's group chat",
+    chatTailDesc: "Print the last messages of a day (20 unless -n is given)",
+    chatSendDesc: "Send a message (@agent:<id> / @all mentions trigger the mentioned desks)",
+    financeDesc: "Spend per employee (along the reporting line) and per ticket, against budgets",
+    orgId:
+      "Organization id (defaults to PENGUIN_ORG_ID, set inside desk and ticket sessions; no other default)",
+    newOrgId:
+      "Id of the organization to create (letters, digits, underscores; also its directory name)",
+    mission: "The organization's mission",
+    orgName: "Display name (defaults to the id)",
+    hireAgentId: "Employ this existing Agent (mutually exclusive with --new-agent)",
+    newAgent: "Create an Agent with this id and employ it (mutually exclusive with --agent-id)",
+    newAgentName: "Display name of the new Agent",
+    newAgentDescription: "Description of the new Agent",
+    skills:
+      "Library plugins for the new Agent, comma-separated (replaces the default agent-company,agent-development)",
+    title: "Job title",
+    reportsTo: "Agent id of the manager",
+    employeeWorkspace:
+      "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
+    budget: "Monthly budget in USD for the employee plus everyone below it",
+    duties: "Duties, in prose",
+    calendarAgentId:
+      "Employee the event belongs to (defaults to PENGUIN_AGENT_ID); on ls, list only this employee's events",
+    calendarTitle: "Event title",
+    statusFilter: "Only this column: proposed, in_progress, review, done or rejected",
+    ownerFilter: "Only tickets owned by this principal (agent:<id> / user:<id>)",
+    blockedFilter: "Only blocked tickets",
+    ticketTitle: "Ticket title",
+    goal: "The goal (mutually exclusive with --body-file)",
+    criteria: "Acceptance criteria (with --goal)",
+    bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
+    owner: "Owner principal (agent:<id> / user:<id>)",
+    parent: "Parent ticket id",
+    notify: "Principals notified when the ticket ends, comma-separated",
+    priority: "Priority: P0, P1 or P2",
+    due: "Due date (yyyy-mm-dd)",
+    moveTo: "Target column: proposed, in_progress, review, done or rejected",
+    moveReason: "Why (required when moving into rejected; recorded under Result)",
+    blockReason: "Why the ticket is blocked",
+    blockedBy: "Who or which ticket it waits for (a principal or a ticket id)",
+    progressText: "The progress entry",
+    startMessage: "A note appended to the ticket text the session opens with",
+    startWorkspace:
+      "Another directory inside the shared workspace (defaults to the employee's desk workspace)",
+    attachSession:
+      "The session to attach, full id or unique fragment (defaults to PENGUIN_SESSION_ID)",
+    chatDate: "Day to read (yyyy-mm-dd in the organization's timezone; defaults to today)",
+    chatCount: "Number of messages to print (default 20)",
+    chatText: "Message text (@agent:<id> or @all to mention)",
+    refTicket: "Ticket the message refers to",
+    refSession: "Session the message refers to",
+    period: "Month to report (yyyy-mm; defaults to the current month)",
+    orgIdMissing: () =>
+      "No organization given: pass --org-id <id>, or set PENGUIN_ORG_ID (desk and ticket sessions carry it in their environment).",
+    hireTargetConflict: () =>
+      "Pass exactly one of --agent-id (an existing Agent) and --new-agent (create one).",
+    newAgentFieldsOnly: () => "--name, --description and --skills describe --new-agent only.",
+    budgetInvalid: (value) =>
+      `Invalid --budget value "${value}": expected a non-negative amount in USD.`,
+    nothingToSet: () => "Nothing to update: pass at least one field.",
+    statusInvalid: (value) =>
+      `Invalid column "${value}": expected proposed, in_progress, review, done or rejected.`,
+    priorityInvalid: (value) => `Invalid --priority value "${value}": expected P0, P1 or P2.`,
+    ticketBodyConflict: () => "Pass exactly one of --goal and --body-file.",
+    criteriaNeedsGoal: () => "--criteria goes with --goal.",
+    bodyFileUnreadable: (file) => `Cannot read --body-file ${file}.`,
+    countInvalid: (value) => `Invalid -n value "${value}": expected a positive integer.`,
+    attachSessionMissing: () =>
+      "No session to attach: pass --session <id>, or run inside a session (PENGUIN_SESSION_ID).",
+    created: (orgId, ceoDeskSessionId) =>
+      `Organization ${orgId} created${ceoDeskSessionId !== undefined ? ` (CEO desk session ${ceoDeskSessionId})` : ""}.`,
+    hired: (agentId, title, reportsTo) =>
+      `Employee ${agentId} hired as ${title}${reportsTo !== null ? `, reporting to ${reportsTo}` : ""}.`,
+    employeeUpdated: (agentId) => `Employee ${agentId} updated.`,
+    left: (agentId) => `Employee ${agentId} left the organization.`,
+    desk: (agentId, sessionId, workspace, openedAt, created) =>
+      `Desk of ${agentId}: session ${sessionId} (workspace ${workspace}, opened ${openedAt})${created ? " — opened just now" : ""}`,
+    deskRenewed: (agentId, sessionId) => `Desk of ${agentId} renewed: session ${sessionId}.`,
+    calendarWritten: (agentId, name, enabledText, nextFireAt) =>
+      `Calendar event ${agentId}/${name} written (${enabledText}${nextFireAt !== undefined ? `, next fire ${nextFireAt}` : ""}).`,
+    calendarRemoved: (agentId, name) => `Calendar event ${agentId}/${name} removed.`,
+    ticketCreated: (ticketId, status) => `Ticket ${ticketId} created (${status}).`,
+    ticketMoved: (ticketId, status) => `Ticket ${ticketId} moved to ${status}.`,
+    ticketAssigned: (ticketId, owner) => `Ticket ${ticketId} assigned to ${owner}.`,
+    ticketBlocked: (ticketId) => `Ticket ${ticketId} marked blocked.`,
+    ticketUnblocked: (ticketId) => `Ticket ${ticketId} unblocked.`,
+    progressRecorded: (ticketId) => `Progress recorded on ticket ${ticketId}.`,
+    ticketAttached: (ticketId, sessionId) => `Session ${sessionId} attached to ticket ${ticketId}.`,
+    chatSent: (id) => `Message ${id} sent.`,
+    empty: (projectId) => `No organizations in project ${projectId}.`,
+    calendarEmpty: () => "No calendar events.",
+    ticketsEmpty: () => "No tickets match.",
+    chatEmpty: (date) => `No chat messages on ${date}.`,
+    showHead: (name, orgId, status) => `${name} (${orgId}) — ${status}`,
+    showMission: (mission) => `Mission: ${mission}`,
+    showEmployees: (count, running, paused) =>
+      `Employees: ${count} (${running} running, ${paused} paused)`,
+    showBoard: (counts, blocked) => `Board: ${counts} (${blocked} blocked)`,
+    showSpend: (period, spend) => `Spend (${period}): ${spend}`,
+    showPending: (mentions, review, blockedByMe) =>
+      `Pending: ${mentions} mentions, ${review} tickets to review, ${blockedByMe} blocked by me`,
+    invalid: (reason) => `invalid: ${reason}`,
+    ticketHead: (ticketId, status, running, blocked) =>
+      `Ticket ${ticketId}: ${status}${running ? ", running" : ""}${blocked !== undefined ? `, blocked (${blocked})` : ""}`,
+    ticketFigures: (cost, rolledUp, sessions, children) =>
+      `Cost ${cost} (rolled up ${rolledUp}), ${sessions} sessions, ${children} child tickets`,
+    financeTotal: (period, total) => `Total (${period}): ${total}`,
+    unpriced: () =>
+      "[unpriced] some usage ran on a model without pricing: the figures are a lower bound",
+    colEmployees: () => "EMPLOYEES",
+    colRunning: () => "RUNNING",
+    colOpen: () => "OPEN",
+    colBlocked: () => "BLOCKED",
+    colSpend: () => "SPEND",
+    colNote: () => "NOTE",
+    colJobTitle: () => "TITLE",
+    colTitle: () => "TITLE",
+    colState: () => "STATE",
+    colOwn: () => "OWN",
+    colCumulative: () => "CUMULATIVE",
+    colBudget: () => "BUDGET",
+    colNext: () => "NEXT",
+    colPriority: () => "PRIORITY",
+    colOwner: () => "OWNER",
+    colTicket: () => "TICKET",
+    colRolledUp: () => "ROLLED UP",
+  },
   client: {
     invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
     remoteNeedsToken: (url) =>
@@ -1273,6 +1623,154 @@ const zh: Messages = {
     colTarget: () => "目标",
     colLastFired: () => "最近触发",
     colStatus: () => "状态",
+  },
+  org: {
+    desc: "公司模式：管理组织（员工、工位、日程、工单、群聊、财务）",
+    lsDesc: "列出 Project 的组织",
+    createDesc: "创建组织：生成 CEO Agent、开 CEO 的工位会话并发起初始化会话",
+    showDesc: "概览：员工与状态、看板计数、预算占用、待处理事项",
+    chartDesc: "员工树：头衔、状态、支出与预算",
+    hireDesc: "招募员工：既有 Agent（--agent-id）或新建 Agent（--new-agent），汇报给 --reports-to",
+    employeeDesc: "管理员工",
+    employeeSetDesc: "更新员工树条目（只改动给出的字段）",
+    leaveDesc: "将员工移出组织（CEO 不可）；Agent 本身保留",
+    deskDesc: "工位会话（每位员工一个常设会话）",
+    deskShowDesc: "员工的工位会话 id 与 Workspace（尚无工位时开一个）",
+    deskRenewDesc: "为员工换一个新的工位会话（重置上下文）",
+    calendarDesc: "日程项（定时发往员工工位会话的任务）",
+    calendarLsDesc: "列出组织的日程项（--agent-id 限定为某位员工）",
+    calendarAddDesc: "创建日程项（经 API 写入日程文件；缺省即启用——用 --disabled 关闭）",
+    calendarUpdateDesc: "更新日程项（读改写：未指定的字段保留存储值）",
+    calendarRmDesc: "删除日程项（不做确认）",
+    ticketDesc: "看板上的工单",
+    ticketLsDesc: "列出看板工单（--status / --owner / --blocked 在本地过滤）",
+    ticketShowDesc: "查看工单：先打印派生数据，再打印工单文件",
+    ticketCreateDesc: "在 proposed 列创建工单",
+    ticketMoveDesc: "把工单移到另一列（移入 rejected 须给 --reason）",
+    ticketAssignDesc: "设置工单负责人",
+    ticketBlockDesc: "标记工单为阻塞（留在所在列）",
+    ticketUnblockDesc: "清除工单的阻塞状态",
+    ticketProgressDesc: "追加一条进展（记为当前会话所写）",
+    ticketStartDesc: "新开一个在后台处理该工单的工单会话；打印会话 id",
+    ticketAttachDesc: "把既有会话挂为贡献会话（缺省当前会话）",
+    chatDesc: "组织群聊",
+    chatTailDesc: "打印某一天的最后若干条消息（未给 -n 时 20 条）",
+    chatSendDesc: "发送消息（@agent:<id> / @all 会触发被提及员工的工位）",
+    financeDesc: "支出：按员工（沿汇报线累计）与按工单，对照预算",
+    orgId: "组织 id（缺省取 PENGUIN_ORG_ID，工位会话与工单会话内自带；此外没有缺省值）",
+    newOrgId: "要创建的组织 id（字母、数字、下划线；同时是目录名）",
+    mission: "组织的使命",
+    orgName: "显示名（缺省同 id）",
+    hireAgentId: "招募这个既有 Agent（与 --new-agent 互斥）",
+    newAgent: "以此 id 新建 Agent 并招募（与 --agent-id 互斥）",
+    newAgentName: "新 Agent 的显示名",
+    newAgentDescription: "新 Agent 的描述",
+    skills: "新 Agent 的插件库插件，逗号分隔（替换缺省的 agent-company,agent-development）",
+    title: "头衔",
+    reportsTo: "上级的 Agent id",
+    employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
+    budget: "月预算（美元），含该员工及其全部下属",
+    duties: "职责描述",
+    calendarAgentId: "日程项所属员工（缺省 PENGUIN_AGENT_ID）；ls 上只列该员工的日程项",
+    calendarTitle: "日程项标题",
+    statusFilter: "只看这一列：proposed、in_progress、review、done 或 rejected",
+    ownerFilter: "只看该负责人的工单（agent:<id> / user:<id>）",
+    blockedFilter: "只看被阻塞的工单",
+    ticketTitle: "工单标题",
+    goal: "目标（与 --body-file 互斥）",
+    criteria: "验收标准（与 --goal 配合）",
+    bodyFile: "从文件读取整个 Markdown 正文（头部仍由服务端生成）",
+    owner: "负责人（agent:<id> / user:<id>）",
+    parent: "父工单 id",
+    notify: "工单结束时通知的对象，逗号分隔",
+    priority: "优先级：P0、P1 或 P2",
+    due: "截止日期（yyyy-mm-dd）",
+    moveTo: "目标列：proposed、in_progress、review、done 或 rejected",
+    moveReason: "原因（移入 rejected 时必填；记入 Result）",
+    blockReason: "阻塞原因",
+    blockedBy: "在等谁或等哪个工单（principal 或工单 id）",
+    progressText: "进展内容",
+    startMessage: "附在工单正文之后、随会话首条输入发出的附言",
+    startWorkspace: "公共工作区内的另一个目录（缺省为该员工工位的 Workspace）",
+    attachSession: "要挂接的会话，完整 id 或唯一片段（缺省 PENGUIN_SESSION_ID）",
+    chatDate: "要读的日期（组织时区的 yyyy-mm-dd；缺省今天）",
+    chatCount: "打印的消息条数（缺省 20）",
+    chatText: "消息内容（@agent:<id> 或 @all 表示提及）",
+    refTicket: "消息关联的工单",
+    refSession: "消息关联的会话",
+    period: "统计月份（yyyy-mm；缺省当月）",
+    orgIdMissing: () =>
+      "未指定组织：请传 --org-id <id>，或设置 PENGUIN_ORG_ID（工位会话与工单会话的环境里自带）。",
+    hireTargetConflict: () =>
+      "--agent-id（既有 Agent）与 --new-agent（新建）二选一，且必须给一个。",
+    newAgentFieldsOnly: () => "--name、--description 与 --skills 只用于描述 --new-agent。",
+    budgetInvalid: (value) => `--budget 值「${value}」无效：应为非负的美元金额。`,
+    nothingToSet: () => "没有要更新的内容：至少给出一个字段。",
+    statusInvalid: (value) =>
+      `列名「${value}」无效：应为 proposed、in_progress、review、done 或 rejected。`,
+    priorityInvalid: (value) => `--priority 值「${value}」无效：应为 P0、P1 或 P2。`,
+    ticketBodyConflict: () => "--goal 与 --body-file 二选一，且必须给一个。",
+    criteriaNeedsGoal: () => "--criteria 须与 --goal 一起使用。",
+    bodyFileUnreadable: (file) => `无法读取 --body-file ${file}。`,
+    countInvalid: (value) => `-n 值「${value}」无效：应为正整数。`,
+    attachSessionMissing: () =>
+      "没有可挂接的会话：请传 --session <id>，或在会话内运行（PENGUIN_SESSION_ID）。",
+    created: (orgId, ceoDeskSessionId) =>
+      `已创建组织 ${orgId}${ceoDeskSessionId !== undefined ? `（CEO 工位会话 ${ceoDeskSessionId}）` : ""}。`,
+    hired: (agentId, title, reportsTo) =>
+      `已招募员工 ${agentId}，头衔 ${title}${reportsTo !== null ? `，汇报给 ${reportsTo}` : ""}。`,
+    employeeUpdated: (agentId) => `已更新员工 ${agentId}。`,
+    left: (agentId) => `员工 ${agentId} 已离开组织。`,
+    desk: (agentId, sessionId, workspace, openedAt, created) =>
+      `${agentId} 的工位：会话 ${sessionId}（Workspace ${workspace}，开于 ${openedAt}）${created ? "——刚刚新开" : ""}`,
+    deskRenewed: (agentId, sessionId) => `${agentId} 的工位已换新：会话 ${sessionId}。`,
+    calendarWritten: (agentId, name, enabledText, nextFireAt) =>
+      `日程项 ${agentId}/${name} 已写入（${enabledText}${nextFireAt !== undefined ? `，下次触发 ${nextFireAt}` : ""}）。`,
+    calendarRemoved: (agentId, name) => `日程项 ${agentId}/${name} 已删除。`,
+    ticketCreated: (ticketId, status) => `已创建工单 ${ticketId}（${status}）。`,
+    ticketMoved: (ticketId, status) => `工单 ${ticketId} 已移到 ${status}。`,
+    ticketAssigned: (ticketId, owner) => `工单 ${ticketId} 已指派给 ${owner}。`,
+    ticketBlocked: (ticketId) => `工单 ${ticketId} 已标记为阻塞。`,
+    ticketUnblocked: (ticketId) => `工单 ${ticketId} 已解除阻塞。`,
+    progressRecorded: (ticketId) => `已在工单 ${ticketId} 记录进展。`,
+    ticketAttached: (ticketId, sessionId) => `会话 ${sessionId} 已挂接到工单 ${ticketId}。`,
+    chatSent: (id) => `消息 ${id} 已发送。`,
+    empty: (projectId) => `Project ${projectId} 没有组织。`,
+    calendarEmpty: () => "没有日程项。",
+    ticketsEmpty: () => "没有匹配的工单。",
+    chatEmpty: (date) => `${date} 没有群聊消息。`,
+    showHead: (name, orgId, status) => `${name}（${orgId}）——${status}`,
+    showMission: (mission) => `使命：${mission}`,
+    showEmployees: (count, running, paused) =>
+      `员工：${count}（运行中 ${running}，已暂停 ${paused}）`,
+    showBoard: (counts, blocked) => `看板：${counts}（阻塞 ${blocked}）`,
+    showSpend: (period, spend) => `支出（${period}）：${spend}`,
+    showPending: (mentions, review, blockedByMe) =>
+      `待处理：@我 ${mentions} 条，待审核工单 ${review} 个，等我的阻塞 ${blockedByMe} 个`,
+    invalid: (reason) => `invalid: ${reason}`,
+    ticketHead: (ticketId, status, running, blocked) =>
+      `工单 ${ticketId}：${status}${running ? "，运行中" : ""}${blocked !== undefined ? `，已阻塞（${blocked}）` : ""}`,
+    ticketFigures: (cost, rolledUp, sessions, children) =>
+      `成本 ${cost}（含子工单 ${rolledUp}），贡献会话 ${sessions} 个，子工单 ${children} 个`,
+    financeTotal: (period, total) => `合计（${period}）：${total}`,
+    unpriced: () => "[unpriced] 部分用量所用模型未配置价格：以上数字是下限",
+    colEmployees: () => "员工数",
+    colRunning: () => "运行中",
+    colOpen: () => "未结",
+    colBlocked: () => "阻塞",
+    colSpend: () => "支出",
+    colNote: () => "备注",
+    colJobTitle: () => "头衔",
+    colTitle: () => "标题",
+    colState: () => "状态",
+    colOwn: () => "自身",
+    colCumulative: () => "累计",
+    colBudget: () => "预算",
+    colNext: () => "下次触发",
+    colPriority: () => "优先级",
+    colOwner: () => "负责人",
+    colTicket: () => "工单",
+    colRolledUp: () => "含子工单",
   },
   client: {
     invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,

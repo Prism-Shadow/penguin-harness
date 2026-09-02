@@ -15,6 +15,7 @@ import {
   buildContextSummaryText,
   buildHandoffMessage,
   buildModelSwitchMessage,
+  buildOrgTriggerMessage,
   buildScheduledMessage,
   buildSkillsMessage,
   buildTurnAbortedBlock,
@@ -25,6 +26,7 @@ import {
   matchDualForm,
   parseHandoffMessage,
   parseModelSwitchMessage,
+  parseOrgTriggerMessage,
   parseScheduledMessage,
   parseSkillsMessage,
   parseUserSteeringText,
@@ -68,6 +70,7 @@ describe("marker block primitives", () => {
       MARKER_TAGS.useSkills,
       MARKER_TAGS.handoffFrom,
       MARKER_TAGS.scheduledTask,
+      MARKER_TAGS.orgTrigger,
       MARKER_TAGS.modelSwitchFrom,
       MARKER_TAGS.backgroundTaskDone,
     ]);
@@ -187,6 +190,31 @@ describe("[user_steering] messages", () => {
 
   it("tolerates trailing whitespace after the closing tag", () => {
     expect(parseUserSteeringText("[user_steering]\nok\n[/user_steering]\n")).toBe("ok");
+  });
+});
+
+describe("[org_trigger] (company-mode work runs and ticket sessions)", () => {
+  it("round-trips every field and keeps the body", () => {
+    const origin = {
+      org: "acme",
+      employee: "acme_hr (HR, reports to acme_ceo)",
+      kind: "event" as const,
+      event: "daily-standup",
+      firedAt: "2026-09-01T09:00:00+08:00",
+      budget: "12.40 / 30.00 USD (41%)",
+    };
+    const text = buildOrgTriggerMessage(origin, "Sweep the board.");
+    expect(text.startsWith("[org_trigger]\n")).toBe(true);
+    expect(text).toContain("<app_data_dir>/organizations/acme/README.md");
+    expect(parseOrgTriggerMessage(text)).toEqual({ origin, rest: "Sweep the board." });
+  });
+
+  it("returns null for an unknown kind, a missing employee, or plain text", () => {
+    const text = buildOrgTriggerMessage({ org: "acme", employee: "acme_ceo", kind: "init" }, "");
+    expect(text.endsWith("[/org_trigger]")).toBe(true);
+    expect(parseOrgTriggerMessage(text.replace("kind: init", "kind: party"))).toBeNull();
+    expect(parseOrgTriggerMessage(text.replace("employee: acme_ceo\n", ""))).toBeNull();
+    expect(parseOrgTriggerMessage("hello")).toBeNull();
   });
 });
 
