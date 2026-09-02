@@ -1312,6 +1312,7 @@ export const en: Strings = {
       "What plugins.json lists, and which of them this process is running. Plugins load once when the server starts, so a change here takes effect at the next restart.",
     installedEmpty: "No plugins installed yet.",
     stateActive: "running",
+    builtin: "built in",
     installedRestart: "restart to load",
     stateInactive: "not loaded",
     replacesLabel: "replaces",
