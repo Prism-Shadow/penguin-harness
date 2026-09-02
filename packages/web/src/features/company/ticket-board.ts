@@ -1,7 +1,8 @@
 /**
  * The ticket board's shaping (pure, unit tested): the five columns in lifecycle order, how
- * cards sort inside one, the blocked-only filter, which moves need a reason, and the
- * per-column counts the overview shows.
+ * cards sort inside one, the blocked-only filter and the search box, which moves need a
+ * reason, the per-column counts the overview shows, and the two facts a card reads off a
+ * ticket's own fields — whether its due date has passed and the day its id was minted.
  */
 import type {
   OrgTicketItem,
@@ -48,14 +49,37 @@ export interface BoardColumn {
   tickets: OrgTicketItem[];
 }
 
-/** The board as rendered: every column, cards sorted, optionally only the blocked ones. */
+/**
+ * The search box's match: case-insensitive, against the title, the id, the owner principal
+ * and the parent id, and — when the caller passes the chart's names — the owner's display
+ * name, so "dev" finds Dev's tickets whether the user thinks in ids or names.
+ */
+export function matchesTicketQuery(
+  t: Pick<OrgTicketItem, "title" | "ticketId" | "owner" | "parent">,
+  query: string,
+  names?: ReadonlyMap<string, string>,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  const ownerId = t.owner !== undefined && t.owner.startsWith("agent:") ? t.owner.slice(6) : null;
+  const ownerName = ownerId !== null ? names?.get(ownerId) : undefined;
+  return [t.title, t.ticketId, t.owner, t.parent, ownerName].some(
+    (v) => v !== undefined && v.toLowerCase().includes(q),
+  );
+}
+
+/** The board as rendered: every column, cards sorted, narrowed by the blocked-only switch and the search box. */
 export function boardColumns(
   res: Pick<OrgTicketsResponse, "columns">,
-  opts: { blockedOnly?: boolean } = {},
+  opts: { blockedOnly?: boolean; query?: string; names?: ReadonlyMap<string, string> } = {},
 ): BoardColumn[] {
   return TICKET_COLUMNS.map((status) => {
     const all = res.columns[status] ?? [];
-    return { status, tickets: sortTickets(opts.blockedOnly ? all.filter(isBlocked) : all) };
+    const kept = all.filter(
+      (t) =>
+        (!opts.blockedOnly || isBlocked(t)) && matchesTicketQuery(t, opts.query ?? "", opts.names),
+    );
+    return { status, tickets: sortTickets(kept) };
   });
 }
 
@@ -95,4 +119,20 @@ export function blockedOnUser<T extends Pick<OrgTicketItem, "blocked" | "blocked
 /** Every ticket of the board in column order — the parent picker's list and the id → title map. */
 export function allTickets(res: Pick<OrgTicketsResponse, "columns">): OrgTicketItem[] {
   return TICKET_COLUMNS.flatMap((status) => res.columns[status] ?? []);
+}
+
+/** A due date (`yyyy-mm-dd`) is overdue once the local day `todayKey` (same form) has passed it. */
+export function isOverdue(due: string | undefined, todayKey: string): boolean {
+  return due !== undefined && /^\d{4}-\d{2}-\d{2}/.test(due) && due.slice(0, 10) < todayKey;
+}
+
+/** The day a ticket was minted, read off its id (`yyyy-mm-dd-<slug>`); null for an id in another shape. */
+export function ticketCreatedDate(ticketId: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(ticketId);
+  return m === null ? null : m[1]!;
+}
+
+/** Tickets the server flagged (status disagreeing with the column, a duplicate id), in column order. */
+export function invalidTickets(res: Pick<OrgTicketsResponse, "columns">): OrgTicketItem[] {
+  return allTickets(res).filter((t) => t.invalid !== undefined);
 }

@@ -2,11 +2,13 @@
  * The organization calendar's geometry (pure, unit tested in Node): the day grid of a month,
  * the seven days of a week, the visible range of each view, stepping the anchor date, the
  * expansion of each event's `startAt` / `period` / `endAt` into the instances that fall in a
- * range, and where an instance sits in a day column. Everything is computed on local calendar
- * days through the Date API's local accessors, so a test built with `new Date(y, m, d)` reads
- * the same in every timezone.
+ * range, where an instance sits in a day column and which lane it takes when instances
+ * overlap, and the cadence an event's `period` reads as in the legend. Everything is computed
+ * on local calendar days through the Date API's local accessors, so a test built with
+ * `new Date(y, m, d)` reads the same in every timezone.
  */
 import type { OrgCalendarItem, OrgCalendarOutcome } from "@prismshadow/penguin-server/api";
+import { packToolLanes } from "../traces/lane-packing";
 
 export type CalendarView = "month" | "week" | "day";
 
@@ -47,14 +49,20 @@ export interface GridDay {
   inMonth: boolean;
 }
 
-/** Six Monday-based rows of seven days covering the month of `anchorMs`, so the grid never changes height across months. */
+/**
+ * Monday-based rows of seven days covering the month of `anchorMs`: as many rows as the month
+ * needs (four to six), so a month never trails a whole row of the next one.
+ */
 export function monthGrid(anchorMs: number): GridDay[][] {
   const a = new Date(anchorMs);
   const first = new Date(a.getFullYear(), a.getMonth(), 1).getTime();
   const month = a.getMonth();
+  const daysInMonth = new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+  const lead = (new Date(first).getDay() + 6) % 7;
+  const rowCount = Math.ceil((lead + daysInMonth) / 7);
   let cursor = startOfWeek(first);
   const rows: GridDay[][] = [];
-  for (let r = 0; r < 6; r++) {
+  for (let r = 0; r < rowCount; r++) {
     const row: GridDay[] = [];
     for (let c = 0; c < 7; c++) {
       row.push({
@@ -93,7 +101,7 @@ export function viewRange(
   }
   const grid = monthGrid(anchorMs);
   const startMs = grid[0]![0]!.dayStartMs;
-  return { startMs, endMs: addDays(grid[5]![6]!.dayStartMs, 1) };
+  return { startMs, endMs: addDays(grid[grid.length - 1]![6]!.dayStartMs, 1) };
 }
 
 /** The anchor one step (`delta` of ±1) forward or back in a view: a day, a week, or a calendar month (clamped to the target month's length). */
@@ -231,4 +239,79 @@ export function toLocalInput(iso: string | undefined): string {
   if (!Number.isFinite(ms)) return "";
   const d = new Date(ms);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/**
+ * How an event recurs, read from `period` and the wall-clock time of `startAt`: the legend
+ * says "every day at 09:00" rather than "1d". Whole days become day / week cadences with the
+ * time of day; sub-day periods keep their unit; no period is a one-off at its instant.
+ */
+export type Cadence =
+  | { kind: "once"; atMs: number }
+  | { kind: "minutes"; n: number }
+  | { kind: "hours"; n: number }
+  | { kind: "days"; n: number; time: string }
+  | { kind: "weeks"; n: number; time: string }
+  | { kind: "invalid" };
+
+export function cadenceOf(event: Pick<OrgCalendarItem, "startAt" | "period">): Cadence {
+  const startAt = Date.parse(event.startAt);
+  if (!Number.isFinite(startAt)) return { kind: "invalid" };
+  if (event.period === undefined) return { kind: "once", atMs: startAt };
+  const period = parsePeriodMs(event.period);
+  if (period === null) return { kind: "invalid" };
+  const time = timeLabel(startAt);
+  if (period % DAY_MS === 0) {
+    const days = period / DAY_MS;
+    if (days % 7 === 0) return { kind: "weeks", n: days / 7, time };
+    return { kind: "days", n: days, time };
+  }
+  if (period % 3_600_000 === 0) return { kind: "hours", n: period / 3_600_000 };
+  return { kind: "minutes", n: period / 60_000 };
+}
+
+/** Where a chip sits among the chips it overlaps: lane `lane` of `lanes` side by side. */
+export interface ChipSlot<T> {
+  item: T;
+  lane: number;
+  lanes: number;
+}
+
+/**
+ * Side-by-side placement for the day and week columns: each instance occupies `slotMs` from
+ * its instant, instances whose slots overlap form a cluster, and inside a cluster they pack
+ * greedily into lanes (the trace timeline's packer). A chip's width is then `1 / lanes` of
+ * its cluster, so a lone 14:00 event stays full width while three 09:00 events share the row.
+ */
+export function chipLanes<T extends { atMs: number; key: string }>(
+  instances: readonly T[],
+  slotMs: number,
+): ChipSlot<T>[] {
+  const sorted = [...instances].sort((a, b) => a.atMs - b.atMs || a.key.localeCompare(b.key));
+  const out: ChipSlot<T>[] = [];
+  let cluster: T[] = [];
+  let clusterEnd = Number.NEGATIVE_INFINITY;
+  const flush = () => {
+    if (cluster.length === 0) return;
+    const lanes = packToolLanes(
+      cluster.map((item) => ({
+        name: "chip",
+        startMs: item.atMs,
+        endMs: item.atMs + slotMs,
+        item,
+      })),
+    );
+    lanes.forEach((lane, i) => {
+      for (const span of lane.spans) out.push({ item: span.item, lane: i, lanes: lanes.length });
+    });
+    cluster = [];
+  };
+  for (const item of sorted) {
+    if (item.atMs >= clusterEnd) flush();
+    cluster.push(item);
+    clusterEnd = Math.max(clusterEnd, item.atMs + slotMs);
+  }
+  flush();
+  out.sort((a, b) => a.item.atMs - b.item.atMs || a.item.key.localeCompare(b.item.key));
+  return out;
 }
