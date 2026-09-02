@@ -88,11 +88,11 @@ Everything the Web App creates from a form — an agent, a model group, a Benchm
 
 ## Agent Management (/agents)
 
-The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
+The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs. The header's **Import agent** button makes a new agent out of a Claude Code, Codex or Pi setup or an exported agent bundle: **From a file** posts an `<id>-export.zip` or a bare `penguin-agent.json` (the agent id is prefilled from the file name and editable; a taken id is answered in place, so a new id retries), and **Let AI import** hands the source to the Project's default agent through the [Create with AI](#create-with-ai) box with the `agent-porting` skill. Each card's **Export agent** downloads that agent's portable bundle — `penguin-agent.json`, its skills and hooks, an integration guide and runnable clients, never vault values. Both stand apart from the Agent State snapshot, which backs up and restores one existing agent:
 
 | Tab | Contents |
 | --- | --- |
-| Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
+| Overview | Basic info, the portable agent bundle export, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
 | Memory | The Agent-level switch, then every memory grouped by scope — user memory first, then one group per Workspace, each group collapsible with add, export and import entries — with view / delete / edit-via-chat actions per row |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |

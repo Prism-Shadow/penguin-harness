@@ -202,6 +202,8 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | POST | /agents/:agentId/memory/scopes/:key/import | Write such a document back (owner only): `{payload, mode?, confirm?}`. `mode` is `skip` (the default — adds only names the scope lacks), `overwrite` (replaces same-named files) or `replace` (also deletes what the document omits); anything that would overwrite or delete needs `confirm`, else 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | Export the Agent State snapshot (tar.gz download) |
 | POST | /agents/:agentId/import | Import a snapshot: `{dataBase64, confirm?}`; 409 on version conflict without confirm |
+| GET | /agents/:agentId/bundle | Export the Agent's portable bundle (zip download): `penguin-agent.json`, the installed `skills/` and `hooks/` directories, an integration guide and runnable clients — never vault values |
+| POST | /agents/import | Create an Agent from a bundle zip or a bare `penguin-agent.json`: `{dataBase64, agentId?}` → 201 `{agent, installed, skipped, vaultKeys}`; 409 `agent_exists` when the id is taken |
 | GET | /agents/:agentId/skills | Installed Skills (library installs go through `/plugins`) |
 | DELETE | /agents/:agentId/skills/:name | Uninstall a Skill |
 | POST | /agents/:agentId/plugins | Install library plugins by name — each one's skills and hook package; reinstalling updates. `{ names }` → 201 `{ skills, hooks }`; 404 `unknown_plugin` writes nothing |

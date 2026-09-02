@@ -1,8 +1,8 @@
 {
-  "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
-  "description_zh": "基于 PenguinHarness 的智能体开发：用 SDK 构建应用、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务。",
-  "short_description": "SDK, unified LLM API, config and orchestration.",
-  "short_description_zh": "SDK、统一 LLM API、配置与编排。",
-  "version": "2026-09-02.1",
+  "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, orchestrate agents, sessions, costs and schedules, and port agents in from Claude Code, Codex or Pi or out as an API bundle.",
+  "description_zh": "基于 PenguinHarness 的智能体开发：用 SDK 构建应用、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务，并把 Claude Code、Codex、Pi 的智能体移植进来或把智能体导出为 API 接入包。",
+  "short_description": "SDK, unified LLM API, config, orchestration and agent porting.",
+  "short_description_zh": "SDK、统一 LLM API、配置、编排与智能体移植。",
+  "version": "2026-09-02.2",
   "category": "ai-app-development"
 }
