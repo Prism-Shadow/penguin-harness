@@ -1184,8 +1184,6 @@ export const en: Strings = {
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop hook"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} hook`,
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
     detailSkills: "Skills",
@@ -1209,13 +1207,70 @@ export const en: Strings = {
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (zip upload / AI) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task; uninstalling deletes the whole package directory.",
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. A switched-off package stays on disk, but new Sessions no longer consult it; uninstalling deletes the whole package directory.",
     agentTabEmpty: "No hook packages installed yet",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "Only the Project owner can switch hook packages on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+    /** Accessible name of a row's enable switch. */
+    enableSwitch: (name: string): string => `Enable the ${name} hook package`,
+    /** Badge on a switched-off row for members (owners see the switch itself). */
+    disabledBadge: "Disabled",
+    enabledToast: (name: string): string => `Enabled the ${name} hook package`,
+    disabledToast: (name: string): string => `Disabled the ${name} hook package`,
+    exportHook: "Export",
+    importHook: "Import hook",
+    /** The import modal's two modes (a Segmented control). */
+    importModeUpload: "Upload a zip",
+    importModeAi: "Let AI import",
+    importUploadDesc:
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Hook package installed",
+    importOverwriteTitle: "Overwrite installed hook package",
+    importOverwriteBody: (name: string): string =>
+      `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /** AI mode: the lead line above the prompt box, and the box's placeholder. */
+    importAiDesc:
+      "Point at a hook package or describe what it should do: the agent reads the source, reviews the scripts, then installs it on this agent.",
+    importAiPlaceholder:
+      "A URL, local path or description of a hook package, or another tool's hooks config (e.g. the hooks block of a Claude Code settings.json)",
+    /** Clickable examples of the AI mode (features/agents/hook-import.ts); a click replaces the draft with `prompt`. */
+    importExamples: [
+      {
+        key: "repo",
+        label: "Import from a repository",
+        description: "Turn a GitHub repository into a hook package",
+        prompt: "Import https://github.com/<org>/my-hooks as a hook package",
+      },
+      {
+        key: "claudeCode",
+        label: "Convert Claude Code hooks",
+        description: "Rewrite another tool's hooks config as a hook package",
+        prompt: "Convert the hooks in ~/.claude/settings.json into a PenguinHarness hook package",
+      },
+      {
+        key: "stopChangelog",
+        label: "Write a stop hook",
+        description: "Write a script from scratch that runs after every task",
+        prompt:
+          "Write a stop hook: after every task, append the list of files changed in the workspace to CHANGELOG-agent.md",
+      },
+    ],
+    /** The fixed tail joined after the draft (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target — named by Project and Agent id, since the prompt goes to the Project's default agent. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY-MM-DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,

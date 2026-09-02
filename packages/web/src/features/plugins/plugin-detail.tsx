@@ -166,10 +166,11 @@ export function PluginDetailModal({
             {localizedText(locale, plugin.description, plugin.descriptionZh)}
           </p>
           <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">{meta}</p>
+          {/* The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy. */}
           {plugin.hooks.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {plugin.hooks.map((event) => (
-                <Badge key={event}>{S.plugins.hookBadge(event)}</Badge>
+                <Badge key={event}>{event}</Badge>
               ))}
             </div>
           )}

@@ -42,12 +42,13 @@ import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { useAiBridge } from "../ai-create";
+import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 
-/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
-const UPLOAD_LABEL_CLASS =
+/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label; the Hooks tab's upload label borrows it. */
+export const UPLOAD_LABEL_CLASS =
   "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
   "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
   "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
@@ -125,42 +126,11 @@ export function SkillsTab({
   const agent = agents.find((a) => a.agentId === agentId);
   const agentName = agent ? agentDisplayName(agent) : agentId;
 
-  /**
-   * "Export as zip": fetch the archive and save it via a temporary object-URL anchor.
-   * The codebase's other downloads are bare `<a href download>` anchors (snapshot export,
-   * trace download), but a bare anchor would save the error JSON as a file when the
-   * request fails — fetching first lets failures surface as a toast instead. The JSON-only
-   * api client can't carry binary, hence the raw fetch (errors re-wrapped as ApiError so
-   * apiErrorText localizes by code as usual).
-   */
+  /** "Export as zip": the shared archive download (archive-download.ts); a failure surfaces as a toast. */
   const exportSkill = async (name: string) => {
     if (!projectId) return;
     try {
-      const res = await fetch(api.agentSkillArchiveUrl(projectId, agentId, name));
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: { code?: string; message?: string };
-        } | null;
-        throw new ApiError(
-          res.status,
-          body?.error?.code ?? "unknown",
-          body?.error?.message ?? S.common.unknownError,
-        );
-      }
-      // The server's Content-Disposition is the authority on the filename (it appends
-      // -v<version> when the frontmatter declares one explicitly); <name>.zip is only
-      // the fallback for a missing/unparseable header.
-      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(
-        res.headers.get("content-disposition") ?? "",
-      )?.[1];
-      const url = URL.createObjectURL(await res.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = encoded ? decodeURIComponent(encoded) : `${name}.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name), name);
     } catch (e) {
       toastError(apiErrorText(e));
     }

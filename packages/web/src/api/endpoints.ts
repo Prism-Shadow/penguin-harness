@@ -131,6 +131,9 @@ import type {
   UpdateJobStatus,
   RestartResponse,
   DesktopUpdateStatusResponse,
+  HookArchiveInstallRequest,
+  HookItem,
+  HookUpdateRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
   UsageErrorsPage,
@@ -1071,6 +1074,36 @@ export const uninstallAgentHook = (projectId: string, agentId: string, name: str
       `/hooks/${encodeURIComponent(name)}`,
     { method: "DELETE" },
   );
+
+/** Switches one installed hook package on or off (owner only — 403 owner_required otherwise): writes `enabled` into its hooks.json and rebuilds the Agent's cached runtimes; 200 returns the updated item. */
+export const setAgentHookEnabled = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  enabled: boolean,
+) =>
+  apiFetch<HookItem>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/hooks/${encodeURIComponent(name)}`,
+    { method: "PATCH", body: { enabled } satisfies HookUpdateRequest },
+  );
+
+/** Installs one hook package from an uploaded zip (base64); 409 hook_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentHookArchive = (
+  projectId: string,
+  agentId: string,
+  body: HookArchiveInstallRequest,
+) =>
+  apiFetch<AgentHooksResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/hooks/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
+export const agentHookArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/hooks/${encodeURIComponent(name)}/archive`;
 
 /** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
 export const installAgentSkillArchive = (
