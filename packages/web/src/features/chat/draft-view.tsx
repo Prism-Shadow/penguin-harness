@@ -57,6 +57,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
+import { AGENT_GROUP_ICON } from "../../components/ui/group-list";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
@@ -122,18 +123,18 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * competing with the titles, while the folder row is exactly where a glyph earns its place —
  * it is what you scan to pick a category.
  *
- * webapps: a browser window (chrome bar + two dots). agents: the SAME robot head the sidebar's
- * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
- * app already has one glyph that means "agent" and a folder of agent examples should wear it.
- * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
- * renders this file, so importing it back would close an import cycle. schedules: a clock face
- * with hands — the plainest mark for "fires on a timer", and distinct from the hourglass that
- * already means a Session is waiting.
+ * webapps: a browser window (chrome bar + two dots). agents: AGENT_GROUP_ICON itself — the one
+ * glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
+ * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
+ * the day that glyph is redrawn. (`components/ui/group-list.tsx` pulls in nothing from
+ * `features/`, so there is no cycle to avoid here.) schedules: a clock face with hands — the
+ * plainest mark for "fires on a timer", and distinct from the hourglass that already means a
+ * Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
-  agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
+  agents: AGENT_GROUP_ICON,
   schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
 };
 

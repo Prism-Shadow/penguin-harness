@@ -21,6 +21,11 @@ than what it does.
   this product a person talks to.
 - **Model library** (nav row): a brain in place of the CPU chip. The page lists language
   models, not the hardware they run on.
+- The new-chat page's **"Build and tune agents"** example folder wears that same Agent glyph
+  by importing it, where it had been hand-copied as a literal — the copy was already out of
+  step with the comment claiming the two were the same mark, and it is what a redrawn glyph
+  silently leaves behind. (The import cycle the copy was justified by does not exist: the
+  glyph lives in `components/ui/group-list.tsx`, which pulls in nothing from `features/`.)
 - **Project settings → Members**: two people, in place of the Agent glyph the tab had
   borrowed. Members are humans.
 - zh: the grouping option reads 「按智能体分组」, naming the surface it groups into exactly as
