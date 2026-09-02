@@ -375,67 +375,6 @@ importers:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
-  packages/plugins/sandbox-bwrap:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  packages/plugins/sandbox-dsh:
-    dependencies:
-      '@deepseek-ai/cordis':
-        specifier: ^4.0.1
-        version: 4.0.1
-      '@deepseek-ai/dsh-sandbox':
-        specifier: 0.1.0-rc.7
-        version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))))(@deepseek-ai/dsh-session@0.1.0-rc.8(fbdb1d988541b64ff002d18c4ded7293))
-      '@deepseek-ai/dsh-sandbox-local':
-        specifier: 0.1.0-rc.7
-        version: 0.1.0-rc.7(aee23af2fa86328531d8fa647b06b497)
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  packages/plugins/sandbox-mxc:
-    devDependencies:
-      '@microsoft/mxc-sdk':
-        specifier: 0.7.0
-        version: 0.7.0
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  packages/plugins/sandbox-seatbelt:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
   packages/server:
     dependencies:
       '@hono/node-server':
@@ -613,6 +552,67 @@ importers:
   plugins/humanizer: {}
 
   plugins/model-development: {}
+
+  plugins/sandbox-bwrap:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/sandbox-dsh:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1
+      '@deepseek-ai/dsh-sandbox':
+        specifier: 0.1.0-rc.7
+        version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-llm@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.1))))(@deepseek-ai/dsh-session@0.1.0-rc.8(fbdb1d988541b64ff002d18c4ded7293))
+      '@deepseek-ai/dsh-sandbox-local':
+        specifier: 0.1.0-rc.7
+        version: 0.1.0-rc.7(aee23af2fa86328531d8fa647b06b497)
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/sandbox-mxc:
+    devDependencies:
+      '@microsoft/mxc-sdk':
+        specifier: 0.7.0
+        version: 0.7.0
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/sandbox-seatbelt:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
   plugins/skill-porting: {}
 

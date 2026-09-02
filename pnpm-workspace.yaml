@@ -1,11 +1,10 @@
 packages:
   - "packages/*"
+  # Plugin packages a deployment installs and lists in plugins.json. They sit at the top
+  # level, outside packages/, because they are not part of the harness: nothing under
+  # packages/ depends on one, and the platform bundle carries none of them — what ships
+  # them is scripts/build-plugins.mjs, which packs each self-contained.
   - "plugins/*"
-  # Plugin packages a deployment installs and lists in plugins.json. They sit in a
-  # directory of their own because they are not part of the harness: nothing else under
-  # packages/ depends on one, and the platform bundle carries none of them. packages/*
-  # does not reach them — packages/plugins has no package.json of its own.
-  - "packages/plugins/*"
 # Dependency pins. pnpm 11 reads overrides ONLY from here — the package.json
 # "pnpm.overrides" block it used to honour is silently ignored, which resolved a second
 # copy of each of these.

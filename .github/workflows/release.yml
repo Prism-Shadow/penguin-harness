@@ -136,7 +136,7 @@ jobs:
           V="${TAG#v}"
           printf '%s\n' "$TAG" | grep -Eq '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
           # Guard: release prep must bump the repo to the tag's version (root + every workspace
-          # package.json — packages/* and packages/plugins/* —
+          # package.json — packages/* and plugins/* —
           # and core's VERSION constant move together in the release: X.Y.Z PR). v0.2.1 was tagged with
           # a 0.2.0 repo, so every dev/source build nagged about updates until the repo caught up —
           # fail the tag push instead. Manual dispatch (EVENT_NAME unset in replays) only warns,
@@ -145,7 +145,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*, packages/plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -563,7 +563,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*, packages/plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
