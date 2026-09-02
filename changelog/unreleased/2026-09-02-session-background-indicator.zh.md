@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#585](https://github.com/Prism-Shadow/penguin-harness/pull/585)
 
 [English](2026-09-02-session-background-indicator.md)
 
