@@ -18,7 +18,7 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    skills: "技能库",
+    plugins: "插件库",
     models: "模型库",
     machines: "机器",
     usage: "成本中心",
@@ -281,7 +281,7 @@ export const zh = {
    * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
-    skillUpdates: (n: number) => `${n} 个技能有更新`,
+    pluginUpdates: (n: number) => `${n} 个插件有更新`,
     presetUpdates: (n: number) => `${n} 个预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
@@ -296,7 +296,7 @@ export const zh = {
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
       `检测到变更：${added} 个新增，${updated} 个可升级`,
-    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Plugins). */
     changesUpgradable: (updated: number): string => `检测到变更：${updated} 个可升级`,
     /** Updates every object the notice counts, behind the page's own confirmation. */
     updateNow: "现在升级",
@@ -304,10 +304,10 @@ export const zh = {
     willTouch: "将影响以下对象：",
     /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
     agentsConfirmTitle: (n: number): string => `更新 ${n} 个 Agent 的内核`,
-    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
-    skillsConfirmTitle: (n: number): string => `更新 ${n} 个技能`,
-    skillsConfirmBody:
-      "更新会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。",
+    /** Bulk plugin update confirmation. Same warning as the per-plugin confirm, with no single subject. */
+    pluginsConfirmTitle: (n: number): string => `更新 ${n} 个插件`,
+    pluginsConfirmBody:
+      "更新会把库内当前副本重装到各 Agent，覆盖其已安装的技能与钩子文件——本地改动会丢失，如有需要请先导出备份。",
     /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
     modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
     /** Every target of the batch was written. Counted in Agents: both pages that use this
@@ -481,11 +481,14 @@ export const zh = {
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     /** Create dialog's skill picker: the library skills installed into the new Agent. */
-    createSkills: "技能",
+    createPlugins: "插件",
+    createPluginsPlaceholder: "未选择插件",
+    createPluginsPicked: (n: number): string => `已选 ${n} 个插件`,
+    createPluginsHint: "创建时安装到该 Agent（技能与钩子包），之后可在其「技能」「钩子」标签页增删",
+    createPluginsEmpty: "插件库暂无可安装的插件",
+    /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "未选择技能",
     createSkillsPicked: (n: number): string => `已选 ${n} 个技能`,
-    createSkillsHint: "创建时安装到该 Agent，之后可在其「技能」标签页增删",
-    createSkillsEmpty: "技能库暂无可安装的技能",
     createDirSkills: "从项目目录导入技能",
     createDirSkillsPick: "未选择目录",
     createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
@@ -497,7 +500,7 @@ export const zh = {
     createSnapshotPick: "选择快照包",
     createSnapshotHint:
       "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
-    createSnapshotSkillsOff: "快照包自带技能，与技能选择互斥",
+    createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
     createSnapshotClear: "移除已选快照包",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
@@ -514,6 +517,7 @@ export const zh = {
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
+    tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
@@ -1124,14 +1128,55 @@ export const zh = {
     },
   },
 
+  /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
+  plugins: {
+    pageTitle: "插件库",
+    pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
+    /** Plugin count in the group header (small text to the right of the category name). */
+    pluginCount: (n: number): string => `${n} 个插件`,
+    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop 钩子"); also the chips on the settings Hooks tab. */
+    hookBadge: (event: string): string => `${event} 钩子`,
+    /** Search box of the create dialog's plugin picker. */
+    searchPlaceholder: "搜索插件",
+    /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
+    /** Section labels of the plugin detail Modal. */
+    detailSkills: "技能",
+    detailHooks: "钩子",
+    usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
+    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
+    quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",
+    /** Top toast shown on successful install / uninstall. */
+    installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
+    uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
+    updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
+    updateConfirmTitle: (name: string): string => `更新 ${name}`,
+    updateConfirmWarning: (name: string): string =>
+      `更新 ${name} 会把库内当前副本重装到各 Agent，覆盖其已安装的技能与钩子文件——本地改动会丢失，如有需要请先导出备份。`,
+    updatedToast: (plugin: string, n: number): string =>
+      `已将 ${plugin} 更新到最新版（${n} 个 Agent）`,
+    /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
+    uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
+    uninstallConfirmBody: (plugin: string, agent: string): string =>
+      `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
+  },
+
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent. */
+  hooks: {
+    agentTabDesc:
+      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后；卸载会删除整个钩子包目录。",
+    agentTabEmpty: "尚未安装任何钩子包",
+    /** The agents page's hook-count stat (hover title / accessible name). */
+    hookCount: (n: number): string => `${n} 个钩子包`,
+    uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
+    uninstallConfirmBody: (name: string, agent: string): string =>
+      `确定从 ${agent} 卸载钩子包 ${name} 吗？其全部脚本（含本地改动）将被删除。`,
+    uninstalledToast: (name: string, agent: string): string => `已从 ${agent} 卸载钩子包 ${name}`,
+  },
+
   skills: {
-    pageTitle: "技能库",
-    pageDesc: "内置 Skill 库：浏览、快捷调用，或安装到 Agent。",
     quickInvoke: "快捷调用",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
-    /** Title on a disabled quick-invoke button: quick invoke opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. preinstall:false skills like remote-claude-code) can't be quick-invoked until it's installed on that agent. */
-    quickInvokeNeedsInstall: "先在当前 Agent 安装该技能后才能快捷调用",
     /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */
     selectAll: "全选",
     selectNone: "全不选",
@@ -1143,17 +1188,9 @@ export const zh = {
     uninstall: "卸载",
     /** Skill count in the group header (small text to the right of the group name). */
     skillCount: (n: number): string => `${n} 个技能`,
-    /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
-    usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Top toast shown on successful install / uninstall. */
-    installedToast: (skill: string, agent: string): string => `已将 ${skill} 安装到 ${agent}`,
-    updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
+    /** The plugin library's per-Agent update button, and the confirm buttons of every update dialog. */
     updateAction: "更新",
-    updateConfirmTitle: (name: string): string => `更新 ${name}`,
-    updateConfirmWarning: (name: string): string =>
-      `更新 ${name} 会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。`,
-    updatedToast: (skill: string, n: number): string =>
-      `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
+    /** Settings Skills tab: toast after uninstalling one skill. */
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
@@ -1837,9 +1874,8 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
-    goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
-    /** Later rounds collapse the objective's images into this chip (round 1 shows them in full). */
-    goalRoundImages: (count: number): string => `${count} 张附图`,
+    /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
+    harnessInjected: "由 harness 注入",
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
     goalStatus: {
       active: "进行中",
@@ -2341,7 +2377,9 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
-      unknown_skill: "该技能不在技能库中。",
+      unknown_skill: "所选目录下没有这个技能。",
+      unknown_plugin: "该插件不在插件库中。",
+      goal_plugin_not_installed: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
       not_pending: "该插话已随本轮送达模型，无法撤回。",

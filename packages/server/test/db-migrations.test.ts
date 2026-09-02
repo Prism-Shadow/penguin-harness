@@ -1,5 +1,6 @@
 /**
- * The ordered-migration mechanism, and the 0.2.4 → 0.2.7 migration that is its first entry.
+ * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, and
+ * the 0.2.9 → 0.2.10 drop that is its first restart-only one.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -22,8 +23,30 @@ import { SCHEMA_SQL } from "../src/db/schema.js";
 const sqlite = process.getBuiltinModule("node:sqlite");
 
 /**
+ * The goal_state table as every release from 0.1.3 to 0.2.9 declared it (frozen: the live
+ * schema no longer has it, and the migration that drops it must not learn a new shape).
+ */
+const GOAL_STATE_DDL = `
+  CREATE TABLE goal_state (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    project_id  TEXT NOT NULL,
+    agent_id    TEXT NOT NULL,
+    objective   TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    budget      INTEGER NOT NULL,
+    used        INTEGER NOT NULL DEFAULT 0,
+    rounds      INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+  );
+  CREATE INDEX idx_goal_session ON goal_state(session_id);
+`;
+
+/**
  * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
- * lacked. Derived by removing, not by hand-copying 15 tables that would fork from reality.
+ * lacked, plus the one table it had that today's declaration dropped. Derived from
+ * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
  */
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
@@ -31,7 +54,28 @@ function open024(): DatabaseSync {
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
+  db.exec(GOAL_STATE_DDL);
   return db;
+}
+
+/** A 0.2.9 database: everything 0.2.4 had plus what versions 1 and 2 added, and still goal_state. */
+function open029(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec(GOAL_STATE_DDL);
+  db.exec("PRAGMA user_version = 2");
+  return db;
+}
+
+/** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
+function withoutRestartOnly<T>(fn: () => T): T {
+  const list = MIGRATIONS as unknown as (typeof MIGRATIONS)[number][];
+  const removed = list.splice(2, 1);
+  try {
+    return fn();
+  } finally {
+    list.push(...removed);
+  }
 }
 
 /**
@@ -94,7 +138,11 @@ describe("migration mechanism", () => {
       const r = migrate(db);
       expect(r.from).toBe(0);
       expect(r.to).toBe(LATEST_VERSION);
-      expect(r.applied).toEqual(["messaging-bindings", "messaging-delivery-flags"]);
+      expect(r.applied).toEqual([
+        "messaging-bindings",
+        "messaging-delivery-flags",
+        "drop-goal-state",
+      ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
@@ -149,7 +197,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
   it("applies swap-safe migrations while a pushed platform boots", () => {
     const db = open024();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "messaging-bindings",
         "messaging-delivery-flags",
       ]);
@@ -158,33 +206,66 @@ describe("the swap path refuses what a rollback could not survive", () => {
     }
   });
 
-  it("refuses a restart-only migration whole, applying nothing", () => {
+  it("refuses a restart-only migration whole, applying nothing — drop-goal-state is the first", () => {
     const db = open024();
     try {
-      const narrowing = {
-        version: LATEST_VERSION + 1,
-        name: "narrows-something",
-        swapSafe: false,
-        up(d: DatabaseSync) {
-          d.exec("CREATE TABLE should_not_exist (x TEXT)");
-        },
-      };
-      (MIGRATIONS as unknown as (typeof narrowing)[]).push(narrowing);
-      try {
-        const before = shape(db);
-        expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
-        // Not even the swap-safe migration ahead of it ran: the push is refused whole.
-        expect(shape(db)).toBe(before);
-        expect(schemaVersion(db)).toBe(0);
-        // The runtime's own open, which owns the process, may apply it.
-        expect(migrate(db).applied).toEqual([
-          "messaging-bindings",
-          "messaging-delivery-flags",
-          "narrows-something",
-        ]);
-      } finally {
-        (MIGRATIONS as unknown as (typeof narrowing)[]).pop();
-      }
+      const before = shape(db);
+      expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
+      // Not even the swap-safe migrations ahead of it ran: the push is refused whole.
+      expect(shape(db)).toBe(before);
+      expect(schemaVersion(db)).toBe(0);
+      // The runtime's own open, which owns the process, may apply it.
+      expect(migrate(db).applied).toEqual([
+        "messaging-bindings",
+        "messaging-delivery-flags",
+        "drop-goal-state",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a database already at the latest version boots on the swap path without a word", () => {
+    const db = open024();
+    try {
+      migrate(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("0.2.9 → current: drop-goal-state", () => {
+  it("drops the table and its index, and a database that never had them migrates the same", () => {
+    const db = open029();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(migrate(db).applied).toEqual(["drop-goal-state"]);
+      expect(shape(db)).toBe(shape(fresh));
+      // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
+      // goal_state to drop and must not fail on it.
+      fresh.exec("PRAGMA user_version = 2");
+      expect(migrate(fresh).applied).toEqual(["drop-goal-state"]);
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down recreates the 0.2.9 table empty, with its index", () => {
+    const db = open029();
+    try {
+      db.exec(
+        "INSERT INTO goal_state (session_id, project_id, agent_id, objective, status, budget, created_at, updated_at)" +
+          " VALUES ('s1', 'p1', 'a1', 'ship it', 'complete', -1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+      );
+      const before = shape(db);
+      migrate(db);
+      rollbackTo(db, 2);
+      expect(shape(db)).toBe(before);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM goal_state").get()).toEqual({ n: 0 });
     } finally {
       db.close();
     }
@@ -252,10 +333,10 @@ describe("rollbackTo", () => {
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
 
-      const r = rollbackTo(db, LATEST_VERSION - 1);
+      const r = rollbackTo(db, LATEST_VERSION - 2);
       expect(r.from).toBe(LATEST_VERSION);
-      expect(r.to).toBe(LATEST_VERSION - 1);
-      expect(r.reverted).toEqual(["messaging-delivery-flags"]);
+      expect(r.to).toBe(LATEST_VERSION - 2);
+      expect(r.reverted).toEqual(["drop-goal-state", "messaging-delivery-flags"]);
       const cols = (
         db.prepare("PRAGMA table_info(messaging_bindings)").all() as { name: string }[]
       ).map((c) => c.name);
@@ -290,7 +371,11 @@ describe("rollbackTo", () => {
     try {
       migrate(db);
       const r = rollbackTo(db, 0);
-      expect(r.reverted).toEqual(["messaging-delivery-flags", "messaging-bindings"]);
+      expect(r.reverted).toEqual([
+        "drop-goal-state",
+        "messaging-delivery-flags",
+        "messaging-bindings",
+      ]);
       expect(
         db
           .prepare(

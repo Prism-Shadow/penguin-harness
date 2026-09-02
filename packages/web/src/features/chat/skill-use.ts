@@ -12,7 +12,7 @@ import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 
 export { buildSkillsMessage, parseSkillsMessage } from "@prismshadow/penguin-core/markers";
 
-/** Book icon (24×24 line path): shared across skill-related UI (nav items are inlined separately in sidebar / app-layout). */
+/** Book icon (24×24 line path): the mark of skills as a kind — the composer's skills button, the "using skills" banner, the agents page's skill count, and what a skill draws when it carries no plugin icon (skill-icon-view.tsx). */
 export const BOOK_ICON =
   "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z";
 
@@ -47,15 +47,17 @@ export function localizedShortText(locale: "zh" | "en", s: SkillDescLike): strin
 }
 
 /**
- * Search filter for the skills dropdown (pure function, shared by chat-input's SkillSelect and
- * unit tests): case-insensitive substring match against the skill name and localized
- * description; an empty query (including whitespace-only) returns the full list.
+ * Search filter for the skills dropdown (pure function, shared by chat-input's SkillSelect, the
+ * pick list and unit tests): case-insensitive substring match against the skill name and
+ * localized description; an empty query (including whitespace-only) returns the full list.
+ * Generic over the row type so a list of rows carrying extra fields (the create dialog's plugin
+ * rows) keeps them through the filter.
  */
-export function filterSkills(
-  skills: SkillMetadataItem[],
+export function filterSkills<T extends SkillMetadataItem>(
+  skills: T[],
   locale: "zh" | "en",
   query: string,
-): SkillMetadataItem[] {
+): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return skills;
   // Match target matches what's displayed: name + localized short text (zh can match the Chinese short description, en is always English).

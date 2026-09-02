@@ -430,16 +430,16 @@ function decideTurn(messages, toolMarker) {
     return { kind: "title", text: "Conversation" };
   }
 
-  // Goal scene: the objective is embedded in every round's [goal] block.
+  // Goal scene: every round's protocol message embeds the goal file's JSON (`"round": N`).
   {
     const lang = langOf(flat, (s) => s.goal.objective);
     if (lang) {
       const scene = SCENES[lang].goal;
-      const rounds = [...flat.matchAll(/round: (\d+)/g)].map((m) => Number(m[1]));
+      const rounds = [...flat.matchAll(/"round": (\d+)/g)].map((m) => Number(m[1]));
       const round = Math.max(1, ...rounds);
       let lastRoundIdx = 0;
       messages.forEach((m, i) => {
-        if (JSON.stringify(m).includes("round: ")) lastRoundIdx = i;
+        if (/"round\\?": /.test(JSON.stringify(m))) lastRoundIdx = i;
       });
       const pos = messages
         .slice(lastRoundIdx + 1)

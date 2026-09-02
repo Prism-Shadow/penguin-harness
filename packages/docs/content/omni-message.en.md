@@ -26,7 +26,7 @@ What each message type carries:
 | --- | --- | --- |
 | `session_meta` | The full runtime configuration of one model context | exactly one per context |
 | `model_msg` | Content inside the model context (text, thinking, tool calls and results) | the bulk |
-| `event_msg` | Runtime events outside the context (approvals, usage, compaction, aborts) | alongside |
+| `event_msg` | Runtime events outside the context (approvals, usage, compaction, aborts, hook answers) | alongside |
 
 ## session_meta
 
@@ -176,7 +176,7 @@ Renderers can therefore paint deltas incrementally and swap in the complete mess
 
 ## event_msg
 
-Eleven event payloads, all listed field by field:
+Twelve event payloads, all listed field by field:
 
 ```ts
 interface ToolListReadyPayload {
@@ -292,6 +292,19 @@ interface AbortPayload {
 interface SubagentPayload {
   type: "subagent";
   session_id: string;         // pointer in the parent Trace to a direct child Session
+}
+
+interface HookPayload {
+  type: "hook";
+  hook: "stop" | "pre_tool_use";    // the hook point that fired (see the agent loop's hooks)
+  name: string;               // the hook's name: "goal", "continual-learning", …
+  decision?: "continue" | "stop"    // stop point
+    | "allow" | "deny";             // pre_tool_use point; absent when the hook only left a record
+  reason?: string;            // one line for people
+  output?: Record<string, string | number | boolean>;
+                              // the hook's own record — the goal hook writes status /
+                              // round / tokens_used / budget; a continue's injected input
+                              // is NOT here: it is the user message that follows
 }
 ```
 

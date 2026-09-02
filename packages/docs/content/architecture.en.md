@@ -29,7 +29,7 @@ PenguinHarness is a pnpm monorepo whose center is the execution engine in `@pris
 | `packages/cli` | Terminal Human implementation: REPL and one-shot runs, embeds core in-process |
 | `packages/server` | Web Human implementation: HTTP for input and approvals, SSE for the output stream |
 | `packages/web` | Rendering SPA: streams by the OmniMessage protocol, contains no engine logic |
-| `packages/skills` | The built-in skill library (a set of `SKILL.md` files) |
+| `plugins/*` | The built-in plugin library, one package per plugin: skills (`SKILL.md` directories) and session hooks (script packages), loaded by core |
 
 ## Division of responsibilities
 
@@ -59,7 +59,7 @@ Item by item (design → owner → carrying file or module):
 | Approval-mode persistence and manual decisions | Server | `server/src/runtime/approvals.ts` + SQLite |
 | Usage persistence and cost statistics | Server | `server/src/runtime/usage-recorder.ts`, `services/usage-service.ts` |
 | Agent behavior definition (prompts, runtime params) | File layer | `agent_state/system_config.yaml`, `AGENTS.md` — see the [Configuration Reference](/configuration) |
-| Skills | File layer | `agent_state/skills/<name>/SKILL.md` — see [Skills](/skills) |
+| Skills, hooks | File layer | `agent_state/skills/<name>/SKILL.md`, `agent_state/hooks/<name>/hooks.json` — see [Skills & Plugins](/skills) |
 | Secrets | File layer | Vault: `agent_state/.vault.toml`; model credentials: `.project_config.toml` (both 0600) |
 | The model table and the default model | File layer | `<project>/.project_config.toml` |
 | Run history (the sole source of truth for recovery) | File layer | `traces/<date>/<session>_<index>.jsonl` — see [Sessions & Traces](/sessions-and-traces) |
@@ -89,7 +89,6 @@ packages/
 ├── cli/src                         # commander entry + run / chat / config / serve commands and approval prompts
 ├── server/src                      # app assembly · db (node:sqlite) · auth · http/routes · runtime · services
 ├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages
-├── skills/                         # loader + the skills/<name>/SKILL.md library
 ├── landing/                        # the product landing page (with the blog)
 └── docs/                           # this documentation site
 ```

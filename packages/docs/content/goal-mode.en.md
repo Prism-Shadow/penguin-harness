@@ -1,11 +1,13 @@
 ---
 title: Goal Mode
-description: Give the Agent an objective instead of a message — the system loops Tasks on one Session until the goal is complete, blocked, or out of token budget.
+description: Give the Agent an objective instead of a message — the goal plugin's stop hook keeps driving Tasks on one Session until the goal is complete, blocked, or out of token budget.
 ---
 
 ## What it is
 
-A normal Task ends when the model stops calling tools and replies. Goal mode inverts the contract: you state an **objective**, and the system keeps driving Tasks on the same Session — each round re-injecting the objective and checking a control file — until the goal reaches a terminal state. The model never decides to stop by simply going quiet; it must *claim* completion (or a genuine impasse) through the protocol below, and everything else loops.
+A normal Task ends when the model stops calling tools and replies. Goal mode inverts the contract: you state an **objective**, and the system keeps driving Tasks on the same Session — each round re-injecting the objective and checking a goal file — until the goal reaches a terminal state. The model never decides to stop by simply going quiet; it must *claim* completion (or a genuine impasse) through the protocol below, and everything else loops.
+
+Goal mode is the **`goal` plugin**, a [hook package](/skills#hook-packages) preinstalled on `default_agent` and installable on any Agent from the plugin library. Its `start.mjs` — the package's [`user_prompt` hook](/agent-loop#user-prompt-hooks) — writes the goal file and answers the submitted prompt with round 1's protocol message as expansion `context`; its `stop.mjs` — a [stop hook](/agent-loop#stop-hooks) — reads the Session's Trace after every Task and answers `continue` with the next round's message, or `stop`. Nothing in the core SDK knows what a goal is; the loop that consults hooks is generic. An Agent without the plugin cannot start a goal: the Web App and the API say so (`409 goal_plugin_not_installed`) instead of running a Task that would simply end.
 
 Start a goal from any of the three surfaces:
 
@@ -16,48 +18,58 @@ Start a goal from any of the three surfaces:
 | CLI one-shot | `penguin run --goal [budget] -m "<objective>"`; exit code 0 only when the goal completes |
 | Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget } }` (budget `-1` or omitted = unlimited) |
 
-In the SDK, goal mode is an option of the one `run` call — `session.run(input, { goal: { budget } })` — not a separate API: the input's text becomes the objective, rounds loop inside the call, and the stream's final message is a `goal_finished` event carrying the outcome.
+Under the hood the server asks the Session to run the goal package's `user_prompt` hook — the installed `agent_state/hooks/goal/start.mjs`, fed `{ hook: "user_prompt", session_id, scratchpad_dir, prompt, budget }` on stdin — and starts the goal run with your message exactly as typed followed by the `{ context }` it prints, stamped `sender: "harness"`; the stop hook takes it from there. In the SDK, a goal is therefore a plain `session.run` on an Agent with the plugin installed, started by writing the goal file the same way (`Session.runUserPromptHook("goal", …)`, or the script directly).
 
-## The control file: GOAL.yaml
+## The goal file: GOAL.json
 
-The loop's state channel is a file at `<agent_dir>/scratchpad/<session_id>/GOAL.yaml` (sibling of the model's `PLAN.md` convention), created by the system when the goal starts:
+The goal's state is a file at `<agent_dir>/scratchpad/<session_id>/GOAL.json` (sibling of the model's `PLAN.md` convention), created when the goal starts and rewritten by the stop hook after every round:
 
-```yaml
-objective: make all tests pass
-status: active
+```json
+{
+  "objective": "make all tests pass",
+  "status": "active",
+  "budget": 500000,
+  "round": 3,
+  "tokens_used": 123456
+}
 ```
-
-The system writes this file **exactly once**, at creation; afterwards it only reads `status`:
 
 | Field | Writer | Notes |
 | --- | --- | --- |
-| `objective` | system, at creation | the canonical value lives in the loop's memory and is re-stated in every round's block, so a tampered file changes nothing |
-| `status` | model | only to `complete` or `blocked` — the model's mailbox back to the loop, read after every round |
+| `objective` | the start script | the text every later round re-injects |
+| `status` | model, or the hook | `complete` / `blocked` are the model's — its one mailbox back to the loop, and the only field it may touch; `active`, `wrapping_up` (the wrap-up round after the budget ran out), `budget_limited` and `aborted` are the hook's |
+| `budget` | the start script | the token budget for the whole goal; `-1` = none |
+| `round` | the hook, every round | the round in progress; on a terminal status, the rounds run |
+| `tokens_used` | the hook, every round | uncached input + output the main session consumed so far, read off the Trace |
+| `ended` | the hook, at the end | `true` once the hook has acted on a terminal status — what tells a goal this run just ended from one an earlier run ended (the hook stays silent for those) |
 
-Budget numbers ride each round's `[goal]` block, not the file; system-side endings (`budget_limited`, `aborted`) exist only as the `goal_finished` outcome and in server state — the file always keeps the model's own last write, which is exactly the resume point an interrupted goal wants. Reads are tolerant: a missing file, unparseable YAML, or an out-of-protocol status all normalize to `blocked` — a broken control channel stops the loop instead of spinning it forever.
+The file is always the goal's current state — the Web server restores the chat page's banner straight from it. Reads are tolerant: a file that no longer parses stops the goal as `blocked` and is moved aside as `GOAL.json.broken`, and a `status` outside the protocol reads as `blocked` — a broken control channel stops the loop instead of spinning it forever.
 
 ## The loop
 
-Each round's user message is a `[goal]` protocol block followed by a plain body — round 1 carries your original message verbatim (skill-invocation blocks and all); later rounds re-inject the objective. The Web App collapses the block into a "Goal · round N" notice under a regular user bubble; the Trace shows it verbatim. The block embeds the `GOAL.yaml` content (the model sees exactly the file it is asked to edit, composed from the same values it was created with), carries the current budget numbers on its own line, and states the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
+Each round's protocol message is plain user text stamped `sender: "harness"` — no marker block; the stamp alone says the harness sent it, and the Web App renders it as a compact collapsed card ("Injected by the harness", the background notices' form) that expands to the full text. Round 1 sends your own message verbatim first (text and images, skill-invocation blocks and all) with the protocol message right behind it pointing back at yours as the objective; later rounds restate the objective from the goal file. The protocol message embeds the `GOAL.json` the hook has just written — round, tokens used and budget included, so the model sees exactly the file it is asked to edit — and states the working rules: evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the stop hook reads the Trace and the file and decides, first match wins:
 
-- `complete` → the goal is done; the loop stops.
-- `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.
-- `active` → budget permitting, the next round fires.
+- the file says `complete` → the goal is done; `blocked` → what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal;
+- the Task was cut off — an `abort` event (user stop), a last request that failed for good, or the per-Task `max_turns` notice — → `aborted`: the model never got to write the file, and re-firing would hit the same cutoff again;
+- the wrap-up round just ran → `budget_limited`;
+- 100 rounds → `aborted` (a runaway backstop for a goal with no or a huge budget whose model never writes the file);
+- the budget is reached → one wrap-up round;
+- otherwise → the next round.
+
+Every answer is recorded as a `hook` event (`name: goal`) on the stream and in the Trace, with the file's state — `status`, `round`, `tokens_used`, `budget` — as its `output`. The terminal statuses are written to the file as well, so the file and the last event agree.
 
 ### Images in an objective
 
-An objective may carry attached images — "make the page match this mockup" is a goal, and a screenshot states it better than a paragraph. They are always saved to the session scratchpad and referenced from the objective as `[attached image: <path>]` lines, **whatever the model's vision**: the objective is re-injected as the text of every round's block, so an image cannot ride along as an image. Sending it in round 1 alone would leave every later round pointing at something compaction has since removed, while the objective still reads correct. As a path it survives every round and every compaction, and the model spends tokens on it only when it actually looks (`read_image`, or `describe_image` without vision). An image cannot stand in for the text — a picture alone states no objective, so a text-less goal input is rejected.
+An objective may carry attached images: they ride round 1 as ordinary input, and the model sees them then. Later rounds re-inject the objective text only. An image cannot stand in for the text — a picture alone states no objective, so a text-less goal input is rejected; file attachments are refused, since nothing carries them across rounds.
 
-The chat page shows the attachments in full under round 1's bubble and collapses them into a one-line chip on later rounds (click to expand): they are part of every round's input, but a twenty-round goal shouldn't repeat the same picture twenty times.
-
-A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does. The same applies to a round the engine cut off at the per-Task turn cap (`max_turns`): the model never got to write the goal file, so the loop ends as `aborted` instead of re-firing the same cutoff forever.
+In the Web App the regular stop button aborts the entire goal; in the CLI, Ctrl-C does. A user's interruption outranks the hook: after a cutoff no `continue` is ever run, and the goal ends as `aborted` with the file saying so.
 
 ## Token budget
 
-Accounting is incremental — **uncached input + output** (`request.total − cache_read`), summed over every request of every round, *including subagent sessions* spawned by `run_subagent`. `used` starts at 0. The sum is a spend estimate, not a bill: cache reads cost money too, just a small fraction of the uncached-input price, so leaving them out keeps the number an honest approximation without per-model price tables.
+The hook counts the round's usage off the Trace: **uncached input + output** (`request.total − cache_read`) of every `token_usage` record since the round's harness-injected input, added to `tokens_used`. Subagent sessions have their own Traces and are not counted. The sum is a spend estimate, not a bill: cache reads cost money too, just a small fraction of the uncached-input price, so leaving them out keeps the number an honest approximation without per-model price tables.
 
-The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the system ends the goal as `budget_limited` (the `goal_finished` outcome; nothing is written to the file). Because the check runs between rounds only, a round already in flight is never cut short: actual spend can overshoot the budget by up to one round, plus the wrap-up round. With no budget set, the loop runs until `complete` or `blocked` — bounded by the model's honesty about the two terminal states, plus a hard backstop of 100 rounds so a model that simply never writes the goal file cannot loop forever.
+The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the hook ends the goal as `budget_limited` (a truthful `complete` written during the wrap-up still counts). Because the check runs between rounds only, a round already in flight is never cut short: actual spend can overshoot the budget by up to one round, plus the wrap-up round. With no budget set, the loop runs until `complete` or `blocked` — bounded by the model's honesty about the two terminal states, plus the hard backstop of 100 rounds.
 
 ## Server state and events
 
-The Web server records each goal run in a `goal_state` row (objective, status, budget, used, rounds) — the chat page's goal banner restores from the latest row on load, and live progress arrives as `goal_started` / `goal_round` / `goal_finished` events on the session's SSE channel. System-side terminal statuses (`aborted`, `budget_limited`) exist in this row and on the stream only; the on-disk file keeps the model's last write for resuming. Deleting the Session removes its goal rows along with the scratchpad (and `GOAL.yaml` with it).
+The Web server keeps no goal table: `GET /api/sessions/:id/goal` reads the Session's `GOAL.json` (null when it never ran a goal). A goal lives only inside its run, so a file the hook has not ended while the Session is not running was left behind by a crash or a kill and reads as `aborted`. Live progress arrives as `goal_started` / `goal_round` / `goal_finished` events on the session's SSE channel, derived from the stream — the round inputs and the goal hook's events. Deleting the Session removes the scratchpad, and `GOAL.json` with it.

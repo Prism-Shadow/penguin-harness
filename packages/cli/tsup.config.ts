@@ -13,9 +13,9 @@ export default defineConfig({
   // Bundle the workspace source @prismshadow/penguin-core, but keep third-party deps (incl.
   // CJS yaml / smol-toml / agenthub) external and resolved from node_modules at runtime —
   // avoids bundling CJS deps into ESM and triggering a "Dynamic require" error.
-  // @prismshadow/penguin-skills must stay external: it reads files under its own skills/ dir
-  // at runtime (files are the source of truth); bundling would break paths relative to the
-  // package root. cli already declares it as a direct dependency.
+  // The @penguinharness/* plugin packages are data-only and never imported as modules: the
+  // bundled core loader resolves their directories through this package's own dependencies
+  // (files are the source of truth), which is why the CLI declares them directly.
   // @prismshadow/penguin-server stays external: the penguin server / web commands import it
   // dynamically at runtime.
   // tsup treats this package's package.json dependencies as external by default, so these

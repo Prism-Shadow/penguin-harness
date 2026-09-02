@@ -83,19 +83,6 @@ export function sessionScratchpadDir(
 }
 
 /**
- * `<agentDir>/scratchpad/<sessionId>/GOAL.yaml`, the goal-mode control file of one Session
- * (sibling of the model's PLAN.md convention; see goal/goal-file.ts for field ownership).
- */
-export function goalFilePath(
-  root: string,
-  projectId: string,
-  agentId: string,
-  sessionId: string,
-): string {
-  return path.join(sessionScratchpadDir(root, projectId, agentId, sessionId), "GOAL.yaml");
-}
-
-/**
  * `<projectDir>/.project_config.toml`, the Project's single config file (a hidden file, not
  * shown by default `ls`, written with mode 0600; model entries are inlined with their credential,
  * see state/project-config.ts).
@@ -145,6 +132,11 @@ export function memoryScopeDir(
 /** `<agentStateDir>/skills`. */
 export function skillsDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "skills");
+}
+
+/** `<agentStateDir>/hooks`: the installed hook packages, one directory per plugin (see agent-state.ts installHook). */
+export function hooksDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentStateDir(root, projectId, agentId), "hooks");
 }
 
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */

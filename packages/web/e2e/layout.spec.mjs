@@ -27,7 +27,7 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Skills / Models / Cost Center / Evaluation Center with localized
+ *   Agents / Plugin library / Models / Cost Center / Evaluation Center with localized
  *   (en + zh) hover
  *   tooltips; "last conversation" targets the newest non-archived session and is disabled
  *   while none exists; expanding from the rail restores the pinned sidebar;
@@ -418,7 +418,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
-    "Skills",
+    "Plugin library",
     "Models",
     "Cost Center",
     "Evaluation Center",
@@ -472,15 +472,15 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   );
 
   // --- Page entries navigate and highlight like the pinned nav ---
-  await rail.getByRole("link", { name: "Skills" }).click();
-  await expect(page).toHaveURL(`${BASE}/skills`);
-  await expect(rail.getByRole("link", { name: "Skills" })).toHaveClass(ACTIVE_FILL);
+  await rail.getByRole("link", { name: "Plugin library" }).click();
+  await expect(page).toHaveURL(`${BASE}/plugins`);
+  await expect(rail.getByRole("link", { name: "Plugin library" })).toHaveClass(ACTIVE_FILL);
 
   // --- zh: tooltips follow the product-specified wording ---
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
   await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "技能库", "模型库", "成本中心", "评估中心"];
+  const ZH = ["最近一次对话", "新建对话", "智能体", "插件库", "模型库", "成本中心", "评估中心"];
   expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail tooltips (zh)").toEqual(ZH);
 
@@ -828,7 +828,7 @@ test("layout: no page grows the document (absolute descendants stay in their scr
   // A short viewport puts the second Agent's node below the fold with a handful of Sessions
   // instead of dozens — the same geometry a full-height window reaches with a longer list.
   await page.setViewportSize({ width: 1440, height: 420 });
-  const paths = ["/chat", "/agents", "/agents/default_agent", "/skills", "/models"];
+  const paths = ["/chat", "/agents", "/agents/default_agent", "/plugins", "/models"];
   const grewBy = (p) =>
     p.evaluate(() => {
       const de = document.documentElement;

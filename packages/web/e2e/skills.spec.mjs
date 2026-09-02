@@ -1,12 +1,12 @@
 /**
- * End-to-end test for the skill library (locale zh-CN):
- * - the sidebar nav shows "技能库" ("Skill Library"), and the page renders the library's skill
- *   cards across group sections (a collapsible group header: group name + skill count,
+ * End-to-end test for the plugin library (locale zh-CN):
+ * - the sidebar nav shows "插件库" ("Plugin library"), and the page renders the library's plugin
+ *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
- *   English by default); cards carry a custom icon (icon.svg sanitized then inlined, not the book
- *   fallback), with metadata showing version and usage count (worded semantically, not a bare
- *   number badge);
+ *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
+ *   sanitized then inlined, not the book fallback), with metadata showing the `YYYY-MM-DD.N`
+ *   version and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -36,13 +36,21 @@ const P = "password123";
 
 // Group names follow the UI language: Chinese when the server dist ships titleZh, otherwise
 // falling back to English (both states are asserted).
-// The group header is a collapsible button (group name + skill count); matched by a substring of its accessible name.
+// The group header is a collapsible button (category name + plugin count); matched by a substring of its accessible name.
 const GROUPS = [
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
-  /Agent Tuning|Agent 调优/,
 ];
+// Library plugin cards the page renders (merged plugins carry several skills each).
+const PLUGINS = [
+  "agent-tuning",
+  "agent-development",
+  "model-development",
+  "software-development",
+  "data-analysis",
+];
+// Installed skill names the composer's dropdown lists (default_agent preinstalls them all).
 const SKILLS = [
   "agent-initialization",
   "benchmark-design",
@@ -50,8 +58,8 @@ const SKILLS = [
   "agent-optimization",
   "data-analysis",
   "penguin-sdk",
-  "penguin-cli",
-  "agenthub-models",
+  "penguin-config",
+  "unified-llm-api",
   "web-design",
   "software-engineering",
 ];
@@ -92,12 +100,12 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Skill library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
+  // —— Plugin library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "技能库" });
+  const navLink = page.getByRole("link", { name: "插件库" });
   await expect(navLink).toBeVisible();
   await navLink.click();
-  await expect(page).toHaveURL(/\/skills$/);
+  await expect(page).toHaveURL(/\/plugins$/);
   for (const g of GROUPS) {
     const header = page.getByRole("button", { name: g });
     await expect(header).toBeVisible();
@@ -105,26 +113,29 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
     // The group header no longer has an icon: the book path must not appear in the group header button.
     await expect(header.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
   }
-  for (const s of SKILLS) {
+  for (const s of PLUGINS) {
     await expect(page.getByText(s, { exact: true })).toBeVisible();
   }
-  // Card metadata is worded semantically: version + usage count (default_agent has all skills preinstalled -> at least 1 in use).
-  await expect(page.getByText(/v\d+ · .*Agent 在用/).first()).toBeVisible();
+  // Card metadata is worded semantically: `v<YYYY-MM-DD.N>` + how long ago that date is +
+  // usage count (default_agent has every preinstalled plugin -> at least 1 in use).
+  await expect(
+    page.getByText(/v\d{4}-\d{2}-\d{2}\.\d+ · .*更新 · .*Agent 在用/).first(),
+  ).toBeVisible();
 
   // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
-  // gated on that Agent having the skill: default_agent ships every preinstalled skill
-  // (agent-initialization is enabled), while remote-claude-code is preinstall:false and absent from it,
-  // so its button is disabled.
-  await expect(page.getByRole("button", { name: "快捷调用 agent-initialization" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "快捷调用 remote-claude-code" })).toBeDisabled();
+  // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
+  // plugin (data-analysis is enabled), while remote-claude-code is preinstall:false and
+  // absent from it, so its button is disabled.
+  await expect(page.getByRole("button", { name: "快捷调用 data-analysis" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "快捷调用 use-claude-code" })).toBeDisabled();
 
-  // Card icon: the DTO icon (icon.svg in the skill's directory) is sanitized and rendered
-  // inline (an aria-hidden wrapper + svg); builtin skills each carry a custom icon, not the book
+  // Card icon: the DTO icon (icon.svg in the plugin's skill directory) is sanitized and rendered
+  // inline (an aria-hidden wrapper + svg); builtin plugins each carry a custom icon, not the book
   // fallback. The card root = the nearest rounded-md ancestor of the name element (the new card
   // layout has the icon spanning two rows on the left, with the name and short description as
   // separate text columns, so it can no longer be located by "the innermost div containing the name").
   const creationCard = page
-    .getByText("agent-initialization", { exact: true })
+    .getByText("agent-tuning", { exact: true })
     .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
@@ -143,8 +154,8 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(firstGroup.locator("[inert]")).toHaveCount(0);
 
   // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
-  await page.getByRole("button", { name: "管理安装 agent-initialization" }).click();
-  const dialog = page.locator("div").filter({ hasText: "管理安装：agent-initialization" }).last();
+  await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
+  const dialog = page.locator("div").filter({ hasText: "管理安装：data-analysis" }).last();
   // default_agent (display name General Agent) has everything preinstalled -> "已安装"
   // ("Installed", whose accessible name is the uninstall action); agent_helper has nothing
   // installed -> "安装" ("Install").
@@ -158,7 +169,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   const uninstallHelper = page.getByRole("button", { name: "卸载 agent_helper" });
   await expect(uninstallHelper).toBeVisible();
   await expect(uninstallHelper).toContainText("已安装");
-  // Server-side truth converges: agent-initialization really does appear in helper's installed list.
+  // Server-side truth converges: the plugin's skill really does appear in helper's installed skills.
   await expect
     .poll(async () => {
       const res = await (
@@ -166,7 +177,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
       ).json();
       return res.skills.map((s) => s.name);
     })
-    .toContain("agent-initialization");
+    .toContain("data-analysis");
   // Clicking "已安装" ("Installed") uninstalls: flips back to "安装" ("Install").
   await uninstallHelper.click();
   await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
@@ -175,11 +186,11 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(dialog).toHaveCount(0);
 
   // —— Quick invoke: navigates to /chat/new (default_agent), prefilling the invoke text + preselecting that skill ——
-  await page.getByRole("button", { name: "快捷调用 agent-initialization" }).click();
+  await page.getByRole("button", { name: "快捷调用 data-analysis" }).click();
   await page.waitForURL(/\/chat\/new$/);
   const ta = page.getByPlaceholder(/输入消息/);
   // Prefilled per the UI language (zh): 使用 X 技能 ("use the X skill").
-  await expect(ta).toHaveValue("使用 agent-initialization 技能");
+  await expect(ta).toHaveValue("使用 data-analysis 技能");
   // The draft belongs to default_agent (display name General Agent).
   await expect(page.getByLabel("选择 Agent")).toContainText("General Agent");
 
@@ -188,18 +199,18 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(skillsBtn).toBeVisible();
   await expect(skillsBtn).toContainText("1");
 
-  // Open the menu: all listed skills each occupy a row (default_agent has everything preinstalled), with agent-initialization shown as selected.
+  // Open the menu: all listed skills each occupy a row (default_agent has everything preinstalled), with data-analysis shown as selected.
   const row = (name) => page.getByRole("button", { name: new RegExp(`^${name}`) });
   await skillsBtn.click();
   for (const s of SKILLS) {
     await expect(row(s)).toBeVisible();
   }
-  await expect(row("agent-initialization")).toHaveAttribute("aria-pressed", "true");
+  await expect(row("data-analysis")).toHaveAttribute("aria-pressed", "true");
 
   // Search filter: typing "sdk" leaves only penguin-sdk.
   await page.getByPlaceholder("搜索技能").fill("sdk");
   await expect(row("penguin-sdk")).toBeVisible();
-  await expect(row("agent-initialization")).toHaveCount(0);
+  await expect(row("data-analysis")).toHaveCount(0);
   await page.getByPlaceholder("搜索技能").fill("");
 
   // Clicking a row toggles its selection **without closing the menu**: select penguin-sdk, then deselect it.
@@ -209,7 +220,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
 
   // —— Survives a reload (#74 comment): checking the dropdown writes into the draft immediately, so both the body and the selection persist after a reload ——
   await page.reload();
-  await expect(ta).toHaveValue("使用 agent-initialization 技能");
+  await expect(ta).toHaveValue("使用 data-analysis 技能");
   await expect(skillsBtn).toContainText("2");
   await skillsBtn.click();
   await expect(row("penguin-sdk")).toHaveAttribute("aria-pressed", "true");
@@ -219,7 +230,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(skillsBtn).toContainText("1");
   // Escape closes the menu (built into the Dropdown).
   await page.keyboard.press("Escape");
-  await expect(row("agent-initialization")).toHaveCount(0);
+  await expect(row("data-analysis")).toHaveCount(0);
 
   // —— Sending the prefilled body directly -> "使用技能" ("Use skills") banner + invoke text lands in the message ——
   await page.getByRole("button", { name: "发送" }).click();
@@ -227,10 +238,10 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   const sessionId = page.url().split("/chat/")[1];
 
   // Message stream: the block collapses into a "使用技能" ("Use skills") banner, and the
-  // prefilled body "使用 agent-initialization 技能" still renders normally; the selection clears once
+  // prefilled body "使用 data-analysis 技能" still renders normally; the selection clears once
   // sending succeeds (the dropdown button's badge disappears).
-  await expect(page.getByText(/使用技能.*agent-initialization/)).toBeVisible();
-  await expect(page.getByText("使用 agent-initialization 技能", { exact: true })).toBeVisible();
+  await expect(page.getByText(/使用技能.*data-analysis/)).toBeVisible();
+  await expect(page.getByText("使用 data-analysis 技能", { exact: true })).toBeVisible();
   await expect(skillsBtn).not.toContainText("1");
 
   // The mock LLM's fallback reply completes a full round (allow-all auto-approves exec_command).

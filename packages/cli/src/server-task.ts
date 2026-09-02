@@ -14,18 +14,9 @@
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
  * notice — the messages endpoint still holds the full history for `penguin logs`.
  */
-import {
-  goalFinishedOf,
-  isEventMessage,
-  isGoalRoundInput,
-  isModelMessage,
-} from "@prismshadow/penguin-core";
-import type {
-  ApprovalDecision,
-  GoalOutcome,
-  OmniMessage,
-  ToolCallPayload,
-} from "@prismshadow/penguin-core";
+import { isEventMessage, isHookInput, isModelMessage } from "@prismshadow/penguin-core";
+import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
+import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { ServerClient } from "./client.js";
 import type { SseFrame } from "./client.js";
 import { dim, humanizeTokens } from "./render.js";
@@ -38,6 +29,17 @@ interface ServerEventFrame {
   state?: "idle" | "running" | "compacting";
   toolCall?: OmniMessage<ToolCallPayload>;
   origin?: string[];
+}
+
+/** The server's goal_finished event: how the goal ended and its counters (the server maps the goal hook's stop event to it). */
+type GoalFinishedEvent = Extract<GoalServerEvent, { type: "goal_finished" }>;
+
+/** How a goal ended plus its counters, as the server's goal_finished event reports them. */
+export interface GoalOutcome {
+  outcome: GoalFinishedEvent["outcome"];
+  /** Rounds actually run (the wrap-up round counts). */
+  rounds: number;
+  tokensUsed: number;
 }
 
 /**
@@ -237,6 +239,10 @@ export async function watchTask(
       const ev = JSON.parse(frame.data) as ServerEventFrame;
       if (ev.type === "task_state" && ev.state === "idle") break;
       if (ev.type === "approval_request") answerApproval(ev);
+      if (ev.type === "goal_finished") {
+        const finished = ev as unknown as GoalFinishedEvent;
+        outcome = { outcome: finished.outcome, rounds: finished.rounds, tokensUsed: finished.used };
+      }
       if (ev.type === "resync_required") {
         renderer?.printLine(dim(t.client.streamResynced()));
       }
@@ -248,13 +254,15 @@ export async function watchTask(
       aborted = true;
     }
     if (opts.goal) {
-      if (isGoalRoundInput(msg)) {
+      // A hook's input is a round boundary: round 1's protocol message (sent right behind
+      // the objective), then every stop-hook continue — the same predicate as the server's
+      // goal_round events.
+      if (isHookInput(msg)) {
         if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
         round++;
         segmentStartedAt = Date.now();
         opts.goal.out.write(`${dim(t.goalRound(round))}\n`);
       }
-      outcome = goalFinishedOf(msg) ?? outcome;
     }
     if (opts.onAssistantText && (msg.origin?.length ?? 0) === 0 && isModelMessage(msg)) {
       const p = msg.payload as { type?: string; role?: string; text?: string };

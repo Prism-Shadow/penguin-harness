@@ -88,7 +88,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-    { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
+    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },

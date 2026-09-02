@@ -1,9 +1,11 @@
 # electron-builder config for the desktop shell installers.
 #
 # The app directory is this package itself: `pnpm build` emits self-contained bundles of
-# the shell, the server and the CLI into dist/ (see tsup.config.ts), so the app carries no
-# dependency tree for electron-builder to collect — `files` below is the complete
-# description of what goes inside an installer.
+# the shell, the server and the CLI into dist/ (see tsup.config.ts). The one dependency tree
+# electron-builder collects is the @penguinharness/* plugin packages this package.json
+# declares — data-only directories the bundled server's plugin loader resolves by name from
+# the app's node_modules (never imported, so bundling has nothing to absorb). Everything
+# else inside an installer is described by `files` below.
 #
 # asar is off on purpose: the shell forks the server as a child process, the skill
 # library reads its .md files from disk, and agent commands spawn real shells — plain
@@ -26,13 +28,12 @@ publish:
   repo: penguin-harness
 directories:
   output: out
-# Everything the app runs, and nothing else. The two mapped entries are the assets the
-# bundled server looks up relative to its own location: `skills/` is written next to dist/
-# by scripts/build-assets.mjs (a source run needs it there too), while web-dist comes
-# straight from the web package. No build order between the two packages guarantees it
-# exists before this one builds, and electron-builder skips an absent `from:` source in
-# silence, so the pack scripts run scripts/preflight.mjs first and verify-packed-cli.mjs
-# checks the packed tree for it.
+# Everything the app runs, and nothing else. The mapped entry is the web build, which the
+# bundled server looks up relative to its own location and which comes straight from the web
+# package. No build order between the two packages guarantees it exists before this one
+# builds, and electron-builder skips an absent `from:` source in silence, so the pack scripts
+# run scripts/preflight.mjs first and verify-packed-cli.mjs checks the packed tree for it —
+# and for the collected plugin packages, whose absence would fail nothing else either.
 files:
   - dist/**/*
   - "!dist/**/*.map"
@@ -40,10 +41,10 @@ files:
   # adds a `!**/node_modules/**` of its own: at the head of this list when no non-negated
   # pattern names node_modules, or immediately BEFORE the first one that does. Naming it here
   # is what moves that exclusion behind `dist/**/*` — last match wins, so this one node_modules
-  # ships and any other that appears under dist/ does not.
+  # ships and any other that appears under dist/ does not. The plugin packages are not listed:
+  # they arrive as collected dependencies, at the app root's node_modules.
   - dist/node_modules/**/*
   - bin/**/*
-  - skills/**/*
   - package.json
   - from: ../web/dist
     to: web-dist

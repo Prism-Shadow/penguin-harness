@@ -14,6 +14,8 @@ import {
   THINKING_LEVEL_NAMES,
   imageUrlMessage,
   scratchpadDir,
+  sessionScratchpadDir,
+  stripLeadingMarkerBlocks,
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -21,6 +23,7 @@ import type {
   ApprovalMode,
   FilesStatResponse,
   GoalResponse,
+  GoalStateView,
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
@@ -44,6 +47,7 @@ import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/previ
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
+import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
 import { sseEndpoint } from "../sse.js";
 import {
@@ -695,7 +699,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
-      deps.goalsRepo.deleteBySession(row.sessionId);
       // A bound Session takes its messaging bindings with it: close the channel
       // connection and drop every channel's row (no-op when unbound; bulk Agent/Project
       // deletes are reconciled by the bridge's next start()).
@@ -882,10 +885,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (goal) {
       // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
       // objective that every round re-injects and an image on its own doesn't say what the
-      // goal is. Images can come along — core folds them into `[attached image: <path>]` lines
-      // inside the objective (whatever the model's vision) so they survive the rounds. File
-      // attachments cannot: nothing folds them into the objective, so they are turned away
-      // here, before any upload is written to disk.
+      // goal is. Images ride round 1 as ordinary input. File attachments cannot: nothing
+      // folds them into the objective, so they are turned away here, before any upload is
+      // written to disk.
       const { messages, attachments } = parseTaskInput(body, limits);
       const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
@@ -898,8 +900,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (attachments.length > 0) {
         throw badRequest("goal mode accepts text and images only (no file attachments).");
       }
+      // The goal plugin owns the protocol — its user_prompt hook writes the goal file and
+      // composes round 1, its stop hook drives every later round; the manager runs the
+      // start under the session lock, so a goal is never started over a running one.
+      const objective = stripLeadingMarkerBlocks(text).trim() || text;
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input: messages,
+        messages,
+        objective,
         budget: goal.budget,
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
@@ -1053,21 +1060,42 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
-  // The Session's most recent goal run (for restoring the chat page's goal banner on load).
-  app.get("/:sessionId/goal", (c) => {
+  // The Session's most recent goal run, read from the goal plugin's file in its scratchpad
+  // (for restoring the chat page's goal banner on load). The file is agent-writable (the
+  // model edits `status`), so its fields are checked rather than trusted. A goal lives only
+  // inside its run: a live status while the Session is not running was left behind by a
+  // crash or a kill, and reads as `aborted`.
+  app.get("/:sessionId/goal", async (c) => {
     const row = resolveSession(c);
-    const g = deps.goalsRepo.latestForSession(row.sessionId);
+    const file = path.join(
+      sessionScratchpadDir(deps.config.root, row.projectId, row.agentId, row.sessionId),
+      "GOAL.json",
+    );
+    let g: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(await fs.readFile(file, "utf8"));
+      if (parsed === null || typeof parsed !== "object") throw new Error("not an object");
+      g = parsed as Record<string, unknown>;
+    } catch {
+      return c.json({ goal: null } satisfies GoalResponse);
+    }
+    const status = typeof g.status === "string" ? g.status : "blocked";
+    const running = deps.manager.statusOf(row.sessionId) === "running";
+    const view: GoalStateView["status"] = isGoalOutcome(status)
+      ? status
+      : status === "active" || status === "wrapping_up"
+        ? running
+          ? "active"
+          : "aborted"
+        : "blocked";
     return c.json({
-      goal: g
-        ? {
-            objective: g.objective,
-            status: g.status,
-            budget: g.budget,
-            used: g.used,
-            rounds: g.rounds,
-            updatedAt: g.updatedAt,
-          }
-        : null,
+      goal: {
+        objective: typeof g.objective === "string" ? g.objective : "",
+        status: view,
+        budget: typeof g.budget === "number" ? g.budget : -1,
+        used: typeof g.tokens_used === "number" ? g.tokens_used : 0,
+        rounds: typeof g.round === "number" ? g.round : 0,
+      },
     } satisfies GoalResponse);
   });
 

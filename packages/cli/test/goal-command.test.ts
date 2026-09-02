@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UNLIMITED_BUDGET } from "@prismshadow/penguin-core";
-import { parseGoalCommand, parseTokenBudget } from "../src/goal-command.js";
+import { parseGoalCommand, parseTokenBudget, UNLIMITED_BUDGET } from "../src/goal-command.js";
 
 describe("parseTokenBudget", () => {
   it("parses plain numbers and k/m suffixes (case-insensitive)", () => {

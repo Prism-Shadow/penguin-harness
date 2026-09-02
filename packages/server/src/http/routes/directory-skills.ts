@@ -19,7 +19,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { requireProjectDir, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { discoverDirectorySkills } from "../../services/directory-skills.js";
-import { toMetadataItem } from "../../services/skill-library.js";
+import { toSkillItem } from "../../services/plugin-library.js";
 
 export function directorySkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -37,7 +37,7 @@ export function directorySkillsRoutes(deps: AppDeps): Hono<AppEnv> {
       // path are projected away by the shared allowlist, and creation re-reads the Skill from
       // disk, so a megabyte of SKILL bodies never crosses the wire and the install can never be
       // driven by a body the client made up.
-      skills: skills.map((skill) => ({ ...toMetadataItem(skill), source: skill.source })),
+      skills: skills.map((skill) => ({ ...toSkillItem(skill), source: skill.source })),
     } satisfies DirectorySkillsResponse);
   });
 

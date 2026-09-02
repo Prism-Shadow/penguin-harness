@@ -1,8 +1,9 @@
 /**
  * Agent settings page "Skills" tab: the skills installed on this Agent
  * (agent_state/skills/<name>/ — the files are the single source of truth, so the list is
- * re-fetched from the API after every mutation instead of trusting client state). Rows show
- * the skill icon, name, localized short description and version/updated metadata; uninstall
+ * re-fetched from the API after every mutation instead of trusting client state). Rows lead
+ * with the icon of the plugin the skill came from (the book glyph when it has none), then
+ * the name, localized short description and version; uninstall
  * confirms first (deletes the whole directory, local edits included). The "Import skill"
  * modal offers two paths: the recommended chat install (a source field accepting a web
  * page / repo URL / local path / foreign install command — see skill-import-source.ts —
@@ -24,7 +25,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -39,7 +39,7 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
@@ -55,8 +55,8 @@ const UPLOAD_LABEL_CLASS =
   "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
   "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
 
-/** Delete (trash can) icon path — the same glyph as the agents page card delete. */
-const TRASH_ICON =
+/** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
+export const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the skill name for the confirm copy. */
@@ -279,11 +279,8 @@ export function SkillsTab({
     reader.readAsDataURL(file);
   };
 
-  /** Metadata line: version · semantic update time (omitted when there's no date), matching the library card. */
-  const metaLine = (skill: SkillMetadataItem): string =>
-    [`v${skill.version}`, skill.updated ? formatRelativeDate(skill.updated, locale) : null]
-      .filter((v): v is string => v !== null)
-      .join(" · ");
+  /** Metadata: the installed copy's version (`YYYY-MM-DD.N`; empty when the frontmatter carries none), shown bare like the library card. */
+  const metaLine = (skill: SkillMetadataItem): string => skill.version;
 
   if (!projectId) return null;
 
@@ -316,11 +313,7 @@ export function SkillsTab({
               key={skill.name}
               className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
             >
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
-              >
-                <SkillIcon icon={skill.icon} size={20} />
-              </span>
+              <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
               <div className="min-w-0 flex-1">
                 <span
                   className="block truncate font-mono text-[13px] font-semibold"
@@ -336,12 +329,14 @@ export function SkillsTab({
                   {localizedShortText(locale, skill)}
                 </p>
               </div>
-              <span
-                className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                title={metaLine(skill)}
-              >
-                {metaLine(skill)}
-              </span>
+              {metaLine(skill) !== "" && (
+                <span
+                  className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
+                  title={metaLine(skill)}
+                >
+                  {metaLine(skill)}
+                </span>
+              )}
               {/* Icon-only row actions (same affordance as the agents page cards: neutral
                   bordered icon for export, danger variant with red text/hover for delete);
                   the tooltip + aria-label carry the wording. */}

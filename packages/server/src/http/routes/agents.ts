@@ -59,9 +59,9 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       maxLen: 2000,
       label: "description",
     });
-    // Library Skills to seed the new Agent with (the create dialog's picker); unknown names are
-    // rejected before the Agent directory exists.
-    const skills = optionalStringArray(body, "skills");
+    // Library plugins to seed the new Agent with (the create dialog's picker); unknown names
+    // are rejected before the Agent directory exists.
+    const plugins = optionalStringArray(body, "plugins");
     // Skills imported from a directory the user picked. The pair only means anything together, so
     // half of it is a bad request rather than a silently ignored field.
     const skillsDirectory = optionalString(body, "skillsDirectory", {
@@ -81,14 +81,14 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       directory = { path: await requireProjectDir(skillsDirectory), names: directorySkills };
     }
     // Optional snapshot seed: the new Agent starts from an exported package instead of the
-    // default template (the service rejects combining it with skill seeding).
+    // default template (the service rejects combining it with seeding).
     const archive = body.dataBase64 === undefined ? undefined : readArchiveBase64(body);
     const item = await deps.agentService.createAgent(
       projectId,
       agentId,
       name,
       description,
-      skills,
+      plugins,
       directory,
       archive,
     );
@@ -122,7 +122,6 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       // Per-Agent runtime state keyed on the now-removed sessions/agent: drop it so nothing is
       // orphaned (session ids are never reused, so a leftover row is dead weight). Usage records
       // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
-      deps.goalsRepo.deleteByAgent(projectId, agentId);
       deps.schedulesRepo.deleteByAgent(projectId, agentId);
       deps.errorsRepo.deleteByAgent(projectId, agentId);
     } finally {

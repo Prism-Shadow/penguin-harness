@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill } from "@prismshadow/penguin-skills";
+import { librarySkill } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentSkillsResponse,
@@ -26,7 +26,7 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const skillMd = (name: string, description = `${name} does a thing`) =>
-  `---\nname: ${name}\ndescription: ${description}\nversion: 3\nupdated: 2026-08-23\n---\n\nBody of ${name}.\n`;
+  `---\nname: ${name}\ndescription: ${description}\nversion: 2026-08-23.3\n---\n\nBody of ${name}.\n`;
 
 describe("directory skills api", () => {
   let t: TestApp;
@@ -91,7 +91,7 @@ describe("directory skills api", () => {
     ]);
     // Metadata comes from the frontmatter, and content never crosses the wire.
     expect(res.skills[0]!.description).toBe("alpha does a thing");
-    expect(res.skills[0]!.version).toBe(3);
+    expect(res.skills[0]!.version).toBe("2026-08-23.3");
     expect(res.skills[0]).not.toHaveProperty("content");
   });
 
@@ -246,7 +246,7 @@ describe("directory skills api", () => {
       "utf8",
     );
     expect(onDisk).toBe(skillMd("penguin-sdk", "the checkout's own"));
-    expect(onDisk).not.toBe(librarySkill("penguin-sdk")!.content);
+    expect(onDisk).not.toBe(librarySkill("penguin-sdk")!.skill.content);
   });
 
   it("is 404 with no Agent created when a picked directory Skill is gone", async () => {

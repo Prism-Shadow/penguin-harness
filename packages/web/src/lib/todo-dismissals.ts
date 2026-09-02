@@ -39,13 +39,14 @@ export type TodoDismissMap = Record<string, TodoDismissals>;
 /**
  * The four keys, listed once so parsing cannot drift from the union.
  *
- * `agents` is the newest of them, and a stored map written before it existed simply has no such
- * key: {@link parseTodoDismissMap} reads that as "nothing dismissed", which shows a dot the user
- * can clear again. That is the same direction every other malformed case degrades in, so the
- * markers already on disk need no migration and nothing is lost by an older client writing the
- * map back without it.
+ * A stored map written before a key existed simply has no such key — `agents` was added late,
+ * and `plugins` replaced `skills` when the library became a plugin library — and
+ * {@link parseTodoDismissMap} reads that as "nothing dismissed", which shows a dot the user can
+ * clear again. That is the same direction every other malformed case degrades in, so the markers
+ * already on disk need no migration and nothing is lost by an older client writing the map back
+ * without it (a stale `skills` marker rides along unread until a newer write drops it).
  */
-const TODO_KEYS: readonly TodoKey[] = ["agents", "skills", "models", "errors"];
+const TODO_KEYS: readonly TodoKey[] = ["agents", "plugins", "models", "errors"];
 
 const EMPTY: TodoDismissals = {};
 

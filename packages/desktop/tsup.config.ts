@@ -15,11 +15,13 @@ import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
  * The server and the CLI are bundled from their own packages' build output, so the app runs
  * exactly what an `npm install` of those packages would, linked into one file each.
  *
- * Bundling absorbs every JavaScript dependency, so the app carries no dependency tree. node-pty
- * is the one exception and cannot be one: it is a native module the server reaches through a
- * runtime `require`, and its loader resolves the binary relative to its own package directory.
- * build-assets.mjs stages a package directory for it at dist/node_modules/node-pty — the only
- * node_modules the app ships (see src/pty-payload.ts).
+ * Bundling absorbs every JavaScript dependency, so the app carries no JavaScript dependency
+ * tree. Two things cannot be absorbed: node-pty, a native module the server reaches through a
+ * runtime `require` whose loader resolves the binary relative to its own package directory —
+ * build-assets.mjs stages a package directory for it at dist/node_modules/node-pty (see
+ * src/pty-payload.ts) — and the @penguinharness/* plugin packages, data directories the
+ * bundled core loader resolves by package name from the bundle's own location, which travel
+ * as this package's declared dependencies (electron-builder collects them, pnpm links them).
  */
 export default defineConfig({
   entry: {
@@ -44,7 +46,8 @@ export default defineConfig({
   // `electron` is a runtime builtin inside the Electron main process, and its npm package is
   // only a shim that reads the binary's path from disk — bundling that shim is what a bare
   // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
-  // this package's `dependencies`, and it deliberately declares none.
+  // this package's `dependencies`, and the only ones it declares are the data-only plugin
+  // packages, which nothing imports.
   external: ["electron"],
   define: buildGitDefine(),
 });

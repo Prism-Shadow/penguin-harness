@@ -28,8 +28,9 @@ const agent = (agentId: string, name?: string): AgentSummary => ({
   kernelOutdated: false,
   vaultKeyCount: 0,
   scheduleCount: 0,
-  skillUpdates: [],
+  pluginUpdates: [],
   skillCount: 0,
+  hookCount: 0,
   memoryCount: 0,
 });
 

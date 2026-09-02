@@ -5,7 +5,8 @@
  * token (`/goal:500k Raise coverage to 80%`); omitting it means no budget. Run passes the
  * budget value (or `true` for a bare `--goal`), so only `parseTokenBudget` applies there.
  */
-import { UNLIMITED_BUDGET } from "@prismshadow/penguin-core";
+/** Budget value meaning "no budget" — what the goal plugin reads -1 as. */
+export const UNLIMITED_BUDGET = -1;
 
 /**
  * Parses a budget token: a positive number with an optional `k` / `m` suffix

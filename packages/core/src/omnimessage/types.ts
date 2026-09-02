@@ -440,22 +440,29 @@ export interface CompactionEndPayload extends RetryDetail {
   status: StopReason;
 }
 
-/** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */
-export type GoalOutcomeStatus = "complete" | "blocked" | "budget_limited" | "aborted";
+/** A hook's decision: at the stop point `continue` keeps the run going (its injected input follows as the next user message) and `stop` lets the run end; at the pre_tool_use point `allow` approves the call without asking and `deny` refuses it. */
+export type HookDecision = "continue" | "stop" | "allow" | "deny";
 
 /**
- * Goal terminal event: the last message of a goal-mode `session.run` (produced by the
- * Session's goal loop, written to the Trace best-effort). Hosts read the outcome from the
- * stream — the CLI's summary line, the Web server's goal_finished SSE event and run-state
- * persistence all map from this one message.
+ * Hook result event: one per non-void answer a hook gave at a hook point — `stop`,
+ * consulted after every Task of a `run` call (see hooks/stop-hook.ts), or `pre_tool_use`,
+ * consulted before each tool call's approval (see hooks/tool-hook.ts). Produced by the
+ * Session, streamed live and written to the Trace best-effort. `name` is the hook's
+ * registered name (`goal`, `continual-learning`, …); `decision` is absent when the hook only
+ * left a record; `output` is the hook's own structured record, scalars only — the goal hook
+ * writes `status` / `round` / `tokens_used` / `budget`, the continual-learning hook `session_id`
+ * / `turns`. A `continue`'s injected input is not here: it is the user message that
+ * follows this event on the stream and in the Trace.
  */
-export interface GoalFinishedPayload {
-  type: "goal_finished";
-  outcome: GoalOutcomeStatus;
-  /** Rounds actually run (the wrap-up round counts). */
-  rounds: number;
-  /** The loop's own accounting: uncached input + output across every round (subagents included). */
-  tokens_used: number;
+export interface HookPayload {
+  type: "hook";
+  /** The hook point that fired. */
+  hook: "stop" | "pre_tool_use";
+  name: string;
+  decision?: HookDecision;
+  /** One line for people, as the hook wrote it. */
+  reason?: string;
+  output?: Record<string, string | number | boolean>;
 }
 
 /**
@@ -562,7 +569,7 @@ export type EventPayload =
   | TokenUsagePayload
   | CompactionBeginPayload
   | CompactionEndPayload
-  | GoalFinishedPayload
+  | HookPayload
   | SubagentPayload
   | ToolListReadyPayload
   | McpConnectBeginPayload
@@ -610,6 +617,20 @@ export function isModelMessage(msg: OmniMessage): msg is ModelMessage {
 
 export function isEventMessage(msg: OmniMessage): msg is EventMessage {
   return msg.type === "event_msg";
+}
+
+/**
+ * Whether this is a main-session user text the harness injected (`sender: "harness"`) — a
+ * stop hook's `continue` input, a host-composed companion message such as the goal plugin's
+ * round protocol, or a background-task completion notice. Hosts key origin display on this
+ * stamp; a consumer that means only the loop-driving injections (round boundaries)
+ * additionally excludes the notices by their `[background_task_done]` block.
+ */
+export function isHarnessInput(msg: OmniMessage): boolean {
+  if (msg.origin && msg.origin.length > 0) return false;
+  if (msg.type !== "model_msg") return false;
+  const p = msg.payload as { type?: string; role?: string; sender?: string };
+  return p.type === "text" && p.role === "user" && p.sender === "harness";
 }
 
 export function isSessionMeta(msg: OmniMessage): msg is SessionMetaMessage {

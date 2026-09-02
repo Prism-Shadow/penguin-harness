@@ -3,7 +3,7 @@
  * Serialized dev prestep: ensure dependencies are installed, then build the workspace deps
  * the dev servers consume (skills, core).
  *
- * dev:server and dev:web must both build packages/skills and packages/core before starting
+ * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev
  * command needs `pnpm install` to be current (a fresh clone, or a pulled lockfile change,
  * otherwise starts against missing/stale packages). But when two dev commands launch at the
@@ -108,7 +108,7 @@ function readText(file) {
 }
 
 /**
- * Content fingerprint of the injected workspace deps' build output (skills + core dist):
+ * Content fingerprint of the injected workspace deps' build output (plugins + core dist):
  * every file's bytes are hashed — chunk renames alone would not do, because tsup's entry
  * outputs keep stable filenames and hold entry-resident code, so an equal-length change
  * there would slip past a path+size check. mtimes are deliberately excluded (tsup runs
@@ -117,7 +117,7 @@ function readText(file) {
  */
 function injectedDistFingerprint() {
   const parts = [];
-  for (const rel of ["packages/skills/dist", "packages/core/dist"]) {
+  for (const rel of ["packages/core/dist"]) {
     const base = path.join(ROOT, rel);
     try {
       for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
@@ -211,16 +211,10 @@ try {
       refreshViteCache();
       exitCode = 0;
     } else {
-      console.log("[dev-prebuild] building skills + core...");
+      console.log("[dev-prebuild] building core...");
       const res = spawnSync(
         "pnpm",
-        [
-          "--filter",
-          "@prismshadow/penguin-skills",
-          "--filter",
-          "@prismshadow/penguin-core",
-          "build",
-        ],
+        ["--filter", "@prismshadow/penguin-core", "build"],
         // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
         { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );

@@ -26,16 +26,18 @@ export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "
  * How a run was cut off early, returned as the **return value** of the run generators
  * (`ContextEngine.run` / `Session.run` / `SubagentHandle.run`): `null` means the run ran
  * to completion. The engine knows which exit it took, so consumers that must not treat a
- * cut-off run as finished (the goal loop deciding whether to re-fire a round, a subagent
+ * cut-off run as finished (the goal hook deciding whether to re-fire a round, a subagent
  * round reporting completion) read this instead of re-deriving it from the stream —
  * failures emit no abort event, only their terminal request_end / compaction_end records.
  * `abort` is a user interruption; `llm_failure` a terminal LLM request failure;
  * `compaction_failure` a compaction given up mid-task (at a Task boundary the same
- * failure is advisory and the run returns null). The error pair mirrors the terminal
- * record's `error_code` / `error_message`.
+ * failure is advisory and the run returns null); `max_turns` the Task's turn cap — the
+ * engine closes the Task with its own notice and holds the pending input as carry-over for
+ * the next run. The error pair mirrors the terminal record's `error_code` / `error_message`
+ * (none for `max_turns`).
  */
 export interface RunCutoff {
-  kind: "abort" | "llm_failure" | "compaction_failure";
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
   errorCode?: ErrorCode;
   errorMessage?: string;
 }
@@ -50,6 +52,33 @@ export interface RunCutoff {
  * Docs: /docs/interfaces § "ApproveFn".
  */
 export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+
+/**
+ * What one pass over the pre-tool-use hooks produced, handed to `context_engine` by the
+ * Session-wired {@link PreToolUseFn}: the `hook` events to record (every non-void answer,
+ * in hook order), and the first decision — `"deny"` refuses the call without consulting the
+ * approval callback, `"allow"` approves it the same way (the project command policy still
+ * outranks an allow: the Session downgrades a policy-vetoed allow to `null` before the
+ * engine sees it), `null` leaves the call to the normal approval boundary. `name` / `reason`
+ * are the deciding hook's, for the denied output line the model reads.
+ */
+export interface PreToolUseOutcome {
+  events: OmniMessage[];
+  decision: "allow" | "deny" | null;
+  name?: string;
+  reason?: string;
+}
+
+/**
+ * Pre-tool-use hook consult: called by `context_engine` once per complete `tool_call`,
+ * BEFORE the approval callback. Wired by the Session from the Agent's installed hook
+ * packages (`hooks.json` `pre_tool_use` commands); absent when none are installed, and the
+ * engine then goes straight to approval.
+ * Docs: /docs/agent-loop § "Hooks".
+ */
+export type PreToolUseFn = (
+  toolCall: OmniMessage<ToolCallPayload>,
+) => Promise<PreToolUseOutcome | null>;
 
 /**
  * One command-policy deny rule — plain project-editable data: a name (identifies the rule

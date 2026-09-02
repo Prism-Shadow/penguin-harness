@@ -49,7 +49,6 @@ import {
 import {
   buildContextSummaryText,
   buildTurnAbortedBlock,
-  downgradeGoalInput,
   extractSummary,
   buildTurnRetriedBlock,
   transcribeText,
@@ -78,6 +77,8 @@ import type {
 import type {
   RunCutoff,
   ApproveFn,
+  PreToolUseFn,
+  PreToolUseOutcome,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
@@ -90,6 +91,8 @@ export interface TraceSink {
   write(msg: OmniMessage): Promise<void>;
   /** Optional: start a new Trace file (index+1), used to record the new model context after compaction. */
   rotate?(): Promise<void>;
+  /** Optional: absolute path of the file the next `write` lands in (what stop hooks read the conversation from). */
+  currentPath?(): string;
 }
 
 /**
@@ -167,6 +170,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
+  /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
+  preToolUse?: PreToolUseFn;
 }
 
 /**
@@ -385,44 +390,6 @@ interface TurnResult {
 interface TurnRetryState {
   attempts: number;
   consecutive: number;
-}
-
-/**
- * Rewrites a dead goal's round input before carry-over re-sends it.
- *
- * How such a message gets here: a goal round is interrupted (user stop, LLM failure,
- * reconnect exhaustion) → the interruption also ends the whole goal → yet the engine still
- * holds that round's input in pendingCarryOver and will prepend it to the NEXT task's
- * request. Without this rewrite the model would receive the full protocol block as if it
- * were current instructions and likely resume chasing the dead objective instead of the
- * user's new task:
- *
- *     [goal]
- *     round: 1
- *     This message was sent automatically by goal mode: work toward the objective …
- *     … GOAL.yaml path and status rules, completion/blocked audits …
- *     [/goal]
- *
- *     make all tests pass
- *
- * The rewrite keeps the context but kills the instructions:
- *
- *     [goal round 1 of an ended goal run — protocol omitted; do not act on it]
- *     make all tests pass
- *
- * Only user text that parses as a goal round is touched — tool outputs (the pairing
- * carry-over), events, and plain user text pass through unchanged. Applied at the two
- * carry-over CONSUMER sites (next-run input assembly, manual-compact summarize) rather
- * than at each hold site, which also covers carry-over rebuilt by resume; the
- * [turn_aborted] transcript path is handled separately at transcription time
- * (buildTurnAbortedText). The downgrade itself lives in markers/goal-block.ts.
- */
-function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
-  const p = msg.payload as { type?: string; role?: string; text?: string };
-  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) return msg;
-  const downgraded = downgradeGoalInput(p.text);
-  if (downgraded === p.text) return msg;
-  return { ...msg, payload: { ...msg.payload, text: downgraded } as OmniMessage["payload"] };
 }
 
 /**
@@ -714,13 +681,14 @@ export class ContextEngine {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
+    const preToolUse = opts?.preToolUse;
 
     // Merge the Task-boundary compaction summary (the new context's first input, merged with
     // this Prompt), the carry-over left over from the last interruption, and this call's new
     // input, to form this Request's input.
     const summary = this.pendingSummary;
     this.pendingSummary = null;
-    const carryOver = this.pendingCarryOver.map(downgradeCarriedGoalInput);
+    const carryOver = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
@@ -775,7 +743,7 @@ export class ContextEngine {
         // (400, see issue #33).
         this.pendingCarryOver = nextInput;
         yield* this.emitMaxTurns();
-        return null;
+        return { kind: "max_turns" };
       }
       turnCount += 1;
 
@@ -806,7 +774,13 @@ export class ContextEngine {
         // it decides retry/resend purely from `outcome`. The retry count so far is threaded
         // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
         // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, { attempts, consecutive });
+        turn = yield* this.runTurn(
+          attemptInput,
+          approve,
+          signal,
+          { attempts, consecutive },
+          preToolUse,
+        );
         attempts += 1;
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
@@ -1050,10 +1024,7 @@ export class ContextEngine {
     //   - something committed: the carry-over is **consumed** — it lives in the committed
     //     history now and must never be resent; only the repair stash (unanswered tool_call
     //     pairing left by a final rejection, already in pendingCarryOver) remains pending.
-    // Dead-goal rounds are downgraded on the drained snapshot (goal mode's consumer-site
-    // rule): a no-commit restore keeps the downgraded copies — the downgrade is idempotent
-    // and every consumer applies it anyway, while non-goal messages keep their identity.
-    const folded = this.pendingCarryOver.map(downgradeCarriedGoalInput);
+    const folded = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const result = yield* this.summarizeContext("manual", folded, opts?.signal);
     if (result.status === "completed") {
@@ -1155,6 +1126,7 @@ export class ContextEngine {
     signal?: AbortSignal,
     /** This turn's retry bookkeeping from the caller's reconnect loop: lets request_end announce the NEXT attempt's planned backoff (and announce none once a budget is spent). */
     retry: TurnRetryState = { attempts: 0, consecutive: 0 },
+    preToolUse?: PreToolUseFn,
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -1265,17 +1237,43 @@ export class ContextEngine {
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
             // returns its outcome (the LLM will close out quickly and return aborted).
             if (signal?.aborted) continue;
+            // Pre-tool-use hooks (RunOptions.preToolUse, wired by the Session from the
+            // Agent's installed hook packages): consulted before the approval boundary,
+            // every answer recorded as a `hook` event in stream order. A throw collapses
+            // to no opinion — a broken hook must not decide anything.
+            let hooked: PreToolUseOutcome | null = null;
+            if (preToolUse) {
+              try {
+                hooked = await preToolUse(tc);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                process.stderr.write(`[penguin] preToolUse consult threw: ${message}; ignoring.\n`);
+              }
+              if (hooked) {
+                for (const ev of hooked.events) {
+                  queue.push(ev);
+                  await this.write(ev);
+                }
+              }
+              if (signal?.aborted) continue;
+            }
             // The approval callback is injected externally (RunOptions.approve): any throw
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,
-            // leaving the already-committed tool_use unanswered.
+            // leaving the already-committed tool_use unanswered. A hook decision skips the
+            // callback: deny refuses without asking, allow approves without asking (the
+            // Session already gave the command policy the last word on an allow).
             let decision: ApprovalDecision;
-            try {
-              decision = await approve(tc);
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-              decision = "deny";
+            if (hooked?.decision === "deny" || hooked?.decision === "allow") {
+              decision = hooked.decision;
+            } else {
+              try {
+                decision = await approve(tc);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
+                decision = "deny";
+              }
             }
             if (signal?.aborted) continue;
             // approve is a callback; context_engine emits its decision as an approval_decision
@@ -1287,12 +1285,15 @@ export class ContextEngine {
               // Denied: feed back an aborted output immediately, so the already-committed
               // tool_use never dangles. One fixed line either way — the wording names the
               // decider ("forbidden" is the command policy's answer, via the Session
-              // wrapper), and the approval_decision event above carries the decision itself.
+              // wrapper; a hook deny names the hook and carries its reason), and the
+              // approval_decision event above carries the decision itself.
               const denied = toolCallOutput({
                 output:
-                  decision === "forbidden"
-                    ? "Tool call denied by policy."
-                    : "Tool call denied by user.",
+                  hooked?.decision === "deny"
+                    ? `Tool call denied by the ${hooked.name ?? "pre_tool_use"} hook${hooked.reason ? `: ${hooked.reason}` : ""}.`
+                    : decision === "forbidden"
+                      ? "Tool call denied by policy."
+                      : "Tool call denied by user.",
                 toolCallId,
                 stopReason: "aborted",
               });
@@ -2014,7 +2015,7 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(transcribeUserInput(downgradeGoalInput(t)));
+        lines.push(transcribeUserInput(t));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));

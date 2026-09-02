@@ -1,7 +1,7 @@
 /**
  * Preflight for `pnpm --dir packages/desktop start` (and the root `pnpm desktop`) and for
  * every `pack*` script: verify everything a source run needs, and fail with the actual fix
- * instead of a bare ENOENT from the utilityProcess fork or an empty skill library. A source
+ * instead of a bare ENOENT from the utilityProcess fork or an empty plugin library. A source
  * run loads the same bundles a packaged app does, so all of them have to exist first — and
  * a pack needs the same set, because electron-builder copies what exists and says nothing
  * about a `from:` source that does not (the web build above all).
@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(path.join(pkgDir, "package.json"));
+const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
 
 const problems = [];
 
@@ -22,11 +23,19 @@ for (const [what, rel] of [
   // Where the server bundle's `require("node-pty")` lands; without it every terminal
   // session fails to spawn, and only once the user opens a terminal panel.
   ["the staged node-pty package", "dist/node_modules/node-pty/package.json"],
-  ["the skill library copy", "skills"],
+  // The plugin packages are this package's dependencies, linked by `pnpm install`; the
+  // bundled server's loader resolves them from here and refuses to start with a declared
+  // one missing. Every declared package is checked, so one added to `dependencies` without
+  // a `pnpm install` fails here rather than at the first library read.
+  ...Object.keys(pkg.dependencies)
+    .filter((dep) => dep.startsWith("@penguinharness/"))
+    .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/plugin.json`]),
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {
-    problems.push(`Missing ${what} (${rel}). Run \`pnpm -r build\` at the repo root.`);
+    problems.push(
+      `Missing ${what} (${rel}). Run \`pnpm install\` and \`pnpm -r build\` at the repo root.`,
+    );
   }
 }
 

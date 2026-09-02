@@ -821,12 +821,12 @@ export interface VaultUpdateRequest {
 // Agent and its config (system_config.yaml + AGENTS.md)
 // ---------------------------------------------------------------------------
 
-/** One installed Skill the library carries a higher version of (see {@link AgentSummary.skillUpdates}). */
-export interface SkillUpdateRef {
-  /** Skill directory name — the identity install / uninstall address it by. */
+/** One installed plugin (a skill or a hook package) the library carries a higher version of (see {@link AgentSummary.pluginUpdates}). */
+export interface PluginUpdateRef {
+  /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version, i.e. what installing again would bring, not what is on disk. */
-  version: number;
+  /** The LIBRARY's version (`YYYY-MM-DD.N`), i.e. what installing again would bring, not what is on disk. */
+  version: string;
 }
 
 export interface AgentSummary {
@@ -854,14 +854,17 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
+  /** Installed hook-package count (number of agent_state/hooks/<name>/ directories with a hooks.json). */
+  hookCount: number;
   /**
-   * Installed Skills the built-in library has moved past, each with the library version on
-   * offer — the Skill-library update gate, riding along on the Agent list so a badge over
-   * that page costs no request of its own. Empty when nothing is behind. Skills that are not
-   * in the library (installed from a zip or a picked directory) are never listed: there is no
+   * Installed plugins the built-in library has moved past — a skill or a hook package whose
+   * on-disk version is behind the library plugin that ships it — each with the library version
+   * on offer: the plugin-library update gate, riding along on the Agent list so a badge over
+   * that page costs no request of its own. Empty when nothing is behind. Skills the library
+   * does not carry (installed from a zip or a picked directory) are never listed: there is no
    * library version for them to be behind.
    */
-  skillUpdates: SkillUpdateRef[];
+  pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
 }
@@ -877,11 +880,12 @@ export interface AgentCreateRequest {
   name?: string;
   description?: string;
   /**
-   * Library Skill names installed into the new Agent, seeding it at creation. Every name must
-   * exist in the library (404 `unknown_skill` otherwise, before anything is created); omitted or
-   * empty leaves the Agent with no Skills, which is what a plain Agent gets by default.
+   * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
+   * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
+   * otherwise, before anything is created); omitted or empty leaves the Agent with nothing
+   * installed, which is what a plain Agent gets by default.
    */
-  skills?: string[];
+  plugins?: string[];
   /**
    * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
    * absolute path the user picked and `directorySkills` are the names to install from it, read
@@ -894,7 +898,7 @@ export interface AgentCreateRequest {
   /**
    * Base64 of an exported Agent State snapshot package (`.tar.gz`): the new Agent is
    * initialized from the package instead of the default template. Mutually exclusive with
-   * skill seeding (`skills` / `skillsDirectory`) — the package carries its own skills.
+   * seeding (`plugins` / `skillsDirectory`) — the package carries its own skills and hooks.
    * Explicit `name` / `description` override the package's values; absent ones keep them.
    */
   dataBase64?: string;
@@ -1469,13 +1473,15 @@ export interface TaskCreateRequest {
   /**
    * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
    * blocks and the like are stripped from the recorded objective; the round-1 message keeps
-   * them) and the server loops the Session until the goal reaches a terminal state.
-   * `budget` is the token budget (uncached input + output); omitted or -1 = unlimited.
+   * them) and the Session's installed `goal` hook package drives round after round until the
+   * goal reaches a terminal state. `budget` is the token budget (uncached input + output);
+   * omitted or -1 = unlimited. Requires the goal plugin installed on the Agent — 409
+   * `goal_plugin_not_installed` otherwise.
    */
   goal?: { budget?: number };
 }
 
-/** Goal-mode run state (from goal_state; the chat page's banner restores from the latest row). */
+/** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
 export interface GoalStateView {
   objective: string;
   status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";
@@ -1483,7 +1489,6 @@ export interface GoalStateView {
   budget: number;
   used: number;
   rounds: number;
-  updatedAt: string;
 }
 
 export interface GoalResponse {
@@ -3024,7 +3029,7 @@ export interface BenchmarkCasesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Skill library and Agent's installed Skills
+// Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
 
 export interface SkillMetadataItem {
@@ -3034,35 +3039,94 @@ export interface SkillMetadataItem {
   /** Short description for frontend display (frontmatter short_description, optional; falls back to description if missing). */
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** Custom icon (raw icon.svg text from the skill directory, optional; frontend falls back to a default book icon if missing). */
+  /**
+   * Raw icon.svg text from the installed skill directory: the plugin's icon for a library
+   * install (written beside SKILL.md at install time), a custom one for a user-authored skill.
+   * Only installed lists carry it — the library listing's skills share their plugin's icon,
+   * which the plugin item carries once. Absent, the frontend draws the book glyph.
+   */
   icon?: string;
-  /** Version number (natural number, frontmatter version; falls back to 1 if invalid). */
-  version: number;
-  /** Update timestamp (frontmatter updated, ISO 8601 UTC by convention; defaults to an empty string). */
-  updated: string;
+  /** Version (`YYYY-MM-DD.N`, frontmatter version); an empty string when the frontmatter carries none or a malformed one. */
+  version: string;
 }
 
-export interface SkillGroupItem {
+/** One installed hook package (`agent_state/hooks/<name>/`): its manifest, without the scripts. */
+export interface HookItem {
+  /** Hook package name — the plugin that shipped it (the identity uninstall addresses it by). */
+  name: string;
+  description: string;
+  descriptionZh?: string;
+  /** Version (`YYYY-MM-DD.N`); an empty string when the manifest carries none. */
+  version: string;
+  /** The hook points the package answers at, e.g. `["stop"]`. */
+  events: string[];
+  /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
+  icon?: string;
+}
+
+/** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
+export interface PluginItem {
+  name: string;
+  description: string;
+  descriptionZh?: string;
+  shortDescription?: string;
+  shortDescriptionZh?: string;
+  /** `YYYY-MM-DD.N`. */
+  version: string;
+  /** The plugin's skills (metadata only). */
+  skills: SkillMetadataItem[];
+  /** The hook points the plugin's hook package answers at (`[]` without one). */
+  hooks: string[];
+  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  icon?: string;
+}
+
+export interface PluginGroupItem {
   id: string;
   title: string;
-  /** Chinese group title (optional; the UI displays it per language). */
+  /** Chinese category title (optional; the UI displays it per language). */
   titleZh?: string;
+  plugins: PluginItem[];
+}
+
+/** GET /api/plugins: the library by category (any logged-in user). */
+export interface PluginLibraryResponse {
+  groups: PluginGroupItem[];
+}
+
+/**
+ * GET /api/plugins/:plugin/files: everything a library plugin ships, for the detail view's file
+ * browser — each skill's installable SKILL.md and auxiliary files under `skills/<name>/`, the
+ * hook package's scripts under `hooks/` — keyed by path relative to the plugin directory. The
+ * manifest and the icon are not among them: the listing already carries both.
+ */
+export interface PluginFilesResponse {
+  files: Record<string, string>;
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/plugins: install library plugins by name — each one's skills
+ * and hook package; already-installed ones are overwritten with library content (i.e. updated).
+ * Every name must be in the library (404 `unknown_plugin`, nothing written). 201 returns the
+ * refreshed installed lists.
+ */
+export interface PluginInstallRequest {
+  names: string[];
+}
+
+export interface AgentPluginsInstallResponse {
   skills: SkillMetadataItem[];
+  hooks: HookItem[];
 }
 
-/** GET /api/skills: library groups and metadata (excludes body content). */
-export interface SkillLibraryResponse {
-  groups: SkillGroupItem[];
-}
-
-/** GET|POST /api/projects/:p/agents/:a/skills: Skills installed on this Agent. */
+/** GET /api/projects/:p/agents/:a/skills: Skills installed on this Agent. */
 export interface AgentSkillsResponse {
   skills: SkillMetadataItem[];
 }
 
-/** POST install request: all names must exist in the library; already-installed ones are overwritten with library content (i.e. updated). */
-export interface SkillInstallRequest {
-  names: string[];
+/** GET /api/projects/:p/agents/:a/hooks: hook packages installed on this Agent; DELETE …/hooks/:name uninstalls one (204). */
+export interface AgentHooksResponse {
+  hooks: HookItem[];
 }
 
 /**

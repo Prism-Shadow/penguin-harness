@@ -1,9 +1,15 @@
 /**
  * The multi-select skill panel body, shared by every surface that picks several skills at once:
- * the composer's skills dropdown and the Agent create dialog's seed picker. It owns the search
- * box, the scroll cap, the row chrome and the toggle semantics — clicking a row toggles it and
- * the panel stays open — so the two hosts differ only in their trigger and in whether they offer
+ * the composer's skills dropdown and the Agent create dialog's two seed pickers. It owns the
+ * search box, the scroll cap, the row chrome and the toggle semantics — clicking a row toggles it
+ * and the panel stays open — so the hosts differ only in their trigger and in whether they offer
  * the bulk controls.
+ *
+ * A row is a Skill's metadata. The create dialog's library picker lists plugins, whose manifest
+ * carries the same fields (name, descriptions, icon, version), so a plugin is a row too. A row's
+ * icon is its plugin's — an installed skill carries the icon of the plugin it came from — and a
+ * row without one draws its kind's glyph: the book, unless the host names another
+ * (`fallbackIcon`, the puzzle piece for plugin rows).
  *
  * `onSelectAll` / `onSelectNone` render the bulk row, and both receive the names **currently
  * matching the search box**. With an empty query that is the whole list, which is the common
@@ -24,6 +30,9 @@ const bulkActionClass =
   "rounded px-1 py-0.5 text-xs text-gray-500 transition-colors duration-150 " +
   "hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200";
 
+/** One pickable row: a Skill's metadata, plus the glyph to draw when it carries no icon (the book when absent). */
+export type PickableItem = SkillMetadataItem & { fallbackIcon?: string };
+
 export function SkillPickList({
   skills,
   selected,
@@ -31,8 +40,9 @@ export function SkillPickList({
   onSelectAll,
   onSelectNone,
   emptyHint,
+  searchPlaceholder,
 }: {
-  skills: SkillMetadataItem[];
+  skills: PickableItem[];
   /** Selected skill names. */
   selected: string[];
   onToggle: (name: string) => void;
@@ -41,11 +51,14 @@ export function SkillPickList({
   onSelectNone?: (names: string[]) => void;
   /** Shown in place of the list when there is nothing to pick from at all. */
   emptyHint: string;
+  /** The search box's placeholder and accessible name; "search skills" unless the rows are something else. */
+  searchPlaceholder?: string;
 }) {
   const { locale } = useLocale();
   const [query, setQuery] = useState("");
   const filtered = filterSkills(skills, locale, query);
   const bulk = onSelectAll !== undefined && onSelectNone !== undefined;
+  const searchLabel = searchPlaceholder ?? S.chat.skillsSearchPlaceholder;
   return (
     <>
       {/* Quick search: filters by skill name and localized description */}
@@ -54,8 +67,8 @@ export function SkillPickList({
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={S.chat.skillsSearchPlaceholder}
-          aria-label={S.chat.skillsSearchPlaceholder}
+          placeholder={searchLabel}
+          aria-label={searchLabel}
           {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
@@ -103,9 +116,10 @@ export function SkillPickList({
                     : "text-gray-600 dark:text-gray-400"
                 }`}
               >
-                {/* Each skill's custom icon (icon.svg, sanitized and inlined; falls back to the book icon if missing). */}
+                {/* Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph. */}
                 <SkillIcon
                   icon={s.icon}
+                  fallback={s.fallbackIcon}
                   size={ICON_SIZE.inlineGlyph}
                   className="shrink-0 text-gray-400 dark:text-gray-500"
                 />

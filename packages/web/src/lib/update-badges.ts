@@ -47,7 +47,7 @@ export function softwareUpdate(flow: UpdateFlow): SoftwareUpdate | null {
 export type BadgeSource =
   | SoftwareUpdate
   | { kind: "kernel" }
-  | { kind: "skills"; count: number }
+  | { kind: "plugins"; count: number }
   | { kind: "models"; count: number }
   | { kind: "errors"; count: number };
 

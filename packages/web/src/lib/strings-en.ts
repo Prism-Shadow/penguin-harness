@@ -14,7 +14,7 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
-    skills: "Skills",
+    plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
     usage: "Cost Center",
@@ -281,7 +281,7 @@ export const en: Strings = {
    * `changes*` wording, since a block that can act needs to say what it would act on.
    */
   todo: {
-    skillUpdates: (n: number) => (n === 1 ? "1 skill update" : `${n} skill updates`),
+    pluginUpdates: (n: number) => (n === 1 ? "1 plugin update" : `${n} plugin updates`),
     presetUpdates: (n: number) =>
       n === 1 ? "1 preset model to sync" : `${n} preset models to sync`,
     unexpectedErrors: (n: number) => (n === 1 ? "1 unexpected error" : `${n} unexpected errors`),
@@ -297,7 +297,7 @@ export const en: Strings = {
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
       `Changes detected: ${added} new, ${updated} to upgrade`,
-    /** The same line where the trail has only one honest count — no padded zero (Agents, Skills). */
+    /** The same line where the trail has only one honest count — no padded zero (Agents, Plugins). */
     changesUpgradable: (updated: number): string => `Changes detected: ${updated} to upgrade`,
     /** Updates every object the notice counts, behind the page's own confirmation. */
     updateNow: "Update now",
@@ -305,10 +305,10 @@ export const en: Strings = {
     willTouch: "This will touch:",
     /** Bulk kernel update confirmation; the body reuses agent.kernelUpdateConfirmBody verbatim. */
     agentsConfirmTitle: (n: number): string => `Update the kernel of ${n} agent(s)`,
-    /** Bulk Skill update confirmation. Same warning as the per-Skill confirm, with no single subject. */
-    skillsConfirmTitle: (n: number): string => `Update ${n} skill(s)`,
-    skillsConfirmBody:
-      "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
+    /** Bulk plugin update confirmation. Same warning as the per-plugin confirm, with no single subject. */
+    pluginsConfirmTitle: (n: number): string => `Update ${n} plugin(s)`,
+    pluginsConfirmBody:
+      "Updating reinstalls the library copy over each agent's installed skill and hook files — any local edits are lost. Export a backup first if you need them.",
     /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
     modelsConfirmTitle: (n: number): string => `Sync ${n} preset model(s)`,
     /** Every target of the batch was written. Counted in agents: both pages that use this
@@ -488,12 +488,15 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
-    createSkills: "Skills",
+    createPlugins: "Plugins",
+    createPluginsPlaceholder: "No plugins selected",
+    createPluginsPicked: (n: number): string => `${n} plugin${n === 1 ? "" : "s"} selected`,
+    createPluginsHint:
+      "Installed into the agent at creation (skills and hook packages); add or remove them later in its Skills and Hooks tabs.",
+    createPluginsEmpty: "The plugin library has nothing to install.",
+    /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
     createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
-    createSkillsHint:
-      "Installed into the agent at creation; add or remove them later in its Skills tab.",
-    createSkillsEmpty: "The skill library has nothing to install.",
     createDirSkills: "Import Skills from a project directory",
     createDirSkillsPick: "No directory selected",
     createDirSkillsHint:
@@ -507,7 +510,7 @@ export const en: Strings = {
     createSnapshotHint:
       "Pick an exported Agent State snapshot package (.tar.gz) to start the new agent from its state; name and description left empty keep the package's values.",
     createSnapshotSkillsOff:
-      "The snapshot package carries its own skills, so skill seeding is unavailable.",
+      "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
@@ -524,6 +527,7 @@ export const en: Strings = {
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
+    tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
@@ -1154,13 +1158,54 @@ export const en: Strings = {
     },
   },
 
+  /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
+  plugins: {
+    pageTitle: "Plugin library",
+    pageDesc:
+      "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
+    pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
+    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop hook"); also the chips on the settings Hooks tab. */
+    hookBadge: (event: string): string => `${event} hook`,
+    searchPlaceholder: "Search plugins",
+    /** Section labels of the plugin detail Modal. */
+    detailSkills: "Skills",
+    detailHooks: "Hooks",
+    usedByAgents: (n: number): string =>
+      n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
+    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected agent, so the plugin has to be installed there first. */
+    quickInvokeNeedsInstall: "Install this plugin on the current agent first to quick-start",
+    installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
+    uninstalledToast: (plugin: string, agent: string): string =>
+      `Uninstalled ${plugin} from ${agent}`,
+    updateOutdated: (n: number): string => `Update available: update ${n} agent install(s)`,
+    updateConfirmTitle: (name: string): string => `Update ${name}`,
+    updateConfirmWarning: (name: string): string =>
+      `Updating ${name} reinstalls the library copy over each agent's installed skill and hook files — any local edits are lost. Export a backup first if you need them.`,
+    updatedToast: (plugin: string, n: number): string =>
+      `Updated ${plugin} to the latest version (${n} agent(s))`,
+    /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
+    uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
+    uninstallConfirmBody: (plugin: string, agent: string): string =>
+      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+  },
+
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent. */
+  hooks: {
+    agentTabDesc:
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task; uninstalling deletes the whole package directory.",
+    agentTabEmpty: "No hook packages installed yet",
+    /** The agents page's hook-count stat (hover title / accessible name). */
+    hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+    uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
+    uninstallConfirmBody: (name: string, agent: string): string =>
+      `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
+    uninstalledToast: (name: string, agent: string): string =>
+      `Uninstalled the ${name} hook package from ${agent}`,
+  },
+
   skills: {
-    pageTitle: "Skill library",
-    pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
-    /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
-    quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
     selectAll: "Select all",
     selectNone: "Select none",
     selectedCount: (n: number): string => `${n} selected`,
@@ -1170,16 +1215,9 @@ export const en: Strings = {
     installed: "Installed",
     uninstall: "Uninstall",
     skillCount: (n: number): string => (n === 1 ? "1 skill" : `${n} skills`),
-    usedByAgents: (n: number): string =>
-      n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    installedToast: (skill: string, agent: string): string => `Installed ${skill} to ${agent}`,
-    updateOutdated: (n: number): string => `Update available: update ${n} agent install(s)`,
+    /** The plugin library's per-agent update button, and the confirm buttons of every update dialog. */
     updateAction: "Update",
-    updateConfirmTitle: (name: string): string => `Update ${name}`,
-    updateConfirmWarning: (name: string): string =>
-      `Updating ${name} reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.`,
-    updatedToast: (skill: string, n: number): string =>
-      `Updated ${skill} to the latest version (${n} agent(s))`,
+    /** Settings Skills tab: toast after uninstalling one skill. */
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
@@ -1873,10 +1911,8 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
-    goalRoundBanner: (round: number): string => `Goal · round ${round}`,
-    /** Later rounds collapse the objective's images into this chip (round 1 shows them in full). */
-    goalRoundImages: (count: number): string =>
-      count === 1 ? "1 attached image" : `${count} attached images`,
+    /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
+    harnessInjected: "Injected by the harness",
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
     goalStatus: {
       active: "running",
@@ -2391,7 +2427,10 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
-      unknown_skill: "This skill is not in the library.",
+      unknown_skill: "This skill is not in the selected directory.",
+      unknown_plugin: "This plugin is not in the plugin library.",
+      goal_plugin_not_installed:
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
       skill_too_large: "This skill directory exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",

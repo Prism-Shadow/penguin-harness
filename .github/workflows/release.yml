@@ -16,9 +16,9 @@
 #   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
-# - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
+# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
-#   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
+#   core serves the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
 #   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
 #   The publish flow mirrors AgentHub's publish.yml: OIDC trusted publishing (environment: npm +
@@ -144,7 +144,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -562,7 +562,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -589,7 +589,9 @@ jobs:
             sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
             grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
           fi
-          (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
+          for dir in plugins/*/; do
+            (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
+          done
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
@@ -598,12 +600,10 @@ jobs:
       # web is built here only to be copied into the server package below.
       - name: Build and test
         run: |
-          pnpm --filter @prismshadow/penguin-skills build
           pnpm --filter @prismshadow/penguin-core build
           pnpm --filter @prismshadow/penguin-server build
           pnpm --filter @prismshadow/penguin-web build
           pnpm --filter @prismshadow/penguin-cli build
-          pnpm --filter @prismshadow/penguin-skills test
           pnpm --filter @prismshadow/penguin-core test
           pnpm --filter @prismshadow/penguin-server test
           pnpm --filter @prismshadow/penguin-cli test
@@ -619,13 +619,25 @@ jobs:
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
-          cp LICENSE packages/skills/LICENSE
           cp LICENSE packages/core/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
+          for dir in plugins/*/; do
+            cp LICENSE "$dir/LICENSE"
+          done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
-          for pkg in skills core server cli; do
+          # The @penguinharness/* plugin packages go first: core declares them as workspace:*
+          # deps, rewritten to their versions at publish time, so they must exist first.
+          for dir in plugins/*/; do
+            name="@penguinharness/$(basename "$dir")"
+            if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
+              echo "$name@$V already on the registry, skipping."
+              continue
+            fi
+            pnpm --filter "$name" publish --access public --no-git-checks
+          done
+          for pkg in core server cli; do
             name="@prismshadow/penguin-$pkg"
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."

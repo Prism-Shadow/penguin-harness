@@ -94,6 +94,8 @@ export interface UserTextItem {
   kind: "user_text";
   id: number;
   text: string;
+  /** Set for a harness-injected input (a stop hook's continue, the goal plugin's round protocol): rendered with an origin caption, skipped by input history and the outline. */
+  sender?: "harness";
   /** Message timestamp (milliseconds): shown on footer hover. History and real time share the same source — this message's own timestamp. */
   atMs?: number;
 }
@@ -1194,6 +1196,7 @@ function handleComplete(
           kind: "user_text",
           id: nextId(model),
           text: p.text,
+          ...(p.sender === "harness" ? { sender: "harness" as const } : {}),
           ...(atMs !== undefined ? { atMs } : {}),
         });
         return;

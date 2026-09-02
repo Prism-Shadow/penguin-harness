@@ -49,20 +49,21 @@ import type {
   ApprovalDecisionPayload,
   CompactionBeginPayload,
   CompactionEndPayload,
+  HookPayload,
   McpConnectBeginPayload,
   McpConnectEndPayload,
   MessageOrigin,
   OmniMessage,
   PartialTextPayload,
   PartialThinkingPayload,
-  PartialToolCallPayload,
   PartialToolCallOutputPayload,
+  PartialToolCallPayload,
   RequestEndPayload,
-  ToolListReadyPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
   ToolDefinition,
+  ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
@@ -936,6 +937,14 @@ export class StreamRenderer {
       } else if (payload.type === "tool_list_ready") {
         // Not rendered; the tool list settles each tool's preview path (description argument).
         this.useToolSchemas((payload as ToolListReadyPayload).tools);
+      } else if (payload.type === "hook") {
+        // A hook's answer, one dim line — except the goal hook's: goal mode's own round and
+        // summary lines (watchTask) already say what it decided.
+        const p = payload as HookPayload;
+        if (p.name === "goal") return;
+        this.finishLine();
+        this.out.write(`${dim(this.t.hookEvent(p.name, p.decision, p.reason), this.c)}\n`);
+        this.lastLineKey = null;
       }
       return;
     }

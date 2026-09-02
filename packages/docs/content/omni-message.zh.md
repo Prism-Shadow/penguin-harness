@@ -26,7 +26,7 @@ interface OmniMessage<P extends OmniPayload = OmniPayload> {
 | --- | --- | --- |
 | `session_meta` | 一个模型上下文的完整运行配置 | 每个上下文恰好一条 |
 | `model_msg` | 模型上下文中的内容消息(文本、思考、工具调用与结果) | 主体 |
-| `event_msg` | 上下文之外的运行事件(审批、用量、压缩、中断) | 伴随 |
+| `event_msg` | 上下文之外的运行事件(审批、用量、压缩、中断、hook 回答) | 伴随 |
 
 ## session_meta
 
@@ -175,7 +175,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 
 ## event_msg
 
-十一种事件 payload，全部逐字段列出：
+十二种事件 payload，全部逐字段列出：
 
 ```ts
 interface ToolListReadyPayload {
@@ -282,6 +282,19 @@ interface AbortPayload {
 interface SubagentPayload {
   type: "subagent";
   session_id: string;         // 父 Trace 中指向直接子 Session 的指针
+}
+
+interface HookPayload {
+  type: "hook";
+  hook: "stop" | "pre_tool_use";    // 触发的 hook 点（见运行循环的 hook 两节）
+  name: string;               // hook 名："goal"、"continual-learning"……
+  decision?: "continue" | "stop"    // stop 点
+    | "allow" | "deny";             // pre_tool_use 点；只留记录时缺省
+  reason?: string;            // 一行给人看的说明
+  output?: Record<string, string | number | boolean>;
+                              // hook 自己的记录——goal hook 写 status / round /
+                              // tokens_used / budget；continue 注入的输入不在这里，
+                              // 它是紧随其后的那条 user 消息
 }
 ```
 

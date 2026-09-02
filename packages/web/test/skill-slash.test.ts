@@ -76,10 +76,9 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: 1,
-      updated: "2026-07-01",
+      version: "2026-07-01.1",
     },
-    { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: 2, updated: "" },
+    { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];
 
   it("one item per skill: cmd is /<skill_name>, desc follows the UI language (falling back to English without a Chinese short description)", () => {
@@ -107,7 +106,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
 
   it("cmd prefix matching (slash filter convention): /agent-opt hits /agent-optimization", () => {
     const items = skillSlashItems(
-      [{ name: "agent-optimization", description: "Optimize agents", version: 1, updated: "" }],
+      [{ name: "agent-optimization", description: "Optimize agents", version: "" }],
       "en",
     );
     expect(items[0]!.cmd.startsWith("/agent-opt")).toBe(true);
@@ -120,8 +119,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
         description: "Create agents from requirements",
         shortDescription: "Create agents",
         shortDescriptionZh: "创建 Agent",
-        version: 1,
-        updated: "",
+        version: "2026-07-01.1",
       },
     ];
     expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("创建 Agent");
@@ -147,10 +145,9 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: 1,
-      updated: "2026-07-01",
+      version: "2026-07-01.1",
     },
-    { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: 2, updated: "" },
+    { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];
 
   it("an empty query (including pure whitespace) returns everything", () => {

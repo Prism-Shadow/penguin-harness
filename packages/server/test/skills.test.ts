@@ -8,20 +8,21 @@
  * create dialog (unknown name = 404 with no Agent created), and the zip
  * archive install/export (layouts, zip-slip and limit rejections, 409
  * skill_exists + overwrite replace, byte-identical export round-trip), and the Agent list's
- * `skillUpdates` — the Skill-library badge gate, which rides along on that list.
+ * `pluginUpdates` — the Skill-library badge gate, which rides along on that list.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
+import { librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentsResponse,
   AgentSkillsResponse,
+  PluginFilesResponse,
+  PluginLibraryResponse,
   ProjectCreateResponse,
-  SkillLibraryResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -33,6 +34,14 @@ describe("skills api", () => {
   let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   const base = (agentId: string) => `/api/projects/${projectId}/agents/${agentId}/skills`;
+  const plugins = (agentId: string) => `/api/projects/${projectId}/agents/${agentId}/plugins`;
+  /** The plugins route beside a skills route: library installs go through plugins. */
+  const toPlugins = (skillsUrl: string) => skillsUrl.replace(/\/skills$/, "/plugins");
+  /** The skill names the preinstalled plugins ship, sorted — the installed-list order. */
+  const preinstalledSkillNames = () =>
+    loadPreinstalledPlugins()
+      .flatMap((p) => p.skills.map((s) => s.name))
+      .sort();
 
   beforeEach(async () => {
     t = await createTestApp();
@@ -60,130 +69,158 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
   }
 
-  it("GET /api/skills: groups with metadata, short descriptions, and icons, without sending bodies", async () => {
-    const res = await member.get("/api/skills");
+  it("GET /api/plugins: categories with plugin metadata, skills and hook points, without sending bodies", async () => {
+    const res = await member.get("/api/plugins");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as SkillLibraryResponse;
+    const body = (await res.json()) as PluginLibraryResponse;
     expect(body.groups.map((g) => g.id)).toEqual([
       "office-productivity",
       "software-development",
       "ai-app-development",
-      "agent-tuning",
     ]);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
-      // The Chinese group title is passed through from the skills package (the UI
-      // picks a language); groups no longer carry a description.
+      // The Chinese category title is passed through from the plugins package (the UI picks a language).
       expect(group.titleZh).toBeTruthy();
-      expect("description" in group).toBe(false);
+      // Members are name-sorted within their category.
+      expect(group.plugins.map((p) => p.name)).toEqual(
+        [...group.plugins.map((p) => p.name)].sort(),
+      );
     }
-    // Members within a group follow the SKILL_GROUPS list order (as ungrouped by loadSkillGroups).
-    expect(body.groups[0]!.skills.map((s) => s.name)).toEqual([
-      "data-analysis",
-      "firecrawl",
-      "bento-slides",
-      "humanizer",
-    ]);
-    expect(body.groups[1]!.skills.map((s) => s.name)).toEqual([
-      "web-design",
-      "software-engineering",
-      "remote-claude-code",
-    ]);
-    expect(body.groups[2]!.skills.map((s) => s.name)).toEqual([
-      "penguin-sdk",
-      "penguin-cli",
-      "penguin-orchestration",
-      "agenthub-models",
-      "vllm",
-      "ollama",
-      "llamafactory",
-      "skill-porting",
-    ]);
-    expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
-      "agent-initialization",
-      "benchmark-design",
-      "agent-evaluation",
-      "agent-optimization",
-    ]);
-    const skills = body.groups.flatMap((g) => g.skills);
-    for (const skill of skills) {
-      expect(skill.name.length).toBeGreaterThan(0);
-      expect(skill.description.length).toBeGreaterThan(0);
-      // The short description (preferred in compact spots like cards) and custom
-      // icon (raw icon.svg) are passed through conditionally for every returned skill.
-      expect(skill.shortDescription, skill.name).toBeTruthy();
-      expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-      expect(skill.icon, skill.name).toContain("<svg");
-      expect(skill.icon).not.toContain("<script");
-      expect(skill.version).toBeGreaterThanOrEqual(1);
-      expect(skill.updated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
-      // The library catalog sends only metadata: the SKILL.md body is written to disk on install and read by the model on demand.
-      expect("content" in skill).toBe(false);
+    const plugins = body.groups.flatMap((g) => g.plugins);
+    for (const plugin of plugins) {
+      expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
+      expect(plugin.version, plugin.name).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+      expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
+      for (const skill of plugin.skills) {
+        // The short description (preferred in compact spots like cards) is passed through for
+        // every returned skill; a skill's icon is its plugin's, sent once on the plugin item;
+        // bodies never are.
+        expect(skill.shortDescription, skill.name).toBeTruthy();
+        expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
+        expect(skill.icon, skill.name).toBeUndefined();
+        expect(skill.version).toBe(plugin.version);
+        expect("content" in skill).toBe(false);
+      }
     }
+    const goal = plugins.find((p) => p.name === "goal")!;
+    expect(goal).toMatchObject({ hooks: ["user_prompt", "stop"], skills: [] });
+    expect(goal.descriptionZh).toBeTruthy();
+    expect("files" in goal).toBe(false);
+    expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
+      hooks: ["stop"],
+    });
+    expect(plugins.find((p) => p.name === "humanizer")).toMatchObject({
+      hooks: [],
+    });
+  });
+
+  it("GET /api/plugins/:plugin/files: what a plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
+    const dev = await member.get("/api/plugins/software-development/files");
+    expect(dev.status).toBe(200);
+    const devFiles = ((await dev.json()) as PluginFilesResponse).files;
+    expect(Object.keys(devFiles)).toEqual([
+      "skills/software-engineering/SKILL.md",
+      "skills/web-design/SKILL.md",
+    ]);
+    // The installable copy (frontmatter stamped), the same text an install writes.
+    expect(devFiles["skills/web-design/SKILL.md"]).toBe(librarySkill("web-design")!.skill.content);
+
+    const goal = await member.get("/api/plugins/goal/files");
+    expect(Object.keys(((await goal.json()) as PluginFilesResponse).files).sort()).toEqual([
+      "hooks/lib.mjs",
+      "hooks/start.mjs",
+      "hooks/stop.mjs",
+    ]);
+
+    // A skill's auxiliary files keep their subdirectory path.
+    const humanizer = await member.get("/api/plugins/humanizer/files");
+    const humanizerFiles = ((await humanizer.json()) as PluginFilesResponse).files;
+    expect(Object.keys(humanizerFiles)).toContain("skills/humanizer/reference/tells.md");
+
+    expect((await member.get("/api/plugins/no-such-plugin/files")).status).toBe(404);
   });
 
   it("members can install and uninstall; installs land verbatim on disk, the directory disappears after uninstall", async () => {
     await createPlainAgent("bare_agent");
     const url = base("bare_agent");
 
-    // Member installs two Skills: 201 returns the updated list (sorted by name).
-    const res = await member.post(url, { names: ["penguin-sdk", "agent-initialization"] });
+    // Member installs two plugins: 201 returns the updated skill list (sorted by name); a
+    // multi-skill plugin lands every one of its skills.
+    const res = await member.post(toPlugins(url), {
+      names: ["data-analysis", "software-development"],
+    });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual(["agent-initialization", "penguin-sdk"]);
-    // The installed list likewise passes through the short description and icon
-    // (icon.svg is copied on install, identical to the library's original).
-    const installed = body.skills.find((s) => s.name === "penguin-sdk")!;
+    expect(body.skills.map((s) => s.name)).toEqual([
+      "data-analysis",
+      "software-engineering",
+      "web-design",
+    ]);
+    // The installed list likewise passes through the short description and the icon — the
+    // plugin's, written as icon.svg beside SKILL.md on install (a skill has none of its own).
+    const installed = body.skills.find((s) => s.name === "web-design")!;
     expect(installed.shortDescription).toBeTruthy();
-    expect(installed.icon).toBe(librarySkill("penguin-sdk")!.icon);
+    const pluginIcon = librarySkill("web-design")!.plugin.icon;
+    expect(pluginIcon).toBeDefined();
+    expect(installed.icon).toBe(pluginIcon);
 
-    // The on-disk content matches the library's SKILL.md verbatim (including
-    // frontmatter), and icon.svg is written alongside it.
+    // The on-disk content matches the library's SKILL.md verbatim (including frontmatter),
+    // and the icon beside it is the plugin's.
     const skillFile = (name: string) =>
       path.join(skillsDir(t.root, projectId, "bare_agent"), name, "SKILL.md");
-    expect(await fs.readFile(skillFile("penguin-sdk"), "utf8")).toBe(
-      librarySkill("penguin-sdk")!.content,
+    expect(await fs.readFile(skillFile("web-design"), "utf8")).toBe(
+      librarySkill("web-design")!.skill.content,
     );
     expect(
       await fs.readFile(
-        path.join(skillsDir(t.root, projectId, "bare_agent"), "penguin-sdk", "icon.svg"),
+        path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg"),
         "utf8",
       ),
-    ).toBe(librarySkill("penguin-sdk")!.icon);
+    ).toBe(pluginIcon);
 
-    // Member uninstalls: 204, the whole skills/<name>/ directory disappears, and the list is updated.
-    expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(204);
-    await expect(fs.access(path.dirname(skillFile("penguin-sdk")))).rejects.toThrow();
+    // Member uninstalls one skill: 204, the whole skills/<name>/ directory disappears, and the list is updated.
+    expect((await member.delete(`${url}/web-design`)).status).toBe(204);
+    await expect(fs.access(path.dirname(skillFile("web-design")))).rejects.toThrow();
     const after = (await (await member.get(url)).json()) as AgentSkillsResponse;
-    expect(after.skills.map((s) => s.name)).toEqual(["agent-initialization"]);
+    expect(after.skills.map((s) => s.name)).toEqual(["data-analysis", "software-engineering"]);
 
     // Deleting a Skill that isn't installed (or was already uninstalled) → 404.
-    expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(404);
+    expect((await member.delete(`${url}/web-design`)).status).toBe(404);
   });
 
   it("reinstall is an idempotent update: hand-edited on-disk content is restored to the library content", async () => {
     await createPlainAgent("update_agent");
     const url = base("update_agent");
-    expect((await owner.post(url, { names: ["penguin-cli"] })).status).toBe(201);
+    expect((await owner.post(toPlugins(url), { names: ["agent-development"] })).status).toBe(201);
 
     // Simulate stale/tampered on-disk content.
-    const file = path.join(skillsDir(t.root, projectId, "update_agent"), "penguin-cli", "SKILL.md");
-    await fs.writeFile(file, "---\nname: penguin-cli\nversion: 0\n---\nstale\n", "utf8");
+    const file = path.join(
+      skillsDir(t.root, projectId, "update_agent"),
+      "penguin-config",
+      "SKILL.md",
+    );
+    await fs.writeFile(file, "---\nname: penguin-config\nversion: 0\n---\nstale\n", "utf8");
 
-    const res = await owner.post(url, { names: ["penguin-cli"] });
+    const res = await owner.post(toPlugins(url), { names: ["agent-development"] });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual(["penguin-cli"]);
-    expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-cli")!.content);
+    expect(body.skills.map((s) => s.name)).toEqual([
+      "penguin-config",
+      "penguin-orchestration",
+      "penguin-sdk",
+      "unified-llm-api",
+    ]);
+    expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-config")!.skill.content);
   });
 
   it("unknown skill 404 unknown_skill, with no half-installed state", async () => {
     await createPlainAgent("strict_agent");
     const url = base("strict_agent");
-    const res = await owner.post(url, { names: ["penguin-sdk", "no-such-skill"] });
+    const res = await owner.post(toPlugins(url), { names: ["data-analysis", "no-such-skill"] });
     expect(res.status).toBe(404);
     const err = (await res.json()) as { error: { code: string; message: string } };
-    expect(err.error.code).toBe("unknown_skill");
+    expect(err.error.code).toBe("unknown_plugin");
     expect(err.error.message).toContain("no-such-skill");
     // Whole request rejected: even the valid library skill was not written to disk.
     const list = (await (await owner.get(url)).json()) as AgentSkillsResponse;
@@ -193,20 +230,20 @@ describe("skills api", () => {
   it("request body validation 400: names missing / empty array / non-string entries", async () => {
     await createPlainAgent("valid_agent");
     const url = base("valid_agent");
-    for (const body of [{}, { names: [] }, { names: ["penguin-sdk", 1] }, { names: [""] }]) {
-      expect((await owner.post(url, body)).status, JSON.stringify(body)).toBe(400);
+    for (const body of [{}, { names: [] }, { names: ["data-analysis", 1] }, { names: [""] }]) {
+      expect((await owner.post(toPlugins(url), body)).status, JSON.stringify(body)).toBe(400);
     }
   });
 
   it("outsiders always get 404 (read, install, uninstall); a missing Agent is 404", async () => {
     const url = base("default_agent");
     expect((await outsider.get(url)).status).toBe(404);
-    expect((await outsider.post(url, { names: ["penguin-sdk"] })).status).toBe(404);
+    expect((await outsider.post(toPlugins(url), { names: ["penguin-sdk"] })).status).toBe(404);
     expect((await outsider.post(`${url}/archive`, { dataBase64: "AAAA" })).status).toBe(404);
     expect((await outsider.get(`${url}/penguin-sdk/archive`)).status).toBe(404);
     expect((await outsider.delete(`${url}/penguin-sdk`)).status).toBe(404);
     // The library catalog isn't scoped under a Project prefix: any logged-in user can read it.
-    expect((await outsider.get("/api/skills")).status).toBe(200);
+    expect((await outsider.get("/api/plugins")).status).toBe(200);
     // Agent doesn't exist: even a member gets 404.
     expect((await member.get(base("no_such_agent"))).status).toBe(404);
   });
@@ -216,21 +253,23 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentSkillsResponse;
     // loadPreinstalledSkills keeps loadLibrarySkills' name sort, matching the installed-list ordering.
-    expect(body.skills.map((s) => s.name)).toEqual(loadPreinstalledSkills().map((s) => s.name));
-    // remote-claude-code and humanizer ship in the library marked `preinstall: false`: not present here.
+    expect(body.skills.map((s) => s.name)).toEqual(preinstalledSkillNames());
+    // use-claude-code and humanizer ship in the library marked `preinstall: false`: their skills are not present here.
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
-    // The installed list likewise passes through the Chinese description and the
-    // short description/icon (listInstalledSkills parses these from the on-disk
-    // frontmatter and icon.svg).
+    // The installed list likewise passes through the Chinese and short descriptions
+    // (listInstalledSkills parses these from the on-disk frontmatter) and the icon each
+    // install wrote beside SKILL.md — its plugin's.
     for (const skill of body.skills) {
       expect(skill.shortDescription, skill.name).toBeTruthy();
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-      expect(skill.icon, skill.name).toContain("<svg");
+      expect(skill.icon, skill.name).toBe(librarySkill(skill.name)!.plugin.icon);
     }
 
     // Manual install from the library still works for a preinstall:false skill.
-    const manual = await member.post(base("default_agent"), { names: ["remote-claude-code"] });
+    const manual = await member.post(plugins("default_agent"), {
+      names: ["use-claude-code"],
+    });
     expect(manual.status).toBe(201);
     const withManual = (await manual.json()) as AgentSkillsResponse;
     expect(withManual.skills.map((s) => s.name)).toContain("remote-claude-code");
@@ -244,7 +283,7 @@ describe("skills api", () => {
       "persistent-session.md",
     );
     expect(await fs.readFile(refPath, "utf8")).toBe(
-      librarySkill("remote-claude-code")!.files![aux],
+      librarySkill("remote-claude-code")!.skill.files![aux],
     );
 
     await createPlainAgent("fresh_agent");
@@ -256,30 +295,38 @@ describe("skills api", () => {
     const created = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "seeded_agent",
       name: "Seeded",
-      skills: ["penguin-sdk", "web-design"],
+      plugins: ["agent-development", "software-development"],
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(2);
+    expect(summary.agent.skillCount).toBe(6);
 
-    // The installed list is the same shape a library install produces (name-sorted).
+    // The installed list is the same shape a library install produces (name-sorted):
+    // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
-    expect(listed.skills.map((s) => s.name)).toEqual(["penguin-sdk", "web-design"]);
+    expect(listed.skills.map((s) => s.name)).toEqual([
+      "penguin-config",
+      "penguin-orchestration",
+      "penguin-sdk",
+      "software-engineering",
+      "unified-llm-api",
+      "web-design",
+    ]);
     // Installed through the same writer as the Skills tab: SKILL.md is the library file verbatim.
     const onDisk = await fs.readFile(
       path.join(skillsDir(t.root, projectId, "seeded_agent"), "penguin-sdk", "SKILL.md"),
       "utf8",
     );
-    expect(onDisk).toBe(librarySkill("penguin-sdk")!.content);
+    expect(onDisk).toBe(librarySkill("penguin-sdk")!.skill.content);
   });
 
   it("agent create with an unknown skill is 404 unknown_skill and creates no Agent", async () => {
     const res = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "ghost_agent",
-      skills: ["penguin-sdk", "no-such-skill"],
+      plugins: ["penguin-sdk", "no-such-plugin"],
     });
     expect(res.status).toBe(404);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("unknown_skill");
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("unknown_plugin");
     // Nothing was created: the id is still free, and no directory was left behind.
     await expect(
       fs.stat(path.join(skillsDir(t.root, projectId, "ghost_agent"), "..")),
@@ -295,7 +342,7 @@ describe("skills api", () => {
     expect(plain.skills).toEqual([]);
     const bad = await owner.post(`/api/projects/${projectId}/agents`, {
       agentId: "bad_seed",
-      skills: "penguin-sdk",
+      plugins: "penguin-sdk",
     });
     expect(bad.status).toBe(400);
   });
@@ -303,7 +350,7 @@ describe("skills api", () => {
   // ---- POST .../skills/archive: install one skill from an uploaded zip ----
 
   const ZIP_SKILL_MD =
-    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2\nupdated: 2026-08-01\n---\n\n# Zip skill\nBody.\n";
+    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2026-08-01.2\n---\n\n# Zip skill\nBody.\n";
 
   /** Builds an in-memory zip and returns it base64-encoded (the request wire format). */
   const zipB64 = (files: Record<string, Uint8Array>): string =>
@@ -325,7 +372,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual(["dir-skill"]);
-    expect(body.skills[0]!.version).toBe(2);
+    expect(body.skills[0]!.version).toBe("2026-08-01.2");
     expect(body.skills[0]!.shortDescription).toBe("Zip demo");
     const dir = path.join(skillsDir(t.root, projectId, "zip_agent"), "dir-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(ZIP_SKILL_MD);
@@ -453,7 +500,7 @@ describe("skills api", () => {
     expect(err.error.message).toMatch(/: zip-skill$/);
 
     // overwrite: true replaces the whole directory: old.txt is gone, new.txt appears.
-    const updatedMd = ZIP_SKILL_MD.replace("version: 2", "version: 3");
+    const updatedMd = ZIP_SKILL_MD.replace("version: 2026-08-01.2", "version: 2026-08-01.3");
     const res = await member.post(url, {
       dataBase64: zipB64({
         "zip-skill/SKILL.md": strToU8(updatedMd),
@@ -463,7 +510,7 @@ describe("skills api", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe(3);
+    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe("2026-08-01.3");
     const dir = path.join(skillsDir(t.root, projectId, "zip_over_agent"), "zip-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(updatedMd);
     expect(await fs.readFile(path.join(dir, "new.txt"), "utf8")).toBe("new\n");
@@ -482,12 +529,12 @@ describe("skills api", () => {
     expect((await member.post(`${url}/archive`, { dataBase64: zipB64(files) })).status).toBe(201);
 
     // Export it: a direct binary attachment (application/zip), like the snapshot export.
-    // The frontmatter declares version: 2 explicitly, so the filename carries -v2.
+    // The frontmatter declares a version explicitly, so the filename carries -v<version>.
     const res = await member.get(`${url}/zip-skill/archive`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''zip-skill-v2.zip",
+      "attachment; filename*=UTF-8''zip-skill-v2026-08-01.2.zip",
     );
     const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
     // Single-top-dir layout with every installed file, byte-identical to the upload — the
@@ -523,12 +570,12 @@ describe("skills api", () => {
    * library, so the cases that matter are the three ways a directory can fail to be an update:
    * already current, not in the library at all, and unreadable.
    */
-  describe("skillUpdates on the Agent list", () => {
+  describe("pluginUpdates on the Agent list", () => {
     const listAgents = async (): Promise<AgentsResponse["agents"]> =>
       ((await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as AgentsResponse)
         .agents;
     /** Rewrites an installed SKILL.md's frontmatter version, which is what "behind" means. */
-    const setInstalledVersion = async (agentId: string, name: string, version: number) => {
+    const setInstalledVersion = async (agentId: string, name: string, version: string) => {
       const file = path.join(skillsDir(t.root, projectId, agentId), name, "SKILL.md");
       const raw = await fs.readFile(file, "utf8");
       await fs.writeFile(file, raw.replace(/^version:.*$/m, `version: ${version}`), "utf8");
@@ -536,21 +583,26 @@ describe("skills api", () => {
 
     it("is empty for a freshly installed Skill, and names the library version once it falls behind", async () => {
       await createPlainAgent("bare_updates");
-      expect((await owner.post(base("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(201);
+      expect(
+        (await owner.post(plugins("bare_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(1);
-      expect(fresh.skillUpdates).toEqual([]);
+      expect(fresh.skillCount).toBe(4);
+      expect(fresh.pluginUpdates).toEqual([]);
 
-      // Age the installed copy: the library now carries a higher version than the disk does.
-      await setInstalledVersion("bare_updates", "penguin-sdk", 0);
+      // Age one installed copy: the library now carries a higher version than the disk does.
+      // The update is reported once, by PLUGIN, however many of its skills lag.
+      await setInstalledVersion("bare_updates", "penguin-sdk", "2000-01-01.1");
       const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(behind.skillUpdates).toEqual([
-        { name: "penguin-sdk", version: librarySkill("penguin-sdk")!.version },
+      expect(behind.pluginUpdates).toEqual([
+        { name: "agent-development", version: librarySkill("penguin-sdk")!.plugin.version },
       ]);
       // Reinstalling IS the update, so the badge clears with the same request the trail ends on.
-      expect((await owner.post(base("bare_updates"), { names: ["penguin-sdk"] })).status).toBe(201);
-      expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.skillUpdates).toEqual(
+      expect(
+        (await owner.post(plugins("bare_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
+      expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.pluginUpdates).toEqual(
         [],
       );
     });
@@ -569,7 +621,7 @@ describe("skills api", () => {
       const agent = (await listAgents()).find((a) => a.agentId === "byo_updates")!;
       expect(agent.skillCount).toBe(1);
       // Nothing to be behind: there is no library copy to reinstall over it.
-      expect(agent.skillUpdates).toEqual([]);
+      expect(agent.pluginUpdates).toEqual([]);
     });
 
     it("counts a directory with no readable SKILL.md as neither installed nor an update", async () => {
@@ -579,7 +631,7 @@ describe("skills api", () => {
       });
       const agent = (await listAgents()).find((a) => a.agentId === "broken_updates")!;
       expect(agent.skillCount).toBe(0);
-      expect(agent.skillUpdates).toEqual([]);
+      expect(agent.pluginUpdates).toEqual([]);
     });
   });
 });
