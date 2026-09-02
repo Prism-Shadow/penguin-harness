@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#593](https://github.com/Prism-Shadow/penguin-harness/pull/593)
 
 [中文版](2026-09-02-schedule-panel.zh.md)
 
