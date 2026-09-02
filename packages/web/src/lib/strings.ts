@@ -18,6 +18,7 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
+    apps: "应用中心",
     plugins: "插件库",
     models: "模型库",
     machines: "机器",
@@ -1148,6 +1149,93 @@ export const zh = {
     },
   },
 
+  /** App Center page (features/apps/apps-page.tsx): the apps registered from this Project's conversations, their probed status, and the actions that reach the owning Session. */
+  apps: {
+    title: "应用中心",
+    subtitle: "把会话里做出来的应用发布到这里，随时查看状态、重启或停止",
+    /** Icon-only refresh button (re-probes every status). */
+    refresh: "刷新状态",
+    create: "新建应用",
+    searchPlaceholder: "搜索应用",
+    filterAll: "全部",
+    statusNames: {
+      running: "运行中",
+      stopped: "已停止",
+      unknown: "未知",
+    } as Record<string, string>,
+    kindNames: {
+      web: "网页应用",
+      api: "API 服务",
+      cli: "命令行工具",
+      other: "其他",
+    } as Record<string, string>,
+    open: "打开",
+    restart: "重启",
+    stop: "停止",
+    /** Accessible name of the row's ellipsis menu button. */
+    menuLabel: "更多操作",
+    goToSession: "跳转到会话",
+    edit: "编辑信息",
+    unregister: "取消注册",
+    /** Meta line pieces, joined with " · ": registration age, host, owning Session. */
+    registeredAgo: (age: string): string => `注册于 ${age}`,
+    fromSession: (title: string): string => `来自会话「${title}」`,
+    fromDeletedSession: "来自会话（已删除）",
+    /** Toast after a restart / stop request was accepted by the server. */
+    actionSent: "已发送到原会话，可在该会话查看进度",
+    /** The owning Session is gone (409 app_session_missing): the request has nowhere to go. */
+    sessionMissing: "原会话已删除，无法发送；请在新会话里重新登记该应用",
+    emptyTitle: "应用中心还没有应用",
+    emptyDesc:
+      "在对话里做出来的应用会通过 app-center 技能自动登记到这里；也可以让 AI 从头创建一个。",
+    noMatch: "没有匹配的应用",
+    invalidFiles: "无法解析的登记文件（已跳过）",
+    aiTitle: "让 AI 创建应用",
+    aiDesc: "描述你想做的应用，智能体会在新对话里构建、运行并登记到应用中心。",
+    aiPlaceholder: "描述你想做的应用…",
+    aiExamples: [
+      {
+        key: "todo",
+        label: "待办事项应用",
+        prompt:
+          "做一个前后端完整的待办事项应用：Node.js + Express 提供 REST API，React 前端，SQLite 存储，运行在 3000 端口",
+      },
+      { key: "bookmarks", label: "书签管理网站", prompt: "做一个个人书签管理网站，支持标签与搜索" },
+      { key: "csv", label: "CSV 图表小工具", prompt: "做一个把 CSV 上传后自动生成图表的小工具" },
+      {
+        key: "weekly",
+        label: "团队周报收集页",
+        prompt: "做一个团队周报收集页面，提交后汇总成 Markdown",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; prompt: string }>,
+    /** Fixed instruction tail behind the user's description (shown in the panel's full-prompt fold). */
+    aiCreateTail:
+      "请使用 software-engineering、web-design 与 app-center 技能：在当前 Workspace 里构建这个应用；以后台方式在固定端口运行；用 curl 之类的浏览器式检查验证它能正常访问；然后用 `penguin app register` 把它登记到应用中心（带上访问地址与启动 / 停止命令），最后告诉我访问地址。",
+    form: {
+      createTitle: "手动登记应用",
+      editTitle: (name: string): string => `编辑「${name}」`,
+      name: "名称",
+      description: "描述",
+      url: "访问地址",
+      urlHint: "应用的本地地址，如 http://localhost:3000；留空则不探测状态",
+      healthUrl: "健康检查地址",
+      healthUrlHint: "留空则探测访问地址",
+      startCommand: "启动命令",
+      stopCommand: "停止命令",
+      commandsHint: "重启 / 停止时发回原会话执行；留空则由原会话自行处理",
+      kind: "类型",
+      session: "所属会话",
+      sessionHint: "重启 / 停止请求会发送到这个会话",
+      noSessions: "当前 Project 还没有会话，先开一个对话再登记",
+      registered: "已登记到应用中心",
+      saved: "已保存",
+    },
+    unregisterTitle: "取消注册",
+    unregisterConfirm: (name: string): string =>
+      `确认把「${name}」从应用中心移除？这只删除登记信息，不会停止应用本身。`,
+    unregistered: "已取消注册",
+  },
+
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     pageTitle: "插件库",
@@ -1787,6 +1875,9 @@ Benchmark：
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
+    /** One-line notice of an `[app_center]` request (the App Center's restart / stop button). */
+    appCenterAction: (name: string, action: "restart" | "stop"): string =>
+      `应用中心：${action === "restart" ? "重启" : "停止"}「${name}」`,
     /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
     backgroundDone: (
       kind: "command" | "subagent",

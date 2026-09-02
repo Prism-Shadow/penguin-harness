@@ -14,6 +14,7 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
+    apps: "App Center",
     plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
@@ -1178,6 +1179,107 @@ export const en: Strings = {
     },
   },
 
+  /** App Center page (features/apps/apps-page.tsx): the apps registered from this Project's conversations, their probed status, and the actions that reach the owning Session. */
+  apps: {
+    title: "App Center",
+    subtitle:
+      "Publish the apps built in your conversations here; check their status, restart or stop them any time",
+    /** Icon-only refresh button (re-probes every status). */
+    refresh: "Refresh statuses",
+    create: "New app",
+    searchPlaceholder: "Search apps",
+    filterAll: "All",
+    statusNames: {
+      running: "Running",
+      stopped: "Stopped",
+      unknown: "Unknown",
+    } as Record<string, string>,
+    kindNames: {
+      web: "Web app",
+      api: "API service",
+      cli: "Command-line tool",
+      other: "Other",
+    } as Record<string, string>,
+    open: "Open",
+    restart: "Restart",
+    stop: "Stop",
+    /** Accessible name of the row's ellipsis menu button. */
+    menuLabel: "More actions",
+    goToSession: "Go to session",
+    edit: "Edit details",
+    unregister: "Unregister",
+    /** Meta line pieces, joined with " · ": registration age, host, owning Session. */
+    registeredAgo: (age: string): string => `Registered ${age}`,
+    fromSession: (title: string): string => `from session "${title}"`,
+    fromDeletedSession: "from a deleted session",
+    /** Toast after a restart / stop request was accepted by the server. */
+    actionSent: "Sent to the original session; follow the progress there",
+    /** The owning Session is gone (409 app_session_missing): the request has nowhere to go. */
+    sessionMissing:
+      "The original session was deleted, so the request cannot be sent; register the app again from a new session",
+    emptyTitle: "No apps in the App Center yet",
+    emptyDesc:
+      "Apps built in conversations register themselves here through the app-center skill; you can also have the AI create one from scratch.",
+    noMatch: "No apps match",
+    invalidFiles: "Registry files that could not be parsed (skipped)",
+    aiTitle: "Create an app with AI",
+    aiDesc:
+      "Describe the app you want; the agent builds, runs and registers it with the App Center in a new conversation.",
+    aiPlaceholder: "Describe the app you want to build…",
+    aiExamples: [
+      {
+        key: "todo",
+        label: "Todo app",
+        prompt:
+          "Build a complete full-stack todo app: a Node.js + Express REST API, a React frontend, SQLite storage, running on port 3000",
+      },
+      {
+        key: "bookmarks",
+        label: "Bookmark manager",
+        prompt: "Build a personal bookmark manager site with tags and search",
+      },
+      {
+        key: "csv",
+        label: "CSV chart tool",
+        prompt: "Build a small tool that turns an uploaded CSV file into charts",
+      },
+      {
+        key: "weekly",
+        label: "Weekly report collector",
+        prompt:
+          "Build a team weekly-report collection page that compiles the submissions into Markdown",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; prompt: string }>,
+    /** Fixed instruction tail behind the user's description (shown in the panel's full-prompt fold). */
+    aiCreateTail:
+      "Use the software-engineering, web-design and app-center skills: build the app in the current Workspace, run it in the background on a stable port, verify it works with a browser-like check (curl), then register it with `penguin app register` (with its URL and start / stop commands) so it appears in the App Center, and end by telling me the URL.",
+    form: {
+      createTitle: "Register an app manually",
+      editTitle: (name: string): string => `Edit "${name}"`,
+      name: "Name",
+      description: "Description",
+      url: "URL",
+      urlHint:
+        "The app's local address, e.g. http://localhost:3000; leave empty to skip status probing",
+      healthUrl: "Health check URL",
+      healthUrlHint: "Leave empty to probe the URL above",
+      startCommand: "Start command",
+      stopCommand: "Stop command",
+      commandsHint:
+        "Sent back to the original session on restart / stop; leave empty to let the session work it out",
+      kind: "Kind",
+      session: "Owning session",
+      sessionHint: "Restart / stop requests are sent to this session",
+      noSessions: "This Project has no sessions yet; start a conversation first",
+      registered: "Registered with the App Center",
+      saved: "Saved",
+    },
+    unregisterTitle: "Unregister",
+    unregisterConfirm: (name: string): string =>
+      `Remove "${name}" from the App Center? This only deletes the registration; the app itself keeps running.`,
+    unregistered: "Unregistered",
+  },
+
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
     pageTitle: "Plugin library",
@@ -1821,6 +1923,9 @@ Scenarios:
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
+    /** One-line notice of an `[app_center]` request (the App Center's restart / stop button). */
+    appCenterAction: (name: string, action: "restart" | "stop"): string =>
+      `App Center: ${action === "restart" ? "restart" : "stop"} "${name}"`,
     /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
     backgroundDone: (kind: "command" | "subagent", status: "completed" | "failed" | "stopped") => {
       const what = kind === "command" ? "Background command" : "Background task";

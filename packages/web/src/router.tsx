@@ -12,6 +12,7 @@ import { LoginPage } from "./pages/login";
 import { ChatPage } from "./features/chat/chat-page";
 import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
+import { AppsPage } from "./features/apps/apps-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
 import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
@@ -69,6 +70,7 @@ export function AppRouter() {
           <Route path="/chat/:sessionId?" element={<ChatPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/agents/:agentId" element={<AgentSettingsPage />} />
+          <Route path="/apps" element={<AppsPage />} />
           <Route path="/plugins" element={<PluginsPage />} />
           <Route path="/models" element={<ModelsPage />} />
           {/* Admin-only server-side (403 otherwise); the sidebar hides the row for
