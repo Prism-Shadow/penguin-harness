@@ -8,7 +8,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PLUGINS_FILE, loadPlugins, readPluginList } from "../src/plugin/loader.js";
+import {
+  PLUGINS_FILE,
+  committedAssetsDir,
+  discoverBuiltinPlugins,
+  loadPlugins,
+  pluginBases,
+  readPluginList,
+} from "../src/plugin/loader.js";
 
 let root: string;
 
@@ -161,5 +168,76 @@ describe("plugin loading", () => {
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
     expect(result.failed.get(file)).toMatch(/penguin\.modules\[0\]/);
+  });
+});
+
+describe("builtin plugins", () => {
+  /** A plugin package under a prefix's node_modules, the shape scripts/build-plugins.mjs ships. */
+  async function writeBuiltin(prefix: string, name: string, moduleName: string): Promise<void> {
+    const dir = path.join(prefix, "node_modules", ...name.split("/"));
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}', "utf8");
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name,
+        main: "./index.js",
+        type: "module",
+        penguin: {
+          modules: [
+            { name: moduleName, requires: {}, provides: {}, contributes: {}, children: [] },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      `export default { modules: { ${moduleName}: { create: () => ({ api: {} }) } } };`,
+      "utf8",
+    );
+  }
+
+  it("discovers the plugins under a builtin prefix, scoped and unscoped, and not under the root's own prefix", async () => {
+    const assets = path.join(root, "hmr", "store", "assets", "abc");
+    await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
+    await writeBuiltin(path.join(assets, "plugins"), "plain-plugin", "Plain");
+    // The operator's own prefix is not builtin: what it holds loads only when listed.
+    await writeBuiltin(path.join(root, "plugins"), "@acme/installed", "Installed");
+    const bases = pluginBases(root, assets);
+    expect(bases[0]).toMatchObject({ builtin: false });
+    expect(bases[1]).toMatchObject({ builtin: true });
+    expect(await discoverBuiltinPlugins(bases)).toEqual([
+      "@acme/penguin-plugin-one",
+      "plain-plugin",
+    ]);
+  });
+
+  it("loads the builtins of the committed assets without them being listed, once even when listed", async () => {
+    const assetsRel = path.join("store", "assets", "abc");
+    const assets = path.join(root, "hmr", assetsRel);
+    await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
+    await mkdir(path.join(root, "hmr"), { recursive: true });
+    // harness.json is what names the committed assets; the loader reads it without a host.
+    await writeFile(
+      path.join(root, "hmr", "harness.json"),
+      JSON.stringify({ assets: { dir: assetsRel.split(path.sep).join("/") } }),
+      "utf8",
+    );
+    await writeConfig({ plugins: ["@acme/penguin-plugin-one"] });
+    const result = await loadPlugins(root);
+    expect([...result.failed.entries()]).toEqual([]);
+    expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
+    expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
+  });
+
+  it("reads a committed assets dir from harness.json, or null without one", async () => {
+    expect(await committedAssetsDir(root)).toBeNull();
+    await mkdir(path.join(root, "hmr"), { recursive: true });
+    await writeFile(
+      path.join(root, "hmr", "harness.json"),
+      JSON.stringify({ assets: { dir: "store/assets/x" } }),
+    );
+    expect(await committedAssetsDir(root)).toBe(path.join(root, "hmr", "store/assets/x"));
   });
 });
