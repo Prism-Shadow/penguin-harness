@@ -2070,8 +2070,8 @@ Scenarios:
    */
   messaging: {
     panelTitle: "Remote control",
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "Remote control…",
+    /** Session-row context-menu action. */
+    bindAction: "Remote control",
     dialogTitle: "Remote control",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "Channel",

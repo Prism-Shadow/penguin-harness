@@ -26,9 +26,14 @@ export const FOLDER_ICON =
 export const FOLDER_OPEN_ICON =
   "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
 
-/** Agent glyph (the grouping toggle's "by Agent" option; also NAV_ICONS.agents in the sidebar nav). */
+/**
+ * Agent glyph (the grouping toggle's "by Agent" option; also NAV_ICONS.agents in the sidebar
+ * nav): a robot head with an antenna, two ears, two eyes and a smile — lucide's `bot` with the
+ * mouth added. The face is the point: an Agent is the thing in this product a person talks to,
+ * and the friendliest mark on the rail should be the one that stands for it.
+ */
 export const AGENT_GROUP_ICON =
-  "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01";
+  "M12 8V4H8M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM2 14h2M20 14h2M9 13h.01M15 13h.01M10 16.5s.8 1 2 1 2-1 2-1";
 
 /** Clock (lucide clock, drawn as one path), the "most recent" sort option. */
 export const CLOCK_ICON = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2";

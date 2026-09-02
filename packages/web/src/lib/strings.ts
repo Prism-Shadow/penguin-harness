@@ -7,7 +7,9 @@
  * language (module-level constants do not update on switch — keep reads inside components).
  * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
- * label/sentence or in a proper name (Agent State, AgentHub). zh keeps "Agent" as-is.
+ * label/sentence or in a proper name (Agent State, AgentHub). zh names the SURFACE
+ * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
+ * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 export const zh = {
   appName: "PenguinHarness",
@@ -1254,7 +1256,7 @@ export const zh = {
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
-    groupByAgent: "按 Agent 分组",
+    groupByAgent: "按智能体分组",
     groupByTime: "按时间分组",
     /** Time-mode bucket names (last day / last month / older), by last activity. */
     timeGroups: {
@@ -2019,8 +2021,8 @@ Benchmark：
    */
   messaging: {
     panelTitle: "远程控制",
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "远程控制…",
+    /** Session-row context-menu action. */
+    bindAction: "远程控制",
     dialogTitle: "远程控制",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "渠道",
