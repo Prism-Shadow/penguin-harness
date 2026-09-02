@@ -2932,6 +2932,85 @@ export interface ScheduleUpsertRequest {
 }
 
 // ---------------------------------------------------------------------------
+// App Center
+// ---------------------------------------------------------------------------
+
+/** What a registered app is (the list's kind glyph). */
+export type AppKind = "web" | "api" | "cli" | "other";
+
+/**
+ * Probed run status: any HTTP response from `healthUrl ?? url` is `running`, a refused
+ * connection or a timeout is `stopped`, and an app without a URL is `unknown`. Served from a
+ * short per-URL cache; `GET ?refresh=1` re-probes.
+ */
+export type AppStatus = "running" | "stopped" | "unknown";
+
+/** One registered app (`<project>/apps/<id>.toml`) with its owning-Session facts and probed status. */
+export interface AppItem {
+  /** File name (without .toml) is the identifier. */
+  id: string;
+  name: string;
+  description?: string;
+  /** The owning Session: restart / stop actions are sent there. */
+  sessionId: string;
+  /** The owning Session's title, when it exists and has one. */
+  sessionTitle?: string;
+  /** False when the owning Session was deleted (actions then answer 409 app_session_missing). */
+  sessionExists: boolean;
+  agentId: string;
+  workspace: string;
+  /** Local URL the app serves at (the "open" link; also the probe target unless `healthUrl` is set). */
+  url?: string;
+  healthUrl?: string;
+  startCommand?: string;
+  stopCommand?: string;
+  kind: AppKind;
+  /** ISO 8601. */
+  registeredAt: string;
+  updatedAt: string;
+  status: AppStatus;
+  /** When the status was probed (ISO 8601); absent for `unknown`. */
+  checkedAt?: string;
+}
+
+export interface AppsResponse {
+  apps: AppItem[];
+  /** Files that failed to parse (listed so a hand edit is noticed, never guessed at). */
+  invalidFiles: Array<{ id: string; error: string }>;
+}
+
+/**
+ * Registration body (POST, with an optional `id`; the server derives one from `name` when
+ * absent) and the full-replacement edit body (PUT). `agentId` and `workspace` default to the
+ * owning Session's values; `kind` defaults to `web`.
+ */
+export interface AppUpsertRequest {
+  name: string;
+  description?: string;
+  sessionId: string;
+  agentId?: string;
+  workspace?: string;
+  url?: string;
+  healthUrl?: string;
+  startCommand?: string;
+  stopCommand?: string;
+  kind?: AppKind;
+}
+
+export type AppAction = "restart" | "stop";
+
+/** POST /api/projects/:p/apps/:id/actions — sends the action as user input to the owning Session. */
+export interface AppActionRequest {
+  action: AppAction;
+}
+
+export interface AppActionResponse {
+  sessionId: string;
+  /** How the input reached the Session: a new Task, a follow-up queued behind a compaction, or steering into the running Task. */
+  delivery: "task" | "queued" | "steer";
+}
+
+// ---------------------------------------------------------------------------
 // Agent State version and snapshots
 // ---------------------------------------------------------------------------
 
