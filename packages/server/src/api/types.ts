@@ -2790,16 +2790,8 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
+  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
-  /**
-   * How many of {@link total} a clear would actually take (see {@link UsageErrorsClearResponse}).
-   *
-   * The same as `total` for an ordinary member, and smaller for an admin, whose reads include
-   * unattributed rows that no Project-scoped clear removes. The confirmation is the only place
-   * this matters, and it is the place it matters most: an irreversible delete has to name the
-   * number that will really go, not the number on screen.
-   */
-  clearable: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
@@ -2812,8 +2804,9 @@ export interface UsageErrors {
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
  * first. The dashboard response above already carries the first page; this exists so
  * "show me earlier ones" does not have to refetch the whole aggregate. It takes the same
- * date/agent filter as the dashboard, so a page never widens what the summary counted, plus
- * an optional `kind` ({@link UsageErrorKind}) narrowing to one of the two categories — which
+ * date/agent filter as the dashboard (`fromTs`/`toTs` narrow it to a trailing window, both
+ * or neither), so a page never widens what the summary counted, plus an optional `kind`
+ * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
  * with `limit=1` instead of pulling the whole dashboard aggregate.
  */
@@ -2825,11 +2818,12 @@ export interface UsageErrorsPage {
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
- * panel is showing (its date range and Agent), Project owner only.
+ * panel is showing (its date range, the trailing window when one is on, and Agent), Project
+ * owner only.
  *
  * Scoped to the filter rather than the Project's whole history, so a clear takes exactly the
- * rows on screen. Errors with no Project attribution are never included, whoever asks: they
- * belong to no Project and are surfaced in every Project's admin view.
+ * rows on screen — for an admin, the unattributed rows an admin's panel shows included; a
+ * member's panel never shows them and a member's clear never takes them.
  */
 export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */

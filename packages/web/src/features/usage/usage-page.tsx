@@ -132,6 +132,18 @@ function ChartCard({
   );
 }
 
+/**
+ * The range the dashboard last read: the preset and the bounds it resolved to at load time —
+ * the two trailing presets add their instant pair (see `loaded` in the page).
+ */
+interface LoadedRange {
+  preset: RangePreset;
+  from: string;
+  to: string;
+  fromTs?: string;
+  toTs?: string;
+}
+
 export function UsagePage() {
   useDocumentTitle(S.usage.title);
   const { currency } = useTheme();
@@ -170,16 +182,15 @@ export function UsagePage() {
   };
   const [data, setData] = useState<UsageResponse | null>(null);
   /**
-   * The date window the dashboard actually READ, which is not always the one the picker holds.
-   * A trailing preset computes its window at load time and deliberately leaves `from`/`to` on
+   * The range the dashboard actually READ, which is not always the one the picker holds. A
+   * trailing preset computes its window at load time and deliberately leaves `from`/`to` on
    * whatever the last calendar preset put there, so the two diverge the moment "last hour" is
-   * chosen. The error panel pages against this window and, for an owner, DELETES against it —
-   * so it has to be the window whose rows are on screen, never the stale pair behind them.
-   * Kept as two primitives so the memo below holds its identity across a reload that changes
-   * nothing (the panel's fetch effect depends on that identity).
+   * chosen. The error panel pages against this range and, for an owner, DELETES against it —
+   * so it has to be the range whose rows are on screen, never the stale pair behind them. The
+   * memo below reads its primitives one by one so it holds its identity across a reload that
+   * changes nothing (the panel's fetch effect depends on that identity).
    */
-  const [loadedFrom, setLoadedFrom] = useState(from);
-  const [loadedTo, setLoadedTo] = useState(to);
+  const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset: "7d", from, to }));
   const [error, setError] = useState<string | null>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
@@ -204,8 +215,7 @@ export function UsagePage() {
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
       setData(res);
-      setLoadedFrom(range.from);
-      setLoadedTo(range.to);
+      setLoaded({ preset, ...range });
     } catch (e) {
       setError(apiErrorText(e));
     }
@@ -219,12 +229,19 @@ export function UsagePage() {
   // The error panel pages against this filter and depends on the object's identity, so it is
   // built once per filter value rather than fresh on every render — a new object each render
   // would refetch the current page on any unrelated state change (hovering a chart bucket).
-  // Built from the window the dashboard read (see loadedFrom/loadedTo), not from the picker's
-  // state: the panel's rows, its later pages and its clear all have to name one same set.
-  // The model filter is deliberately absent: it never applied to errors.
+  // Built from the range the dashboard read (see `loaded`), not from the picker's state: the
+  // panel's rows, its later pages and its clear all have to name one same set. The model
+  // filter is deliberately absent: it never applied to errors.
   const errorFilters = useMemo(
-    () => ({ from: loadedFrom, to: loadedTo, ...(agentFilter ? { agentId: agentFilter } : {}) }),
-    [loadedFrom, loadedTo, agentFilter],
+    () => ({
+      from: loaded.from,
+      to: loaded.to,
+      ...(loaded.fromTs !== undefined && loaded.toTs !== undefined
+        ? { fromTs: loaded.fromTs, toTs: loaded.toTs }
+        : {}),
+      ...(agentFilter ? { agentId: agentFilter } : {}),
+    }),
+    [loaded.from, loaded.to, loaded.fromTs, loaded.toTs, agentFilter],
   );
 
   if (!projectId) return null;
@@ -435,6 +452,7 @@ export function UsagePage() {
               errors={data.errors}
               projectId={projectId}
               filters={errorFilters}
+              preset={loaded.preset === "custom" ? undefined : loaded.preset}
               // Clearing the log is a Project-level management operation, gated on the owner
               // by the route; a member reads the panel without the action.
               canClear={currentProject?.role === "owner"}

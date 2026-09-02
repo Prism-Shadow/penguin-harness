@@ -30,10 +30,9 @@ const item = (code: string): UsageErrorItem => ({
   message: `${code} went wrong`,
 });
 
-function errorsOf(items: UsageErrorItem[], clearable = items.length): UsageErrors {
+function errorsOf(items: UsageErrorItem[]): UsageErrors {
   return {
     total: items.length,
-    clearable,
     unexpected: items.length,
     topCode: null,
     recent: items,
@@ -45,7 +44,6 @@ const FILTERS: ErrorsFilters = { from: "2026-08-01", to: "2026-08-27" };
 function render(
   opts: {
     items?: UsageErrorItem[];
-    clearable?: number;
     canClear?: boolean;
     filters?: ErrorsFilters;
   } = {},
@@ -53,7 +51,7 @@ function render(
   const items = opts.items ?? [item("internal")];
   return renderToStaticMarkup(
     createElement(ErrorsPanel, {
-      errors: errorsOf(items, opts.clearable ?? items.length),
+      errors: errorsOf(items),
       projectId: "p1",
       filters: opts.filters ?? FILTERS,
       canClear: opts.canClear ?? true,
@@ -76,15 +74,6 @@ describe("ErrorsPanel clear action", () => {
     expect(empty).not.toContain(S.usage.errorsClear);
   });
 
-  it("is absent when every row in range is one no Project-scoped clear can take", () => {
-    // An admin's read includes unattributed rows (a login failure, a process crash); the delete
-    // never does. A window holding only those has rows on screen and nothing to clear, so the
-    // action must not be offered — it could only report "deleted 0".
-    expect(render({ items: [item("uncaught_exception")], clearable: 0 })).not.toContain(
-      S.usage.errorsClear,
-    );
-  });
-
   it("is absent while a date bound is blank: the sentence could not describe that delete", () => {
     // A cleared date input sends no bound, which the route reads as unbounded on that side —
     // wider than anything the confirmation's "records outside that range are kept" can promise.
@@ -100,9 +89,9 @@ describe("ErrorsPanel clear action", () => {
 
 describe("errorsClearScopeText", () => {
   for (const [locale, dict] of Object.entries({ zh, en })) {
-    it(`${locale}: names the date range, and the Agent when one is selected`, () => {
+    it(`${locale}: a custom range is named by its dates, and the Agent when one is selected`, () => {
       setActiveStrings(dict);
-      const ranged = errorsClearScopeText(FILTERS, 12);
+      const ranged = errorsClearScopeText(FILTERS, undefined, 12);
       expect(ranged).toContain("2026-08-01");
       expect(ranged).toContain("2026-08-27");
       expect(ranged).toContain("12");
@@ -110,16 +99,30 @@ describe("errorsClearScopeText", () => {
       // than the one about to run.
       expect(ranged).not.toContain("agent-7");
 
-      const perAgent = errorsClearScopeText({ ...FILTERS, agentId: "agent-7" }, 3);
+      const perAgent = errorsClearScopeText({ ...FILTERS, agentId: "agent-7" }, undefined, 3);
       expect(perAgent).toContain("agent-7");
       expect(perAgent).toContain("2026-08-01");
       expect(perAgent).toContain("3");
     });
+
+    it(`${locale}: a quick preset is named as the picker names it, never as the dates behind it`, () => {
+      setActiveStrings(dict);
+      for (const preset of ["1h", "1d", "7d", "30d", "90d"] as const) {
+        const text = errorsClearScopeText(FILTERS, preset, 12);
+        expect(text).toContain(dict.usage.errorsClearRangePreset(preset));
+        expect(text).not.toContain("2026-08-01");
+        expect(text).not.toContain("2026-08-27");
+        expect(text).toContain("12");
+      }
+      const perAgent = errorsClearScopeText({ ...FILTERS, agentId: "agent-7" }, "7d", 3);
+      expect(perAgent).toContain("agent-7");
+      expect(perAgent).toContain(dict.usage.errorsClearRangePreset("7d"));
+    });
   }
 
   it("an empty agentId is no filter at all (the panel's own spelling of 'all agents')", () => {
-    expect(errorsClearScopeText({ ...FILTERS, agentId: "" }, 4)).toBe(
-      errorsClearScopeText(FILTERS, 4),
+    expect(errorsClearScopeText({ ...FILTERS, agentId: "" }, "7d", 4)).toBe(
+      errorsClearScopeText(FILTERS, "7d", 4),
     );
   });
 });

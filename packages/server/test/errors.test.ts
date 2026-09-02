@@ -131,6 +131,31 @@ describe("errors-repo", () => {
     expect(repo.recent("p1", { agentId: "a1" })).toHaveLength(1);
   });
 
+  it("a trailing window narrows the dates to instants, both ends inclusive, for reads and the clear alike", () => {
+    const window = {
+      from: "2026-07-06",
+      to: "2026-07-06",
+      fromTs: "2026-07-06T10:00:00.000Z",
+      toTs: "2026-07-06T11:00:00.000Z",
+    };
+    for (const [time, message] of [
+      ["09:59:59.999", "just before"],
+      ["10:00:00.000", "at from"],
+      ["10:30:00.000", "inside"],
+      ["11:00:00.000", "at to"],
+      ["11:00:00.001", "just after"],
+    ] as const) {
+      repo.insert(row("2026-07-06", { ts: `2026-07-06T${time}Z`, message }));
+    }
+    // A row stamped exactly on either bound is inside the window …
+    expect(repo.summary("p1", window)).toEqual({ total: 3, unexpected: 3 });
+    expect(repo.recent("p1", window).map((r) => r.message)).toEqual(["at to", "inside", "at from"]);
+    // … and the clear of the same window takes exactly those, sparing the same day's rows a
+    // millisecond outside it.
+    expect(repo.deleteFiltered("p1", window)).toBe(3);
+    expect(repo.recent("p1").map((r) => r.message)).toEqual(["just after", "just before"]);
+  });
+
   it("recent errors: newest first, top limit rows", () => {
     repo.insert(row("2026-07-05", { message: "old" }));
     repo.insert(row("2026-07-06", { message: "new" }));
@@ -169,20 +194,24 @@ describe("errors-repo", () => {
     expect(repo.recent("p1").map((r) => r.message)).toEqual(["after-range", "before-range"]);
   });
 
-  it("deleteFiltered: never reaches unattributed rows or another Project's", () => {
-    // Unattributed rows appear in EVERY Project's admin view, so a Project-scoped clear that
-    // took them would empty them out of every other Project's panel as well.
+  it("deleteFiltered follows the caller's includeGlobal: a member's clear leaves unattributed rows, an admin's takes them", () => {
+    // Unattributed rows appear in every Project's admin view and in no member's. The clear
+    // reaches exactly what the caller's read reaches, so only a read that includes them
+    // deletes them; another Project's rows are out of reach either way.
     repo.insert(row("2026-07-06", { projectId: null, source: "process", message: "crash" }));
     repo.insert(row("2026-07-06", { projectId: "p-other", message: "other tenant" }));
     repo.insert(row("2026-07-06", { message: "mine" }));
-
-    expect(repo.deleteFiltered("p1")).toBe(1);
-    expect(
+    const remaining = () =>
       db
         .prepare("SELECT message FROM error_records ORDER BY id")
         .all()
-        .map((r) => r.message),
-    ).toEqual(["crash", "other tenant"]);
+        .map((r) => r.message);
+
+    expect(repo.deleteFiltered("p1")).toBe(1);
+    expect(remaining()).toEqual(["crash", "other tenant"]);
+
+    expect(repo.deleteFiltered("p1", { includeGlobal: true })).toBe(1);
+    expect(remaining()).toEqual(["other tenant"]);
   });
 
   // —— Row cap (the second line of defense against error storms; the first is ErrorRecorder's short-window dedup) ——
@@ -1131,11 +1160,6 @@ describe("HTTP onError persistence (integration)", () => {
     expect(adminBody.errors.total).toBe(1);
     expect(adminBody.errors.topCode).toMatchObject({ source: "http", code: "invalid_credentials" });
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
-    // …but not clear it. The clear confirmation states `clearable`, so what it promises is what
-    // the delete can really take: the read reaches this row, no Project-scoped delete does.
-    expect(adminBody.errors.clearable).toBe(0);
-    // A member's read never included them, so the two numbers are the same one.
-    expect(plainBody.errors.clearable).toBe(0);
   });
 
   it("the paged error route pages inside the caller's own tenant, at every offset", async () => {
@@ -1284,6 +1308,34 @@ describe("HTTP onError persistence (integration)", () => {
     expect(errorRows()).toHaveLength(0);
   });
 
+  it("a trailing-window clear deletes exactly the rows the window listed", async () => {
+    const day = "2026-07-06";
+    seedRow({ date: day, code: "before_window", ts: `${day}T09:59:59.999Z` });
+    seedRow({ date: day, code: "at_from", ts: `${day}T10:00:00.000Z` });
+    seedRow({ date: day, code: "at_to", ts: `${day}T11:00:00.000Z` });
+    seedRow({ date: day, code: "after_window", ts: `${day}T11:00:00.001Z` });
+    const window = `from=${day}&to=${day}&fromTs=${day}T10:00:00.000Z&toTs=${day}T11:00:00.000Z`;
+
+    // What the panel lists for the window …
+    const listed = (await (
+      await api.get(`/api/projects/${projectId}/usage/errors?offset=0&limit=20&${window}`)
+    ).json()) as UsageErrorsPage;
+    expect(listed.items.map((e) => e.code)).toEqual(["at_to", "at_from"]);
+    expect(listed.total).toBe(2);
+
+    // … is what the clear of the same window takes: the same day's rows a millisecond
+    // outside it stay.
+    const cleared = await api.delete(`/api/projects/${projectId}/usage/errors?${window}`);
+    expect(await cleared.json()).toEqual({ deleted: 2 });
+    expect(errorRows().map((r) => r.code)).toEqual(["before_window", "after_window"]);
+
+    // Half a window is refused, as the dashboard refuses it.
+    const half = await api.delete(
+      `/api/projects/${projectId}/usage/errors?fromTs=${day}T10:00:00.000Z`,
+    );
+    expect(half.status).toBe(400);
+  });
+
   it("a member cannot clear the log, so it is no route to the unattributed rows", async () => {
     seedRow({ date: "2026-07-06", code: "project_row" });
     seedRow({ date: "2026-07-06", code: "unattributed_row", projectId: null, source: "process" });
@@ -1319,10 +1371,10 @@ describe("HTTP onError persistence (integration)", () => {
     expect(seeded()).toEqual(["project_row", "unattributed_row"]);
   });
 
-  it("unattributed rows survive every clear, including an admin's own", async () => {
-    // They belong to no Project and show in EVERY Project's admin view, so a Project-scoped
-    // clear taking them would empty them out of every other Project's panel too. That keeps
-    // the delete strictly narrower than any caller's read, admin included.
+  it("an admin's clear takes the unattributed rows an admin's read showed", async () => {
+    // They show in every Project's admin view and in no member's, so the clear follows the
+    // read: the one person who can see them anywhere empties them from the panel that showed
+    // them, while a member's clear (whose read never lists them) never reaches them.
     const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     new ErrorsRepo(t.deps.db).insert({
       ts: "2026-07-06T00:00:00.000Z",
@@ -1343,8 +1395,8 @@ describe("HTTP onError persistence (integration)", () => {
     expect(before.items.map((e) => e.code)).toEqual(["uncaught_exception"]);
 
     const cleared = await adminApi.delete(`/api/projects/default_project/usage/errors`);
-    expect(await cleared.json()).toEqual({ deleted: 0 });
-    expect(errorRows().filter((r) => r.project_id === null)).toHaveLength(1);
+    expect(await cleared.json()).toEqual({ deleted: 1 });
+    expect(errorRows().filter((r) => r.project_id === null)).toHaveLength(0);
   });
 
   it("Project deletion cascade-cleans that Project's error records", async () => {

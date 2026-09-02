@@ -2323,10 +2323,19 @@ Scenarios:
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "in the last hour",
+        "1d": "in the last 24 hours",
+        "7d": "in the last 7 days",
+        "30d": "in the last 30 days",
+        "90d": "in the last 90 days",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `between ${from} and ${to}`,
+    errorsClearScope: (count: number, range: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} ${range}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} ${range}. Other agents and records outside that range are kept.`,
     errorsClearIrreversible: "This cannot be undone.",
     errorsClearDone: (count: number): string =>
       `Deleted ${count} error record${count === 1 ? "" : "s"}`,
