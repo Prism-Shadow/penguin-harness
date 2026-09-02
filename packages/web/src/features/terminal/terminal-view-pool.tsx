@@ -37,6 +37,22 @@ export function subscribeTerminalViewStates(listener: () => void): () => void {
 
 const IDLE_STATE: TerminalViewState = { status: "connecting", info: null };
 
+/**
+ * Listeners for a shown terminal asking to be closed (Ctrl+W inside it). A view knows only
+ * its own id, while the dock holding the tab owns the close path — the confirm-then-kill
+ * its × runs — so the request is relayed by id to whichever dock has that tab.
+ */
+const closeRequestListeners = new Set<(id: string) => void>();
+
+export function subscribeTerminalCloseRequests(listener: (id: string) => void): () => void {
+  closeRequestListeners.add(listener);
+  return () => closeRequestListeners.delete(listener);
+}
+
+function requestTerminalClose(id: string): void {
+  for (const listener of [...closeRequestListeners]) listener(id);
+}
+
 export function terminalViewState(id: string | null): TerminalViewState {
   return (id !== null ? viewStates.get(id) : undefined) ?? IDLE_STATE;
 }
@@ -132,6 +148,7 @@ export function TerminalDockRuntime() {
               void refreshTerminals();
             }}
             onTitle={(title) => noteTerminalTitle(id, title)}
+            onCloseRequest={() => requestTerminalClose(id)}
             className="min-h-0 flex-1 overflow-hidden"
           />,
           terminalViewContainer(id),
