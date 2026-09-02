@@ -103,7 +103,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 300;
  * failure (private mode) both helpers degrade to "not consumed", and the in-component
  * ref still provides the previous apply-once-per-mount behavior.
  */
-type RouteStateField = "agentId" | "workspace";
+type RouteStateField = "agentId" | "workspace" | "autoSend";
 function loadAppliedRouteKey(field: RouteStateField): string | null {
   try {
     return sessionStorage.getItem(`penguin.chatRouteApplied.${field}`);
@@ -251,7 +251,11 @@ export function DraftView({
   // on invalid value" effect would let the former write B in one render while the
   // latter, still judging by the stale closure's invalid value, writes the default
   // Agent and clobbers B.
-  const routeState = location.state as { agentId?: string; workspace?: string } | null;
+  const routeState = location.state as {
+    agentId?: string;
+    workspace?: string;
+    autoSend?: boolean;
+  } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
   /** One-shot marker for the project-default Agent (seeding precedence, see below). */
@@ -683,6 +687,60 @@ export function DraftView({
   const fillShortcut = useCallback((prompt: string) => {
     composerRef.current?.fillExample(prompt, []);
   }, []);
+
+  /**
+   * Auto-send for the "Create with AI" bridge (features/ai-create): the request arrives with
+   * `autoSend` in location.state and its prompt already in the draft cache, and the composer
+   * submits it — through the Send button's own path — once the send preconditions hold: the
+   * requested agent is the selected one, a model is known, and that agent's installed skills
+   * are loaded (a preselected skill is pruned against them first). Two steps rather than one:
+   * arming is state, so the submit runs one render later, after the composer's own pruning of
+   * the selection has committed. Consumed exactly once per history entry — the refs cover
+   * StrictMode's doubled effects and later dependency changes, the sessionStorage marker covers
+   * a reload (history.state keeps `autoSend`; see loadAppliedRouteKey). A Project with no model
+   * at all has nothing to send with: the marker is consumed and the prefilled draft stays, the
+   * ordinary draft state.
+   */
+  const autoSendRequested = routeState?.autoSend === true;
+  const autoSendConsumed = useRef(false);
+  const [autoSendArmed, setAutoSendArmed] = useState(false);
+  useEffect(() => {
+    if (!autoSendRequested || autoSendConsumed.current) return;
+    if (loadAppliedRouteKey("autoSend") === location.key) {
+      autoSendConsumed.current = true;
+      return;
+    }
+    if (!models) return;
+    const sendable = models.models.length > 0;
+    if (sendable) {
+      const wanted = stateAgentId ?? agentId;
+      const ready =
+        agentId !== null &&
+        agentId === wanted &&
+        agents.some((a) => a.agentId === agentId) &&
+        modelRef !== null &&
+        skillsLoaded;
+      if (!ready) return;
+    }
+    autoSendConsumed.current = true;
+    saveAppliedRouteKey("autoSend", location.key);
+    if (sendable) setAutoSendArmed(true);
+  }, [
+    autoSendRequested,
+    location.key,
+    models,
+    agents,
+    agentId,
+    stateAgentId,
+    modelRef,
+    skillsLoaded,
+  ]);
+  const autoSendFired = useRef(false);
+  useEffect(() => {
+    if (!autoSendArmed || autoSendFired.current) return;
+    autoSendFired.current = true;
+    composerRef.current?.submit();
+  }, [autoSendArmed]);
 
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
