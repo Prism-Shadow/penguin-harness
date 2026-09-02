@@ -127,10 +127,10 @@ function resolvePlugin(
 }
 
 /**
- * The builtin plugins a set of bases holds: every package under a builtin prefix's
- * node_modules (scoped or not) whose package.json declares `penguin`. These load without
- * being listed in plugins.json — they are part of the build, and a sandbox backend that does
- * not apply to this platform answers its probe with null rather than failing.
+ * The plugins a set of bases SHIPS: every package under a builtin prefix's node_modules
+ * (scoped or not) whose package.json declares `penguin`. Being shipped means installing one
+ * needs no download — it does not mean it is installed. Nothing here loads; the list is what
+ * marks a catalogue row as available offline and lets an install skip npm.
  */
 export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Promise<string[]> {
   const names: string[] = [];
@@ -297,10 +297,10 @@ function asPlugin(module: unknown): Plugin | null {
 export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const bases = pluginBases(root, await committedAssetsDir(root));
-  // The builtin plugins load unlisted; plugins.json adds to them. A listed builtin is one
-  // entry, not two.
-  const builtin = await discoverBuiltinPlugins(bases);
-  const specifiers = [...new Set([...builtin, ...(await readPluginList(root))])];
+  // What plugins.json lists, and nothing else. A plugin the BUILD ships is available without
+  // a download — that is what `builtin` means — but availability is not consent: it loads
+  // when an operator installs it, like every other plugin.
+  const specifiers = await readPluginList(root);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     try {

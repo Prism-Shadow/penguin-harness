@@ -973,12 +973,13 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
     }
   };
   const specifiers = (installed?.plugins ?? []).map((p) => p.specifier);
-  const stateOf = (name: string): "none" | "pending" | "active" | "builtin" => {
+  const stateOf = (name: string): "none" | "pending" | "active" => {
     const row = installed?.plugins.find((p) => p.specifier === name);
     if (row === undefined) return "none";
-    if (row.builtin) return "builtin";
     return row.active ? "active" : "pending";
   };
+  /** Shipped with this build: installable without a download, and NOT installed until asked. */
+  const isShipped = (name: string) => installed?.shipped.includes(name) === true;
   /**
    * Sources that answered with nothing. A published index that is down shortens this listing
    * instead of emptying it (the server merges tolerantly), so the section has to say so — a
@@ -1033,6 +1034,7 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
               key={`${plugin.name}@${plugin.version}`}
               plugin={plugin}
               state={stateOf(plugin.name)}
+              shipped={isShipped(plugin.name)}
               busy={pendingSpecifier === plugin.name}
               blocked={pendingSpecifier !== null && pendingSpecifier !== plugin.name}
               onInstall={isAdmin ? () => void runInstall(plugin.name, true) : null}
@@ -1061,13 +1063,16 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
 function RegistryRow({
   plugin,
   state,
+  shipped,
   busy,
   blocked,
   onInstall,
   onRemove,
 }: {
   plugin: PluginIndexEntry;
-  state: "none" | "pending" | "active" | "builtin";
+  state: "none" | "pending" | "active";
+  /** The build carries this one: installing it copies nothing over the network. */
+  shipped: boolean;
   /** This row's own install or removal is running. */
   busy: boolean;
   /** Another row's is: one npm at a time, so the rest are held rather than queued. */
@@ -1076,11 +1081,7 @@ function RegistryRow({
   onRemove: (() => void) | null;
 }) {
   const chip =
-    state === "builtin" ? (
-      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-        {S.plugins.builtin}
-      </span>
-    ) : state === "active" ? (
+    state === "active" ? (
       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.success}`}>
         {S.plugins.stateActive}
       </span>
@@ -1089,6 +1090,14 @@ function RegistryRow({
         {S.plugins.installedRestart}
       </span>
     ) : null;
+  const shippedTag = shipped ? (
+    <span
+      title={S.plugins.builtinHint}
+      className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+    >
+      {S.plugins.builtin}
+    </span>
+  ) : null;
   return (
     <div className="flex items-stretch rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
       <Link
@@ -1116,7 +1125,7 @@ function RegistryRow({
               {plugin.description}
             </p>
           </div>
-          {chip === null && onInstall === null && (
+          {chip === null && onInstall === null && shippedTag === null && (
             <GlyphIcon
               d="M9 6l6 6-6 6"
               size={14}
@@ -1136,8 +1145,9 @@ function RegistryRow({
           ))}
         </div>
       </Link>
-      {(chip !== null || onInstall !== null) && (
+      {(chip !== null || onInstall !== null || shippedTag !== null) && (
         <div className="flex shrink-0 flex-col items-end justify-center gap-1 py-3 pr-4 pl-1">
+          {state === "none" && shippedTag}
           {state === "none"
             ? onInstall !== null && (
                 <Button variant="primary" size="sm" disabled={busy || blocked} onClick={onInstall}>
@@ -1145,7 +1155,7 @@ function RegistryRow({
                 </Button>
               )
             : chip}
-          {state !== "none" && state !== "builtin" && onRemove !== null && (
+          {state !== "none" && onRemove !== null && (
             <button
               type="button"
               disabled={busy || blocked}
