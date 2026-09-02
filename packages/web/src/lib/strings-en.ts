@@ -2438,6 +2438,8 @@ Scenarios:
     orgSettings: "Organization settings",
     orgInvalid: "Invalid configuration",
     orgPaused: "Paused",
+    /** The switcher's check mark beside the open organization (sr text). */
+    switcherCurrent: "Current organization",
     /** `<project> / <org>` in the switcher: the Project half of the label. */
     inProject: (project: string, org: string): string => `${project} / ${org}`,
     /** The empty landing of `/org` when the user has no organization anywhere. */
@@ -2457,6 +2459,24 @@ Scenarios:
     missionPlaceholder:
       "e.g. Maintain the PenguinHarness docs site and publish a weekly update digest",
     createdOpeningCeo: "Organization created — opening the CEO's desk session",
+    /** Create and settings dialogs: the model and the shared workspace, both optional. */
+    modelField: "Model",
+    modelInfo:
+      "The model desk and ticket sessions run on by default; an employee given its own model in the org chart uses that instead. Takes effect from the next work round.",
+    modelHint: "Leave empty to use the Project's default model",
+    modelProjectDefault: "Project default",
+    modelProjectDefaultNamed: (name: string): string => `Project default (${name})`,
+    modelsLoadFailed:
+      "The model list could not be read; you can still create with the Project default",
+    workspaceField: "Company workspace",
+    workspaceInfo:
+      "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
+    workspaceHint:
+      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
+    workspaceEmpty: "The organization's own workspace/ directory",
+    workspaceMenuHint: "Pick an existing directory as the company workspace",
+    workspaceClear: "Back to the organization's own directory",
+    creating: "Creating…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "Organization settings",
     timezone: "Timezone",
@@ -2481,6 +2501,7 @@ Scenarios:
     deleteOrgConfirm: (name: string): string =>
       `Delete organization "${name}"? Employee Agents and every session are kept; only the organization directory goes — the chart, calendar, tickets and chat log.`,
     deleted: "Organization deleted",
+    settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {
       running: "Running",
@@ -2504,6 +2525,10 @@ Scenarios:
       empty: "No sessions in this organization yet",
       untitledSession: "Untitled session",
       loading: "Loading…",
+      loadFailed: "The session list could not be loaded",
+      viewInChart: "Show on the org chart",
+      viewTicket: "Open the ticket",
+      rowMenu: (name: string): string => `${name}: more actions`,
     },
     overview: {
       title: "Overview",
@@ -2532,6 +2557,43 @@ Scenarios:
       /** A fresh organization: point the user at the CEO. */
       firstStep:
         "The organization is brand new: open the CEO's desk session to confirm the mission, hire employees and set up the calendar.",
+      /** The hero: who made it, how big it is, which period the spend counts. */
+      createdBy: (user: string): string => `Created by ${user}`,
+      employeesCount: (n: number): string => `${n} employee${n === 1 ? "" : "s"}`,
+      period: (period: string): string => `Period ${period}`,
+      openCeoDesk: "Open the CEO's desk",
+      refreshFailed: "The refresh failed; this is the last data read",
+      /** The KPI strip. */
+      openTickets: "Open tickets",
+      boardTotal: (n: number): string => `${n} in total`,
+      todayCount: (n: number): string => `${n} event${n === 1 ? "" : "s"}`,
+      upcoming: "Upcoming",
+      failed: "Not on time",
+      budgetLeft: (amount: string): string => `${amount} left`,
+      overBudget: (amount: string): string => `${amount} over`,
+      /** The three first steps of a new organization (replaces the empty sections). */
+      firstStepsTitle: "First steps",
+      firstStepsInfo:
+        "The guide for a brand-new organization: talk to the CEO about the mission, hire, schedule. Once the first employee is hired or the first ticket filed, the dashboard takes its place.",
+      stepCeoTitle: "Talk to the CEO",
+      stepCeoBody:
+        "Open the CEO's desk session, confirm the mission and let it propose the structure and the first tickets.",
+      stepHireTitle: "Hire employees",
+      stepHireBody:
+        "On the org chart, hire subordinates for the CEO: an existing Agent or a new one, with a title and a budget.",
+      stepScheduleTitle: "Schedule the work",
+      stepScheduleBody:
+        "On the calendar, give employees their rounds: when one is due, its prompt goes to the employee's desk session.",
+      stepDone: "Done",
+      goToChart: "Open the org chart",
+      goToCalendar: "Open the calendar",
+      /** "For me" rows. */
+      openMentions: "Read them in chat",
+      reviewHint: "Drag to Done once it passes review, otherwise reject with a reason",
+      blockedHint: "Unblock it from the ticket's details",
+      /** Today's timeline. */
+      timelineMore: (n: number): string => `${n} more — open the calendar`,
+      viewAll: "View all",
     },
     calendarOutcomes: {
       fired: "Fired",

@@ -2389,6 +2389,8 @@ Benchmark：
     orgSettings: "组织设置",
     orgInvalid: "配置无效",
     orgPaused: "已暂停",
+    /** The switcher's check mark beside the open organization (sr text). */
+    switcherCurrent: "当前组织",
     /** `<project> / <org>` in the switcher: the Project half of the label. */
     inProject: (project: string, org: string): string => `${project} / ${org}`,
     /** The empty landing of `/org` when the user has no organization anywhere. */
@@ -2405,6 +2407,22 @@ Benchmark：
     missionHint: "一句话说明这个组织存在的目的；CEO 的初始化会话从它开始",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
     createdOpeningCeo: "组织已创建，正在打开 CEO 的工位会话",
+    /** Create and settings dialogs: the model and the shared workspace, both optional. */
+    modelField: "模型",
+    modelInfo:
+      "工位会话与工单会话默认使用的模型；员工在组织图里另有指定时以员工的为准。改动从下一次工作轮起生效。",
+    modelHint: "留空则使用 Project 的默认模型",
+    modelProjectDefault: "Project 默认",
+    modelProjectDefaultNamed: (name: string): string => `Project 默认（${name}）`,
+    modelsLoadFailed: "模型列表读取失败；仍可按 Project 默认模型创建",
+    workspaceField: "公司工作区",
+    workspaceInfo:
+      "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
+    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
+    workspaceEmpty: "组织自己的 workspace/ 目录",
+    workspaceMenuHint: "选一个已存在的目录作为公司工作区",
+    workspaceClear: "改回组织自己的目录",
+    creating: "创建中…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
     timezone: "时区",
@@ -2428,6 +2446,7 @@ Benchmark：
     deleteOrgConfirm: (name: string): string =>
       `确认删除组织「${name}」？员工 Agent 与所有会话都会保留，删除的只是组织目录：组织图、日程、工单与群聊记录。`,
     deleted: "组织已删除",
+    settingsLoadFailed: "组织设置读取失败",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {
       running: "运行中",
@@ -2451,6 +2470,10 @@ Benchmark：
       empty: "这个组织还没有会话",
       untitledSession: "未命名会话",
       loading: "加载中…",
+      loadFailed: "会话列表加载失败",
+      viewInChart: "在组织图中查看",
+      viewTicket: "查看工单",
+      rowMenu: (name: string): string => `${name}：更多操作`,
     },
     overview: {
       title: "概览",
@@ -2478,6 +2501,40 @@ Benchmark：
       openChat: "打开群聊",
       /** A fresh organization: point the user at the CEO. */
       firstStep: "组织刚建立：先打开 CEO 的工位会话，确认使命、招募员工并安排日程。",
+      /** The hero: who made it, how big it is, which period the spend counts. */
+      createdBy: (user: string): string => `由 ${user} 创建`,
+      employeesCount: (n: number): string => `${n} 位员工`,
+      period: (period: string): string => `${period} 周期`,
+      openCeoDesk: "打开 CEO 工位",
+      refreshFailed: "刷新失败，显示的是上次读取的数据",
+      /** The KPI strip. */
+      openTickets: "未完结工单",
+      boardTotal: (n: number): string => `共 ${n} 张`,
+      todayCount: (n: number): string => `${n} 项`,
+      upcoming: "待触发",
+      failed: "未按时",
+      budgetLeft: (amount: string): string => `剩余 ${amount}`,
+      overBudget: (amount: string): string => `超支 ${amount}`,
+      /** The three first steps of a new organization (replaces the empty sections). */
+      firstStepsTitle: "三步上手",
+      firstStepsInfo:
+        "组织刚建立时的引导：和 CEO 谈使命、招募员工、安排日程。招到第一位员工或开出第一张工单后，这里换成日常仪表盘。",
+      stepCeoTitle: "和 CEO 谈使命",
+      stepCeoBody: "打开 CEO 的工位会话，确认使命，让它提出组织结构与首批工单。",
+      stepHireTitle: "招募员工",
+      stepHireBody: "在组织图里为 CEO 招募下属：选已有 Agent 或新建一个，给头衔与预算。",
+      stepScheduleTitle: "安排日程",
+      stepScheduleBody: "在日历里为员工安排巡检：到点即向它的工位会话发送提示词。",
+      stepDone: "已完成",
+      goToChart: "去组织图",
+      goToCalendar: "去日历",
+      /** "For me" rows. */
+      openMentions: "去群聊查看",
+      reviewHint: "审核通过拖到「已完成」，否则拒绝并写明理由",
+      blockedHint: "在工单详情里解除阻塞",
+      /** Today's timeline. */
+      timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
+      viewAll: "查看全部",
     },
     calendarOutcomes: {
       fired: "已触发",
