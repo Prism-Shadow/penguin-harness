@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#586](https://github.com/Prism-Shadow/penguin-harness/pull/586)
 
 [English](2026-09-02-dock-floating-launcher.md)
 
