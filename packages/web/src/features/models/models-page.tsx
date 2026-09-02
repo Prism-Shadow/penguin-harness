@@ -58,6 +58,8 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { AiCreateButton, AiCreateModal } from "../ai-create";
+import { modelsAiExamples, modelsAiTail } from "./models-ai-prompts";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -601,7 +603,7 @@ const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 
 export function ModelsPage() {
   useDocumentTitle(S.models.title);
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
@@ -677,6 +679,8 @@ export function ModelsPage() {
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  /** "Add models with AI" dialog: the prompt goes to the Project's default agent (models-ai-prompts.ts). */
+  const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1033,6 +1037,14 @@ export function ModelsPage() {
                     </>
                   )}
                 </Button>
+              )}
+              {isOwner && (
+                <AiCreateButton
+                  size="sm"
+                  label={S.models.aiAdd}
+                  disabled={rows === null}
+                  onClick={() => setAiAddOpen(true)}
+                />
               )}
             </div>
           </div>
@@ -1479,6 +1491,22 @@ export function ModelsPage() {
           </div>
         </Modal>
       )}
+      {/* The AI path for what the group import cannot read: a listing page that is not an
+          OpenAI-compatible /models endpoint, or a service described in words. The table reloads
+          on every mount, so the group the agent adds is there when the page is next visited. */}
+      {projectId !== null && (
+        <AiCreateModal
+          open={aiAddOpen}
+          onClose={() => setAiAddOpen(false)}
+          title={S.models.aiAddTitle}
+          description={S.models.aiAddIntro}
+          placeholder={S.models.aiAddPlaceholder}
+          examples={modelsAiExamples()}
+          tail={modelsAiTail(projectId)}
+          agents={agents}
+        />
+      )}
+
       {rows && addGroupOpen && (
         <AddGroupDialog
           projectId={projectId}
