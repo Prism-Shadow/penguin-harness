@@ -243,6 +243,46 @@ export interface Messages {
     colLastFired(): string;
     colStatus(): string;
   };
+  /** `penguin app`: the App Center registry (a validated writer over the apps API; the TOML file under the Project's apps/ stays the truth). */
+  app: {
+    desc: string;
+    lsDesc: string;
+    registerDesc: string;
+    unregisterDesc: string;
+    statusDesc: string;
+    /** --name: display name (the id is derived from it unless --id is given). */
+    name: string;
+    /** --id: explicit id (file name); registering an existing id updates it in place. */
+    id: string;
+    description: string;
+    /** --url: the local URL the app serves at (also the probe target unless --health-url is given). */
+    url: string;
+    healthUrl: string;
+    startCommand: string;
+    stopCommand: string;
+    /** --kind: web / api / cli / other (default web). */
+    kind: string;
+    /** --session-id: the owning Session (defaults to PENGUIN_SESSION_ID, the calling Session). */
+    sessionId: string;
+    /** --workspace: overrides the owning Session's Workspace. */
+    workspace: string;
+    /** Neither --session-id nor PENGUIN_SESSION_ID: an app must bind to a Session. */
+    sessionRequired(): string;
+    kindInvalid(value: string): string;
+    registered(id: string, name: string, url: string | undefined): string;
+    updated(id: string, name: string, url: string | undefined): string;
+    unregistered(id: string): string;
+    /** `status`: one line with the probed status and the URL when there is one. */
+    statusLine(id: string, status: string, url: string | undefined): string;
+    empty(projectId: string): string;
+    colId(): string;
+    colName(): string;
+    colKind(): string;
+    colStatus(): string;
+    colUrl(): string;
+    colSession(): string;
+    colRegistered(): string;
+  };
   /** Server-connection layer: resolution, auto-start, tokens, streams. */
   client: {
     invalidServerUrl(value: string): string;
@@ -763,6 +803,42 @@ const en: Messages = {
     colLastFired: () => "LAST FIRED",
     colStatus: () => "STATUS",
   },
+  app: {
+    desc: "Manage the App Center registry",
+    lsDesc: "List the project's registered apps with their probed status",
+    registerDesc:
+      "Register an app built in this Session (the app binds to the Session; an existing --id is updated in place)",
+    unregisterDesc:
+      "Remove an app from the App Center (no prompt; the server's owner authorization applies)",
+    statusDesc: "Probe one app's status now",
+    name: "Display name (the id is derived from it unless --id is given)",
+    id: "Explicit id (letters, digits, _ and -); registering an existing id updates it",
+    description: "One-line description",
+    url: "Local URL the app serves at, e.g. http://localhost:3000 (also the status probe target)",
+    healthUrl: "URL to probe instead of --url",
+    startCommand: "Command that starts the app (sent back to the Session on restart)",
+    stopCommand: "Command that stops the app (sent back to the Session on stop / restart)",
+    kind: "web, api, cli or other (default web)",
+    sessionId: "Owning Session id (defaults to PENGUIN_SESSION_ID, the calling Session)",
+    workspace: "Workspace path (defaults to the owning Session's Workspace)",
+    sessionRequired: () =>
+      "An app binds to a Session: pass --session-id, or run this inside a harness Session (PENGUIN_SESSION_ID).",
+    kindInvalid: (value) => `Unknown kind "${value}": expected web, api, cli or other.`,
+    registered: (id, name, url) =>
+      `App ${id} registered (${name}${url !== undefined ? `, ${url}` : ""}).`,
+    updated: (id, name, url) =>
+      `App ${id} updated (${name}${url !== undefined ? `, ${url}` : ""}).`,
+    unregistered: (id) => `App ${id} unregistered.`,
+    statusLine: (id, status, url) => `${id}: ${status}${url !== undefined ? ` (${url})` : ""}`,
+    empty: (projectId) => `No registered apps in project ${projectId}.`,
+    colId: () => "ID",
+    colName: () => "NAME",
+    colKind: () => "KIND",
+    colStatus: () => "STATUS",
+    colUrl: () => "URL",
+    colSession: () => "SESSION",
+    colRegistered: () => "REGISTERED",
+  },
   client: {
     invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
     remoteNeedsToken: (url) =>
@@ -1273,6 +1349,40 @@ const zh: Messages = {
     colTarget: () => "目标",
     colLastFired: () => "最近触发",
     colStatus: () => "状态",
+  },
+  app: {
+    desc: "管理应用中心",
+    lsDesc: "列出 Project 已登记的应用及其探测状态",
+    registerDesc: "登记本会话里做出来的应用（应用绑定到会话；已存在的 --id 原地更新）",
+    unregisterDesc: "从应用中心移除应用（不做确认；服务端的 owner 授权照旧生效）",
+    statusDesc: "立即探测某个应用的状态",
+    name: "显示名称（未指定 --id 时据此生成 id）",
+    id: "显式 id（字母、数字、_ 与 -）；登记已存在的 id 即更新",
+    description: "一句话描述",
+    url: "应用的本地地址，如 http://localhost:3000（同时是状态探测目标）",
+    healthUrl: "改用此地址探测（代替 --url）",
+    startCommand: "启动应用的命令（重启时发回会话）",
+    stopCommand: "停止应用的命令（停止 / 重启时发回会话）",
+    kind: "web、api、cli 或 other（缺省 web）",
+    sessionId: "所属会话 id（缺省取 PENGUIN_SESSION_ID，即调用方所在会话）",
+    workspace: "Workspace 路径（缺省取所属会话的 Workspace）",
+    sessionRequired: () =>
+      "应用须绑定到会话：请传 --session-id，或在 harness 会话内运行（PENGUIN_SESSION_ID）。",
+    kindInvalid: (value) => `未知类型「${value}」：应为 web、api、cli 或 other。`,
+    registered: (id, name, url) =>
+      `应用 ${id} 已登记（${name}${url !== undefined ? `，${url}` : ""}）。`,
+    updated: (id, name, url) =>
+      `应用 ${id} 已更新（${name}${url !== undefined ? `，${url}` : ""}）。`,
+    unregistered: (id) => `应用 ${id} 已移除。`,
+    statusLine: (id, status, url) => `${id}：${status}${url !== undefined ? `（${url}）` : ""}`,
+    empty: (projectId) => `Project ${projectId} 没有已登记的应用。`,
+    colId: () => "ID",
+    colName: () => "名称",
+    colKind: () => "类型",
+    colStatus: () => "状态",
+    colUrl: () => "地址",
+    colSession: () => "会话",
+    colRegistered: () => "登记时间",
   },
   client: {
     invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,
