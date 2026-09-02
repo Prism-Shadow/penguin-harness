@@ -3617,6 +3617,11 @@ export interface InstalledPlugin {
   specifier: string;
   /** Whether the modules this package declares are all present in the running process. */
   active: boolean;
+  /**
+   * Shipped with the build (a hot push's assets, or the installation's own `plugins/`)
+   * rather than installed by an operator: loads without being listed, cannot be removed.
+   */
+  builtin: boolean;
   /** Module names the package declares it adds. */
   modules: string[];
   /** Node names the package declares it stands in for. */

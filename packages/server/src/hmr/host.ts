@@ -106,8 +106,20 @@ export interface GitSource {
  * fails to load from a bundle placed outside the server's own module graph).
  */
 export interface UpgradeAssets {
-  /** relPath → base64 content. */
-  files: Record<string, string>;
+  /**
+   * relPath → base64 content: the whole set inline. The original shape, and what a pusher
+   * that never probed sends; every file arrives whether or not this store holds it.
+   */
+  files?: Record<string, string>;
+  /**
+   * relPath → the sha256 of its content, for a pusher that probed first (POST
+   * /api/hmr/assets/probe): only the blobs the store lacks travel in `blobs`, the rest are
+   * named and expected to be here already. A named blob that is neither is a refused push,
+   * not a silent hole in the assets.
+   */
+  manifest?: Record<string, { sha: string }>;
+  /** sha256 → base64 content, for the manifest entries this store was missing. */
+  blobs?: Record<string, string>;
   /** relPaths that must land executable (a helper binary the platform spawns). */
   exec?: string[];
 }
@@ -118,6 +130,13 @@ export interface UpgradeAssets {
  * manifest. All three travel in the SAME request — there is no partial-target
  * upgrade.
  */
+/** One materialized assets directory's own record of what it was built from. */
+interface AssetsRecord {
+  /** relPath → sha256, the same map the pusher named (or the one derived from inline files). */
+  files: Record<string, string>;
+}
+const ASSETS_RECORD = ".manifest.json";
+
 export interface UpgradeAllTarget {
   platform: string;
   cli: string;
@@ -537,26 +556,86 @@ export class HmrHost {
    * push interrupted halfway is repaired rather than trusted.
    */
   private async materializeAssets(assets: UpgradeAssets): Promise<string> {
-    const sha = filesDigest(assets.files).slice(0, 16);
+    // Both payload shapes become one map of relPath → sha256, with the bytes of any blob
+    // that arrived inline stored under its hash first. Inline files (the v1 shape) are
+    // hashed here; a manifest (v2) names its hashes and ships only what the probe said was
+    // missing. From here on the two are the same thing.
+    const files: Record<string, string> = {};
+    if (assets.files !== undefined) {
+      for (const [rel, b64] of Object.entries(assets.files)) {
+        if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+        files[rel] = await this.storeBlob(Buffer.from(b64, "base64"));
+      }
+    }
+    if (assets.manifest !== undefined) {
+      for (const [sha, b64] of Object.entries(assets.blobs ?? {})) {
+        const stored = await this.storeBlob(Buffer.from(b64, "base64"));
+        if (stored !== sha) throw new Error(`blob ${sha} does not hash to its name`);
+      }
+      for (const [rel, entry] of Object.entries(assets.manifest)) {
+        if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+        if (!/^[0-9a-f]{64}$/.test(entry.sha)) throw new Error(`bad blob name for ${rel}`);
+        if (!fs.existsSync(this.blobPath(entry.sha))) {
+          throw new Error(
+            `assets manifest names blob ${entry.sha.slice(0, 12)} for ${rel}, which this store does not hold — push again without the probe`,
+          );
+        }
+        files[rel] = entry.sha;
+      }
+    }
+
+    const sha = recordDigest(files).slice(0, 16);
     const dir = path.join(this.storeDir, "assets", sha);
     const marker = path.join(dir, MATERIALIZED);
     if (fs.existsSync(marker)) return dir;
 
     const exec = new Set(assets.exec ?? []);
-    for (const [rel, b64] of Object.entries(assets.files)) {
-      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+    for (const [rel, blob] of Object.entries(files)) {
       const file = path.join(dir, rel);
-      const content = Buffer.from(b64, "base64");
       await fsp.mkdir(path.dirname(file), { recursive: true });
-      // Repairing an incomplete directory: whatever already matches is left alone, for the
-      // same reason the whole directory is skipped above.
+      // Repairing an incomplete directory: whatever already matches is left alone. The
+      // content comes from the blob store, never from the payload — after the first push
+      // of a given file the payload does not carry it any more.
+      const content = await fsp.readFile(this.blobPath(blob));
       if (!(await sameFileContent(file, content))) await fsp.writeFile(file, content);
       // Explicit chmod: writeFile's mode is masked by umask, and ignored outright when
       // the file already exists (a reused, content-addressed directory).
       await fsp.chmod(file, exec.has(rel) ? 0o755 : 0o644);
     }
+    const record: AssetsRecord = { files };
+    await fsp.writeFile(path.join(dir, ASSETS_RECORD), JSON.stringify(record));
     await fsp.writeFile(marker, sha);
     return dir;
+  }
+
+  /** `store/blobs/<sha256>`: one file per distinct content, shared by every assets set. */
+  private blobPath(sha: string): string {
+    return path.join(this.storeDir, "blobs", sha);
+  }
+
+  /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
+  private async storeBlob(content: Buffer): Promise<string> {
+    const sha = crypto.createHash("sha256").update(content).digest("hex");
+    const file = this.blobPath(sha);
+    if (!fs.existsSync(file)) {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      // Written beside and renamed in: a crash mid-write must not leave a blob whose name
+      // promises content it does not have.
+      const tmp = `${file}.${process.pid}.tmp`;
+      await fsp.writeFile(tmp, content);
+      await fsp.rename(tmp, file);
+    }
+    return sha;
+  }
+
+  /**
+   * Which of these blobs the store does NOT hold — what a pusher asks before it sends, so
+   * an unchanged native module or plugin never crosses the wire twice.
+   */
+  missingBlobs(hashes: readonly string[]): string[] {
+    return hashes.filter(
+      (sha) => !/^[0-9a-f]{64}$/.test(sha) || !fs.existsSync(this.blobPath(sha)),
+    );
   }
 
   /** Points the registry at this version's assets (or clears it when a push has none). */
@@ -724,6 +803,30 @@ export class HmrHost {
       assetsRef,
       (sha) => fsp.rm(path.join(assetsRoot, sha), { recursive: true, force: true }),
     );
+
+    // Blobs are shared by every assets set, so they are collected LAST, against what the
+    // sweep above left: a blob no remaining set records is unreachable. A set without a
+    // record (materialized before records existed) keeps nothing alive through the blob
+    // store because it never read from it, and its own files stay untouched.
+    const live = new Set<string>();
+    for (const name of await fsp.readdir(assetsRoot).catch(() => [] as string[])) {
+      try {
+        const record = JSON.parse(
+          await fsp.readFile(path.join(assetsRoot, name, ASSETS_RECORD), "utf8"),
+        ) as AssetsRecord;
+        for (const sha of Object.values(record.files)) live.add(sha);
+      } catch {
+        // No record, or an unreadable one: nothing to keep alive from here.
+      }
+    }
+    const blobsDir = path.join(this.storeDir, "blobs");
+    for (const name of await fsp.readdir(blobsDir).catch(() => [] as string[])) {
+      if (/^[0-9a-f]{64}$/.test(name) && !live.has(name)) {
+        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
+      } else if (name.endsWith(".tmp")) {
+        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
+      }
+    }
   }
 
   /** Process-exit sweep only; never part of an upgrade. */
@@ -740,6 +843,17 @@ function errMsg(err: unknown): string {
 
 function sha1(content: string): string {
   return crypto.createHash("sha1").update(content).digest("hex");
+}
+
+/**
+ * The name of a materialized assets directory: a hash over relPath → sha256, so the same
+ * files name the same directory whether they arrived inline or by manifest, and a set is
+ * never written twice.
+ */
+function recordDigest(files: Record<string, string>): string {
+  const hash = crypto.createHash("sha1");
+  for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
+  return hash.digest("hex");
 }
 
 /** Content hash over a web dist manifest: stable across re-pushes of identical content. */
