@@ -148,11 +148,8 @@ import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
-import {
-  agentHooksRoutes,
-  agentPluginsRoutes,
-  pluginLibraryRoutes,
-} from "./http/routes/plugins.js";
+import { agentHooksRoutes } from "./http/routes/hooks.js";
+import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";

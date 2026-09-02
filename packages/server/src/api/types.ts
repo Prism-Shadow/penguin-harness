@@ -3060,6 +3060,8 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
+  /** `false` when the manifest says `enabled: false`: the package stays installed, but no Session created from then on consults it (PATCH …/hooks/:name switches it). */
+  enabled: boolean;
   /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
   icon?: string;
 }
@@ -3127,6 +3129,26 @@ export interface AgentSkillsResponse {
 /** GET /api/projects/:p/agents/:a/hooks: hook packages installed on this Agent; DELETE …/hooks/:name uninstalls one (204). */
 export interface AgentHooksResponse {
   hooks: HookItem[];
+}
+
+/** PATCH /api/projects/:p/agents/:a/hooks/:name (owner only): switch one installed package on or off. 200 returns the updated HookItem; 404 when it is not installed. */
+export interface HookUpdateRequest {
+  enabled: boolean;
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/hooks/archive: install one hook package from an uploaded zip.
+ * Layout: hooks.json and its scripts at the zip root, or exactly one top-level directory
+ * containing them (the directory name is then the package name). 201 returns the refreshed
+ * installed list (AgentHooksResponse); an already-installed name without `overwrite` is 409
+ * `hook_exists`. GET …/hooks/:name/archive is the matching export: the installed directory as
+ * a zip attachment, which round-trips through this POST.
+ */
+export interface HookArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace an installed package of the same name instead of answering 409. */
+  overwrite?: boolean;
 }
 
 /**
