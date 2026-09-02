@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#592](https://github.com/Prism-Shadow/penguin-harness/pull/592)
 
 [English](2026-09-02-hooks-enable-import-export.md)
 
