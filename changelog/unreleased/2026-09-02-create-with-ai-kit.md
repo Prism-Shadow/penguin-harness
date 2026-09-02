@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#583](https://github.com/Prism-Shadow/penguin-harness/pull/583)
 
 [中文版](2026-09-02-create-with-ai-kit.zh.md)
 
