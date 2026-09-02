@@ -97,13 +97,12 @@ export function SkillTile({
   size?: number;
   /** Icon edge in px. */
   glyph?: number;
-  className?: string;
 }) {
   return (
     <span
       aria-hidden
       style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)} ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)}`}
     >
       <SkillIcon icon={icon} fallback={fallback} size={glyph} />
     </span>
