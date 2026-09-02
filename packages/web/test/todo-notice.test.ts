@@ -71,7 +71,7 @@ describe("the notice block is the one shape on every page that has one", () => {
     expect(sites.map((s) => s.file).sort()).toEqual([
       "features/agents/agents-page.tsx",
       "features/models/models-page.tsx",
-      "features/skills/skills-page.tsx",
+      "features/plugins/plugins-page.tsx",
       "features/usage/usage-page.tsx",
     ]);
   });
@@ -89,7 +89,7 @@ describe("the notice block is the one shape on every page that has one", () => {
     expect(withAction.sort()).toEqual([
       "features/agents/agents-page.tsx",
       "features/models/models-page.tsx",
-      "features/skills/skills-page.tsx",
+      "features/plugins/plugins-page.tsx",
     ]);
   });
 });

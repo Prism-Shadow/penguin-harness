@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "plugins/*"
 # Dependency pins. pnpm 11 reads overrides ONLY from here — the package.json
 # "pnpm.overrides" block it used to honour is silently ignored, which resolved a second
 # copy of each of these.

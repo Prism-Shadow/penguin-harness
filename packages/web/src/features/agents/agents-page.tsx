@@ -5,21 +5,27 @@
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * tool / skill / memory / vault-key / schedule counts deep-link to the settings page's matching
- * tab (?tab=tools|skills|memory|vault|schedules) and appear in the settings tabs' order.
+ * tool / skill / hook / memory / vault-key / schedule counts deep-link to the settings page's
+ * matching tab (?tab=tools|skills|hooks|memory|vault|schedules) and appear in the settings tabs'
+ * order.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
  * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
- * (tooltip shows the full name); "Create Agent" fills in name + description and picks the Skills
- * the new Agent starts with — from the library, and from a project directory's .agents/skills or
- * .claude/skills — through form-variant dropdowns over the shared multi-select panel, with select
- * all / select none. A plain new Agent otherwise starts with none.
+ * (tooltip shows the full name); "Create Agent" fills in name + description and picks what the
+ * new Agent starts with — plugins from the library (each one's skills and hook package), and
+ * Skills from a project directory's .agents/skills or .claude/skills — through form-variant
+ * dropdowns over the shared multi-select panel, with select all / select none. A plain new Agent
+ * otherwise starts with none.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
-import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import type {
+  AgentCreateRequest,
+  PluginItem,
+  SkillMetadataItem,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -46,7 +52,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { GEAR_ICON } from "../../components/ui/icons";
+import { GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -61,6 +67,7 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { CloseIcon } from "../../components/ui/icons";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
+import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -80,7 +87,7 @@ const CARD_ICONS = {
   vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
   /** Schedule count (alarm clock: dial + hands + twin bells, distinct from the plain clock face used for "last modified") */
   schedules: "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5",
-  /** Installed skill count (open book, same family as the skill library) */
+  /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
@@ -97,6 +104,15 @@ const CARD_ICONS = {
 const STAT_LINK_CLASS =
   "inline-flex shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
   "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
+
+/**
+ * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
+ * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
+ * puzzle piece rather than the book.
+ */
+function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: PLUGIN_ICON }));
+}
 
 export function AgentsPage() {
   const navigate = useNavigate();
@@ -117,21 +133,21 @@ export function AgentsPage() {
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   /**
-   * Skill library for the create dialog's picker, flattened out of its groups: the picker is a
+   * Plugin library for the create dialog's picker, flattened out of its groups: the picker is a
    * flat searchable list (the same panel the composer uses), so the grouping the library page
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
-  const [library, setLibrary] = useState<SkillMetadataItem[] | null>(null);
+  const [library, setLibrary] = useState<PickableItem[] | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
-  /** Library skills to install into the new Agent, in pick order. */
-  const [createSkills, setCreateSkills] = useState<string[]>([]);
-  const [skillsOpen, setSkillsOpen] = useState(false);
+  /** Library plugins to install into the new Agent (each one's skills and hook package), in pick order. */
+  const [createPlugins, setCreatePlugins] = useState<string[]>([]);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   /**
    * Skills imported from a directory instead of the library, kept as its own field rather than
-   * merged into the list above: the server lets a directory Skill and a library Skill share a
-   * name (the directory one wins), which one flat list of picked names could not express.
+   * merged into the list above: the server lets a directory Skill and a library plugin's Skill
+   * share a name (the directory one wins), which one flat list of picked names could not express.
    */
   const [skillsDir, setSkillsDir] = useState("");
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
@@ -140,8 +156,8 @@ export function AgentsPage() {
   const [dirSkillsOpen, setDirSkillsOpen] = useState(false);
   /**
    * Snapshot package to initialize the new Agent from (null = default template). Picking one
-   * hides the two skill fields: the package carries its own skills, and the server rejects
-   * the combination.
+   * hides the two seed fields: the package carries its own skills and hooks, and the server
+   * rejects the combination.
    */
   const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
 
@@ -151,8 +167,8 @@ export function AgentsPage() {
     setName("");
     setDescription("");
     setIdError(undefined);
-    setCreateSkills([]);
-    setSkillsOpen(false);
+    setCreatePlugins([]);
+    setPluginsOpen(false);
     setSkillsDir("");
     setDirSkills(null);
     setDirSkillsError(null);
@@ -167,8 +183,8 @@ export function AgentsPage() {
     e.target.value = "";
     if (!file) return;
     setSnapshotFile(file);
-    // Skill seeding and the package are mutually exclusive; drop any picks made before.
-    setCreateSkills([]);
+    // Seeding and the package are mutually exclusive; drop any picks made before.
+    setCreatePlugins([]);
     setSkillsDir("");
     setCreateDirSkills([]);
     // Suggest the id from the package name (exported as <agentId>-v<n>.tar.gz) while the
@@ -187,8 +203,8 @@ export function AgentsPage() {
     libraryPending.current = true;
     setLibraryError(null);
     api
-      .getSkillLibrary()
-      .then((res) => setLibrary(res.groups.flatMap((g) => g.skills)))
+      .getPluginLibrary()
+      .then((res) => setLibrary(pluginPickItems(res.groups.flatMap((g) => g.plugins))))
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
         libraryPending.current = false;
@@ -271,27 +287,17 @@ export function AgentsPage() {
     setIdError(undefined);
     try {
       // Name defaults to the id (leave blank to let the server fill it in from the id).
-      const body: {
-        agentId: string;
-        name?: string;
-        description?: string;
-        skills?: string[];
-        skillsDirectory?: string;
-        directorySkills?: string[];
-        dataBase64?: string;
-      } = {
-        agentId: id,
-      };
+      const body: AgentCreateRequest = { agentId: id };
       if (name.trim()) body.name = name.trim();
       if (description.trim()) body.description = description.trim();
       if (snapshotFile !== null) {
-        // Initialize from the picked package; skill seeding is mutually exclusive (the
-        // package carries its own skills), and picking the file already cleared those fields.
+        // Initialize from the picked package; seeding is mutually exclusive (the package
+        // carries its own skills and hooks), and picking the file already cleared those fields.
         body.dataBase64 = await fileToBase64(snapshotFile);
       } else {
-        // Picked Skills are seeded server-side inside the same create call, so a failure leaves no
-        // half-equipped Agent behind.
-        if (createSkills.length > 0) body.skills = createSkills;
+        // Picked plugins are seeded server-side inside the same create call, so a failure leaves
+        // no half-equipped Agent behind.
+        if (createPlugins.length > 0) body.plugins = createPlugins;
         // The pair only means anything together, so it is sent only when a directory actually
         // contributed something — picking a directory and then no Skills from it is a plain Agent.
         if (skillsDir && createDirSkills.length > 0) {
@@ -332,7 +338,7 @@ export function AgentsPage() {
    */
   const openSettingsTab = (
     agentId: string,
-    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "memory",
+    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "memory",
   ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
@@ -398,28 +404,33 @@ export function AgentsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-          <Button variant="primary" onClick={openCreate}>
-            {S.agent.create}
-          </Button>
-        </div>
+        {/* The title row and the notice under it share one block, so the gap below the block
+            (to the list) is the same whether or not the notice is showing — the models page's
+            header has the same shape. */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
+            <Button variant="primary" onClick={openCreate}>
+              {S.agent.create}
+            </Button>
+          </div>
 
-        {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
-            An Agent's kernel is never NEW — the Agent already exists and its config is simply
-            behind the defaults generation — so the line states the upgradable count alone
-            rather than padding it with a zero the page has no meaning for. The per-card capsule
-            below and the per-Agent update in settings are untouched. */}
-        {kernelTodo && (
-          <TodoNotice
-            text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
-            actionLabel={S.todo.updateNow}
-            busy={kernelRunning}
-            onAction={() => setKernelConfirmOpen(true)}
-            dismissLabel={S.todo.dismiss}
-            onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
-          />
-        )}
+          {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
+              An Agent's kernel is never NEW — the Agent already exists and its config is simply
+              behind the defaults generation — so the line states the upgradable count alone
+              rather than padding it with a zero the page has no meaning for. The per-card capsule
+              below and the per-Agent update in settings are untouched. */}
+          {kernelTodo && (
+            <TodoNotice
+              text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
+              actionLabel={S.todo.updateNow}
+              busy={kernelRunning}
+              onAction={() => setKernelConfirmOpen(true)}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
+            />
+          )}
+        </div>
 
         {agentsLoading ? (
           /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a
@@ -494,8 +505,8 @@ export function AgentsPage() {
                     </p>
                     {/* Stats on their own line: same color/font size as the description; each
                         item hugs its content, with spacing left to the container's uniform
-                        gap-x-4; meaning folded into the hover title. Tool/skill/memory/vault/
-                        schedule counts are buttons deep-linking to the matching settings tab,
+                        gap-x-4; meaning folded into the hover title. Tool/skill/hook/memory/
+                        vault/schedule counts are buttons deep-linking to the matching settings tab,
                         listed in the settings tabs' order (also for built-in Agents — their
                         Settings entry point has no gating either); session count and
                         last-modified stay plain text.
@@ -531,6 +542,16 @@ export function AgentsPage() {
                       >
                         <GlyphIcon d={CARD_ICONS.skills} size={ICON_SIZE.inlineGlyph} />
                         {a.skillCount}
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
+                        title={S.hooks.hookCount(a.hookCount)}
+                        aria-label={S.hooks.hookCount(a.hookCount)}
+                        onClick={() => openSettingsTab(a.agentId, "hooks")}
+                      >
+                        <GlyphIcon d={HOOK_ICON} size={ICON_SIZE.inlineGlyph} />
+                        {a.hookCount}
                       </button>
                       <button
                         type="button"
@@ -683,8 +704,8 @@ export function AgentsPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
           {/* Optional snapshot seed: the new Agent starts from an exported package instead of
-              the default template. Picking one hides the two skill fields below — the package
-              carries its own skills, and the server rejects the combination. */}
+              the default template. Picking one hides the two seed fields below — the package
+              carries its own skills and hooks, and the server rejects the combination. */}
           <div>
             <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
             {snapshotFile === null ? (
@@ -721,47 +742,48 @@ export function AgentsPage() {
           </div>
           {snapshotFile === null && (
             <>
-              {/* Seed Skills: the form-variant picker (same trigger as the schedule dialog's model
-              and workspace pickers) over the shared multi-select panel, so a dialog field and the
-              composer's dropdown offer one list with one set of row semantics. */}
+              {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
+              model and workspace pickers) over the shared multi-select panel, so a dialog field
+              and the composer's dropdown offer one list with one set of row semantics. */}
               <div>
-                <FieldLabel>{S.agent.createSkills}</FieldLabel>
+                <FieldLabel>{S.agent.createPlugins}</FieldLabel>
                 <FormPicker
-                  open={skillsOpen}
-                  setOpen={setSkillsOpen}
+                  open={pluginsOpen}
+                  setOpen={setPluginsOpen}
                   label={
-                    createSkills.length === 0
-                      ? S.agent.createSkillsPlaceholder
-                      : S.agent.createSkillsPicked(createSkills.length)
+                    createPlugins.length === 0
+                      ? S.agent.createPluginsPlaceholder
+                      : S.agent.createPluginsPicked(createPlugins.length)
                   }
-                  muted={createSkills.length === 0}
-                  title={S.agent.createSkills}
-                  ariaLabel={S.agent.createSkills}
+                  muted={createPlugins.length === 0}
+                  title={S.agent.createPlugins}
+                  ariaLabel={S.agent.createPlugins}
                   disabled={busy}
                   menuClass="w-[26rem]"
                 >
                   <SkillPickList
                     skills={library ?? []}
-                    selected={createSkills}
-                    onToggle={(skillName) =>
-                      setCreateSkills((prev) => toggleSkillName(prev, skillName))
+                    selected={createPlugins}
+                    onToggle={(pluginName) =>
+                      setCreatePlugins((prev) => toggleSkillName(prev, pluginName))
                     }
-                    onSelectAll={(names) => setCreateSkills((prev) => addSkillNames(prev, names))}
+                    onSelectAll={(names) => setCreatePlugins((prev) => addSkillNames(prev, names))}
                     onSelectNone={(names) =>
-                      setCreateSkills((prev) => removeSkillNames(prev, names))
+                      setCreatePlugins((prev) => removeSkillNames(prev, names))
                     }
-                    emptyHint={library === null ? S.common.loading : S.agent.createSkillsEmpty}
+                    emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
+                    searchPlaceholder={S.plugins.searchPlaceholder}
                   />
                 </FormPicker>
                 {libraryError ? (
                   <FieldError>{libraryError}</FieldError>
                 ) : (
-                  <FieldHint>{S.agent.createSkillsHint}</FieldHint>
+                  <FieldHint>{S.agent.createPluginsHint}</FieldHint>
                 )}
               </div>
               {/* Skills a checkout already carries: pick the project directory, then pick from what
               its .agents/skills / .claude/skills hold. Separate from the library field because a
-              directory Skill may share a library Skill's name and still be the one installed. */}
+              directory Skill may share a library plugin's Skill name and still be the one installed. */}
               <div>
                 <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
                 <WorkspaceSelect

@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill } from "@prismshadow/penguin-skills";
+import { librarySkill } from "../src/index.js";
 import {
   AGENTS_MD_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -46,24 +46,27 @@ const skillIcon = (name: string) => skillFile(name, "icon.svg");
 
 describe("installSkill / removeSkill", () => {
   it("writes skills/<name>/SKILL.md verbatim with a trailing newline", async () => {
-    const skill = librarySkill("penguin-cli")!;
+    const skill = librarySkill("penguin-config")!.skill;
     await install(skill.name, skill.content);
-    expect(await fs.readFile(skillMd("penguin-cli"), "utf8")).toBe(skill.content);
+    expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(skill.content);
 
     // Content without a trailing newline gets one appended; reinstalling overwrites.
-    await install("penguin-cli", "---\nname: penguin-cli\nversion: 2\n---\n\nNew body");
-    expect(await fs.readFile(skillMd("penguin-cli"), "utf8")).toBe(
-      "---\nname: penguin-cli\nversion: 2\n---\n\nNew body\n",
+    await install(
+      "penguin-config",
+      "---\nname: penguin-config\nversion: 2026-08-01.2\n---\n\nNew body",
     );
-    expect((await list()).map((s) => s.version)).toEqual([2]);
+    expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(
+      "---\nname: penguin-config\nversion: 2026-08-01.2\n---\n\nNew body\n",
+    );
+    expect((await list()).map((s) => s.version)).toEqual(["2026-08-01.2"]);
   });
 
-  it("writes icon.svg alongside SKILL.md, and reinstalling without icon removes it", async () => {
-    // A library skill with an icon: installing writes it to disk alongside SKILL.md.
-    const skill = librarySkill("penguin-sdk")!;
-    expect(skill.icon).toBeTruthy();
-    await install(skill.name, skill.content, skill.icon);
-    expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(skill.icon);
+  it("writes an install's icon.svg alongside SKILL.md, and reinstalling without one removes it", async () => {
+    // Library skills carry no icon (the plugin owns it), but installSkill still accepts one —
+    // for user-authored skills and zip imports. An install with an icon writes it to disk.
+    const icon = "<svg><rect /></svg>";
+    await install("penguin-sdk", librarySkill("penguin-sdk")!.skill.content, icon);
+    expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(icon);
 
     // Overwrite semantics: this install has no icon -> the old icon.svg is removed, and the
     // directory matches this install's content exactly.
@@ -116,14 +119,14 @@ describe("installSkill / removeSkill", () => {
   });
 
   it("stages the install and leaves no staging directory behind", async () => {
-    const skill = librarySkill("penguin-sdk")!;
+    const skill = librarySkill("penguin-sdk")!.skill;
     await install(skill.name, skill.content);
     const entries = await fs.readdir(skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
     expect(entries).toEqual(["penguin-sdk"]);
   });
 
   it("removeSkill deletes the whole skill directory and is idempotent", async () => {
-    const skill = librarySkill("penguin-sdk")!;
+    const skill = librarySkill("penguin-sdk")!.skill;
     await install(skill.name, skill.content);
     await removeSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, "penguin-sdk");
     await expect(fs.access(skillMd("penguin-sdk"))).rejects.toThrow();
@@ -141,15 +144,15 @@ describe("listInstalledSkills", () => {
   it("parses frontmatter and sorts by name", async () => {
     await install(
       "zeta",
-      "---\nname: zeta\ndescription: Z skill.\nversion: 3\nupdated: 2026-07-16\n---\n\nBody\n",
+      "---\nname: zeta\ndescription: Z skill.\nversion: 2026-07-16.3\n---\n\nBody\n",
     );
     await install(
       "alpha",
-      "---\nname: alpha\ndescription: A skill.\nversion: 1\nupdated: 2026-07-16\n---\n\nBody\n",
+      "---\nname: alpha\ndescription: A skill.\nversion: 2026-07-16.1\n---\n\nBody\n",
     );
     expect(await list()).toEqual([
-      { name: "alpha", description: "A skill.", version: 1, updated: "2026-07-16" },
-      { name: "zeta", description: "Z skill.", version: 3, updated: "2026-07-16" },
+      { name: "alpha", description: "A skill.", version: "2026-07-16.1" },
+      { name: "zeta", description: "Z skill.", version: "2026-07-16.3" },
     ]);
   });
 
@@ -157,23 +160,22 @@ describe("listInstalledSkills", () => {
     const icon = '<svg viewBox="0 0 24 24"><path d="M4 4h16" /></svg>\n';
     await install(
       "with-extras",
-      "---\nname: with-extras\ndescription: Long description here.\nshort_description: Short one.\nshort_description_zh: 短描述。\nversion: 1\nupdated: 2026-07-17\n---\n\nBody\n",
+      "---\nname: with-extras\ndescription: Long description here.\nshort_description: Short one.\nshort_description_zh: 短描述。\nversion: 2026-07-17.1\n---\n\nBody\n",
       icon,
     );
     await install(
       "plain",
-      "---\nname: plain\ndescription: Plain skill.\nversion: 1\nupdated: 2026-07-17\n---\n\nBody\n",
+      "---\nname: plain\ndescription: Plain skill.\nversion: 2026-07-17.1\n---\n\nBody\n",
     );
     const skills = await list();
     expect(skills).toEqual([
-      { name: "plain", description: "Plain skill.", version: 1, updated: "2026-07-17" },
+      { name: "plain", description: "Plain skill.", version: "2026-07-17.1" },
       {
         name: "with-extras",
         description: "Long description here.",
         shortDescription: "Short one.",
         shortDescriptionZh: "短描述。",
-        version: 1,
-        updated: "2026-07-17",
+        version: "2026-07-17.1",
         icon,
       },
     ]);
@@ -189,10 +191,10 @@ describe("listInstalledSkills", () => {
     // and Prompt lookup, so the listing must follow it (frontmatter fields are display-only).
     await install(
       "local-name",
-      "---\nname: upstream-name\ndescription: Fetched skill.\nversion: 2\nupdated: 2026-07-01\n---\n\nBody\n",
+      "---\nname: upstream-name\ndescription: Fetched skill.\nversion: 2026-07-01.2\n---\n\nBody\n",
     );
     expect(await list()).toEqual([
-      { name: "local-name", description: "Fetched skill.", version: 2, updated: "2026-07-01" },
+      { name: "local-name", description: "Fetched skill.", version: "2026-07-01.2" },
     ]);
   });
 
@@ -211,7 +213,7 @@ describe("listInstalledSkills", () => {
       "---\nname: half-installed\n---\nBody\n",
       "utf8",
     );
-    expect(await list()).toEqual([{ name: "broken", description: "", version: 1, updated: "" }]);
+    expect(await list()).toEqual([{ name: "broken", description: "", version: "" }]);
   });
 });
 
@@ -220,8 +222,8 @@ describe("skillMetadataSection / assembleSystemPrompt injection", () => {
     expect(skillMetadataSection([])).toBe("");
     expect(
       skillMetadataSection([
-        { name: "a", description: "Does A.", version: 1, updated: "2026-07-16" },
-        { name: "b", description: "", version: 1, updated: "" },
+        { name: "a", description: "Does A.", version: "2026-07-16.1" },
+        { name: "b", description: "", version: "" },
       ]),
     ).toBe("- `a` — Does A.\n- `b`");
   });
@@ -240,7 +242,7 @@ describe("skillMetadataSection / assembleSystemPrompt injection", () => {
       agentsMd: "# Agent Rules",
     };
     const prompt = assembleSystemPrompt(state, undefined, undefined, [
-      { name: "demo", description: "Demo skill.", version: 1, updated: "2026-07-16" },
+      { name: "demo", description: "Demo skill.", version: "2026-07-16.1" },
     ]);
     expect(prompt).toBe(["before", "# Agent Rules", "- `demo` — Demo skill.", "after"].join("\n"));
     // Not provided / empty list: the placeholder is replaced with an empty string, no residue left.

@@ -3,7 +3,7 @@ title: Agent 运行循环
 description: context_engine 的总体流程图与逐环节拆解——审批、并发工具执行、中断补发、自动重连与上下文压缩。
 ---
 
-SDK 的唯一执行入口是 `session.run(newMessages, opts?)`：输入本次新增的 OmniMessage 列表(Prompt)，返回一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 自动跑完一个完整的 Task，直到模型给出不含工具调用的最终答复。
+SDK 的唯一执行入口是 `session.run(newMessages, opts?)`：输入本次新增的 OmniMessage 列表(Prompt)，返回一个异步生成器，流式产出 [OmniMessage](/omni-message)。一次 `run` 自动跑完一个完整的 Task，直到模型给出不含工具调用的最终答复——若有 [stop hook](#stop-hook) 要求继续，则接连跑多个 Task。
 
 本页先给出 context_engine 的总体流程，再逐环节拆解；逐条消息级的可见时序与顺序保证见[消息流转与时序](/message-flow)。源码：`packages/core/src/engine/context-engine.ts`。
 
@@ -80,6 +80,63 @@ Task 由若干连续的 Request(轮)组成，每轮：
 - **场景 B：模型输出未完成**——整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。
 
 补发内容只进入模型上下文，不写入 Trace——Trace 永远只记录真实发生的消息。
+
+## Stop hook
+
+hook 是 Session 在循环固定点上执行的函数。目前有三个点：**stop**——一个 Task 结束的那一刻（模型给出不含工具调用的最终答复，或被掐断：用户中断、LLM 故障、`max_turns` 上限）——**`pre_tool_use`**，每次工具调用审批之前，以及 **`user_prompt`**，用户提交 Prompt 之时（均见下方小节）。Session 咨询的 hook 就是**安装在 Agent `agent_state/hooks/` 里的钩子包**——[插件](/skills#钩子包)携带的那些——像 Skill 一样每个 Session 都新鲜读取；SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` 注册进程内函数。
+
+已安装的 hook 是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行：只告诉它去哪里看，其余一切——token 用量、轮次、Task 的结束方式、它自己的状态文件——都由它从 Trace 推导。
+
+```text
+stdin   { "hook": "stop", "session_id": "…", "trace_path": "/abs/…/<session>_001.jsonl" }
+stdout  空 = 无意见；否则
+        { "decision": "continue" | "stop",   // continue：`input` 作为下一个 Task 的 user 消息
+          "input": "…",
+          "reason": "一行给人看的说明",
+          "output": { "…": 标量 },           // hook 自己的记录
+          "subagent": { "prompt": "…", "agent_id": "…" } }   // 请求一个游离的后台子会话
+exit    非零 = 失败（stderr 末尾成为 reason）；超时（缺省 60 秒）即被杀
+```
+
+`trace_path` 是正在写入的 Trace 文件——当前上下文分段；压缩会换新文件——无 Trace 的 Session 缺省。规则：
+
+- 每个 Task 结束后按注册顺序逐个执行；每个非空回答都记为一条 [`hook` 事件](/omni-message#event_msg)——`hook`、`name`（钩子包名）、`decision`、`reason`、`output`——推到流上并写入 Trace；注入的输入不在事件里，它是紧随其后的那条 user 消息；
+- 第一个 `continue` 生效：其输入带上 [`sender: "harness"`](/omni-message#model_msg) 标记先 yield 到流上（普通运行从不 yield 自己的输入，宿主据此渲染注入的那条——说明消息来自 harness 的是这一标记，而不是文本内容），再在同一次 `run` 调用内驱动下一个 Task；无人 `continue` 则调用返回；
+- 被掐断之后、或 signal 已中止时，`continue` 只记录、不执行——用户的中断压过一切 hook；
+- `subagent` 回答让 Session 派生一个游离的后台子 Session（同一 Agent，或 `agent_id` 指定的那个），以该 prompt 为第一条 user 消息；它继承本次运行的审批回调，输出流被丢弃（它自己的 Trace 才是记录），其 Session id 以 `output.session_id` 记在事件上；
+- hook 失败——崩溃、打印的不是 JSON、或超时——以错误信息为 `reason` 记录、按无意见处理，永远不会拖垮运行。
+
+插件库内置两个钩子包。[目标模式](/goal-mode)是其一：它的 stop hook 读目标文件、判定、交回下一轮的协议消息。**`continual-learning`** 插件是另一个（不预装）：刚结束的 Task 跑了超过 30 个完成的轮次时，它把该 Task 浓缩成摘录——user 与 assistant 文本、工具调用与参数、工具输出，各自截断，不含思考与图片——并以 `subagent` 请求作答，prompt 里给出 Skill 目录与该任务调用过的 Skill 名，请子会话把值得沉淀的发现写进相关 `SKILL.md`，或什么都不改。窗口就是 Task 本身（Trace 里自它的输入消息起的记录；压缩在任务中途换文件时，窗口即新文件所含），因此一个 Task 至多触发一次——在它结束时——短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
+
+### Pre-tool-use hook
+
+钩子包还可以声明 `pre_tool_use` 命令（`hooks.json`，来自插件的 `hooks.pre_tool_use`）。引擎在每个完整的工具调用上、**审批回调之前**咨询它们——同一套子进程契约，调用本身随 stdin 给出：
+
+```text
+stdin   { "hook": "pre_tool_use", "session_id", "trace_path",
+          "tool_name": "exec_command", "tool_call_id": "…", "arguments": "<原始参数 JSON>" }
+stdout  空 = 无意见；否则
+        { "decision": "allow" | "deny",   // deny：拒绝该调用；allow：不询问直接放行
+          "reason": "给人看的一行说明",
+          "output": { "…": 标量 } }        // 钩子自己的记录
+```
+
+规则与 stop 点一致——每个非空回答记一条 `hook` 事件、第一个决定生效、崩溃 / 非 JSON / 超时按无意见记录——另有三条自己的：
+
+- **deny** 不咨询审批回调直接拒绝；模型在工具输出里读到拒绝原因，含钩子名与 `reason`；
+- **allow** 不询问宿主直接放行——但[命令策略](/configuration#沙箱安全策略)仍然压过它：钩子包在 Agent 可写的状态里，策略是 Project 持有的安全配置，被策略否决的调用无论钩子怎么答都保持 `forbidden`。deny 只会收窄、永远不会放宽；
+- 脚本跑在**热路径**上——每个工具调用执行前咨询一次——保持脚本轻快，并在清单里给出较小的 `timeout`。
+
+没有内置插件带这个点；它留给自定义守卫——项目专属的沙箱规则、审计日志、为已知安全的调用跳过审批弹窗的放行清单。
+
+### User-prompt hook
+
+第三个点 `user_prompt` 用来扩展提交的 Prompt。钩子只在 core 里运行：宿主在接受某个流程的用户 Prompt 时经 `Session.runUserPromptHook(name, prompt, extras)` 触发它——Session 自己补上 id 与 scratchpad 目录——回答里的 `context` 紧随用户自己的消息之后、以 harness 标记发出（渲染为紧凑的折叠卡片）。[目标模式的启动](/goal-mode)是唯一的内置用途：goal 插件的 `start.mjs` 就是它的 `user_prompt` 命令——服务端对 `goal: { budget }` 请 Session 运行它，它写下 `GOAL.json` 并以第一轮协议消息作答。
+
+```text
+stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …宿主附加字段（goal 为 "budget"） }
+stdout  { "context": "<追加在用户消息之后的文本>" }
+```
 
 ## 运行中插话(Steering)
 

@@ -72,7 +72,7 @@ describe("badgeNote", () => {
   });
 
   it("names a single to-do trail, count included", () => {
-    expect(badgeNote([{ kind: "skills", count: 3 }])).toEqual({ kind: "skills", count: 3 });
+    expect(badgeNote([{ kind: "plugins", count: 3 }])).toEqual({ kind: "plugins", count: 3 });
   });
 
   it("names none of them when several trails have something", () => {

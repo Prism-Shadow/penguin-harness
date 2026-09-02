@@ -22,7 +22,12 @@ import { fileURLToPath } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(pkgDir, "out");
-const version = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8")).version;
+const ownPkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+const version = ownPkg.version;
+/** The plugin packages the bundled loader will look for: every @penguinharness/* in this package's dependencies (the one field the packaged manifest keeps). */
+const pluginNames = Object.keys(ownPkg.dependencies ?? {}).filter((name) =>
+  name.startsWith("@penguinharness/"),
+);
 
 /** Every `resources/app` directory under out/, in both platform layouts. */
 function appDirs() {
@@ -71,7 +76,18 @@ for (const app of dirs) {
   // WITHOUT complaint when the source is absent — a pack run before the web build shipped
   // an app whose every page was a 404. The shell now refuses to start such a build
   // (src/web-dist.ts); this catches it before anything is uploaded.
-  for (const rel of ["bin/penguin", "bin/penguin.cmd", "dist/penguin.js", "web-dist/index.html"]) {
+  // The plugin library travels as electron-builder's collected dependencies, at the app root's
+  // node_modules: the packed server resolves each package by name from there, and a plugin
+  // that did not make it in is simply absent from every Agent's library, with nothing else
+  // failing.
+  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/plugin.json`);
+  for (const rel of [
+    "bin/penguin",
+    "bin/penguin.cmd",
+    "dist/penguin.js",
+    "web-dist/index.html",
+    ...pluginFiles,
+  ]) {
     const file = path.join(app, ...rel.split("/"));
     if (!fs.existsSync(file)) {
       problems.push(`${app}: ${rel} is missing from the packed app.`);

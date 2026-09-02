@@ -47,7 +47,6 @@ import { openDatabase } from "./db/database.js";
 import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
@@ -148,7 +147,12 @@ import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
-import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
+import { agentSkillsRoutes } from "./http/routes/skills.js";
+import {
+  agentHooksRoutes,
+  agentPluginsRoutes,
+  pluginLibraryRoutes,
+} from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -195,7 +199,6 @@ export interface AppDeps {
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
-  goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
   /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
   messagingRepo: MessagingBindingsRepo;
@@ -845,7 +848,6 @@ export function buildAppDeps(
     };
   };
   const schedulesRepo = new SchedulesRepo(db);
-  const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
   // Per-App like the preview signer above: a flow holds a PKCE verifier and nothing durable,
@@ -931,7 +933,6 @@ export function buildAppDeps(
     errors,
     titles,
     log,
-    goals: goalsRepo,
     // Run-state flips reach the whole login session, not just the tab watching that one
     // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
@@ -948,7 +949,6 @@ export function buildAppDeps(
     usage: usageRepo,
     errors: errorsRepo,
     schedules: schedulesRepo,
-    goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
     traceIndex,
@@ -1080,7 +1080,6 @@ export function buildAppDeps(
     benchmarks,
     snapshots,
     schedulesRepo,
-    goalsRepo,
     errorsRepo,
     messagingRepo,
     qqScan,
@@ -1194,8 +1193,8 @@ export function createApp(
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
   app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
-  // Skill library listing: readable once logged in, not nested under a Project prefix.
-  app.route("/api/skills", skillLibraryRoutes());
+  // Plugin library listing: readable once logged in, not nested under a Project prefix.
+  app.route("/api/plugins", pluginLibraryRoutes());
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
@@ -1211,6 +1210,8 @@ export function createApp(
   app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/plugins", agentPluginsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/hooks", agentHooksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId", agentTransferRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/traces", agentTracesRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));

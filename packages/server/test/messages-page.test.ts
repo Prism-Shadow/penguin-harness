@@ -416,8 +416,8 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:02.000Z", assistantText("a2")),
       at("2026-07-20T10:01:03.000Z", requestEnd("completed")),
       at("2026-07-20T10:01:03.500Z", tokenUsage(counts(2000), counts(200))),
-      // A goal round-2 re-send: starts a Task but opens no outline entry.
-      at("2026-07-20T10:02:00.000Z", userText("[goal]\nround: 2\nbudget: unlimited\n[/goal]\ngo")),
+      // A harness-injected input (a goal round's protocol): starts a Task but opens no outline entry.
+      at("2026-07-20T10:02:00.000Z", userText("goal round 2 protocol", "harness")),
       at("2026-07-20T10:02:01.000Z", requestBegin()),
       at("2026-07-20T10:02:02.000Z", assistantText("a3")),
       at("2026-07-20T10:02:03.000Z", requestEnd("completed")),
@@ -438,7 +438,7 @@ describe("messages windowed reads", () => {
       cursor: decodeCursor(tail.before!)!,
       limit: 1,
     });
-    expect(userTexts(goalWin.messages)[0]).toContain("[goal]");
+    expect(userTexts(goalWin.messages)[0]).toContain("goal round 2 protocol");
     expect(goalWin.prior.turns).toBe(1);
 
     const bannerWin = await service.readMessagesPage(P, A, S, {

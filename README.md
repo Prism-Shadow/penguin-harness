@@ -82,16 +82,15 @@ With PenguinHarness Skills, an agent evaluates and optimizes itself: run the ben
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
-## Built-in Skills
+## Built-in plugins
 
-Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); agents can also write and optimize their own:
+Three plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
 
-| Group                | Skills                                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Office Productivity  | `data-analysis`, `firecrawl`, `bento-slides`, `humanizer`                                                                   |
-| Software Development | `web-design`, `software-engineering`, `remote-claude-code`                                                                  |
-| AI App Development   | `penguin-sdk`, `penguin-cli`, `penguin-orchestration`, `agenthub-models`, `vllm`, `ollama`, `llamafactory`, `skill-porting` |
-| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`                                        |
+| Category             | Plugins                                                                       |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
+| Software Development | `software-development`, `use-claude-code`                              |
+| AI App Development   | `agent-development`, `model-development`, `skill-porting`, `agent-tuning`     |
 
 ## Supported Models
 

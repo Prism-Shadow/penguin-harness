@@ -10,6 +10,8 @@
  */
 import { dualFormPatterns, markerBlock, matchDualForm } from "./block.js";
 import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
+import { isHarnessInput } from "../types.js";
+import type { OmniMessage } from "../types.js";
 
 /**
  * Strips every **leading** machine-prefixed block (a skill invocation, a handoff /
@@ -18,8 +20,9 @@ import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
  *
  *     "[use_skills]\nskills: web-design\n[/use_skills]\n\nfix the layout"  →  "fix the layout"
  *
- * Used where a prefixed input doubles as user-facing content — e.g. the goal loop deriving
- * the objective (re-injected each round, recorded in GOAL.yaml) from the round-1 input.
+ * Used where a prefixed input doubles as user-facing content — e.g. the goal route deriving
+ * the objective from the round-1 input before handing it to the goal plugin, which records it
+ * in the Session's GOAL.json and restates it each round.
  */
 export function stripLeadingMarkerBlocks(text: string): string {
   let out = text;
@@ -400,4 +403,16 @@ export function isSteeredBackgroundNotice(text: string): boolean {
  */
 export function isWholeOriginBlock(text: string): boolean {
   return parseHandoffMessage(text) !== null || parseModelSwitchMessage(text) !== null;
+}
+
+/**
+ * Whether a message is a user text a hook put into the loop: a stop hook's `continue`
+ * input, or a user_prompt hook's expansion context the host sent behind the user's message
+ * (goal mode's round protocol) — the harness-stamped inputs that open a round of their own.
+ * A background-task completion notice shares the stamp but is a report riding inside a
+ * round, so it is excluded by its block.
+ */
+export function isHookInput(msg: OmniMessage): boolean {
+  if (!isHarnessInput(msg)) return false;
+  return parseBackgroundTaskDoneMessage((msg.payload as { text: string }).text) === null;
 }

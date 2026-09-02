@@ -79,7 +79,7 @@ platformImpl.create
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
 └─ business assembly (when caps are all present): buildAppDeps → scheduler.start()
-   → orphaned-Goal reconciliation → createApp (terminal + business groups in ONE Hono app)
+   → createApp (terminal + business groups in ONE Hono app)
    → one registry write publishes the {deps, app, shutdown} pointer
    → ctx.effect registers the hard stop for the next swap
 ```

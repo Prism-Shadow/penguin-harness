@@ -15,7 +15,7 @@ import { S } from "./strings";
  */
 export function apiErrorText(err: unknown, ctx?: { modelId?: string }): string {
   if (!(err instanceof ApiError)) return S.common.unknownError;
-  // These two need context the error body doesn't carry (the model id) / their own phrasing.
+  // These need context the error body doesn't carry (the model id) / their own phrasing.
   if (err.code === "model_credential_missing") {
     return ctx?.modelId ? S.errors.modelCredentialMissing(ctx.modelId) : err.message;
   }

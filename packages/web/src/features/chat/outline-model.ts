@@ -117,9 +117,11 @@ export function buildOutline(items: readonly ChatItem[]): OutlineEntry[] {
       let body = "";
       if (item.kind === "user_text") {
         const parsed = parseUserMessageBody(item.text);
-        if (!parsed || (parsed.goalRound !== undefined && parsed.goalRound > 1)) {
-          // A banner-only item is not a question, but it still separates user runs: a real
-          // prompt right after it must open its own entry, not merge across the banner.
+        // A banner-only or harness-injected item (a goal round, a hook continue) is not a
+        // question, but it still separates user runs: a real prompt right after it must
+        // open its own entry, not merge across the banner. An idle-launched completion
+        // notice shares the harness stamp yet keeps its turn (its report is the title).
+        if (!parsed || (item.sender === "harness" && !parsed.backgroundDone)) {
           lastWasUser = false;
           continue;
         }

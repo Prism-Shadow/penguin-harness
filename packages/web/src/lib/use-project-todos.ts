@@ -1,7 +1,7 @@
 /**
  * The two Project-scoped probes behind the dismissible badges, and their shared cache.
  *
- * The Skills trail needs no request at all — `AgentSummary.skillUpdates` rides along on the
+ * The plugins trail needs no request at all — `AgentSummary.pluginUpdates` rides along on the
  * Agent list the Project context already loads. The other two do:
  *
  * - **models** — the built-in catalog lives in the client bundle, so the only missing half is
@@ -21,7 +21,7 @@
  * the cache passively and is pushed the result when it lands. Failures resolve to "nothing
  * known", clear the shared promise so a later activation retries, and surface nothing: an
  * unreachable probe leaves the gate closed and says nothing, exactly like the update check.
- * `refreshProjectTodos` is the acting user: after a sync or a Skill update the answer has
+ * `refreshProjectTodos` is the acting user: after a sync or a plugin update the answer has
  * changed, and the badge must not wait for a reload to notice. It bumps a per-Project
  * generation so an in-flight probe from before the action cannot land on top of the answer
  * from after it.
@@ -165,7 +165,7 @@ export function useProjectTodos(
 
 /**
  * Drops one Project's cached probes and re-runs the ones already known, then pushes the result.
- * Called after an action that changes what is waiting — syncing presets, updating a Skill — so
+ * Called after an action that changes what is waiting — syncing presets, updating a plugin — so
  * the badge clears (or does not) on the strength of the server's answer rather than a guess.
  * Only probes that had already run are re-run: refreshing must not make a request a gate had
  * deliberately declined.

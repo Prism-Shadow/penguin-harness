@@ -1,0 +1,21 @@
+{
+  "name": "@penguinharness/continual-learning",
+  "version": "0.2.9",
+  "description": "Continual learning: a stop hook that, when the task that just ended ran more than 30 completed turns, hands a condensed excerpt of that task to a background subagent, which folds the durable findings into the agent's own skills.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/continual-learning"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "hooks",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

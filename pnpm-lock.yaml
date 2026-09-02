@@ -48,6 +48,42 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-tuning':
+        specifier: workspace:*
+        version: link:../../plugins/agent-tuning
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
         specifier: ^0.4.9
         version: 0.4.9(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -57,9 +93,6 @@ importers:
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(supports-color@10.2.2)(zod@4.4.3)
-      '@prismshadow/penguin-skills':
-        specifier: workspace:*
-        version: link:../skills
       commander:
         specifier: ^13.0.0
         version: 13.1.0
@@ -94,12 +127,45 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-tuning':
+        specifier: workspace:*
+        version: link:../../plugins/agent-tuning
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
         specifier: ^0.4.9
         version: 0.4.9(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills':
-        specifier: workspace:*
-        version: link:../skills
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -136,6 +202,43 @@ importers:
         version: 4.4.3
 
   packages/desktop:
+    dependencies:
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-tuning':
+        specifier: workspace:*
+        version: link:../../plugins/agent-tuning
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
+      '@penguinharness/use-bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
+      '@penguinharness/use-firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/use-firecrawl
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
@@ -280,9 +383,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills':
-        specifier: workspace:*
-        version: link:../skills
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -338,21 +438,6 @@ importers:
       tsx:
         specifier: ^4.20.0
         version: 4.22.4
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.6
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
-
-  packages/skills:
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -450,6 +535,30 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/agent-development: {}
+
+  plugins/agent-tuning: {}
+
+  plugins/continual-learning: {}
+
+  plugins/data-analysis: {}
+
+  plugins/goal: {}
+
+  plugins/humanizer: {}
+
+  plugins/model-development: {}
+
+  plugins/skill-porting: {}
+
+  plugins/software-development: {}
+
+  plugins/use-bento-slides: {}
+
+  plugins/use-claude-code: {}
+
+  plugins/use-firecrawl: {}
 
 packages:
 
@@ -979,6 +1088,42 @@ packages:
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
 
+  '@penguinharness/agent-development@file:plugins/agent-development':
+    resolution: {directory: plugins/agent-development, type: directory}
+
+  '@penguinharness/agent-tuning@file:plugins/agent-tuning':
+    resolution: {directory: plugins/agent-tuning, type: directory}
+
+  '@penguinharness/continual-learning@file:plugins/continual-learning':
+    resolution: {directory: plugins/continual-learning, type: directory}
+
+  '@penguinharness/data-analysis@file:plugins/data-analysis':
+    resolution: {directory: plugins/data-analysis, type: directory}
+
+  '@penguinharness/goal@file:plugins/goal':
+    resolution: {directory: plugins/goal, type: directory}
+
+  '@penguinharness/humanizer@file:plugins/humanizer':
+    resolution: {directory: plugins/humanizer, type: directory}
+
+  '@penguinharness/model-development@file:plugins/model-development':
+    resolution: {directory: plugins/model-development, type: directory}
+
+  '@penguinharness/skill-porting@file:plugins/skill-porting':
+    resolution: {directory: plugins/skill-porting, type: directory}
+
+  '@penguinharness/software-development@file:plugins/software-development':
+    resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/use-bento-slides@file:plugins/use-bento-slides':
+    resolution: {directory: plugins/use-bento-slides, type: directory}
+
+  '@penguinharness/use-claude-code@file:plugins/use-claude-code':
+    resolution: {directory: plugins/use-claude-code, type: directory}
+
+  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl':
+    resolution: {directory: plugins/use-firecrawl, type: directory}
+
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
     engines: {node: '>=18'}
@@ -998,10 +1143,6 @@ packages:
 
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
-    engines: {node: '>=24'}
-
-  '@prismshadow/penguin-skills@file:packages/skills':
-    resolution: {directory: packages/skills, type: directory}
     engines: {node: '>=24'}
 
   '@protobufjs/aspromise@1.1.2':
@@ -4637,6 +4778,30 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
+  '@penguinharness/agent-development@file:plugins/agent-development': {}
+
+  '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
+
+  '@penguinharness/continual-learning@file:plugins/continual-learning': {}
+
+  '@penguinharness/data-analysis@file:plugins/data-analysis': {}
+
+  '@penguinharness/goal@file:plugins/goal': {}
+
+  '@penguinharness/humanizer@file:plugins/humanizer': {}
+
+  '@penguinharness/model-development@file:plugins/model-development': {}
+
+  '@penguinharness/skill-porting@file:plugins/skill-porting': {}
+
+  '@penguinharness/software-development@file:plugins/software-development': {}
+
+  '@penguinharness/use-bento-slides@file:plugins/use-bento-slides': {}
+
+  '@penguinharness/use-claude-code@file:plugins/use-claude-code': {}
+
+  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
+
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
@@ -4674,10 +4839,21 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/agenthub': 0.4.9(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
-      '@prismshadow/penguin-skills': file:packages/skills
       commander: 13.1.0
       dotenv: 17.4.2
       smol-toml: 1.6.1
@@ -4694,8 +4870,19 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/agenthub': 0.4.9(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills': file:packages/skills
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -4710,8 +4897,19 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
+      '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/humanizer': file:plugins/humanizer
+      '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/skill-porting': file:plugins/skill-porting
+      '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
+      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/agenthub': 0.4.9(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills': file:packages/skills
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -4728,7 +4926,6 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-skills': file:packages/skills
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -4755,7 +4952,6 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-skills': file:packages/skills
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -4776,8 +4972,6 @@ snapshots:
       - supports-color
       - utf-8-validate
       - zod
-
-  '@prismshadow/penguin-skills@file:packages/skills': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 

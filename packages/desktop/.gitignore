@@ -2,11 +2,15 @@
 # every branch, but the files they leave behind outlive a branch switch — an ignore
 # rule only where the generator lives leaves 340 MB of unpacked app untracked and
 # unignored in every other working copy, one `git add -A` away from a commit.
-#   bin/    — generated `penguin` / `penguin.cmd` CLI launchers
-#   out/    — electron-builder output
-#   skills/ — a copy of packages/skills/skills, which is tracked at its source
-#   stage/  — the assembled app directory, on branches that stage before packing
+#   bin/     — generated `penguin` / `penguin.cmd` CLI launchers
+#   out/     — electron-builder output
+#   official/, plugins/, skills/ — the plugin library copy under the names earlier build
+#             scripts staged it at (it now travels as declared dependencies instead),
+#             still on disk in older working trees
+#   stage/    — the assembled app directory, on branches that stage before packing
 bin/
 out/
+official/
+plugins/
 skills/
 stage/

@@ -1,6 +1,6 @@
 /**
  * The live badges, read by every anchor on the five trails: the mobile menu button, the
- * sidebar avatar and its collapsed-rail twin, and the Agents / Skills / Models / Cost Center
+ * sidebar avatar and its collapsed-rail twin, and the Agents / Plugins / Models / Cost Center
  * nav entries in both the pinned sidebar and the rail.
  *
  * One owner activates the fetches. `AppLayout` calls this with `eager` on, which is what makes
@@ -26,9 +26,9 @@ import { badgeNote, softwareUpdate } from "./update-badges";
 import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
 import {
   kernelUpdateTodo,
+  pluginUpdateTodo,
   presetUpdateTodo,
   raisedTodo,
-  skillUpdateTodo,
   unexpectedErrorTodo,
 } from "./todo-badges";
 import type { Todo, TodoKey } from "./todo-badges";
@@ -38,7 +38,7 @@ import { catalogDelta } from "../features/models/catalog-sync";
 import { useProject } from "../state/project";
 
 /** The nav routes that can carry a dot, and what each one's dot leads to. */
-export type BadgedRoute = "/agents" | "/skills" | "/models" | "/usage";
+export type BadgedRoute = "/agents" | "/plugins" | "/models" | "/usage";
 
 export interface UpdateBadges {
   /** A software update this mode can act on, or null. */
@@ -84,7 +84,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   // The kernel trail is dismissible like the other three: an Agent can be deliberately left on
   // the generation it was tuned against, and the page notice that says so needs a way down.
   const kernelTodo = raise(kernelUpdateTodo(agents), "agents");
-  const skills = raise(skillUpdateTodo(agents), "skills");
+  const plugins = raise(pluginUpdateTodo(agents), "plugins");
   const models = raise(presetTodo, "models");
   const errors = raise(
     probes.errors === null ? null : unexpectedErrorTodo(probes.errors),
@@ -96,13 +96,13 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   const sources: BadgeSource[] = [];
   if (software !== null) sources.push(software);
   if (kernelTodo !== null) sources.push({ kind: "kernel" });
-  if (skills !== null) sources.push({ kind: "skills", count: skills.count });
+  if (plugins !== null) sources.push({ kind: "plugins", count: plugins.count });
   if (models !== null) sources.push({ kind: "models", count: models.count });
   if (errors !== null) sources.push({ kind: "errors", count: errors.count });
 
   const navNotes: Partial<Record<BadgedRoute, string>> = {};
   if (kernelTodo !== null) navNotes["/agents"] = S.agent.kernelOutdatedHint;
-  if (skills !== null) navNotes["/skills"] = S.todo.skillUpdates(skills.count);
+  if (plugins !== null) navNotes["/plugins"] = S.todo.pluginUpdates(plugins.count);
   if (models !== null) navNotes["/models"] = S.todo.presetUpdates(models.count);
   if (errors !== null) navNotes["/usage"] = S.todo.unexpectedErrors(errors.count);
 
@@ -112,7 +112,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     navNotes,
     todos: {
       ...(kernelTodo !== null ? { agents: kernelTodo } : {}),
-      ...(skills !== null ? { skills } : {}),
+      ...(plugins !== null ? { plugins } : {}),
       ...(models !== null ? { models } : {}),
       ...(errors !== null ? { errors } : {}),
     },
@@ -145,8 +145,8 @@ function noteText(note: UpdateBadgeNote): string | null {
       return S.update.restartToUpdate(note.version);
     case "kernel":
       return S.agent.kernelOutdatedHint;
-    case "skills":
-      return S.todo.skillUpdates(note.count);
+    case "plugins":
+      return S.todo.pluginUpdates(note.count);
     case "models":
       return S.todo.presetUpdates(note.count);
     case "errors":

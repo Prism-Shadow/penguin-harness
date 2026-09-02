@@ -84,8 +84,8 @@ export interface SessionStreamState {
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
   /**
-   * Goal-banner state: an in-flight goal restored from goal_state on load (only when still
-   * active), then kept live by goal_* server events; terminal states reached during this
+   * Goal-banner state: an in-flight goal restored from the Session's GOAL.json on load (only
+   * when still active), then kept live by goal_* server events; terminal states reached during this
    * page's lifetime stay visible until the session changes. Null = no banner.
    */
   goal: GoalBannerState | null;

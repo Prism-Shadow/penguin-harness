@@ -3,7 +3,7 @@ title: The Agent Loop
 description: The context_engine's master flow diagram and a stage-by-stage breakdown — approvals, concurrent tool execution, interrupt carry-over, automatic reconnect and compaction.
 ---
 
-The SDK's single execution entry point is `session.run(newMessages, opts?)`: input is the list of new OmniMessages (the Prompt); the return value is an async generator that streams [OmniMessage](/omni-message). One `run` drives one complete Task, until the model produces a final answer with no tool calls.
+The SDK's single execution entry point is `session.run(newMessages, opts?)`: input is the list of new OmniMessages (the Prompt); the return value is an async generator that streams [OmniMessage](/omni-message). One `run` drives one complete Task, until the model produces a final answer with no tool calls — or several Tasks in a row, when a [stop hook](#stop-hooks) asks for more.
 
 This page shows the context_engine's overall flow first, then breaks down each stage; the message-level observable timeline and ordering guarantees are on [Message Flow & Ordering](/message-flow). Source: `packages/core/src/engine/context-engine.ts`.
 
@@ -31,10 +31,14 @@ session.run(newMessages, { approve, signal })
 │                              for tools)                       │
 │                                                               │
 │  tool outputs reordered to original call order ──► next turn  │
-│  no tool_call this turn? ──► Task ends, run returns           │
+│  no tool_call this turn? ──► Task ends                        │
 │  compaction trigger (context/turns)? ──► summarize/discard    │
 │                                          + Trace rotation     │
 └───────────────────────────────────────────────────────────────┘
+  │
+  ▼
+stop hooks (each answer → a `hook` event; the first `continue` ──► its input
+becomes the next Task's user message, same run) ── no continue? ──► run returns
 
 signal fires (any point) ──► emit abort + build carry-over ──► run returns
 ```
@@ -83,6 +87,63 @@ When `signal` fires, the engine emits an `abort` event and returns immediately, 
 - **Case B — the model's output was incomplete**: the whole turn is flattened into one `[turn_aborted]` user text carrying whatever partial output existed.
 
 Carry-over enters the model context only — it is never written to the Trace, which records only what actually happened.
+
+## Stop hooks
+
+A hook is a function the Session runs at a fixed point of the loop. Three points exist today: **stop** — the moment a Task ends (the model's final reply with no tool call, or a cutoff: user abort, LLM failure, the `max_turns` cap) — **`pre_tool_use`**, before each tool call's approval, and **`user_prompt`**, when a prompt is submitted (their own sections below). The hooks a Session consults are the **hook packages installed in the Agent's `agent_state/hooks/`** — what a [plugin](/skills#hook-packages) ships — read fresh per Session like skills; SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse`.
+
+An installed hook is a plain Node script, run as a subprocess the way Claude Code runs its command hooks: it is told only where to look, and derives everything else — token usage, turn counts, how the Task ended, its own state file — from the Trace.
+
+```text
+stdin   { "hook": "stop", "session_id": "…", "trace_path": "/abs/…/<session>_001.jsonl" }
+stdout  nothing = no opinion; otherwise
+        { "decision": "continue" | "stop",   // continue: `input` becomes the next Task's user message
+          "input": "…",
+          "reason": "one line for people",
+          "output": { "…": scalars },        // the hook's own record
+          "subagent": { "prompt": "…", "agent_id": "…" } }   // ask for a detached background subagent
+exit    non-zero = failure (stderr's tail becomes the reason); a timeout (default 60 s) kills it
+```
+
+`trace_path` is the Trace file being written — the current context segment; a compaction rotates to a new file — and is absent for a Trace-less Session. The rules:
+
+- hooks run in registration order after every Task; every non-empty answer is recorded as one [`hook` event](/omni-message#event_msg) — `hook`, `name` (the package name), `decision`, `reason`, `output` — streamed and written to the Trace; the injected input is not in the event, it is the user message that follows it;
+- the first `continue` wins: its input is stamped [`sender: "harness"`](/omni-message#model_msg) and yielded onto the stream (a plain run never yields its own input; hosts render the injected one from the stream — the stamp, not the text, is what says the harness sent it) and drives the next Task inside the same `run` call; no `continue` means the call returns;
+- after a cutoff, or once the signal is aborted, a `continue` is recorded but never run — a user's interruption outranks every hook;
+- a `subagent` answer makes the Session spawn a detached background child Session (the same Agent, or `agent_id`) whose first user message is the prompt; it inherits the run's approval callback, its stream is dropped (its own Trace is the record), and its session id is recorded on the event as `output.session_id`;
+- a hook that fails — crashes, prints something that is not JSON, or times out — is recorded with the error as its `reason` and treated as having no opinion; it never takes the run down.
+
+Two hook packages ship in the plugin library. [Goal mode](/goal-mode) is one: its stop hook reads the goal file, decides, and hands back the next round's protocol message. The **`continual-learning`** plugin is the other (not preinstalled): when the Task that just ended ran more than 30 completed turns, it condenses that Task — user and assistant text, tool calls with their arguments, tool outputs, each clipped, no thinking or images — into an excerpt and answers with a `subagent` request whose prompt names the skills directory and the skills the task invoked and asks the child to fold the durable findings into the relevant `SKILL.md` files, or change nothing. The window is the Task itself (its records in the Trace, from its input message; a compaction rotates the file mid-Task and the window is then what the new file holds), so a Task triggers at most once — at its end — and short Tasks never do. An Agent with no installed skill never fires it.
+
+### Pre-tool-use hooks
+
+A hook package can also name `pre_tool_use` commands (`hooks.json`, from the plugin's `hooks.pre_tool_use`). The engine consults them once per complete tool call, **before** the approval callback — the same subprocess contract, with the call inline:
+
+```text
+stdin   { "hook": "pre_tool_use", "session_id", "trace_path",
+          "tool_name": "exec_command", "tool_call_id": "…", "arguments": "<raw argument JSON>" }
+stdout  nothing = no opinion; otherwise
+        { "decision": "allow" | "deny",   // deny: refuse the call; allow: approve it without asking
+          "reason": "one line for people",
+          "output": { "…": scalars } }    // the hook's own record
+```
+
+The rules mirror the stop point's — every non-empty answer is one `hook` event, the first decision wins, a crash / non-JSON / timeout is recorded and treated as no opinion — plus three of its own:
+
+- a **deny** refuses the call without consulting the approval callback; the model reads the refusal as the tool's output, the hook's name and `reason` included;
+- an **allow** approves without asking the host — except that the [command policy](/configuration#command-policy) still outranks it: hook packages live in agent-writable state, the policy is Project-owned security config, so a policy-vetoed call stays `forbidden` no matter what a hook answers. A deny can only ever narrow what would have run;
+- the scripts run **on the hot path** — one consult per tool call, before anything executes — so keep them fast and set a tight `timeout` in the manifest.
+
+No built-in plugin ships one; the point is there for custom guards — a project-specific sandbox rule, an audit log, an allowlist that skips the approval prompt for known-safe calls.
+
+### User-prompt hooks
+
+The third point, `user_prompt`, expands a submitted prompt. Hooks run in core and nowhere else: the host triggers this one through `Session.runUserPromptHook(name, prompt, extras)` when it accepts a user prompt for the flow the package owns — the Session supplies its own id and scratchpad directory — and the answer's `context` is sent right behind the user's own message as a harness-stamped message (rendered as a compact collapsed card). [Goal mode's start](/goal-mode) is the one shipped use: the goal plugin's `start.mjs` is its `user_prompt` command — the server asks the Session to run it for `goal: { budget }`, it writes `GOAL.json` and answers with round 1's protocol message.
+
+```text
+stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …host extras (goal: "budget") }
+stdout  { "context": "<text appended after the user's message>" }
+```
 
 ## Mid-run steering
 

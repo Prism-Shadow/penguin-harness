@@ -42,7 +42,7 @@ import type {
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
-import { goalRoundMessage } from "../src/goal/goal-prompts.js";
+
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
@@ -750,105 +750,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(texts).toContain("go");
     expect(texts).toContain("next");
     expect(texts.join("\n")).not.toContain("[turn_aborted]");
-  });
-
-  it("downgrades a goal round's protocol in the [turn_aborted] transcript (auth exit path)", async () => {
-    // An aborted/failed goal round's input rides into the next task via flatten carry-over;
-    // its [goal] protocol ("the system sends the next round automatically", the file rules)
-    // is stale the moment the goal ends and must not re-enter the model as live instructions.
-    const goalInput = goalRoundMessage({
-      objective: "fix the tests",
-      goalFilePath: "/tmp/GOAL.yaml",
-      round: 1,
-      tokensUsed: 0,
-      budget: -1,
-      body: "fix the tests",
-    });
-    const received: OmniMessage[][] = [];
-    let calls = 0;
-    const llm: LLMInterface = {
-      async *streamGenerate(params) {
-        received.push(params.newMessages);
-        if (++calls === 1) {
-          yield partialText("start", "");
-          yield partialText("delta", "half a thought");
-          // `fatal`: exits straight to the flatten path (no retry).
-          return { status: "fatal", errorMessage: "boom" };
-        }
-        yield assistantText("ok");
-        yield tokenUsage(emptyTokenCounts(), {
-          cache_read: 0,
-          cache_write: 0,
-          output: 1,
-          total: 1,
-        });
-        return { status: "completed" };
-      },
-    };
-    const environment = new Environment({
-      workspaceDir: workspace,
-      toolConfig: execCommandToolConfig(),
-    });
-    const engine = new ContextEngine({ llm, environment });
-
-    await collectRun(engine, [userText(goalInput)], allowAll);
-    await collectRun(engine, [userText("unrelated new task")], allowAll);
-
-    expect(received).toHaveLength(2);
-    const texts = received[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
-    const joined = texts.join("\n");
-    // The transcript survives (interrupted-work context), the protocol does not.
-    expect(joined).toContain("[turn_aborted]");
-    expect(joined).toContain("goal round 1 of an ended goal run");
-    expect(joined).toContain("fix the tests");
-    expect(joined).not.toContain("[goal]");
-    expect(joined).not.toContain("Do not modify the goal file");
-    expect(joined).toContain("unrelated new task");
-  });
-
-  it("downgrades a goal round held raw in carry-over (pre-dispatch abort path)", async () => {
-    // Aborted before the Request went out: the input is held AS-IS (not flattened) — without
-    // the downgrade, the full [goal] block would be re-sent verbatim as current input.
-    const goalInput = goalRoundMessage({
-      objective: "fix the tests",
-      goalFilePath: "/tmp/GOAL.yaml",
-      round: 2,
-      tokensUsed: 0,
-      budget: -1,
-      body: "fix the tests",
-    });
-    const received: OmniMessage[][] = [];
-    const llm: LLMInterface = {
-      async *streamGenerate(params) {
-        received.push(params.newMessages);
-        yield assistantText("ok");
-        yield tokenUsage(emptyTokenCounts(), {
-          cache_read: 0,
-          cache_write: 0,
-          output: 1,
-          total: 1,
-        });
-        return { status: "completed" };
-      },
-    };
-    const environment = new Environment({
-      workspaceDir: workspace,
-      toolConfig: execCommandToolConfig(),
-    });
-    const engine = new ContextEngine({ llm, environment });
-    const controller = new AbortController();
-    controller.abort();
-
-    await collectRun(engine, [userText(goalInput)], allowAll, controller.signal);
-    await collectRun(engine, [userText("unrelated new task")], allowAll);
-
-    expect(received).toHaveLength(1);
-    const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
-    const joined = texts.join("\n");
-    expect(joined).toContain("goal round 2 of an ended goal run");
-    expect(joined).toContain("fix the tests");
-    expect(joined).not.toContain("[goal]");
-    expect(joined).toContain("unrelated new task");
   });
 
   it("never writes the flatten carry-over to trace (case B): synthesized carry-over is memory-only", async () => {

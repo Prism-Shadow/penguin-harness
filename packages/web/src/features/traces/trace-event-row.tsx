@@ -12,6 +12,7 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
+import { HOOK_ICON } from "../../components/ui/icons";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
@@ -44,6 +45,8 @@ const TYPE_ICON: Record<string, string> = {
   compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
+  // A hook's answer: the hook glyph the settings tab and the harness card use.
+  hook: HOOK_ICON,
   // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
   mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
   mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
@@ -125,8 +128,24 @@ export function summarizeEvent(msg: OmniMessage): string {
       const legacy = p["reason"] != null ? String(p["reason"]) : "";
       return [code || legacy, detail].filter(Boolean).join(" · ");
     }
-    case "goal_finished":
-      return `${String(p["outcome"])} · rounds=${String(p["rounds"])} · tokens=${String(p["tokens_used"])}`;
+    case "hook": {
+      // A hook's answer: its name, decision and reason, then its structured record as k=v.
+      const output = p["output"];
+      const record =
+        output && typeof output === "object"
+          ? Object.entries(output as Record<string, unknown>)
+              .map(([k, v]) => `${k}=${String(v)}`)
+              .join(" ")
+          : "";
+      return [
+        p["name"] != null ? String(p["name"]) : "",
+        p["decision"] != null ? String(p["decision"]) : "",
+        p["reason"] != null ? String(p["reason"]) : "",
+        record,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
     case "subagent":
       return String(p["session_id"] ?? "");
     default:

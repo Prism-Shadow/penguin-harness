@@ -28,8 +28,8 @@ import {
   loadAgentState,
   loadAgentVault,
   loadProjectConfig,
+  listInstalledHooks,
   projectDir,
-  goalFilePath,
   resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
@@ -49,6 +49,8 @@ import {
   resumeTrace,
 } from "./trace/index.js";
 import { Session } from "./session.js";
+import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
+import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import type { SessionConfig } from "./session.js";
 import {
   createTempWorkspace,
@@ -79,7 +81,9 @@ import type {
   OpenedContext,
 } from "./engine/context-engine.js";
 import type {
+  ApproveFn,
   CommandPolicyConfig,
+  GenerativeModelConfig,
   ProxyEnvPolicy,
   SubagentHandle,
   SubagentRunner,
@@ -227,6 +231,8 @@ interface SessionRuntime {
   commandPolicy: () => CommandPolicyConfig | undefined;
 
   createBareLLM: () => GenerativeModel;
+  /** The child-session runner the run_subagent tool uses; sessionHooks' subagent spawner shares it. */
+  subagentRunner: SubagentRunner;
 }
 
 /**
@@ -537,12 +543,17 @@ export class Agent {
     const context = await this.assembleContext(spec);
     const rt = this.buildRuntime(spec, context);
 
+    const hooks = await this.sessionHooks(
+      rt.subagentRunner,
+      spec.subagentDepth > 0 || opts.source === "subagent",
+    );
+
     const trace = new Writer({
       tracesDir: tracesDir(this.state.root, this.state.projectId, this.state.agentId),
       sessionId,
     });
 
-    return this.newSession(spec, context, rt, trace);
+    return this.newSession(spec, context, rt, trace, { ...(hooks ? { hooks } : {}) });
   }
 
   /**
@@ -663,6 +674,8 @@ export class Agent {
       return r;
     };
 
+    const hooks = await this.sessionHooks(rt.subagentRunner, meta.source === "subagent");
+
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
       tracesDir: dir,
@@ -692,6 +705,7 @@ export class Agent {
 
     return this.newSession(spec, context, rt, trace, {
       bootstrap,
+      ...(hooks ? { hooks } : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -737,9 +751,6 @@ export class Agent {
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
       modelHasVision: spec.modelEntry.vision !== false,
-      // Goal mode's control file lives in the session scratchpad; the path is fixed per
-      // Session, so it is wired here rather than passed per-run.
-      goalFilePath: goalFilePath(root, projectId, agentId, spec.sessionId),
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
       // Sandbox command policy, strict-tier like the rest of the context (though
       // Project-owned, never Agent State): read from disk when each context opens, so an
@@ -1133,6 +1144,77 @@ export class Agent {
       commandPolicy: () => current.commandPolicy,
 
       createBareLLM,
+      subagentRunner,
     };
   }
+
+  /**
+   * The hooks of a top-level Session: every hook package installed in the Agent's
+   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a
+   * script (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
+   * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
+   * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
+   * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
+   * Trace, and a child could not spawn a subagent anyway.
+   */
+  private async sessionHooks(
+    runner: SubagentRunner,
+    child: boolean,
+  ): Promise<SessionHooks | undefined> {
+    if (child) return undefined;
+    const installed = await listInstalledHooks(
+      this.state.root,
+      this.state.projectId,
+      this.state.agentId,
+    );
+    const stop = installed.flatMap((hook) =>
+      hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
+    );
+    const preToolUse = installed.flatMap((hook) =>
+      hook.pre_tool_use.map((cmd) =>
+        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+      ),
+    );
+    const userPrompt = installed.flatMap((hook) =>
+      hook.user_prompt.map((cmd) =>
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+      ),
+    );
+    if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;
+    return {
+      ...(stop.length > 0 ? { stop } : {}),
+      ...(preToolUse.length > 0 ? { preToolUse } : {}),
+      ...(userPrompt.length > 0 ? { userPrompt } : {}),
+      spawnSubagent: async (request: HookSubagentRequest, approve?: ApproveFn) => {
+        const handle = await runner.spawn({
+          ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),
+        });
+        // The child's upfront session_meta goes back to the Session, which streams it behind
+        // the hook event so a host registers the child session (a row, a place in the
+        // subagent listing) the way it does a tool-spawned one; the detached run then skips
+        // its own meta forwarding.
+        const meta = handle.takeMeta?.() ?? null;
+        runDetached(handle, [userText(request.prompt, "harness")], approve);
+        return { sessionId: handle.sessionId, meta };
+      },
+    };
+  }
+}
+
+/** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */
+function runDetached(handle: SubagentHandle, messages: OmniMessage[], approve?: ApproveFn): void {
+  void (async () => {
+    try {
+      const it = handle.run({ messages, ...(approve ? { approve } : {}) });
+      for (;;) {
+        const res = await it.next();
+        if (res.done) break;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[hooks] subagent ${handle.sessionId} failed: ${message}\n`);
+    } finally {
+      handle.dispose();
+    }
+  })();
 }

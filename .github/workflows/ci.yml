@@ -58,7 +58,7 @@ jobs:
       # files read skills' emitted types, for one.
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web...,@prismshadow/penguin-skills..."
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web..."
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
@@ -85,7 +85,7 @@ jobs:
             build: "@prismshadow/penguin-desktop..."
             tests: >-
               pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
-              --filter @prismshadow/penguin-docs --filter @prismshadow/penguin-skills test
+              --filter @prismshadow/penguin-docs test
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup

@@ -22,8 +22,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseSkillFrontmatter, SKILL_NAME_PATTERN } from "@prismshadow/penguin-skills";
-import type { SkillMetadata } from "@prismshadow/penguin-skills";
+import { parseSkillFrontmatter, PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
+import type { SkillMetadata } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import {
   MAX_ARCHIVE_FILES,
@@ -189,7 +189,7 @@ export async function discoverDirectorySkills(dir: string): Promise<DirectorySki
     }
     for (const entry of entries) {
       // A symlinked Skill directory is not a directory to Dirent, so it is skipped here too.
-      if (!entry.isDirectory() || !SKILL_NAME_PATTERN.test(entry.name)) continue;
+      if (!entry.isDirectory() || !PLUGIN_NAME_PATTERN.test(entry.name)) continue;
       if (byName.has(entry.name)) continue; // earlier root wins: .agents over .claude
       // One Skill that cannot be read — an unreadable file, an oversized SKILL.md — is passed
       // over like any other non-installable directory, rather than failing the whole listing.

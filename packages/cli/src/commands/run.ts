@@ -26,10 +26,10 @@
  * Docs: /docs/cli § "penguin run".
  */
 import type { Command } from "commander";
-import { UNLIMITED_BUDGET, VERSION } from "@prismshadow/penguin-core";
+import { VERSION } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
-import { parseTokenBudget } from "../goal-command.js";
+import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
 import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
 import {

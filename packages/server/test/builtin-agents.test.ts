@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadPreinstalledSkills } from "@prismshadow/penguin-skills";
+import { libraryPlugin, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type { BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 
@@ -47,14 +47,38 @@ describe("built-in Agent provisioning", () => {
     expect(list.agents.find((a) => a.agentId === "default_agent")?.name).toBe("General Agent");
 
     // Install policy: default_agent is pre-installed with the library's preinstalled set
-    // (skills marked `preinstall: false`, e.g. remote-claude-code, stay manual-install only).
+    // (plugins marked `preinstall: false`, e.g. use-claude-code, stay manual-install only).
     const skillsOf = async (agentId: string) =>
       (
         await fs.readdir(path.join(t.root, projectId, "agents", agentId, "agent_state", "skills"))
       ).sort();
     expect(await skillsOf("default_agent")).toEqual(
-      loadPreinstalledSkills().map((skill) => skill.name),
+      loadPreinstalledPlugins()
+        .flatMap((plugin) => plugin.skills.map((skill) => skill.name))
+        .sort(),
     );
+    // The preinstalled hook packages land beside the skills (the goal plugin ships one).
+    const hooksOf = await fs.readdir(
+      path.join(t.root, projectId, "agents", "default_agent", "agent_state", "hooks"),
+    );
+    expect(hooksOf).toContain("goal");
+    expect(hooksOf).not.toContain("continual-learning");
+    // The hook package carries its plugin's icon beside the manifest, the way an installed skill does.
+    expect(
+      await fs.readFile(
+        path.join(
+          t.root,
+          projectId,
+          "agents",
+          "default_agent",
+          "agent_state",
+          "hooks",
+          "goal",
+          "icon.svg",
+        ),
+        "utf8",
+      ),
+    ).toBe(libraryPlugin("goal")!.icon);
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workflows section).

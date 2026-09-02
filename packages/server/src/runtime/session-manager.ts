@@ -34,13 +34,11 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
-  goalFinishedOf,
-  goalTokenDelta,
-  isGoalRoundInput,
+  isHookInput,
   isSessionMeta,
   parseUserSteeringText,
-  stripLeadingMarkerBlocks,
   tracesDir,
+  userText,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
@@ -65,9 +63,9 @@ import type {
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
+import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -117,8 +115,6 @@ export interface RuntimeSession {
     opts: {
       approve: ApproveFn;
       signal: AbortSignal;
-      /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
-      goal?: { budget?: number };
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
@@ -141,6 +137,16 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
+  /**
+   * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
+   * run in core and nowhere else); null = the package is not installed or names no such
+   * command. Optional: test fakes may omit it, reading as not installed.
+   */
+  runUserPromptHook?(
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<{ context?: string } | null>;
   /** A tool's permission level from the running context's toolset (core `Session.toolPermission`; strict-tier — rebuilt at rotation). */
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
@@ -312,8 +318,6 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
-  /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
-  goals?: GoalsRepo;
   /**
    * Publishes a Session-scoped event on the user-level channel of everyone who can see the
    * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
@@ -894,19 +898,24 @@ export class SessionManager {
   }
 
   /**
-   * Start a goal run: like startTask, but the run is core goal mode — one
-   * `session.run(input, { goal })` call loops rounds until a terminal state, and the
-   * Session stays `running` for the whole goal (every round), so the existing abort
-   * endpoint interrupts the entire loop and schedules queue behind it as usual. Round
-   * inputs are yielded by core and published like any streamed message; progress
-   * additionally goes out as goal_* server events and into goal_state (when a repo is
-   * wired).
+   * Start a goal run: like startTask, but the goal plugin composes the input and its stop
+   * hook drives every later round inside this one `session.run` call — so the Session
+   * stays `running` for the whole goal (every round), the existing abort endpoint
+   * interrupts the entire loop and schedules queue behind it as usual. The plugin's
+   * `user_prompt` hook (hooks run in core and nowhere else — `Session.runUserPromptHook`)
+   * writes the Session's goal file and answers the round-1 protocol message; it runs under
+   * the session lock AFTER the idle check, since it overwrites the goal file a running goal
+   * is reading. Not installed (null) is the route's 409; an empty answer a 500. Round inputs
+   * are yielded by core and published like any streamed message; progress additionally goes
+   * out as goal_* server events (the run state itself is the goal file the plugin maintains).
    */
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
-      input: OmniMessage[];
+      /** The user's own message(s) exactly as submitted — text and images, no wrapping. */
+      messages: OmniMessage[];
+      /** The user's own objective text (leading marker blocks stripped): what the plugin records, the goal_started event and the title material. */
+      objective: string;
       budget: number;
     },
   ): Promise<{ sessionId: string }> {
@@ -916,36 +925,44 @@ export class SessionManager {
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
-      // The objective is the user's own text (leading skill-invocation blocks stripped) —
-      // the same derivation core records in GOAL.yaml; used for the run-state row, the
-      // goal_started event, and as title material.
-      // `isPlainText` leaves attached images out, so this copy carries no
-      // `[attached image: <path>]` lines — which suits its readers, since a status card and a
-      // generated title read better without absolute scratchpad paths. Core keeps its own
-      // folded copy (Session.runGoal) for what the rounds actually re-inject.
-      const text = args.input
-        .filter(isPlainText("user"))
-        .map((m) => m.payload.text)
-        .join("\n");
-      const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
+      const objective = args.objective;
+      const started = await entry.session.runUserPromptHook?.("goal", objective, {
+        budget: args.budget,
+      });
+      if (!started) {
+        throw new HttpError(
+          409,
+          "goal_plugin_not_installed",
+          "Goal mode needs the goal plugin installed on this agent.",
+        );
+      }
+      if (!started.context) {
+        throw new HttpError(
+          500,
+          "goal_start_failed",
+          "The goal plugin's user_prompt hook gave no round-1 context.",
+        );
+      }
+      // Round 1 is the user's own message(s) followed by the hook's expansion context stamped
+      // as harness-injected (the protocol text points back at the user message as the
+      // objective). Later rounds are the stop hook's continues, which core stamps the same way.
+      const input = [...args.messages, userText(started.context, "harness")];
       const ac = new AbortController();
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
-      // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
-      // inputs onto the stream, but the Trace write still waits for the bootstrap);
-      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
-      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
+      // Round-1 input: same publish + pendingInputs hold as launchTask. Core never yields
+      // a run's own initial input (only the stop hook's later injections), so without this
+      // publish the round-1 messages reach only the Trace — a page already subscribed (a
+      // second goal on the session) would not see the user's message or the protocol
+      // message until a reload. Append + bootstrap reset for the same abort-mid-bootstrap
+      // reasons as launchTask.
+      entry.pendingInputs = [...entry.pendingInputs, ...input];
       entry.pendingBootstrap = [];
+      const channel = this.deps.channels.get(entry.sessionId);
+      for (const msg of input) channel.publish(msg);
       this.publishState(entry, "running");
       const approve = this.entryApprove(entry);
-      const goalId = this.deps.goals?.create({
-        sessionId: entry.sessionId,
-        projectId: entry.projectId,
-        agentId: entry.agentId,
-        objective,
-        budget: args.budget,
-      });
       this.publishEvent(entry, {
         type: "goal_started",
         sessionId: entry.sessionId,
@@ -953,11 +970,10 @@ export class SessionManager {
         budget: args.budget,
       });
       const gen = this.goalStream(entry, {
-        input: args.input,
+        input,
         budget: args.budget,
         approve,
         signal: ac.signal,
-        ...(goalId !== undefined ? { goalId } : {}),
       });
       // The objective doubles as the title material (same role as a task's input text).
       entry.running = this.drive(entry, gen, { userExcerpt: objective });
@@ -966,11 +982,14 @@ export class SessionManager {
   }
 
   /**
-   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
-   * inputs) become goal_round events + goal_state refreshes, and the terminal
-   * `goal_finished` event message becomes the goal_finished server event + the run-state
-   * row's final status. Token numbers mirror core's own accounting (same
-   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
+   * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
+   * round 1 from the seeded input (core never yields a run's initial input, so it is
+   * counted here, where startGoal published it), later rounds from the stop-hook continues
+   * core yields — and the goal hook's `stop` event becomes the
+   * goal_finished server event. `used` is what the hook last recorded in its event's
+   * `output` — the same number its budget check used — so the UI never shows a different
+   * figure. A stream that ends without the hook's terminal event (a cut-off run, an
+   * infrastructure failure) closes as `aborted`.
    */
   private async *goalStream(
     entry: RuntimeEntry,
@@ -979,23 +998,32 @@ export class SessionManager {
       budget: number;
       approve: ApproveFn;
       signal: AbortSignal;
-      goalId?: number;
     },
   ): AsyncGenerator<OmniMessage> {
     const gen = entry.session.run(args.input, {
       approve: args.approve,
       signal: args.signal,
-      goal: { budget: args.budget },
     });
     let round = 0;
     let used = 0;
     let finished = false;
+    // Round 1's boundary is the seeded input itself: it never comes back out of `gen`.
+    for (const msg of args.input) {
+      if (isHookInput(msg)) {
+        round++;
+        this.publishEvent(entry, {
+          type: "goal_round",
+          sessionId: entry.sessionId,
+          round,
+          used,
+          budget: args.budget,
+        });
+      }
+    }
     try {
       for await (const msg of gen) {
-        used += goalTokenDelta(msg);
-        if (isGoalRoundInput(msg)) {
+        if (isHookInput(msg)) {
           round++;
-          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
           this.publishEvent(entry, {
             type: "goal_round",
             sessionId: entry.sessionId,
@@ -1004,17 +1032,11 @@ export class SessionManager {
             budget: args.budget,
           });
         }
-        const outcome = goalFinishedOf(msg);
+        const progress = goalProgressOf(msg);
+        if (progress) used = progress.tokensUsed;
+        const outcome = goalOutcomeOf(msg);
         if (outcome) {
           finished = true;
-          if (args.goalId !== undefined) {
-            this.deps.goals?.finish(
-              args.goalId,
-              outcome.outcome,
-              outcome.rounds,
-              outcome.tokensUsed,
-            );
-          }
           this.publishEvent(entry, {
             type: "goal_finished",
             sessionId: entry.sessionId,
@@ -1025,30 +1047,18 @@ export class SessionManager {
         }
         yield msg;
       }
-      if (!finished) {
-        // Defensive: core always ends a goal stream with goal_finished; a stream that
-        // didn't is a cut-off run — close the row so the UI never shows a forever-active
-        // goal.
-        this.finishAborted(entry, args.goalId, round, used);
-      }
+      if (!finished) this.finishAborted(entry, round, used);
     } catch (err) {
-      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
-      // run state as aborted, then let drive's defensive catch record the error. Guarded on
-      // `finished`: a throw after the terminal event must not overwrite the row's real
-      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
-      if (!finished) this.finishAborted(entry, args.goalId, round, used);
+      // Core throws only on infrastructure failures: close the goal
+      // as aborted, then let drive's defensive catch record the error. Guarded on
+      // `finished`: a throw after the terminal event must not publish a contradicting event.
+      if (!finished) this.finishAborted(entry, round, used);
       throw err;
     }
   }
 
-  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
-  private finishAborted(
-    entry: RuntimeEntry,
-    goalId: number | undefined,
-    round: number,
-    used: number,
-  ): void {
-    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
+  /** Closes a goal as aborted for the UI (stream cut off / infrastructure failure). */
+  private finishAborted(entry: RuntimeEntry, round: number, used: number): void {
     this.publishEvent(entry, {
       type: "goal_finished",
       sessionId: entry.sessionId,

@@ -1,12 +1,13 @@
 /**
- * Landing ↔ skill-library sync: the home page's Skills section presents the built-in library,
- * so every Skill that ships in packages/skills has to appear in both dictionaries and nothing
- * else may. Derived from the library directory — the same source docs' skills-sync test reads —
- * so shipping a Skill without listing it here fails instead of leaving the section quietly short.
+ * Landing ↔ plugin-library sync: the home page's Skills section presents the built-in skills,
+ * so every skill that ships in a packages/plugins plugin has to appear in both dictionaries and
+ * nothing else may (hook packages are not skills and are not listed there). Derived from the
+ * library directories — the same source docs' skills-sync test reads — so shipping a skill
+ * without listing it here fails instead of leaving the section quietly short.
  *
- * Membership only, not order and not which card a Skill sits in: the group manifest is
- * SKILL_GROUPS, pinned in packages/skills' own test, and a reordering inside a card is not a
- * regression worth a red suite.
+ * Membership only, not order and not which card a skill sits in: the categories are the
+ * plugin manifests' call, pinned in packages/plugins' own tests, and a reordering inside a card
+ * is not a regression worth a red suite.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -15,14 +16,23 @@ import { zh } from "../src/lib/strings";
 import type { Strings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
-const skillsRoot = join(__dirname, "..", "..", "skills", "skills");
+const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 
-const librarySkills = readdirSync(skillsRoot, { withFileTypes: true })
-  .filter((entry) => entry.isDirectory() && existsSync(join(skillsRoot, entry.name, "SKILL.md")))
-  .map((entry) => entry.name)
+/** Every skill directory under every plugin's skills/ (a plugin may ship none). */
+const librarySkills = readdirSync(pluginsRoot, { withFileTypes: true })
+  .filter((plugin) => plugin.isDirectory() && existsSync(join(pluginsRoot, plugin.name, "skills")))
+  .flatMap((plugin) =>
+    readdirSync(join(pluginsRoot, plugin.name, "skills"), { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          existsSync(join(pluginsRoot, plugin.name, "skills", entry.name, "SKILL.md")),
+      )
+      .map((entry) => entry.name),
+  )
   .sort();
 
-/** Every Skill name a dictionary's Skills section renders, flattened across its four cards. */
+/** Every Skill name a dictionary's Skills section renders, flattened across its cards. */
 const listedSkills = (dict: Strings): string[] =>
   dict.skills.groups.flatMap((group) => group.skills);
 
@@ -59,7 +69,7 @@ describe("landing ↔ skill library sync", () => {
   }
 
   /**
-   * Card by card rather than as one flat list: the two dictionaries render the same four cards
+   * Card by card rather than as one flat list: the two dictionaries render the same cards
    * in the same order, so a Skill that moves card in one language and not the other is drift a
    * flattened comparison cannot see. Membership inside a card only — the chips are free to be
    * reordered.

@@ -1,0 +1,17 @@
+{
+  "description": "Continual learning: a stop hook that, when the task that just ended ran more than 30 completed turns, hands a condensed excerpt of that task to a background subagent, which folds the durable findings into the agent's own skills.",
+  "description_zh": "持续学习：一个 stop hook，刚结束的任务跑了超过 30 个完成的轮次时，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 自己的 Skill。",
+  "short_description": "Fold a long task's findings back into the agent's skills.",
+  "short_description_zh": "把长任务的发现回流进 Agent 的 Skill。",
+  "version": "2026-09-02.1",
+  "category": "office-productivity",
+  "preinstall": false,
+  "hooks": {
+    "stop": [
+      {
+        "command": "stop.mjs",
+        "timeout": 60
+      }
+    ]
+  }
+}

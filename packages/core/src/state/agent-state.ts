@@ -15,10 +15,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  loadPreinstalledSkills,
+  loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  type HookManifest,
+  type LibraryPlugin,
   type SkillMetadata,
-} from "@prismshadow/penguin-skills";
+} from "../plugins/index.js";
 import type { ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import {
@@ -69,6 +71,7 @@ import {
   agentStateDir,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  hooksDir,
   memoryDir,
   resolveRoot,
   scheduleDir,
@@ -202,6 +205,7 @@ export async function loadAgentState(opts?: {
     // exists from the Agent's first day; Workspace scopes appear at Session creation.
     ensureUserMemoryDir(root, projectId, agentId),
     fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
+    fs.mkdir(hooksDir(root, projectId, agentId), { recursive: true }),
     fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
   ]);
   const preset = opts.init.preset;
@@ -211,20 +215,20 @@ export async function loadAgentState(opts?: {
     ...(preset?.description !== undefined ? { description: preset.description } : {}),
   };
   const agentsMd = preset?.agentsMd ?? defaultAgentsMd();
-  // Only installs the Skills specified by preset (a plain newly created Agent gets none
+  // Only installs the plugins specified by preset (a plain newly created Agent gets none
   // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
-  // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
+  // the library's preinstalled set (plugins marked `preinstall: false` stay manual-install) —
   // the install policy follows Agent identity, not whether creation came from the server or
   // was done directly via SDK/CLI.
   // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
-  // reads SKILL.md with shell and follows it.
-  const skills =
+  // reads SKILL.md with shell and follows it. Hook packages run at the loop's hook points.
+  const plugins =
     preset === undefined && agentId === DEFAULT_AGENT_ID
-      ? loadPreinstalledSkills()
-      : (preset?.skills ?? []);
+      ? loadPreinstalledPlugins()
+      : (preset?.plugins ?? []);
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
-    ...skills.map((skill) => installSkill(root, projectId, agentId, skill)),
+    ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
     // The example Benchmark is only provisioned alongside default_agent (so the evaluation
     // center has data out of the box): idempotently skipped if benchmarks/ already exists,
     // and not created for plain Agents.
@@ -470,9 +474,10 @@ function assertSafeSkillFile(rel: string): void {
 
 /**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg and
- * any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`, subdirectories
- * preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
+ * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg
+ * (a library skill's is its plugin's icon, stamped by the loader; a user-authored or zip-imported
+ * skill's is its own) and any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`,
+ * subdirectories preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
  * updates to the latest content and drops files the new version no longer ships — the directory
  * content always matches the Skill being installed. Each file path is checked to stay within the
  * skill directory before anything is written.
@@ -555,7 +560,7 @@ export async function removeSkill(
 
 /** An installed Skill entry: frontmatter metadata (including an optional short description) + the optional icon.svg content in the directory. */
 export interface InstalledSkill extends SkillMetadata {
-  /** The raw content of `skills/<name>/icon.svg` (a custom icon copied alongside SKILL.md at install time); the field is omitted when missing (the frontend falls back to a default book icon). */
+  /** The raw content of `skills/<name>/icon.svg` — the plugin's icon for a library install, a custom one for a user-authored skill — copied alongside SKILL.md at install time; the field is omitted when missing (the frontend then draws the book glyph). */
   icon?: string;
 }
 
@@ -608,12 +613,133 @@ export async function listInstalledSkills(
     // injected name, and the API couldn't uninstall it either.
     const parsed = parseSkillFrontmatter(raw);
     skills.push({
-      ...(parsed ?? { description: "", version: 1, updated: "" }),
+      ...(parsed ?? { description: "", version: "" }),
       name: entry.name,
       ...(icon !== undefined ? { icon } : {}),
     });
   }
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Installs one library plugin: every skill it ships through `installSkill`, and its hook
+ * package (when it has one) through `installHook` — the same writers the library routes use,
+ * so a plugin picked at Agent creation and one installed from the library land identically.
+ * The plugin's icon lands with both: stamped onto each skill by the loader, and written beside
+ * the hook package's manifest here.
+ */
+export async function installPlugin(
+  root: string,
+  projectId: string,
+  agentId: string,
+  plugin: LibraryPlugin,
+): Promise<void> {
+  for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
+  if (plugin.hooks) {
+    await installHook(
+      root,
+      projectId,
+      agentId,
+      plugin.hooks.manifest,
+      plugin.hooks.files,
+      plugin.icon,
+    );
+  }
+}
+
+/**
+ * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's
+ * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
+ * installed skill does), plus the package's files (relative path → content, subdirectories
+ * preserved), replacing the whole directory like a skill install does. Each file path is
+ * checked to stay within the directory.
+ * Docs: /docs/skills § "Hooks".
+ */
+export async function installHook(
+  root: string,
+  projectId: string,
+  agentId: string,
+  manifest: HookManifest,
+  files: Record<string, string>,
+  icon?: string,
+): Promise<void> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  assertValidId("skill_name", manifest.name);
+  for (const rel of Object.keys(files)) assertSafeSkillFile(rel);
+  const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
+  await replaceSkillDirectory(dir, [
+    ["hooks.json", `${JSON.stringify(manifest, null, 2)}\n`],
+    ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
+    ...Object.entries(files),
+  ]);
+}
+
+/** Uninstalls a hook package: deletes the entire `hooks/<name>/` directory; idempotent. */
+export async function removeHook(
+  root: string,
+  projectId: string,
+  agentId: string,
+  name: string,
+): Promise<void> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  assertValidId("skill_name", name);
+  await fs.rm(path.join(hooksDir(root, projectId, agentId), name), {
+    recursive: true,
+    force: true,
+  });
+}
+
+/** An installed hook package: its manifest plus the directory its commands resolve against. */
+export interface InstalledHook extends HookManifest {
+  dir: string;
+  /** The raw content of `hooks/<name>/icon.svg` (the plugin's icon, written beside the manifest at install time); omitted when the plugin ships none. */
+  icon?: string;
+}
+
+/**
+ * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json` and
+ * reads the optional icon.svg beside it. The manifest is the installer's own output
+ * (installHook writes a HookManifest), so it is read back as one; a directory without a
+ * hooks.json is not a hook package, and the directory name is the identity (a manifest
+ * naming something else is corrected). Sorted by name; [] when hooks/ doesn't exist.
+ */
+export async function listInstalledHooks(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<InstalledHook[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const base = hooksDir(root, projectId, agentId);
+  let entries;
+  try {
+    entries = await fs.readdir(base, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const hooks: InstalledHook[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const dir = path.join(base, entry.name);
+    let manifest: HookManifest;
+    try {
+      manifest = JSON.parse(
+        await fs.readFile(path.join(dir, "hooks.json"), "utf8"),
+      ) as HookManifest;
+    } catch {
+      continue;
+    }
+    let icon: string | undefined;
+    try {
+      icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");
+    } catch {
+      // No icon.svg: the plugin shipped none.
+    }
+    hooks.push({ ...manifest, name: entry.name, dir, ...(icon !== undefined ? { icon } : {}) });
+  }
+  return hooks.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

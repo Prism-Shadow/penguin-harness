@@ -161,8 +161,8 @@ export interface Messages {
     createId: string;
     createName: string;
     createDescription: string;
-    /** --skills: comma-separated library skill names to seed the new agent with. */
-    createSkills: string;
+    /** --plugins: comma-separated library plugin names to seed the new agent with. */
+    createPlugins: string;
     created(agentId: string, projectId: string): string;
     colId(): string;
     colName(): string;
@@ -469,6 +469,8 @@ export interface Messages {
     rounds: number,
     tokens: string,
   ): string;
+  /** Dim line for a hook's answer (any hook but goal, whose own lines cover it): name, decision, reason. */
+  hookEvent(name: string, decision: string | undefined, reason: string | undefined): string;
   /** `/goal` usage error (missing objective / malformed command). */
   goalUsage(): string;
   /** Invalid token-budget value (chat `/goal:<budget>` or run `--goal <budget>`). */
@@ -691,7 +693,8 @@ const en: Messages = {
     createId: "Agent id (directory name; letters, digits, underscores)",
     createName: "Display name (defaults to the id)",
     createDescription: "Description",
-    createSkills: "Library skills to preinstall, comma-separated (e.g. web-search,pdf)",
+    createPlugins:
+      "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
@@ -1008,6 +1011,8 @@ const en: Messages = {
     }[outcome];
     return `[goal] ${label} · ${rounds} round${rounds === 1 ? "" : "s"} · tokens ${tokens}`;
   },
+  hookEvent: (name, decision, reason) =>
+    `[hook] ${[name, decision, reason].filter(Boolean).join(" · ")}`,
   goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
@@ -1202,7 +1207,7 @@ const zh: Messages = {
     createId: "Agent id（即目录名；字母、数字、下划线）",
     createName: "显示名（缺省同 id）",
     createDescription: "描述",
-    createSkills: "预装的技能库 Skill，逗号分隔（如 web-search,pdf）",
+    createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",
@@ -1502,6 +1507,8 @@ const zh: Messages = {
     }[outcome];
     return `[目标] ${label} · 共 ${rounds} 轮 · tokens ${tokens}`;
   },
+  hookEvent: (name, decision, reason) =>
+    `[钩子] ${[name, decision, reason].filter(Boolean).join(" · ")}`,
   goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,

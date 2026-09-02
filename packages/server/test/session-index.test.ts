@@ -791,7 +791,7 @@ describe("session-index", () => {
     // after the test closed its database.
     const started: OmniMessage[][] = [];
     t.deps.manager.startGoal = async (sessionId, args) => {
-      started.push(args.input);
+      started.push(args.messages);
       return { sessionId };
     };
     const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
@@ -802,6 +802,8 @@ describe("session-index", () => {
       goal: {},
     });
     expect(withText.status).toBe(202);
+    // The user's own messages verbatim (the manager appends the plugin's round-1 protocol
+    // message behind them).
     expect(started[0]?.map((m) => (m.payload as { type: string }).type)).toEqual([
       "text",
       "image_url",

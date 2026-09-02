@@ -4,26 +4,26 @@
  * The rule every case here defends is the one that makes a dismissal safe: what the badge is
  * dismissed against is WHAT is waiting, not the fact that something was. So dismissing hides
  * exactly the things that were waved away — including the rest of a batch after one of them is
- * dealt with — acting on the trail clears it on its own, and anything new — a later Skill
+ * dealt with — acting on the trail clears it on its own, and anything new — a later plugin
  * version, a different model, a newer error — raises it again.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary, UsageErrorsPage } from "@prismshadow/penguin-server/api";
 import {
   kernelUpdateTodo,
+  pluginUpdateTodo,
   presetUpdateTodo,
   raisedTodo,
-  skillUpdateTodo,
   unexpectedErrorTodo,
 } from "../src/lib/todo-badges";
 import type { Todo } from "../src/lib/todo-badges";
 import { parseTodoDismissMap, withDismissal } from "../src/lib/todo-dismissals";
 
-/** Just the field the Skills gate reads (the gate takes a Pick, so the fixture can be one too). */
+/** Just the field the plugins gate reads (the gate takes a Pick, so the fixture can be one too). */
 function agent(
-  ...updates: Array<{ name: string; version: number }>
-): Pick<AgentSummary, "skillUpdates"> {
-  return { skillUpdates: updates };
+  ...updates: Array<{ name: string; version: string }>
+): Pick<AgentSummary, "pluginUpdates"> {
+  return { pluginUpdates: updates };
 }
 
 function errorPage(total: number, ...timestamps: string[]): UsageErrorsPage {
@@ -39,46 +39,57 @@ function errorPage(total: number, ...timestamps: string[]): UsageErrorsPage {
   };
 }
 
-describe("skillUpdateTodo", () => {
+describe("pluginUpdateTodo", () => {
   it("is null when no Agent is behind", () => {
-    expect(skillUpdateTodo([agent(), agent()])).toBeNull();
+    expect(pluginUpdateTodo([agent(), agent()])).toBeNull();
   });
 
-  it("counts distinct Skills, not Agents: the trail ends on a list that shows each once", () => {
-    const todo = skillUpdateTodo([
-      agent({ name: "web-design", version: 3 }),
-      agent({ name: "web-design", version: 3 }, { name: "vllm", version: 2 }),
+  it("counts distinct plugins, not Agents: the trail ends on a list that shows each once", () => {
+    const todo = pluginUpdateTodo([
+      agent({ name: "web-design", version: "2026-08-03.1" }),
+      agent(
+        { name: "web-design", version: "2026-08-03.1" },
+        { name: "vllm", version: "2026-08-02.1" },
+      ),
     ]);
     expect(todo).toEqual({
-      signature: "vllm@2,web-design@3",
-      items: ["vllm@2", "web-design@3"],
+      signature: "vllm@2026-08-02.1,web-design@2026-08-03.1",
+      items: ["vllm@2026-08-02.1", "web-design@2026-08-03.1"],
       count: 2,
       match: "set",
     });
   });
 
-  it("reports no added/upgradable split: an uninstalled Skill is not waiting for anyone", () => {
-    expect(skillUpdateTodo([agent({ name: "a", version: 2 })])!.breakdown).toBeUndefined();
+  it("reports no added/upgradable split: an uninstalled plugin is not waiting for anyone", () => {
+    expect(
+      pluginUpdateTodo([agent({ name: "a", version: "2026-08-02.1" })])!.breakdown,
+    ).toBeUndefined();
   });
 
   it("is order-independent, so two loads of the same state dismiss alike", () => {
-    const a = skillUpdateTodo([agent({ name: "b", version: 1 }, { name: "a", version: 2 })]);
-    const b = skillUpdateTodo([agent({ name: "a", version: 2 }), agent({ name: "b", version: 1 })]);
+    const a = pluginUpdateTodo([
+      agent({ name: "b", version: "2026-08-01.1" }, { name: "a", version: "2026-08-02.1" }),
+    ]);
+    const b = pluginUpdateTodo([
+      agent({ name: "a", version: "2026-08-02.1" }),
+      agent({ name: "b", version: "2026-08-01.1" }),
+    ]);
     expect(a).toEqual(b);
   });
 
-  it("keeps the highest library version when Agents disagree", () => {
-    // One Agent behind v2 and another behind v3 is one Skill to update, at v3.
-    const todo = skillUpdateTodo([
-      agent({ name: "vllm", version: 2 }),
-      agent({ name: "vllm", version: 3 }),
+  it("lists a plugin once however many Agents are behind on it — they all read one library", () => {
+    // The version is the library's, so every occurrence of a name carries the same one; the
+    // gate takes it as it comes and never orders `YYYY-MM-DD.N` strings itself.
+    const todo = pluginUpdateTodo([
+      agent({ name: "vllm", version: "2026-08-03.1" }),
+      agent({ name: "vllm", version: "2026-08-03.1" }),
     ]);
-    expect(todo).toEqual({ signature: "vllm@3", items: ["vllm@3"], count: 1, match: "set" });
-  });
-
-  it("survives an Agent list from a server that does not send the field", () => {
-    // A newer web against an older runtime: no skillUpdates key at all, and no crash.
-    expect(skillUpdateTodo([{} as Pick<AgentSummary, "skillUpdates">])).toBeNull();
+    expect(todo).toEqual({
+      signature: "vllm@2026-08-03.1",
+      items: ["vllm@2026-08-03.1"],
+      count: 1,
+      match: "set",
+    });
   });
 });
 
@@ -234,13 +245,13 @@ describe("raisedTodo", () => {
   });
 
   it("comes back for a later version of the same thing", () => {
-    // "Not this update" — never "never tell me about this Skill again".
+    // "Not this update" — never "never tell me about this plugin again".
     const later: Todo = { signature: "vllm@3", items: ["vllm@3"], count: 1, match: "set" };
     expect(raisedTodo(later, "vllm@2")).toEqual(later);
   });
 
   it("stays down for the rest of a batch after one of it was acted on", () => {
-    // Two Skills dismissed together, then one updated: what is left is a SUBSET of what the
+    // Two plugins dismissed together, then one updated: what is left is a SUBSET of what the
     // user waved away, and a shrinking set is not news.
     const rest: Todo = { signature: "b@3", items: ["b@3"], count: 1, match: "set" };
     expect(raisedTodo(rest, "a@2,b@3")).toBeNull();
@@ -250,15 +261,15 @@ describe("raisedTodo", () => {
 describe("todo dismissal markers", () => {
   it("reads nothing out of an absent, malformed or wrongly shaped record", () => {
     expect(parseTodoDismissMap(undefined)).toEqual({});
-    expect(parseTodoDismissMap("skills")).toEqual({});
+    expect(parseTodoDismissMap("plugins")).toEqual({});
     expect(parseTodoDismissMap([])).toEqual({});
     expect(parseTodoDismissMap({ p1: "a@1" })).toEqual({});
   });
 
   it("keeps the string signatures and drops everything else, key by key", () => {
     // One bad value must not resurrect the other trails' dots.
-    expect(parseTodoDismissMap({ p1: { skills: "a@1", models: 7, nope: "x" } })).toEqual({
-      p1: { skills: "a@1" },
+    expect(parseTodoDismissMap({ p1: { plugins: "a@1", models: 7, nope: "x" } })).toEqual({
+      p1: { plugins: "a@1" },
     });
   });
 
@@ -266,9 +277,9 @@ describe("todo dismissal markers", () => {
     // The whole map is what gets written back (PUT /me/prefs merges only at the top level),
     // so a dismissal must carry every other Project through untouched.
     expect(
-      withDismissal({ p1: { skills: "a@1" }, p2: { errors: "t" } }, "p1", "models", "b/two"),
+      withDismissal({ p1: { plugins: "a@1" }, p2: { errors: "t" } }, "p1", "models", "b/two"),
     ).toEqual({
-      p1: { skills: "a@1", models: "b/two" },
+      p1: { plugins: "a@1", models: "b/two" },
       p2: { errors: "t" },
     });
   });

@@ -98,7 +98,7 @@ describe("penguin run", () => {
   });
 
   it("a goal run exits non-zero unless the goal completed", async () => {
-    // The fake emits no goal_finished event, which reads as "did not complete".
+    // The fake emits no goal hook stop event, which reads as "did not complete".
     const code = await cli(["run", "-m", "objective", "--goal", "500k"]);
     expect(code).toBe(1);
     const session = [...server.sessions.values()][0]!;
@@ -188,7 +188,7 @@ describe("penguin logs", () => {
 });
 
 describe("penguin agent / project", () => {
-  it("agent ls prints the table; agent create posts id/name/skills", async () => {
+  it("agent ls prints the table; agent create posts id/name/plugins", async () => {
     await cli(["agent", "ls"]);
     expect(out()).toContain("default_agent");
 
@@ -200,15 +200,15 @@ describe("penguin agent / project", () => {
       "helper",
       "--name",
       "Helper",
-      "--skills",
-      "web-search, pdf",
+      "--plugins",
+      "software-development, goal",
     ]);
     expect(code).toBe(0);
     const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/agents"));
     expect(create?.body).toMatchObject({
       agentId: "helper",
       name: "Helper",
-      skills: ["web-search", "pdf"],
+      plugins: ["software-development", "goal"],
     });
     expect(out()).toContain(t.agent.created("helper", "default_project"));
   });

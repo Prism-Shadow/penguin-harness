@@ -18,6 +18,8 @@ import type {
   AgentKernelUpdateResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
+  AgentHooksResponse,
+  AgentPluginsInstallResponse,
   AgentSkillsResponse,
   AgentVaultConfigDto,
   AgentsResponse,
@@ -96,8 +98,9 @@ import type {
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
-  SkillInstallRequest,
-  SkillLibraryResponse,
+  PluginFilesResponse,
+  PluginInstallRequest,
+  PluginLibraryResponse,
   QQBindingPutRequest,
   QQBindingResponse,
   QQScanPollResponse,
@@ -1031,21 +1034,42 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
     { method: "DELETE" },
   );
 
-// Skill library & Agent-installed Skills ------------------------------------------------------
+// Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
-/** Skill library (available to any logged-in user): groups and metadata, excludes SKILL.md body content. */
-export const getSkillLibrary = () => apiFetch<SkillLibraryResponse>("/api/skills");
+/** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
+export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plugins");
+
+/** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
+export const getPluginFiles = (plugin: string) =>
+  apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
+
+/**
+ * Installs whole library plugins — each one's skills and hook package; an already-installed
+ * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
+ * refreshed installed lists.
+ */
+export const installAgentPlugins = (projectId: string, agentId: string, names: string[]) =>
+  apiFetch<AgentPluginsInstallResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
+    { method: "POST", body: { names } satisfies PluginInstallRequest },
+  );
 
 export const getAgentSkills = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
   );
 
-/** Installs (if already installed, overwrites with the library content); 201 returns the Agent's latest installed list. */
-export const installAgentSkills = (projectId: string, agentId: string, names: string[]) =>
-  apiFetch<AgentSkillsResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
-    { method: "POST", body: { names } satisfies SkillInstallRequest },
+export const getAgentHooks = (projectId: string, agentId: string) =>
+  apiFetch<AgentHooksResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
+export const uninstallAgentHook = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/hooks/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */

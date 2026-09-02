@@ -39,7 +39,6 @@
 import { parseUserSteeringText } from "@prismshadow/penguin-core";
 import {
   parseBackgroundTaskDoneMessage,
-  parseGoalMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
 } from "@prismshadow/penguin-core/markers";
@@ -182,7 +181,7 @@ function breakRuns(state: ScanState): void {
 /**
  * Handle one Task-starting user message (prompt text or non-steering image).
  * `entryEligible` says whether the message would open an outline entry (buildOutline's
- * rule); ineligible messages (banner blocks, goal rounds > 1) still start Tasks — and
+ * rule); ineligible messages (banner blocks, harness-injected inputs) still start Tasks — and
  * still cut when the run is broken — but never count and always break the run, exactly
  * as buildOutline resets lastWasUser for them.
  */
@@ -208,11 +207,15 @@ function onTaskStart(
   }
 }
 
-/** buildOutline's eligibility for a user prompt TEXT: machine-only source blocks and goal rounds past 1 open no entry. */
-function outlineEligibleText(text: string): boolean {
-  if (parseHandoffMessage(text) || parseModelSwitchMessage(text)) return false;
-  const goal = parseGoalMessage(text);
-  return !(goal !== null && goal.round > 1);
+/**
+ * buildOutline's eligibility for a user prompt: machine-only source blocks and
+ * harness-injected inputs (goal rounds, hook continues) open no entry. A background
+ * completion notice shares the harness stamp but keeps its independent turn when it starts
+ * a Task (`isNotice` — the caller already parsed it), matching the Web reducer.
+ */
+function outlineEligible(text: string, sender: string | undefined, isNotice: boolean): boolean {
+  if (sender === "harness" && !isNotice) return false;
+  return !parseHandoffMessage(text) && !parseModelSwitchMessage(text);
 }
 
 /**
@@ -282,7 +285,12 @@ export async function scanMessages(
           breakRuns(state);
           continue;
         }
-        onTaskStart(state, ms, outlineEligibleText(text), (stats) => onBoundary(i, stats));
+        onTaskStart(
+          state,
+          ms,
+          outlineEligible(text, (p as { sender?: string }).sender, notice !== null),
+          (stats) => onBoundary(i, stats),
+        );
         continue;
       }
       if (p.type === "image_url") {

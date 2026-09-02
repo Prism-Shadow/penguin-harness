@@ -26,9 +26,12 @@ import {
 } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
+import { runStopHooks } from "./hooks/stop-hook.js";
+import type { HookSubagentSpawner, SessionHooks, StopHook } from "./hooks/stop-hook.js";
+import { runPreToolUseHooks } from "./hooks/tool-hook.js";
+import type { PreToolUseHook } from "./hooks/tool-hook.js";
+import type { UserPromptHook, UserPromptHookResult } from "./hooks/prompt-hook.js";
 import { pumpOpener } from "./internal/merge-queue.js";
-import { runGoalLoop } from "./goal/goal-loop.js";
-import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   ApproveFn,
   RunCutoff,
@@ -42,7 +45,7 @@ import type {
   ThinkingLevelName,
   ToolPermission,
 } from "./interfaces/index.js";
-import { withCommandPolicy } from "./internal/command-policy.js";
+import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js";
 import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
@@ -114,16 +117,14 @@ export interface SessionConfig {
   imagesDir: string;
   /**
    * Whether the session's model accepts image input (from ModelEntry.vision). Prompts and
-   * steering messages fold their images only when this is false; goal objectives fold either
-   * way, since they are re-injected as text every round (see `runGoal`).
+   * steering messages fold their images only when this is false.
    */
   modelHasVision: boolean;
   /**
-   * Absolute path of this Session's GOAL.yaml (the composition layer derives it from the
-   * agent scratchpad — see `goalFilePath` in state/paths.ts). Goal mode
-   * (`run(input, { goal })`) is unavailable without it.
+   * Stop hooks consulted after every Task of a `run` call, and the spawner that honors a
+   * hook's `subagent` answer (see hooks/stop-hook.ts). Absent = none.
    */
-  goalFilePath?: string;
+  hooks?: SessionHooks;
   /**
    * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
    * SOURCE answering with the running context's policy: command policy is strict-tier —
@@ -137,16 +138,8 @@ export interface SessionConfig {
   commandPolicy?: CommandPolicySource;
 }
 
-/** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
-export interface GoalRunOptions {
-  /** Token budget; omitted or -1 (`UNLIMITED_BUDGET`) means no budget. */
-  budget?: number;
-  /** Hard cap on rounds — a runaway backstop, not a host knob (default 100; -1 disables; see goal-loop.ts). */
-  maxRounds?: number;
-}
-
-/** `Session.run` options: the engine's per-call options, plus goal mode. */
-export type SessionRunOptions = RunOptions & { goal?: GoalRunOptions };
+/** `Session.run` options: the engine's per-call options. */
+export type SessionRunOptions = RunOptions;
 
 /**
  * Awaits `work` unless `signal` aborts first — the abort side never cancels `work`
@@ -280,7 +273,11 @@ export class Session {
   private level?: ThinkingLevelName;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
-  private readonly goalFile?: string;
+  /** Stop hooks every `run` of this Session consults, and the spawner for their subagent answers (see SessionConfig.hooks). */
+  private readonly stopHooks: readonly StopHook[];
+  private readonly preToolUseHooks: readonly PreToolUseHook[];
+  private readonly userPromptHooks: readonly UserPromptHook[];
+  private readonly spawnSubagent?: HookSubagentSpawner;
   private readonly commandPolicy?: CommandPolicySource;
   private metaWritten = false;
   /**
@@ -326,7 +323,10 @@ export class Session {
 
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
-    if (config.goalFilePath) this.goalFile = config.goalFilePath;
+    this.stopHooks = config.hooks?.stop ?? [];
+    this.preToolUseHooks = config.hooks?.preToolUse ?? [];
+    this.userPromptHooks = config.hooks?.userPrompt ?? [];
+    if (config.hooks?.spawnSubagent) this.spawnSubagent = config.hooks.spawnSubagent;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
@@ -388,15 +388,39 @@ export class Session {
    * until a turn no longer produces a tool_call (Task ends) or it's aborted.
    * Docs: /docs/agent-loop § "The loop at a glance".
    *
-   * With `opts.goal` present, the same call runs **goal mode**: the input's text becomes the
-   * objective (attached images fold into `[attached image: …]` lines within it, whatever the
-   * model's vision — see `runGoal`), and the Session loops Tasks — each round's input is the
-   * `[goal]` protocol block followed by the text (round 1 verbatim, later rounds the objective)
-   * — until the goal file says stop, the budget runs out, or a round is cut off. Round inputs are
-   * yielded onto the stream before each round (a plain run never yields its own input), and
-   * the final message is exactly one `goal_finished` event carrying the outcome.
-   * Docs: /docs/goal-mode.
+   * When the Task ends, the Session's stop hooks are consulted (see hooks/stop-hook.ts):
+   * every answer is recorded as a `hook` event on the stream and in the Trace, and the first
+   * `continue` drives another Task inside this same call — its input is yielded first, as a
+   * user text message, since a plain run never yields its own input and hosts render the
+   * injected one from the stream. No `continue`, a cutoff (abort, LLM failure, the
+   * max_turns cap) or an aborted signal ends the call; the return value is the last Task's
+   * cutoff, exactly as for a single Task.
    */
+  /**
+   * Runs the named package's `user_prompt` hook — hooks run in core and nowhere else; the
+   * host calls this when it accepts a user prompt for the flow the package owns (the server
+   * does for a goal start, with `extras: { budget }`). The Session supplies its own id and
+   * scratchpad directory; the answer's `context` is the text the host sends right behind
+   * the user's message, stamped `sender: "harness"`. Returns null when the package is not
+   * installed or names no `user_prompt` command (the host's cue to refuse the flow); an
+   * empty answer is `{}`. No `hook` event is recorded — the expansion message is the record.
+   */
+  async runUserPromptHook(
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<UserPromptHookResult | null> {
+    const hook = this.userPromptHooks.find((h) => h.name === name);
+    if (!hook) return null;
+    const result = await hook.run({
+      sessionId: this.sessionId,
+      scratchpadDir: this.imagesDir,
+      prompt,
+      ...(extras !== undefined ? { extras } : {}),
+    });
+    return result ?? {};
+  }
+
   async *run(
     newMessages: OmniMessage[],
     opts?: SessionRunOptions,
@@ -404,24 +428,86 @@ export class Session {
     // The sandbox command policy is applied here, at the Human boundary itself: the
     // injected callback is wrapped so a vetoed command is refused before the host is ever
     // asked, which is what makes the policy outrank every approval mode — no host, and no
-    // approval mode, gets a say. Wrapped once for both a plain Task and every goal round;
-    // a child Session wraps its own forwarded callback again, harmlessly. With no callback
-    // at all the engine denies everything anyway, so there is nothing to guard.
+    // approval mode, gets a say. Wrapped once for every Task of this call; a child Session
+    // wraps its own forwarded callback again, harmlessly. With no callback at all the
+    // engine denies everything anyway, so there is nothing to guard.
     if (opts?.approve) {
       opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
     }
-    if (opts?.goal) {
-      // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
-      // Per-round cutoffs are consumed by the goal loop itself; goal mode always closes
-      // with its own goal_finished terminal event.
-      const { goal, ...roundOpts } = opts;
-      yield* this.runGoal(newMessages, goal, roundOpts);
-      return null;
+    // Pre-tool-use hooks ride the engine's consult seam (RunOptions.preToolUse): the
+    // engine records their events in stream order and applies the first decision before
+    // the approval callback. One rule is enforced here, where the command policy lives:
+    // a hook `allow` never overrides the policy — hook packages sit in agent-writable
+    // state, the policy is Project-owned security config — so a policy-vetoed allow is
+    // downgraded to no decision and the approval chain (policy outermost) answers.
+    if (this.preToolUseHooks.length > 0) {
+      const hooks = this.preToolUseHooks;
+      const signal = opts?.signal;
+      opts = {
+        ...opts,
+        preToolUse: async (tc) => {
+          const p = tc.payload;
+          const tracePath = this.trace?.currentPath?.();
+          const outcome = await runPreToolUseHooks(hooks, {
+            sessionId: this.sessionId,
+            ...(tracePath !== undefined ? { tracePath } : {}),
+            toolName: p.name,
+            toolCallId: p.tool_call_id,
+            argumentsJson: p.arguments,
+            ...(signal ? { signal } : {}),
+          });
+          if (
+            outcome.decision === "allow" &&
+            vetoForToolCall(p.name, p.arguments, this.commandPolicy?.()) !== null
+          ) {
+            return { ...outcome, decision: null };
+          }
+          return outcome;
+        },
+      };
     }
-    return yield* this.runTask(newMessages, opts);
+    const approve = opts?.approve;
+    const spawn = this.spawnSubagent;
+    let input = newMessages;
+    for (;;) {
+      // Manual iteration (not for-await) so the engine's return value — how the Task ended —
+      // is read: a cutoff means the model never finished, which no `continue` may override.
+      const it = this.runTask(input, opts);
+      let cutoff: RunCutoff | null = null;
+      for (;;) {
+        const res = await it.next();
+        if (res.done) {
+          cutoff = res.value;
+          break;
+        }
+        yield res.value;
+      }
+      if (this.stopHooks.length === 0) return cutoff;
+      const tracePath = this.trace?.currentPath?.();
+      const outcome = await runStopHooks(
+        this.stopHooks,
+        {
+          sessionId: this.sessionId,
+          ...(tracePath !== undefined ? { tracePath } : {}),
+          ...(opts?.signal ? { signal: opts.signal } : {}),
+        },
+        spawn ? (request) => spawn(request, approve) : undefined,
+      );
+      for (const ev of outcome.events) {
+        await this.writeTrace(ev, "hook event");
+        yield ev;
+      }
+      // A user's interruption outranks every hook: after a cutoff, or with the signal
+      // already aborted between Tasks, a `continue` is recorded but never run — an aborted
+      // engine would only hold the injected input as carry-over and leak it into the
+      // user's next message.
+      if (outcome.next === null || cutoff !== null || opts?.signal?.aborted) return cutoff;
+      input = [userText(outcome.next, "harness")];
+      yield input[0]!;
+    }
   }
 
-  /** The single-Task path (a goal round runs one of these per round). */
+  /** The single-Task path: every Task of a `run` call — a hook-continued one included — runs one of these. */
   private async *runTask(
     newMessages: OmniMessage[],
     opts?: RunOptions,
@@ -597,74 +683,6 @@ export class Session {
     // engine now that it exists, ahead of the first turn request.
     if (this.level !== undefined) this.engine.setThinkingLevel(this.level);
     return true;
-  }
-
-  /**
-   * The goal-mode branch of `run`: validates the input, folds any attached images into the
-   * objective, then drives the goal loop, running each round through the single-Task path with
-   * the same per-call options (approval, signal). The loop's terminal
-   * `goal_finished` event is additionally written to the Trace (best-effort, like session_meta)
-   * so the goal's end survives with its conversation.
-   *
-   * Images fold here whether or not the model has vision, because the objective is re-injected
-   * as the text of every round's `[goal]` block — an image message has nowhere to sit in that.
-   * Sending it in round 1 alone would leave later rounds pointing at something compaction has
-   * since dropped, while the objective still reads correct; a path line survives every round
-   * and every compaction, and the model pays for the picture only when it looks. The lines go
-   * at the end of the text, where goal-loop's `stripLeadingMarkerBlocks` leaves them alone.
-   *
-   * Text is required and checked before the fold: a picture alone doesn't state a goal.
-   */
-  private async *runGoal(
-    newMessages: OmniMessage[],
-    goal: GoalRunOptions,
-    opts: RunOptions,
-  ): AsyncGenerator<OmniMessage> {
-    if (!this.goalFile) {
-      throw new Error("Goal mode is unavailable: this Session has no goal file path configured.");
-    }
-    const isUserText = (m: OmniMessage): boolean => {
-      const p = m.payload as { type?: string; role?: string; text?: string };
-      return m.type === "model_msg" && p.type === "text" && p.role === "user" && !!p.text?.trim();
-    };
-    // The objective itself. Checked before the fold, which only ever appends to a user text —
-    // so once this passes, the joined text below cannot come out empty.
-    if (!newMessages.some(isUserText)) {
-      throw new Error("Goal mode requires a non-empty text objective.");
-    }
-    const folded = await this.foldImages(newMessages);
-    const texts: string[] = [];
-    for (const m of folded) {
-      const p = m.payload as { type?: string; role?: string; text?: string };
-      // The fold has already turned the images into text, so anything left that isn't user
-      // text was never one of the two kinds goal mode accepts.
-      if (m.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) {
-        throw new Error("Goal mode accepts user text and images only (the objective).");
-      }
-      texts.push(p.text);
-    }
-    const text = texts.join("\n").trim();
-    const loop = runGoalLoop(
-      { run: (msgs) => this.runTask(msgs, opts) },
-      {
-        text,
-        goalFilePath: this.goalFile,
-        ...(goal.budget !== undefined ? { budget: goal.budget } : {}),
-        ...(goal.maxRounds !== undefined ? { maxRounds: goal.maxRounds } : {}),
-        ...(opts.signal ? { signal: opts.signal } : {}),
-      },
-    );
-    for await (const msg of loop) {
-      if (goalFinishedOf(msg) && this.trace) {
-        try {
-          await this.trace.write(msg);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          process.stderr.write(`[trace] goal_finished write failed: ${message}\n`);
-        }
-      }
-      yield msg;
-    }
   }
 
   /**

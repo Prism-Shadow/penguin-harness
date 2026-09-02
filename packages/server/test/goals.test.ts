@@ -1,7 +1,8 @@
 /**
- * Goal-mode server tests: GoalsRepo state rows, and SessionManager.startGoal driving core
- * goal mode through one `session.run(input, { goal })` call with a fake Session (no real LLM
- * requests) — round events, terminal state persistence, and status transitions.
+ * Goal-mode server tests: SessionManager.startGoal running the goal plugin's user_prompt hook
+ * on a fake Session (no real LLM requests, no scripts) and driving one `session.run` — the
+ * round and terminal server events derived from the stream's harness-injected inputs and
+ * goal hook events.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -9,14 +10,13 @@ import {
   assistantText,
   buildSkillsMessage,
   emptyTokenCounts,
-  goalFinished,
+  hookEvent,
   imageUrlMessage,
   tokenUsage,
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
-import { GoalsRepo } from "../src/db/repos/goals.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
@@ -43,103 +43,36 @@ function usage(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: 0, total };
 }
 
-/** A goal round's injected input, as core's loop would compose it (block + body). */
-function roundInput(round: number, body: string): OmniMessage {
-  return userText(`[goal]\nround: ${round}\nprotocol lines\n[/goal]\n\n${body}`);
+/** A goal round's injected input, as the host records it: plain protocol text, stamped `sender: "harness"`. */
+function roundInput(round: number): OmniMessage {
+  return userText(`goal round ${round} protocol lines`, "harness");
 }
 
-describe("GoalsRepo", () => {
-  let db: DatabaseSync;
-  let repo: GoalsRepo;
-
-  beforeEach(() => {
-    db = openDatabase(":memory:");
-    repo = new GoalsRepo(db);
+/** The goal hook's answer, as core records it: the file's state after the decision. */
+function goalHook(
+  decision: "continue" | "stop",
+  status: string,
+  round: number,
+  tokensUsed: number,
+  budget = -1,
+): OmniMessage {
+  return hookEvent({
+    hook: "stop",
+    name: "goal",
+    decision,
+    output: { status, round, tokens_used: tokensUsed, budget },
   });
-  afterEach(() => db.close());
-
-  it("creates, progresses, finishes, and reads back the latest row per session", () => {
-    const id = repo.create({
-      sessionId: "s1",
-      projectId: "p1",
-      agentId: "a1",
-      objective: "obj",
-      budget: -1,
-    });
-    repo.progress(id, 2, 1234);
-    let row = repo.latestForSession("s1");
-    expect(row).toMatchObject({ id, status: "active", rounds: 2, used: 1234, budget: -1 });
-
-    repo.finish(id, "complete", 3, 2000);
-    row = repo.latestForSession("s1");
-    expect(row).toMatchObject({ status: "complete", rounds: 3, used: 2000 });
-
-    // A later run wins for display.
-    const id2 = repo.create({
-      sessionId: "s1",
-      projectId: "p1",
-      agentId: "a1",
-      objective: "obj2",
-      budget: 500,
-    });
-    expect(repo.latestForSession("s1")?.id).toBe(id2);
-  });
-
-  it("deletes by session, by agent, and by project", () => {
-    repo.create({ sessionId: "s1", projectId: "p1", agentId: "a1", objective: "o", budget: -1 });
-    repo.create({ sessionId: "s2", projectId: "p1", agentId: "a1", objective: "o", budget: -1 });
-    repo.deleteBySession("s1");
-    expect(repo.latestForSession("s1")).toBeNull();
-    expect(repo.latestForSession("s2")).not.toBeNull();
-
-    // deleteByAgent drops the agent's rows but spares another agent in the same project.
-    repo.create({ sessionId: "s3", projectId: "p1", agentId: "a2", objective: "o", budget: -1 });
-    repo.deleteByAgent("p1", "a1");
-    expect(repo.latestForSession("s2")).toBeNull();
-    expect(repo.latestForSession("s3")).not.toBeNull();
-
-    repo.deleteByProject("p1");
-    expect(repo.latestForSession("s3")).toBeNull();
-  });
-
-  it("reconciles orphaned active rows to aborted on startup, leaving terminal rows untouched", () => {
-    const active = repo.create({
-      sessionId: "s1",
-      projectId: "p1",
-      agentId: "a1",
-      objective: "o",
-      budget: -1,
-    });
-    const done = repo.create({
-      sessionId: "s2",
-      projectId: "p1",
-      agentId: "a1",
-      objective: "o",
-      budget: -1,
-    });
-    repo.finish(done, "complete", 1, 10);
-
-    // A hard crash leaves the running goal's row `active`; boot reconciliation flips only it.
-    expect(repo.abortOrphanedActive()).toBe(1);
-    expect(repo.latestForSession("s1")?.status).toBe("aborted");
-    expect(repo.latestForSession("s2")?.status).toBe("complete");
-    // Idempotent: a second boot finds nothing left to reconcile.
-    expect(repo.abortOrphanedActive()).toBe(0);
-    void active;
-  });
-});
+}
 
 describe("SessionManager.startGoal", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
-  let goals: GoalsRepo;
   let channels: ChannelHub;
 
   beforeEach(() => {
     db = openDatabase(":memory:");
     sessions = new SessionsRepo(db);
     sessions.insert(ROW);
-    goals = new GoalsRepo(db);
     channels = new ChannelHub();
   });
   afterEach(() => {
@@ -147,37 +80,49 @@ describe("SessionManager.startGoal", () => {
     db.close();
   });
 
-  type RunOpts = { goal?: { budget?: number } };
+  type RunOpts = Record<string, never>;
 
   /**
-   * Fake session: `run` asserts it was called in goal mode and emits the whole goal stream
-   * the way core's loop would — per-round `[goal]` inputs and work, then the terminal
-   * goal_finished event (the loop itself is core's and is tested in core).
+   * Fake session: `runUserPromptHook` answers the way the goal plugin's start script would
+   * (round 1's protocol text, recorded with what it was asked), and `run` emits the goal
+   * stream the way core would — the run's own initial input is NEVER yielded (startGoal
+   * publishes it; the tap counts round 1 off the seeded input), later rounds'
+   * harness-stamped injections and the goal hook's answers are (the hook loop is core's and
+   * the decisions are the goal plugin's; both are tested where they live).
    */
-  function goalFakeSession(
-    stream: (input: OmniMessage[]) => OmniMessage[],
-  ): RuntimeSession & { runOpts: RunOpts[]; runs: OmniMessage[][] } {
+  function goalFakeSession(stream: (input: OmniMessage[]) => OmniMessage[]): RuntimeSession & {
+    runOpts: RunOpts[];
+    runs: OmniMessage[][];
+    starts: Array<{ name: string; prompt: string; extras: unknown }>;
+  } {
     const runOpts: RunOpts[] = [];
     const runs: OmniMessage[][] = [];
+    const starts: Array<{ name: string; prompt: string; extras: unknown }> = [];
     return {
       sessionId: ROW.sessionId,
       runOpts,
       runs,
+      starts,
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
+      async runUserPromptHook(name, prompt, extras) {
+        starts.push({ name, prompt, extras });
+        return { context: "goal round 1 protocol lines" };
+      },
       async *run(input: OmniMessage[], opts) {
         runs.push(input);
-        runOpts.push({ ...(opts.goal !== undefined ? { goal: opts.goal } : {}) });
+        void opts;
+        runOpts.push({});
         yield* stream(input);
       },
       async *compact() {},
     };
   }
 
-  function makeManager(session: RuntimeSession, withRepo = true): SessionManager {
+  function makeManager(session: RuntimeSession): SessionManager {
     return new SessionManager({
       sessions,
       channels,
@@ -185,148 +130,201 @@ describe("SessionManager.startGoal", () => {
       loader: { load: async () => session },
       recorder: { record: async () => {} },
       log: () => {},
-      ...(withRepo ? { goals } : {}),
     });
   }
 
-  it("drives one goal-mode run, publishing goal events and persisting the outcome", async () => {
+  function serverEvents(events: ChannelEvent[]) {
+    return events
+      .filter((e) => e.event === "server_event")
+      .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
+  }
+
+  it("drives one goal-mode run, mapping the round inputs and the hook's answers to goal events", async () => {
     const text = buildSkillsMessage(["web-design"], "make it work");
-    const session = goalFakeSession((input) => [
-      roundInput(1, (input[0]!.payload as { text: string }).text),
+    const session = goalFakeSession(() => [
       assistantText("round 1 work"),
       tokenUsage(usage(100), usage(100)),
-      roundInput(2, "make it work"),
+      goalHook("continue", "active", 2, 100),
+      roundInput(2),
       assistantText("round 2 work"),
       tokenUsage(usage(200), usage(200)),
-      goalFinished("complete", 2, 300),
+      goalHook("stop", "complete", 2, 300),
     ]);
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText(text)], budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      messages: [userText(text)],
+      objective: "make it work",
+      budget: -1,
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // One run call carries the whole goal: the input verbatim and the goal option (core
-    // loops the rounds internally).
-    expect(session.runOpts).toEqual([{ goal: { budget: -1 } }]);
+    // The goal plugin's user_prompt hook is run with the objective and the budget, and one
+    // run call carries the whole goal — the user's message then the hook's context stamped
+    // as harness-injected, no extra run options: the plugin's stop hook drives the rounds
+    // inside it, and the thinking level is the Session's own soft state rather than a
+    // per-run parameter.
+    expect(session.starts).toEqual([
+      { name: "goal", prompt: "make it work", extras: { budget: -1 } },
+    ]);
+    expect(session.runs.map((run) => run.map((m) => m.payload))).toEqual([
+      [userText(text).payload, roundInput(1).payload],
+    ]);
+    expect(session.runOpts).toEqual([{}]);
 
-    const server = events
-      .filter((e) => e.event === "server_event")
-      .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
-    // The recorded objective is the user's own text: the [use_skills] prefix is stripped.
+    const server = serverEvents(events);
+    // The published objective is the one the route passed (the user's own text, markers stripped).
     expect(server.find((e) => e.type === "goal_started")).toMatchObject({
       objective: "make it work",
       budget: -1,
     });
     const rounds = server.filter((e) => e.type === "goal_round");
     expect(rounds).toHaveLength(2);
+    // Round 2's `used` is what the hook recorded when it decided to continue.
+    expect(rounds[0]).toMatchObject({ round: 1, used: 0 });
     expect(rounds[1]).toMatchObject({ round: 2, used: 100 });
-    const finished = server.find((e) => e.type === "goal_finished");
-    expect(finished).toMatchObject({ outcome: "complete", rounds: 2, used: 300 });
-
-    const row = goals.latestForSession(ROW.sessionId);
-    expect(row).toMatchObject({
-      status: "complete",
+    expect(server.find((e) => e.type === "goal_finished")).toMatchObject({
+      outcome: "complete",
       rounds: 2,
       used: 300,
-      objective: "make it work",
     });
 
-    // The round inputs were published on the message stream (no `event:` name) for live viewers.
+    // The inputs were published on the message stream (no `event:` name) for live viewers —
+    // round 1 by startGoal itself (core never yields a run's initial input, and a page
+    // already subscribed would otherwise miss it until a reload), round 2 off the stream:
+    // the user's own message verbatim — the [use_skills] block included — and both rounds'
+    // harness-stamped protocol messages.
     const published = events
       .filter((e) => e.event === undefined)
       .map((e) => JSON.parse(e.data) as OmniMessage)
-      .filter(
-        (m) =>
-          m.type === "model_msg" &&
-          (m.payload as { role?: string }).role === "user" &&
-          ((m.payload as { text?: string }).text ?? "").startsWith("[goal]"),
-      );
-    expect(published).toHaveLength(2);
-    // Round 1 carries the caller's input verbatim — the [use_skills] block included.
+      .filter((m) => m.type === "model_msg" && (m.payload as { role?: string }).role === "user");
+    expect(published).toHaveLength(3);
     expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
+    expect(published.map((m) => (m.payload as { sender?: string }).sender ?? "user")).toEqual([
+      "user",
+      "harness",
+      "harness",
+    ]);
   });
 
   it("records the objective without the attached images: the display copy stays path-free", async () => {
     // Core folds the attached images into `[attached image: …]` lines inside the objective it
-    // re-injects each round. The objective recorded here is the one shown to people — status
+    // re-injects each round. The objective published here is the one shown to people — status
     // card, goal_started, title material — so it keeps the user's words only.
-    const session = goalFakeSession(() => [goalFinished("complete", 1, 10)]);
+    const session = goalFakeSession(() => [goalHook("stop", "complete", 1, 10)]);
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      input: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
+      messages: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
+      objective: "Match this mockup",
       budget: -1,
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // The whole input still reaches core (the images included) — only the recorded copy differs.
-    expect(session.runs[0]).toHaveLength(2);
-    const started = events
-      .filter((e) => e.event === "server_event")
-      .map((e) => JSON.parse(e.data) as { type: string; objective?: string })
-      .find((e) => e.type === "goal_started");
-    expect(started?.objective).toBe("Match this mockup");
-    expect(goals.latestForSession(ROW.sessionId)?.objective).toBe("Match this mockup");
+    // The whole input reaches core (the images included, then the protocol message) — only
+    // the published objective differs.
+    expect(session.runs[0]).toHaveLength(3);
+    expect(serverEvents(events).find((e) => e.type === "goal_started")?.objective).toBe(
+      "Match this mockup",
+    );
   });
 
-  it("409s while a goal is running (mutual exclusion); runs without a goals repo", async () => {
+  it("a background completion notice inside a round is not a round boundary", async () => {
+    const notice = userText(
+      "[background_task_done]\nkind: command\nid: proc-1\nstatus: completed\n[/background_task_done]\n\nBackground command finished",
+      "harness",
+    );
+    const session = goalFakeSession(() => [
+      assistantText("working"),
+      notice,
+      assistantText("absorbed"),
+      goalHook("stop", "complete", 1, 10),
+    ]);
+    const manager = makeManager(session);
+    const events: ChannelEvent[] = [];
+    channels.get(ROW.sessionId).subscribe((e) => events.push(e));
+    await manager.startGoal(ROW.sessionId, {
+      messages: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+    const rounds = serverEvents(events).filter((e) => e.type === "goal_round");
+    expect(rounds).toEqual([expect.objectContaining({ round: 1 })]);
+  });
+
+  it("409s while a goal is running (mutual exclusion)", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    const session = goalFakeSession(() => [roundInput(1, "obj"), goalFinished("complete", 1, 0)]);
+    const session = goalFakeSession(() => [roundInput(1), goalHook("stop", "complete", 1, 0)]);
     const orig = session.run.bind(session);
     session.run = async function* (input, opts) {
       yield* orig(input, opts);
       await gate;
     };
-    const manager = makeManager(session, false);
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    const manager = makeManager(session);
+    await manager.startGoal(ROW.sessionId, {
+      messages: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
     await expect(manager.startTask(ROW.sessionId, [userText("x")])).rejects.toMatchObject({
       status: 409,
     });
+    // A second goal is refused BEFORE its start hook runs: the hook rewrites the goal file
+    // the running goal's stop hook reads, so the idle check has to come first.
+    await expect(
+      manager.startGoal(ROW.sessionId, { messages: [userText("y")], objective: "y", budget: -1 }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(session.starts).toHaveLength(1);
     release();
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
-    // No goals repo wired: the goal still ran and finished without touching one.
-    expect(goals.latestForSession(ROW.sessionId)).toBeNull();
   });
 
-  it("a throw after the terminal event does not overwrite the recorded outcome", async () => {
-    // repo.finish is an unconditional UPDATE: without the `finished` guard, the defensive
-    // catch would flip a completed row to aborted and publish a contradicting event.
+  it("409s goal_plugin_not_installed when the Session has no goal user_prompt hook", async () => {
+    const session = goalFakeSession(() => []);
+    session.runUserPromptHook = async () => null;
+    const manager = makeManager(session);
+    await expect(
+      manager.startGoal(ROW.sessionId, {
+        messages: [userText("obj")],
+        objective: "obj",
+        budget: -1,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "goal_plugin_not_installed" });
+    expect(manager.statusOf(ROW.sessionId)).toBe("idle");
+  });
+
+  it("a throw after the terminal event does not publish a contradicting outcome", async () => {
     const session = goalFakeSession(() => []);
     session.run = async function* () {
-      yield roundInput(1, "obj");
-      yield goalFinished("complete", 1, 42);
+      yield goalHook("stop", "complete", 1, 42);
       throw new Error("post-terminal hiccup");
     };
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      messages: [userText("obj")],
+      objective: "obj",
+      budget: -1,
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    expect(goals.latestForSession(ROW.sessionId)).toMatchObject({
-      status: "complete",
-      rounds: 1,
-      used: 42,
-    });
-    const finished = events
-      .filter((e) => e.event === "server_event")
-      .map((e) => JSON.parse(e.data) as { type: string; outcome?: string })
-      .filter((e) => e.type === "goal_finished");
-    expect(finished).toEqual([expect.objectContaining({ outcome: "complete" })]);
+    const finished = serverEvents(events).filter((e) => e.type === "goal_finished");
+    expect(finished).toEqual([expect.objectContaining({ outcome: "complete", used: 42 })]);
   });
 
-  it("closes the run state as aborted when the stream ends without a terminal event", async () => {
-    // A cut-off run (infrastructure failure upstream) must not leave the row active.
+  it("closes the goal as aborted when the stream ends without the hook's terminal event", async () => {
+    // A cut-off run (infrastructure failure upstream) must not leave the banner active.
     const session = goalFakeSession(() => [
-      roundInput(1, "obj"),
       assistantText("partial work"),
       tokenUsage(usage(50), usage(50)),
     ]);
@@ -334,21 +332,17 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: 1000 });
+    await manager.startGoal(ROW.sessionId, {
+      messages: [userText("obj")],
+      objective: "obj",
+      budget: 1000,
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    expect(goals.latestForSession(ROW.sessionId)).toMatchObject({
-      status: "aborted",
-      rounds: 1,
-      used: 50,
-    });
-    const server = events
-      .filter((e) => e.event === "server_event")
-      .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
-    expect(server.find((e) => e.type === "goal_finished")).toMatchObject({
+    expect(serverEvents(events).find((e) => e.type === "goal_finished")).toMatchObject({
       outcome: "aborted",
       rounds: 1,
-      used: 50,
+      used: 0,
     });
   });
 

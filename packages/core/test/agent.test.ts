@@ -843,7 +843,7 @@ describe("Agent.createSession skill metadata injection", () => {
     await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
       name: "demo-skill",
       content:
-        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 1\nupdated: 2026-07-16\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
+        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 2026-07-16.1\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-skills");
