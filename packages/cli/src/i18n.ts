@@ -693,7 +693,8 @@ const en: Messages = {
     createId: "Agent id (directory name; letters, digits, underscores)",
     createName: "Display name (defaults to the id)",
     createDescription: "Description",
-    createPlugins: "Library plugins to preinstall, comma-separated (e.g. web-design,goal)",
+    createPlugins:
+      "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
@@ -1206,7 +1207,7 @@ const zh: Messages = {
     createId: "Agent id（即目录名；字母、数字、下划线）",
     createName: "显示名（缺省同 id）",
     createDescription: "描述",
-    createPlugins: "预装的插件库插件，逗号分隔（如 web-design,goal）",
+    createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",

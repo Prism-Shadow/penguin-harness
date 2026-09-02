@@ -34,6 +34,7 @@ const SKILL_TILE_COLORS = [
 /** Semantic hue overrides (palette indices) — e.g. the firecrawl flame is amber, not whatever the hash lands on. */
 const SKILL_COLOR_OVERRIDES: Record<string, number> = {
   firecrawl: 3,
+  "use-firecrawl": 3,
   "data-analysis": 1,
   "web-design": 2,
   "penguin-sdk": 0,

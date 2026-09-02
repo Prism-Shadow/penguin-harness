@@ -88,8 +88,8 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
-| 办公效率    | `data-analysis`、`firecrawl`、`bento-slides`、`humanizer`、`goal`、`continual-learning` |
-| 软件开发    | `software-development`、`remote-claude-code`                                    |
+| 办公效率    | `data-analysis`、`use-firecrawl`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
+| 软件开发    | `software-development`、`use-remote-claude-code`                                |
 | AI 应用开发 | `agent-development`、`model-development`、`skill-porting`、`agent-tuning`       |
 
 ## 支持的模型

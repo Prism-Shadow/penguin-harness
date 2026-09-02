@@ -154,7 +154,7 @@ penguin logs 402a2e24 -f
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins web-design,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
 ```
 
 `agent ls` 列出 Project 的 Agent（id、名称、会话数、描述）。`agent create` 创建一个：

@@ -154,7 +154,7 @@ penguin logs 402a2e24 -f
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins web-design,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
 ```
 
 `agent ls` lists the project's agents (id, name, session count, description). `agent create` creates one:
