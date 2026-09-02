@@ -1,7 +1,8 @@
 /**
  * Context composition: what the Session's current model context is made of, split into the six
  * parts a reader can act on — system prompt, tool definitions, user messages, model messages,
- * tool requests, tool results — plus the tools whose call traffic occupies the most of it.
+ * tool requests, tool results — plus the tools whose call traffic occupies the most of it, and
+ * the files the three file tools spent the most of it on.
  *
  * The basis is **one Trace shard**. A shard is one complete model context by construction: the
  * writer rotates on compaction and opens the new file with `session_meta` followed by
@@ -19,6 +20,8 @@
  * read off the provider's `token_usage`. Every figure here is therefore an estimate; what it is
  * good for is **shares**, which is what its consumers spend it on.
  */
+import os from "node:os";
+import path from "node:path";
 import {
   DEFAULT_MAX_CONTEXT_LENGTH,
   approximateMessagesTokens,
@@ -32,10 +35,17 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type { SessionContextParts } from "../api/types.js";
+import type { ContextFileShare, SessionContextParts } from "../api/types.js";
 
-/** How many tools the ranking names before the tail is dropped. */
-const TOP_TOOLS = 5;
+/** How many entries each ranking — tools, files — names before the tail is dropped. */
+const RANKING_SIZE = 5;
+
+/** The file tools, each by the op a call of it counts as. */
+const FILE_TOOL_OPS: Record<string, keyof ContextFileShare["ops"]> = {
+  read_file: "read",
+  edit_file: "edit",
+  write_file: "write",
+};
 
 /** The answer for a Session with no Trace yet: measured as empty, not unknown. */
 export function emptyContextBreakdown(): SessionContextParts {
@@ -48,12 +58,70 @@ export function emptyContextBreakdown(): SessionContextParts {
     toolResults: 0,
     total: 0,
     topTools: [],
+    topFiles: [],
     contextClosed: false,
   };
 }
 
 function bump(per: Map<string, number>, name: string, tokens: number): void {
   per.set(name, (per.get(name) ?? 0) + tokens);
+}
+
+type FileRow = Pick<ContextFileShare, "tokens" | "ops">;
+
+function fileRow(per: Map<string, FileRow>, file: string): FileRow {
+  let row = per.get(file);
+  if (row === undefined) {
+    row = { tokens: 0, ops: { read: 0, edit: 0, write: 0 } };
+    per.set(file, row);
+  }
+  return row;
+}
+
+/**
+ * The file a file-tool call names, spelled the way the ranking shows it — or null when the call
+ * carries no usable `file_path` (arguments that never became valid JSON, a missing, empty or
+ * non-string value), which is a call the tool itself refused.
+ *
+ * The argument is resolved the way the file tools resolve it, against the Workspace, so `a.ts`,
+ * `./a.ts` and `<workspace>/a.ts` are one file and one row. A file inside the Workspace is
+ * shown relative to it; anything else is absolute, with the home directory shortened to `~`.
+ * Without a Workspace to resolve against (a shard with no `session_meta`), a relative path is
+ * shown as written.
+ */
+function fileDisplayPath(argumentsJson: string, workspace: string | undefined): string | null {
+  let args: unknown;
+  try {
+    args = JSON.parse(argumentsJson);
+  } catch {
+    return null;
+  }
+  const filePath =
+    typeof args === "object" && args !== null
+      ? (args as Record<string, unknown>)["file_path"]
+      : undefined;
+  if (typeof filePath !== "string" || filePath.length === 0) return null;
+  if (workspace === undefined) {
+    return path.isAbsolute(filePath)
+      ? shortenHome(path.normalize(filePath))
+      : path.normalize(filePath);
+  }
+  const absolute = path.resolve(workspace, filePath);
+  const rel = path.relative(workspace, absolute);
+  return isInside(rel) ? rel : shortenHome(absolute);
+}
+
+/** `~` for the home directory, the way a shell prints a path under it. */
+function shortenHome(absolute: string): string {
+  const home = os.homedir();
+  if (home === "") return absolute;
+  const rel = path.relative(home, absolute);
+  return isInside(rel) ? `~${path.sep}${rel}` : absolute;
+}
+
+/** True when a `path.relative` result stays under its base: not the base itself, not above it, not on another drive. */
+function isInside(rel: string): boolean {
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 }
 
 /**
@@ -75,6 +143,12 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
   const perTool = new Map<string, number>();
   /** tool_call_id -> tool name, so a result can be attributed to the tool that produced it. */
   const callName = new Map<string, string>();
+  /** display path -> its file-tool calls plus their results, and how many calls of each kind. */
+  const perFile = new Map<string, FileRow>();
+  /** tool_call_id -> the file its call named, so a file tool's result reaches the same row. */
+  const callFile = new Map<string, string>();
+  /** The Workspace file paths are resolved against; recorded by the shard's `session_meta`, which precedes every call. */
+  let workspace: string | undefined;
   let compacting = false;
 
   for (const msg of messages) {
@@ -82,7 +156,9 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
       // A per-shard invariant, not an accumulation: a resumed process writes its own copy into
       // the shard it continues, and a rotation writes one at the head of the new file. The
       // newest wins; adding them would count one system prompt several times.
-      out.systemPrompt = approximateTokens((msg.payload as SessionMetaPayload).system_prompt ?? "");
+      const meta = msg.payload as SessionMetaPayload;
+      out.systemPrompt = approximateTokens(meta.system_prompt ?? "");
+      workspace = meta.workspace || undefined;
       continue;
     }
     const p = msg.payload as { type?: string; role?: string };
@@ -122,6 +198,16 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
         out.toolRequests += size;
         callName.set(tc.tool_call_id, tc.name);
         bump(perTool, tc.name, size);
+        const op = FILE_TOOL_OPS[tc.name];
+        if (op !== undefined) {
+          const file = fileDisplayPath(tc.arguments, workspace);
+          if (file !== null) {
+            callFile.set(tc.tool_call_id, file);
+            const row = fileRow(perFile, file);
+            row.tokens += size;
+            row.ops[op] += 1;
+          }
+        }
         break;
       }
       case "tool_call_output": {
@@ -132,6 +218,8 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
         // `toolRequests + toolResults`.
         const name = callName.get(result.tool_call_id);
         if (name !== undefined) bump(perTool, name, size);
+        const file = callFile.get(result.tool_call_id);
+        if (file !== undefined) fileRow(perFile, file).tokens += size;
         break;
       }
     }
@@ -147,8 +235,12 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
   out.topTools = [...perTool]
     // Name breaks ties so equal-sized tools keep a stable order across calls.
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, TOP_TOOLS)
+    .slice(0, RANKING_SIZE)
     .map(([name, tokens]) => ({ name, tokens }));
+  out.topFiles = [...perFile]
+    .sort((a, b) => b[1].tokens - a[1].tokens || a[0].localeCompare(b[0]))
+    .slice(0, RANKING_SIZE)
+    .map(([file, row]) => ({ path: file, tokens: row.tokens, ops: row.ops }));
   out.contextClosed = endsWithCompletedCompaction(messages);
   return out;
 }
