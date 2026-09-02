@@ -120,6 +120,7 @@ describe("skills api", () => {
     expect(dev.status).toBe(200);
     const devFiles = ((await dev.json()) as PluginFilesResponse).files;
     expect(Object.keys(devFiles)).toEqual([
+      "skills/app-center/SKILL.md",
       "skills/software-engineering/SKILL.md",
       "skills/web-design/SKILL.md",
     ]);
@@ -153,6 +154,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual([
+      "app-center",
       "data-analysis",
       "software-engineering",
       "web-design",
@@ -183,7 +185,11 @@ describe("skills api", () => {
     expect((await member.delete(`${url}/web-design`)).status).toBe(204);
     await expect(fs.access(path.dirname(skillFile("web-design")))).rejects.toThrow();
     const after = (await (await member.get(url)).json()) as AgentSkillsResponse;
-    expect(after.skills.map((s) => s.name)).toEqual(["data-analysis", "software-engineering"]);
+    expect(after.skills.map((s) => s.name)).toEqual([
+      "app-center",
+      "data-analysis",
+      "software-engineering",
+    ]);
 
     // Deleting a Skill that isn't installed (or was already uninstalled) → 404.
     expect((await member.delete(`${url}/web-design`)).status).toBe(404);
@@ -299,12 +305,13 @@ describe("skills api", () => {
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(6);
+    expect(summary.agent.skillCount).toBe(7);
 
     // The installed list is the same shape a library install produces (name-sorted):
     // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
     expect(listed.skills.map((s) => s.name)).toEqual([
+      "app-center",
       "penguin-config",
       "penguin-orchestration",
       "penguin-sdk",
