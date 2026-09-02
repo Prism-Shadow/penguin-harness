@@ -2338,9 +2338,44 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    selectBenchmark: "在左侧选择一个 Benchmark",
+    subtitle: "为智能体出题、评测与优化",
+    /** The novice guide under the title: the three-step loop and the Skill behind each step. */
+    guideTitle: "三步闭环：出题、看分、优化",
+    guideSteps: [
+      "让 AI 为某个智能体出一套 Benchmark 并取得基线分：出题由 benchmark-design 技能完成，每道题由 agent-evaluation 技能在隔离的 Workspace 里试测、校准难度后冻结。",
+      "在这里查看分数曲线与逐题明细，确认题目能把「真正做对」和「看起来做对」区分开。",
+      "让 AI 针对这套 Benchmark 优化智能体：agent-optimization 技能每轮只做一个可证伪的改动并重新评测，分数严格提升才保留新版本，否则回滚。",
+    ],
+    guideNote:
+      "三个技能都在 agent-tuning 插件里，默认智能体已自带；新建的智能体可以在插件库里安装。",
+    newBenchmark: "新建 Benchmark",
+    searchPlaceholder: "搜索标题、描述或智能体",
+    noMatches: "没有匹配的 Benchmark",
+    emptyTitle: "还没有 Benchmark",
+    emptyDescription:
+      "先让 AI 为一个智能体出题并取得基线分；之后这里会显示分数曲线与逐题明细，并可一键发起优化。",
     emptyAgent: "该 Agent 暂无 Benchmark",
+    createForAgent: "为此智能体出题",
     caseCount: (n: number): string => `${n} 题`,
+    runsPerCase: (n: number): string => `每题 ${n} 次运行`,
+    notEvaluated: "尚未评测",
+    lastEvaluated: (when: string): string => `最近评估 ${when}`,
+    /** Accessible name of the row sparkline. */
+    sparklineLabel: (n: number): string => `${n} 次评估的分数走势`,
+    latestScoreLabel: "最新分数",
+    /** The change column when there is nothing earlier to compare against. */
+    firstEvaluation: "首次评估",
+    optimize: "优化",
+    view: "查看",
+    moreActions: "更多操作",
+    copyPath: "复制目录路径",
+    pathCopied: "已复制 Benchmark 的目录路径",
+    deleteBenchmark: "删除 Benchmark",
+    deleteConfirm: (title: string): string =>
+      `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
+    deleted: "Benchmark 已删除",
+    backToList: "返回列表",
+    closeDetail: "关闭详情",
     /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
     cases: "题目",
@@ -2351,6 +2386,7 @@ Benchmark：
     caseFileUnavailable: "案例文件暂时无法读取",
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
+    noEvaluationsHint: "取得基线分后，这里会出现分数曲线与评估明细。",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */
     summaryLabel: "评估说明",
     /** Chart legend: older evaluation records with no model label (gray series). */
@@ -2363,6 +2399,143 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    // New Benchmark, AI mode: the target picker, the examples and the fixed tail.
+    aiCreateTitle: "让 AI 创建 Benchmark",
+    aiCreateDescription:
+      "描述要考察的能力与场景，AI 会为被测智能体出题、逐题试测以校准难度，并取得基线分。",
+    targetAgent: "被测智能体",
+    targetAgentHint: "题目为它而出、分数记在它名下；出题本身由下方所示的智能体在新对话里完成",
+    aiCreateExamples: {
+      reportWriter: {
+        label: "为报告写作智能体出一套高难度题",
+        description: "5 道题：材料矛盾、格式严格、跨语言、篇幅与引用",
+        prompt:
+          "为报告写作智能体设计一套高难度 Benchmark：5 道题，覆盖材料自相矛盾、格式要求严格、跨语言资料、篇幅限制与引用规范等场景，" +
+          "评分细则要能把「优秀」和「及格」拉开差距，然后取得基线分。",
+      },
+      customerService: {
+        label: "客服智能体的多轮对话题",
+        description: "8 道题：情绪化用户、政策边界、需查资料",
+        prompt:
+          "为客服智能体设计 8 道多轮对话题：含情绪化用户、政策边界、需要查资料才能回答的问题，评分看准确性、语气与是否越权承诺。",
+      },
+      codeReview: {
+        label: "代码审查智能体的缺陷题",
+        description: "6 道题：每题 2–3 个真实缺陷，评分看查全与误报",
+        prompt:
+          "为代码审查智能体出 6 道题：每题给一段含 2–3 个真实缺陷的代码（安全、并发、边界），评分看是否找全、是否误报。",
+      },
+      dataAnalysis: {
+        label: "数据分析智能体的 CSV 题",
+        description: "5 道题：附 CSV 与业务问题，评分看结论与口径",
+        prompt:
+          "为数据分析智能体出 5 道题：每题附一份 CSV 与业务问题，评分看结论正确性、图表与口径说明。",
+      },
+    },
+    /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
+    aiCreateTail: (targetAgentId: string): string =>
+      "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
+      `- test_agent_id：\`${targetAgentId}\`\n` +
+      "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
+      "- desired_baseline_score：`<70`（上文另有要求时以上文为准）\n" +
+      "- pilot_iteration_limit：`3`\n\n" +
+      "在被测智能体目录的 `benchmarks/<benchmark_id>/` 下创建 `benchmark_config.toml`（title、description、runs = 1）、" +
+      "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
+      "以及 `scoreboard.yaml`（初始为 `evaluations: []`）。通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
+      "定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+    // New Benchmark, manual mode: the form.
+    manualCreateTitle: "手动配置 Benchmark",
+    manualCreateIntro:
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入被测智能体的 benchmarks/ 下，之后可以直接评测或优化。",
+    agentField: "所属智能体",
+    idField: "Benchmark id",
+    idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
+    idExists: "已有同名 Benchmark，请换一个 id",
+    titleField: "标题",
+    descriptionField: "描述",
+    descriptionHint: "一句话说明考察什么能力、题目难在哪里",
+    runsField: "每题运行次数",
+    runsHint: "整数，至少 1；优化时每道题跑这么多次取平均",
+    runsInfo:
+      "多次运行能把稳定的能力差距和偶然波动分开，但评测成本按次数倍增。AI 出题校准时固定每题 1 次；这里的值给之后的优化用。",
+    casesTitle: "题目",
+    casesInfo:
+      "每道题分两部分：题干交给被测智能体；评分细则只有评测方能看到，永远不进被测智能体的 Workspace。",
+    rubricInfo:
+      "有区分度的评分细则：条目可观察、合计 100 分，把分数主要放在「真正做对」和「看起来做对」会产生不同结果的决定或产物上，不要给格式合规太高的保底分。",
+    caseHeading: (n: number): string => `第 ${n} 题`,
+    caseSlugField: "目录名后缀",
+    caseSlugHint: (id: string): string => `目录名 ${id}：仅字母、数字、_ 和 -`,
+    caseTitleField: "题目标题",
+    caseStatementField: "题干",
+    caseStatementHint: "Markdown；写明目标、给定材料、要求的产物与格式，不要暗示解法或评分点",
+    caseRubricField: "评分细则",
+    caseRubricHint: "Markdown；逐条给分并合计 100 分，如「- 40 分：……」",
+    addCase: "添加题目",
+    removeCase: "删除此题",
+    createSubmit: "创建 Benchmark",
+    created: "Benchmark 已创建",
+    invalidId: "仅允许字母、数字、_ 和 -",
+    invalidRuns: "必须是不小于 1 的整数",
+    invalidScore: "必须是 1–100 的整数",
+    // Optimize: the dialog's two modes over one parameter tail.
+    optimizeTitle: (title: string): string => `优化：${title}`,
+    optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
+    modeManual: "手动配置",
+    modePrompt: "写提示词",
+    optimizerAgent: "执行优化的智能体",
+    optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
+    optimizerMissingSkill:
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+    targetAgentFixed: (name: string): string => `被测智能体：${name}`,
+    sessionModel: "优化会话使用的模型",
+    sessionModelHint: "做分析与改动的模型；评测被测智能体时沿用基线记录的模型，不在这里改",
+    projectDefaultModel: (name: string): string => `Project 默认（${name}）`,
+    projectDefaultModelUnset: "Project 默认",
+    optimizeRunsHint: "每个候选版本每道题跑几次取平均",
+    roundLimitField: "最多轮数",
+    roundLimitHint: "每轮一个改动；评测完整才算一轮",
+    targetScoreField: "目标分数",
+    targetScoreHint: "达到即提前结束；默认比当前基线高 10 分",
+    focusField: "优化重点",
+    focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
+    noBaseline:
+      "这套 Benchmark 还没有基线分。优化需要一条完整的基线评估作为比较起点——可以先让 AI 出题时取得基线，或在对话里让它先完成一次完整评测。",
+    baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
+    optimizeExamples: {
+      citations: {
+        label: "只改引用与格式",
+        description: "保留写作风格，专攻引用规范与格式合规",
+        prompt: "重点优化引用规范与格式合规，不要改动写作风格。",
+      },
+      promptOnly: {
+        label: "只改行为指引",
+        description: "只动 AGENTS.md 里的指引，不装新技能",
+        prompt: "只允许修改系统提示词（AGENTS.md 里的行为指引），不要安装新技能。",
+      },
+      traceFirst: {
+        label: "先看最低分的 Trace",
+        description: "从最差的两道题找共同原因再改",
+        prompt: "先分析最低分的两道题的 Trace，找出共同原因再改。",
+      },
+    },
+    /** The fixed tail: the `agent-optimization` inputs, the acceptance rule and the report. */
+    optimizeTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      roundLimit: number;
+      targetScore: number;
+    }): string =>
+      "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- runs：\`${p.runs}\`\n` +
+      `- desired_score：\`>=${p.targetScore}\`\n` +
+      `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
+      "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 委派 `agent-evaluation` 评测完整的 Case × runs 矩阵，" +
+      "评测沿用基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本并把 evaluation 追加到 scoreboard.yaml，否则回滚。" +
+      "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
