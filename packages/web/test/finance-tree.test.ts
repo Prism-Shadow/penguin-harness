@@ -1,12 +1,16 @@
 /**
  * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket table
- * along parent tickets, period arithmetic, the budget tone thresholds and the trend series.
+ * along parent tickets, period arithmetic, the budget tone thresholds, the trend series
+ * and its axis breaks, the KPI row's numbers and the alert grouping.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
 import {
   budgetTone,
+  dailyBreaks,
+  financeKpis,
   financeSeries,
+  groupAlerts,
   shiftPeriod,
   spendTreeRows,
   ticketTreeRows,
@@ -95,5 +99,80 @@ describe("financeSeries", () => {
         denominator: 0,
       },
     ]);
+  });
+});
+
+describe("dailyBreaks", () => {
+  it("marks the point after which a calendar day was skipped, across a month boundary too", () => {
+    const daily = [
+      { date: "2026-08-30" },
+      { date: "2026-08-31" },
+      { date: "2026-09-01" },
+      { date: "2026-09-03" },
+      { date: "2026-09-10" },
+    ];
+    expect(dailyBreaks(daily)).toEqual([2, 3]);
+    expect(dailyBreaks([{ date: "2026-09-02" }])).toEqual([]);
+    expect(dailyBreaks([])).toEqual([]);
+  });
+
+  it("ignores an unparsable date rather than breaking around it", () => {
+    expect(dailyBreaks([{ date: "2026-09-01" }, { date: "nope" }, { date: "2026-09-05" }])).toEqual(
+      [],
+    );
+  });
+});
+
+describe("financeKpis", () => {
+  const withBudget = (
+    agentId: string,
+    reportsTo: string | null,
+    extra: Partial<OrgFinanceEmployee>,
+  ): OrgFinanceEmployee => ({ ...employee(agentId, reportsTo), ...extra });
+
+  it("measures the total against the root's budget and counts budgets, warnings and pauses", () => {
+    const kpis = financeKpis({
+      total: 21,
+      employees: [
+        withBudget("cto", "ceo", { budget: 4, warned: true, paused: true }),
+        withBudget("ceo", null, { budget: 10, warned: true }),
+        withBudget("dev", "cto", {}),
+        withBudget("growth", "ceo", { budget: 3, warned: true }),
+      ],
+    });
+    expect(kpis).toEqual({
+      total: 21,
+      budget: 10,
+      ratio: 2.1,
+      employees: 4,
+      budgeted: 3,
+      warned: 2,
+      paused: 1,
+    });
+  });
+
+  it("leaves budget and ratio out when the root has no budget", () => {
+    const kpis = financeKpis({ total: 5, employees: [employee("ceo", null)] });
+    expect(kpis).toEqual({ total: 5, employees: 1, budgeted: 0, warned: 0, paused: 0 });
+    expect("budget" in kpis).toBe(false);
+  });
+});
+
+describe("groupAlerts", () => {
+  it("lists a paused alert under paused only, newest first in each group", () => {
+    const groups = groupAlerts([
+      { agentId: "a", period: "2026-09", warnedAt: "2026-09-01T00:00:00Z" },
+      {
+        agentId: "b",
+        period: "2026-09",
+        warnedAt: "2026-09-01T00:00:00Z",
+        pausedAt: "2026-09-02T00:00:00Z",
+      },
+      { agentId: "c", period: "2026-09", warnedAt: "2026-09-03T00:00:00Z" },
+      { agentId: "d", period: "2026-09", pausedAt: "2026-09-04T00:00:00Z" },
+      { agentId: "e", period: "2026-09" },
+    ]);
+    expect(groups.paused.map((a) => a.agentId)).toEqual(["d", "b"]);
+    expect(groups.warned.map((a) => a.agentId)).toEqual(["c", "a"]);
   });
 });

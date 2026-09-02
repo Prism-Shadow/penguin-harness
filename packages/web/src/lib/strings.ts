@@ -2803,6 +2803,37 @@ Benchmark：
       alertPaused: (name: string, at: string): string =>
         `${name} 于 ${at} 达到预算上限，已暂停自动触发`,
       alertsHint: "解除方式：调高该员工的预算，或清空预算；下一次巡检自动恢复。",
+      /** The KPI row under the title. */
+      kpiTotal: "合计支出",
+      orgBudget: "组织预算（CEO）",
+      kpiEmployees: "员工",
+      budgetsSet: (n: number): string => `${n} 人设了预算`,
+      thresholds: "达到 80% 告警，达到 100% 暂停",
+      kpiAlerts: "告警",
+      alertsSummary: (warned: number, paused: number): string => `${warned} 告警 · ${paused} 暂停`,
+      /** Column header explanations, and the tree's root mark. */
+      cumulativeInfo: "本人加全部下属的支出之和；预算与占比按这个口径。",
+      rolledUpInfo: "本工单加全部子工单的成本之和。",
+      root: "根",
+      /** The inline budget editor. */
+      budgetEmptyHint: "留空为不限",
+      saveBudget: "保存预算",
+      cancelEdit: "取消",
+      editBudgetOf: (name: string): string => `编辑 ${name} 的预算`,
+      /** The ticket table's owner column and row action. */
+      openTicket: "打开工单",
+      /** The trend section. */
+      trendInfo: "组织全部会话每天的成本合计，按组织时区分日；只画有支出的日子。",
+      trendEmpty: "本周期还没有支出记录",
+      /** The alert list. */
+      alertsInfo:
+        "每次巡检核对累计支出与预算：达到 80% 记一次告警，达到 100% 暂停该员工及其下属的自动触发；解除后自动恢复。",
+      pausedGroup: "已暂停自动触发",
+      warnedGroup: "已告警",
+      warnedAt: (at: string): string => `${at} 达到 80%`,
+      pausedAt: (at: string): string => `${at} 达到 100%`,
+      /** A refetch failed while the last good data is still on screen. */
+      refreshFailed: "刷新失败，显示的是上次加载的数据",
     },
     chat: {
       title: "群聊",
@@ -2827,6 +2858,19 @@ Benchmark：
       /** The nav entry's badge: what is waiting behind it. */
       badgeUnread: (n: number): string => `${n} 条未读`,
       badgeMentions: (n: number): string => `${n} 条 @我`,
+      /** Day separators, paging and the read cursor in the stream. */
+      today: "今天",
+      yesterday: "昨天",
+      noEarlier: "没有更早的记录",
+      unreadDivider: "以下为未读",
+      newMessages: (n: number): string => `${n} 条新消息`,
+      /** The composer and its @ autocomplete. */
+      composerHint: "只有 @ 才会送达员工 · Enter 发送，Shift+Enter 换行",
+      mentionPanel: "提及",
+      mentionsYou: "提到了你",
+      /** Accessible name of a system banner and of a message's per-line time. */
+      systemMessage: "系统消息",
+      sentAt: (time: string): string => `发送于 ${time}`,
     },
   },
   errors: {

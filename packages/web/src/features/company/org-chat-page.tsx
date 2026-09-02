@@ -1,47 +1,72 @@
 /**
- * The organization's chat: one day's message stream (sender avatar and name, `system`
- * messages as a grey banner, @-mentions highlighted, ticket and session references as
- * links), paging back through earlier days, and the composer — `@` opens an autocomplete
- * over employees, members and `all`, Enter sends. Viewing the newest message posts the read
- * cursor, which is what clears the nav entry's badge. Nothing here delivers to an employee
- * unless it is @-mentioned; the empty state says so.
+ * The organization's chat: the stream of the loaded days — a separator per day (paging back
+ * through earlier day files), consecutive messages by one sender under one avatar and name
+ * with each line's time on hover, `system` messages as centred banners, @-mentions as chips
+ * (stronger when they address the reader), ticket and session references as chips that
+ * open them, an unread divider at the read cursor — and the composer beneath it. The view
+ * follows the stream while it is at the bottom; scrolled up, new messages collect behind a
+ * pill that returns to the latest. Sitting at the bottom of today marks everything read,
+ * which is what clears the nav entry's badge. Nothing here delivers to an employee unless
+ * it is @-mentioned; the composer's hint and the empty state say so.
+ *
+ * Only the chat file is essential: the chart (names, mention candidates) and the member
+ * list are best effort, so a hiccup there degrades names to ids rather than blocking the
+ * page. The skeleton stands only until the first response; a failed first fetch is an
+ * error with a retry inside the stream area, with the composer still there.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type {
-  OrgChatMessage,
-  OrgChatResponse,
-  OrgChartResponse,
-} from "@prismshadow/penguin-server/api";
+import type { OrgChatMessage } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneInk } from "../../lib/tone";
+import { toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
+import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
-import { Select } from "../../components/ui/select";
-import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { NAV_ICONS } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
-import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
+import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { OrgPage, useOrg } from "./org-layout";
-import { PrincipalChip } from "./shared";
+import { principalLabel } from "./shared";
 import { orgKey, orgPagePath } from "./company-nav";
+import { ChatComposer } from "./chat-composer";
 import {
-  filterMentionCandidates,
-  insertMention,
   mentionCandidates,
-  mentionQueryAt,
+  mentionIsMe,
+  mentionLabel,
   mentionRuns,
   mentionsUser,
 } from "./chat-mentions";
-import type { MentionCandidate } from "./chat-mentions";
+import {
+  appendMessage,
+  buildStream,
+  clockTime,
+  dayKind,
+  earlierDay,
+  lastMessageId,
+  messageCount,
+} from "./chat-stream";
+import type { ChatDay, StreamItem } from "./chat-stream";
 import { parsePrincipal } from "./principals";
+
+/** What the first response fixes for the page's lifetime: today, the day list, and the read cursor the divider is drawn at. */
+interface StreamMeta {
+  today: string;
+  /** Every day with a chat file, newest first. */
+  days: string[];
+  unreadAfterId: string | null;
+}
+
+/** Downward arrow on the return-to-latest pill (lucide arrow-down). */
+const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
 
 export function OrgChatPage() {
   const { projectId, orgId, org } = useOrg();
@@ -49,329 +74,473 @@ export function OrgChatPage() {
   const company = useCompany();
   const { user } = useAuth();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.chat}` : S.nav.org.chat);
-  const [data, setData] = useState<OrgChatResponse | null>(null);
-  const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [members, setMembers] = useState<string[]>([]);
+  const [days, setDays] = useState<ChatDay[] | null>(null);
+  const [meta, setMeta] = useState<StreamMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [date, setDate] = useState<string | undefined>(undefined);
-  const [text, setText] = useState("");
-  const [caret, setCaret] = useState(0);
-  const [highlight, setHighlight] = useState(0);
-  const [sending, setSending] = useState(false);
+  const [employees, setEmployees] = useState<
+    ReadonlyArray<{ agentId: string; name: string; title: string }>
+  >([]);
+  const [members, setMembers] = useState<string[]>([]);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  /** Messages that arrived while the view was scrolled up; shown on the pill. */
+  const [pendingNew, setPendingNew] = useState(0);
+  const [showJump, setShowJump] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const follow = useMemo(createStreamFollow, []);
+  /** The newest id already posted as read: the cursor is written once per new tail, not per render. */
+  const markedRef = useRef<string | null>(null);
+  /** Scroll anchoring across a prepend: the height before the earlier day landed, and which day was first. */
+  const heightRef = useRef(0);
+  const firstDayRef = useRef<string | null>(null);
   const me = user?.userId ?? "";
   const myKey = orgKey(projectId, orgId);
 
   const load = useCallback(async () => {
+    // Names and candidates are best effort: the stream must not wait on them.
+    void api
+      .getOrgChart(projectId, orgId)
+      .then((ch) =>
+        setEmployees(
+          ch.employees.map((e) => ({ agentId: e.agentId, name: e.name, title: e.title })),
+        ),
+      )
+      .catch(() => undefined);
+    void api
+      .listMembers(projectId)
+      .then((res) => setMembers(res.members.map((m) => m.userId)))
+      .catch(() => undefined);
     try {
-      const [chat, ch, mem] = await Promise.all([
-        api.getOrgChat(projectId, orgId, date),
-        api.getOrgChart(projectId, orgId),
-        api.listMembers(projectId).catch(() => ({ members: [] })),
-      ]);
-      setData(chat);
-      setChart(ch);
-      setMembers(mem.members.map((m) => m.userId));
+      const res = await api.getOrgChat(projectId, orgId);
+      setDays([{ date: res.date, messages: res.messages }]);
+      setMeta((prev) => ({
+        today: res.date,
+        days: res.days,
+        // The divider stays where the first load put it: marking read must not move it out
+        // from under the reader.
+        unreadAfterId: prev?.unreadAfterId ?? res.lastReadId ?? null,
+      }));
       setError(null);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, orgId, date]);
+  }, [projectId, orgId]);
   useEffect(() => {
     void load();
   }, [load]);
 
-  /** Mark everything shown as read once the newest day is on screen, and clear the badge. */
-  const markRead = useCallback(
-    (messages: readonly OrgChatMessage[], viewingToday: boolean) => {
-      if (!viewingToday) return;
-      company.setChatCounters(0, 0);
-      const last = messages[messages.length - 1];
-      if (last !== undefined)
-        void api.readOrgChat(projectId, orgId, { upTo: last.id }).catch(() => undefined);
-    },
-    [company, projectId, orgId],
-  );
-  const viewingToday = data !== null && (date === undefined || date === data.days[0]);
-  useEffect(() => {
-    if (data === null) return;
-    markRead(data.messages, viewingToday);
-    // Follow the stream to its end on load.
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [data, viewingToday, markRead]);
-
-  // A new message on this organization lands in the stream without a refetch (and is read at once while today is on screen).
-  useCompanyEvents((ev) => {
-    if (ev.type !== "org_chat" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
-    setData((prev) => {
-      if (prev === null || !viewingToday) return prev;
-      if (prev.messages.some((m) => m.id === ev.message.id)) return prev;
-      return { ...prev, messages: [...prev.messages, ev.message] };
-    });
-  });
-
-  const names = new Map((chart?.employees ?? []).map((e) => [e.agentId, e.name]));
-  const candidates = useMemo(
-    () =>
-      mentionCandidates(
-        (chart?.employees ?? []).map((e) => ({ agentId: e.agentId, name: e.name })),
-        members,
-        S.company.chat.mentionAll,
-      ),
-    [chart, members],
-  );
-  const mention = mentionQueryAt(text, caret);
-  const suggestions = mention === null ? [] : filterMentionCandidates(candidates, mention.query);
-  const panelOpen = mention !== null && suggestions.length > 0;
-
-  const pick = (c: MentionCandidate) => {
-    if (mention === null) return;
-    const next = insertMention(text, mention.start, caret, c.principal);
-    setText(next.text);
-    setCaret(next.caret);
-    setHighlight(0);
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (el) {
-        el.focus();
-        el.setSelectionRange(next.caret, next.caret);
-      }
-    });
-  };
-
-  const send = async () => {
-    const body = text.trim();
-    if (body === "" || sending) return;
-    setSending(true);
+  const loadEarlier = async () => {
+    if (days === null || meta === null || loadingEarlier) return;
+    const target = earlierDay(meta.days, days[0]?.date ?? meta.today);
+    if (target === null) return;
+    setLoadingEarlier(true);
     try {
-      const msg = await api.sendOrgChat(projectId, orgId, { text: body });
-      setText("");
-      setCaret(0);
-      setData((prev) =>
-        prev === null || prev.messages.some((m) => m.id === msg.id)
+      const res = await api.getOrgChat(projectId, orgId, target);
+      setDays((prev) =>
+        prev === null || prev.some((d) => d.date === target)
           ? prev
-          : { ...prev, messages: [...prev.messages, msg] },
+          : [{ date: target, messages: res.messages }, ...prev],
       );
-      if (!viewingToday) setDate(undefined);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
-      setSending(false);
+      setLoadingEarlier(false);
     }
   };
 
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (panelOpen) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setHighlight((h) => (h + 1) % suggestions.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setHighlight((h) => (h - 1 + suggestions.length) % suggestions.length);
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        const c = suggestions[highlight] ?? suggestions[0];
-        if (c) pick(c);
-        return;
-      }
-    }
-    // Enter sends; Shift+Enter breaks the line. The isComposing guard keeps an IME's
-    // candidate-accepting Enter from sending the raw pinyin.
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void send();
+  // A new message on this organization lands in the stream without a refetch. While the
+  // view is at the bottom it simply appears; scrolled up, it counts towards the pill.
+  useCompanyEvents((ev) => {
+    if (ev.type !== "org_chat" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
+    if (meta === null) return;
+    setDays((prev) => {
+      if (prev === null) return prev;
+      const next = appendMessage(prev, meta.today, ev.message);
+      if (next !== prev && !follow.stick) setPendingNew((n) => n + 1);
+      return next;
+    });
+  });
+
+  const syncScrollState = () => {
+    const el = listRef.current;
+    const stick = follow.stick;
+    setAtBottom(stick);
+    setShowJump(!stick && el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+    if (stick) setPendingNew(0);
+  };
+
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    follow.scrolled({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    syncScrollState();
+  };
+
+  // Before paint: keep the reader's place when an earlier day lands above the viewport, and
+  // otherwise stick to the bottom while following.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || days === null) return;
+    const firstDay = days[0]?.date ?? null;
+    const prepended = firstDayRef.current !== null && firstDay !== firstDayRef.current;
+    if (prepended && !follow.stick) el.scrollTop += el.scrollHeight - heightRef.current;
+    firstDayRef.current = firstDay;
+    heightRef.current = el.scrollHeight;
+    if (follow.stick) stickToBottom(el, follow);
+    syncScrollState();
+    // syncScrollState is recreated per render; the effect keys on the stream's content only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, follow]);
+
+  // The composer growing, or the window resizing, shrinks the stream: re-snap while following.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      heightRef.current = el.scrollHeight;
+      if (follow.stick) stickToBottom(el, follow);
+    });
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [follow, days === null]);
+
+  // Sitting at the bottom of the newest day marks its tail as read and clears the badge.
+  const lastId = days === null ? null : lastMessageId(days);
+  useEffect(() => {
+    if (!atBottom || lastId === null || lastId === markedRef.current) return;
+    markedRef.current = lastId;
+    company.setChatCounters(0, 0);
+    void api.readOrgChat(projectId, orgId, { upTo: lastId }).catch(() => undefined);
+  }, [atBottom, lastId, company, projectId, orgId]);
+
+  const jumpToLatest = () => {
+    const el = listRef.current;
+    if (!el) return;
+    follow.resume();
+    stickToBottom(el, follow);
+    syncScrollState();
+  };
+
+  const send = async (text: string): Promise<boolean> => {
+    try {
+      const msg = await api.sendOrgChat(projectId, orgId, { text });
+      follow.resume();
+      setDays((prev) =>
+        prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
+      );
+      return true;
+    } catch (e) {
+      toastError(apiErrorText(e));
+      return false;
     }
   };
+
+  const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
+  const candidates = useMemo(
+    () => mentionCandidates(employees, members, S.company.chat.mentionAll),
+    [employees, members],
+  );
+  const stream = useMemo(
+    () => (days === null ? [] : buildStream(days, { unreadAfterId: meta?.unreadAfterId ?? null })),
+    [days, meta],
+  );
+  const earlier =
+    days !== null && meta !== null ? earlierDay(meta.days, days[0]?.date ?? meta.today) : null;
+
+  const openTicket = (ticketId: string) =>
+    navigate(`${orgPagePath(projectId, orgId, "tickets")}?ticket=${encodeURIComponent(ticketId)}`);
+  const scrollToMessage = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({ block: "center" });
 
   const renderText = (m: OrgChatMessage) =>
     mentionRuns(m.text).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
       ) : (
-        <span
+        <MentionChip
           key={i}
-          className={`rounded px-0.5 font-medium ${toneInk.busy} bg-emerald-50 dark:bg-emerald-950/40`}
-        >
-          {run.text}
-        </span>
+          raw={run.text}
+          label={mentionLabel(run.mention, names, S.company.principalAll)}
+          me={mentionIsMe(run.mention, me, employeeIds)}
+        />
       ),
     );
 
-  const message = (m: OrgChatMessage) => {
-    const p = parsePrincipal(m.sender);
-    if (p.kind === "system") {
+  const renderRefs = (m: OrgChatMessage) => {
+    const refs = m.refs;
+    if (refs === undefined) return null;
+    if (refs.ticket === undefined && refs.session === undefined && refs.replyTo === undefined)
+      return null;
+    return (
+      <span className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row}`}>
+        {refs.ticket !== undefined && (
+          <RefChip onClick={() => openTicket(refs.ticket ?? "")} icon={NAV_ICONS.orgTickets}>
+            {S.company.chat.ticketRef(refs.ticket)}
+          </RefChip>
+        )}
+        {refs.session !== undefined && (
+          <RefChip onClick={() => navigate(`/chat/${refs.session ?? ""}`)}>
+            {S.company.chat.sessionRef}
+          </RefChip>
+        )}
+        {refs.replyTo !== undefined && (
+          <RefChip onClick={() => scrollToMessage(refs.replyTo ?? "")}>
+            {S.company.chat.replyTo}
+          </RefChip>
+        )}
+      </span>
+    );
+  };
+
+  const renderItem = (item: StreamItem, i: number) => {
+    if (item.kind === "day") {
+      const kind = meta === null ? "other" : dayKind(item.date, meta.today);
+      const label =
+        kind === "today"
+          ? S.company.chat.today
+          : kind === "yesterday"
+            ? S.company.chat.yesterday
+            : null;
       return (
-        <div key={m.id} className="my-2 flex justify-center">
-          <p className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+        <div key={`day-${item.date}`} className={`flex items-center ${ICON_GAP.menu} py-3`}>
+          <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+            {label !== null ? `${label} · ${item.date}` : item.date}
+          </span>
+          <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        </div>
+      );
+    }
+    if (item.kind === "unread") {
+      return (
+        <div
+          key={`unread-${i}`}
+          className={`flex items-center ${ICON_GAP.menu} py-2`}
+          role="separator"
+        >
+          <span className="h-px flex-1 bg-red-300 dark:bg-red-800" />
+          <span className="text-[11px] font-medium text-red-600 dark:text-red-400">
+            {S.company.chat.unreadDivider}
+          </span>
+          <span className="h-px flex-1 bg-red-300 dark:bg-red-800" />
+        </div>
+      );
+    }
+    if (item.kind === "system") {
+      const m = item.message;
+      return (
+        <div key={m.id} id={m.id} className="my-2 flex justify-center">
+          <p
+            title={formatDateTime(m.time)}
+            className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs leading-relaxed text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
+          >
+            <span className="sr-only">{S.company.chat.systemMessage} </span>
             {renderText(m)}
-            <span className="ml-2 text-gray-400 dark:text-gray-500">{formatDateTime(m.time)}</span>
+            <span className="ml-2 text-gray-400 dark:text-gray-500">{clockTime(m.time)}</span>
+            {renderRefs(m)}
           </p>
         </div>
       );
     }
+    const first = item.messages[0]!;
+    const p = parsePrincipal(item.sender);
+    const label = principalLabel(item.sender, names);
     const mine = p.kind === "user" && p.id === me;
-    const addressed = mentionsUser(m.mentions, me);
     return (
-      <div key={m.id} className={`my-2 flex flex-col ${mine ? "items-end" : "items-start"}`}>
-        <div className="mb-0.5 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-          <PrincipalChip principal={m.sender} names={names} size={16} />
-          {mine && <span>({S.company.chat.you})</span>}
-          {m.hop > 0 && <span className="text-gray-400">{S.company.chat.hop(m.hop)}</span>}
-          <span className="text-gray-400 dark:text-gray-500">{formatDateTime(m.time)}</span>
-        </div>
-        <div
-          className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
-            mine
-              ? "bg-gray-100 dark:bg-gray-800"
-              : addressed
-                ? "border border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30"
-                : "border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-          }`}
-        >
-          {renderText(m)}
-          {(m.refs?.ticket !== undefined || m.refs?.session !== undefined) && (
-            <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
-              {m.refs.ticket !== undefined && (
-                <button
-                  type="button"
-                  className={`${toneInk.busy} hover:underline`}
-                  onClick={() =>
-                    navigate(
-                      `${orgPagePath(projectId, orgId, "tickets")}?ticket=${encodeURIComponent(m.refs?.ticket ?? "")}`,
-                    )
-                  }
+      <div key={first.id} className={`flex ${ICON_GAP.card} py-1.5`}>
+        {p.kind === "agent" ? (
+          <AgentAvatar id={p.id} name={label} size={28} className="mt-0.5 shrink-0 rounded-md" />
+        ) : (
+          <span
+            aria-hidden
+            className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+          >
+            {label.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className={`flex flex-wrap items-baseline ${ICON_GAP.menu} text-xs`}>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{label}</span>
+            {mine && (
+              <span className="text-gray-400 dark:text-gray-500">({S.company.chat.you})</span>
+            )}
+            <span
+              className="text-[11px] text-gray-400 dark:text-gray-500"
+              title={formatDateTime(first.time)}
+            >
+              {clockTime(first.time)}
+            </span>
+            {item.hop > 0 && (
+              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                {S.company.chat.hop(item.hop)}
+              </span>
+            )}
+          </div>
+          {item.messages.map((m) => {
+            const addressed = mentionsUser(m.mentions, me);
+            return (
+              <div
+                key={m.id}
+                id={m.id}
+                className={`group relative -mx-2 rounded-md px-2 py-0.5 ${
+                  addressed
+                    ? "bg-amber-50/70 dark:bg-amber-950/25"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-900/60"
+                }`}
+              >
+                <p className="whitespace-pre-wrap pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                  {renderText(m)}
+                </p>
+                {renderRefs(m)}
+                <span
+                  className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
+                  title={formatDateTime(m.time)}
+                  aria-label={S.company.chat.sentAt(formatDateTime(m.time))}
                 >
-                  {S.company.chat.ticketRef(m.refs.ticket)}
-                </button>
-              )}
-              {m.refs.session !== undefined && (
-                <button
-                  type="button"
-                  className={`${toneInk.busy} hover:underline`}
-                  onClick={() => navigate(`/chat/${m.refs?.session ?? ""}`)}
-                >
-                  {S.company.chat.sessionRef}
-                </button>
-              )}
-            </div>
-          )}
+                  {clockTime(m.time)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
-  const dayPicker =
-    data !== null && data.days.length > 1 ? (
-      <div className="w-40">
-        <Select
-          size="sm"
-          aria-label={S.company.chat.earlierDays}
-          value={date ?? data.days[0] ?? ""}
-          onChange={(e) => setDate(e.target.value)}
-        >
-          {data.days.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </Select>
-      </div>
-    ) : undefined;
-
   return (
-    <OrgPage title={S.nav.org.chat} info={S.company.chat.info} actions={dayPicker}>
-      {/* The stream and the composer share the page's column: the stream scrolls, the composer stays. */}
-      <div className="flex h-[calc(100vh-9rem)] min-h-[24rem] flex-col">
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {error !== null && data === null ? (
-            <EmptyState
-              title={error}
-              action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
-            />
-          ) : data === null ? (
-            <div className="space-y-3">
-              <Skeleton className="h-10 w-2/3" />
-              <Skeleton className="h-10 w-1/2" />
+    <OrgPage title={S.nav.org.chat} info={S.company.chat.info}>
+      {/* The stream and the composer fill the page frame beneath its title: the frame is a
+          scroll container (a containing block), so the column is pinned to its edges and the
+          stream alone scrolls, whatever the viewport or a notice banner above the shell does. */}
+      <div className="absolute inset-x-4 bottom-4 top-[3.75rem] flex flex-col md:inset-x-6 md:bottom-6 md:top-[4.25rem]">
+        <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+          <div
+            ref={listRef}
+            onScroll={onScroll}
+            onWheel={(e) => follow.wheel(e.deltaY)}
+            onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
+            onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
+            onTouchEnd={() => follow.touchEnd()}
+            className="min-h-0 flex-1 overflow-y-auto pr-1"
+          >
+            <div>
+              {days === null && error !== null ? (
+                <EmptyState
+                  title={error}
+                  action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
+                />
+              ) : days === null ? (
+                <StreamSkeleton />
+              ) : (
+                <>
+                  {earlier !== null ? (
+                    <div className="flex justify-center py-2">
+                      <Button
+                        size="sm"
+                        disabled={loadingEarlier}
+                        onClick={() => void loadEarlier()}
+                      >
+                        {loadingEarlier ? S.common.loading : S.company.chat.earlierDays}
+                      </Button>
+                    </div>
+                  ) : (
+                    messageCount(days) > 0 && (
+                      <p className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
+                        {S.company.chat.noEarlier}
+                      </p>
+                    )
+                  )}
+                  {messageCount(days) === 0 ? (
+                    <EmptyState
+                      title={S.company.chat.empty}
+                      description={S.company.chat.emptyHint}
+                    />
+                  ) : (
+                    stream.map(renderItem)
+                  )}
+                </>
+              )}
             </div>
-          ) : data.messages.length === 0 ? (
-            <EmptyState title={S.company.chat.empty} description={S.company.chat.emptyHint} />
-          ) : (
-            data.messages.map(message)
+          </div>
+          {showJump && (
+            <button
+              type="button"
+              aria-label={S.chat.jumpToLatest}
+              title={S.chat.jumpToLatest}
+              onClick={jumpToLatest}
+              className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+            >
+              {pendingNew > 0 ? S.company.chat.newMessages(pendingNew) : S.chat.jumpToLatest}
+              <GlyphIcon d={ARROW_DOWN_ICON} size={ICON_SIZE.inlineGlyph} />
+            </button>
           )}
         </div>
-        <div className="mt-3 shrink-0 border-t border-gray-200 pt-3 dark:border-gray-800">
-          <Dropdown
-            open={panelOpen}
-            // Dismissing (outside click, Escape) parks the caret at 0, where no token can
-            // end, so the panel stays closed until the next keystroke moves the caret again.
-            setOpen={(v) => {
-              if (!v) setCaret(0);
-            }}
-            portal={{ direction: "up", align: "left" }}
-            menuClass="w-72"
-            focusOnOpen={false}
-            button={null}
-          >
-            <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-              @
-            </p>
-            {suggestions.map((c, i) => (
-              <button
-                key={c.principal}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(c)}
-                className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  i === highlight ? "bg-gray-100 dark:bg-gray-800" : ""
-                }`}
-              >
-                <span className="min-w-0 truncate">
-                  <PrincipalChip principal={c.principal} names={names} />
-                </span>
-                <span className="shrink-0 text-gray-400">
-                  {c.kind === "employee"
-                    ? S.company.chat.employees
-                    : c.kind === "member"
-                      ? S.company.chat.members
-                      : S.company.chat.mentionAllDesc}
-                </span>
-              </button>
-            ))}
-          </Dropdown>
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              rows={2}
-              value={text}
-              placeholder={S.company.chat.placeholder}
-              aria-label={S.company.chat.placeholder}
-              disabled={sending}
-              {...noAutofill}
-              onChange={(e) => {
-                setText(e.target.value);
-                setCaret(e.target.selectionStart ?? e.target.value.length);
-                setHighlight(0);
-              }}
-              onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-              onKeyDown={onKeyDown}
-              className="min-h-[3.25rem] w-full flex-1 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:placeholder:text-gray-500"
-            />
-            <Button
-              variant="primary"
-              disabled={sending || text.trim() === ""}
-              onClick={() => void send()}
-            >
-              {S.company.chat.send}
-            </Button>
-          </div>
+        <div className="mx-auto w-full max-w-5xl">
+          <ChatComposer candidates={candidates} names={names} onSend={send} />
         </div>
       </div>
     </OrgPage>
+  );
+}
+
+/** A mention as a chip: the resolved name after the `@`, the raw token in the tooltip; attention-toned when it addresses the reader. */
+function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
+  return (
+    <span
+      title={raw}
+      className={`rounded px-1 ${
+        me
+          ? `font-semibold ${toneSurface.attention}`
+          : "bg-gray-100 font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+      }`}
+    >
+      @{label}
+      {me && <span className="sr-only"> ({S.company.chat.mentionsYou})</span>}
+    </span>
+  );
+}
+
+/** A small bordered chip that opens what a message refers to. */
+function RefChip({
+  onClick,
+  icon,
+  children,
+}: {
+  onClick: () => void;
+  icon?: string;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+    >
+      {icon !== undefined && <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} />}
+      {children}
+    </button>
+  );
+}
+
+/** Three message-shaped bands while the first day loads. */
+function StreamSkeleton() {
+  return (
+    <div className="space-y-4 py-2">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={`flex ${ICON_GAP.card}`}>
+          <Skeleton className="h-7 w-7 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className={`h-4 ${i === 1 ? "w-1/2" : "w-3/4"}`} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
