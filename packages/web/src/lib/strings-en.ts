@@ -854,7 +854,7 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number): string =>
       `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,

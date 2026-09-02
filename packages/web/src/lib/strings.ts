@@ -831,7 +831,7 @@ export const zh = {
      */
     recommendedGroup: "官方推荐",
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% 优惠`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
     offPeakTitle: (pct: number): string =>
