@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#589](https://github.com/Prism-Shadow/penguin-harness/pull/589)
 
 [English](2026-09-02-workspace-tree-editor.md)
 
