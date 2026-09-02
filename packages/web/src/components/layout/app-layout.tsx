@@ -22,6 +22,7 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
@@ -326,6 +327,9 @@ export function AppLayout() {
         <TerminalDockRuntime />
       </div>
 
+      {/* The software-update modal, opened from the sidebar's update row and the draft
+          page's version badge alike; mounted here so it outlives both. */}
+      <UpdateModal />
       <ChangePasswordDialog
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}

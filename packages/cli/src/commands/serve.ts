@@ -13,11 +13,26 @@
  * service is ready, prints the URL, and opens a browser per-platform (`--no-open`
  * disables this). Before the import, PENGUIN_CLI_ENTRY is exported (when node can re-run
  * this entry) so the server's admin self-update endpoint can invoke `penguin update`.
+ *
+ * Supervision: when plain node can re-run this entry, the service runs as a CHILD process
+ * (`node <entry> server …`, marked PENGUIN_SERVE_CHILD=1) and this process stays behind
+ * as its supervisor — it forwards the terminal's signals, exits with the child's code, and
+ * relaunches the child when it exits with core's SERVER_RESTART_EXIT_CODE. That exit is
+ * what the Web App's "restart to update" asks for once `penguin update` has replaced the
+ * install: the relaunch re-resolves the same entry path, which now holds the new release.
+ * The child is told a supervisor is there (PENGUIN_SUPERVISED=1); a dev run through tsx
+ * cannot be re-spawned by node and runs in-process as before, where the server reports
+ * that a restart must be done by hand.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import path from "node:path";
-import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_SERVER_PORT,
+  SERVER_RESTART_EXIT_CODE,
+  resolveRoot,
+} from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
@@ -100,10 +115,63 @@ async function existingInstanceUrl(): Promise<string | null> {
   return lock === null ? null : `http://localhost:${lock.port}/`;
 }
 
-async function startServer(opts: {
-  port?: string;
-  host?: string;
-}): Promise<{ host: string; port: number }> {
+/** Marks the service child a supervising `penguin server|web` spawned: it runs the server in-process. */
+export const SERVE_CHILD_ENV = "PENGUIN_SERVE_CHILD";
+
+/** What the supervisor does when its child exits (pure; exported for unit tests). */
+export function supervisorDecision(
+  exit: { code: number | null; signal: NodeJS.Signals | null },
+  stopping: boolean,
+): { action: "respawn" } | { action: "exit"; code: number } {
+  // The restart code is the child's own request to be relaunched; a signal-terminated
+  // child reports no code and is simply gone. Once the supervisor itself was told to stop,
+  // nothing is relaunched, whatever the child's last word.
+  if (!stopping && exit.code === SERVER_RESTART_EXIT_CODE) return { action: "respawn" };
+  return { action: "exit", code: exit.code ?? (exit.signal !== null ? 1 : 0) };
+}
+
+/**
+ * Runs the service as a child of this process and keeps it running across restart
+ * requests. Returns once the first child is spawned; the process then lives as long as
+ * the child does (the handle keeps the event loop alive) and takes its exit code.
+ */
+function supervise(cliEntry: string, host: string, port: number, t: Messages): void {
+  let stopping = false;
+  let child: ChildProcess | null = null;
+  const spawnChild = (): void => {
+    child = spawn(process.execPath, [cliEntry, "server", "--port", String(port), "--host", host], {
+      stdio: "inherit",
+      env: { ...process.env, [SERVE_CHILD_ENV]: "1", PENGUIN_SUPERVISED: "1" },
+    });
+    child.on("exit", (code, signal) => {
+      const decision = supervisorDecision({ code, signal }, stopping);
+      if (decision.action === "respawn") {
+        process.stdout.write(`${t.serve.restarting}\n`);
+        spawnChild();
+        return;
+      }
+      process.exitCode = decision.code;
+    });
+  };
+  // A signal aimed at the supervisor alone (`kill <pid>`) must reach the service; one from
+  // the terminal already reached both, and the child's shutdown is idempotent. Windows has
+  // no signal to forward — the console delivers Ctrl+C to every process attached to it —
+  // and kill() there is a hard TerminateProcess that would cut a shutdown short.
+  if (process.platform !== "win32") {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      process.on(signal, () => {
+        stopping = true;
+        child?.kill(signal);
+      });
+    }
+  }
+  spawnChild();
+}
+
+async function startServer(
+  opts: { port?: string; host?: string },
+  t: Messages,
+): Promise<{ host: string; port: number }> {
   const port = resolvePort(opts.port, process.env.PORT);
   const host = opts.host ?? process.env.HOST ?? DEFAULT_HOST;
   process.env.PORT = String(port);
@@ -116,6 +184,12 @@ async function startServer(opts: {
   const cliEntry = cliEntryFor(process.argv[1]);
   if (cliEntry !== null) {
     process.env.PENGUIN_CLI_ENTRY = cliEntry;
+  }
+  // The same re-runnable entry is what makes supervision possible: the child is exactly
+  // this command again, marked as the child so it does not supervise in turn.
+  if (cliEntry !== null && process.env[SERVE_CHILD_ENV] !== "1") {
+    supervise(cliEntry, host, port, t);
+    return { host, port };
   }
   await import("@prismshadow/penguin-server");
   return { host, port };
@@ -265,7 +339,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
         process.exitCode = 1;
         return;
       }
-      await startServer(opts);
+      await startServer(opts, t);
     });
   // Bare `penguin server` still starts the service (commander runs the action when no
   // subcommand is named); the subcommand only dispatches on an exact name match.
@@ -288,7 +362,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
         if (opts.open) openBrowser(existing);
         return;
       }
-      const { host, port } = await startServer(opts);
+      const { host, port } = await startServer(opts, t);
       const url = browserUrl(host, port);
       const readiness = await waitForReady(url);
       if (!readiness.ready) {

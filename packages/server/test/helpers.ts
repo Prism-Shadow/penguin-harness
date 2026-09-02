@@ -57,6 +57,7 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
+    supervised: false,
   };
 }
 

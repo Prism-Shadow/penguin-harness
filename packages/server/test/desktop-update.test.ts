@@ -74,7 +74,7 @@ describe("GET /api/desktop/update", () => {
   });
 });
 
-describe("POST /api/desktop/update/{check,install}", () => {
+describe("POST /api/desktop/update/{check,download,install}", () => {
   it("forwards to the registered shell sender and answers 202", async () => {
     const t = await createDesktopApp();
     try {
@@ -88,13 +88,19 @@ describe("POST /api/desktop/update/{check,install}", () => {
         body: "{}",
       });
       expect(check.status).toBe(202);
+      const download = await t.app.request("/api/desktop/update/download", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(download.status).toBe(202);
       const install = await t.app.request("/api/desktop/update/install", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
         body: "{}",
       });
       expect(install.status).toBe(202);
-      expect(actions).toEqual(["check", "install"]);
+      expect(actions).toEqual(["check", "download", "install"]);
     } finally {
       await t.cleanup();
     }
@@ -110,7 +116,11 @@ describe("POST /api/desktop/update/{check,install}", () => {
       t.deps.desktop!.onUpdateCommand(() => {
         commanded += 1;
       });
-      for (const path of ["/api/desktop/update/check", "/api/desktop/update/install"]) {
+      for (const path of [
+        "/api/desktop/update/check",
+        "/api/desktop/update/download",
+        "/api/desktop/update/install",
+      ]) {
         const viaPassword = await t.app.request(path, {
           method: "POST",
           headers: { cookie: admin.cookie, "content-type": "application/json" },
@@ -126,7 +136,7 @@ describe("POST /api/desktop/update/{check,install}", () => {
         });
         expect(anonymous.status).toBe(401);
       }
-      // Nothing reached the shell on any of those four attempts.
+      // Nothing reached the shell on any of those six attempts.
       expect(commanded).toBe(0);
     } finally {
       await t.cleanup();

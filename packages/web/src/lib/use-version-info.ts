@@ -66,6 +66,11 @@ export interface VersionInfo {
   update: UpdateCheckResponse | null;
 }
 
+/** The module cache as it stands, for callers outside React (the update flow's actions). */
+export function getVersionInfo(): VersionInfo {
+  return { version: versionCache, update: updateCache };
+}
+
 export function useVersionInfo(active: boolean): VersionInfo {
   // Initial state comes from the module cache, so a remounted sidebar (locale switch)
   // shows the version footer and the update dot immediately, with no second request.

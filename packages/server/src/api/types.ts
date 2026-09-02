@@ -3125,7 +3125,9 @@ export interface UpdateCheckResponse {
  * utilityProcess message channel and served at GET /api/desktop/update. `state` is the
  * discriminator; the optional fields belong to the states named on them.
  *
- * A `downloaded` build stays the reported state until it is installed: a later periodic
+ * The shell never downloads on its own: a check ends in `available`, and the download
+ * starts only on the page's (or the native dialog's) say-so — the `download` command. A
+ * `downloaded` build stays the reported state until it is installed: a later periodic
  * check (or its failure) must not hide the actionable "restart to install" step.
  */
 export interface DesktopUpdateStatus {
@@ -3139,8 +3141,15 @@ export interface DesktopUpdateStatus {
    */
   seq?: number;
   state:
-    "idle" | "checking" | "up-to-date" | "downloading" | "downloaded" | "error" | "unsupported";
-  /** Newer release being fetched / ready to install (`downloading`, `downloaded`). */
+    | "idle"
+    | "checking"
+    | "up-to-date"
+    | "available"
+    | "downloading"
+    | "downloaded"
+    | "error"
+    | "unsupported";
+  /** The newer release: offered (`available`), being fetched (`downloading`) or ready to install (`downloaded`). */
   version?: string;
   /** Download progress 0–100 (`downloading`). */
   percent?: number;
@@ -3164,16 +3173,20 @@ export interface DesktopUpdaterStatusMessage {
   status: DesktopUpdateStatus;
 }
 
-/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/update/check|install). */
+/**
+ * Server → shell command over the utilityProcess message channel (relayed from
+ * POST /api/desktop/update/check|download|install): look for a release, fetch the one
+ * offered, or restart into the one downloaded.
+ */
 export interface DesktopUpdaterCommandMessage {
   type: "desktop-updater-command";
-  action: "check" | "install";
+  action: "check" | "download" | "install";
 }
 
 /**
- * POST /api/version/update (admin only): runs the CLI self-update (`penguin update --yes`)
- * on the server host. `unsupported` covers both a server not launched via the CLI and the
- * CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ * The outcome of one self-update run (`penguin update --yes` on the server host), carried
+ * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
+ * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
  */
 export interface UpdateRunResponse {
   status: "updated" | "failed" | "unsupported";
@@ -3183,6 +3196,47 @@ export interface UpdateRunResponse {
   output: string;
   /** True when the install changed (or was already current): restart the service to run the new version. */
   needsRestart: boolean;
+}
+
+/**
+ * Where a running self-update is: resolving the release and fetching the installer,
+ * downloading the bundle (the one phase with a percentage), or verifying and installing it.
+ */
+export type UpdateJobPhase = "resolving" | "downloading" | "installing";
+
+/**
+ * GET / POST /api/version/update (admin only): the self-update job. POST starts a run when
+ * none is in flight — a finished run may be started again, which is how a failed one is
+ * retried — and answers with the status exactly as GET does; the page polls GET while
+ * `state` is `running`. One job per process: two admins clicking at once share the one run,
+ * and the finished status stays readable until the next start.
+ */
+export interface UpdateJobStatus {
+  state: "idle" | "running" | "done";
+  /** The release the run targets — the update check's newest version when the run started; null when none was known. */
+  targetVersion: string | null;
+  /** Running only. */
+  phase?: UpdateJobPhase;
+  /** Running, `downloading` only: 0–100 read off the installer's progress bar; null until its first tick. */
+  percent?: number | null;
+  /** Tail of the update command's combined stdout+stderr so far (capped; empty when nothing ran). */
+  output: string;
+  /** Done only. */
+  result?: UpdateRunResponse;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+/**
+ * POST /api/version/restart (admin only): asks the process to exit with the supervisor's
+ * restart code after a graceful shutdown, so `penguin server|web` relaunches it on the
+ * installed release. `restarting: false` when nothing supervises this process — it was
+ * started some other way than through the CLI, or it is a dev run — and the page shows the
+ * manual restart hint instead.
+ */
+export interface RestartResponse {
+  restarting: boolean;
+  reason?: "no_supervisor";
 }
 
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
