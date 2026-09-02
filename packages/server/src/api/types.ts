@@ -3618,8 +3618,9 @@ export interface InstalledPlugin {
   /** Whether the modules this package declares are all present in the running process. */
   active: boolean;
   /**
-   * Shipped with the build (a hot push's assets, or the installation's own `plugins/`)
-   * rather than installed by an operator: loads without being listed, cannot be removed.
+   * Where the package came from: shipped with the build (a hot push's assets, or the
+   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
+   * plugin — being shipped is not being installed.
    */
   builtin: boolean;
   /** Module names the package declares it adds. */
@@ -3632,6 +3633,11 @@ export interface InstalledPlugin {
 
 export interface InstalledPluginsResponse {
   plugins: InstalledPlugin[];
+  /**
+   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
+   * `plugins/`): installable without a download, and not installed until listed.
+   */
+  shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
   /** A listed plugin is not running: plugins load once per process, so a restart applies it. */

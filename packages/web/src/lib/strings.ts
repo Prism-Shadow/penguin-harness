@@ -1279,6 +1279,7 @@ export const zh = {
     installedEmpty: "还没有安装任何插件。",
     stateActive: "运行中",
     builtin: "内置",
+    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
     installedRestart: "待重启",
     stateInactive: "未加载",
     replacesLabel: "替换",
