@@ -1,10 +1,14 @@
 /**
  * The finance page's shaping (pure, unit tested): the spend tree in reporting-line order with
  * depths, the ticket table along parent tickets, period arithmetic for the this / previous
- * switch, the tone a budget ratio takes, and the daily series in the trend chart's shape.
+ * switch, the tone a budget ratio takes, the daily series in the trend chart's shape (with
+ * the axis breaks where days were skipped), the KPI row's numbers, and the alert list
+ * grouped by state.
  */
 import type {
+  OrgBudgetAlert,
   OrgFinanceEmployee,
+  OrgFinanceResponse,
   OrgFinanceTicket,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-server/api";
@@ -98,4 +102,74 @@ export function financeSeries(
     completed: 0,
     denominator: 0,
   }));
+}
+
+/** `yyyy-mm-dd` as a UTC day number; null for anything else. */
+function dayNumber(date: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(ms) ? null : Math.round(ms / 86_400_000);
+}
+
+/**
+ * Indices after which the daily series skips at least one calendar day: the server lists
+ * only the days that recorded a cost, so the chart marks the gaps on its axis rather than
+ * drawing the remaining days as neighbours.
+ */
+export function dailyBreaks(daily: ReadonlyArray<{ date: string }>): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < daily.length; i++) {
+    const a = dayNumber(daily[i]!.date);
+    const b = dayNumber(daily[i + 1]!.date);
+    if (a !== null && b !== null && b - a > 1) out.push(i);
+  }
+  return out;
+}
+
+/** The KPI row: the organization's total against the root's (CEO's) budget, head counts and alert counts. */
+export interface FinanceKpis {
+  total: number;
+  /** The root employee's budget, which covers the whole organization; absent = unbounded. */
+  budget?: number;
+  ratio?: number;
+  employees: number;
+  /** Employees with a budget of their own. */
+  budgeted: number;
+  /** Warned but not (yet) paused. */
+  warned: number;
+  paused: number;
+}
+
+export function financeKpis(data: Pick<OrgFinanceResponse, "employees" | "total">): FinanceKpis {
+  const root = data.employees.find((e) => e.reportsTo === null) ?? data.employees[0];
+  const budget = root?.budget;
+  const ratio = budget !== undefined && budget > 0 ? data.total / budget : undefined;
+  return {
+    total: data.total,
+    ...(budget !== undefined ? { budget } : {}),
+    ...(ratio !== undefined ? { ratio } : {}),
+    employees: data.employees.length,
+    budgeted: data.employees.filter((e) => e.budget !== undefined).length,
+    warned: data.employees.filter((e) => e.warned && !e.paused).length,
+    paused: data.employees.filter((e) => e.paused).length,
+  };
+}
+
+/**
+ * Alerts grouped by state, newest first inside each group: a pause outranks the warning
+ * that preceded it, so an alert carrying both timestamps lists under `paused` only.
+ */
+export function groupAlerts(alerts: readonly OrgBudgetAlert[]): {
+  paused: OrgBudgetAlert[];
+  warned: OrgBudgetAlert[];
+} {
+  const paused = alerts.filter((a) => a.pausedAt !== undefined);
+  const warned = alerts.filter((a) => a.pausedAt === undefined && a.warnedAt !== undefined);
+  const newestFirst = (key: "pausedAt" | "warnedAt") => (a: OrgBudgetAlert, b: OrgBudgetAlert) =>
+    (b[key] ?? "").localeCompare(a[key] ?? "");
+  return {
+    paused: paused.sort(newestFirst("pausedAt")),
+    warned: warned.sort(newestFirst("warnedAt")),
+  };
 }

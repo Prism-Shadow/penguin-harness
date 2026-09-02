@@ -1,27 +1,31 @@
 /**
  * The organization chat's @-mentions (pure, unit tested): the candidates the composer offers
- * (employees, Project members, `all`), the token being typed at the caret, how a pick is
- * spliced into the draft, and how a stored message is split into plain runs and mention runs
- * for highlighting. The token grammar mirrors the server's extractMentionTokens — `@id`,
- * `@agent:id`, `@user:id`, `@all` — so what the composer highlights is what the server
- * delivers.
+ * (employees, Project members, `all`) and how they rank against what was typed, the token
+ * being typed at the caret, what a pick types and how it is spliced into the draft, how a
+ * stored message is split into plain runs and mention runs for highlighting, and what a
+ * mention run displays and whether it addresses the reader. The token grammar mirrors the
+ * server's extractMentionTokens — `@id`, `@agent:id`, `@user:id`, `@all` — and its
+ * resolution order (an employee before a member of the same id), so what the composer
+ * highlights is what the server delivers.
  */
 
 export type MentionKind = "employee" | "member" | "all";
 
 export interface MentionCandidate {
-  /** The principal the pick inserts (`agent:<id>`, `user:<id>`, `all`). */
+  /** The principal the pick stands for (`agent:<id>`, `user:<id>`, `all`). */
   principal: string;
   /** The display name (an employee's name, a member's user id, "everyone"). */
   label: string;
   /** The bare id the user may have typed (`ceo`, `alice`, `all`). */
   id: string;
   kind: MentionKind;
+  /** Secondary text beside the name: an employee's title. */
+  detail?: string;
 }
 
 /** Employees first, then members, then `all` — the order the panel lists them in. */
 export function mentionCandidates(
-  employees: ReadonlyArray<{ agentId: string; name: string }>,
+  employees: ReadonlyArray<{ agentId: string; name: string; title?: string }>,
   members: readonly string[],
   allLabel: string,
 ): MentionCandidate[] {
@@ -30,12 +34,77 @@ export function mentionCandidates(
     label: e.name,
     id: e.agentId,
     kind: "employee" as const,
+    ...(e.title !== undefined && e.title.trim() !== "" ? { detail: e.title.trim() } : {}),
   }));
   for (const userId of members) {
     out.push({ principal: `user:${userId}`, label: userId, id: userId, kind: "member" });
   }
   out.push({ principal: "all", label: allLabel, id: "all", kind: "all" });
   return out;
+}
+
+/**
+ * Candidates ranked for the panel: an id or name that starts with the query ranks above one
+ * that merely contains it (or whose principal does), and ties keep the list's own order —
+ * employees, then members, then `all`. An empty query keeps everyone in that order.
+ */
+export function rankMentionCandidates(
+  candidates: readonly MentionCandidate[],
+  query: string,
+): MentionCandidate[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return [...candidates];
+  const scored: Array<{ c: MentionCandidate; score: number; i: number }> = [];
+  candidates.forEach((c, i) => {
+    const id = c.id.toLowerCase();
+    const label = c.label.toLowerCase();
+    const score =
+      id.startsWith(q) || label.startsWith(q)
+        ? 0
+        : id.includes(q) || label.includes(q) || c.principal.toLowerCase().includes(q)
+          ? 1
+          : -1;
+    if (score >= 0) scored.push({ c, score, i });
+  });
+  return scored.sort((a, b) => a.score - b.score || a.i - b.i).map((s) => s.c);
+}
+
+/**
+ * What a pick types after the `@`: an employee's bare id, a member's bare id — unless an
+ * employee shares it, in which case `user:` disambiguates, since the server resolves a bare
+ * id to the employee first — and `all`.
+ */
+export function mentionInsertId(
+  c: MentionCandidate,
+  candidates: readonly MentionCandidate[],
+): string {
+  if (c.kind === "member" && candidates.some((o) => o.kind === "employee" && o.id === c.id)) {
+    return `user:${c.id}`;
+  }
+  return c.id;
+}
+
+/** What a mention token displays: the employee's name for an agent id (prefixed or bare), the user id for a member, the "everyone" label for `all`. */
+export function mentionLabel(
+  token: string,
+  names: ReadonlyMap<string, string>,
+  allLabel: string,
+): string {
+  if (token === "all") return allLabel;
+  const m = /^(agent|user):(.+)$/.exec(token);
+  if (m) return m[1] === "agent" ? (names.get(m[2]!) ?? m[2]!) : m[2]!;
+  return names.get(token) ?? token;
+}
+
+/** Whether a mention token addresses this user: their `user:` principal, `all`, or their bare id when no employee claims it. */
+export function mentionIsMe(
+  token: string,
+  userId: string,
+  employeeIds: ReadonlySet<string>,
+): boolean {
+  if (userId === "") return false;
+  if (token === "all" || token === `user:${userId}`) return true;
+  return token === userId && !employeeIds.has(userId);
 }
 
 /** Case-insensitive substring match on the id, the label or the full principal; an empty query keeps everyone. */

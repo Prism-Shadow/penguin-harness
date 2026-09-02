@@ -2762,6 +2762,40 @@ Scenarios:
         `${name} reached its budget at ${at}; automatic triggers paused`,
       alertsHint:
         "To lift a pause, raise the employee's budget or clear it; the next check resumes it automatically.",
+      /** The KPI row under the title. */
+      kpiTotal: "Total spend",
+      orgBudget: "Organization budget (CEO)",
+      kpiEmployees: "Employees",
+      budgetsSet: (n: number): string => `${n} with a budget`,
+      thresholds: "80% warns, 100% pauses",
+      kpiAlerts: "Alerts",
+      alertsSummary: (warned: number, paused: number): string =>
+        `${warned} warned · ${paused} paused`,
+      /** Column header explanations, and the tree's root mark. */
+      cumulativeInfo:
+        "The employee's own spend plus every subordinate's; budget and ratio use this measure.",
+      rolledUpInfo: "This ticket's cost plus every child ticket's.",
+      root: "Root",
+      /** The inline budget editor. */
+      budgetEmptyHint: "Leave empty for unbounded",
+      saveBudget: "Save budget",
+      cancelEdit: "Cancel",
+      editBudgetOf: (name: string): string => `Edit the budget of ${name}`,
+      /** The ticket table's owner column and row action. */
+      openTicket: "Open ticket",
+      /** The trend section. */
+      trendInfo:
+        "The daily cost of every session in the organization, by the organization's timezone; only days with spend are drawn.",
+      trendEmpty: "No spend recorded this period yet",
+      /** The alert list. */
+      alertsInfo:
+        "Every check compares cumulative spend with the budget: reaching 80% records a warning, reaching 100% pauses the employee's and its subordinates' automatic triggers; lifting the pause resumes them.",
+      pausedGroup: "Automatic triggers paused",
+      warnedGroup: "Warned",
+      warnedAt: (at: string): string => `reached 80% at ${at}`,
+      pausedAt: (at: string): string => `reached 100% at ${at}`,
+      /** A refetch failed while the last good data is still on screen. */
+      refreshFailed: "Refresh failed; showing the last loaded data",
     },
     chat: {
       title: "Chat",
@@ -2786,6 +2820,19 @@ Scenarios:
       /** The nav entry's badge: what is waiting behind it. */
       badgeUnread: (n: number): string => `${n} unread`,
       badgeMentions: (n: number): string => `${n} mentioning me`,
+      /** Day separators, paging and the read cursor in the stream. */
+      today: "Today",
+      yesterday: "Yesterday",
+      noEarlier: "No earlier messages",
+      unreadDivider: "Unread",
+      newMessages: (n: number): string => `${n} new message${n === 1 ? "" : "s"}`,
+      /** The composer and its @ autocomplete. */
+      composerHint: "Only an @ reaches an employee · Enter to send, Shift+Enter for a new line",
+      mentionPanel: "Mention",
+      mentionsYou: "Mentions you",
+      /** Accessible name of a system banner and of a message's per-line time. */
+      systemMessage: "System message",
+      sentAt: (time: string): string => `Sent at ${time}`,
     },
   },
   errors: {

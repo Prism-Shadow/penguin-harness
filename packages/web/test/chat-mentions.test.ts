@@ -1,16 +1,21 @@
 /**
- * chat-mentions.ts unit tests: the candidate list and its filter, the @-token at the caret,
- * splicing a pick into the draft, and splitting a stored message into plain and mention runs
- * by the server's own token grammar.
+ * chat-mentions.ts unit tests: the candidate list, its filter and its ranking, what a pick
+ * types, the @-token at the caret, splicing a pick into the draft, splitting a stored
+ * message into plain and mention runs by the server's own token grammar, and what a
+ * mention run displays and whom it addresses.
  */
 import { describe, expect, it } from "vitest";
 import {
   filterMentionCandidates,
   insertMention,
   mentionCandidates,
+  mentionInsertId,
+  mentionIsMe,
+  mentionLabel,
   mentionQueryAt,
   mentionRuns,
   mentionsUser,
+  rankMentionCandidates,
 } from "../src/features/company/chat-mentions";
 
 const candidates = mentionCandidates(
@@ -88,5 +93,92 @@ describe("mentionsUser", () => {
     expect(mentionsUser(["agent:ceo", "user:bob"], "bob")).toBe(true);
     expect(mentionsUser(["all"], "bob")).toBe(true);
     expect(mentionsUser(["user:alice"], "bob")).toBe(false);
+  });
+});
+
+describe("mentionCandidates with titles", () => {
+  it("carries an employee's title as the detail and leaves a blank one out", () => {
+    const list = mentionCandidates(
+      [
+        { agentId: "ceo", name: "Alice", title: "CEO" },
+        { agentId: "pm", name: "Product", title: "  " },
+      ],
+      [],
+      "Everyone",
+    );
+    expect(list[0]?.detail).toBe("CEO");
+    expect("detail" in list[1]!).toBe(false);
+  });
+});
+
+describe("rankMentionCandidates", () => {
+  const list = mentionCandidates(
+    [
+      { agentId: "studio_ceo", name: "Penguin CEO" },
+      { agentId: "studio_cto", name: "Tech Lead" },
+      { agentId: "ops", name: "Studio Ops" },
+    ],
+    ["stu", "bob"],
+    "Everyone",
+  );
+
+  it("keeps the list's own order for an empty query", () => {
+    expect(rankMentionCandidates(list, "").map((c) => c.id)).toEqual([
+      "studio_ceo",
+      "studio_cto",
+      "ops",
+      "stu",
+      "bob",
+      "all",
+    ]);
+  });
+
+  it("puts id and name prefixes above substring matches, ties in list order", () => {
+    // "stu": prefixes on studio_ceo / studio_cto / Studio Ops (name) / stu; nothing else.
+    expect(rankMentionCandidates(list, "stu").map((c) => c.id)).toEqual([
+      "studio_ceo",
+      "studio_cto",
+      "ops",
+      "stu",
+    ]);
+    // "lead": a substring of the name only.
+    expect(rankMentionCandidates(list, "LEAD").map((c) => c.id)).toEqual(["studio_cto"]);
+    // "cto" is a prefix of nothing but is contained in studio_cto.
+    expect(rankMentionCandidates(list, "cto").map((c) => c.id)).toEqual(["studio_cto"]);
+    // A principal prefix reaches the members.
+    expect(rankMentionCandidates(list, "user:").map((c) => c.id)).toEqual(["stu", "bob"]);
+    expect(rankMentionCandidates(list, "zzz")).toEqual([]);
+  });
+});
+
+describe("mentionInsertId", () => {
+  it("types a bare id, and disambiguates a member who shares an employee's id", () => {
+    const list = mentionCandidates([{ agentId: "alice", name: "Alice" }], ["alice", "bob"], "All");
+    expect(mentionInsertId(list[0]!, list)).toBe("alice");
+    expect(mentionInsertId(list[1]!, list)).toBe("user:alice");
+    expect(mentionInsertId(list[2]!, list)).toBe("bob");
+    expect(mentionInsertId(list[3]!, list)).toBe("all");
+  });
+});
+
+describe("mentionLabel and mentionIsMe", () => {
+  const names = new Map([["ceo", "Alice"]]);
+  const employees = new Set(["ceo", "bob"]);
+
+  it("resolves an agent id to its name, a member to its id, all to the everyone label", () => {
+    expect(mentionLabel("agent:ceo", names, "Everyone")).toBe("Alice");
+    expect(mentionLabel("ceo", names, "Everyone")).toBe("Alice");
+    expect(mentionLabel("user:bob", names, "Everyone")).toBe("bob");
+    expect(mentionLabel("unknown", names, "Everyone")).toBe("unknown");
+    expect(mentionLabel("all", names, "Everyone")).toBe("Everyone");
+  });
+
+  it("addresses the reader by principal, by all, or by bare id when no employee claims it", () => {
+    expect(mentionIsMe("user:bob", "bob", employees)).toBe(true);
+    expect(mentionIsMe("all", "bob", employees)).toBe(true);
+    // The server gives a bare "bob" to the employee of that id, not the member.
+    expect(mentionIsMe("bob", "bob", employees)).toBe(false);
+    expect(mentionIsMe("carol", "carol", employees)).toBe(true);
+    expect(mentionIsMe("all", "", employees)).toBe(false);
   });
 });
