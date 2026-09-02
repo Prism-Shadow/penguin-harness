@@ -216,3 +216,62 @@ describe("mergeRegisteredWorkspaces", () => {
     ]);
   });
 });
+
+describe("a workspace's machine", () => {
+  it("records the machine a directory was picked on", () => {
+    const entries = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    expect(entries[0]).toEqual({ path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" });
+  });
+
+  it("leaves it absent for this machine, which is what every older entry looks like", () => {
+    expect(registerWorkspace([], "/srv/app")[0]).toEqual({ path: "/srv/app" });
+  });
+
+  it("keeps the same path on two machines as two workspaces", () => {
+    // `/srv/app` on two machines is two different directories; collapsing them would hide
+    // one behind the other with no way to tell which.
+    let entries = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    entries = registerWorkspace(entries, "/srv/app");
+    entries = registerWorkspace(entries, "/srv/app", "OTHERaaaaaaaaaaa");
+    expect(entries).toHaveLength(3);
+    expect(entries.map((e) => e.machineId)).toEqual([
+      "OTHERaaaaaaaaaaa",
+      undefined,
+      "noeSE0FFHhNXl2J5",
+    ]);
+  });
+
+  it("still dedups the same path on the SAME machine", () => {
+    const first = registerWorkspace([], "/srv/app", "noeSE0FFHhNXl2J5");
+    expect(registerWorkspace(first, "/srv/app", "noeSE0FFHhNXl2J5")).toBe(first);
+    const local = registerWorkspace([], "/srv/app");
+    expect(registerWorkspace(local, "/srv/app")).toBe(local);
+  });
+
+  it("round-trips through storage, and tolerates a stored entry without one", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    saveWorkspaceRegistry(
+      "p",
+      [{ path: "/a", machineId: "noeSE0FFHhNXl2J5" }, { path: "/b" }],
+      storage,
+    );
+    expect(loadWorkspaceRegistry("p", storage)).toEqual([
+      { path: "/a", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/b" },
+    ]);
+  });
+
+  it("drops an empty machine id rather than storing a workspace on nothing", () => {
+    const store = new Map<string, string>();
+    store.set(workspaceRegistryKey("p"), JSON.stringify([{ path: "/a", machineId: "" }]));
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    expect(loadWorkspaceRegistry("p", storage)).toEqual([{ path: "/a" }]);
+  });
+});

@@ -1,5 +1,10 @@
 /**
- * Workspace picker, extracted from draft-view.tsx so the Project settings dialog's
+ * Workspace picker: which directory, and — when more than one machine is reachable — which
+ * MACHINE it is on. A workspace is a directory on a machine, so choosing one is choosing
+ * where the path has to exist; the browser lists that machine's filesystem, over the tunnel
+ * when it is not this one. The row only appears when there is a choice to make.
+ *
+ * Extracted from draft-view.tsx so the Project settings dialog's
  * "new chat defaults" section can offer the same dir-browser popover the chat draft uses.
  * Two trigger variants, one menu:
  * - "pill" (default): the draft page's pill trigger with viewport-docked in-flow menu —
@@ -22,6 +27,8 @@ import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
+import type { WorkspaceMachine } from "../../lib/workspace-machines";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =
@@ -41,6 +48,8 @@ export function WorkspaceSelect({
   projectId,
   workspace,
   onChange,
+  machineId,
+  chooseMachine,
   variant = "pill",
   trigger,
   fieldLabel,
@@ -50,7 +59,12 @@ export function WorkspaceSelect({
 }: {
   projectId: string;
   workspace: string;
-  onChange: (path: string) => void;
+  /** `machineId` is null for this machine — the shape the registry stores. */
+  onChange: (path: string, machineId?: string | null) => void;
+  /** The machine to browse first; omitted starts on the window's current server. */
+  machineId?: string | null;
+  /** Offer the machine row. Off where a machine cannot be meaningfully chosen yet. */
+  chooseMachine?: boolean;
   /** Trigger style: the draft page's pill (default), or a dialog form control (see the header comment). */
   variant?: "pill" | "form";
   /**
@@ -75,6 +89,18 @@ export function WorkspaceSelect({
 }) {
   const fieldName = fieldLabel ?? S.chat.workspace;
   const [open, setOpen] = useState(false);
+  /**
+   * The machine being browsed. Its OWN state rather than a prop: picking a machine re-roots
+   * the browser without touching the window's active server, which is the whole point —
+   * a workspace on another machine is chosen from here, not by going there.
+   *
+   * Starts on this machine unless the caller names one — a workspace being edited that
+   * already lives elsewhere. The window itself never moves, so "here" is always the honest
+   * starting point.
+   */
+  const [machine, setMachine] = useState<string | null>(machineId ?? null);
+  const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
+  const [machineOpen, setMachineOpen] = useState(false);
   /**
    * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
    * its left offset varies with the agent's name — a statically left-anchored 20rem panel can
@@ -119,7 +145,7 @@ export function WorkspaceSelect({
       setLoading(true);
       setError(null);
       api
-        .listDirs(projectId, abs)
+        .listDirs(projectId, abs, machine)
         .then((res) => {
           if (seq === loadSeq.current) setDir(res);
         })
@@ -132,8 +158,31 @@ export function WorkspaceSelect({
           if (seq === loadSeq.current) setLoading(false);
         });
     },
-    [projectId],
+    [projectId, machine],
   );
+
+  /**
+   * loadDir through a ref: the machine row renders above the browser but has to drive it,
+   * and the callback is rebuilt whenever the machine changes — a direct reference captured
+   * at render time would browse the machine we just left.
+   */
+  const loadDirRef = useRef<(machineId: string | null) => void>(() => {});
+  loadDirRef.current = (nextMachine: string | null) => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setError(null);
+    api
+      .listDirs(projectId, "", nextMachine)
+      .then((res) => {
+        if (seq === loadSeq.current) setDir(res);
+      })
+      .catch((e: unknown) => {
+        if (seq === loadSeq.current) setError(apiErrorText(e));
+      })
+      .finally(() => {
+        if (seq === loadSeq.current) setLoading(false);
+      });
+  };
 
   // Only loads on first expand: an already-filled absolute path is used as the starting point, otherwise the server falls back to the home directory.
   const loadOnFirstOpen = (next: boolean) => {
@@ -199,12 +248,94 @@ export function WorkspaceSelect({
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
+  // The machines a workspace can live on: this PROJECT's machines, from the LOCAL server —
+  // the list is its own, whichever server the rest of the window is using.
+  useEffect(() => {
+    if (!open || chooseMachine !== true) return;
+    let cancelled = false;
+    void api
+      .getMachines(projectId)
+      .then((res) => {
+        if (!cancelled) setMachines(workspaceMachines(res));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, chooseMachine, projectId]);
+
+  /**
+   * The row is shown whenever this surface offers machines at all — NOT only when more than
+   * one is reachable. A control that disappears when the answer is "just this one" reads as
+   * a missing feature, and leaves someone with 45 hosts in their ssh config wondering why
+   * they cannot pick any of them. Showing it with one entry, plus a line saying how many
+   * are a connect away, answers that question where hiding it asked a new one.
+   */
+  const machineRow = chooseMachine === true && machines.length > 0;
+
   /** Folder glyph shared by both triggers. */
   const folderIcon = (extraClass: string) => (
     <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.rowLead} className={`text-gray-400 ${extraClass}`} />
   );
   const menu = (
     <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
+      {/* Which machine's filesystem is being browsed. Changing it re-roots the browser at
+          that machine's home directory — a path is only meaningful on the machine it is on,
+          so carrying the current one across would be a path that likely does not exist. */}
+      {machineRow && (
+        <Dropdown
+          open={machineOpen}
+          setOpen={setMachineOpen}
+          menuClass="left-0 right-0 top-full mt-1 origin-top"
+          button={
+            <button
+              type="button"
+              onClick={() => setMachineOpen(!machineOpen)}
+              aria-haspopup="listbox"
+              aria-expanded={machineOpen}
+              className="flex w-full items-center gap-1.5 rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {machineLabel(machines, machine) ?? S.chat.workspaceMachine}
+              </span>
+              <Chevron open={machineOpen} />
+            </button>
+          }
+        >
+          {machines.map((entry, index) => (
+            <button
+              key={entry.selectable ? (entry.id ?? "local") : `unusable-${index}`}
+              type="button"
+              disabled={!entry.selectable}
+              onClick={() => {
+                setMachineOpen(false);
+                if (entry.id === machine) return;
+                setMachine(entry.id);
+                // Start over at that machine's home directory.
+                loadDirRef.current(entry.id);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent"
+            >
+              <span
+                className={`min-w-0 flex-1 truncate ${entry.selectable ? "" : "text-gray-400 dark:text-gray-500"}`}
+              >
+                {entry.label}
+              </span>
+              {entry.local && (
+                <span className="shrink-0 text-gray-400">{S.chat.workspaceHere}</span>
+              )}
+              {/* A machine that cannot be browsed is shown, disabled, saying why — right
+                  where "why can I not pick that one?" is asked. Leaving it out, or counting
+                  it in a footnote, answers somewhere the question was not. */}
+              {entry.reason !== undefined && (
+                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  {S.chat.workspaceMachineWhy[entry.reason]}
+                </span>
+              )}
+            </button>
+          ))}
+        </Dropdown>
+      )}
       <div className="rounded-md border border-gray-200 dark:border-gray-800">
         {/* Current path (editable: Enter/blur commits, Escape discards) + "Use this directory" (closes the menu once selected) */}
         <div className="flex items-center gap-1.5 border-b border-gray-100 px-1.5 py-1 dark:border-gray-800">
@@ -231,7 +362,7 @@ export function WorkspaceSelect({
             disabled={!dir}
             onClick={() => {
               if (!dir) return;
-              onChange(dir.path);
+              onChange(dir.path, machine);
               setOpen(false);
             }}
             className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -298,7 +429,7 @@ export function WorkspaceSelect({
         <button
           type="button"
           onClick={() => {
-            onChange("");
+            onChange("", machine);
             setOpen(false);
           }}
           className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
