@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `core`, `skills`, `docs`
+- **PR:** [#595](https://github.com/Prism-Shadow/penguin-harness/pull/595)
 
 [English](2026-09-02-app-center.md)
 
