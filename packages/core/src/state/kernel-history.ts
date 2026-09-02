@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-09-01";
+export const KERNEL_VERSION = "2026-09-02";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -185,15 +185,20 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
  *   that must outlive the conversation takes the new-Session form, and a subagent omits the
  *   field): the schedules tab moved.
- * - `2026-09-01` (current) — `model.timeoutMs` rose to 300000: the value is the idle budget
+ * - `2026-09-01` — `model.timeoutMs` rose to 300000: the value is the idle budget
  *   between upstream events, and a model that keeps its reasoning off the wire spends its
  *   whole thinking phase inside the wait for the first one, which 120000 cut short. The
  *   runtime tab moved.
+ * - `2026-09-02` (current) — image reading folded into `read_file`: the `read_image` /
+ *   `describe_image` entries left the set, `read_file` gained the optional `prompt` argument,
+ *   an image-aware description and a 60000 timeout, and `input_command`'s timeout aligned
+ *   with `exec_command` at 120000 (its empty-poll default became 110000): the tools tab
+ *   moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
-  tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
+  tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
@@ -225,6 +230,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "c719f2fe8a25bc5c644a4e1a78d26cf960dd0561efc453614af2e395000ed4de", // before `max` joined the ladder
     "074248073c5fe89537ff257cc5d5662159288fc79ede7703eded6b440b4e38e9", // before background execution and the kill tools
     "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
+    "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d", // before the image tools folded into read_file
   ],
   // The memory prompt's wording before #397 named when a fact is worth saving.
   memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],

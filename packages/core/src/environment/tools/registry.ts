@@ -6,7 +6,10 @@
  * description/parameters/permission/maxOutputLength from config are injected into the tool's
  * `definition` by each factory, and the runtime tool name follows the config entry's name.
  * When adding a new built-in tool, just register one factory entry here — no changes to
- * Environment needed.
+ * Environment needed. A stored entry whose name has no factory (a tool removed since the
+ * config was written, e.g. `kill_command`, `read_image`, `describe_image`) is skipped:
+ * neither listed to the model nor executable, and a call by that name gets the standard
+ * unknown-tool reply.
  *
  * Docs: packages/docs/content/tools.{zh,en}.md (site path /docs/tools) documents every
  * built-in tool and the approval flow — keep the page in sync when this table changes.
@@ -20,13 +23,12 @@ import { EXEC_COMMAND_NAME, createExecCommandTool } from "./exec-command.js";
 import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
 import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
 import { INPUT_SUBAGENT_NAME, createInputSubagentTool } from "./input-subagent.js";
-import { READ_IMAGE_NAME, createReadImageTool } from "./read-image.js";
-import { DESCRIBE_IMAGE_NAME, createDescribeImageTool } from "./describe-image.js";
 
 /**
  * A factory that constructs a BuiltinTool instance from a tool config entry; optionally
  * receives runtime services injected by Environment.
- * Most tools ignore `services`; only a few (e.g. `run_subagent`) use it.
+ * Most tools ignore `services`; a few use it (`run_subagent` for the runner, `read_file` for
+ * the vision describer that tells it the session model cannot view images).
  */
 export type BuiltinToolFactory = (
   definition: ToolDefinitionConfig,
@@ -42,12 +44,4 @@ export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
   [INPUT_COMMAND_NAME]: createInputCommandTool,
   [SUBAGENT_NAME]: createSubagentTool,
   [INPUT_SUBAGENT_NAME]: createInputSubagentTool,
-  [READ_IMAGE_NAME]: createReadImageTool,
-  // describe_image: the text-only-model variant of read_image (hands the image to the
-  // configured vision model for description, returns text).
-  // Which tool is used for which model class is declared by the config entry's forModel
-  // annotation; before assembly, selectBuiltinToolsForModel has already filtered out entries
-  // that don't apply to the session's model.
-  [DESCRIBE_IMAGE_NAME]: (definition, services) =>
-    createDescribeImageTool(definition, services?.visionDescriber ?? { modelId: null }),
 };

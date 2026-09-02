@@ -1,35 +1,14 @@
 /**
- * read_image — image-reading tool, a builtin tool implementation (BuiltinTool).
+ * Image loading for read_file's image branch: which sources count as images, how their bytes
+ * are fetched (an http(s) URL through the global fetch, anything else as a path resolved
+ * against the Workspace), and the validation every image passes (size cap, supported mime).
  *
- * Reads an image and feeds it back to the model as **image content**: if `source` is an http(s)
- * URL, downloads it with the global fetch (respecting the abort signal); otherwise reads it as a
- * local file path (relative paths are resolved against the Workspace). Only png/jpeg/gif/webp
- * are allowed (determined in order by response header / magic number / extension); errors out
- * above 5MB.
- *
- * Division of responsibility with Environment (see environment.ts): on success, yields a brief
- * descriptive delta (e.g. `image/png, 123.4 kB`), while the image itself is carried via the
- * return value `ToolResult.images` (a data URL) for Environment to attach when closing out (a
- * single streaming delta carries it all at once before stop, plus the final complete
- * `tool_call_output`); on failure, yields explanatory text and closes with `failed`, **never
- * throwing**; if interrupted, only reports `aborted` — the interruption note is appended by
- * Environment.
- *
- * This tool is only used by sessions with a model that supports images (config entry
- * `forModel: "vision"`); text-only models use describe_image instead (the image is handed to a
- * configured vision model to describe, returning text — see describe-image.ts), and the image
- * loading/validation logic is shared via `loadImage`.
- * Docs: /docs/tools § "Image tools".
+ * Detection order is magic number → response content-type (URLs only) → extension: a file
+ * whose bytes say PNG is an image whatever it is called, and a `.png` path with unrecognized
+ * bytes is still handed over as an image rather than dumped as text.
  */
 import path from "node:path";
-import { readFile, stat } from "node:fs/promises";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces/index.js";
-import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-
-/** Tool name constant (used only within this tool module, never exposed to Environment). */
-export const READ_IMAGE_NAME = "read_image";
+import { open, readFile, stat } from "node:fs/promises";
 
 /**
  * Image size upper bound (bytes): errors out above this. Taken as the common denominator of
@@ -52,8 +31,11 @@ const EXT_TO_MIME: Record<string, string> = {
   ".webp": "image/webp",
 };
 
+/** Bytes that decide every supported magic number (the WebP RIFF header is the longest). */
+const SNIFF_BYTES = 12;
+
 /** Sniffs the mime type from the file header's magic number; returns null if unrecognized. */
-function sniffMime(buf: Buffer): string | null {
+export function sniffImageMime(buf: Buffer): string | null {
   if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47) return "image/png";
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
     return "image/jpeg";
@@ -73,8 +55,38 @@ function sniffMime(buf: Buffer): string | null {
 }
 
 /** Infers the mime type from a path / URL pathname's extension; returns null if it can't be inferred. */
-function mimeFromExt(p: string): string | null {
+export function imageMimeFromExt(p: string): string | null {
   return EXT_TO_MIME[path.extname(p).toLowerCase()] ?? null;
+}
+
+/** Whether a source is an http(s) URL — the only kind of source that is never a local path. */
+export function isHttpUrl(source: string): boolean {
+  return /^https?:\/\//i.test(source);
+}
+
+/**
+ * Whether a local file is an image: judged by its leading bytes, then by its extension. A
+ * file that cannot be opened is judged by extension alone — the caller's own read reports
+ * the error afterwards.
+ */
+export async function looksLikeImageFile(filePath: string): Promise<boolean> {
+  let fd;
+  try {
+    fd = await open(filePath, "r");
+  } catch {
+    return imageMimeFromExt(filePath) !== null;
+  }
+  try {
+    const head = Buffer.alloc(SNIFF_BYTES);
+    const { bytesRead } = await fd.read(head, 0, SNIFF_BYTES, 0);
+    return (
+      sniffImageMime(head.subarray(0, bytesRead)) !== null || imageMimeFromExt(filePath) !== null
+    );
+  } catch {
+    return imageMimeFromExt(filePath) !== null;
+  } finally {
+    await fd.close();
+  }
 }
 
 /** Byte count -> human-readable size (B / kB / MB, one decimal place). */
@@ -98,10 +110,9 @@ export type LoadImageResult =
   | { ok: false; reason: "failed"; message: string };
 
 /**
- * Reads and validates an image (shared by read_image and describe_image):
- * an http(s) URL is downloaded with the global fetch, otherwise read as a local path (resolved
- * against Workspace); validates the size upper bound and mime type (determined in order by
- * response header / magic number / extension). Never throws.
+ * Reads and validates an image: an http(s) URL is downloaded with the global fetch, otherwise
+ * read as a local path (resolved against Workspace); validates the size upper bound and mime
+ * type (determined in order by response header / magic number / extension). Never throws.
  */
 export async function loadImage(
   source: string,
@@ -112,7 +123,7 @@ export async function loadImage(
 
   let bytes: Buffer;
   let mime: string | null;
-  if (/^https?:\/\//i.test(source)) {
+  if (isHttpUrl(source)) {
     // URL branch: downloads via the global fetch (abort signal passed through to the request);
     // mime is preferentially taken from the response header, falling back to magic number / URL
     // extension.
@@ -155,11 +166,11 @@ export async function loadImage(
     const headerMime = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
     let urlExtMime: string | null = null;
     try {
-      urlExtMime = mimeFromExt(new URL(source).pathname);
+      urlExtMime = imageMimeFromExt(new URL(source).pathname);
     } catch {
       urlExtMime = null; // A URL parse failure only affects the extension fallback
     }
-    mime = SUPPORTED_MIMES.has(headerMime) ? headerMime : (sniffMime(bytes) ?? urlExtMime);
+    mime = SUPPORTED_MIMES.has(headerMime) ? headerMime : (sniffImageMime(bytes) ?? urlExtMime);
     if (mime === null && headerMime) mime = headerMime; // Include the real response type in the error
   } else {
     // Local-path branch: relative paths are resolved against Workspace; stat first to check the
@@ -189,7 +200,7 @@ export async function loadImage(
         message: `Failed to read image "${source}": ${message}`,
       };
     }
-    mime = sniffMime(bytes) ?? mimeFromExt(filePath);
+    mime = sniffImageMime(bytes) ?? imageMimeFromExt(filePath);
   }
 
   if (signal?.aborted) return { ok: false, reason: "aborted" };
@@ -206,43 +217,4 @@ export async function loadImage(
     return { ok: false, reason: "failed", message: UNSUPPORTED_MESSAGE(mime) };
   }
   return { ok: true, bytes, mime };
-}
-
-/**
- * read_image builtin tool: reads a local file or downloads a URL, validates its type and size,
- * then outputs a data URL image. `definition` is overridden by Environment at construction time
- * with the same-named entry from ToolConfig (description/arguments/permissions/limits).
- */
-export function createReadImageTool(definition: ToolDefinitionConfig): BuiltinTool {
-  return {
-    name: READ_IMAGE_NAME,
-    definition,
-    async *execute(
-      args: Record<string, unknown>,
-      ctx: ToolExecutionContext,
-    ): AsyncGenerator<OmniMessage, ToolResult | void> {
-      const { toolCallId, signal } = ctx;
-      const delta = (output: string): OmniMessage =>
-        partialToolCallOutput({ eventType: "delta", output, toolCallId });
-
-      const source = args["source"];
-      if (typeof source !== "string" || source.length === 0) {
-        yield delta('Missing required argument "source" for read_image.');
-        return { stopReason: "fatal" };
-      }
-
-      const res = await loadImage(source, ctx.workspaceDir, signal);
-      if (!res.ok) {
-        if (res.reason === "aborted") return { stopReason: "aborted" };
-        yield delta(res.message);
-        return { stopReason: "fatal" };
-      }
-
-      // Success: yield a brief one-line description as a text delta (both in the streaming and
-      // complete message), while the image itself is carried via the return value for
-      // Environment to attach.
-      yield delta(`${res.mime}, ${formatSize(res.bytes.length)}`);
-      return { images: [`data:${res.mime};base64,${res.bytes.toString("base64")}`] };
-    },
-  };
 }

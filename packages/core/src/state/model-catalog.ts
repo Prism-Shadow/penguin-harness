@@ -1848,7 +1848,7 @@ export function presetModelEntries(): ModelEntry[] {
       ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
       ...(pricing ? { pricing: { ...pricing } } : {}),
       // ModelEntry.vision defaults to supported: only models that don't support images
-      // explicitly persist false (drives the read_image / describe_image choice and input
+      // explicitly persist false (drives read_file's hand-off of images to the vision model and input
       // image hand-off, see project-config.ts).
       ...(m.supportsVision ? {} : { vision: false }),
       ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),

@@ -384,9 +384,9 @@ export class Agent {
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the max spawn
     // depth no longer gets run_subagent or input_subagent (the latter depends on the
     // subagent_id produced by the former, so exposing it alone is meaningless). Tool entries
-    // are also selected by the session model's type (marked via forModel: vision models use
-    // read_image, text-only models use describe_image; entries without this marker are
-    // unaffected).
+    // are also selected by the session model's type through their forModel annotation
+    // (entries without it are unaffected — the built-in set carries none; read_file decides
+    // per model at runtime through the injected vision describer).
     const canSpawn = spec.subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(state);
     const modelVision = spec.modelEntry.vision !== false;
@@ -953,11 +953,12 @@ export class Agent {
     }
 
     // When the session model doesn't support images (vision=false): inject a vision
-    // model service for describe_image (forModel: "text-only", selected by the tool
-    // filter in assembleContext) — images are described by the Project config's
-    // vision_model (a paired reference), and the tool returns text. Even when unconfigured
-    // or invalid, it is still injected (modelId=null); the tool then finishes with a failed
-    // explanation, and images are never allowed into that session's history.
+    // model service for read_file's image branch — images are described by the Project
+    // config's vision_model (a paired reference), and the tool returns text instead of
+    // image content. Even when unconfigured or invalid, it is still injected (modelId=null):
+    // its presence is what tells read_file the session model cannot view images; the tool
+    // then finishes with a failed explanation, and images are never allowed into that
+    // session's history.
     let visionDescriber: VisionDescriberService | undefined;
     if (modelEntry.vision === false) {
       const visionRef = this.projectConfig.vision_model;

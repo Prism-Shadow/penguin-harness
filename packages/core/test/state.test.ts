@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clampYield } from "../src/environment/tools/background/index.js";
+import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -243,7 +245,7 @@ describe("loadAgentState", () => {
 });
 
 describe("buildToolConfig", () => {
-  it("exposes command, file, subagent (rw) and image (r) tools", async () => {
+  it("exposes the command, file (read_file also reads images) and subagent tools with their default contracts", async () => {
     const state = await loadAgentState({ init: {} });
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
@@ -255,8 +257,6 @@ describe("buildToolConfig", () => {
       "input_command",
       "run_subagent",
       "input_subagent",
-      "read_image",
-      "describe_image",
     ]);
     const exec = cfg.customTools.find((t) => t.name === "exec_command")!;
     expect(exec.permission).toBe("rw");
@@ -272,21 +272,30 @@ describe("buildToolConfig", () => {
     const write = cfg.customTools.find((t) => t.name === "input_command")!;
     expect(write.permission).toBe("rw");
     expect(write.call_description).toBe(true);
+    // Same timeout tier as exec_command; the empty-poll default has to fit under it, so a
+    // default-length poll returns on its own before the Environment's timeout fires.
+    expect(write.timeoutMs).toBe(120000);
+    expect(clampYield(undefined, DEFAULT_EMPTY_POLL_YIELD_MS, write.timeoutMs)).toBe(
+      DEFAULT_EMPTY_POLL_YIELD_MS,
+    );
     expect((write.parameters as { required?: string[] }).required).toEqual([
       "description",
       "process_id",
     ]);
-    // File tools: read_file is read-only with a wider output cap; edit/write are rw.
+    // File tools: read_file is read-only with a wider output cap and the image-reading
+    // timeout (one vision request may sit inside a call); edit/write are rw.
     const readFile = cfg.customTools.find((t) => t.name === "read_file")!;
     expect(readFile.permission).toBe("r");
-    expect(readFile.timeoutMs).toBe(30000);
+    expect(readFile.timeoutMs).toBe(60000);
     expect(readFile.maxOutputLength).toBe(64000);
     expect((readFile.parameters as { required?: string[] }).required).toEqual(["file_path"]);
     expect(Object.keys((readFile.parameters as { properties: object }).properties)).toEqual([
       "file_path",
       "offset",
       "limit",
+      "prompt",
     ]);
+    expect(readFile.description).toContain("image");
     const editFile = cfg.customTools.find((t) => t.name === "edit_file")!;
     expect(editFile.permission).toBe("rw");
     expect(editFile.timeoutMs).toBe(30000);
@@ -311,37 +320,24 @@ describe("buildToolConfig", () => {
       "description",
       "subagent_id",
     ]);
-    // Both image-reading tool entries are explicitly in the config, each declaring its
-    // applicable model kind via the forModel annotation.
-    const readImage = cfg.customTools.find((t) => t.name === "read_image")!;
-    expect(readImage.forModel).toBe("vision");
-    expect(readImage.permission).toBe("r");
-    expect(Object.keys((readImage.parameters as { properties: object }).properties)).toEqual([
-      "source",
-    ]);
-    const describeImage = cfg.customTools.find((t) => t.name === "describe_image")!;
-    expect(describeImage.forModel).toBe("text-only");
-    expect(describeImage.permission).toBe("r");
-    expect(Object.keys((describeImage.parameters as { properties: object }).properties)).toEqual([
-      "source",
-      "prompt",
-    ]);
-    expect((describeImage.parameters as { required?: string[] }).required).toEqual(["source"]);
+    // No built-in entry is pinned to a model class: read_file serves both at runtime.
+    expect(cfg.customTools.every((t) => t.forModel === undefined)).toBe(true);
   });
 
-  it("selectBuiltinToolsForModel picks the matching image tool per model kind", async () => {
-    const state = await loadAgentState({ init: {} });
-    const all = buildToolConfig(state).customTools;
-    // Vision model: read_image is kept, describe_image is filtered out; unannotated tools are unaffected.
-    const forVision = selectBuiltinToolsForModel(all, true);
-    expect(forVision.some((t) => t.name === "read_image")).toBe(true);
-    expect(forVision.some((t) => t.name === "describe_image")).toBe(false);
-    expect(forVision.filter((t) => t.name === "exec_command")).toHaveLength(1);
-    // Text-only model: describe_image is kept.
-    const forText = selectBuiltinToolsForModel(all, false);
-    expect(forText.some((t) => t.name === "read_image")).toBe(false);
-    expect(forText.some((t) => t.name === "describe_image")).toBe(true);
-    expect(forText.filter((t) => t.name === "exec_command")).toHaveLength(1);
+  it("selectBuiltinToolsForModel keeps an entry annotated for the session model's class and every unannotated one", () => {
+    const entries = [
+      { name: "for_vision", description: "v", forModel: "vision" as const },
+      { name: "for_text", description: "t", forModel: "text-only" as const },
+      { name: "read_file", description: "any" },
+    ];
+    expect(selectBuiltinToolsForModel(entries, true).map((t) => t.name)).toEqual([
+      "for_vision",
+      "read_file",
+    ]);
+    expect(selectBuiltinToolsForModel(entries, false).map((t) => t.name)).toEqual([
+      "for_text",
+      "read_file",
+    ]);
   });
 
   it("loads MCP Server config from system_config.yaml", () => {
@@ -383,8 +379,6 @@ describe("buildToolConfig", () => {
       "input_command",
       "run_subagent",
       "input_subagent",
-      "read_image",
-      "describe_image",
     ]);
   });
 });
@@ -416,7 +410,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
       expect(required(tool)).toContain("description");
     }
     // The file tools' path argument is self-describing: no description parameter in config.
-    for (const name of ["read_file", "edit_file", "write_file", "read_image", "describe_image"]) {
+    for (const name of ["read_file", "edit_file", "write_file"]) {
       const tool = cfg.customTools.find((t) => t.name === name)!;
       expect(properties(tool)["description"]).toBeUndefined();
     }

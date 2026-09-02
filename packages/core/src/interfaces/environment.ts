@@ -38,9 +38,10 @@ export interface ToolDefinitionConfig {
   permission?: ToolPermission;
   /**
    * Which class of session model this entry targets: `"vision"` only for models that support
-   * images (e.g. read_image), `"text-only"` only for text-only models (e.g. describe_image);
-   * omitted means available for all models. Filtered by session model at assembly time
-   * (see `selectBuiltinToolsForModel`).
+   * images, `"text-only"` only for text-only models; omitted means available for all models.
+   * Filtered by session model at assembly time (see `selectBuiltinToolsForModel`). The
+   * built-in defaults set it on no entry — read_file serves both classes and decides at
+   * runtime — so it is a config feature for entries that need a per-class definition.
    */
   forModel?: "vision" | "text-only";
   /** Timeout for a single tool call (ms); on timeout, ends as `failed`; <=0 disables it. */
@@ -206,10 +207,11 @@ export interface SubagentRunner {
 }
 
 /**
- * Proxy-reading service for describe_image: injected when the session model doesn't support
- * images (vision=false) — images are handed to the configured vision model for description and
- * the tool returns text, avoiding a 400 from feeding images back into a tool_result for a
- * provider that doesn't support images.
+ * Proxy-reading service for read_file's image branch: injected when the session model doesn't
+ * support images (vision=false) — images are handed to the configured vision model for
+ * description and the tool returns text, avoiding a 400 from feeding images back into a
+ * tool_result for a provider that doesn't support images. Its presence is also how read_file
+ * learns the session model cannot view images: absent, an image is returned as image content.
  * Docs: /docs/interfaces § "VisionDescriberService".
  */
 export interface VisionDescriberService {
@@ -225,7 +227,7 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Injected when the session model doesn't support images: for describe_image's single-shot vision-model proxy reading. */
+  /** Injected when (and only when) the session model doesn't support images: read_file then describes an image through it instead of returning image content. */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
