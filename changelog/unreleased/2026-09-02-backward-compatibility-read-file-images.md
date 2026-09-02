@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** process
 - **Scope:** `core`, `web`
+- **PR:** [#588](https://github.com/Prism-Shadow/penguin-harness/pull/588)
 - **Breaking:** yes — the `read_image` and `describe_image` tool names are gone; an existing Agent's stored entries stop assembling, and a model calling either gets the unknown-tool reply until the Agent's kernel is updated
 
 [中文版](2026-09-02-backward-compatibility-read-file-images.zh.md)

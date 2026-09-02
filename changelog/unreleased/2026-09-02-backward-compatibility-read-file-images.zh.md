@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** process
 - **Scope:** `core`, `web`
+- **PR:** [#588](https://github.com/Prism-Shadow/penguin-harness/pull/588)
 - **Breaking:** yes — `read_image` 与 `describe_image` 两个工具名不复存在；既有 Agent 的存量条目不再装配，模型按任一旧名调用都会得到未知工具回复，直到该 Agent 更新内核
 
 [English](2026-09-02-backward-compatibility-read-file-images.md)

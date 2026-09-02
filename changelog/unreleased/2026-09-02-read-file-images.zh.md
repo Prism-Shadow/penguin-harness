@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `core`, `web`, `cli`, `server`, `docs`
+- **PR:** [#588](https://github.com/Prism-Shadow/penguin-harness/pull/588)
 
 [English](2026-09-02-read-file-images.md)
 
