@@ -109,6 +109,14 @@ export const zh = {
     /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
     killConfirmTitle: "关闭此终端？",
     killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+    /** The floating launcher on the chat body's right edge while the right dock is hidden. */
+    launcher: "打开侧边栏面板",
+    /** Its tooltip: the click and the drag in one line. */
+    launcherHint: "打开侧边栏面板 · 可上下拖动",
+    /** Appended to the launcher's accessible name while its amber dot shows. */
+    launcherPending: "子智能体有待审批",
+    /** The fan of panel entries the launcher opens (its accessible group name). */
+    launcherPanels: "侧边栏面板",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

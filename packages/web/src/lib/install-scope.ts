@@ -139,6 +139,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.dock.launcherY",
+    scope: "browser",
+    why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",
