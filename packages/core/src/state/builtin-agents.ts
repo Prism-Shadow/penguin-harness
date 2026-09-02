@@ -12,7 +12,7 @@
  * - Skill metadata is auto-injected into the system Prompt via the `{{SKILL_METADATA}}`
  *   placeholder; it's not registered in AGENTS.md.
  */
-import { loadPreinstalledPlugins, type LibraryPlugin } from "@prismshadow/penguin-plugins";
+import { loadPreinstalledPlugins, type LibraryPlugin } from "../plugins/index.js";
 import { DEFAULT_AGENT_ID } from "./paths.js";
 
 /** The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from Web). */

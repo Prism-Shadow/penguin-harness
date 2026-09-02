@@ -67,7 +67,6 @@
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-plugins": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",

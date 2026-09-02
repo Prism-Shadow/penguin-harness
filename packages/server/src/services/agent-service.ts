@@ -30,11 +30,11 @@ import {
   systemConfigPath,
 } from "@prismshadow/penguin-core";
 import {
-  compareVersions,
+  comparePluginVersions,
   libraryPlugin,
   librarySkill,
   parseSkillFrontmatter,
-} from "@prismshadow/penguin-plugins";
+} from "@prismshadow/penguin-core";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
@@ -236,13 +236,13 @@ export class AgentService {
     for (const skill of skills) {
       if (skill === null) continue;
       const plugin = librarySkill(skill.name)?.plugin;
-      if (plugin && compareVersions(plugin.version, skill.version) > 0) {
+      if (plugin && comparePluginVersions(plugin.version, skill.version) > 0) {
         updates.set(plugin.name, plugin.version);
       }
     }
     for (const hook of hooks) {
       const plugin = libraryPlugin(hook.name);
-      if (plugin && compareVersions(plugin.version, hook.version) > 0) {
+      if (plugin && comparePluginVersions(plugin.version, hook.version) > 0) {
         updates.set(plugin.name, plugin.version);
       }
     }

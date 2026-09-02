@@ -33,6 +33,7 @@ export * from "./llm/index.js";
 export * from "./environment/index.js";
 export * from "./trace/index.js";
 export * from "./hooks/index.js";
+export * from "./plugins/index.js";
 
 // Runtime entry points
 export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";

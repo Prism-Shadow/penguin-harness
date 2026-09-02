@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-skill-porting",
+  "name": "@penguinharness/skill-porting",
   "version": "0.2.9",
   "description": "Install skills from external ecosystems into this agent's agent_state/skills/ — resolve Claude Code plugin marketplaces, the Codex plugin repo, skills.sh registry names, GitHub repos, or local folders to their skill directories, review every file, and normalize SKILL.md frontmatter to the Penguin format.",
   "license": "Apache-2.0",

@@ -28,11 +28,11 @@ plugins/<plugin>/
 
 插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
 
-每个插件都是独立的 npm 包——`@prismshadow/penguin-plugin-<name>`，仓库内位于 `plugins/<name>/`——`@prismshadow/penguin-plugins` 是依赖它们全部并解析各自目录的 loader（desktop 构建则把同样的目录打包在旁）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
+每个插件都是独立的 npm 包——`@penguinharness/<name>`，仓库内位于 `plugins/<name>/`。loader 在 `@prismshadow/penguin-core` 里，它依赖这些插件包并解析各自目录（desktop 构建则把同样的目录打包在旁）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。图标即插件的 `icon.svg`，读取时盖章进来——Skill 目录也可以自带 `icon.svg` 覆盖（用户自建 Skill 沿用此方式）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。Skill 本身不带图标——图标属于插件（`plugin.json` 同级的 `icon.svg`）；单独展示的已装 Skill 回退默认书本图标。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
 
 库内 `SKILL.md` 的 frontmatter 只有两个字段——其余全部放在 `plugin.json`：
 
@@ -83,7 +83,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整插件库（标记 `preinstall: false` 的插件除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的插件库页，或经 SDK；
-- 安装 Skill 即写入它的可安装 `SKILL.md`（frontmatter 已按插件元数据重新生成，见上），目录内的 `icon.svg` 与其他文件（保留子目录）一并拷贝；安装钩子包即写入 `hooks.json` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
+- 安装 Skill 即写入它的可安装 `SKILL.md`（frontmatter 已按插件元数据重新生成，见上），目录内其他文件（保留子目录）一并拷贝（用户自建或导入的 Skill 可自带 `icon.svg`，同样拷贝）；安装钩子包即写入 `hooks.json` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
 
 ## 内置插件库
 

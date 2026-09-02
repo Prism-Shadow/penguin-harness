@@ -21,7 +21,7 @@ import {
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
-} from "@prismshadow/penguin-plugins";
+} from "../plugins/index.js";
 import type { ToolConfig, ToolDefinitionConfig } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import {

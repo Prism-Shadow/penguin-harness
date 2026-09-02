@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill } from "@prismshadow/penguin-plugins";
+import { librarySkill } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentSkillsResponse,

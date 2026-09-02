@@ -16,7 +16,7 @@
 #   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
 #   archives under the same names plus *-offline wrappers; the installers keep accepting that
 #   legacy layout for pinned versions.
-# - publish-npm: publish the whole chain (@prismshadow/penguin-plugins -> @prismshadow/penguin-core
+# - publish-npm: publish the whole chain (the @penguinharness/* plugin packages -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
 #   the package (web-dist/, its default web dir falls back to it), so `npm install -g
@@ -592,7 +592,6 @@ jobs:
           for dir in plugins/*/; do
             (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
           done
-          (cd packages/plugins && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
@@ -601,12 +600,10 @@ jobs:
       # web is built here only to be copied into the server package below.
       - name: Build and test
         run: |
-          pnpm --filter @prismshadow/penguin-plugins build
           pnpm --filter @prismshadow/penguin-core build
           pnpm --filter @prismshadow/penguin-server build
           pnpm --filter @prismshadow/penguin-web build
           pnpm --filter @prismshadow/penguin-cli build
-          pnpm --filter @prismshadow/penguin-plugins test
           pnpm --filter @prismshadow/penguin-core test
           pnpm --filter @prismshadow/penguin-server test
           pnpm --filter @prismshadow/penguin-cli test
@@ -622,7 +619,6 @@ jobs:
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
-          cp LICENSE packages/plugins/LICENSE
           cp LICENSE packages/core/LICENSE
           cp LICENSE packages/server/LICENSE
           cp LICENSE packages/cli/LICENSE
@@ -631,17 +627,17 @@ jobs:
           done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
-          # The per-plugin packages go first: the aggregator's workspace:* deps are rewritten
-          # to their versions at publish time, so they must exist on the registry.
+          # The @penguinharness/* plugin packages go first: core declares them as workspace:*
+          # deps, rewritten to their versions at publish time, so they must exist first.
           for dir in plugins/*/; do
-            name="@prismshadow/penguin-plugin-$(basename "$dir")"
+            name="@penguinharness/$(basename "$dir")"
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
-          for pkg in plugins core server cli; do
+          for pkg in core server cli; do
             name="@prismshadow/penguin-$pkg"
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."

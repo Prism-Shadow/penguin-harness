@@ -6,8 +6,8 @@
  * and a packaged app:
  *
  * - `official/` — the shipped plugin library, one directory per plugin package copied from
- *   the repo's `plugins/`. @prismshadow/penguin-plugins reads a bundled `official/` beside
- *   its `dist/` before falling back to package resolution, and bundling puts the reader in `dist/`,
+ *   the repo's `plugins/`. core's plugin loader reads a bundled `official/` beside the
+ *   package root before falling back to package resolution, and bundling puts the loader in `dist/`,
  *   so the copy lands where that same package-relative lookup finds it. (The server's web-dist
  *   lookup works the same way and is satisfied by electron-builder's file mapping when
  *   packaging; a source run falls back to packages/web/dist on its own.)

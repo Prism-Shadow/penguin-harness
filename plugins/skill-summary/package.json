@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-skill-summary",
+  "name": "@penguinharness/skill-summary",
   "version": "0.2.9",
   "description": "Skill summary: a stop hook that, every 20 completed turns, hands a condensed excerpt of the session to a background subagent, which folds the durable findings into the agent's own skills.",
   "license": "Apache-2.0",

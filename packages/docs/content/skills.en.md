@@ -28,11 +28,11 @@ plugins/<plugin>/
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
 
-Every plugin is its own npm package — `@prismshadow/penguin-plugin-<name>`, `plugins/<name>/` in the repo — and `@prismshadow/penguin-plugins` is the loader that depends on them all and resolves their directories (the desktop build bundles the same directories beside it instead). At runtime the plugin files are the source of truth for library content, read on every call.
+Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name>/` in the repo. The loader lives in `@prismshadow/penguin-core`, which depends on the plugin packages and resolves their directories (the desktop build bundles the same directories beside it instead). At runtime the plugin files are the source of truth for library content, read on every call.
 
 ## Anatomy of a Skill
 
-A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Its icon is the plugin's `icon.svg`, stamped in at load time — a skill directory may still carry its own `icon.svg` to override it (user-authored skills keep working that way). The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
+A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Skills carry no icon of their own — the icon belongs to the plugin (`icon.svg` beside `plugin.json`); an installed skill shown on its own falls back to a default book glyph. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
 
 A library `SKILL.md`'s frontmatter carries only two fields — everything else lives in `plugin.json`:
 
@@ -83,7 +83,7 @@ Installed Skills live under `agent_state/skills/<name>/`, hook packages under `a
 
 - The built-in Agent `default_agent` gets the whole library installed at initialization, except plugins marked `preinstall: false` — those are only ever installed manually;
 - other Agents install on demand — through the Web UI's plugin library page, or via the SDK;
-- installing a skill writes its installable `SKILL.md` (the frontmatter regenerated with the plugin's metadata, see above) and copies any `icon.svg` and other files in the skill directory (subdirectories preserved) alongside it; installing a hook package writes `hooks.json` and every file under the plugin's `hooks/`. Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships — reinstalling is how an installed copy is updated, and the Agents page flags a plugin whose installed skill or hook package is behind the library.
+- installing a skill writes its installable `SKILL.md` (the frontmatter regenerated with the plugin's metadata, see above) and copies any other files in the skill directory (subdirectories preserved) alongside it (a user-authored or imported skill may include its own `icon.svg`, which is copied too); installing a hook package writes `hooks.json` and every file under the plugin's `hooks/`. Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships — reinstalling is how an installed copy is updated, and the Agents page flags a plugin whose installed skill or hook package is behind the library.
 
 ## Built-in library
 

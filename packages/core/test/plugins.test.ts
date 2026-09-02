@@ -1,5 +1,5 @@
 /**
- * The plugin library's file source of truth and its loader: one npm package per plugin under the repo's `plugins/`
+ * The plugin library's file source of truth and core's loader: one npm package per plugin under the repo's `plugins/`
  * (manifest fields, the skills and hook packages they ship), the version scheme, the
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   PLUGIN_CATEGORIES,
   PLUGIN_VERSION_PATTERN,
-  compareVersions,
+  comparePluginVersions,
   groupPlugins,
   libraryPlugin,
   librarySkill,
@@ -20,7 +20,7 @@ import {
   parseSkillFrontmatter,
   type LibraryPlugin,
   type PluginCategory,
-} from "../src/index.js";
+} from "../src/plugins/index.js";
 
 const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 
@@ -77,13 +77,10 @@ describe("loadLibraryPlugins", () => {
         expect(skill.version).toBe(plugin.version);
         expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
         expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
-        // Every skill ends up with an icon: its own icon.svg (merged plugins keep each
-        // constituent's identity icon) or the plugin's, stamped by the loader.
-        const ownIcon = await fs.readFile(path.join(dir, "icon.svg"), "utf8").then(
-          (t) => t,
-          () => undefined,
-        );
-        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(ownIcon ?? plugin.icon);
+        // Skills carry no icons — the icon belongs to the plugin alone, and no skill
+        // directory ships an icon.svg of its own.
+        expect("icon" in skill, `${plugin.name}/${skill.name} icon`).toBe(false);
+        await expect(fs.access(path.join(dir, "icon.svg"))).rejects.toThrow();
         // Every shipped skill asks before starting when the message only names it.
         expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
           /^## Before you start$/m,
@@ -140,14 +137,14 @@ describe("loadPreinstalledPlugins", () => {
   });
 });
 
-describe("compareVersions", () => {
+describe("comparePluginVersions", () => {
   it("orders by date, then by sequence number numerically; non-versions sort before every version", () => {
-    expect(compareVersions("2026-08-29.1", "2026-08-29.1")).toBe(0);
-    expect(compareVersions("2026-08-29.2", "2026-08-29.10")).toBeLessThan(0);
-    expect(compareVersions("2026-09-01.1", "2026-08-29.9")).toBeGreaterThan(0);
-    expect(compareVersions("", "2026-08-29.1")).toBeLessThan(0);
-    expect(compareVersions("7", "2026-08-29.1")).toBeLessThan(0);
-    expect(compareVersions("", "")).toBe(0);
+    expect(comparePluginVersions("2026-08-29.1", "2026-08-29.1")).toBe(0);
+    expect(comparePluginVersions("2026-08-29.2", "2026-08-29.10")).toBeLessThan(0);
+    expect(comparePluginVersions("2026-09-01.1", "2026-08-29.9")).toBeGreaterThan(0);
+    expect(comparePluginVersions("", "2026-08-29.1")).toBeLessThan(0);
+    expect(comparePluginVersions("7", "2026-08-29.1")).toBeLessThan(0);
+    expect(comparePluginVersions("", "")).toBe(0);
   });
 });
 
@@ -222,8 +219,8 @@ describe("parseSkillFrontmatter", () => {
  */
 const README_TABLES = [
   {
-    label: "packages/plugins/README.md",
-    file: "../README.md",
+    label: "plugins/README.md",
+    file: "../../../plugins/README.md",
     heading: (c: PluginCategory) => c.title,
   },
   { label: "README.md", file: "../../../README.md", heading: (c: PluginCategory) => c.title },

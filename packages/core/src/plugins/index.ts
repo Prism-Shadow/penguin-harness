@@ -1,7 +1,8 @@
 /**
- * PenguinHarness plugin library: the built-in plugins and the loader that reads them.
+ * PenguinHarness plugin library: the built-in plugins and the loader that reads them (part
+ * of core — hooks, skills and their loading all live in one SDK).
  *
- * A plugin is its own npm package (`@prismshadow/penguin-plugin-<name>`, `plugins/<name>/` in
+ * A plugin is its own npm package (`@penguinharness/<name>`, `plugins/<name>/` in
  * the repo; the desktop bundle assembles the same directories under `official/` beside dist —
  * see pluginRoots): a directory carrying a `plugin.json` manifest, an
  * `icon.svg` beside it (every built-in plugin ships one), and
@@ -13,7 +14,7 @@
  * (id and titles) is code; install / uninstall / scan live in core's state layer.
  *
  * Versions are dates with a sequence number, `YYYY-MM-DD.N` (see PLUGIN_VERSION_PATTERN and
- * compareVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
+ * comparePluginVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
  * carries only `name` and `description`, and the loader stamps the plugin's version and UI short
  * descriptions into each skill's metadata and installable content (the installed copy carries the
  * full frontmatter, generated — the way hooks.json is).
@@ -132,7 +133,7 @@ export const PLUGIN_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
  * string that is not a version (the empty string an unversioned install reads as, a legacy
  * natural number) sorts before every real version, so anything in the library counts as newer.
  */
-export function compareVersions(a: string, b: string): number {
+export function comparePluginVersions(a: string, b: string): number {
   const va = PLUGIN_VERSION_PATTERN.test(a);
   const vb = PLUGIN_VERSION_PATTERN.test(b);
   if (!va || !vb) return Number(va) - Number(vb);
@@ -176,17 +177,32 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
 }
 
 /** Root directory of library files: the package's `official/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** npm-name prefix of the per-plugin packages this aggregator depends on. */
-const PLUGIN_PKG_PREFIX = "@prismshadow/penguin-plugin-";
+/**
+ * The nearest package root above this module: `packages/core` from source or dist, and the
+ * bundling package's own root wherever core is inlined (the CLI bundle, the desktop server
+ * bundle) — which is exactly whose package.json lists the plugin packages to resolve, and
+ * where a bundled `official/` directory would sit.
+ */
+function packageRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return dir;
+    dir = parent;
+  }
+}
+const PKG_ROOT = packageRoot();
+/** npm-name prefix of the per-plugin packages (the host package's dependencies name them). */
+const PLUGIN_PKG_PREFIX = "@penguinharness/";
 
 /**
  * Where the plugin directories live, name → absolute root. Two layouts:
  * - **bundled**: an `official/` directory beside this package's `dist/` holding one plugin
  *   directory per plugin — what the desktop build assembles (no node_modules there);
- * - **package**: each plugin is its own npm package (`@prismshadow/penguin-plugin-<name>`,
- *   `plugins/<name>/` in the repo), listed in this package's dependencies and resolved
- *   through Node — the workspace and an npm install both land here.
+ * - **package**: each plugin is its own npm package (`@penguinharness/<name>`, `plugins/<name>/`
+ *   in the repo), listed in the host package's dependencies and resolved through Node — the
+ *   workspace and an npm install both land here.
  * Read fresh on every call, like the plugin files themselves.
  */
 function pluginRoots(): Map<string, string> {
@@ -281,12 +297,7 @@ function readSkillDir(dir: string, name: string): LibrarySkill | undefined {
  */
 function stampSkill(
   skill: LibrarySkill,
-  plugin: {
-    shortDescription?: string;
-    shortDescriptionZh?: string;
-    version: string;
-    icon?: string;
-  },
+  plugin: { shortDescription?: string; shortDescriptionZh?: string; version: string },
 ): LibrarySkill {
   const shortDescription = skill.shortDescription ?? plugin.shortDescription;
   const shortDescriptionZh = skill.shortDescriptionZh ?? plugin.shortDescriptionZh;
@@ -300,12 +311,10 @@ function stampSkill(
     "---",
   ].join("\n");
   const body = skill.content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---/, "");
-  const icon = skill.icon ?? plugin.icon;
   return {
     ...skill,
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
-    ...(icon !== undefined ? { icon } : {}),
     version: plugin.version,
     content: `${front}${body}`,
   };
@@ -414,7 +423,6 @@ function readPluginDir(name: string, dir: string): LibraryPlugin | undefined {
       stampSkill(skill, {
         ...(shortDescription !== undefined ? { shortDescription } : {}),
         ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
-        ...(icon !== undefined ? { icon } : {}),
         version,
       }),
     ),

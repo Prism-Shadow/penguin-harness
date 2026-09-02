@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-goal",
+  "name": "@penguinharness/goal",
   "version": "0.2.9",
   "description": "Goal mode: a stop hook that keeps the session working toward an objective — re-injecting it every round and checking the goal file — until the goal is complete, blocked, or out of token budget.",
   "license": "Apache-2.0",

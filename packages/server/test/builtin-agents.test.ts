@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadPreinstalledPlugins } from "@prismshadow/penguin-plugins";
+import { loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type { BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 

@@ -1,5 +1,5 @@
 /**
- * Plugin library page: the @prismshadow/penguin-plugins library, shown sectioned by category.
+ * Plugin library page: the built-in plugin library (loaded by core from the @penguinharness/* packages), shown sectioned by category.
  * A plugin ships skills and/or a hook package (scripts the harness runs at the loop's hook
  * points, e.g. after every Task), and is installed on an Agent as a whole. Groups are
  * borderless — the group header (category name + plugin count, no icon) is collapsible,

@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill } from "@prismshadow/penguin-plugins";
+import { librarySkill } from "../src/index.js";
 import {
   AGENTS_MD_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -61,12 +61,12 @@ describe("installSkill / removeSkill", () => {
     expect((await list()).map((s) => s.version)).toEqual(["2026-08-01.2"]);
   });
 
-  it("writes icon.svg alongside SKILL.md, and reinstalling without icon removes it", async () => {
-    // A library skill with an icon: installing writes it to disk alongside SKILL.md.
-    const skill = librarySkill("penguin-sdk")!.skill;
-    expect(skill.icon).toBeTruthy();
-    await install(skill.name, skill.content, skill.icon);
-    expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(skill.icon);
+  it("writes an install's icon.svg alongside SKILL.md, and reinstalling without one removes it", async () => {
+    // Library skills carry no icon (the plugin owns it), but installSkill still accepts one —
+    // for user-authored skills and zip imports. An install with an icon writes it to disk.
+    const icon = "<svg><rect /></svg>";
+    await install("penguin-sdk", librarySkill("penguin-sdk")!.skill.content, icon);
+    expect(await fs.readFile(skillIcon("penguin-sdk"), "utf8")).toBe(icon);
 
     // Overwrite semantics: this install has no icon -> the old icon.svg is removed, and the
     // directory matches this install's content exactly.

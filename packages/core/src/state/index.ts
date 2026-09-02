@@ -17,14 +17,3 @@ export * from "./agent-state.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";
 export * from "./example-benchmark.js";
-
-// Plugin library types, the frontmatter parser and the version order (from the plugins package; the server reuses the same implementation via core).
-export {
-  compareVersions,
-  parseSkillFrontmatter,
-  PLUGIN_VERSION_PATTERN,
-  type HookCommand,
-  type HookManifest,
-  type LibraryPlugin,
-  type SkillMetadata,
-} from "@prismshadow/penguin-plugins";

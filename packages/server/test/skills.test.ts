@@ -15,7 +15,7 @@ import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-plugins";
+import { librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentsResponse,
@@ -94,12 +94,12 @@ describe("skills api", () => {
       expect(plugin.version, plugin.name).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
-        // The short description (preferred in compact spots like cards) and custom icon (raw
-        // icon.svg) are passed through for every returned skill; bodies never are.
+        // The short description (preferred in compact spots like cards) is passed through for
+        // every returned skill; skills carry no icon of their own (the plugin owns it);
+        // bodies never are.
         expect(skill.shortDescription, skill.name).toBeTruthy();
         expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-        expect(skill.icon, skill.name).toContain("<svg");
-        expect(skill.icon).not.toContain("<script");
+        expect(skill.icon, skill.name).toBeUndefined();
         expect(skill.version).toBe(plugin.version);
         expect("content" in skill).toBe(false);
       }
@@ -139,21 +139,18 @@ describe("skills api", () => {
     // web-design keeps its own file inside the merged plugin).
     const installed = body.skills.find((s) => s.name === "web-design")!;
     expect(installed.shortDescription).toBeTruthy();
-    expect(installed.icon).toBe(librarySkill("web-design")!.skill.icon);
+    expect(installed.icon).toBeUndefined();
 
-    // The on-disk content matches the library's SKILL.md verbatim (including
-    // frontmatter), and icon.svg is written alongside it.
+    // The on-disk content matches the library's SKILL.md verbatim (including frontmatter);
+    // library skills carry no icon, so no icon.svg is written.
     const skillFile = (name: string) =>
       path.join(skillsDir(t.root, projectId, "bare_agent"), name, "SKILL.md");
     expect(await fs.readFile(skillFile("web-design"), "utf8")).toBe(
       librarySkill("web-design")!.skill.content,
     );
-    expect(
-      await fs.readFile(
-        path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg"),
-        "utf8",
-      ),
-    ).toBe(librarySkill("web-design")!.skill.icon);
+    await expect(
+      fs.access(path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg")),
+    ).rejects.toThrow();
 
     // Member uninstalls one skill: 204, the whole skills/<name>/ directory disappears, and the list is updated.
     expect((await member.delete(`${url}/web-design`)).status).toBe(204);
@@ -233,13 +230,13 @@ describe("skills api", () => {
     // remote-claude-code and humanizer ship in the library marked `preinstall: false`: not present here.
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
-    // The installed list likewise passes through the Chinese description and the
-    // short description/icon (listInstalledSkills parses these from the on-disk
-    // frontmatter and icon.svg).
+    // The installed list likewise passes through the Chinese and short descriptions
+    // (listInstalledSkills parses these from the on-disk frontmatter); library skills carry
+    // no icon.svg, so no installed one does either.
     for (const skill of body.skills) {
       expect(skill.shortDescription, skill.name).toBeTruthy();
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-      expect(skill.icon, skill.name).toContain("<svg");
+      expect(skill.icon, skill.name).toBeUndefined();
     }
 
     // Manual install from the library still works for a preinstall:false skill.

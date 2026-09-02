@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-model-development",
+  "name": "@penguinharness/model-development",
   "version": "0.2.9",
   "description": "Model development on your own hardware: fine-tune with LlamaFactory, run local models with Ollama, and serve them with vLLM.",
   "license": "Apache-2.0",

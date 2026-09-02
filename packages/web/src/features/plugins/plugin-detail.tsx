@@ -112,7 +112,8 @@ export function PluginDetailModal({
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${skillTileColor(skill.name)}`}
                     >
-                      <SkillIcon icon={skill.icon} size={15} />
+                      {/* Skills carry no icon of their own (the plugin owns it); the book glyph. */}
+                      <SkillIcon size={15} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-mono text-xs font-semibold">

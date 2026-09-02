@@ -166,7 +166,7 @@ pnpm install && pnpm build
 | `@prismshadow/penguin-cli` | 命令行工具，提供 `penguin` 命令 |
 | `@prismshadow/penguin-core` | SDK，程序化创建 Agent 与 Session |
 | `@prismshadow/penguin-server` | Web 服务，含 Web UI 静态资源 |
-| `@prismshadow/penguin-plugins` | 插件库：Skill 与会话钩子 |
+| `@penguinharness/*` | 内置插件，一插件一包（Skill 与会话钩子）；由 core 加载 |
 
 全部包以 Apache-2.0 协议发布。
 

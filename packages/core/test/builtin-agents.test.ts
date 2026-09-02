@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-plugins";
+import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "../src/index.js";
 import {
   agentsMdPath,
   assembleSystemPrompt,

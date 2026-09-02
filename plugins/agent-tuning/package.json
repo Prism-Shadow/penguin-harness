@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-agent-tuning",
+  "name": "@penguinharness/agent-tuning",
   "version": "0.2.9",
   "description": "Agent tuning as a loop: initialize an agent from a requirement, design and calibrate a capability benchmark, run and score isolated cases, and improve the agent from measured results.",
   "license": "Apache-2.0",

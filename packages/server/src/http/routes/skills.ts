@@ -26,7 +26,7 @@ import {
   parseSkillFrontmatter,
   PLUGIN_VERSION_PATTERN,
   SKILL_NAME_PATTERN,
-} from "@prismshadow/penguin-plugins";
+} from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";

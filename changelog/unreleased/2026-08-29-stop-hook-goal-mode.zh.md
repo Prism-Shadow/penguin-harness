@@ -7,7 +7,7 @@
 
 [English](2026-08-29-stop-hook-goal-mode.md)
 
-Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前一个，**stop**，即一个 Task 结束的那一刻——钩子本身来自插件的**钩子包**：装进 `agent_state/hooks/`（与 `agent_state/skills/` 并列）的纯 Node 脚本。目标模式整个搬出核心，成为 `goal` 插件的 stop hook，ralph loop 式：一份状态文件，钩子在每个 Task 结束后读它、重写它。第二个钩子包 `skill-summary` 把长会话的发现交给后台子会话。技能库重整为插件库——每个插件一份清单、Skill 与钩子包放在其中、版本按日期编号——`@prismshadow/penguin-skills` 弃用，改为 `@prismshadow/penguin-plugins`。
+Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前一个，**stop**，即一个 Task 结束的那一刻——钩子本身来自插件的**钩子包**：装进 `agent_state/hooks/`（与 `agent_state/skills/` 并列）的纯 Node 脚本。目标模式整个搬出核心，成为 `goal` 插件的 stop hook，ralph loop 式：一份状态文件，钩子在每个 Task 结束后读它、重写它。第二个钩子包 `skill-summary` 把长会话的发现交给后台子会话。技能库重整为插件库——每个插件一个 npm 包（`@penguinharness/<name>`）、Skill 与钩子包放在其中、版本按日期编号，由 `@prismshadow/penguin-core` 加载——`@prismshadow/penguin-skills` 弃用。
 
 ## Stop hook
 
@@ -30,7 +30,7 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 ## 插件库
 
-- **每个插件都是独立的 npm 包**：`@prismshadow/penguin-plugin-<name>`，仓库根目录 `plugins/` 下一包一插件（`plugin.json` + `icon.svg` + `skills/<name>/` + `hooks/`）；`@prismshadow/penguin-plugins`（取代 `packages/skills`）成为依赖它们全部的 loader——优先读 dist 旁的 `official/` 打包目录（desktop 形态），否则逐包解析。四组合并为多 Skill 插件：`software-development`（software-engineering＋web-design）、`model-development`（llamafactory＋ollama＋vllm）、`agent-development`（penguin-sdk＋`unified-llm-api`〔原 agenthub-models〕＋`penguin-config`〔原 penguin-cli〕＋penguin-orchestration）、`agent-tuning`（initialization＋benchmark-design＋evaluation＋optimization）；其余仍各自成包，预装口径不变，合并成员的 Skill 目录保留各自的身份图标。两个钩子包归入 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；图标是 `plugin.json` 同级的 `icon.svg`（每个内置插件都有——钩子包也不例外——Skill 继承它）；自然数 `version` 与 `updated` 时间戳退场。
+- **每个插件都是独立的 npm 包**：`@penguinharness/<name>`，仓库根目录 `plugins/` 下一包一插件（`plugin.json` + `icon.svg` + `skills/<name>/` + `hooks/`）；loader 并入 `@prismshadow/penguin-core`（取代 `packages/skills` 包）——core 依赖这些插件包并解析各自目录，desktop 形态优先读 host 包根旁的 `official/` 目录，否则逐包解析。四组合并为多 Skill 插件：`software-development`（software-engineering＋web-design）、`model-development`（llamafactory＋ollama＋vllm）、`agent-development`（penguin-sdk＋`unified-llm-api`〔原 agenthub-models〕＋`penguin-config`〔原 penguin-cli〕＋penguin-orchestration）、`agent-tuning`（initialization＋benchmark-design＋evaluation＋optimization）；其余仍各自成包，预装口径不变，合并成员的 Skill 目录保留各自的身份图标。两个钩子包归入 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；图标是 `plugin.json` 同级的 `icon.svg`（每个内置插件都有，钩子包也不例外）——**Skill 本身不带图标**（单独展示回退书本图标；用户自建/导入的 Skill 仍可自带）；自然数 `version` 与 `updated` 时间戳退场。
 - Agent State：`agent_state/hooks/<plugin>/` 存放钩子包（由清单生成的 `hooks.json` 加脚本），与 `agent_state/skills/` 并列；状态层新增 `installPlugin`、`installHook`、`removeHook`、`listInstalledHooks`。`default_agent` 预装全部未标 `preinstall: false` 的插件。
 - API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
 - Web App：技能库页改为**插件库**（`/plugins`）——每张卡片带一行语义化元信息（`v<版本> · N 天前更新 · N 个 Agent 在用`，日期直接解析自版本号），点开即详情 Modal：完整描述、插件携带的 Skill（每行可点开简单的 SKILL.md 阅读器，经新增的 `GET /api/plugins/:plugin/skills/:skill` 取全文）与钩子点；按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
@@ -38,7 +38,7 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 
 ## 兼容性
 
-- **`@prismshadow/penguin-skills` 弃用**，该名下不再发布新版本；发布链改发 `@prismshadow/penguin-plugins`。
+- **`@prismshadow/penguin-skills` 弃用**，该名下不再发布新版本；发布链改发 `@penguinharness/*` 各插件包（由 `@prismshadow/penguin-core` 加载）。
 - **既有已装 Skill 带的是自然数版本**，会读作空版本，因此插件库会把它们各报一次可更新；从库重装即带上日期版本。
 - **既有 Agent 没有任何钩子包**——不会向已存在的 Agent 自动安装。这样的 Agent 上发起目标会收到 `409 goal_plugin_not_installed`，直到从插件库装上 `goal` 插件；此后新建的 `default_agent` 自带。
 - **`goal_finished` 与 `goal` 运行选项不复存在**（连同上一轮迭代的 `goal_state` 表一起移除）；`goal_*` 服务端事件不变。早期版本的 Trace 仍带 `goal_finished` 记录，读取方把它当作未知事件。

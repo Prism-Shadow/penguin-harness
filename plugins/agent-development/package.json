@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-agent-development",
+  "name": "@penguinharness/agent-development",
   "version": "0.2.9",
   "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
   "license": "Apache-2.0",

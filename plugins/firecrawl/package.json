@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-firecrawl",
+  "name": "@penguinharness/firecrawl",
   "version": "0.2.9",
   "description": "Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
   "license": "Apache-2.0",

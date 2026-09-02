@@ -8,8 +8,8 @@
  * library types is withheld from the API until someone adds it here on purpose; skill bodies
  * and hook scripts never travel in a listing.
  */
-import { libraryPlugin } from "@prismshadow/penguin-plugins";
-import type { HookManifest, LibraryPlugin, SkillMetadata } from "@prismshadow/penguin-plugins";
+import { libraryPlugin } from "@prismshadow/penguin-core";
+import type { HookManifest, LibraryPlugin, SkillMetadata } from "@prismshadow/penguin-core";
 import type { HookItem, PluginItem, SkillMetadataItem } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 
