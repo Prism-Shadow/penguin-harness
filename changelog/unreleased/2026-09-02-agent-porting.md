@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `server`, `cli`, `web`, `skills`, `docs`
+- **PR:** [#594](https://github.com/Prism-Shadow/penguin-harness/pull/594)
 
 [中文版](2026-09-02-agent-porting.zh.md)
 
