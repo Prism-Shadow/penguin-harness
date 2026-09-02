@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { sessionActivity } from "../src/lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../src/lib/session-activity";
 import type { SessionActivity } from "../src/lib/session-activity";
 import {
   ACTIVITY_GLYPH,
+  BackgroundTasksMark,
   SessionActivityIcon,
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
+import { BACKGROUND_TASKS_ICON } from "../src/components/ui/icons";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
 import { readFileSync } from "node:fs";
@@ -41,6 +43,51 @@ describe("sessionActivity", () => {
   it("still reports a live run started before its Trace was recorded", () => {
     expect(sessionActivity("running", false, false)).toBe("running");
     expect(sessionActivity("compacting", false, false)).toBe("compacting");
+  });
+});
+
+describe("sessionBackgroundTasks", () => {
+  it("is zero without the field and the sum of both counts with it", () => {
+    // The server omits the field at zero, so absence is the common case, not an error.
+    expect(sessionBackgroundTasks({})).toBe(0);
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 2, subagents: 0 } })).toBe(2);
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 3 } })).toBe(4);
+  });
+
+  it("is a facet beside the activity state, not a fourth state", () => {
+    // An idle, read Session can still own a dev server: the glyph says nothing and the
+    // background count says 1, and the row draws both.
+    expect(sessionActivity("idle", true, false)).toBeNull();
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 0 } })).toBe(1);
+  });
+});
+
+/**
+ * The background-task mark: rendered only while the count is non-zero (the caller's
+ * decision), in the `busy` tone, naming its count in the accessible name and tooltip so the
+ * glyph is never the only carrier.
+ */
+describe("BackgroundTasksMark", () => {
+  const render = (count: number) =>
+    renderToStaticMarkup(createElement(BackgroundTasksMark, { count }));
+
+  it("names the count for screen readers and hover", () => {
+    const markup = render(3);
+    expect(markup).toContain(`aria-label="${S.chat.backgroundTasks(3)}"`);
+    expect(markup).toContain(`title="${S.chat.backgroundTasks(3)}"`);
+    expect(markup).toContain('role="img"');
+    expect(S.chat.backgroundTasks(3)).toContain("3");
+  });
+
+  it("draws the layered-stack glyph in the busy tone, on the same 12px box as the activity glyphs", () => {
+    const markup = render(1);
+    expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
+    expect(markup).toContain(toneInk.busy);
+    expect(markup).toMatch(/width="12"/);
+    // Not one of the activity glyphs, and no motion: it is a fact about the Session, not a
+    // live-progress indicator.
+    expect(markup).not.toContain(ACTIVITY_GLYPH.running);
+    expect(markup).not.toContain("hourglass-turn");
   });
 });
 

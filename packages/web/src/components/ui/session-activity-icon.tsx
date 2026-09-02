@@ -1,6 +1,8 @@
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
+import { GlyphIcon } from "./glyph-icon";
+import { BACKGROUND_TASKS_ICON } from "./icons";
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -24,6 +26,10 @@ type Activity = Exclude<SessionActivity, null>;
  * Every glyph also names its exact state in its accessible name and tooltip, so nothing here is
  * legible only to a sighted user with full colour vision. The read state announces nothing
  * because it renders nothing, which is correct — there is no state to report.
+ *
+ * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): a
+ * layered stack in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
+ * Session can still own a dev server or a background subagent, and the row says both.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
  * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
@@ -53,6 +59,27 @@ export function sessionActivityLabel(activity: Activity): string {
   if (activity === "running") return S.chat.statusRunning;
   if (activity === "compacting") return S.chat.statusCompacting;
   return S.chat.statusCompletedUnread;
+}
+
+/**
+ * The background-task mark: a session row's and the chat header's "this conversation still
+ * has work going on behind it" — command processes past their yield window and background
+ * subagents mid-round. `busy` ink, because that is what it means; the count lives in the
+ * accessible name and tooltip ("3 background tasks"), never in colour alone. Rendered only
+ * while the count is non-zero — the caller decides, so the row reserves no box for it.
+ */
+export function BackgroundTasksMark({ count, size = 12 }: { count: number; size?: number }) {
+  const label = S.chat.backgroundTasks(count);
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center ${toneInk.busy}`}
+    >
+      <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
+    </span>
+  );
 }
 
 export function SessionActivityIcon({
