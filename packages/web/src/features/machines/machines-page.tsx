@@ -1,38 +1,23 @@
 /**
- * Machines page: pick a host out of the SERVER's own `~/.ssh/config` and install this build
- * on it.
+ * Machines page: pick a host out of the SERVER's own `~/.ssh/config`, install this build on
+ * it, connect to it, sign in to it.
  *
- * The host list is a PICKER, not a rendered list, because an ssh config routinely declares
- * hundreds of entries: the panel shows a few rows, a fuzzy query reaches the rest, and the
- * matched characters are highlighted so a subsequence hit (`gpu1` → `gpu-01`) reads as a
- * match rather than as a wrong result. A counter names how many rows the current view leaves
- * out — silent truncation would read as "that host is not in my config".
+ * The host list is a picker, not a rendered list: an ssh config routinely declares hundreds
+ * of entries, so the panel shows a few rows, a fuzzy query reaches the rest, and a counter
+ * names how many rows the view leaves out.
  *
- * The list itself is the config text; the server does no `ssh -G` and no network to produce
- * it, so hundreds of hosts cost one file read and a row carries nothing but its alias.
- *
- * An install is a job on the server, not a request that finishes: it probes the machine,
- * may fetch a Node runtime, copies an image over scp and runs an installer there. POST
- * starts it and the page polls while it runs. The progress lines are the far side's own
- * words wherever there are any, so they are rendered verbatim in a monospace block rather
- * than interpreted here — a refused key or an unusable Node explains itself better than any
- * status enum could.
- *
- * One job exists at a time server-side, so the panel below follows THE JOB and names the
- * alias it belongs to, while the button follows the SELECTION: picking another host while
- * one installs must not hide the install that is running.
- *
- * Which hosts already carry this program comes from each machine's own persisted record,
- * not from the job — the job is one slot, so reading "installed" off it made a host stop
- * looking installed the moment anything else was installed or the server restarted.
+ * An install is a job on the server: POST starts it and the page polls while it runs. The
+ * progress lines are the far side's own words, rendered verbatim in a monospace block. One
+ * job exists at a time server-side, so the panel follows THE JOB and names the alias it
+ * belongs to, while the button follows the selection.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MachinesResponse } from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useProject } from "../../state/project";
 import { formatDateTime } from "../../lib/format";
 import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
@@ -44,18 +29,40 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
-import { installButtonState, installedMachines, verdictOf } from "./machines-view";
+import {
+  connectAction,
+  installButtonState,
+  installedMachines,
+  localMachine,
+  outOfDate,
+  statusTone,
+  verdictOf,
+} from "./machines-view";
 import type { MachineVerdict } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
 /** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
 const POLL_MS = 1500;
+
+/** One machine's server state as a line of text, or null when it has not been probed yet. */
+function statusText(machine: MachineInfo): string | null {
+  const status = machine.status;
+  if (status === null) return null;
+  if (status.state === "running") {
+    return status.port === undefined
+      ? S.machines.statusRunning
+      : S.machines.statusRunningOn(status.port);
+  }
+  return status.state === "stopped" ? S.machines.statusStopped : S.machines.statusUnreachable;
+}
 
 /** A finished job's one-line verdict, and the tone that carries it. */
 function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
   if (verdict.kind === "failed") {
     return { text: S.machines.failedAt(verdict.step), tone: "danger" };
   }
+  if (verdict.kind === "connected") return { text: S.machines.reachable, tone: "success" };
   const version = verdict.version ?? "";
   return {
     text:
@@ -70,7 +77,7 @@ export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
   // Machines belong to the Project, like every other row in this nav group: switching
   // Projects switches which machines are listed, and installing here gives the machine to
-  // THIS Project.
+  // THIS Project — the same one whose Model credentials it will be handed.
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const [state, setState] = useState<MachinesResponse | null>(null);
@@ -88,7 +95,7 @@ export function MachinesPage() {
   };
 
   const load = useCallback(async () => {
-    if (projectId === null) return; // No Project chosen yet: nothing to list machines for.
+    if (projectId === null) return; // No Project chosen yet: there is nothing to list machines for.
     try {
       setState(await api.getMachines(projectId));
       setError(null);
@@ -124,20 +131,119 @@ export function MachinesPage() {
     };
   }, [running]);
 
-  // The picker offers targets, and this machine is never one: a server does not push this
-  // build over the program directory it is running from (the API says 409 to the attempt).
-  const machines = useMemo(() => (state?.machines ?? []).filter((m) => !m.local), [state]);
+  const machines = useMemo(() => state?.machines ?? [], [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
-  const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
+  const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
+  /** The machine whose connect POST is in flight — the server has no job to report yet. */
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  /** Aliases the picker offers: everything except this machine, which is not a target. */
+  const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
+  const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenCount = matched.length - visible.length;
   const selected = machines.find((machine) => machine.id === selectedId) ?? null;
 
-  const install = async () => {
-    if (selectedId === null || projectId === null) return;
+  /**
+   * Re-probe the installed servers on a widening schedule (probe-schedule.ts). Separate from
+   * the job poll above: that one follows an install and stops when it settles, this one
+   * watches machines nobody is touching and has to stay cheap for hours.
+   */
+  const [probing, setProbing] = useState(false);
+  const settledRounds = useRef(0);
+  const lastPrint = useRef<string | null>(null);
+  const probe = useCallback(async () => {
+    if (projectId === null) return;
+    setProbing(true);
+    try {
+      const next = await api.probeMachines(projectId);
+      const print = probeFingerprint(next.machines);
+      // A round that changed nothing widens the interval; anything moving resets it.
+      settledRounds.current = print === lastPrint.current ? settledRounds.current + 1 : 0;
+      lastPrint.current = print;
+      setState(next);
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  const probeRef = useRef(probe);
+  probeRef.current = probe;
+  /** Nothing installed anywhere: there is no server to ask about, so no timer runs at all. */
+  const hasInstalled = installed.length > 0;
+  useEffect(() => {
+    if (!hasInstalled) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (delay: number) => {
+      timer = setTimeout(() => {
+        void probeRef.current().finally(() => {
+          if (!cancelled) arm(probeDelayMs(settledRounds.current));
+        });
+      }, delay);
+    };
+    // The first probe is immediate: opening the page is itself a reason to look.
+    arm(0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasInstalled]);
+
+  const connect = async (machineId: string) => {
+    if (projectId === null) return;
+    setConnecting(machineId);
+    try {
+      setState(await api.connectMachine(projectId, machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  /**
+   * Restarts a machine's server. Its own control because a machine's FILES can be brought
+   * forward while it runs — a replicated store, an install that already matched — and only a
+   * restart makes the process match them.
+   */
+  const restart = async (machineId: string) => {
+    if (projectId === null) return;
+    setConnecting(machineId);
+    try {
+      setState(await api.restartMachine(projectId, machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const disconnect = async (machineId: string) => {
+    if (projectId === null) return;
+    try {
+      setState(await api.disconnectMachine(projectId, machineId));
+      setError(null);
+    } catch (err) {
+      setError(apiErrorText(err));
+    }
+  };
+
+  /**
+   * Starts an install, or adopts when this server already installed there for another
+   * Project — one button, because from where the person stands both answer "make this
+   * machine usable here" and only one of them costs a transfer.
+   */
+  const install = async (machineId = selectedId, replaceProgram = false) => {
+    if (machineId === null || projectId === null) return;
     setStarting(true);
     try {
-      setState(await api.installOnMachine(projectId, selectedId));
+      setState(await api.installOnMachine(projectId, machineId, replaceProgram));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
@@ -285,11 +391,21 @@ export function MachinesPage() {
                 >
                   {button.action === "installing"
                     ? S.machines.installing
-                    : button.action === "reinstall"
-                      ? S.machines.reinstall
-                      : S.machines.install}
+                    : button.action === "adopt"
+                      ? S.machines.adopt
+                      : button.action === "update"
+                        ? S.machines.update
+                        : button.action === "reinstall"
+                          ? S.machines.reinstall
+                          : S.machines.install}
                 </Button>
               </div>
+            )}
+
+            {selected?.elsewhere != null && (
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                {S.machines.installedElsewhere(selected.elsewhere.version)}
+              </p>
             )}
 
             {selected?.installed != null && (
@@ -301,41 +417,138 @@ export function MachinesPage() {
               </p>
             )}
 
+            {/* This machine, first and on its own: it is where the page is being served
+                from, always up by definition, and never something to install onto. */}
+            {local !== null && (
+              <section className="mt-6">
+                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  {S.machines.localTitle}
+                </h2>
+                <div className="mt-2 flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+                  <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate text-sm font-medium"
+                    title={local.machineId ?? undefined}
+                  >
+                    {local.alias}
+                  </span>
+                  {local.installed !== null && (
+                    <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                      {local.installed.version}
+                    </span>
+                  )}
+                  <span className={`shrink-0 text-xs ${toneInk[statusTone(local.status?.state)]}`}>
+                    {statusText(local) ?? S.machines.statusRunning}
+                  </span>
+                </div>
+              </section>
+            )}
+
             {/* What this server has already installed, standing on the page rather than
                 only inside the picker: it is the answer to "what did I do", which a panel
                 that has to be opened one row at a time cannot give. */}
             {installed.length > 0 && (
               <section className="mt-6">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  {S.machines.installedTitle(installed.length)}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="min-w-0 flex-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {S.machines.installedTitle(installed.length)}
+                  </h2>
+                  {/* The schedule widens on its own (probe-schedule.ts); this is for when
+                      you already know something changed and do not want to wait for it. */}
+                  <Button size="sm" variant="ghost" disabled={probing} onClick={() => void probe()}>
+                    {probing ? S.machines.checking : S.machines.refresh}
+                  </Button>
+                </div>
                 <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {installed.map((machine) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => setSelectedId(machine.id)}
-                      aria-current={machine.id === selectedId ? "true" : undefined}
-                      className={`flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 ${
-                        machine.id === selectedId
-                          ? "bg-gray-100 dark:bg-gray-800"
-                          : "bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/70"
-                      }`}
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {machine.alias}
-                      </span>
-                      <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                        {machine.installed!.version}
-                      </span>
-                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                        {formatDateTime(machine.installed!.at)}
-                      </span>
-                    </button>
-                  ))}
+                  {installed.map((machine) => {
+                    const action = connectAction(machine, state.job, connecting);
+                    return (
+                      <div
+                        key={machine.id}
+                        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${
+                          machine.id === selectedId
+                            ? "bg-gray-100 dark:bg-gray-800"
+                            : "bg-white dark:bg-gray-900"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(machine.id)}
+                          aria-current={machine.id === selectedId ? "true" : undefined}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        >
+                          <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                            <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
+                          </span>
+                          {/* The alias is the label — it is what someone chose and recognises.
+                          The machine's own id is the identity, kept to the tooltip. */}
+                          <span
+                            className="min-w-0 flex-1 truncate text-sm font-medium"
+                            title={machine.machineId ?? undefined}
+                          >
+                            {machine.alias}
+                          </span>
+                          <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                            {machine.installed!.version}
+                          </span>
+                          {/* The server over there, as of the last probe. Never colour alone:
+                          the state is named in words, and unprobed says so too. */}
+                          <span
+                            className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
+                            title={machine.status?.detail}
+                          >
+                            {statusText(machine) ?? S.machines.statusUnknown}
+                          </span>
+                        </button>
+                        {/* Connected means its filesystem and API are reachable from here —
+                          through the workspace picker, and anything else that names a
+                          machine. There is nothing to "enter": the window never moves. */}
+                        {action === "connected" ? (
+                          <>
+                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                              {S.machines.reachable}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={running}
+                              onClick={() => void restart(machine.id)}
+                            >
+                              {S.machines.restart}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void disconnect(machine.id)}
+                            >
+                              {S.machines.disconnect}
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={running}
+                              onClick={() => void restart(machine.id)}
+                            >
+                              {S.machines.restart}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={action !== "connect" || state.job?.running === true}
+                              onClick={() => void connect(machine.id)}
+                            >
+                              {action === "connecting" ? S.machines.connecting : S.machines.connect}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -347,7 +560,13 @@ export function MachinesPage() {
                 <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 dark:bg-gray-900">
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{job.alias}</span>
                   {running ? (
-                    <span className={`text-xs ${toneInk.busy}`}>{S.machines.installing}</span>
+                    <span className={`text-xs ${toneInk.busy}`}>
+                      {job.kind === "install"
+                        ? S.machines.installing
+                        : job.kind === "restart"
+                          ? S.machines.restarting
+                          : S.machines.connecting}
+                    </span>
                   ) : (
                     verdictText !== null && (
                       <span className={`text-xs ${toneInk[verdictText.tone]}`}>
@@ -370,6 +589,23 @@ export function MachinesPage() {
                       >
                         {verdict.message}
                       </pre>
+                    )}
+                    {/* The one failure with a next step this side can take. Offered rather
+                        than taken: it restarts a server other people may be on. */}
+                    {verdict?.kind === "failed" && verdict.canReplaceProgram === true && (
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {S.machines.replaceProgramWhy}
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-2"
+                          disabled={running}
+                          onClick={() => void install(job.machineId, true)}
+                        >
+                          {S.machines.replaceProgram}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}
