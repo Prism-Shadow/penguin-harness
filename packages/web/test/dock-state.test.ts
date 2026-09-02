@@ -60,6 +60,13 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("bottom")).toBe("agents");
   });
 
+  it("lists the scheduled-tasks panel as a kind and opens it like any other", () => {
+    expect(dock.PANEL_KINDS).toContain("schedules");
+    dock.openPanel("schedules", "right");
+    expect(dock.panelDock("schedules")).toBe("right");
+    expect(dock.dockActiveKey("right")).toBe("schedules");
+  });
+
   it("closing a panel tab removes it; closing the last one puts the dock away", () => {
     dock.openPanel("workspace", "right");
     dock.openPanel("memory", "right");
@@ -282,6 +289,21 @@ describe("persistence", () => {
     expect(reloaded.bottomRatio()).toBe(0.5); // sizes are one preference, not per scope
     reloaded.setDockScope(b);
     expect(reloaded.dockActiveKey("bottom")).toBe("memory");
+  });
+
+  it("reads a stored schedules tab back and drops a tab key it does not know", async () => {
+    // A layout written by a newer build may name a kind this build lacks; the known tab
+    // survives and the stranger is dropped, never the whole dock.
+    store.set(
+      "penguin.dock.layout",
+      '{"scopes": {"s": {"right": {"tabs": ["schedules", "someday"], "active": "schedules", "open": true}}}}',
+    );
+    vi.resetModules();
+    const reloaded = await import("../src/features/dock/dock-state");
+    reloaded.setDockScope("s");
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules"]);
+    expect(reloaded.dockActiveKey("right")).toBe("schedules");
+    expect(reloaded.isDockVisible("right")).toBe(true);
   });
 
   it("degrades a malformed stored entry to empty docks", async () => {

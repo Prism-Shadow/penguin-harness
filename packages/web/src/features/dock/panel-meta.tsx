@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
-import { MESSAGING_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { MESSAGING_ICON, NAV_ICONS, SCHEDULE_ICON } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import type { PanelKind } from "./dock-state";
 
@@ -50,6 +50,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.nav.traces;
     case "messaging":
       return S.messaging.panelTitle;
+    case "schedules":
+      return S.schedule.panelTitle;
   }
 }
 
@@ -65,5 +67,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={NAV_ICONS.traces} size={size} />;
     case "messaging":
       return <GlyphIcon d={MESSAGING_ICON} size={size} />;
+    case "schedules":
+      return <GlyphIcon d={SCHEDULE_ICON} size={size} />;
   }
 }

@@ -40,6 +40,11 @@ export interface AiCreatePanelProps {
   onAgentChange?: (agentId: string) => void;
   /** Offer a picker beside the "done by" line instead of a fixed agent; needs onAgentChange. */
   allowAgentChoice?: boolean;
+  /**
+   * Replaces the "done by <agent> in a new conversation" lead line — for a surface that sends
+   * somewhere else, such as into the conversation on screen; null renders no lead line at all.
+   */
+  byLine?: string | null;
   disabled?: boolean;
 }
 
@@ -64,6 +69,7 @@ export function AiCreatePanel({
   agentId,
   onAgentChange,
   allowAgentChoice,
+  byLine,
   disabled,
 }: AiCreatePanelProps) {
   const agent = agents.find((a) => a.agentId === agentId) ?? null;
@@ -87,7 +93,9 @@ export function AiCreatePanel({
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-        {agent !== null ? (
+        {byLine !== undefined ? (
+          byLine !== null && <span>{byLine}</span>
+        ) : agent !== null ? (
           <span>{S.aiCreate.byAgent(agentDisplayName(agent))}</span>
         ) : agents.length === 0 ? (
           <span className={toneInk.attention}>{S.aiCreate.noAgent}</span>
