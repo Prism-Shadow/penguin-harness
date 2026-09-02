@@ -256,7 +256,7 @@ describe("skills api", () => {
     const body = (await res.json()) as AgentSkillsResponse;
     // loadPreinstalledSkills keeps loadLibrarySkills' name sort, matching the installed-list ordering.
     expect(body.skills.map((s) => s.name)).toEqual(preinstalledSkillNames());
-    // use-remote-claude-code and humanizer ship in the library marked `preinstall: false`: their skills are not present here.
+    // use-claude-code and humanizer ship in the library marked `preinstall: false`: their skills are not present here.
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
     // The installed list likewise passes through the Chinese and short descriptions
@@ -270,7 +270,7 @@ describe("skills api", () => {
 
     // Manual install from the library still works for a preinstall:false skill.
     const manual = await member.post(plugins("default_agent"), {
-      names: ["use-remote-claude-code"],
+      names: ["use-claude-code"],
     });
     expect(manual.status).toBe(201);
     const withManual = (await manual.json()) as AgentSkillsResponse;

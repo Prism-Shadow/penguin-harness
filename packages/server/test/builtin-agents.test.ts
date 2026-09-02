@@ -47,7 +47,7 @@ describe("built-in Agent provisioning", () => {
     expect(list.agents.find((a) => a.agentId === "default_agent")?.name).toBe("General Agent");
 
     // Install policy: default_agent is pre-installed with the library's preinstalled set
-    // (plugins marked `preinstall: false`, e.g. use-remote-claude-code, stay manual-install only).
+    // (plugins marked `preinstall: false`, e.g. use-claude-code, stay manual-install only).
     const skillsOf = async (agentId: string) =>
       (
         await fs.readdir(path.join(t.root, projectId, "agents", agentId, "agent_state", "skills"))

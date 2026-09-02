@@ -78,12 +78,12 @@ importers:
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-remote-claude-code
       '@prismshadow/agenthub':
         specifier: ^0.4.8
         version: 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -157,12 +157,12 @@ importers:
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-remote-claude-code
       '@prismshadow/agenthub':
         specifier: ^0.4.8
         version: 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -233,12 +233,12 @@ importers:
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
+      '@penguinharness/use-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/use-claude-code
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-remote-claude-code
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
@@ -556,9 +556,9 @@ importers:
 
   plugins/use-bento-slides: {}
 
-  plugins/use-firecrawl: {}
+  plugins/use-claude-code: {}
 
-  plugins/use-remote-claude-code: {}
+  plugins/use-firecrawl: {}
 
 packages:
 
@@ -1118,11 +1118,11 @@ packages:
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides':
     resolution: {directory: plugins/use-bento-slides, type: directory}
 
+  '@penguinharness/use-claude-code@file:plugins/use-claude-code':
+    resolution: {directory: plugins/use-claude-code, type: directory}
+
   '@penguinharness/use-firecrawl@file:plugins/use-firecrawl':
     resolution: {directory: plugins/use-firecrawl, type: directory}
-
-  '@penguinharness/use-remote-claude-code@file:plugins/use-remote-claude-code':
-    resolution: {directory: plugins/use-remote-claude-code, type: directory}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -4798,9 +4798,9 @@ snapshots:
 
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides': {}
 
-  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
+  '@penguinharness/use-claude-code@file:plugins/use-claude-code': {}
 
-  '@penguinharness/use-remote-claude-code@file:plugins/use-remote-claude-code': {}
+  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
 
   '@playwright/test@1.61.1':
     dependencies:
@@ -4849,8 +4849,8 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code': file:plugins/use-remote-claude-code
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
@@ -4880,8 +4880,8 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code': file:plugins/use-remote-claude-code
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
@@ -4907,8 +4907,8 @@ snapshots:
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
+      '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@penguinharness/use-remote-claude-code': file:plugins/use-remote-claude-code
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1

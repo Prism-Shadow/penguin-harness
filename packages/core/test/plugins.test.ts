@@ -130,7 +130,7 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["continual-learning", "humanizer", "use-remote-claude-code"]) {
+    for (const manual of ["continual-learning", "humanizer", "use-claude-code"]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }

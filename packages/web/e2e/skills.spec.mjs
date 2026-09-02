@@ -127,9 +127,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   // plugin (data-analysis is enabled), while remote-claude-code is preinstall:false and
   // absent from it, so its button is disabled.
   await expect(page.getByRole("button", { name: "快捷调用 data-analysis" })).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "快捷调用 use-remote-claude-code" }),
-  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "快捷调用 use-claude-code" })).toBeDisabled();
 
   // Card icon: the DTO icon (icon.svg in the plugin's skill directory) is sanitized and rendered
   // inline (an aria-hidden wrapper + svg); builtin plugins each carry a custom icon, not the book
