@@ -532,6 +532,54 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    importAgent: "Import agent",
+    importAgentDesc:
+      "Turn a Claude Code, Codex or Pi agent setup, or an agent bundle exported from PenguinHarness, into a new agent of this Project. Not the snapshot import: a snapshot backs up and restores, this ports and integrates.",
+    importModeFile: "From a file",
+    importModeAi: "Let AI import",
+    importFilePick: "Choose a file",
+    importFileHint: "An <id>-export.zip exported from PenguinHarness, or a bare penguin-agent.json",
+    importFileClear: "Remove the selected file",
+    importAgentIdHint: "Leave empty to use the id inside the file",
+    importAgentExists: "That id is taken: enter a new agent id and retry",
+    importAgentAction: "Import",
+    importAgentBusy: "Importing…",
+    importAgentDone: (id: string): string => `Agent ${id} imported`,
+    importAgentSkipped: (notes: string): string => `Not mapped: ${notes}`,
+    importAgentVaultKeys: (keys: string): string => `Vault keys to set: ${keys}`,
+    exportAgent: "Export agent",
+    exportAgentDesc:
+      "Download the portable agent bundle (zip): definition, skills, hooks and an integration guide; no vault values, memory, Traces or snapshots",
+    aiImportIntro:
+      "The agent reads the source, writes the portable definition and runs the import; secrets are never copied, and the keys to set are listed in its report.",
+    aiImportExamples: [
+      {
+        key: "claude",
+        label: "Import my Claude Code setup",
+        description: "~/.claude",
+        prompt: "Import my local Claude Code setup (~/.claude) as an agent",
+      },
+      {
+        key: "codex",
+        label: "Import my Codex settings",
+        description: "~/.codex",
+        prompt: "Import the Codex settings in ~/.codex as an agent",
+      },
+      {
+        key: "pi",
+        label: "Import Pi's agent settings",
+        description: "~/.pi",
+        prompt: "Import Pi's agent settings (~/.pi)",
+      },
+      {
+        key: "bundle",
+        label: "Import an exported bundle",
+        description: "researcher-export.zip",
+        prompt: "Import ~/exports/researcher-export.zip",
+      },
+    ],
+    aiImportTail: (projectId: string): string =>
+      `Use the agent-porting skill. Read the source fully, not just a summary; build the portable definition from it (penguin-agent.json, with skills/ directories where needed); import it into project ${projectId} with \`penguin agent import\`; then report the new agent id, what was mapped and what was not, and the vault keys I need to set.`,
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
