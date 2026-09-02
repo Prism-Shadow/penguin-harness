@@ -62,6 +62,14 @@ budget marks) and each user's chat read cursor.
   session list grouped by organization with desk and ticket sub-folders, an 「组织」 folder in
   development mode, the `[org_trigger]` banner in conversations, and the two switches on the
   settings page.
+- Creation options: an organization may be created with a **model** (a configured pair, used
+  by every desk and ticket session whose employee names none) and a **company workspace** (an
+  existing absolute directory used as the shared workspace instead of the organization's own
+  `workspace/`); both are `org_config.toml` fields, editable in the organization settings and
+  through `penguin org create --workspace … --model-id … --provider …`.
+- Scheduling guidance: the CEO/HR skills, the initialization run and the handbook schedule
+  the calendar as a rota — role cadences (CEO daily, HR every three days, finance weekly),
+  a distinct hour per employee, one recurring event per employee, never `--start-at now`.
 - Plugins: a new `agent-company` plugin in its own category (Agent Company / Agent 公司,
   `preinstall: false`) with the `company-employee`, `company-ceo`, `company-hr` and
   `company-finance` skills; the CEO and every hired Agent get it together with

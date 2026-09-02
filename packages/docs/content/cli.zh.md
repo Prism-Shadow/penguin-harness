@@ -221,7 +221,7 @@ penguin schedule rm daily-report
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--project-id <id>]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--model-id <id> --provider <p>] [--project-id <id>]
 penguin org show [--org-id <id>] [--json]                       # 概览：员工与状态、看板计数、预算占用、待处理事项
 penguin org chart [--org-id <id>] [--json]                      # 员工树
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]

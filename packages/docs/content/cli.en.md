@@ -221,7 +221,7 @@ Company mode's command family — a thin client over the organization API. An or
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--project-id <id>]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--model-id <id> --provider <p>] [--project-id <id>]
 penguin org show [--org-id <id>] [--json]                       # overview: employees and states, board counts, spend against budget, pending items
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]

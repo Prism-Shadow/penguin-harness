@@ -9,11 +9,15 @@ import { provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
-const U = "boardmember";
+// Unique per run: the organization and the persisted work mode belong to the user, so a rerun
+// against the same data root must start from a fresh one.
+const U = `boardmember_${Date.now().toString(36)}`;
 const P = "password123";
 const ORG = "marketplace";
+// "slow text test" makes the mock stream its answer for ~8 s, so the page can be checked
+// while the CEO's initialization run is still in flight.
 const MISSION =
-  "做一个 DeepSeek Harness 插件 Marketplace，通过社交媒体和 SEO 把搜索排名做到前三，靠首页限时置顶曝光位盈利。";
+  "slow text test: 做一个 DeepSeek Harness 插件 Marketplace，通过社交媒体和 SEO 把搜索排名做到前三，靠首页限时置顶曝光位盈利。";
 
 test("company mode: create the organization, meet the CEO, see the board and the chat work", async ({
   page,
@@ -59,8 +63,11 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.getByRole("textbox", { name: /^使命/ }).fill(MISSION);
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
-  // Creation opens the CEO's desk conversation: an ordinary chat page.
+  // Creation opens the CEO's desk conversation: an ordinary chat page that renders while the
+  // initialization run is still streaming (the trigger banner and the live state appear at
+  // once, not after the run ends).
   await expect(page).toHaveURL(/\/chat\/session-/, { timeout: 30_000 });
+  await expect(page.getByText(/由组织「marketplace」触发/).first()).toBeVisible({ timeout: 3_000 });
   const detail = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(detail.employeeCount).toBe(1);
   expect(detail.ceoDeskSessionId).toBeTruthy();
@@ -123,6 +130,17 @@ test("company mode: create the organization, meet the CEO, see the board and the
   // The overview reflects it all: one employee, one proposed ticket, the mission on screen.
   await page.goto(`/org/${projectId}/${ORG}/overview`);
   await expect(page.getByText("Plugin Marketplace").first()).toBeVisible();
+
+  // Switching back to development mode from an organization page takes effect at once: the
+  // development sidebar (with its new-chat entry) replaces the company one.
+  await page
+    .getByRole("group", { name: "工作模式" })
+    .getByRole("button", { name: "开发", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: "新建对话" }).first()).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(page).not.toHaveURL(/\/org\//);
   const overview = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(overview.board.proposed).toBe(1);
   expect(overview.openTickets).toBe(1);
