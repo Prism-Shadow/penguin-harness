@@ -28,6 +28,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
+/** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
+const PACK_FORMAT = 2;
 
 /** Files under `dir`, as sorted relative posix paths. */
 async function walk(dir, prefix = "") {
@@ -42,7 +44,7 @@ async function walk(dir, prefix = "") {
 
 /** What a plugin's pack depends on: its sources, its manifest, its README — and the bundler. */
 async function sourceHash(dir, esbuildVersion) {
-  const h = createHash("sha256").update(`esbuild ${esbuildVersion}\0`);
+  const h = createHash("sha256").update(`esbuild ${esbuildVersion}\0pack ${PACK_FORMAT}\0`);
   for (const rel of ["package.json", "README.md"]) {
     const file = path.join(dir, rel);
     if (fs.existsSync(file))
@@ -78,7 +80,9 @@ function shippedManifest(pkg) {
     ...rest,
     type: "module",
     main: "./index.js",
-    exports: { ".": { import: "./index.js" } },
+    // `default` as well as `import`: the loader locates a plugin with require.resolve (the
+    // one resolver that takes a base path), which never matches an `import`-only export.
+    exports: { ".": { import: "./index.js", default: "./index.js" } },
   };
 }
 
