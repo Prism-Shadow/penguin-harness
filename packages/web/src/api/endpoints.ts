@@ -125,7 +125,8 @@ import type {
   TraceImportResponse,
   UiPrefs,
   UpdateCheckResponse,
-  UpdateRunResponse,
+  UpdateJobStatus,
+  RestartResponse,
   DesktopUpdateStatusResponse,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -760,16 +761,11 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
     body,
   });
 
-/** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived; the optional thinkingLevel pins only a round this message starts. 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */
-export const messageSubagent = (
-  sessionId: string,
-  childSessionId: string,
-  text: string,
-  thinkingLevel?: string,
-) =>
+/** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived (the child runs at its own Session's thinking level; pin it with patchSession). 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */
+export const messageSubagent = (sessionId: string, childSessionId: string, text: string) =>
   apiFetch<SubagentMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/message`,
-    { method: "POST", body: { text, ...(thinkingLevel ? { thinkingLevel } : {}) } },
+    { method: "POST", body: { text } },
   );
 
 /** Panel stop for one subagent child (#272): aborts only its CURRENT run — the session survives for follow-ups (202 aborted; 204 when already idle/unknown). */
@@ -1172,9 +1168,16 @@ export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 export const checkUpdate = (force = false) =>
   apiFetch<UpdateCheckResponse>(`/api/version/update-check${force ? "?force=1" : ""}`);
 
-/** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
-export const runUpdate = () =>
-  apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+/** Admin only: the self-update job's status — polled while it runs. */
+export const getUpdateJob = () => apiFetch<UpdateJobStatus>("/api/version/update");
+
+/** Admin only: starts the self-update job (`penguin update` on the server host, in the background) and answers with its status. */
+export const startUpdateJob = () =>
+  apiFetch<UpdateJobStatus>("/api/version/update", { method: "POST", body: {} });
+
+/** Admin only: asks the supervised server process to restart into the installed release. */
+export const restartServer = () =>
+  apiFetch<RestartResponse>("/api/version/restart", { method: "POST", body: {} });
 
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
@@ -1182,6 +1185,9 @@ export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/ap
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
+
+export const desktopUpdateDownload = () =>
+  apiFetch<void>("/api/desktop/update/download", { method: "POST", body: {} });
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });

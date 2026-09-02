@@ -115,16 +115,16 @@ describe("the sidebar user menu", () => {
     expect(source).not.toContain("ChangePasswordDialog");
   });
 
-  it("keeps both update rows outside the settings dialog, in one slot under its entry", () => {
-    // Updating is deliberately not a settings page: the menu carries the check itself, and
-    // the two rows are mutually exclusive by their own gates (a desktop-mode server never
-    // offers the server check; a browser session against one gets neither).
-    expect(source).toContain("<ServerUpdateRow");
-    expect(source).toContain("<DesktopUpdateRow");
-    expect(source).toContain("<UpdateDialog");
-    // The row's install/announce dialogs hang off the Sidebar, which outlives the menu the
-    // click closes — mounting them in the rows would unmount them on that same click.
-    expect(source).toContain("setUpdateDialogOpen(true)");
-    expect(source).toContain("setClientInstallOpen(true)");
+  it("keeps the one update row outside the settings dialog, opening the modal the layout mounts", () => {
+    // Updating is deliberately not a settings page: the menu carries the entry itself. One
+    // row serves both backends (the server release, the shell's own updater in the desktop
+    // window) and hides itself where the session can update nothing; every click opens the
+    // update modal, which is mounted by the app layout — not here, where the menu closing on
+    // that same click would unmount it, and not on the draft page whose badge opens it too.
+    expect(source).toContain("<UpdateRow");
+    expect(source).toContain("openUpdateModal()");
+    expect(source).not.toContain("<UpdateModal");
+    expect(source).not.toContain("ServerUpdateRow");
+    expect(source).not.toContain("DesktopUpdateRow");
   });
 });

@@ -121,8 +121,6 @@ export interface SubagentHandle {
     signal?: AbortSignal;
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
-    /** Per-turn thinking level for THIS round only (a host follow-up's picker); omitted keeps the child Session's own level. */
-    thinkingLevel?: ThinkingLevelName;
   }): AsyncGenerator<OmniMessage, RunCutoff | null>;
   /**
    * Queues a steering message for the child Session's running Task (the same mechanism as a
@@ -132,9 +130,21 @@ export interface SubagentHandle {
    * handle without it simply reports "not steerable".
    */
   steer?(messages: OmniMessage[]): boolean;
+  /** Pins the child Session's thinking level (`Session.thinkingLevel`: applied from its next LLM request) — a host panel's pick on a live child. Optional, like `steer`. */
+  setThinkingLevel?(level: ThinkingLevelName): void;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void;
 }
+
+/** Every thinking level name, the `ThinkingLevelName` vocabulary as a runtime list (validating a wire value — the server's PATCH and Agent-config routes). */
+export const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
 /**
  * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
@@ -380,8 +390,6 @@ export type SubagentMessageOutcome = "steered" | "started" | "resumed" | "busy" 
 
 /** Options of a host-initiated subagent message (see EnvironmentInterface.sendToBackgroundSubagent). */
 export interface SubagentMessageOptions {
-  /** Per-turn thinking level for a follow-up/resumed round; steering an already-running round cannot change that round's level. */
-  thinkingLevel?: ThinkingLevelName;
   /**
    * Enables the resume fallback when no live child bears the session id: the child Session
    * is revived (its own history, model and Workspace — `resumeSession` semantics) and
@@ -440,6 +448,13 @@ export interface EnvironmentInterface {
    * never destroyed. False when the child is unknown or idle. Optional.
    */
   abortBackgroundSubagentRun?(childSessionId: string): boolean;
+  /**
+   * Host-initiated pin of one live child session's thinking level (the child-session
+   * equivalent of assigning `Session.thinkingLevel`: applied from the child's next LLM
+   * request). False when the child is not live — a released child is revived through the
+   * host's loader, which restores the pin it stores. Optional.
+   */
+  setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /**
    * Attaches the single listener for subagent run-state changes (a round starting or
    * settling on any live child). The host re-reads `listBackgroundSubagents` on each ping —

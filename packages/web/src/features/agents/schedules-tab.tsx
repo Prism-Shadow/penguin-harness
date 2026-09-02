@@ -351,7 +351,7 @@ export function SchedulesTab({
       if (form.editing !== null) await api.updateSchedule(projectId, agentId, form.editing, body);
       else await api.createSchedule(projectId, agentId, { name, ...body });
       setForm(null);
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       await load();
       // A created schedule moves the agent card's count; refresh the list provider too.
       void reloadAgents();
@@ -380,7 +380,7 @@ export function SchedulesTab({
         // Model reference is resent as a whole pair or not at all — never half of one.
         ...(model ? { modelId: model.modelId, provider: model.provider } : {}),
       });
-      toastSuccess(S.common.saved);
+      toastSuccess(S.agent.savedTakesEffect);
       await load();
     } catch (e) {
       toastError(apiErrorText(e));

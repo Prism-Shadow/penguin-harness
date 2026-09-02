@@ -4,8 +4,8 @@
  * is never sent), PUT is owner-only, whole-table replace semantics (omitting
  * value keeps the original, an absent key is deleted, a new key must supply a
  * value), 400 on key/shape validation, 404 for a nonexistent Agent, vaults of
- * different Agents are independent of each other, and PUT invalidates the Agent's
- * cached Session runtimes (the next Task re-resumes and sees the new values).
+ * different Agents are independent of each other, and PUT leaves the Agent's cached
+ * Session runtimes alone (core reads the vault into each Session's next model context).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { userText } from "@prismshadow/penguin-core";
@@ -139,7 +139,7 @@ describe("vault api", () => {
     expect(modelsBody.models[0]!.credential).toBeTruthy();
   });
 
-  it("PUT invalidates the Agent's cached Session runtimes: the next Task re-resumes and picks up the new vault", async () => {
+  it("PUT leaves the Agent's cached Session runtimes alone: the vault reaches a running Session at its next compaction, not by a rebuild", async () => {
     t.deps.sessionsRepo.insert({
       sessionId: "vault-sess-1",
       projectId,
@@ -161,19 +161,19 @@ describe("vault api", () => {
     await waitFor(idle);
     expect(loads).toBe(1);
 
-    // Vault update via the API: the cached runtime is stale, so the next Task re-resumes
-    // (the loader re-reads .vault.toml — the new value reaches the next Task's environment).
+    // Vault update via the API: the cached runtime stays — no re-resume. The Session's
+    // running model context keeps the environment it opened with (a context's
+    // configuration never changes mid-life), and core assembles the new vault into the
+    // next context it opens, exactly as the CLI's in-process Session does.
     const put = await owner.put(vaultPath, { entries: [{ key: "NEW_KEY", value: "v-secret-1" }] });
     expect(put.status).toBe(200);
     await t.deps.manager.startTask("vault-sess-1", [userText("c")]);
     await waitFor(idle);
-    expect(loads).toBe(2);
-
-    // Reads don't invalidate: the rebuilt runtime is reused.
+    expect(loads).toBe(1);
     expect((await owner.get(vaultPath)).status).toBe(200);
     await t.deps.manager.startTask("vault-sess-1", [userText("d")]);
     await waitFor(idle);
-    expect(loads).toBe(2);
+    expect(loads).toBe(1);
   });
 
   it("Agent-level isolation: different Agents' vaults are independent; a nonexistent Agent 404", async () => {

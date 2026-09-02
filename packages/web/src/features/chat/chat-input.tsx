@@ -338,6 +338,7 @@ function ThinkingLevelSelect({
   onChange,
   disabled,
   direction = "down",
+  note,
 }: {
   /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
   value: string | null;
@@ -345,6 +346,8 @@ function ThinkingLevelSelect({
   disabled: boolean;
   /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
   direction?: "down" | "up";
+  /** Footnote under the rows — the session variant's pre-pick reminder: a change applies right away but invalidates the model's cached context, so compacting first is recommended. */
+  note?: string;
 }) {
   const [open, setOpen] = useState(false);
   const label =
@@ -398,6 +401,11 @@ function ThinkingLevelSelect({
           <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
         </button>
       ))}
+      {note && (
+        <div className="max-w-56 border-t border-gray-100 px-3 pb-1 pt-1.5 text-[11px] leading-snug text-gray-400 dark:border-gray-800 dark:text-gray-500">
+          {note}
+        </div>
+      )}
     </Dropdown>
   );
 }
@@ -901,16 +909,15 @@ export function ChatInput({
    */
   onChangeThinkingLevel?: (level: string) => void;
   /**
-   * Session state: the per-turn thinking level to DISPLAY — the parent resolves it as "the
+   * Session state: the Session's thinking level to DISPLAY — the parent resolves it as "the
    * user's pick for this session, else the Agent config's level" ("" = neither known yet),
-   * so the picker auto-follows the config until touched. The send path is the parent's own
-   * state: while untouched nothing is sent with tasks (the server/core fallback applies and
-   * mid-session Agent-config edits keep taking effect); an explicit pick sticks and is sent
-   * with every subsequent task, never writing through to the Agent config (that behavior
-   * stays draft-only).
+   * so the picker auto-follows the config until touched. A pick is the parent's own state:
+   * it pins the level on the Session (PATCH), and core applies it from the next LLM request
+   * (soft-limited; the menu note advises compacting first); nothing rides a task. Never
+   * written through to the Agent config (that behavior stays draft-only).
    */
   turnThinkingLevel?: string;
-  /** Session state: pins the per-turn thinking level for this session; also enables the editable picker. */
+  /** Session state: pins the thinking level on this session (effective from its next LLM request); also enables the editable picker. */
   onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
@@ -2565,16 +2572,19 @@ export function ChatInput({
                 disabled={busy}
               />
             )}
-            {/* Session state: per-turn thinking level (editable) — displays the user's pick,
-              else the Agent config's level (auto-follow; the parent resolves it). While
-              untouched nothing rides on tasks; a pick sticks for the session and is sent
-              with every subsequent send, never writing through to the Agent config. */}
+            {/* Session state: the Session's pinned thinking level (editable) — displays the
+              user's pick, else the Agent config's level (auto-follow; the parent resolves
+              it). A pick is pinned on the Session (PATCH) and applies from the next LLM
+              request (soft-limited): the menu's footnote reminds, before the pick, that the
+              change costs the model's cached context and compacting first is recommended —
+              never writing through to the Agent config. */}
             {!onChangeModel && onChangeTurnThinkingLevel && (
               <ThinkingLevelSelect
                 value={turnThinkingLevel ?? ""}
                 onChange={onChangeTurnThinkingLevel}
                 disabled={busy}
                 direction="up"
+                note={S.chat.thinkingLevelChangeNote}
               />
             )}
             {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}

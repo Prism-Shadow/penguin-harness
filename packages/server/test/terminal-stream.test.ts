@@ -7,7 +7,7 @@
  * and hostile-input tolerance. These are the promises the web dock and /terminal page are
  * built on.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
@@ -57,6 +57,31 @@ beforeAll(async () => {
     // viewer is too far behind) is only observable through this line.
     log: (line) => serverLogs.push(line),
   });
+});
+
+/**
+ * Every test's shells are killed before the next one starts. The suite shares one app, and
+ * the terminal registry caps a user at MAX_TERMINALS_PER_USER LIVE shells: fourteen tests
+ * each opening a /bin/sh that nothing closes only fit under that cap when enough earlier
+ * shells happened to exit first — which is why the suite passed on one runner and answered
+ * 429 on a slower one. A kill is a signal, not an exit, so this waits for the registry to
+ * report none alive rather than trusting the DELETE.
+ */
+afterEach(async () => {
+  if (IS_WINDOWS) return;
+  const listed = (await (await api.get("/api/terminals")).json()) as {
+    terminals: TerminalInfoJson[];
+  };
+  for (const terminal of listed.terminals) await api.delete(`/api/terminals/${terminal.id}`);
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    const now = (await (await api.get("/api/terminals")).json()) as {
+      terminals: TerminalInfoJson[];
+    };
+    if (!now.terminals.some((terminal) => terminal.alive)) return;
+    if (Date.now() > deadline) throw new Error("terminals from the previous test are still alive");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 });
 
 afterAll(async () => {

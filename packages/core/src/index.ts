@@ -26,6 +26,7 @@ export type * from "./version-info.js";
 
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
 export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
+export { SERVER_RESTART_EXIT_CODE } from "./internal/server-lifecycle.js";
 
 // Submodules
 export * from "./state/index.js";
@@ -41,6 +42,8 @@ export type {
   CompactionSettings,
   ContextEngineDeps,
   EngineInitialState,
+  OpenContextOptions,
+  OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";

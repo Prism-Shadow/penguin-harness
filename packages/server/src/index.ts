@@ -19,6 +19,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
+import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -227,6 +228,14 @@ class PenguinServer {
     // TerminateProcess with no signal delivery.
     this.deps.desktop?.onShutdownRequest(() => void this.shutdown("desktop-shutdown"));
 
+    // Restart-to-update: POST /api/version/restart lands here once a self-update is
+    // installed — the same graceful shutdown, exiting with the code the supervising
+    // `penguin server|web` respawns on, so the relaunch runs the new release. The
+    // lifecycle service only fires it when a supervisor is actually there.
+    this.deps.lifecycle.onRestartRequest(
+      () => void this.shutdown("restart", SERVER_RESTART_EXIT_CODE),
+    );
+
     // Client-update relay: under the shell this process is an Electron utilityProcess and
     // carries process.parentPort; wire it to the desktop service so the update routes can
     // read the shell's updater snapshot and forward check/install. Absent port (a plain
@@ -267,6 +276,16 @@ class PenguinServer {
     console.log(`penguin-server started: http://${this.appHost()}:${port}`);
     console.log(`Data root: ${this.config.root}`);
     console.log(`SQLite: ${this.config.dbPath}`);
+    // Named for the same reason the data root is: it is the one path the static tail
+    // serves from when no pushed web version is restored, and the only trace of a wrong
+    // PENGUIN_WEB_DIST or a missing build is otherwise a 404 on every page.
+    console.log(`Web dist: ${this.config.webDist}`);
+    if (!fs.existsSync(path.join(this.config.webDist, "index.html"))) {
+      console.warn(
+        `[server] Web dist has no index.html; the Web App answers 404 unless a pushed web ` +
+          `version is restored. Build packages/web or point PENGUIN_WEB_DIST at a build.`,
+      );
+    }
     if (this.config.desktopToken !== null) console.log("Desktop mode: enabled");
     // PORT=0 asked for an ephemeral port: record the real one so everything derived from
     // the server's own port is correct — Workspace preview URLs above all, which are built

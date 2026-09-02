@@ -6,9 +6,9 @@
  * reset the admin itself once its password is forgotten. This subcommand of `penguin
  * server` closes that gap from the machine owning the data root (PENGUIN_HOME or the
  * default root, PENGUIN_WEB_DB honored for the database path): it refuses while a live
- * server owns the root (web.db is single-writer), otherwise the built-in admin gets a
- * fresh initial password, printed here in the same framed notice the server prints on
- * startup — and re-printed on every later start until the password is changed.
+ * server owns the root (web.db is single-writer), otherwise the built-in admin returns to
+ * the unclaimed state with its sessions revoked, and the next server start prints a fresh
+ * first-login link to claim it through (reset-admin-password.ts).
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import path from "node:path";

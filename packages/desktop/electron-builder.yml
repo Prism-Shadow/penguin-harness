@@ -29,8 +29,10 @@ directories:
 # Everything the app runs, and nothing else. The two mapped entries are the assets the
 # bundled server looks up relative to its own location: `skills/` is written next to dist/
 # by scripts/build-assets.mjs (a source run needs it there too), while web-dist comes
-# straight from the web package — no build order between the two packages guarantees it
-# exists before this one builds, but it always does by the time anything is packed.
+# straight from the web package. No build order between the two packages guarantees it
+# exists before this one builds, and electron-builder skips an absent `from:` source in
+# silence, so the pack scripts run scripts/preflight.mjs first and verify-packed-cli.mjs
+# checks the packed tree for it.
 files:
   - dist/**/*
   - "!dist/**/*.map"

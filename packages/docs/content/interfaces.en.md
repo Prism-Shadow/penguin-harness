@@ -37,7 +37,7 @@ What travels *alongside* it is the **control plane**, deliberately not message-s
 | Control-plane item | Where | Why it is not a message |
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
-| `thinkingLevel` | `RunOptions` → `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. |
+| `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter — the soft-limited knob); unset, the LLM object's construction default — the context's opening level — applies (`RunOptions` carries no level). |
 | `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call; the answer is a three-value enum the engine turns into an `approval_decision` message the moment it has it. |
 | `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is statically guaranteed to exist; "the last message yielded must be a `request_end`" would only ever be a runtime convention. The engine writes that `request_end` from it. |
 
@@ -103,7 +103,7 @@ interface GenerativeModelConfig {
   maxTokens?: number;
   fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
-  requestTimeoutMs?: number;       // per-Request timeout, default 120000; <=0 disables
+  requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
 ```
@@ -114,6 +114,7 @@ interface GenerativeModelConfig {
 
 - the gateway maintains conversation history **statefully**, receiving only new messages each turn; resuming a Session replays committed history through a one-time `setHistory`;
 - an internal `EventTranslator` translates gateway stream events into `partial_*` fragments plus complete messages, preserving each item's opaque `fidelity` payload verbatim; segmentation mirrors the gateway's own aggregation — a thinking block is closed by its fidelity payload and a run of equal fidelity stays one block (OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks), while a text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`, fidelity keys accumulating on merge; complete messages settle in thinking → text → tool_call order;
+- every request asks the gateway for thought summaries (`thinking_summary`), which no provider rejects — it is dropped where the family has no such thing, and read as "summarized thinking" by the Claude family. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase, which is what `requestTimeoutMs` measures: the timer runs only while awaiting the next upstream event, resets on each one, and never counts consumer-side time (yielding, approvals, Trace writes), so it bounds silence rather than the length of a response;
 - `ToolCallIdAllocator` disambiguates providers that use the function name as the call id (append `#n` inbound, strip outbound), scoped to the whole Session;
 - provider differences (tool-call formats, reasoning content, streaming events) are absorbed entirely inside the gateway — see [Models & Providers](/models).
 
@@ -231,7 +232,6 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
-  thinkingLevel?: ThinkingLevelName;   // this run's thinking level (per-turn; compaction requests unaffected)
 }
 ```
 

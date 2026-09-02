@@ -35,6 +35,7 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  addTokenCounts,
   emptyTokenCounts,
   isCompleteModelMessage,
   isSessionMeta,
@@ -82,6 +83,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -102,6 +104,35 @@ export interface CompactionSettings {
   mode: CompactionMode;
   /** Prompt used for summarize compaction. */
   prompt: string;
+}
+
+/**
+ * A model context opened by {@link ContextEngineDeps.openNextContext} after a completed compaction:
+ * the fresh LLM object, plus what the opener re-read for it — the `session_meta` the rotated
+ * Trace file opens with (so that file's head describes the context it records) and the
+ * per-context engine settings. Every optional field absent means "the previous context's
+ * stays": an opener that could not re-read the Agent State returns the LLM alone.
+ */
+export interface OpenedContext {
+  llm: LLMInterface;
+  sessionMeta?: OmniMessage;
+  /** Maximum LLM turns per Task in this context; -1 removes the cap. */
+  maxTurns?: number;
+  /** Compaction settings of this context (thresholds, mode, Prompt). */
+  compaction?: CompactionSettings;
+}
+
+/** What {@link ContextEngineDeps.openNextContext} is called with. */
+export interface OpenContextOptions {
+  /**
+   * Publishes a record the opener produces while opening — the `mcp_connect_begin` /
+   * `mcp_connect_end` pair bracketing its MCP connect, and the `tool_list_ready` carrying the
+   * context's toolset. The engine yields each one live, in call order, and writes them at the
+   * head of the rotated Trace file right after the context's `session_meta`, so the new file
+   * is self-contained; an opener that emits nothing leaves the previous context's toolset
+   * record in place there.
+   */
+  emit: (msg: OmniMessage) => void;
 }
 
 /** Result of one compaction run: a StopReason terminal state (completed / aborted / retryable — abandoned, made up at the next trigger / fatal — needs a config change first); carries the summary message when summarize succeeds. */
@@ -136,12 +167,6 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
-  /**
-   * Thinking level for this run's LLM requests (a per-turn parameter): forwarded to every
-   * `streamGenerate` of this run — reconnect retries included; compaction requests keep the
-   * construction-time default (no override). Omitted = the LLM object's default.
-   */
-  thinkingLevel?: ThinkingLevelName;
 }
 
 /**
@@ -163,7 +188,7 @@ export interface EngineInitialState {
    * after a restart — both have zero turns and are not the same message to a user.
    */
   fromCompaction?: boolean;
-  /** Carried-over Session cumulative token counts (handed to the new object when compaction swaps it in). */
+  /** Carried-over Session cumulative token counts (the engine resumes its own accumulator from them). */
   sessionTokens?: TokenCounts;
   /** Most recent token_usage's request.total (the context usage figure, keeps compaction threshold checks continuous). */
   lastRequestTotal?: number;
@@ -178,7 +203,7 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
+  /** Maximum LLM turns for a single Task in the first context; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). A context `openNextContext` opens may bring its own. */
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
@@ -187,6 +212,14 @@ export interface ContextEngineDeps {
    * recovery window instead of five retries burning out in about a second (issue #218).
    */
   maxReconnects?: number;
+  /**
+   * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
+   * or not it received anything. Defaults to 20. It only binds once received content has
+   * reset the consecutive ladder (`maxReconnects`) at least once, and exists solely to keep
+   * that reset from turning an endpoint that streams a few tokens and drops into an endless
+   * retry loop.
+   */
+  maxTurnAttempts?: number;
   /**
    * Exponential backoff base (ms): the wait before reconnect retry N is
    * `base × 2^(N−1)`, capped at `reconnectBackoffMaxMs` (see reconnectDelayMs).
@@ -207,22 +240,31 @@ export interface ContextEngineDeps {
    */
   compactionMaxReconnects?: number;
   /**
-   * Creates a new LLM object after compaction (a fresh model context); the argument is the
-   * current Session cumulative token counts, for the new object to carry forward
-   * (token_usage.session stays continuous across compaction). Context compaction is
-   * unavailable if this is not provided.
+   * Opens a fresh model context after compaction: the new LLM object, plus whatever the
+   * opener re-read for the new context — its session_meta and its engine settings (see
+   * {@link OpenedContext}) — and, through `opts.emit`, the records it produced while opening
+   * (see {@link OpenContextOptions}). May rebuild the toolset and connect MCP servers, hence
+   * possibly async and possibly slow; the engine yields the emitted records live meanwhile.
+   * Session token continuity is the engine's own bookkeeping — it seeds the returned LLM's
+   * `sessionTokens` itself. Context compaction is unavailable if this is not provided.
    */
-  createLLM?: (sessionTokens: TokenCounts) => LLMInterface;
-  /** Context compaction settings; only takes effect if provided together with `createLLM`. */
+  openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
+  /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
-  /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
+  /**
+   * The first context's session_meta message: written at the start of each Trace file a
+   * compaction's rotation opens, until an `openNextContext` result brings the meta of the context
+   * it opened — from then on that one is written, so every file's head describes its own
+   * context.
+   */
   sessionMeta?: OmniMessage;
   /**
-   * This Session's tool_list_ready event (the resolved toolset). Written once right after
-   * the first run's input (following `bootstrapRecords`), and rewritten right after
-   * sessionMeta on each post-compaction Trace file — every file's tool record stays
-   * self-contained. Held here alone; deliberately NOT part of `bootstrapRecords`, so the
-   * one message isn't carried twice.
+   * The first context's tool_list_ready event (the resolved toolset). Written once right
+   * after the first run's input (following `bootstrapRecords`), and again right after
+   * sessionMeta on each Trace file a compaction's rotation opens — until an `openNextContext`
+   * emits the records of the context it opened, which take its place there — so every
+   * file's tool record stays self-contained. Held here alone; deliberately NOT part of
+   * `bootstrapRecords`, so the one message isn't carried twice.
    */
   toolList?: OmniMessage;
   /**
@@ -320,56 +362,29 @@ interface TurnResult {
   toolCalls: OmniMessage<ToolCallPayload>[];
   /** Complete thinking/text segments produced by the model this turn (including partial segments finalized on interruption), for carry-over flattening. */
   assistantSegments: OmniMessage[];
+  /**
+   * Whether this attempt received anything at all from the LLM stream. It is what the
+   * reconnect loop resets its ladder on: one message is proof the connection was established
+   * and the model was producing. Deliberately wider than the collected arrays — a drop
+   * mid-tool-call synthesizes a tool_call that is never dispatched and so never reaches
+   * `toolCalls`, yet those bytes did arrive.
+   */
+  receivedContent: boolean;
   /** Terminal state of this turn's LLM request (completed / failed / aborted / timeout / malformed). */
   outcome: LLMOutcome;
 }
 
 /**
- * Merge queue: lets multiple concurrent producers (the LLM stream consumer + several tool
- * executions) push OmniMessage entries; a single consumer (run's generator) pulls and
- * yields them in push order. Finishes once all producers are done and the queue is drained.
- * Docs: /docs/message-flow § "The merge point: MergeQueue".
+ * A turn's retry bookkeeping, threaded into `runTurn` so its `request_end` can announce the
+ * next attempt's planned backoff. `attempts` counts every attempt the turn has made so far
+ * (the ordinal hosts render, and what the absolute ceiling measures); `consecutive` counts
+ * only the tail of them that came back having received nothing — the backoff rung, and what
+ * `maxReconnects` measures. The two diverge as soon as an attempt receives content: see the
+ * reconnect loop in runToCompletion.
  */
-class MergeQueue {
-  private items: OmniMessage[] = [];
-  private producers = 0;
-  private wake: (() => void) | null = null;
-
-  /** Registers a producer. */
-  addProducer(): void {
-    this.producers += 1;
-  }
-
-  /** Deregisters a producer (its stream has finished). */
-  removeProducer(): void {
-    this.producers -= 1;
-    this.signal();
-  }
-
-  /** Pushes a message and wakes the consumer. */
-  push(msg: OmniMessage): void {
-    this.items.push(msg);
-    this.signal();
-  }
-
-  private signal(): void {
-    if (this.wake) {
-      const w = this.wake;
-      this.wake = null;
-      w();
-    }
-  }
-
-  /** Takes the next message; waits if empty but producers remain; returns null if empty and no producers remain. */
-  async next(): Promise<OmniMessage | null> {
-    for (;;) {
-      if (this.items.length > 0) return this.items.shift()!;
-      if (this.producers === 0) return null;
-      await new Promise<void>((resolve) => {
-        this.wake = resolve;
-      });
-    }
-  }
+interface TurnRetryState {
+  attempts: number;
+  consecutive: number;
 }
 
 /**
@@ -422,6 +437,12 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
  * set explicitly (issue #170 — a compaction request is an ordinary LLM request and gets the
  * turn loop's patience; compaction additionally routes a committed-but-unusable summary
  * through the same budget, see summarizeContext).
+ *
+ * One rule is the turn loop's alone: received content resets its ladder. Compaction cannot
+ * borrow it precisely because of that extra class — its budget also covers responses that
+ * were committed but unusable (an empty summary, or tool calls), where "produced content" is
+ * not evidence of progress at all, and resetting on it would turn issue #83's guard into a
+ * loop that re-asks a model already answering wrong, at maximum context, forever.
  */
 const RETRY_STATUSES: readonly StopReason[] = ["retryable"];
 
@@ -441,22 +462,47 @@ export function reconnectDelayMs(base: number, max: number, attempt: number): nu
 }
 
 export class ContextEngine {
-  private readonly maxTurns: number;
+  /** Per-context settings: the first context's from the deps, then whatever each opened context brings (see `startNewContext`). */
+  private maxTurns: number;
+  private compaction: CompactionSettings | undefined;
   private readonly maxReconnects: number;
+  private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
   private readonly reconnectBackoffMaxMs: number;
   private readonly compactionMaxReconnects: number;
   /** Interruption cleanup: content to resend generated when the previous run was aborted, held on the engine across runs. */
   private pendingCarryOver: OmniMessage[] = [];
-  /** Current LLM object; swapped for a new one created by `createLLM` after a successful compaction (a fresh model context). */
+  /** Current LLM object; swapped for the one `openNextContext` returns after a successful compaction (a fresh model context). */
   private llm: LLMInterface;
+  /**
+   * session_meta of the current context, written at the head of the Trace file the deferred
+   * rotation opens (see `write`): the first context's at construction, then whatever meta each
+   * `openNextContext` result brings — a context that brought none keeps the previous one.
+   */
+  private contextMeta: OmniMessage | undefined;
+  /**
+   * The records written right after `contextMeta` at that rotation — the context's toolset
+   * record and, when it connected MCP servers, the connect pair before it: the first context's
+   * `toolList` at construction, then what each `openNextContext` emitted — a context that emitted
+   * nothing keeps the previous records.
+   */
+  private contextRecords: OmniMessage[];
   /** Session cumulative turn count: counted per LLM Request that produces token_usage, across Tasks; reset to zero after compaction completes. */
   private sessionTurns = 0;
   /** Whether the current context was produced by a compaction (`startNewContext`); this flag becomes meaningless once a new completed turn occurs. */
   private fromCompaction = false;
+  /**
+   * The Session's current thinking level — the soft-limited runtime parameter as
+   * engine-owned state: `setThinkingLevel` (fed by the `Session.thinkingLevel` setter) moves it
+   * mid-context, and every subsequent turn request carries it as the per-request override.
+   * Undefined = no pin: the LLM object's construction default (the context's opening base)
+   * applies. Compaction requests ignore it and keep the context's base — their prefix must
+   * stay byte-identical at the moment the context is largest.
+   */
+  private thinkingLevel?: ThinkingLevelName;
   /** Most recent token_usage's request.total, i.e. the current context usage figure. */
   private lastRequestTotal = 0;
-  /** Most recent token_usage's session cumulative counts, handed to the new LLM object when compaction swaps it in. */
+  /** The Session-cumulative token series — engine-owned: accumulated from each token_usage's request counts and stamped onto the message before it is yielded or written (the LLM's lifetime is one context; the engine's is the Session). */
   private lastSessionTokens: TokenCounts = emptyTokenCounts();
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: OmniMessage | null = null;
@@ -513,10 +559,14 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
+    this.maxTurnAttempts = deps.maxTurnAttempts ?? 20;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
+    this.compaction = deps.compaction;
     this.llm = deps.llm;
+    this.contextMeta = deps.sessionMeta;
+    this.contextRecords = deps.toolList ? [deps.toolList] : [];
     // Session resumption: apply the initial state derived from replay.
     const init = deps.initialState;
     if (init) {
@@ -528,6 +578,11 @@ export class ContextEngine {
       this.lastRequestTotal = init.lastRequestTotal ?? 0;
       this.pendingTraceRotation = init.pendingTraceRotation ?? false;
     }
+  }
+
+  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
+  setThinkingLevel(level: ThinkingLevelName): void {
+    this.thinkingLevel = level;
   }
 
   /**
@@ -659,9 +714,6 @@ export class ContextEngine {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
-    // Per-turn thinking level: applies to each of this run's LLM requests (reconnects included);
-    // compaction requests are out of scope and keep the LLM default.
-    const thinkingLevel = opts?.thinkingLevel;
 
     // Merge the Task-boundary compaction summary (the new context's first input, merged with
     // this Prompt), the carry-over left over from the last interruption, and this call's new
@@ -741,7 +793,11 @@ export class ContextEngine {
       // GenerativeModel precisely so it never reaches this loop.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
-      let reconnects = 0;
+      // Two counters, because the ladder and the ceiling answer different questions (see
+      // TurnRetryState): `attempts` is every attempt this turn has made, `consecutive` only
+      // the tail that received nothing. Both live and die with the turn.
+      let attempts = 0;
+      let consecutive = 0;
       let turn: TurnResult;
 
       for (;;) {
@@ -750,7 +806,8 @@ export class ContextEngine {
         // it decides retry/resend purely from `outcome`. The retry count so far is threaded
         // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
         // the counter lives in this loop while the event is built inside the turn.
-        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
+        turn = yield* this.runTurn(attemptInput, approve, signal, { attempts, consecutive });
+        attempts += 1;
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -790,11 +847,20 @@ export class ContextEngine {
         // request_end(retryable) followed by the next request_begin.
         failedTurns.push(turn);
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
+        // Received content resets the ladder. An attempt the stream sent anything to had a
+        // working connection and a model writing into it, so its drop is a fresh transport
+        // fault — not the n-th piece of evidence that this endpoint is unreachable. A socket
+        // that dies twice in one turn shouldn't add up to a reason to stop while
+        // `[turn_retried]` carries the accumulated output into every retry and the turn keeps
+        // inching forward. What bounds this is the ceiling below, not the ladder: an endpoint
+        // that streams a few tokens and drops, every single time, would otherwise be retried
+        // forever.
+        if (turn.receivedContent) consecutive = 0;
         // Exhausted: give up without an abort event — abort marks a user interruption,
         // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
         // since no retry is planned) is the terminal record frontends and observability
         // read; `attempt` and `error_message` ride on it.
-        if (reconnects >= this.maxReconnects) {
+        if (consecutive >= this.maxReconnects || attempts >= this.maxTurnAttempts) {
           this.pendingCarryOver = attemptInput;
           return {
             kind: "llm_failure",
@@ -804,8 +870,8 @@ export class ContextEngine {
               : {}),
           };
         }
-        reconnects += 1;
-        if (!(await this.backoff(reconnects, signal))) {
+        consecutive += 1;
+        if (!(await this.backoff(consecutive, signal))) {
           this.pendingCarryOver = attemptInput;
           yield* this.emitAbort("backoff_interrupted");
           return { kind: "abort", errorCode: "backoff_interrupted" };
@@ -818,7 +884,7 @@ export class ContextEngine {
       const midTask = turn.toolOutputs.length > 0;
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
-        const mode = this.deps.compaction!.mode;
+        const mode = this.compaction!.mode;
         if (mode === "discard") {
           // Once discarded, the current Task can't continue: defer until the Task really
           // ends (mid-Task, or steering/notices still queued that must continue the loop).
@@ -954,21 +1020,21 @@ export class ContextEngine {
    */
   compactability(): CompactAvailability {
     return compactAvailability({
-      configured: Boolean(this.deps.compaction && this.deps.createLLM),
+      configured: Boolean(this.compaction && this.deps.openNextContext),
       sessionTurns: this.sessionTurns,
       fromCompaction: this.fromCompaction,
     });
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
-    if (!this.deps.compaction || !this.deps.createLLM) return;
+    if (!this.compaction || !this.deps.openNextContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
     // after the previous compaction, so running again would overwrite the not-yet-consumed
     // pendingSummary with an "empty summary," permanently losing the only record of the prior
     // conversation.
     if (this.sessionTurns === 0) return;
-    if (this.deps.compaction.mode === "discard") {
+    if (this.compaction.mode === "discard") {
       this.pendingCarryOver = this.pendingCarryOver.filter(
         (m) => (m.payload as { type?: string }).type !== "tool_call_output",
       );
@@ -1087,9 +1153,8 @@ export class ContextEngine {
     input: OmniMessage[],
     approve: ApproveFn,
     signal?: AbortSignal,
-    thinkingLevel?: ThinkingLevelName,
-    /** Retries already performed for this turn (from the caller's reconnect loop): lets request_end announce the NEXT attempt's planned backoff. */
-    reconnectsSoFar = 0,
+    /** This turn's retry bookkeeping from the caller's reconnect loop: lets request_end announce the NEXT attempt's planned backoff (and announce none once a budget is spent). */
+    retry: TurnRetryState = { attempts: 0, consecutive: 0 },
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -1103,6 +1168,8 @@ export class ContextEngine {
     const assistantSegments: OmniMessage[] = [];
     // This turn's LLM terminal state: taken from streamGenerate's generator return value.
     let outcome: LLMOutcome = { status: "completed" };
+    // Set by the first message the stream yields (see TurnResult.receivedContent).
+    let receivedContent = false;
 
     // Driver task: consumes the LLM stream + approves one at a time + dispatches tool
     // execution. It is itself a producer.
@@ -1117,10 +1184,11 @@ export class ContextEngine {
         await this.write(startEvt);
         // Iterate manually to capture the generator's **return value** (LLMOutcome); LLM
         // guarantees it never throws.
+        const level = this.thinkingLevel;
         const gen = this.llm.streamGenerate({
           newMessages: input,
           ...(signal ? { signal } : {}),
-          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          ...(level !== undefined ? { thinkingLevel: level } : {}),
         });
         for (;;) {
           const res = await gen.next();
@@ -1131,19 +1199,28 @@ export class ContextEngine {
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
-            const retryInMs = this.plannedRetryDelayMs(
-              outcome,
-              reconnectsSoFar,
-              this.maxReconnects,
-              RETRY_STATUSES,
-            );
+            // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
+            // attempt that received content restarts the ladder at its first rung, and either
+            // budget running out means no retry is planned at all.
+            const retryInMs =
+              retry.attempts + 1 >= this.maxTurnAttempts
+                ? undefined
+                : this.plannedRetryDelayMs(
+                    outcome,
+                    receivedContent ? 0 : retry.consecutive,
+                    this.maxReconnects,
+                    RETRY_STATUSES,
+                  );
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
-              // The authoritative attempt ordinal (1-based, within this retry run); a clean
-              // first-try completion stays unstamped so the common case adds no noise.
-              ...(outcome.status !== "completed" || reconnectsSoFar > 0
-                ? { attempt: reconnectsSoFar + 1 }
+              // The authoritative attempt ordinal (1-based, within this retry run): the
+              // turn's TOTAL attempt count, which never rewinds when received content resets
+              // the backoff ladder — hosts render "attempt N", and a counter that went
+              // backwards mid-turn would read as a lost attempt. A clean first-try completion
+              // stays unstamped so the common case adds no noise.
+              ...(outcome.status !== "completed" || retry.attempts > 0
+                ? { attempt: retry.attempts + 1 }
                 : {}),
               ...(retryInMs !== undefined ? { retryInMs } : {}),
             });
@@ -1152,12 +1229,15 @@ export class ContextEngine {
             break;
           }
           const msg = res.value;
+          receivedContent = true;
+          // token_usage means "this Request completed normally": record the context usage /
+          // Session cumulative counts — stamped onto the message BEFORE it is yielded or
+          // written, so the stream and the Trace carry the Session series rather than the
+          // LLM's per-request stand-in — and increment the Session turn count (counted per
+          // LLM Request, across Tasks; used for compaction threshold checks).
+          if (this.observeTokenUsage(msg)) this.sessionTurns += 1;
           queue.push(msg);
           await this.write(msg);
-          // token_usage means "this Request completed normally": record the context usage /
-          // Session cumulative counts, and increment the Session turn count (counted per LLM
-          // Request, across Tasks; used for compaction threshold checks).
-          if (this.observeTokenUsage(msg)) this.sessionTurns += 1;
           // Collect complete thinking/text segments (including partial segments finalized on
           // interruption), for carry-over flatten.
           if (
@@ -1259,7 +1339,7 @@ export class ContextEngine {
       const out = byId.get(id);
       if (out) orderedOutputs.push(out);
     }
-    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, outcome };
+    return { toolOutputs: orderedOutputs, toolCalls, assistantSegments, receivedContent, outcome };
   }
 
   /**
@@ -1362,8 +1442,8 @@ export class ContextEngine {
    * Docs: /docs/agent-loop § "Compaction".
    */
   private compactionTrigger(): CompactionReason | null {
-    const settings = this.deps.compaction;
-    if (!settings || !this.deps.createLLM) return null;
+    const settings = this.compaction;
+    if (!settings || !this.deps.openNextContext) return null;
     if (settings.maxContextLength > 0 && this.lastRequestTotal >= settings.maxContextLength) {
       return "context";
     }
@@ -1373,13 +1453,23 @@ export class ContextEngine {
     return null;
   }
 
-  /** Records context usage and Session cumulative counts from a token_usage event; returns whether the message is a token_usage. */
+  /**
+   * Records context usage from a token_usage event and stamps the engine-authored session
+   * series onto it; returns whether the message is a token_usage. The engine is the single
+   * author of `token_usage.session`: the LLM reports per-request usage only (its lifetime is
+   * one model context), and this method — on the turn path and the compaction path alike —
+   * accumulates the request counts and overwrites the payload's `session` before the
+   * message is yielded or written.
+   */
   private observeTokenUsage(msg: OmniMessage): boolean {
     if (msg.type !== "event_msg") return false;
     const payload = msg.payload as Partial<TokenUsagePayload>;
     if (payload.type !== "token_usage") return false;
-    if (payload.request) this.lastRequestTotal = payload.request.total;
-    if (payload.session) this.lastSessionTokens = payload.session;
+    if (payload.request) {
+      this.lastRequestTotal = payload.request.total;
+      this.lastSessionTokens = addTokenCounts(this.lastSessionTokens, payload.request);
+      (payload as TokenUsagePayload).session = this.lastSessionTokens;
+    }
     return true;
   }
 
@@ -1392,7 +1482,7 @@ export class ContextEngine {
   private async *discardContext(reason: CompactionReason): AsyncGenerator<OmniMessage> {
     yield* this.emitCompactionBegin(reason, "discard");
     yield* this.emitCompactionEnd(reason, "discard", "completed");
-    await this.startNewContext();
+    yield* this.startNewContext();
   }
 
   /**
@@ -1428,7 +1518,7 @@ export class ContextEngine {
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
   ): AsyncGenerator<OmniMessage, CompactionResult> {
-    const settings = this.deps.compaction!;
+    const settings = this.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
     // Compaction request input: this turn's tool results (mid-Task) or leftover interruption
@@ -1507,7 +1597,7 @@ export class ContextEngine {
         if (summaryText !== "" && attempt.toolCalls.length === 0) {
           const summary = userText(buildContextSummaryText(summaryText));
           yield* this.emitCompactionEnd(reason, "summarize", "completed", { attempt: attempts });
-          await this.startNewContext();
+          yield* this.startNewContext();
           return { status: "completed", summary, committed };
         }
         // Not a summary — one more failed attempt, sharing the reconnect budget below. Tool
@@ -1639,7 +1729,7 @@ export class ContextEngine {
    * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
    * call with a synthesized failed output).
    * Token usage is counted into the Session
-   * cumulative totals (recorded via observeTokenUsage, for the new object to carry forward).
+   * cumulative totals (accumulated and stamped onto every token_usage via observeTokenUsage).
    */
   private async *runCompactionRequest(
     input: OmniMessage[],
@@ -1713,8 +1803,9 @@ export class ContextEngine {
         };
       }
       const msg = res.value;
-      await this.write(msg);
+      // Stamped with the Session series before the write, exactly like a turn's (runTurn).
       if (this.observeTokenUsage(msg)) usage = msg;
+      await this.write(msg);
       // Streamed compaction progress (issue #290): the summary's own text rides the output
       // stream between the paired compaction events — partial_text fragments verbatim (all
       // three phases, so the server's live tail opens and closes its fragment and a join
@@ -1749,15 +1840,37 @@ export class ContextEngine {
   }
 
   /**
-   * Opens a new model context after successful compaction: swaps in a new LLM object (carrying
-   * forward the Session cumulative token counts), resets the Session turn count and context
-   * usage counter. Trace **does not** split files immediately — that's deferred until the next
-   * message that needs writing, when it rotates and opens with a session_meta (see `write`),
-   * avoiding an empty file if no further messages follow the compaction.
+   * Opens a new model context after successful compaction: swaps in the LLM object
+   * `openNextContext` returns (seeding it with the Session cumulative token counts), adopts
+   * whatever the opened context brings — its session_meta and toolset records for the rotated
+   * Trace file's head, its engine settings — and resets the Session turn count and context
+   * usage counter. The records the opener emits while opening (its MCP connect pair, its
+   * tool_list_ready) are yielded live as they come, so a slow connect is never a silent gap.
+   * Trace **does not** split files immediately — that's deferred until the next message that
+   * needs writing, when it rotates and opens with the context's session_meta and records (see
+   * `write`), avoiding an empty file if no further messages follow the compaction.
    */
-  private async startNewContext(): Promise<void> {
+  private async *startNewContext(): AsyncGenerator<OmniMessage> {
+    // The opener publishes records through a callback; a merge queue turns them into this
+    // generator's live yields while the opener is still running.
+    const { queue, result: opening } = pumpOpener((emit) => this.deps.openNextContext!({ emit }));
+    const records: OmniMessage[] = [];
+    for (;;) {
+      const msg = await queue.next();
+      if (msg === null) break;
+      records.push(msg);
+      yield msg;
+    }
+    // An opener that throws (the Agent State could not be assembled) propagates out of the
+    // run with the engine untouched: the old context stays current and no rotation is
+    // pending, so the next trigger compacts again from a consistent state.
+    const opened = await opening;
     this.pendingTraceRotation = true;
-    this.llm = this.deps.createLLM!(this.lastSessionTokens);
+    this.llm = opened.llm;
+    if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
+    if (records.length > 0) this.contextRecords = records;
+    if (opened.maxTurns !== undefined) this.maxTurns = opened.maxTurns;
+    if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
@@ -1927,7 +2040,8 @@ export class ContextEngine {
   /**
    * Trace writes are **best-effort**: observability should never interrupt the ReAct
    * loop, so write failures only warn rather than throw. The first write after compaction first
-   * performs the deferred Trace rotation: splitting the file and opening it with session_meta.
+   * performs the deferred Trace rotation: splitting the file and opening it with the current
+   * context's session_meta and records (its MCP connect pair, if any, and its toolset).
    */
   private async write(msg: OmniMessage): Promise<void> {
     if (!this.deps.trace) return;
@@ -1935,8 +2049,8 @@ export class ContextEngine {
       this.pendingTraceRotation = false;
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
-        if (this.deps.sessionMeta) await this.deps.trace.write(this.deps.sessionMeta);
-        if (this.deps.toolList) await this.deps.trace.write(this.deps.toolList);
+        if (this.contextMeta) await this.deps.trace.write(this.contextMeta);
+        for (const record of this.contextRecords) await this.deps.trace.write(record);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] rotate failed: ${message}\n`);

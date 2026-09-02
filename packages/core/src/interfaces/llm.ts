@@ -55,7 +55,15 @@ export interface GenerativeModelConfig {
   fastMode?: boolean;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
-  /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
+  /**
+   * Idle budget (ms) for an LLM Request: the longest wait for the NEXT upstream event, not a
+   * cap on the request's total duration — the timer runs only while awaiting upstream, resets
+   * on every event, and excludes consumer-side time (yielding, approvals, Trace writes). It
+   * therefore bounds the connect + first-event wait and the gaps between events, never how
+   * long the model generates. From system_config.model.timeoutMs; <=0 disables it. Defaults
+   * to 300000: a model whose reasoning never reaches the wire spends its whole thinking phase
+   * inside the first-event gap.
+   */
   requestTimeoutMs?: number;
   /**
    * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new

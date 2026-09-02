@@ -17,6 +17,7 @@
  * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import { createHash } from "node:crypto";
+import zlib from "node:zlib";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -35,6 +36,7 @@ import {
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_DESKTOP_RESOURCE_ID,
+  RUNTIME_LIFECYCLE_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   RUNTIME_PROXY_RESOURCE_ID,
@@ -42,6 +44,7 @@ import {
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
+import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { GoalsRepo } from "./db/repos/goals.js";
@@ -95,6 +98,7 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
+import { LifecycleService } from "./services/lifecycle-service.js";
 import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
@@ -108,6 +112,7 @@ import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
+import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost } from "./hmr/host.js";
@@ -182,6 +187,8 @@ export interface AppDeps {
   usageService: UsageService;
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
+  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
+  updateJob: UpdateJobService;
   workspaceFiles: WorkspaceFilesService;
   /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
   previewTokens: PreviewTokenSigner;
@@ -207,6 +214,8 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
+  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
+  lifecycle: LifecycleService;
   /**
    * Installing this build on a machine from the server's own `~/.ssh/config` (the Machines
    * page). Business, not runtime: spawning ssh and packing an image are in-process effects,
@@ -233,6 +242,8 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /** Tests: a job service over a scripted runner, so no real `penguin update` is ever spawned. */
+  updateJob?: UpdateJobService;
   /** Test double: the Feishu connector's SDK factory (avoids real Lark network / long connections). */
   feishuSdk?: FeishuSdk;
   /** Test double: the Telegram connector's Bot API transport (avoids real Telegram network / long polls). */
@@ -329,6 +340,7 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
   // The registry sweep only STARTS extension disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -560,6 +572,78 @@ function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
   return header.split(",").some((tag) => bare(tag) === want);
 }
 
+/**
+ * Extensions worth compressing. Everything absent is either already compressed (png, woff2,
+ * ico) or too small for the round trip to pay for the CPU — recompressing a PNG spends time
+ * to make the response slightly larger.
+ */
+const COMPRESSIBLE = new Set([".html", ".js", ".css", ".json", ".svg", ".map", ".txt"]);
+
+/**
+ * Below this, compression is not worth doing: a few hundred bytes rarely shrink past the
+ * gzip header, and the transfer was never the cost at that size.
+ */
+const COMPRESS_MIN_BYTES = 1024;
+
+/**
+ * The best encoding this client accepts, or null for none.
+ *
+ * Brotli first — on the app bundle it is meaningfully smaller than gzip, and everything that
+ * speaks it also speaks gzip, so the fallback is free. Parsed rather than substring-matched
+ * because `q=0` means REFUSED: a client that sends `gzip;q=0` is saying "not gzip", and a
+ * naive `includes("gzip")` reads that as consent and returns bytes it cannot decode.
+ */
+function pickEncoding(header: string | undefined): "br" | "gzip" | null {
+  if (header === undefined) return null;
+  const accepted = new Set<string>();
+  for (const part of header.split(",")) {
+    const [rawToken, ...params] = part.split(";");
+    const token = (rawToken ?? "").trim().toLowerCase();
+    const q = params.map((p) => /^\s*q=([0-9.]+)\s*$/i.exec(p)).find((m) => m !== null)?.[1];
+    if (q !== undefined && Number.parseFloat(q) === 0) continue;
+    accepted.add(token);
+  }
+  if (accepted.has("br")) return "br";
+  if (accepted.has("gzip")) return "gzip";
+  return null;
+}
+
+/**
+ * Compressed bodies, keyed by `<encoding> <etag>` — the ETag already identifies one exact
+ * representation, so it is the only key this needs, and it changes when the bytes do.
+ *
+ * Cached because the alternative is compressing the same 1.2 MB bundle on every page load.
+ * Bounded and insertion-ordered (oldest evicted first): a dist is tens of files, but a hot
+ * push replaces all of them, and nothing should grow without a ceiling across a long uptime.
+ */
+const COMPRESSED_CACHE_ENTRIES = 128;
+const compressedCache = new Map<string, Buffer>();
+
+function compressedBody(content: Buffer, encoding: "br" | "gzip", etag: string): Buffer {
+  const key = `${encoding} ${etag}`;
+  const hit = compressedCache.get(key);
+  if (hit !== undefined) return hit;
+  const body =
+    encoding === "br"
+      ? zlib.brotliCompressSync(content, {
+          params: {
+            // Text mode and the real size let brotli pick its window; quality 5 is the knee
+            // of the curve — near-max ratio for a fraction of the time of 11, which on a
+            // megabyte is the difference between imperceptible and a visible stall.
+            [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: content.byteLength,
+          },
+        })
+      : zlib.gzipSync(content, { level: 6 });
+  if (compressedCache.size >= COMPRESSED_CACHE_ENTRIES) {
+    const oldest = compressedCache.keys().next();
+    if (!oldest.done) compressedCache.delete(oldest.value);
+  }
+  compressedCache.set(key, body);
+  return body;
+}
+
 /** The static response for one resolved file: 304 on an ETag match, the bytes otherwise. */
 function staticResponse(
   c: Context<AppEnv>,
@@ -567,16 +651,35 @@ function staticResponse(
   servedPath: string,
   etag: string,
 ): Response {
+  const ext = path.extname(servedPath).toLowerCase();
+  const mayCompress = COMPRESSIBLE.has(ext) && content.byteLength >= COMPRESS_MIN_BYTES;
+  // Chosen BEFORE the 304, because it decides which representation is being talked about —
+  // and a 304 has to carry the validator of the one the client would have got.
+  const encoding = mayCompress ? pickEncoding(c.req.header("accept-encoding")) : null;
+  // Weakened when compressed, as a re-encoding proxy would: those bytes are a different
+  // representation of the same thing, and a weak validator is exactly the claim "equivalent,
+  // not identical". Revalidation matches either spelling — ifNoneMatchHits compares weakly.
+  const responseEtag = encoding !== null && !etag.startsWith("W/") ? `W/${etag}` : etag;
   const headers: Record<string, string> = {
     "Cache-Control": cacheControlFor(servedPath),
-    ETag: etag,
+    ETag: responseEtag,
   };
+  // Announced whenever the answer COULD have varied — on the 304 too, and even when this
+  // particular client took no encoding: a shared cache keys on what the header says, so
+  // leaving it off is how one client's gzip reaches another that cannot read it.
+  if (mayCompress) headers["Vary"] = "Accept-Encoding";
   if (ifNoneMatchHits(c.req.header("if-none-match"), etag)) {
     return new Response(null, { status: 304, headers });
   }
-  headers["Content-Type"] =
-    CONTENT_TYPES[path.extname(servedPath).toLowerCase()] ?? "application/octet-stream";
-  return new Response(new Uint8Array(content), { status: 200, headers });
+  headers["Content-Type"] = CONTENT_TYPES[ext] ?? "application/octet-stream";
+  if (encoding === null) {
+    return new Response(new Uint8Array(content), { status: 200, headers });
+  }
+  headers["Content-Encoding"] = encoding;
+  return new Response(new Uint8Array(compressedBody(content, encoding, etag)), {
+    status: 200,
+    headers,
+  });
 }
 
 /**
@@ -668,6 +771,12 @@ export function buildAppDeps(
 ): AppDeps {
   const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
+
+  // A pushed platform carries its own migrations, which is the only way the tables its
+  // business needs can reach a runtime older than they are — that runtime will never grow
+  // them by restarting, because it does not have them. swapPath: this boot can be rolled
+  // back, so a restart-only migration is refused here instead of being left behind.
+  migrate(db, { swapPath: true });
 
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);
@@ -779,6 +888,7 @@ export function buildAppDeps(
   );
   const updateCheck =
     overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
+  const updateJob = overrides.updateJob ?? new UpdateJobService();
 
   const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
   const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
@@ -964,6 +1074,7 @@ export function buildAppDeps(
     traceIndex,
     usageService,
     updateCheck,
+    updateJob,
     workspaceFiles,
     previewTokens,
     benchmarks,
@@ -981,6 +1092,7 @@ export function buildAppDeps(
     sessionSources,
     errors,
     desktop: caps.desktop,
+    lifecycle: caps.lifecycle,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
     machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),

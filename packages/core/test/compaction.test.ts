@@ -29,6 +29,8 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  mcpConnectBegin,
+  mcpConnectEnd,
   partialText,
   requestBegin,
   requestEnd,
@@ -37,14 +39,15 @@ import {
   tokenUsage,
   toolCall,
   toolCallOutput,
+  toolListReady,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
   CompactionBeginPayload,
   CompactionEndPayload,
   OmniMessage,
+  SessionMetaPayload,
   TextPayload,
-  TokenCounts,
   TokenUsagePayload,
 } from "../src/omnimessage/index.js";
 import type {
@@ -198,7 +201,6 @@ describe("context compaction", () => {
       [{ messages: [assistantText("answer two"), usage(20, 330)] }],
       "llm2",
     );
-    let factoryTokens: TokenCounts | null = null;
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_compact" });
     const engine = new ContextEngine({
       llm: llm1,
@@ -206,10 +208,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: (tokens) => {
-        factoryTokens = tokens;
-        return llm2;
-      },
+      openNextContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -248,11 +247,12 @@ describe("context compaction", () => {
       .map(textOf);
     expect(textBetween).toEqual(["[summary]the distilled summary[/summary]"]);
 
-    // The new LLM instance carries over the session's cumulative tokens (including compaction request usage).
-    expect(factoryTokens).toMatchObject({ total: 310 });
-
     // The summary is merged with the next user prompt as the new LLM instance's first input.
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    // The engine authors the session series itself: the new context's token_usage continues
+    // from 310 (compaction request usage included) — nothing is seeded on the LLM object.
+    const usage2 = out2.find((m) => (m.payload as { type?: string }).type === "token_usage")!;
+    expect((usage2.payload as TokenUsagePayload).session.total).toBe(330);
     expect(llm1.calls).toHaveLength(2);
     expect(llm2.calls).toHaveLength(1);
     const firstInput = llm2.calls[0]!.map(textOf);
@@ -269,11 +269,261 @@ describe("context compaction", () => {
     const newTrace = await readTrace(trace.currentPath());
     expect(trace.currentPath()).not.toBe(oldPath);
     expect(newTrace[0]!.type).toBe("session_meta");
+    // The opened context brought no meta of its own, so the new file repeats the first one's.
+    expect(newTrace[0]!.payload).toEqual(metaMessage.payload);
     expect(
       newTrace.some((m) =>
         ((m.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
       ),
     ).toBe(true);
+  });
+
+  it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
+    // The composition layer re-assembles the system prompt for each context and hands the
+    // engine the session_meta recording it: that meta — not the Session's first — is what the
+    // rotated file must start with, so every file's head describes the context it records.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer two"), usage(150, 460)] },
+        { messages: [assistantText("[summary]two[/summary]"), usage(160, 620)] },
+      ],
+      "llm2",
+    );
+    const llm3 = new ScriptedLLM(
+      [{ messages: [assistantText("answer three"), usage(20, 640)] }],
+      "llm3",
+    );
+    const refreshed = sessionMeta({
+      ...(metaMessage.payload as SessionMetaPayload),
+      system_prompt: "sp re-assembled for context two",
+    });
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_meta_rotation" });
+    let opened = 0;
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      // Context two brings its meta; context three brings none (an opener that could not
+      // re-assemble) and must inherit context two's, not fall back to the Session's first.
+      openNextContext: async () => {
+        opened += 1;
+        return opened === 1 ? { llm: llm2, sessionMeta: refreshed } : { llm: llm3 };
+      },
+    });
+    const firstPath = trace.currentPath();
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const secondPath = trace.currentPath();
+    expect(secondPath).not.toBe(firstPath);
+    const second = await readTrace(secondPath);
+    expect(second[0]!.type).toBe("session_meta");
+    expect((second[0]!.payload as SessionMetaPayload).system_prompt).toBe(
+      "sp re-assembled for context two",
+    );
+
+    await collect(engine.run([userText("task three")], { approve: allowAll }));
+    const thirdPath = trace.currentPath();
+    expect(thirdPath).not.toBe(secondPath);
+    const third = await readTrace(thirdPath);
+    expect(third[0]!.type).toBe("session_meta");
+    expect((third[0]!.payload as SessionMetaPayload).system_prompt).toBe(
+      "sp re-assembled for context two",
+    );
+    expect(opened).toBe(2);
+  });
+
+  it("records the opener publishes are yielded live and written at the rotated file's head after the meta; a context that publishes none keeps the previous records", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer two"), usage(150, 460)] },
+        { messages: [assistantText("[summary]two[/summary]"), usage(160, 620)] },
+      ],
+      "llm2",
+    );
+    const llm3 = new ScriptedLLM(
+      [{ messages: [assistantText("answer three"), usage(20, 640)] }],
+      "llm3",
+    );
+    const firstToolList = toolListReady([{ name: "old_tool", description: "context one's" }]);
+    const connectBegin = mcpConnectBegin(["fx"]);
+    const connectEnd = mcpConnectEnd({ status: "completed", results: [] });
+    const newToolList = toolListReady([{ name: "new_tool", description: "context two's" }]);
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_records" });
+    let opened = 0;
+    let beginSeen = false;
+    let beginSeenBeforeEnd: boolean | null = null;
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      toolList: firstToolList,
+      // What the Session hands a first run: the (here empty) connect pair, so the first
+      // context's toolset record takes the bootstrap path — after the input, not at a head.
+      bootstrapRecords: [],
+      compaction: settings(),
+      openNextContext: async ({ emit }) => {
+        opened += 1;
+        if (opened === 2) return { llm: llm3 };
+        emit(connectBegin);
+        // The connect takes a while: the consumer must have received the begin by the time
+        // the end exists, or a slow MCP server would be a silent gap on the stream.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        beginSeenBeforeEnd = beginSeen;
+        emit(connectEnd);
+        emit(newToolList);
+        return { llm: llm2 };
+      },
+    });
+    const firstPath = trace.currentPath();
+
+    const out1: OmniMessage[] = [];
+    for await (const msg of engine.run([userText("task one")], { approve: allowAll })) {
+      out1.push(msg);
+      if (msg === connectBegin) beginSeen = true;
+    }
+    // Live: the records follow the compaction_end on the stream, in publication order, and
+    // the begin was delivered while the opener was still connecting.
+    const types = payloadTypes(out1);
+    expect(types.slice(types.lastIndexOf("compaction_end") + 1)).toEqual([
+      "mcp_connect_begin",
+      "mcp_connect_end",
+      "tool_list_ready",
+    ]);
+    expect(beginSeenBeforeEnd).toBe(true);
+
+    // Trace: the rotated file opens with the meta, then exactly those records, then the
+    // context's first input (the summary).
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const secondPath = trace.currentPath();
+    expect(secondPath).not.toBe(firstPath);
+    const second = await readTrace(secondPath);
+    expect(second[0]!.type).toBe("session_meta");
+    expect(payloadTypes(second.slice(1, 4))).toEqual([
+      "mcp_connect_begin",
+      "mcp_connect_end",
+      "tool_list_ready",
+    ]);
+    expect((second[3]!.payload as { tools: { name: string }[] }).tools[0]!.name).toBe("new_tool");
+    expect(textOf(second[4]!)).toContain("[context_summary]");
+    // The first file's toolset record rode the first run's bootstrap path (after the input),
+    // and it is the first context's — the new one never leaks backwards.
+    const first = await readTrace(firstPath);
+    expect(payloadTypes(first.slice(0, 2))).toEqual(["text", "tool_list_ready"]);
+    expect((first[1]!.payload as { tools: { name: string }[] }).tools[0]!.name).toBe("old_tool");
+    expect(payloadTypes(first).filter((t) => t === "tool_list_ready")).toHaveLength(1);
+
+    // Context three's opener published nothing (it could not re-read the Agent State): the
+    // third file repeats context two's records, never falls back to the first context's.
+    await collect(engine.run([userText("task three")], { approve: allowAll }));
+    const thirdPath = trace.currentPath();
+    expect(thirdPath).not.toBe(secondPath);
+    const third = await readTrace(thirdPath);
+    expect(third[0]!.type).toBe("session_meta");
+    expect(payloadTypes(third.slice(1, 4))).toEqual([
+      "mcp_connect_begin",
+      "mcp_connect_end",
+      "tool_list_ready",
+    ]);
+    expect((third[3]!.payload as { tools: { name: string }[] }).tools[0]!.name).toBe("new_tool");
+    expect(opened).toBe(2);
+  });
+
+  it("an opener that throws fails the run and leaves the engine on the old context, with no rotation pending", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+        { messages: [assistantText("still the old context"), usage(20, 330)] },
+      ],
+      "llm1",
+    );
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_opener_throws" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => {
+        throw new Error("Invalid Agent State config");
+      },
+    });
+    const firstPath = trace.currentPath();
+
+    await expect(
+      collect(engine.run([userText("task one")], { approve: allowAll })),
+    ).rejects.toThrow("Invalid Agent State config");
+
+    // The old LLM object is still current and nothing rotates: the next run appends to the
+    // same file and goes to the same object.
+    const out = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain(
+      "still the old context",
+    );
+    expect(trace.currentPath()).toBe(firstPath);
+    expect(llm1.calls).toHaveLength(3);
+  });
+
+  it("an opened context's maxTurns and compaction settings replace the engine's from then on", async () => {
+    // Context one compacts at 100. The opened context raises the threshold to 1000 and caps a
+    // Task at one turn: task two's 150-token turn must not compact again, and its tool call
+    // must end the Task at the cap instead of being followed up.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]one[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 460)],
+        },
+        { messages: [assistantText("never requested"), usage(10, 470)] },
+      ],
+      "llm2",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      openNextContext: () => ({
+        llm: llm2,
+        maxTurns: 1,
+        compaction: settings({ maxContextLength: 1000 }),
+      }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    const out = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    expect(compactionEvents(out)).toEqual([]);
+    expect(
+      out.some(
+        (m) =>
+          (m.payload as { type?: string }).type === "text" &&
+          textOf(m).includes("reached max turns (1)"),
+      ),
+    ).toBe(true);
+    expect(llm2.calls).toHaveLength(1);
   });
 
   it("summarize mid-task: tool outputs pair into the compaction request, summary alone feeds the new LLM", async () => {
@@ -297,7 +547,7 @@ describe("context compaction", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("do task")], { approve: allowAll }));
@@ -351,9 +601,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openNextContext: () => {
         created += 1;
-        return llm2;
+        return { llm: llm2 };
       },
     });
     const oldPath = trace.currentPath();
@@ -413,7 +663,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -446,7 +696,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openNextContext: () => ({ llm: llm1 }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -488,7 +738,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
       maxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -520,7 +770,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
       compactionMaxReconnects: 2,
       reconnectBackoffMs: 1,
     });
@@ -557,7 +807,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openNextContext: () => ({ llm: llm1 }),
       maxReconnects: 8,
       compactionMaxReconnects: 2,
       reconnectBackoffMs: 1,
@@ -620,9 +870,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openNextContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -710,9 +960,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openNextContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -798,15 +1048,11 @@ describe("context compaction", () => {
       "llm1",
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("fresh"), usage(20, 500)] }], "llm2");
-    let factoryTokens: TokenCounts | null = null;
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: (tokens) => {
-        factoryTokens = tokens;
-        return llm2;
-      },
+      openNextContext: () => ({ llm: llm2 }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -830,11 +1076,11 @@ describe("context compaction", () => {
     expect(usageBetween.map((m) => (m.payload as TokenUsagePayload).request.total)).toEqual([
       160, 170,
     ]);
-    // Session cumulative tokens carried into the new instance include the rejected attempts' usage.
-    expect(factoryTokens).toMatchObject({ total: 480 });
-
-    // The new context opens with the 5th attempt's summary.
-    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    // The new context opens with the 5th attempt's summary; the engine-authored session
+    // series continues from 480 (the rejected attempts' usage included).
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const usage2 = out2.find((m) => (m.payload as { type?: string }).type === "token_usage")!;
+    expect((usage2.payload as TokenUsagePayload).session.total).toBe(500);
     expect(llm1.calls).toHaveLength(6);
     expect(llm2.calls[0]!.map(textOf)).toEqual([
       "[context_summary]\nfifth attempt wins\n[/context_summary]",
@@ -871,7 +1117,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
       reconnectBackoffMs: 1,
     });
     const oldPath = trace.currentPath();
@@ -942,7 +1188,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -1000,9 +1246,9 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => {
+      openNextContext: () => {
         created += 1;
-        return new ScriptedLLM([], "llm2");
+        return { llm: new ScriptedLLM([], "llm2") };
       },
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
@@ -1066,7 +1312,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -1113,7 +1359,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -1152,7 +1398,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       reconnectBackoffMs: 1,
     });
 
@@ -1223,7 +1469,7 @@ describe("context compaction", () => {
       llm: model,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1258,7 +1504,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings({ maxContextLength: -1, maxSessionTurns: 2 }),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     // Triggers right at task 1's wrap-up (compacts as soon as the threshold is reached, without waiting for the next task); the summary request goes to the old instance.
@@ -1292,7 +1538,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1325,7 +1571,7 @@ describe("context compaction", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings({ mode: "discard" }),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
     const oldPath = trace.currentPath();
 
@@ -1362,7 +1608,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -1393,7 +1639,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
       reconnectBackoffMs: 1,
     });
 
@@ -1427,7 +1673,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     await collect(engine.run([userText("hi")], { approve: allowAll }));
@@ -1463,7 +1709,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
@@ -1512,7 +1758,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
       compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
@@ -1542,7 +1788,7 @@ describe("context compaction", () => {
     expect(textOf(run3[1]!)).toBe("run3");
   });
 
-  it("no compaction capability (createLLM missing) means thresholds never fire and compact() is a no-op", async () => {
+  it("no compaction capability (openNextContext missing) means thresholds never fire and compact() is a no-op", async () => {
     const llm1 = new ScriptedLLM(
       [{ messages: [assistantText("big"), usage(999999, 999999)] }],
       "llm1",
@@ -1568,7 +1814,7 @@ describe("context compaction", () => {
     // have sessionTurns == 0, but they're two completely different messages to the user: telling
     // someone who just finished compacting that there's "no completed conversation turn yet" is
     // effectively saying nothing useful.
-    // The compaction request goes to the **current** LLM (the script's second entry); createLLM
+    // The compaction request goes to the **current** LLM (the script's second entry); openNextContext
     // supplies the LLM used for the new context after compaction.
     const llm1 = new ScriptedLLM(
       [
@@ -1580,7 +1826,7 @@ describe("context compaction", () => {
     );
     const llm2 = new ScriptedLLM([{ messages: [assistantText("after"), usage(5, 20)] }], "llm2");
 
-    // (1) No compaction capability configured (no compaction / createLLM).
+    // (1) No compaction capability configured (no compaction / openNextContext).
     const noCap = new ContextEngine({ llm: llm1, environment: fakeEnvironment });
     expect(noCap.compactability()).toBe("unsupported");
 
@@ -1589,7 +1835,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
     expect(engine.compactability()).toBe("empty");
     expect(await collect(engine.compact())).toHaveLength(0);
@@ -1617,7 +1863,7 @@ describe("context compaction", () => {
       llm: new ScriptedLLM([]),
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([]),
+      openNextContext: () => ({ llm: new ScriptedLLM([]) }),
       initialState: { sessionTurns: 4 },
     });
     expect(withTurns.compactability()).toBe("ok");
@@ -1627,7 +1873,7 @@ describe("context compaction", () => {
       llm: new ScriptedLLM([]),
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([]),
+      openNextContext: () => ({ llm: new ScriptedLLM([]) }),
       initialState: { sessionTurns: 0, fromCompaction: true },
     });
     expect(justCompacted.compactability()).toBe("just_compacted");
@@ -1643,15 +1889,14 @@ describe("context compaction", () => {
     const written: OmniMessage[] = [];
     const session = new Session({
       meta: metaMessage.payload,
-      bootstrap: async () => ({ tools: [], llm: resumedLLM, mcp: [] }),
-      mcpServers: [],
+      bootstrap: async () => ({ llm: resumedLLM }),
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {
           written.push(msg);
         },
       },
-      createLLM: () => newContextLLM,
+      openNextContext: () => ({ llm: newContextLLM }),
       compaction: settings(),
       // What agent.resumeSession derives from the Trace: three completed turns of history.
       metaAlreadyWritten: true,
@@ -1683,16 +1928,15 @@ describe("context compaction", () => {
       meta: metaMessage.payload,
       bootstrap: async () => {
         bootstrapped = true;
-        return { tools: [], llm: new ScriptedLLM([]), mcp: [] };
+        return { llm: new ScriptedLLM([]) };
       },
-      mcpServers: [],
       environment: fakeEnvironment,
       trace: {
         write: async (msg) => {
           written.push(msg);
         },
       },
-      createLLM: () => new ScriptedLLM([]),
+      openNextContext: () => ({ llm: new ScriptedLLM([]) }),
       compaction: settings(),
       imagesDir: "/tmp/penguin-test-scratch",
       modelHasVision: true,
@@ -1720,7 +1964,7 @@ describe("context compaction", () => {
       llm: llm1,
       environment: fakeEnvironment,
       compaction: settings(),
-      createLLM: () => llm1,
+      openNextContext: () => ({ llm: llm1 }),
     });
     // The abort signal is already pending before the compaction request: the fake LLM finishes straight to aborted.
     const approveThenAbort: ApproveFn = async () => "allow";
@@ -1787,7 +2031,7 @@ describe("compaction summary streaming (issue #290)", () => {
       trace,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
     const oldPath = trace.currentPath();
 
@@ -1832,7 +2076,7 @@ describe("compaction summary streaming (issue #290)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
 
     const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
@@ -1955,7 +2199,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => llm2,
+      openNextContext: () => ({ llm: llm2 }),
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -2004,7 +2248,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: env,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("done"), usage(1, 1)] }], "l2"),
+      openNextContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("done"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     const gen = engine.run([userText("go")], { approve: allowAll });
@@ -2064,7 +2310,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: failingEnv,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      openNextContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -2088,7 +2336,9 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings(),
-      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      openNextContext: () => ({
+        llm: new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+      }),
     });
 
     await collect(engine.run([userText("go")], { approve: async () => "deny" }));
@@ -2111,7 +2361,7 @@ describe("mid-task compaction runs the tools first (issue #288)", () => {
       environment: fakeEnvironment,
       sessionMeta: metaMessage,
       compaction: settings({ maxContextLength: 100000 }),
-      createLLM: () => new ScriptedLLM([], "llm2"),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
     });
     await collect(engine.run([userText("hi")], { approve: allowAll }));
     await collect(engine.compact());

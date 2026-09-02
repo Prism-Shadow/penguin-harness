@@ -29,7 +29,7 @@ import {
   defaultSystemConfig,
   isKernelOutdated,
   kernelTabHash,
-  loadOrInitAgentState,
+  loadAgentState,
   resetSystemConfigToDefaults,
   systemConfigPath,
   type KernelSupersededTabHashes,
@@ -172,7 +172,7 @@ describe("applyKernelUpdate", () => {
 
   /** Creates the default agent, then rewrites its config file with the given object. */
   async function seedConfig(config: Record<string, unknown>): Promise<void> {
-    await loadOrInitAgentState({ root });
+    await loadAgentState({ init: {}, root });
     await fs.writeFile(configPath(), stringifyYaml(config), "utf8");
   }
 
@@ -189,7 +189,7 @@ describe("applyKernelUpdate", () => {
   });
 
   it("is a stamped no-op on a freshly created config", async () => {
-    await loadOrInitAgentState({ root });
+    await loadAgentState({ init: {}, root });
     const before = await readConfig();
     const result = await update();
     expect(result).toEqual({ advanced: [], kept: [], kernelVersion: KERNEL_VERSION });
@@ -324,7 +324,7 @@ describe("applyKernelUpdate", () => {
   });
 
   it("tolerates dangling/invalid section keys (a hand-edited `tools:` with no value parses as null)", async () => {
-    await loadOrInitAgentState({ root });
+    await loadAgentState({ init: {}, root });
     await fs.writeFile(
       configPath(),
       // `tools` is a dangling key: the whole tab reads absent and must be materialized instead
@@ -346,7 +346,7 @@ describe("applyKernelUpdate", () => {
   });
 
   it("preserves YAML comments on untouched content", async () => {
-    await loadOrInitAgentState({ root });
+    await loadAgentState({ init: {}, root });
     const raw = await fs.readFile(configPath(), "utf8");
     await fs.writeFile(
       configPath(),
@@ -374,12 +374,12 @@ describe("kernel stamping on the materialization paths", () => {
   });
 
   it("a newly created agent is stamped with the current kernel version", async () => {
-    const state = await loadOrInitAgentState({ root });
+    const state = await loadAgentState({ init: {}, root });
     expect(state.systemConfig.kernel_version).toBe(KERNEL_VERSION);
   });
 
   it("restore-defaults re-stamps a config that predates the mechanism", async () => {
-    await loadOrInitAgentState({ root });
+    await loadAgentState({ init: {}, root });
     const configPath = systemConfigPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(configPath, "system_prompt: old\nversion: 3\n", "utf8");
     const written = await resetSystemConfigToDefaults(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);

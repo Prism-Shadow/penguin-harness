@@ -10,7 +10,7 @@
  * Session's SSE stream (subscribe first, POST second) through the shared watcher.
  * `/goal[:<budget>] <objective>` runs goal mode; `/compact` POSTs a compaction and
  * renders its progress; `/clear` creates a fresh server Session in place; `/thinking`
- * shows or overrides the per-turn thinking level; `/verbose` toggles tool-output
+ * shows or re-pins the Session's thinking level; `/verbose` toggles tool-output
  * collapsing (display only); `/exit` or `/quit` exits. Typing while a turn runs POSTs
  * a steering message (delivered between turns); Ctrl-C during a run POSTs /abort.
  *
@@ -44,6 +44,7 @@ import {
   getSessionInfo,
   getSessionMessages,
   listAgentSessions,
+  pinThinkingLevel,
   resolveWorkspace,
 } from "../server-session.js";
 import { SessionStream, watchTask } from "../server-task.js";
@@ -155,25 +156,27 @@ export function registerChatCommand(program: Command, t: Messages): void {
               ? { approvalMode: caller.approvalMode }
               : {}),
         });
-        // `--thinking` on a new chat pins the Session default (sticky server-side, so
-        // spawned subagent sessions follow it — the same effect creation-time pinning
-        // had); with no flag, the caller's level pins the same way.
+        // `--thinking` on a new chat pins the Session (sticky server-side: it rides every
+        // later request of this Session; a subagent it spawns inherits the level its
+        // parent's context opened with, not the pin — run_subagent's own argument sets a
+        // child's level); with no flag, the caller's level pins the same way.
         const pin = flagThinking ?? caller?.thinkingLevel;
         if (pin) {
-          await client.request("PATCH", `/api/sessions/${session.sessionId}`, {
-            thinkingLevel: pin,
-          });
+          await pinThinkingLevel(client, session.sessionId, pin);
           session = { ...session, thinkingLevel: pin };
         }
       }
 
-      // Thinking level shown/changed by `/thinking` (a per-turn run parameter):
-      // - a new chat's `--thinking` pinned the Session default above; under `--resume`
-      //   the Session already exists and the flag becomes the initial per-turn override.
-      // - `/thinking <level>` sets the override; unset turns omit the parameter so the
-      //   Session's pinned level (else the Agent config) applies.
-      let thinkingOverride = opts.resume !== undefined ? flagThinking : undefined;
-      const sessionThinkingDefault = (): string =>
+      // The thinking level is pinned on the Session (PATCH) and core applies it from the
+      // next LLM request — the soft-limited parameter: a mid-context change is allowed,
+      // and the /thinking reply advises compacting first since it costs the provider's
+      // cached context. `--thinking` under `--resume` pins the existing Session the same
+      // way; `/thinking <level>` re-pins.
+      if (opts.resume !== undefined && flagThinking) {
+        await pinThinkingLevel(client, session.sessionId, flagThinking);
+        session = { ...session, thinkingLevel: flagThinking };
+      }
+      const sessionThinkingLevel = (): string =>
         session.thinkingLevel ?? t.chatThinkingConfigured();
 
       let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
@@ -465,17 +468,15 @@ export function registerChatCommand(program: Command, t: Messages): void {
             if (!parsed.ok) {
               out.write(`${t.error(t.thinkingInvalid(parsed.value))}\n`);
             } else if (parsed.level === null) {
-              const sessionDefault = sessionThinkingDefault();
-              out.write(
-                `${
-                  thinkingOverride
-                    ? t.thinkingCurrentOverride(thinkingOverride, sessionDefault)
-                    : t.thinkingCurrentDefault(sessionDefault)
-                }\n`,
-              );
+              out.write(`${t.thinkingCurrent(sessionThinkingLevel())}\n`);
             } else {
-              thinkingOverride = parsed.level;
-              out.write(`${t.thinkingSet(parsed.level)}\n`);
+              try {
+                await pinThinkingLevel(client, session.sessionId, parsed.level);
+                session = { ...session, thinkingLevel: parsed.level };
+                out.write(`${t.thinkingSet(parsed.level)}\n`);
+              } catch (err) {
+                out.write(`${t.error(err instanceof Error ? err.message : String(err))}\n`);
+              }
             }
             continue;
           }
@@ -523,11 +524,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
               // Carry the current session's pinned thinking level over (whether it came
               // from --thinking or from the calling session's context).
               const pin = session.thinkingLevel;
-              if (pin) {
-                await client.request("PATCH", `/api/sessions/${next.sessionId}`, {
-                  thinkingLevel: pin,
-                });
-              }
+              if (pin) await pinThinkingLevel(client, next.sessionId, pin);
               if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
               session = pin ? { ...next, thinkingLevel: pin } : next;
               renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
@@ -547,7 +544,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
                   () =>
                     client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
                       input: [{ type: "text", text: parsed.objective }],
-                      ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                       goal: { budget: parsed.budget },
                     }),
                   { goal: true },
@@ -558,7 +554,6 @@ export function registerChatCommand(program: Command, t: Messages): void {
               await runTurn(() =>
                 client.request("POST", `/api/sessions/${session.sessionId}/tasks`, {
                   input: [{ type: "text", text }],
-                  ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                 }),
               );
             }

@@ -131,7 +131,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/version | 当前运行构建的身份，外加该根目录被推送的 harness：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`，与 `penguin version --json` 输出同一份记录。`harness` 描述该数据根目录的 HMR store（`{source, pushedAt, bundles}`，其中 `source` 为推送方 checkout 的 `{repo, revision}`），从未被推送过时为 null。`describe` 是单行身份（发布版为 `v0.2.3`，源码构建为 `v0.2.3-14-g9e8f7d6-dirty`）；`channel` 取 `release` 或 `source`；`buildDate`（UTC yyyy-mm-dd）与 `commit` 在构建时打入、无需联网，源码构建以及打入机制之前的发布版为 null；`branch` 与 `dirty` 记录源码构建的 git 位置，发布版为 null |
 | GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
-| POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
+| GET | /api/version/update | **仅管理员。**在线更新任务的状态：`{state: idle \| running \| done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`——运行中带 `phase`（`resolving` / `downloading` / `installing`）与 `percent`（从安装器的进度条读出）；结束后带 `result`（`{status, reason?, output, needsRestart}`）。更新弹窗在任务运行期间轮询它 |
+| POST | /api/version/update | **仅管理员。**启动在线更新任务——在服务器上后台运行 `penguin update --yes`——已有任务在跑则并入；应答与 GET 完全一致。已结束的任务可以再次启动（即重试） |
+| POST | /api/version/restart | **仅管理员。**请求进程在优雅关闭后以托管进程约定的重启退出码退出，由 `penguin server \| penguin web` 在已安装的版本上重新拉起：`{restarting: true}`；没有托管进程时为 `{restarting: false, reason: "no_supervisor"}` |
 
 `update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
 
@@ -245,15 +247,15 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
-| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级固定在该 Session 上并持久化：此后凡是自身未携带等级的运行都改用它，而不再回落到 Agent 配置；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未固定） |
+| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
-| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files, thinkingLevel?}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
+| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
@@ -377,8 +379,7 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // 本次 Task 的思考等级（逐轮参数，六档之一；非法值 400）；缺省 = 先回退到该 Session 固定的档位，再回退到 Agent 配置
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  // 思考等级不是 Task 参数：它属于模型上下文——用 PATCH 钉在 Session 上，此后开启的每个上下文都以钉住的等级运行
 }
 type TaskInputPart =
   | { type: "text"; text: string }

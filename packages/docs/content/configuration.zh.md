@@ -95,7 +95,7 @@ output = 0.857143
 
 ### 沙箱安全策略
 
-`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，模型收到固定文案 `Tool call denied by policy.`——与人工取消可区分——从而换路。策略放在 Project 配置而不是 Agent State：Agent 改自己的配置改不到它，且每个 Session 在创建时读取快照，运行中改动要到下次加载才生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身。
+`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，模型收到固定文案 `Tool call denied by policy.`——与人工取消可区分——从而换路。策略放在 Project 配置而不是 Agent State：Agent 经自己的配置面改不到它。它属于运行参数的严格层：随模型上下文在开启时读取一次，修改在各运行中 Session 的下一次轮换（压缩）生效，新对话立即生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身，改动同样在下一次轮换生效。
 
 规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集读回编辑区，由 Save 落盘。
 
@@ -146,8 +146,8 @@ enabled = false
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
 | `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
-| `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；每个模型上下文开启时采用的档位（Session 钉住的档位优先），上下文内固定，修改在下一次压缩后生效 |
+| `model.timeoutMs` | `300000` | 单次 Request 的**空闲**超时（毫秒）：等待上游下一个事件的上限，收到任一事件即归零重计，不是整次请求的总时长上限。它约束的是连接建立与首个事件的等待、以及流式过程中的事件间隔——思考不外露的模型整段推理都落在「首个事件」这一段里，缺省值为此留足余量 |
 | `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -183,7 +183,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 120000
+  timeoutMs: 300000
 
 compaction:
   max_context_length: 256000
@@ -233,7 +233,7 @@ compaction:
 
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
-`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
+`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（见[上下文压缩](/agent-loop)）。
 
 Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
 

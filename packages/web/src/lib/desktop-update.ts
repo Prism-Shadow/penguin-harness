@@ -1,9 +1,8 @@
 /**
- * Client-update row logic for the sidebar user menu (desktop shell only).
- *
- * The row's data is the shell's updater snapshot; use-desktop-update.ts owns the
- * polling, the armed-check watch and the toasts, these helpers keep the mapping pure
- * (vitest runs node-only here, so nothing renders — same split as account-menu.ts).
+ * Client-update helpers for the desktop shell's own window: whether the client update
+ * surface is offered at all, and when an armed row-initiated check has settled.
+ * use-desktop-update.ts owns the polling and the armed watch; these keep the decisions
+ * pure (vitest runs node-only here, so nothing renders — same split as account-menu.ts).
  */
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
 import type { AccountMenuSession } from "./account-menu";
@@ -20,93 +19,10 @@ export function offersClientUpdate(session: AccountMenuSession): boolean {
   return session.desktopMode && session.sessionVia === "desktop";
 }
 
-/** The row's render mode; action and busy derive from it (ROW_BEHAVIOR), so they cannot disagree. */
-export type ClientUpdateLabelKind =
-  | "check"
-  | "checking"
-  | "downloading"
-  | "install"
-  | "unsupported"
-  /** No snapshot yet (the shell wires its port a beat after boot): render disabled until one lands. */
-  | "unknown";
-
-const ROW_BEHAVIOR: Record<
-  ClientUpdateLabelKind,
-  { action: "check" | "install" | "none"; busy: boolean }
-> = {
-  check: { action: "check", busy: false },
-  checking: { action: "none", busy: true },
-  downloading: { action: "none", busy: true },
-  install: { action: "install", busy: false },
-  unsupported: { action: "none", busy: false },
-  unknown: { action: "none", busy: false },
-};
-
-/** What the row renders for one snapshot. */
-export interface ClientUpdateRowModel {
-  labelKind: ClientUpdateLabelKind;
-  /** What a click does; `none` renders the row disabled. Derived from labelKind. */
-  action: "check" | "install" | "none";
-  /** Spinner + no click while the shell is checking or downloading. Derived from labelKind. */
-  busy: boolean;
-  /** Newer release the label names (`downloading`, `install`). */
-  version: string | null;
-  /** Download progress 0–100, when the shell reported one. */
-  percent: number | null;
-  /** Installed client version for the right-aligned chip; null until the first push. */
-  appVersion: string | null;
-  /** Why updates are off (`unsupported` label's tooltip). */
-  unsupportedReason: "dev" | "linux-not-appimage" | null;
-}
-
-function rowOf(
-  labelKind: ClientUpdateLabelKind,
-  status: DesktopUpdateStatus | null,
-  rest: Partial<Pick<ClientUpdateRowModel, "version" | "percent" | "unsupportedReason">> = {},
-): ClientUpdateRowModel {
-  return {
-    labelKind,
-    ...ROW_BEHAVIOR[labelKind],
-    version: null,
-    percent: null,
-    appVersion: status?.appVersion ?? null,
-    unsupportedReason: null,
-    ...rest,
-  };
-}
-
-/**
- * Maps one snapshot to the row. `checkPending` is the gap between clicking the check
- * and the shell's `checking` frame landing: the row already spins, so a second click
- * cannot arm a second watch.
- */
-export function clientUpdateRow(
-  status: DesktopUpdateStatus | null,
-  checkPending = false,
-): ClientUpdateRowModel {
-  if (status === null) return rowOf("unknown", status);
-  switch (status.state) {
-    case "unsupported":
-      return rowOf("unsupported", status, { unsupportedReason: status.reason ?? null });
-    case "checking":
-      return rowOf("checking", status);
-    case "downloading":
-      return rowOf("downloading", status, {
-        version: status.version ?? null,
-        percent: status.percent ?? null,
-      });
-    case "downloaded":
-      return rowOf("install", status, { version: status.version ?? null });
-    // idle / up-to-date / error all offer the (re-)check; error details reach the user
-    // through the settle toast of the check that produced them, not a persistent row.
-    default:
-      return checkPending ? rowOf("checking", status) : rowOf("check", status);
-  }
-}
-
-/** How one row-initiated check ended, for exactly one toast per outcome (the same rule as the server-update row's manual check). */
+/** How one row-initiated check ended, for exactly one report per outcome (in the modal when it is open, a toast otherwise). */
 export type ClientCheckSettle =
   | { kind: "up-to-date" }
+  /** The check offered a release (`available`), or ran into one already being fetched. */
   | { kind: "found"; version: string | null }
   /** The check ran into a build already sitting on disk: point at the install step, not at a download. */
   | { kind: "ready"; version: string | null }
@@ -146,6 +62,7 @@ export function clientCheckSettle(
   switch (now.state) {
     case "up-to-date":
       return { kind: "up-to-date" };
+    case "available":
     case "downloading":
       return { kind: "found", version: now.version ?? null };
     case "downloaded":

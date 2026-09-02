@@ -304,6 +304,13 @@ export class HmrHost {
       const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
       const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
       const webMem = filesMapFromGzip(gz);
+      // The same floor a push is held to (doUpgradeAll): a web version without its entry
+      // page would be committed as "restored" and then answer 404 to every navigation,
+      // with nothing in the log to say why. Failing here lands on the packaged default
+      // instead, and names the reason.
+      if (!webMem.has("index.html")) {
+        throw new Error(`web dist '${manifest.web.manifest}' has no index.html`);
+      }
       // Everything validated: commit together. boot() runs last so a boot failure
       // leaves nothing partially applied either.
       const instance = (await boot(

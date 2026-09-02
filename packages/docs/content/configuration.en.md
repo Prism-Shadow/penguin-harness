@@ -95,7 +95,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 
 ### Command policy
 
-The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied at the approval boundary itself to both tools that reach a shell — `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into an already-running one) — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model receives the fixed line `Tool call denied by policy.` — distinct from a person's cancellation — and changes course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration cannot reach it, and each Session snapshots it at creation, so a mid-Session edit takes effect only from the next load. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself.
+The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied at the approval boundary itself to both tools that reach a shell — `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into an already-running one) — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model receives the fixed line `Tool call denied by policy.` — distinct from a person's cancellation — and changes course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration through its settings surface cannot reach it. It sits in the strict tier of runtime parameters: read once per model context, when the context opens — an edit reaches a running Session at its next rotation (compaction), and new conversations at once. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself, and the rewrite takes effect at the next rotation: an accident guardrail, not a security boundary.
 
 The rules are **plain data with no special tiers**: the factory set is seeded into each new project exactly like the model presets — copied in at creation, never rewritten afterward — and every rule can then be edited, disabled, deleted, or joined by new ones. A project from before the seeding (no `rules` list stored) behaves as the factory set until its first saved edit materializes the list; the settings page's "Restore defaults" loads the factory set back into the editor, and Save writes it.
 
@@ -146,8 +146,8 @@ Manage it from the Security policy tab of Project Settings in the Web App (owner
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the session default, overridable per-Task |
-| `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the level each model context opens at unless the Session pins one — fixed for the context, so a change lands at the next compaction |
+| `model.timeoutMs` | `300000` | **Idle** budget for a Request (milliseconds): the longest wait for the next upstream event, reset by every event — not a cap on the request's total duration. It bounds the connect + first-event wait and the gaps between events; a model that keeps its reasoning off the wire spends its whole thinking phase inside that first gap, which is what the default leaves room for |
 | `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction; the effective threshold is the smaller of this and the model's `context_window` − 2048, so a small-window model compacts inside its window while a window above 258048 fires at this number (an entry with no `context_window` assumes a 128000 window) |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
@@ -183,7 +183,7 @@ max_turns: -1
 model:
   max_tokens: 32000
   thinking_level: medium
-  timeoutMs: 120000
+  timeoutMs: 300000
 
 compaction:
   max_context_length: 256000
@@ -233,7 +233,7 @@ For developers: `kernel_version` advances manually, and only on a substantive ch
 
 On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
-`agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
+`agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)). Like the rest of the Agent State — `system_config.yaml` included — it is read whenever a model context opens: at Session creation and again when a compaction opens the next context. An edit therefore takes effect at the next compaction of a running Session, not only in new Sessions, and never inside the context that is running (see [Compaction](/agent-loop)).
 
 The Vault / Skills / Memory / Schedules sections all follow the same placeholder + toggle + editable prompt pattern: the template holds only the `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` placeholders, the section text lives in the corresponding `*.prompt` config (edited on its settings tab), and turning `*.enabled` off empties the whole block. The four section placeholders are expanded **last, in a single pass** at assembly time: expansion products are never rescanned, so placeholder-looking text inside a memory index or a section prompt stays literal instead of triggering a second substitution.
 

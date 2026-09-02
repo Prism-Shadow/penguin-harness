@@ -12,7 +12,15 @@ import { z } from "zod";
 import { Environment } from "../src/environment/index.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
 import { Session } from "../src/session.js";
-import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
+import {
+  assistantText,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  toolCall,
+  toolListReady,
+  userText,
+} from "../src/omnimessage/index.js";
+import { mcpConnectOutcome } from "../src/internal/session-support.js";
 import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
 import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces/index.js";
 
@@ -110,6 +118,82 @@ describe("renderCallToolResult", () => {
       images: [],
     });
   });
+});
+
+describe("Environment.reconfigure with MCP Servers (a new model context's server list)", () => {
+  let dir: string;
+  let env: Environment;
+
+  beforeAll(async () => {
+    dir = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-reconf-")));
+    env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
+    });
+  });
+
+  afterAll(async () => {
+    env.dispose();
+    await rmEventually(dir);
+  }, 30_000);
+
+  it("closes the previous context's servers and connects the new list on the next listTools", async () => {
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx__echo");
+    expect(env.pendingMcpServerNames()).toEqual([]);
+
+    // A context without servers: nothing listed, the old tool names no longer resolve.
+    env.reconfigure({ toolConfig: { customTools: [], mcpServers: [] }, vault: {} });
+    expect(env.pendingMcpServerNames()).toEqual([]);
+    expect(env.mcpConnectResults()).toEqual([]);
+    expect(await env.listTools()).toEqual([]);
+    const gone = finalPayload(await runTool(env, "mcp__fx__echo", { text: "x" }));
+    expect(gone.stop_reason).toBe("fatal");
+    expect(gone.output).toContain("Unknown tool: mcp__fx__echo");
+
+    // A context with the server under a new name: connected afresh, lazily, on listTools —
+    // the tools come back under the new prefix and execute.
+    env.reconfigure({
+      toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+      vault: {},
+    });
+    expect(env.pendingMcpServerNames()).toEqual(["fx2"]);
+    expect(env.mcpConnectResults()).toEqual([]);
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
+    expect(env.mcpConnectResults()).toEqual([
+      expect.objectContaining({ server: "fx2", status: "completed" }),
+    ]);
+    const echoed = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "hi" }));
+    expect(echoed.stop_reason).toBe("completed");
+    expect(echoed.output).toBe("echo: hi");
+
+    // The same entry again — a Session compacting every turn must not respawn its servers:
+    // nothing is pending, the next listTools runs no connect phase (no outcome to report),
+    // and the connection keeps serving.
+    env.reconfigure({
+      toolConfig: { customTools: [], mcpServers: [{ ...fixtureEntry(), name: "fx2" }] },
+      vault: {},
+    });
+    expect(env.pendingMcpServerNames()).toEqual([]);
+    expect((await env.listTools()).map((t) => t.name)).toContain("mcp__fx2__echo");
+    expect(env.mcpConnectResults()).toEqual([]);
+    const again = finalPayload(await runTool(env, "mcp__fx2__echo", { text: "kept" }));
+    expect(again.output).toBe("echo: kept");
+
+    // A changed entry (a new env var for the server) is a different server: reconnected.
+    env.reconfigure({
+      toolConfig: {
+        customTools: [],
+        mcpServers: [{ ...fixtureEntry({ env: { FIXTURE_SECRET: "v2" } }), name: "fx2" }],
+      },
+      vault: {},
+    });
+    expect(env.pendingMcpServerNames()).toEqual(["fx2"]);
+    await env.listTools();
+    expect(env.mcpConnectResults()).toEqual([
+      expect.objectContaining({ server: "fx2", status: "completed" }),
+    ]);
+    expect(finalPayload(await runTool(env, "mcp__fx2__probe", {})).output).toMatch(/^v2\|/);
+  }, 30_000);
 });
 
 describe("MCP over stdio through Environment", () => {
@@ -363,7 +447,7 @@ describe("MCP over stdio — per-server permission override", () => {
     const provider = new McpToolProvider([fixtureEntry({ permission: "readonly" })], { warn });
     try {
       expect(await provider.listTools()).toEqual([]);
-      expect(provider.serverNames()).toEqual([]);
+      expect(provider.pendingServerNames()).toEqual([]);
       expect(warn).toHaveBeenCalledWith(
         expect.stringMatching(/MCP server "fx" skipped: "permission" must be "auto", "r" or "rw"/),
       );
@@ -403,12 +487,16 @@ describe("Session first-run bootstrap events", () => {
     };
     return new Session({
       meta,
-      bootstrap: async () => ({
-        tools: await env.listTools(),
-        llm: fakeLLM,
-        mcp: env.mcpConnectResults(),
-      }),
-      mcpServers: env.mcpServerNames(),
+      // The real composition layer's opening procedure, spelled out: connect pair around
+      // the pending connect, then the toolset record, all through emit.
+      bootstrap: async ({ emit }) => {
+        const pending = env.pendingMcpServerNames();
+        if (pending.length > 0) emit(mcpConnectBegin(pending));
+        const tools = await env.listTools();
+        if (pending.length > 0) emit(mcpConnectEnd(mcpConnectOutcome(env.mcpConnectResults())));
+        emit(toolListReady(tools));
+        return { tools, llm: fakeLLM };
+      },
       environment: env,
       trace: {
         write: async (msg) => {
@@ -519,12 +607,15 @@ describe("Session first-run bootstrap events", () => {
         agent_state: tmp,
         workspace: tmp,
       },
-      bootstrap: async () => {
+      bootstrap: async ({ emit }) => {
         calls += 1;
+        emit(mcpConnectBegin(["fx"]));
         await gate;
-        return { tools: [{ name: "t", description: "d" }], llm: capturingLLM, mcp: [] };
+        emit(mcpConnectEnd({ status: "completed", results: [] }));
+        const tools = [{ name: "t", description: "d" }];
+        emit(toolListReady(tools));
+        return { tools, llm: capturingLLM };
       },
-      mcpServers: ["fx"],
       environment: env,
       trace: {
         write: async (msg) => {

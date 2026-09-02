@@ -101,6 +101,7 @@ export interface AgentState {
   agentId: string;
   stateDir: string;
   systemConfig: SystemConfig;
+  /** `AGENTS.md` as read when the State was loaded. A Session never runs on a State object it did not load itself: every model context is assembled from a fresh `loadAgentState` (see Agent.createSession). */
   agentsMd: string;
 }
 
@@ -122,20 +123,36 @@ export interface SessionEnvironmentValues {
   date: string;
 }
 
+/** Reads the Agent's `AGENTS.md` as it is on disk right now; a missing file reads as the default content (see `loadAgentState`). */
+export async function readAgentsMd(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<string> {
+  const mdPath = agentsMdPath(root, projectId, agentId);
+  return (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();
+}
+
 /**
- * Loads or initializes Agent State.
+ * THE Agent State loader — the one function behind initialization and rotation alike.
  *
- * When root/project/agent are omitted, `resolveRoot()` and the default constants are used. If
- * `system_config.yaml` doesn't exist, the directory is treated as empty and initialized;
- * otherwise the existing content is loaded. `preset` only takes effect on the initialization
- * path (name/description/AGENTS.md overrides and extra Skills) and is ignored when loading an
- * existing Agent — existing config is never overwritten.
+ * Loads the State as it is on disk right now (`system_config.yaml` and `AGENTS.md`). With
+ * `init` given and no `system_config.yaml` present, the directory is treated as a new Agent
+ * and initialized first (structure, default config, preinstalled Skills; `init.preset`
+ * applies there only) — the create-or-load entry `createAgent` and project provisioning use.
+ * Without `init`, a missing Agent throws: the other caller is a model context opening —
+ * Session creation, the context a completed compaction opens, a resume that finds its
+ * context closed — which must never re-create a deleted Agent as a side effect. Either way
+ * an edit to the Agent State lands in the next context and never in the one that is
+ * running; the snapshot a long-lived Agent object holds is not what a Session runs on.
+ * Docs: /docs/agent-loop § "Compaction".
  */
-export async function loadOrInitAgentState(opts?: {
+export async function loadAgentState(opts?: {
   agentId?: string;
   projectId?: string;
   root?: string;
-  preset?: AgentPreset;
+  /** Initialize a not-yet-initialized Agent instead of throwing (`preset` applies on that path only; an existing Agent is never overwritten). */
+  init?: { preset?: AgentPreset };
 }): Promise<AgentState> {
   const root = opts?.root ?? resolveRoot();
   const projectId = opts?.projectId ?? DEFAULT_PROJECT_ID;
@@ -147,15 +164,10 @@ export async function loadOrInitAgentState(opts?: {
 
   const stateDir = agentStateDir(root, projectId, agentId);
   const configPath = systemConfigPath(root, projectId, agentId);
-  const mdPath = agentsMdPath(root, projectId, agentId);
-
-  let systemConfig: SystemConfig;
-  let agentsMd: string;
 
   if (await fileExists(configPath)) {
-    // Load path: read the existing system_config.yaml and AGENTS.md.
-    const rawConfig = await fs.readFile(configPath, "utf8");
-    const parsed = parseYaml(rawConfig) as unknown;
+    // Load path: the State as it is on disk.
+    const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
     // Defensive check: if the file is empty/corrupted, parseYaml may return null/a non-object,
     // or system_prompt may be missing — otherwise "undefined" would get spliced into the system
     // Prompt. Throw a clear error when validation fails.
@@ -168,52 +180,60 @@ export async function loadOrInitAgentState(opts?: {
         `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
       );
     }
-    systemConfig = parsed as SystemConfig;
-    agentsMd = (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();
-  } else {
-    // Init path: create the directory structure and write default config (preset only takes effect here).
-    await Promise.all([
-      fs.mkdir(stateDir, { recursive: true }),
-      fs.mkdir(toolsDir(root, projectId, agentId), { recursive: true }),
-      // Creates memory/user/ (and memory/ above it) with an empty MEMORY.md, so the User scope
-      // exists from the Agent's first day; Workspace scopes appear at Session creation.
-      ensureUserMemoryDir(root, projectId, agentId),
-      fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
-      fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
-    ]);
-    const preset = opts?.preset;
-    systemConfig = {
-      ...defaultSystemConfig(),
-      ...(preset?.name !== undefined ? { name: preset.name } : {}),
-      ...(preset?.description !== undefined ? { description: preset.description } : {}),
+    return {
+      root,
+      projectId,
+      agentId,
+      stateDir,
+      systemConfig: parsed as SystemConfig,
+      agentsMd: await readAgentsMd(root, projectId, agentId),
     };
-    agentsMd = preset?.agentsMd ?? defaultAgentsMd();
-    // Only installs the Skills specified by preset (a plain newly created Agent gets none
-    // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
-    // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
-    // the install policy follows Agent identity, not whether creation came from the server or
-    // was done directly via SDK/CLI.
-    // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
-    // reads SKILL.md with shell and follows it.
-    const skills =
-      opts?.preset === undefined && agentId === DEFAULT_AGENT_ID
-        ? loadPreinstalledSkills()
-        : (opts?.preset?.skills ?? []);
-    await Promise.all([
-      atomicWriteFile(mdPath, agentsMd, { followSymlinks: true }),
-      ...skills.map((skill) => installSkill(root, projectId, agentId, skill)),
-      // The example Benchmark is only provisioned alongside default_agent (so the evaluation
-      // center has data out of the box): idempotently skipped if benchmarks/ already exists,
-      // and not created for plain Agents.
-      ...(agentId === DEFAULT_AGENT_ID
-        ? [provisionExampleBenchmark(root, projectId, agentId)]
-        : []),
-    ]);
-    // system_config.yaml is written last: its existence is the "initialization complete" marker
-    // (the load/init decision point). If this fails partway (disk full / crash), the next run
-    // still takes the init path and self-heals, so no half-initialized state with missing Skills is left behind.
-    await atomicWriteFile(configPath, stringifyYaml(systemConfig), { followSymlinks: true });
   }
+
+  if (!opts?.init) {
+    throw new Error(`Agent State is not initialized: ${configPath} does not exist.`);
+  }
+
+  // Init path: create the directory structure and write default config (preset only takes effect here).
+  await Promise.all([
+    fs.mkdir(stateDir, { recursive: true }),
+    fs.mkdir(toolsDir(root, projectId, agentId), { recursive: true }),
+    // Creates memory/user/ (and memory/ above it) with an empty MEMORY.md, so the User scope
+    // exists from the Agent's first day; Workspace scopes appear at Session creation.
+    ensureUserMemoryDir(root, projectId, agentId),
+    fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
+    fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
+  ]);
+  const preset = opts.init.preset;
+  const systemConfig: SystemConfig = {
+    ...defaultSystemConfig(),
+    ...(preset?.name !== undefined ? { name: preset.name } : {}),
+    ...(preset?.description !== undefined ? { description: preset.description } : {}),
+  };
+  const agentsMd = preset?.agentsMd ?? defaultAgentsMd();
+  // Only installs the Skills specified by preset (a plain newly created Agent gets none
+  // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
+  // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
+  // the install policy follows Agent identity, not whether creation came from the server or
+  // was done directly via SDK/CLI.
+  // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
+  // reads SKILL.md with shell and follows it.
+  const skills =
+    preset === undefined && agentId === DEFAULT_AGENT_ID
+      ? loadPreinstalledSkills()
+      : (preset?.skills ?? []);
+  await Promise.all([
+    atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
+    ...skills.map((skill) => installSkill(root, projectId, agentId, skill)),
+    // The example Benchmark is only provisioned alongside default_agent (so the evaluation
+    // center has data out of the box): idempotently skipped if benchmarks/ already exists,
+    // and not created for plain Agents.
+    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId, agentId)] : []),
+  ]);
+  // system_config.yaml is written last: its existence is the "initialization complete" marker
+  // (the load/init decision point). If this fails partway (disk full / crash), the next run
+  // still takes the init path and self-heals, so no half-initialized state with missing Skills is left behind.
+  await atomicWriteFile(configPath, stringifyYaml(systemConfig), { followSymlinks: true });
 
   return { root, projectId, agentId, stateDir, systemConfig, agentsMd };
 }
@@ -221,9 +241,10 @@ export async function loadOrInitAgentState(opts?: {
 /**
  * Initializes a Project's built-in Agent (the only built-in Agent: default_agent).
  *
- * Calls loadOrInitAgentState for each one: an Agent whose directory already exists (including a
- * default_agent created earlier by the CLI) is only loaded, never overwritten (preset only
- * takes effect on initialization). Returns the list of built-in Agent ids.
+ * Calls the init-enabled `loadAgentState` for each one: an Agent whose directory already
+ * exists (including a default_agent created earlier by the CLI) is only loaded, never
+ * overwritten (preset only takes effect on initialization). Returns the list of built-in
+ * Agent ids.
  */
 export async function provisionProjectAgents(opts?: {
   root?: string;
@@ -231,11 +252,11 @@ export async function provisionProjectAgents(opts?: {
 }): Promise<string[]> {
   const agentIds: string[] = [];
   for (const { agentId, preset } of builtinProjectAgentPresets()) {
-    await loadOrInitAgentState({
+    await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
       agentId,
-      preset,
+      init: { preset },
     });
     agentIds.push(agentId);
   }
@@ -255,7 +276,7 @@ export async function provisionProjectAgents(opts?: {
  * preserved (the file is rewritten from the default object). Other Agent State files
  * (AGENTS.md, skills/, vault, memory/ …) are untouched. Returns the config written.
  *
- * Requires an existing Agent: unlike `loadOrInitAgentState` this never initializes a new
+ * Requires an existing Agent: unlike an init-enabled `loadAgentState` this never initializes a new
  * one — it throws when `system_config.yaml` is missing.
  */
 export async function resetSystemConfigToDefaults(
