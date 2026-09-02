@@ -215,6 +215,71 @@ export function parseScheduledMessage(
 }
 
 // ---------------------------------------------------------------------------
+// [app_center] — an App Center restart / stop request, followed by the instructions
+// ---------------------------------------------------------------------------
+
+/** Actions the App Center sends to an app's owning Session. */
+export type AppCenterAction = "restart" | "stop";
+
+/** Origin info for an App Center action message. */
+export interface AppCenterOrigin {
+  /** The registered app's id (its file name under the Project's apps/ directory). */
+  appId: string;
+  /** Display name; omitted from the block (and absent here) when it equals the id. */
+  appName?: string;
+  action: AppCenterAction;
+}
+
+/**
+ * Action input = an `[app_center]` origin block (app and action) + the instruction body: tells
+ * the model the App Center asked for this on the user's behalf; the frontend collapses the
+ * block into a one-line App Center hint and renders the body as usual (Trace shows it verbatim).
+ */
+export function buildAppCenterMessage(origin: AppCenterOrigin, instructions: string): string {
+  const name = origin.appName && origin.appName !== origin.appId ? ` (${origin.appName})` : "";
+  const block = markerBlock(
+    MARKER_TAGS.appCenter,
+    [
+      "This message was sent by the App Center on the user's behalf; the app and the requested action are listed below and the instructions follow.",
+      `app: ${origin.appId}${name}`,
+      `action: ${origin.action}`,
+    ].join("\n"),
+  );
+  return instructions ? `${block}\n\n${instructions}` : block;
+}
+
+const APP_CENTER_PATTERNS = dualFormPatterns(MARKER_TAGS.appCenter, "\\n([\\s\\S]*?)\\n");
+
+/**
+ * Inverse of `buildAppCenterMessage`: returns origin info and the remaining text when the
+ * message **starts with** an `[app_center]` block, otherwise null. Prefix-block semantics like
+ * `[scheduled_task]`: the body after the block is returned for normal rendering.
+ */
+export function parseAppCenterMessage(
+  text: string,
+): { origin: AppCenterOrigin; rest: string } | null {
+  const m = matchDualForm(APP_CENTER_PATTERNS, text);
+  if (!m || m.index !== 0) return null;
+  let appId = "";
+  let appName: string | undefined;
+  let action: AppCenterAction | null = null;
+  for (const [key, value] of fieldLines(m[1]!, ["app", "action"])) {
+    if (key === "app") {
+      const { id, label } = splitLabeled(value);
+      appId = id;
+      if (label !== undefined) appName = label;
+    } else if (value === "restart" || value === "stop") {
+      action = value;
+    }
+  }
+  if (!appId || action === null) return null;
+  return {
+    origin: { appId, ...(appName !== undefined ? { appName } : {}), action },
+    rest: text.slice(m[0].length).replace(/^\n+/, ""),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // [model_switch_from] — the /model command's handoff-style conversation switch
 // ---------------------------------------------------------------------------
 
@@ -398,8 +463,9 @@ export function isSteeredBackgroundNotice(text: string): boolean {
  * and must be left alone. Deliberately implemented by running the parsers rather than
  * re-testing their patterns, so the predicate cannot drift from what they accept.
  *
- * `[use_skills]` and `[scheduled_task]` are **not** included: they are prefix blocks followed by
- * the message's own body and are parsed at index 0 only, so appending after that body is safe.
+ * `[use_skills]`, `[scheduled_task]` and `[app_center]` are **not** included: they are prefix
+ * blocks followed by the message's own body and are parsed at index 0 only, so appending after
+ * that body is safe.
  */
 export function isWholeOriginBlock(text: string): boolean {
   return parseHandoffMessage(text) !== null || parseModelSwitchMessage(text) !== null;
