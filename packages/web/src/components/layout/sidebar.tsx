@@ -1855,6 +1855,10 @@ export function Sidebar({
                 projectId={currentProjectId ?? ""}
                 workspace=""
                 onChange={addWorkspace}
+                // The sidebar's + is where a workspace is CREATED, so it is where the
+                // machine is chosen; the draft and settings pickers edit a workspace that
+                // already has one.
+                chooseMachine
                 trigger={(open, toggle) => (
                   <button
                     type="button"
