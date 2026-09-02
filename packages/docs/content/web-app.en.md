@@ -82,6 +82,10 @@ Copy buttons across the app confirm at the button itself: the copy icon flips to
 
 The files panel browses the Workspace tree, previews files (Markdown / HTML rendered), uploads files (≤ 14MB each), and downloads them.
 
+## Create with AI
+
+Everything the Web App creates from a form — an agent, a model group, a Benchmark, a scheduled task, a vault secret, a hook import, an app, an agent import — can also be described to an agent instead. The **Create** button in those headers is split: its main half and the **Create with AI** row of its menu (the magic wand) open a prompt box, while **Set up manually** opens the form as before. The box comes with clickable examples that fill the draft, and a folded **Full prompt** preview shows the fixed instructions that travel with what you typed, with a copy button. **Send to agent** opens a new conversation with the Project's `default_agent` (the first agent when there is none) and sends the prompt at once; **Edit in a new chat** opens that conversation with the prompt prefilled and sends nothing.
+
 ## Agent Management (/agents)
 
 The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
