@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `core`, `web`, `cli`, `docs`
+- **PR:** [#582](https://github.com/Prism-Shadow/penguin-harness/pull/582)
 
 [中文版](2026-09-02-compaction-banner-thinking.zh.md)
 
