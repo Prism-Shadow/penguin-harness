@@ -22,12 +22,18 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
 
-/** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
-const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
+/**
+ * "Last conversation" glyph, used only by the rail: lucide's history mark — a clock read
+ * backwards. Deliberately not the bare clock the session list's "most recent" sort option
+ * wears (group-list.tsx): that one means "ordered by time", this one means "the conversation
+ * you were last in", and the returning arrow is what says so.
+ */
+const HISTORY_ICON = "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2";
 
 /** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. `relative` so an entry can anchor an update badge on its corner (no z-index, so it still creates no stacking context). */
 const railItemClass = (active: boolean) =>
@@ -105,9 +111,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
           rail's width. */}
       <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
-        {/* 1. Last conversation: lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only
-            once the list has settled with no non-archived Session — while it is still loading the
-            entry keeps its normal look (no flash) and a click is a graceful no-op. */}
+        {/* 1. Last conversation: a history mark (a clock read backwards) — the entry goes BACK to
+            where the user was, which the returning arrow says and a bare clock face does not.
+            Lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only once the list
+            has settled with no non-archived Session — while it is still loading the entry keeps
+            its normal look (no flash) and a click is a graceful no-op. */}
         <button
           type="button"
           title={S.nav.lastConversation}
@@ -120,7 +128,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
               : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
           }
         >
-          <GlyphIcon d={LAST_CHAT_ICON} size={18} />
+          <GlyphIcon d={HISTORY_ICON} size={18} />
         </button>
         {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
         <button
@@ -326,6 +334,9 @@ export function AppLayout() {
         <TerminalDockRuntime />
       </div>
 
+      {/* The software-update modal, opened from the sidebar's update row and the draft
+          page's version badge alike; mounted here so it outlives both. */}
+      <UpdateModal />
       <ChangePasswordDialog
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}

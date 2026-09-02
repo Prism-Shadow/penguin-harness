@@ -184,73 +184,94 @@ export const en: Strings = {
     } as Record<string, string>,
   },
 
-  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  /**
+   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
+   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
+   * outcomes that land while the modal is closed. Null version = the backend named none.
+   */
   update: {
     /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
     lastUpdated: (date: string) => `Last updated ${date}`,
-    /** Superscript badge on the version lines when the update check found a newer release. */
+    /** The version line's superscript, a button into the modal; the other two follow the flow. */
     newVersionBadge: "New version available",
+    badgeDownloading: "Downloading update",
+    badgeReady: "Restart to update",
+    /** A release offered: the row's label and the avatar badges' sentence. */
     newVersion: (v: string) => `New version v${v} available`,
+    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    restartToUpdate: (v: string | null) =>
+      v !== null ? `Restart to update to v${v}` : "Restart to finish updating",
+    /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "Updates available",
-    /**
-     * The sidebar user menu's SINGLE update row: it reads "Check for updates" until a newer
-     * release is known and runs the manual check; once one is known it reads newVersion() and
-     * opens the update dialog instead (which carries the release-notes link and, for admins,
-     * the self-update action).
-     */
+    // —— the account-menu row ——
     checkNow: "Check for updates",
     checking: "Checking…",
-    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
-    foundNew: (v: string) => `New version v${v} found — use the update entry to install`,
+    rowDownloading: (v: string | null, percent: number | null) =>
+      `Downloading${v !== null ? ` v${v}` : " update"}${percent !== null ? ` ${percent}%` : "…"}`,
+    rowRestarting: "Restarting…",
+    rowUnsupported: "Cannot update from here",
+    // —— the modal ——
+    title: "Software Update",
+    currentVersion: (v: string) => `Current version v${v}`,
+    checkingBody: "Checking for updates…",
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
     releaseNotes: "Release notes",
-    updateNow: "Update now",
-    updating: "Updating…",
-    updated: "Update complete — restart the service to apply",
-    restartHint: "Restart by re-running penguin web (or penguin server) in a terminal",
-    failed: "Update failed",
-    unsupported: "This install cannot be updated from the web UI",
-    confirmBody:
-      "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
-    /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
+    openReleases: "Open the Releases page",
+    /** What "download and update" does, per backend. */
+    availableBodyRelease:
+      "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). You can close this window while it downloads; restart the service afterwards to run it.",
+    availableBodyClient:
+      "Downloads the new version. You can close this window and keep working while it downloads; restart the app once it is ready to finish updating.",
+    /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "Only an administrator can run the update from here.",
-    /**
-     * Desktop client-update row in the sidebar user menu (shell window only): check →
-     * download progress → restart-to-install, driven by the shell's updater snapshot.
-     * It stands in for the server update surface, which desktop mode hides entirely.
-     * Null version/percent = the shell didn't name one.
-     */
-    clientCheckNow: "Check for updates",
-    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
-    clientFoundNew: (v: string | null) =>
-      v !== null
-        ? `Version v${v} found — downloading in the background…`
-        : "New version found — downloading in the background…",
-    clientDownloading: (v: string | null, percent: number | null) =>
-      `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
-    clientRestartToInstall: (v: string | null) =>
-      v !== null ? `Restart to install v${v}` : "Restart to install the update",
-    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
-    clientDownloadReady: (v: string | null) =>
-      v !== null
-        ? `Version v${v} is ready — restart to install`
-        : "The update is ready — restart to install",
-    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
-    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
-    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
-    clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
-    clientInstallConfirmTitle: "Restart and install the update",
+    downloadAndInstall: "Download and update",
+    later: "Later",
+    background: "Continue in background",
+    downloading: (v: string | null) =>
+      v !== null ? `Downloading v${v}…` : "Downloading the update…",
+    /** The progress bar's accessible name. */
+    downloadProgress: "Download progress",
+    /** The server job's stages, shown under the bar while it carries no percentage. */
+    phaseResolving: "Resolving the release…",
+    phaseDownloading: "Downloading the package…",
+    phaseInstalling: "Verifying and installing…",
+    ready: (v: string | null) => (v !== null ? `v${v} is ready` : "The update is ready"),
+    readyBodyRelease:
+      "Restart the service to run the new version. Running tasks will be interrupted; this page reloads once the service is back.",
     /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
-    clientInstallConfirmBody:
+    readyBodyClient:
       "PenguinHarness will restart to finish updating. Running tasks will be interrupted.",
-    clientInstallConfirmAction: "Restart now",
-    /** Tooltip on the disabled row in a dev (unpackaged) run. */
-    clientUnsupportedDev: "A dev run does not update itself",
-    /** Tooltip on the disabled row for a Linux install that is not an AppImage (a .deb, or an unpacked tree). */
-    clientUnsupportedNonAppImage:
+    /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
+    readyBodyManual:
+      "The new version is installed. This service is not supervised by penguin web or penguin server, so it cannot be restarted from here: re-run penguin web (or penguin server) in a terminal.",
+    restartNow: "Restart and update",
+    restarting: "Restarting…",
+    restartingBodyRelease: "This page reloads once the service is back.",
+    restartingBodyClient: "The app is about to restart.",
+    failed: "Update failed",
+    retry: "Retry",
+    /** Why this install cannot update itself. */
+    unsupportedDev: "A dev run does not update itself",
+    unsupportedNonAppImage:
       "Only the AppImage build updates itself on Linux — update a package install through your package manager",
+    unsupportedNotViaCli:
+      "This service was not started through penguin web or penguin server, so it cannot be updated from here",
+    unsupportedCli: "This install cannot be updated from the web UI",
+    // —— toasts: outcomes that land while the modal is closed ——
+    foundNew: (v: string) => `New version v${v} found — open the update entry to download it`,
+    foundNewUnnamed: "New version found — open the update entry to download it",
+    readyToast: (v: string | null) =>
+      v !== null ? `v${v} is ready — restart to update` : "The update is ready — restart to update",
+    failedToast: "Update failed — open the update entry for details",
+    unsupportedToast: "This install cannot be updated from the web UI",
+    /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
+    /** A download / restart request failed before the backend could act; `detail` is apiErrorText output. */
+    requestFailed: (detail: string) => `Could not run the update action: ${detail}`,
+    restartTimedOut:
+      "The service has not come back — check penguin web's output in the terminal, then reload this page",
   },
 
   /**
@@ -2088,8 +2109,8 @@ Scenarios:
    */
   messaging: {
     panelTitle: "Remote control",
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "Remote control…",
+    /** Session-row context-menu action. */
+    bindAction: "Remote control",
     dialogTitle: "Remote control",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "Channel",

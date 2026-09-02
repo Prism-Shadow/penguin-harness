@@ -8,11 +8,14 @@
  * status fold, GET /api/desktop/update serves it). The window itself stays a plain
  * browser: the relay adds server HTTP surface, never a renderer IPC bridge.
  *
- * Automatic checks are quiet: they run on a timer, download in the background, and speak
- * up only when a build is ready to install. A manual check reports every outcome (already
- * up to date / downloading / failed), the same rule the Web App's check-for-updates row
+ * A check only looks: it ends in `available`, and nothing is fetched until the user says
+ * so — from the Web App's update modal (the relayed `download` command) or from the native
+ * dialog a menu-driven check ends in. Automatic checks are quiet: they run on a timer and
+ * surface an offer only as the page's badge. A manual check reports every outcome (already
+ * up to date / a release offered / failed), the same rule the Web App's update entry
  * follows — a manual action that answers with silence reads as broken. A web-initiated
- * check is manual too, but its outcomes render in the row that asked, not in dialogs.
+ * check or download is manual too, but its outcomes render in the modal that asked, not
+ * in dialogs: the native restart prompt follows only a download the native dialog started.
  *
  * Release builds use Developer ID signing on macOS and Authenticode signing on Windows;
  * unsigned dry-run artifacts can still find updates, but platform trust and release
@@ -22,7 +25,10 @@
 import { app, dialog, net, shell } from "electron";
 import type { BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
-import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
+import type {
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+} from "@prismshadow/penguin-server/api";
 import { feedUrlOverride, updateSourceConfig, updateSupport } from "./update-support.js";
 import {
   feedLabel,
@@ -55,6 +61,8 @@ function log(line: string): void {
 let manualCheckInFlight = false;
 let downloadedVersion: string | null = null;
 let downloadInFlight = false;
+/** The running download was started from the native dialog: its outcomes get native dialogs too. */
+let nativeDownload = false;
 
 type FeedState =
   { phase: "pending" } | { phase: "unavailable" } | { phase: "ready"; fallbackUrl: string | null };
@@ -181,23 +189,29 @@ function reannounceStatus(): void {
   for (const listener of statusListeners) listener(status);
 }
 
-function reportUpdaterError(err: Error): void {
+/**
+ * Records a failure and, when the native path asked for the step that failed, tells the
+ * user in a dialog: a menu-driven check, or a download started from the offer dialog.
+ * Web-driven steps report through the status the modal reads.
+ */
+function reportUpdaterError(err: Error, step: "check" | "download"): void {
   emitStatus({ kind: "error", message: err.message });
-  if (manualCheckInFlight) {
-    manualCheckInFlight = false;
-    void dialog
-      .showMessageBox({
-        type: "error",
-        message: "Could not check for updates.",
-        detail: `${err.message}\n\nYou can always download the latest release manually.`,
-        buttons: ["Open Releases", "OK"],
-        defaultId: 1,
-        cancelId: 1,
-      })
-      .then((r) => {
-        if (r.response === 0) void shell.openExternal(RELEASES_URL);
-      });
-  }
+  const native = step === "check" ? manualCheckInFlight : nativeDownload;
+  if (!native) return;
+  manualCheckInFlight = false;
+  nativeDownload = false;
+  void dialog
+    .showMessageBox({
+      type: "error",
+      message: step === "check" ? "Could not check for updates." : "Could not download the update.",
+      detail: `${err.message}\n\nYou can always download the latest release manually.`,
+      buttons: ["Open Releases", "OK"],
+      defaultId: 1,
+      cancelId: 1,
+    })
+    .then((r) => {
+      if (r.response === 0) void shell.openExternal(RELEASES_URL);
+    });
 }
 
 /** Current snapshot, for the initial push after a server (re)start. */
@@ -212,13 +226,18 @@ export function onUpdaterStatus(listener: (status: DesktopUpdateStatus) => void)
 }
 
 /**
- * Server-relayed command from the account-menu row. `check` is a manual check whose
- * outcomes render in the row (no dialogs); a check that cannot run answers with a
- * status push instead of silence, so the row always settles. `install` restarts into a
- * downloaded build — the page confirmed the interruption before sending it, and the
- * row only offers it in the `downloaded` state, so a stale frame is dropped here.
+ * Server-relayed command from the page's update modal. `check` is a manual check whose
+ * outcomes render in the modal (no dialogs); a check that cannot run answers with a
+ * status push instead of silence, so the modal always settles. `download` fetches the
+ * release on offer — the page confirmed it before sending. `install` restarts into a
+ * downloaded build — the page confirmed the interruption before sending it, and it only
+ * offers the step in the `downloaded` state, so a stale frame is dropped here.
  */
-export function handleUpdaterCommand(action: "check" | "install"): void {
+export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["action"]): void {
+  if (action === "download") {
+    void startDownload("web");
+    return;
+  }
   if (action === "check") {
     const support = updateSupport({
       isPackaged: app.isPackaged,
@@ -232,6 +251,7 @@ export function handleUpdaterCommand(action: "check" | "install"): void {
     if (
       downloadedVersion !== null ||
       status.state === "downloading" ||
+      status.state === "available" ||
       status.state === "checking"
     ) {
       reannounceStatus();
@@ -276,9 +296,9 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     return;
   }
 
-  // Background downloads, explicit install: the user decides when to restart. The
-  // download is still started immediately after update-available; keeping the trigger
-  // here lets a failed package download retry the same tag on the fallback feed.
+  // Explicit download, explicit install: the user decides both when to fetch and when to
+  // restart. Owning the download call here (rather than autoDownload) is also what lets a
+  // failed package download retry the same tag on the fallback feed.
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = null;
@@ -301,18 +321,11 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     }
   });
   autoUpdater.on("update-available", (info: { version: string }) => {
-    log(`update available: ${info.version} (downloading)`);
+    log(`update available: ${info.version} (offered)`);
     emitStatus({ kind: "available", version: info.version });
-    void downloadUpdateWithFallback();
     if (manualCheckInFlight) {
       manualCheckInFlight = false;
-      void dialog.showMessageBox({
-        type: "info",
-        message: `Version ${info.version} is available.`,
-        detail:
-          "It is downloading in the background; you will be asked to restart when it is ready.",
-        buttons: ["OK"],
-      });
+      void promptDownload(info.version, getWindow());
     }
   });
   autoUpdater.on("download-progress", (p: { percent: number }) => {
@@ -323,7 +336,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     downloadedVersion = info.version;
     log(`downloaded: ${info.version}`);
     emitStatus({ kind: "downloaded", version: info.version });
-    void promptRestart(info.version, getWindow());
+    // Only the native path prompts: a download the page started ends in the modal's own
+    // "restart to update" step, and a second prompt on top of it would be one too many.
+    if (nativeDownload) {
+      nativeDownload = false;
+      void promptRestart(info.version, getWindow());
+    }
   });
   autoUpdater.on("error", (err: Error) => {
     log(`error: ${err.message}`);
@@ -336,7 +354,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
       });
       return;
     }
-    reportUpdaterError(err);
+    reportUpdaterError(err, "check");
   });
 
   const override = feedUrlOverride(process.env);
@@ -386,8 +404,15 @@ async function check(): Promise<void> {
   // A waiting build ends the checking: a re-check that finds a newer release would
   // start fetching it and invalidate the downloaded package on disk while the UI still
   // points its install action at it. The user installs what they were offered; the next
-  // launch checks again. A running download likewise finishes undisturbed.
-  if (downloadedVersion !== null || status.state === "downloading") return;
+  // launch checks again. A running download likewise finishes undisturbed, and a standing
+  // offer stays what it is — the user takes it or leaves it; the next launch checks again.
+  if (
+    downloadedVersion !== null ||
+    status.state === "downloading" ||
+    status.state === "available"
+  ) {
+    return;
+  }
   await refreshUpdateFeed();
   if (feedState.phase !== "ready") {
     const message =
@@ -411,33 +436,60 @@ async function check(): Promise<void> {
   }
 }
 
+/**
+ * The user's "download" — from the page's modal (`web`) or the native offer dialog
+ * (`native`): fetches the release on offer. Anything else on offer is answered with a
+ * status push (a build already waiting or downloading, or nothing offered at all — a
+ * stale frame), so the asking side settles instead of waiting.
+ */
+async function startDownload(origin: "native" | "web"): Promise<void> {
+  if (downloadedVersion !== null || downloadInFlight) {
+    reannounceStatus();
+    return;
+  }
+  if (status.state !== "available" || status.version === undefined) {
+    log("download requested with nothing offered (stale frame); ignoring");
+    reannounceStatus();
+    return;
+  }
+  nativeDownload = origin === "native";
+  emitStatus({ kind: "download-started", version: status.version });
+  await downloadUpdateWithFallback();
+}
+
+/**
+ * One download of the offered release, retried once on the other pinned feed when the
+ * package fetch fails there: the retry re-checks on the fallback feed (whose `checking`
+ * and same-version `available` the status fold suppresses under the running download)
+ * and downloads again if it offers the release.
+ */
 async function downloadUpdateWithFallback(): Promise<void> {
   if (downloadedVersion !== null || downloadInFlight) return;
   downloadInFlight = true;
-  let delegatedToRetryCheck = false;
   try {
     await autoUpdater.downloadUpdate();
   } catch (err) {
     const error = err as Error;
     if (downloadedVersion !== null) return;
-    downloadInFlight = false;
     if (switchToFallbackFeed("download failed")) {
-      delegatedToRetryCheck = true;
       try {
         const retryResult = await autoUpdater.checkForUpdates();
-        if (retryResult === null || !retryResult.isUpdateAvailable) {
-          const message = "The fallback update source did not offer a downloadable update.";
-          log(message);
-          emitStatus({ kind: "error", message });
+        if (retryResult !== null && retryResult.isUpdateAvailable) {
+          await autoUpdater.downloadUpdate();
+          return;
         }
+        const message = "The fallback update source did not offer a downloadable update.";
+        log(message);
+        emitStatus({ kind: "error", message });
+        nativeDownload = false;
       } catch (retryErr) {
-        log(`check failed: ${(retryErr as Error).message}`);
+        reportUpdaterError(retryErr as Error, "download");
       }
       return;
     }
-    reportUpdaterError(error);
+    reportUpdaterError(error, "download");
   } finally {
-    if (!delegatedToRetryCheck) downloadInFlight = false;
+    downloadInFlight = false;
   }
 }
 
@@ -480,6 +532,11 @@ export async function checkForUpdatesManually(): Promise<void> {
     });
     return;
   }
+  if (status.state === "available" && status.version !== undefined) {
+    // The offer stands (check() leaves it alone); a manual check re-presents it.
+    await promptDownload(status.version, null);
+    return;
+  }
   manualCheckInFlight = true;
   await check();
   if (manualCheckInFlight && feedState.phase === "unavailable") {
@@ -491,6 +548,27 @@ export async function checkForUpdatesManually(): Promise<void> {
       buttons: ["OK"],
     });
   }
+}
+
+/**
+ * "A release is available" prompt for the native path. Downloading is the user's call
+ * here exactly as it is in the Web App's modal; a "Later" leaves the offer standing.
+ */
+async function promptDownload(version: string, parent: BrowserWindow | null): Promise<void> {
+  const options = {
+    type: "info" as const,
+    message: `Version ${version} is available.`,
+    detail:
+      "Download it now? PenguinHarness keeps running while it downloads, and you will be asked to restart when it is ready.",
+    buttons: ["Download", "Later"],
+    defaultId: 0,
+    cancelId: 1,
+  };
+  const result = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  if (result.response !== 0) return;
+  await startDownload("native");
 }
 
 /** "Ready to install" prompt; restarting is the only path that swaps the app. */

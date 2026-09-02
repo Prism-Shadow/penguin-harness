@@ -30,6 +30,7 @@ import type { ProxySettings } from "../net/proxy.js";
 import type { BuildDepsOverrides } from "../app.js";
 import type { HmrHost } from "../hmr/host.js";
 import type { DesktopService } from "../services/desktop-service.js";
+import type { LifecycleService } from "../services/lifecycle-service.js";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -90,6 +91,7 @@ interface RuntimeInterfaces extends Interfaces {
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
   desktop: MembersOf<DesktopService>;
+  lifecycle: MembersOf<LifecycleService>;
 }
 
 export const RUNTIME_INTERFACES: RuntimeInterfaces = {
@@ -107,6 +109,7 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "desktopToken",
     "portFile",
     "trustProxy",
+    "supervised",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
@@ -117,6 +120,7 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   // optional, so there are no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
+  lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
 export const RUNTIME_INTERFACES_RESOURCE_ID = "runtime:interfaces";
@@ -184,6 +188,12 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
  * admin surfaces), so the claim must distinguish "not desktop" from "not published".
  */
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
+/**
+ * Process lifecycle (services/lifecycle-service.ts): whether a supervisor relaunches this
+ * process, and the restart trigger. Always published — the platform's restart route needs
+ * a definite "nobody would relaunch me" to refuse with, not a missing capability.
+ */
+export const RUNTIME_LIFECYCLE_RESOURCE_ID = "runtime:lifecycle";
 /** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 
@@ -226,6 +236,7 @@ export interface RuntimeCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
+  lifecycle: LifecycleService;
   /** The construction-override seam; {} outside tests. */
   overrides: BuildDepsOverrides;
 }
@@ -274,7 +285,8 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr) {
+  const lifecycle = resources.claim<LifecycleService>(RUNTIME_LIFECYCLE_RESOURCE_ID);
+  if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -298,6 +310,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
+    ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
@@ -310,6 +323,6 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, overrides },
+    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, overrides },
   };
 }

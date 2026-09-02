@@ -19,6 +19,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
+import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -226,6 +227,14 @@ class PenguinServer {
     // shutdown as the signals, reachable over HTTP because a Windows child kill is a hard
     // TerminateProcess with no signal delivery.
     this.deps.desktop?.onShutdownRequest(() => void this.shutdown("desktop-shutdown"));
+
+    // Restart-to-update: POST /api/version/restart lands here once a self-update is
+    // installed — the same graceful shutdown, exiting with the code the supervising
+    // `penguin server|web` respawns on, so the relaunch runs the new release. The
+    // lifecycle service only fires it when a supervisor is actually there.
+    this.deps.lifecycle.onRestartRequest(
+      () => void this.shutdown("restart", SERVER_RESTART_EXIT_CODE),
+    );
 
     // Client-update relay: under the shell this process is an Electron utilityProcess and
     // carries process.parentPort; wire it to the desktop service so the update routes can

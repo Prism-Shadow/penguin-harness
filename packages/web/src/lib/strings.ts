@@ -7,7 +7,9 @@
  * language (module-level constants do not update on switch — keep reads inside components).
  * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
- * label/sentence or in a proper name (Agent State, AgentHub). zh keeps "Agent" as-is.
+ * label/sentence or in a proper name (Agent State, AgentHub). zh names the SURFACE
+ * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
+ * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 export const zh = {
   appName: "PenguinHarness",
@@ -189,72 +191,87 @@ export const zh = {
     } as Record<string, string>,
   },
 
-  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  /**
+   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
+   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
+   * outcomes that land while the modal is closed. Null version = the backend named none.
+   */
   update: {
     /** Version-line date label (owner-specified wording); `date` is formatMonthDay output. */
     lastUpdated: (date: string) => `最近更新日期 ${date}`,
-    /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
+    /** The version line's superscript (owner-specified wording), a button into the modal; the other two follow the flow. */
     newVersionBadge: "有新版本可用",
+    badgeDownloading: "正在下载更新",
+    badgeReady: "重启以更新",
+    /** A release offered: the row's label and the avatar badges' sentence. */
     newVersion: (v: string) => `新版本 v${v} 可用`,
-    /**
-     * The combined wording for an anchor that leads to BOTH update trails at once (the
-     * mobile menu button): something is updatable, without claiming which — naming one of
-     * two would send the user down the wrong one.
-     */
+    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    restartToUpdate: (v: string | null) => (v !== null ? `重启以更新到 v${v}` : "重启以完成更新"),
+    /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "有可用更新",
-    /**
-     * The sidebar user menu's SINGLE update row: it reads checkNow until a newer release
-     * is known and runs the manual check; once one is known it reads newVersion() and
-     * opens the update dialog instead (which carries the release-notes link and, for
-     * admins, the self-update action).
-     */
+    // —— the account-menu row ——
     checkNow: "检查更新",
     checking: "检查中…",
-    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
-    foundNew: (v: string) => `发现新版本 v${v}，点击该更新入口即可安装`,
+    rowDownloading: (v: string | null, percent: number | null) =>
+      `正在下载${v !== null ? ` v${v}` : "更新"}${percent !== null ? ` ${percent}%` : "…"}`,
+    rowRestarting: "正在重启…",
+    rowUnsupported: "无法在线更新",
+    // —— the modal ——
+    title: "软件更新",
+    currentVersion: (v: string) => `当前版本 v${v}`,
+    checkingBody: "正在检查更新…",
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
     releaseNotes: "更新说明",
-    updateNow: "立即更新",
-    updating: "更新中…",
-    updated: "更新完成，重启服务后生效",
-    restartHint: "在终端重新运行 penguin web（或 penguin server）即可完成重启",
-    failed: "更新失败",
-    unsupported: "当前安装方式不支持在线更新",
-    confirmBody:
-      "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
-    /** Copy shown to non-admins in place of confirmBody (they can read the release notes but cannot run the update here). */
+    openReleases: "打开 Releases 页面",
+    /** What "download and update" does, per backend. */
+    availableBodyRelease:
+      "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。下载期间可以关闭本窗口，安装完成后重启服务即可生效。",
+    availableBodyClient:
+      "将下载新版本。下载期间可以关闭本窗口继续使用，下载完成后重启应用即可完成更新。",
+    /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "只有管理员可以在这里执行更新。",
-    /**
-     * Desktop client-update row in the sidebar user menu (shell window only): check →
-     * download progress → restart-to-install, driven by the shell's updater snapshot.
-     * It stands in for the server update surface, which desktop mode hides entirely.
-     * Null version/percent = the shell didn't name one.
-     */
-    clientCheckNow: "检查更新",
-    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
-    clientFoundNew: (v: string | null) =>
-      v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
-    clientDownloading: (v: string | null, percent: number | null) =>
-      `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
-    clientRestartToInstall: (v: string | null) =>
-      v !== null ? `重启并安装 v${v}` : "重启并安装更新",
-    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
-    clientDownloadReady: (v: string | null) =>
-      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
-    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
-    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
-    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
-    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
-    clientInstallConfirmTitle: "重启并安装更新",
+    downloadAndInstall: "下载并更新",
+    later: "稍后",
+    background: "放到后台",
+    downloading: (v: string | null) => (v !== null ? `正在下载 v${v}…` : "正在下载更新…"),
+    /** The progress bar's accessible name. */
+    downloadProgress: "下载进度",
+    /** The server job's stages, shown under the bar while it carries no percentage. */
+    phaseResolving: "正在获取版本信息…",
+    phaseDownloading: "正在下载安装包…",
+    phaseInstalling: "正在校验并安装…",
+    ready: (v: string | null) => (v !== null ? `v${v} 已就绪` : "更新已就绪"),
+    readyBodyRelease: "重启服务即可运行新版本，正在运行的任务会被打断；服务回来后页面会自动刷新。",
     /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
-    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
-    clientInstallConfirmAction: "立即重启",
-    /** Tooltip on the disabled row in a dev (unpackaged) run. */
-    clientUnsupportedDev: "开发运行不支持自更新",
-    /** Tooltip on the disabled row for a Linux install that is not an AppImage (a .deb, or an unpacked tree). */
-    clientUnsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
+    readyBodyClient: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
+    readyBodyManual:
+      "新版本已安装。当前服务不是由 penguin web 或 penguin server 托管，无法从这里重启：请在终端重新运行 penguin web（或 penguin server）。",
+    restartNow: "重启并更新",
+    restarting: "正在重启…",
+    restartingBodyRelease: "服务回来后页面会自动刷新。",
+    restartingBodyClient: "应用即将重启。",
+    failed: "更新失败",
+    retry: "重试",
+    /** Why this install cannot update itself. */
+    unsupportedDev: "开发运行不支持自更新",
+    unsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
+    unsupportedNotViaCli: "当前服务不是通过 penguin web 或 penguin server 启动的，无法从这里更新",
+    unsupportedCli: "当前安装方式不支持在线更新",
+    // —— toasts: outcomes that land while the modal is closed ——
+    foundNew: (v: string) => `发现新版本 v${v}，打开更新入口即可下载`,
+    foundNewUnnamed: "发现新版本，打开更新入口即可下载",
+    readyToast: (v: string | null) =>
+      v !== null ? `v${v} 已就绪，可重启更新` : "更新已就绪，可重启更新",
+    failedToast: "更新失败，打开更新入口查看详情",
+    unsupportedToast: "当前安装方式不支持在线更新",
+    /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
+    /** A download / restart request failed before the backend could act; `detail` is apiErrorText output. */
+    requestFailed: (detail: string) => `无法执行更新操作：${detail}`,
+    restartTimedOut: "服务迟迟没有回来，请查看终端里 penguin web 的输出后手动刷新页面",
   },
 
   /**
@@ -1276,7 +1293,7 @@ export const zh = {
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
-    groupByAgent: "按 Agent 分组",
+    groupByAgent: "按智能体分组",
     groupByTime: "按时间分组",
     /** Time-mode bucket names (last day / last month / older), by last activity. */
     timeGroups: {
@@ -2042,8 +2059,8 @@ Benchmark：
    */
   messaging: {
     panelTitle: "远程控制",
-    /** Session-row context-menu action (the trailing ellipsis marks that a dialog follows). */
-    bindAction: "远程控制…",
+    /** Session-row context-menu action. */
+    bindAction: "远程控制",
     dialogTitle: "远程控制",
     /** The channel selector (always live: each channel's config is saved independently). */
     channelLabel: "渠道",

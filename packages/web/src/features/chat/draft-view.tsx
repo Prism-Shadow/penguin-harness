@@ -57,10 +57,13 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
+import { AGENT_GROUP_ICON } from "../../components/ui/group-list";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
+import { versionBadgeFor } from "../../lib/update-flow";
+import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { adoptDockScope } from "../dock/dock-state";
@@ -122,18 +125,18 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * competing with the titles, while the folder row is exactly where a glyph earns its place —
  * it is what you scan to pick a category.
  *
- * webapps: a browser window (chrome bar + two dots). agents: the SAME robot head the sidebar's
- * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
- * app already has one glyph that means "agent" and a folder of agent examples should wear it.
- * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
- * renders this file, so importing it back would close an import cycle. schedules: a clock face
- * with hands — the plainest mark for "fires on a timer", and distinct from the hourglass that
- * already means a Session is waiting.
+ * webapps: a browser window (chrome bar + two dots). agents: AGENT_GROUP_ICON itself — the one
+ * glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
+ * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
+ * the day that glyph is redrawn. (`components/ui/group-list.tsx` pulls in nothing from
+ * `features/`, so there is no cycle to avoid here.) schedules: a clock face with hands — the
+ * plainest mark for "fires on a timer", and distinct from the hourglass that already means a
+ * Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
-  agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
+  agents: AGENT_GROUP_ICON,
   schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
 };
 
@@ -845,16 +848,16 @@ const versionBadgeClass =
  * the running version's release
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
- * and show the version alone. When the update check knows a newer release, a small
- * superscript badge follows, linking to the release page (this surface's affordance; the
- * sidebar user menu instead routes its single update row into the update dialog).
+ * and show the version alone. When the update flow has something waiting — a release
+ * offered, a download in the background, a restart pending — a small superscript badge
+ * follows, a button into the update modal (the same modal the sidebar's update row opens).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).
  */
 function VersionLine() {
   const { locale } = useLocale();
-  const { version, update } = useVersionInfo(true);
+  const { version } = useVersionInfo(true);
   if (version === null) return null;
   const date = version.buildDate;
   return (
@@ -862,24 +865,44 @@ function VersionLine() {
       {`v${version.version}${
         date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
       }`}
-      {update !== null &&
-        update.updateAvailable &&
-        update.latestVersion !== null &&
-        (update.releaseUrl !== null ? (
-          <a
-            href={update.releaseUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={S.update.newVersion(update.latestVersion)}
-            aria-label={S.update.newVersion(update.latestVersion)}
-            className={`${versionBadgeClass} hover:underline`}
-          >
-            {S.update.newVersionBadge}
-          </a>
-        ) : (
-          <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
-        ))}
+      <VersionBadge />
     </p>
+  );
+}
+
+/**
+ * The superscript on the version line: a button into the update modal, worded by where the
+ * flow stands. Its title and accessible name carry the update row's own sentence, so the
+ * two surfaces say the same thing about the same release.
+ */
+function VersionBadge() {
+  const { mode, flow } = useUpdateFlow();
+  const badge = versionBadgeFor(flow);
+  if (mode === "none" || badge === null) return null;
+  const text =
+    badge === "available"
+      ? S.update.newVersionBadge
+      : badge === "downloading"
+        ? S.update.badgeDownloading
+        : S.update.badgeReady;
+  const note =
+    flow.kind === "available"
+      ? S.update.newVersion(flow.version)
+      : flow.kind === "downloading"
+        ? S.update.rowDownloading(flow.version, flow.percent)
+        : flow.kind === "ready"
+          ? S.update.restartToUpdate(flow.version)
+          : text;
+  return (
+    <button
+      type="button"
+      onClick={openUpdateModal}
+      title={note}
+      aria-label={note}
+      className={`${versionBadgeClass} hover:underline`}
+    >
+      {text}
+    </button>
   );
 }
 

@@ -131,7 +131,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/version | 当前运行构建的身份，外加该根目录被推送的 harness：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`，与 `penguin version --json` 输出同一份记录。`harness` 描述该数据根目录的 HMR store（`{source, pushedAt, bundles}`，其中 `source` 为推送方 checkout 的 `{repo, revision}`），从未被推送过时为 null。`describe` 是单行身份（发布版为 `v0.2.3`，源码构建为 `v0.2.3-14-g9e8f7d6-dirty`）；`channel` 取 `release` 或 `source`；`buildDate`（UTC yyyy-mm-dd）与 `commit` 在构建时打入、无需联网，源码构建以及打入机制之前的发布版为 null；`branch` 与 `dirty` 记录源码构建的 git 位置，发布版为 null |
 | GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
-| POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
+| GET | /api/version/update | **仅管理员。**在线更新任务的状态：`{state: idle \| running \| done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`——运行中带 `phase`（`resolving` / `downloading` / `installing`）与 `percent`（从安装器的进度条读出）；结束后带 `result`（`{status, reason?, output, needsRestart}`）。更新弹窗在任务运行期间轮询它 |
+| POST | /api/version/update | **仅管理员。**启动在线更新任务——在服务器上后台运行 `penguin update --yes`——已有任务在跑则并入；应答与 GET 完全一致。已结束的任务可以再次启动（即重试） |
+| POST | /api/version/restart | **仅管理员。**请求进程在优雅关闭后以托管进程约定的重启退出码退出，由 `penguin server \| penguin web` 在已安装的版本上重新拉起：`{restarting: true}`；没有托管进程时为 `{restarting: false, reason: "no_supervisor"}` |
 
 `update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
 

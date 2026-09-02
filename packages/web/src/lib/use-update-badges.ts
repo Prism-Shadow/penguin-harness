@@ -18,10 +18,9 @@
  * nothing there; syncing presets is owner-only, so a member never sees the Models dot (and
  * `use-project-todos.ts` does not even make that request).
  */
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { S } from "./strings";
-import { offersClientUpdate } from "./desktop-update";
-import { refreshDesktopUpdate, useDesktopUpdate } from "./use-desktop-update";
+import { useUpdateFlow } from "./use-update-flow";
 import { useVersionInfo } from "./use-version-info";
 import { badgeNote, softwareUpdate } from "./update-badges";
 import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
@@ -36,7 +35,6 @@ import type { Todo, TodoKey } from "./todo-badges";
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
 import { catalogDelta } from "../features/models/catalog-sync";
-import { useAuth } from "../state/auth";
 import { useProject } from "../state/project";
 
 /** The nav routes that can carry a dot, and what each one's dot leads to. */
@@ -58,29 +56,20 @@ export interface UpdateBadges {
 }
 
 export function useUpdateBadges(eager = false): UpdateBadges {
-  const { desktopMode, sessionVia } = useAuth();
   const { agents, currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Syncing presets is owner-only, so that trail has no control at its end for a member.
   const ownsProject = currentProject?.role === "owner";
-  const clientRowOffered = offersClientUpdate({ desktopMode, sessionVia });
-  const { update } = useVersionInfo(eager);
-  // Passive: the shell's snapshot is polled by the sidebar's own hook instance while the user
-  // menu is open. The one-shot refresh below is what lets a build downloaded before this load
-  // show up without opening anything.
-  const { status } = useDesktopUpdate(false, false);
-  useEffect(() => {
-    if (eager && clientRowOffered) refreshDesktopUpdate();
-  }, [eager, clientRowOffered]);
+  // The eager instance is what fetches the version and the release check on load at all; the
+  // flow below reads the same cache. The shell's snapshot is refreshed once on load by the
+  // flow's owner (the update modal), so a release offered or downloaded before this load
+  // shows up without the user opening anything.
+  useVersionInfo(eager);
+  const { flow } = useUpdateFlow();
   const probes = useProjectTodos(projectId, eager, ownsProject);
   const dismissed = useTodoDismissals(projectId, eager);
 
-  const software = softwareUpdate({
-    releaseRowOffered: !desktopMode,
-    clientRowOffered,
-    update,
-    clientStatus: status,
-  });
+  const software = softwareUpdate(flow);
 
   // Memoized on the cached response's identity: this walks the whole built-in catalog, and the
   // hook re-runs on every render of the pages that read it (a keystroke in the model search box).
@@ -150,10 +139,10 @@ function noteText(note: UpdateBadgeNote): string | null {
   switch (note.kind) {
     case "none":
       return null;
-    case "release":
+    case "available":
       return S.update.newVersion(note.version);
-    case "client":
-      return S.update.clientRestartToInstall(note.version);
+    case "ready":
+      return S.update.restartToUpdate(note.version);
     case "kernel":
       return S.agent.kernelOutdatedHint;
     case "plugins":

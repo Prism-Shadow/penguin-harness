@@ -2,12 +2,13 @@
  * updater-status.ts unit tests: the event → snapshot fold behind the account-menu
  * client-update row, and the port frame helpers.
  *
- * Two behavioral rules are worth pinning hard. `downloaded` suppresses transient noise
- * (a re-check failing on a train's Wi-Fi must not hide the one actionable step) but
- * yields to a *different* version being fetched — a replacement download invalidates
- * the held package, so keeping the old headline would point the install at a deleted
- * file. And `downloading` suppresses a concurrent check's `checking`, which would
- * drop the download context and every later progress tick with it.
+ * Three behavioral rules are worth pinning hard. A check ends in `available` and never
+ * downloads on its own — the fetch begins on `download-started`, the user's say-so. Then
+ * `downloaded` suppresses transient noise (a re-check failing on a train's Wi-Fi must not
+ * hide the one actionable step) but yields to a *different* version being fetched — a
+ * replacement download invalidates the held package, so keeping the old headline would
+ * point the install at a deleted file. And `downloading` suppresses a concurrent check's
+ * `checking`, which would drop the download context and every later progress tick with it.
  */
 import { describe, expect, it } from "vitest";
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
@@ -36,8 +37,11 @@ describe("nextUpdateStatus", () => {
     });
   });
 
-  it("walks the download path: available → progress → downloaded", () => {
-    const downloading = fold([{ kind: "checking" }, { kind: "available", version: "1.1.0" }]);
+  it("walks the download path: available → download-started → progress → downloaded", () => {
+    // A check only offers: nothing is fetched until the user says so.
+    const offered = fold([{ kind: "checking" }, { kind: "available", version: "1.1.0" }]);
+    expect(offered).toEqual({ appVersion: "1.0.0", state: "available", version: "1.1.0" });
+    const downloading = nextUpdateStatus(offered, { kind: "download-started", version: "1.1.0" });
     expect(downloading).toEqual({
       appVersion: "1.0.0",
       state: "downloading",
@@ -84,9 +88,14 @@ describe("nextUpdateStatus", () => {
     }
   });
 
-  it("yields a downloaded build to a different version being fetched (the held package is being replaced)", () => {
+  it("yields a downloaded build to a different version being offered or fetched (the held package is being replaced)", () => {
     const downloaded = fold([{ kind: "downloaded", version: "1.1.0" }]);
     expect(nextUpdateStatus(downloaded, { kind: "available", version: "1.2.0" })).toEqual({
+      appVersion: "1.0.0",
+      state: "available",
+      version: "1.2.0",
+    });
+    expect(nextUpdateStatus(downloaded, { kind: "download-started", version: "1.2.0" })).toEqual({
       appVersion: "1.0.0",
       state: "downloading",
       version: "1.2.0",
@@ -99,12 +108,36 @@ describe("nextUpdateStatus", () => {
     });
   });
 
+  it("keeps a standing offer over a re-check's checking and its same-version re-announce", () => {
+    const offered = fold([{ kind: "available", version: "1.1.0" }]);
+    for (const ev of [
+      { kind: "checking" },
+      { kind: "available", version: "1.1.0" },
+    ] satisfies UpdaterEvent[]) {
+      expect(nextUpdateStatus(offered, ev)).toBe(offered);
+    }
+    // A real answer replaces it: the release was pulled, or another one took its place.
+    expect(nextUpdateStatus(offered, { kind: "not-available" })).toEqual({
+      appVersion: "1.0.0",
+      state: "up-to-date",
+    });
+    expect(nextUpdateStatus(offered, { kind: "available", version: "1.2.0" })).toEqual({
+      appVersion: "1.0.0",
+      state: "available",
+      version: "1.2.0",
+    });
+  });
+
   it("keeps a running download over a concurrent check's noise", () => {
-    const downloading = fold([{ kind: "available", version: "1.1.0" }]);
+    const downloading = fold([
+      { kind: "available", version: "1.1.0" },
+      { kind: "download-started", version: "1.1.0" },
+    ]);
     for (const ev of [
       { kind: "checking" },
       { kind: "not-available" },
       { kind: "available", version: "1.1.0" },
+      { kind: "download-started", version: "1.1.0" },
     ] satisfies UpdaterEvent[]) {
       expect(nextUpdateStatus(downloading, ev)).toBe(downloading);
     }
@@ -117,13 +150,17 @@ describe("nextUpdateStatus", () => {
     });
   });
 
-  it("lets a running download switch to a different announced version, and still fail on its own error", () => {
-    const downloading = fold([{ kind: "available", version: "1.1.0" }]);
+  it("lets a running download yield to a different announced version (offered anew), and still fail on its own error", () => {
+    const downloading = fold([
+      { kind: "available", version: "1.1.0" },
+      { kind: "download-started", version: "1.1.0" },
+    ]);
+    // The package being fetched is invalidated by the replacement; the new one needs the
+    // user's say-so again, so it is offered, not fetched.
     expect(nextUpdateStatus(downloading, { kind: "available", version: "1.2.0" })).toEqual({
       appVersion: "1.0.0",
-      state: "downloading",
+      state: "available",
       version: "1.2.0",
-      percent: 0,
     });
     expect(nextUpdateStatus(downloading, { kind: "error", message: "disk full" })).toEqual({
       appVersion: "1.0.0",
@@ -151,8 +188,11 @@ describe("port frames", () => {
     expect(updaterStatusMessage(status)).toEqual({ type: "desktop-updater-status", status });
   });
 
-  it("accepts exactly the two command frames", () => {
+  it("accepts exactly the three command frames", () => {
     expect(parseUpdaterCommand({ type: "desktop-updater-command", action: "check" })).toBe("check");
+    expect(parseUpdaterCommand({ type: "desktop-updater-command", action: "download" })).toBe(
+      "download",
+    );
     expect(parseUpdaterCommand({ type: "desktop-updater-command", action: "install" })).toBe(
       "install",
     );

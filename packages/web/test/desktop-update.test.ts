@@ -1,7 +1,7 @@
 /**
- * desktop-update.ts unit tests: who gets the client-update row, what it renders per
- * shell snapshot, and when an armed row-initiated check settles (one toast per
- * outcome).
+ * desktop-update.ts unit tests: who gets the client update surface at all, and when an
+ * armed row-initiated check settles (one report per outcome — in the modal when it is
+ * open, a toast otherwise).
  *
  * offersClientUpdate is pinned in all four combinations for the same reason as
  * offersChangePassword next door: each single-field simplification fails a real case —
@@ -15,7 +15,6 @@ import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
 import {
   CLIENT_CHECK_TIMEOUT_MS,
   clientCheckSettle,
-  clientUpdateRow,
   offersClientUpdate,
 } from "../src/lib/desktop-update";
 
@@ -32,73 +31,6 @@ const at = (
   state: DesktopUpdateStatus["state"],
   rest: Partial<DesktopUpdateStatus> = {},
 ): DesktopUpdateStatus => ({ appVersion: "0.2.3", seq: 1, state, ...rest });
-
-describe("clientUpdateRow", () => {
-  it("renders disabled until the shell's first push lands", () => {
-    expect(clientUpdateRow(null)).toMatchObject({
-      labelKind: "unknown",
-      action: "none",
-      busy: false,
-      appVersion: null,
-    });
-  });
-
-  it("offers the (re-)check for idle, up-to-date and error snapshots", () => {
-    for (const state of ["idle", "up-to-date", "error"] as const) {
-      expect(clientUpdateRow(at(state))).toMatchObject({
-        labelKind: "check",
-        action: "check",
-        busy: false,
-        appVersion: "0.2.3",
-      });
-    }
-  });
-
-  it("spins on an armed check before the shell's checking frame lands", () => {
-    expect(clientUpdateRow(at("idle"), true)).toMatchObject({
-      labelKind: "checking",
-      action: "none",
-      busy: true,
-    });
-    // Once the shell reports its own busy/terminal states, the snapshot wins.
-    expect(clientUpdateRow(at("downloaded", { version: "0.3.0" }), true)).toMatchObject({
-      labelKind: "install",
-    });
-  });
-
-  it("renders busy states without an action", () => {
-    expect(clientUpdateRow(at("checking"))).toMatchObject({
-      labelKind: "checking",
-      action: "none",
-      busy: true,
-    });
-    expect(clientUpdateRow(at("downloading", { version: "0.3.0", percent: 42 }))).toMatchObject({
-      labelKind: "downloading",
-      action: "none",
-      busy: true,
-      version: "0.3.0",
-      percent: 42,
-    });
-  });
-
-  it("offers the install once a build is downloaded", () => {
-    expect(clientUpdateRow(at("downloaded", { version: "0.3.0" }))).toMatchObject({
-      labelKind: "install",
-      action: "install",
-      busy: false,
-      version: "0.3.0",
-    });
-  });
-
-  it("disables the row for an unsupported form, naming the reason", () => {
-    expect(clientUpdateRow(at("unsupported", { reason: "linux-not-appimage" }))).toMatchObject({
-      labelKind: "unsupported",
-      action: "none",
-      busy: false,
-      unsupportedReason: "linux-not-appimage",
-    });
-  });
-});
 
 describe("clientCheckSettle", () => {
   it("stays open while checking, before any snapshot, or while the seq has not moved", () => {
@@ -118,6 +50,11 @@ describe("clientCheckSettle", () => {
     expect(
       clientCheckSettle(1, at("downloading", { seq: 3, version: "0.3.0", percent: 1 }), 3_000),
     ).toEqual({ kind: "found", version: "0.3.0" });
+    // A check ends in an offer now (nothing is fetched until the user says so): found too.
+    expect(clientCheckSettle(1, at("available", { seq: 3, version: "0.3.0" }), 3_000)).toEqual({
+      kind: "found",
+      version: "0.3.0",
+    });
     expect(clientCheckSettle(1, at("downloaded", { seq: 3, version: "0.3.0" }), 3_000)).toEqual({
       kind: "ready",
       version: "0.3.0",

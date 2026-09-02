@@ -197,7 +197,13 @@ export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (an open book: two pages + spine — the library is still read like one). */
   plugins: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
-  models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
+  /**
+   * Model library (a brain: two lobes drawn as one path, closed across the midline). The chip
+   * this replaces named the hardware a model runs on; what the page actually lists is language
+   * models, and a brain is the mark that says so at a glance.
+   */
+  models:
+    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",

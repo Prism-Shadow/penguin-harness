@@ -37,7 +37,6 @@ import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { GEAR_ICON } from "../ui/icons";
-import { AGENT_GROUP_ICON } from "../ui/group-list";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
@@ -178,7 +177,9 @@ export function CreateProjectDialog({
 /** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
   general: GEAR_ICON,
-  members: AGENT_GROUP_ICON,
+  /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
+  members:
+    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   /** Sliders (lucide sliders-vertical). */
   defaults: "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
   /** Shield (lucide shield). */
