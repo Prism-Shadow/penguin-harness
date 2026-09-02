@@ -1,10 +1,10 @@
 /**
- * Benchmark scoreboard read integration tests (read-only display): benchmark_config.toml title/description and runs
+ * Benchmark API integration tests: benchmark_config.toml title/description and runs
  * pass-through (falls back to directory name if missing), scoreboard.yaml v2's
  * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
  * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
- * unconfigured, permissions (members can read,
- * outsiders get 404).
+ * unconfigured, permissions (members can read, outsiders get 404), and the owner-only
+ * create (the on-disk layout the Skills read) and delete routes.
  *
  * Tested with a plain Agent (no sample Benchmark pre-installed); default_agent's sample
  * Benchmark assertions live in builtin-agents.test.ts.
@@ -12,9 +12,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parse as parseToml } from "smol-toml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
+  BenchmarkCreateRequest,
+  BenchmarkCreateResponse,
   BenchmarksResponse,
   ProjectCreateResponse,
   WorkspaceFilesResponse,
@@ -344,5 +347,121 @@ describe("benchmarks api", () => {
     });
 
     expect((await outsider.get(base)).status).toBe(404);
+  });
+
+  /** A well-formed create request; the tests below vary one field at a time. */
+  const createBody: BenchmarkCreateRequest = {
+    id: "report-writing-v1",
+    title: "Report writing",
+    description: "Hard cases for the report writer",
+    runs: 2,
+    cases: [
+      {
+        id: "CASE-001-contradictions",
+        title: "Contradicting sources",
+        statement: "Write a report from the two briefs in this Workspace.\n",
+        rubric: "- 60 pts: names the contradiction.\n- 40 pts: picks the dated source.\n",
+      },
+      {
+        id: "CASE-002-format",
+        title: "Strict format",
+        statement: "Follow the template exactly.",
+        rubric: "- 100 pts: every template section present.",
+      },
+    ],
+  };
+
+  it("owner creates a Benchmark by hand and the server writes the Skill layout", async () => {
+    const res = await owner.post(base, createBody);
+    expect(res.status).toBe(201);
+    const { benchmark } = (await res.json()) as BenchmarkCreateResponse;
+    expect(benchmark).toEqual({
+      id: "report-writing-v1",
+      title: "Report writing",
+      description: "Hard cases for the report writer",
+      runs: 2,
+      caseCount: 2,
+      evaluations: [],
+    });
+
+    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "report-writing-v1");
+    expect(parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"))).toEqual({
+      title: "Report writing",
+      description: "Hard cases for the report writer",
+      runs: 2,
+    });
+    expect(await fs.readFile(path.join(dir, "scoreboard.yaml"), "utf8")).toBe("evaluations: []\n");
+    // The statement README opens with the title as its heading (what the case list reads
+    // back); the rubric is written verbatim, trimmed to one trailing newline.
+    expect(
+      await fs.readFile(
+        path.join(dir, "CASE-001-contradictions", "statement", "README.md"),
+        "utf8",
+      ),
+    ).toBe("# Contradicting sources\n\nWrite a report from the two briefs in this Workspace.\n");
+    expect(
+      await fs.readFile(path.join(dir, "CASE-001-contradictions", "rubric", "README.md"), "utf8"),
+    ).toBe("- 60 pts: names the contradiction.\n- 40 pts: picks the dated source.\n");
+
+    const list = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(list.benchmarks.map((b) => b.id)).toEqual(["report-writing-v1"]);
+    const cases = (await (
+      await member.get(`${base}/report-writing-v1/cases`)
+    ).json()) as BenchmarkCasesResponse;
+    expect(cases.cases).toEqual([
+      { id: "CASE-001-contradictions", title: "Contradicting sources" },
+      { id: "CASE-002-format", title: "Strict format" },
+    ]);
+
+    // The same id again is a conflict, and the first Benchmark is left as it was.
+    const again = await owner.post(base, { ...createBody, title: "Overwrite attempt" });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
+      "benchmark_exists",
+    );
+    expect(
+      parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8")),
+    ).toMatchObject({ title: "Report writing" });
+  });
+
+  it("rejects malformed create requests and non-owners without writing anything", async () => {
+    const first = createBody.cases[0]!;
+    const bad: unknown[] = [
+      { ...createBody, id: "../escape" },
+      { ...createBody, id: "" },
+      { ...createBody, title: "   " },
+      { ...createBody, runs: 0 },
+      { ...createBody, runs: 1.5 },
+      { ...createBody, cases: [] },
+      { ...createBody, cases: [{ ...first, id: "excel-task" }] },
+      { ...createBody, cases: [{ ...first, id: "CASE-001/../x" }] },
+      { ...createBody, cases: [first, first] },
+      { ...createBody, cases: [{ ...first, rubric: "" }] },
+    ];
+    for (const body of bad) {
+      expect((await owner.post(base, body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await member.post(base, createBody)).status).toBe(403);
+    expect((await outsider.post(base, createBody)).status).toBe(404);
+    // A missing Agent is a 404 before any validation.
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents/nobody/benchmarks`, createBody)).status,
+    ).toBe(404);
+    expect(((await (await owner.get(base)).json()) as BenchmarksResponse).benchmarks).toEqual([]);
+  });
+
+  it("owner deletes a Benchmark directory whole; members and outsiders cannot", async () => {
+    expect((await owner.post(base, createBody)).status).toBe(201);
+    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "report-writing-v1");
+    expect((await member.delete(`${base}/report-writing-v1`)).status).toBe(403);
+    expect((await outsider.delete(`${base}/report-writing-v1`)).status).toBe(404);
+    await expect(fs.access(dir)).resolves.toBeUndefined();
+
+    expect((await owner.delete(`${base}/report-writing-v1`)).status).toBe(204);
+    await expect(fs.access(dir)).rejects.toThrow();
+    expect(((await (await owner.get(base)).json()) as BenchmarksResponse).benchmarks).toEqual([]);
+    // Gone, or never there: both are a plain 404.
+    expect((await owner.delete(`${base}/report-writing-v1`)).status).toBe(404);
+    expect((await owner.delete(`${base}/never-existed`)).status).toBe(404);
   });
 });
