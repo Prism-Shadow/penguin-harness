@@ -106,7 +106,10 @@ export function InstalledPluginsDialog({
                       {row.active ? S.plugins.stateActive : S.plugins.stateInactive}
                     </span>
                     {row.builtin && (
-                      <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                      <span
+                        title={S.plugins.builtinHint}
+                        className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      >
                         {S.plugins.builtin}
                       </span>
                     )}
@@ -124,7 +127,7 @@ export function InstalledPluginsDialog({
                     <p className={`mt-0.5 text-xs ${toneInk.danger}`}>{row.error}</p>
                   )}
                 </div>
-                {isAdmin && !row.builtin && (
+                {isAdmin && (
                   <Button
                     variant="secondary"
                     size="sm"
