@@ -144,7 +144,7 @@ Task 运行期间，宿主可通过 `session.steer(input)` 排队一条用户消
 
 ## 输入图片
 
-一张输入图片要么以图片消息的形态跟着请求走，要么变成一行 `[attached image: <路径>]`，指向会话 scratchpad 里的文件——模型再用 `read_image` / `describe_image` 去看，Web 则从路径还原出缩略图。这个转换是每个 Session 绑定一次的同一个函数（Session 是唯一同时知道 scratchpad 目录和模型能力的层），而**是否折叠由各输入路径自己决定**：
+一张输入图片要么以图片消息的形态跟着请求走，要么变成一行 `[attached image: <路径>]`，指向会话 scratchpad 里的文件——模型再用 `read_file` 去看，Web 则从路径还原出缩略图。这个转换是每个 Session 绑定一次的同一个函数（Session 是唯一同时知道 scratchpad 目录和模型能力的层），而**是否折叠由各输入路径自己决定**：
 
 | 输入 | 何时折叠 | 折叠时机 |
 | --- | --- | --- |

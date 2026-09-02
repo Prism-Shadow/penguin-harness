@@ -51,7 +51,7 @@ The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-tok
 | --- | --- |
 | `name` | Project display name (the id is shown when unset) |
 | `default_model` | Paired reference `{ provider, model_id }` to the default model; must point to an entry in `models` |
-| `vision_model` | The vision model that reads images on behalf of text-only models (used by `describe_image`); a paired reference |
+| `vision_model` | The vision model that reads images on behalf of text-only models (`read_file` hands images to it); a paired reference |
 | `[command_policy]` | Sandbox command policy: deny rules for shell commands, applied ahead of the approval mode — see [Command policy](#command-policy) |
 | `[[models]]` | The list of available model entries |
 
