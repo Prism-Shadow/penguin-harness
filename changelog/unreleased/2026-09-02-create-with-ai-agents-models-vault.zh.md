@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#591](https://github.com/Prism-Shadow/penguin-harness/pull/591)
 
 [English](2026-09-02-create-with-ai-agents-models-vault.md)
 
