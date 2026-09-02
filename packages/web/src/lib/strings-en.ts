@@ -2604,6 +2604,27 @@ Scenarios:
         `Have ${name} leave? It is removed from the chart and its subordinates report to its manager instead; the Agent and every session are kept.`,
       left: (name: string): string => `${name} has left`,
       saved: "Chart updated",
+      /** The page: zoom control, legend, counts, a failed refresh, the detached row. */
+      zoom: "Zoom",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      zoomFit: "Fit to width",
+      legend: "State legend",
+      employeeCount: (n: number): string => `${n} employee${n === 1 ? "" : "s"}`,
+      spend: "This period's spend",
+      refreshFailed: (error: string): string => `Refresh failed: ${error}`,
+      detached: "Manager not in the chart",
+      detachedNotice: (n: number): string =>
+        `${n} employee${n === 1 ? "" : "s"} cannot reach the CEO along the reporting line: the manager left the organization, or the line loops. Use "Change reporting line" to reattach them.`,
+      /** Hire and edit dialogs: the two sections, the current value, and the field hints. */
+      hireAgentSection: "Agent",
+      hirePositionSection: "Position",
+      agentHint: "Only Agents of this Project not yet in the organization",
+      budgetPlaceholder: "e.g. 30",
+      clearBudget: "Set unbounded",
+      currentValue: (value: string): string => `Current: ${value}`,
+      manager: "Manager",
+      reportsToHint: "Only employees outside its own subtree are listed",
     },
     calendar: {
       title: "Calendar",

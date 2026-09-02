@@ -1,9 +1,11 @@
 /**
- * The org chart's personnel dialogs. Hire a subordinate — an existing Agent of the Project or
- * a new one (id, name, description, plugins defaulting to agent-company and
- * agent-development), with the employee's title, duties, workspace and budget — and the
- * single-field edits: budget, reporting line, workspace. Every write stops at the shared
- * ConfirmModal first (the confirmation names what the chart file will say), then calls the API.
+ * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
+ * existing one of the Project, or a new one: id, name, description, plugins defaulting to
+ * agent-company and agent-development) and the position (title, duties, workspace, budget)
+ * — and the single-field edits, each showing the current value first: budget (a number, or
+ * unbounded), reporting line (anyone outside the employee's own subtree), workspace. Every
+ * write stops at the shared ConfirmModal first (the confirmation names what the chart file
+ * will say), then calls the API.
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
@@ -27,10 +29,20 @@ import { PLUGIN_ICON } from "../../components/ui/icons";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
+import { OrgSection } from "./org-layout";
 import { managerCandidates } from "./org-chart-tree";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
+
+/** The "what it is now" line at the top of an edit dialog. */
+function CurrentValue({ value }: { value: string }) {
+  return (
+    <p className="text-xs text-gray-500 dark:text-gray-400">
+      {S.company.chart.currentValue(value)}
+    </p>
+  );
+}
 
 export function HireDialog({
   open,
@@ -107,10 +119,11 @@ export function HireDialog({
     };
   }, [open, library]);
 
+  const picked = agents.find((a) => a.agentId === agentId);
   const hireName =
     source === "existing"
-      ? agents.find((a) => a.agentId === agentId)
-        ? agentDisplayName(agents.find((a) => a.agentId === agentId)!)
+      ? picked !== undefined
+        ? agentDisplayName(picked)
         : agentId
       : newName.trim() || newId.trim();
 
@@ -185,142 +198,158 @@ export function HireDialog({
           </>
         }
       >
-        <div className="space-y-3">
-          <div>
-            <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
-            <Segmented
-              options={[
-                { value: "existing" as const, label: S.company.chart.hireExisting },
-                { value: "new" as const, label: S.company.chart.hireNew },
-              ]}
-              value={source}
-              onChange={setSource}
-              cols={2}
-            />
-          </div>
-          {source === "existing" ? (
-            <div>
-              <Select
-                size="sm"
-                label={S.company.chart.agent}
-                required
-                value={agentId}
-                {...(errors.agent !== undefined ? { error: errors.agent } : {})}
-                onChange={(e) => setAgentId(e.target.value)}
-              >
-                {candidates.length === 0 ? (
-                  <option value="">{S.company.chart.noAgentsLeft}</option>
-                ) : (
-                  candidates.map((a) => (
-                    <option key={a.agentId} value={a.agentId}>
-                      {agentDisplayName(a)} ({a.agentId})
-                    </option>
-                  ))
-                )}
-              </Select>
+        <div className="space-y-5">
+          <OrgSection title={S.company.chart.hireAgentSection}>
+            <div className="space-y-3">
+              <div>
+                <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
+                <Segmented
+                  options={[
+                    { value: "existing" as const, label: S.company.chart.hireExisting },
+                    { value: "new" as const, label: S.company.chart.hireNew },
+                  ]}
+                  value={source}
+                  onChange={setSource}
+                  cols={2}
+                />
+              </div>
+              {source === "existing" ? (
+                <Select
+                  size="sm"
+                  label={S.company.chart.agent}
+                  required
+                  value={agentId}
+                  hint={S.company.chart.agentHint}
+                  {...(errors.agent !== undefined ? { error: errors.agent } : {})}
+                  onChange={(e) => {
+                    setAgentId(e.target.value);
+                    setErrors((p) => ({ ...p, agent: undefined }));
+                  }}
+                >
+                  {candidates.length === 0 ? (
+                    <option value="">{S.company.chart.noAgentsLeft}</option>
+                  ) : (
+                    candidates.map((a) => (
+                      <option key={a.agentId} value={a.agentId}>
+                        {agentDisplayName(a)} ({a.agentId})
+                      </option>
+                    ))
+                  )}
+                </Select>
+              ) : (
+                <>
+                  <Input
+                    label={S.company.chart.agentId}
+                    required
+                    size="sm"
+                    value={newId}
+                    className="font-mono"
+                    hint={S.company.chart.agentIdHint}
+                    {...(errors.agent !== undefined ? { error: errors.agent } : {})}
+                    onChange={(e) => {
+                      setNewId(e.target.value);
+                      setErrors((p) => ({ ...p, agent: undefined }));
+                    }}
+                  />
+                  <Input
+                    label={S.company.chart.agentName}
+                    size="sm"
+                    value={newName}
+                    hint={S.company.chart.agentNameHint}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                  <Textarea
+                    label={S.company.chart.agentDescription}
+                    size="sm"
+                    rows={2}
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                  />
+                  <div>
+                    <FieldLabel>{S.company.chart.plugins}</FieldLabel>
+                    <FormPicker
+                      open={pluginsOpen}
+                      setOpen={setPluginsOpen}
+                      label={
+                        plugins.length === 0
+                          ? S.company.chart.pluginsPlaceholder
+                          : S.company.chart.pluginsPicked(plugins.length)
+                      }
+                      muted={plugins.length === 0}
+                      title={S.company.chart.plugins}
+                      ariaLabel={S.company.chart.plugins}
+                      disabled={busy}
+                      menuClass="w-[26rem]"
+                    >
+                      <SkillPickList
+                        skills={library ?? []}
+                        selected={plugins}
+                        onToggle={(name) => setPlugins((prev) => toggleSkillName(prev, name))}
+                        onSelectAll={(names) => setPlugins((prev) => addSkillNames(prev, names))}
+                        onSelectNone={(names) =>
+                          setPlugins((prev) => removeSkillNames(prev, names))
+                        }
+                        emptyHint={
+                          library === null ? S.common.loading : S.company.chart.pluginsEmpty
+                        }
+                        searchPlaceholder={S.plugins.searchPlaceholder}
+                      />
+                    </FormPicker>
+                    <FieldHint>{S.company.chart.pluginsHint}</FieldHint>
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            <>
+          </OrgSection>
+          <OrgSection title={S.company.chart.hirePositionSection}>
+            <div className="space-y-3">
               <Input
-                label={S.company.chart.agentId}
+                label={S.company.chart.employeeTitle}
                 required
                 size="sm"
-                value={newId}
-                className="font-mono"
-                hint={S.company.chart.agentIdHint}
-                {...(errors.agent !== undefined ? { error: errors.agent } : {})}
+                value={title}
+                placeholder={S.company.chart.employeeTitlePlaceholder}
+                {...(errors.title !== undefined ? { error: errors.title } : {})}
                 onChange={(e) => {
-                  setNewId(e.target.value);
-                  setErrors((p) => ({ ...p, agent: undefined }));
+                  setTitle(e.target.value);
+                  setErrors((p) => ({ ...p, title: undefined }));
                 }}
               />
-              <Input
-                label={S.company.chart.agentName}
-                size="sm"
-                value={newName}
-                hint={S.company.chart.agentNameHint}
-                onChange={(e) => setNewName(e.target.value)}
-              />
               <Textarea
-                label={S.company.chart.agentDescription}
+                label={S.company.chart.duties}
                 size="sm"
                 rows={2}
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
+                value={duties}
+                hint={S.company.chart.dutiesHint}
+                onChange={(e) => setDuties(e.target.value)}
               />
-              <div>
-                <FieldLabel>{S.company.chart.plugins}</FieldLabel>
-                <FormPicker
-                  open={pluginsOpen}
-                  setOpen={setPluginsOpen}
-                  label={
-                    plugins.length === 0
-                      ? S.company.chart.pluginsPlaceholder
-                      : S.company.chart.pluginsPicked(plugins.length)
-                  }
-                  muted={plugins.length === 0}
-                  title={S.company.chart.plugins}
-                  ariaLabel={S.company.chart.plugins}
-                  disabled={busy}
-                  menuClass="w-[26rem]"
-                >
-                  <SkillPickList
-                    skills={library ?? []}
-                    selected={plugins}
-                    onToggle={(name) => setPlugins((prev) => toggleSkillName(prev, name))}
-                    onSelectAll={(names) => setPlugins((prev) => addSkillNames(prev, names))}
-                    onSelectNone={(names) => setPlugins((prev) => removeSkillNames(prev, names))}
-                    emptyHint={library === null ? S.common.loading : S.company.chart.pluginsEmpty}
-                    searchPlaceholder={S.plugins.searchPlaceholder}
-                  />
-                </FormPicker>
-                <FieldHint>{S.company.chart.pluginsHint}</FieldHint>
-              </div>
-            </>
-          )}
-          <Input
-            label={S.company.chart.employeeTitle}
-            required
-            size="sm"
-            value={title}
-            placeholder={S.company.chart.employeeTitlePlaceholder}
-            {...(errors.title !== undefined ? { error: errors.title } : {})}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              setErrors((p) => ({ ...p, title: undefined }));
-            }}
-          />
-          <Textarea
-            label={S.company.chart.duties}
-            size="sm"
-            rows={2}
-            value={duties}
-            hint={S.company.chart.dutiesHint}
-            onChange={(e) => setDuties(e.target.value)}
-          />
-          <Input
-            label={S.company.chart.workspace}
-            size="sm"
-            value={workspace}
-            className="font-mono"
-            hint={S.company.chart.workspaceHint}
-            placeholder="."
-            onChange={(e) => setWorkspace(e.target.value)}
-          />
-          <Input
-            label={S.company.chart.budget}
-            size="sm"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            value={budget}
-            hint={S.company.chart.budgetHint}
-            {...(errors.budget !== undefined ? { error: errors.budget } : {})}
-            onChange={(e) => {
-              setBudget(e.target.value);
-              setErrors((p) => ({ ...p, budget: undefined }));
-            }}
-          />
+              <Input
+                label={S.company.chart.workspace}
+                size="sm"
+                value={workspace}
+                className="font-mono"
+                hint={S.company.chart.workspaceHint}
+                placeholder="."
+                onChange={(e) => setWorkspace(e.target.value)}
+              />
+              <Input
+                label={S.company.chart.budget}
+                size="sm"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={budget}
+                placeholder={S.company.chart.budgetPlaceholder}
+                hint={S.company.chart.budgetHint}
+                {...(errors.budget !== undefined ? { error: errors.budget } : {})}
+                onChange={(e) => {
+                  setBudget(e.target.value);
+                  setErrors((p) => ({ ...p, budget: undefined }));
+                }}
+              />
+            </div>
+          </OrgSection>
         </div>
       </Modal>
       <ConfirmModal
@@ -390,11 +419,11 @@ export function EmployeeEditDialog({
       : edit === "reportsTo"
         ? S.company.chart.reportsToTitle(employee.name)
         : S.company.chart.workspaceTitle(employee.name);
-  const budgetLabel =
-    value.trim() === "" ? S.company.noBudget : formatMoney(Number(value), currency);
+  const budgetLabel = (raw: string) =>
+    raw.trim() === "" ? S.company.noBudget : formatMoney(Number(raw), currency);
   const confirmText =
     edit === "budget"
-      ? S.company.chart.budgetConfirm(employee.name, budgetLabel)
+      ? S.company.chart.budgetConfirm(employee.name, budgetLabel(value))
       : edit === "reportsTo"
         ? S.company.chart.reportsToConfirm(employee.name, managerName(value))
         : S.company.chart.workspaceConfirm(employee.name, value.trim());
@@ -464,57 +493,91 @@ export function EmployeeEditDialog({
         }
       >
         {edit === "budget" && (
-          <Input
-            label={S.company.chart.budget}
-            size="sm"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            value={value}
-            hint={S.company.chart.budgetHint}
-            {...(error !== undefined ? { error } : {})}
-            autoFocus
-            onChange={(e) => {
-              setValue(e.target.value);
-              setError(undefined);
-            }}
-          />
-        )}
-        {edit === "reportsTo" && (
-          <div>
-            <Select
+          <div className="space-y-3">
+            <CurrentValue
+              value={
+                employee.budget === undefined
+                  ? S.company.noBudget
+                  : formatMoney(employee.budget, currency)
+              }
+            />
+            <Input
+              label={S.company.chart.budget}
               size="sm"
-              label={S.company.chart.changeReportsTo}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="any"
               value={value}
+              placeholder={S.company.chart.budgetPlaceholder}
+              hint={S.company.chart.budgetHint}
               {...(error !== undefined ? { error } : {})}
+              autoFocus
               onChange={(e) => {
                 setValue(e.target.value);
                 setError(undefined);
               }}
-            >
-              {managers.map((m) => (
-                <option key={m.agentId} value={m.agentId}>
-                  {m.name} · {m.title}
-                </option>
-              ))}
-            </Select>
-            {managers.length === 0 && <FieldError>{S.company.chart.reportsToCycle}</FieldError>}
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || value.trim() === ""}
+                onClick={() => {
+                  setValue("");
+                  setError(undefined);
+                }}
+              >
+                {S.company.chart.clearBudget}
+              </Button>
+            </div>
+          </div>
+        )}
+        {edit === "reportsTo" && (
+          <div className="space-y-3">
+            <CurrentValue
+              value={employee.reportsTo === null ? "—" : managerName(employee.reportsTo)}
+            />
+            <div>
+              <Select
+                size="sm"
+                label={S.company.chart.manager}
+                value={value}
+                hint={S.company.chart.reportsToHint}
+                {...(error !== undefined ? { error } : {})}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  setError(undefined);
+                }}
+              >
+                {managers.map((m) => (
+                  <option key={m.agentId} value={m.agentId}>
+                    {m.name} · {m.title}
+                  </option>
+                ))}
+              </Select>
+              {managers.length === 0 && <FieldError>{S.company.chart.reportsToCycle}</FieldError>}
+            </div>
           </div>
         )}
         {edit === "workspace" && (
-          <Input
-            label={S.company.chart.workspace}
-            size="sm"
-            value={value}
-            className="font-mono"
-            hint={S.company.chart.workspaceHint}
-            {...(error !== undefined ? { error } : {})}
-            autoFocus
-            onChange={(e) => {
-              setValue(e.target.value);
-              setError(undefined);
-            }}
-          />
+          <div className="space-y-3">
+            <CurrentValue value={employee.workspace} />
+            <Input
+              label={S.company.chart.workspace}
+              size="sm"
+              value={value}
+              className="font-mono"
+              placeholder="."
+              hint={S.company.chart.workspaceHint}
+              {...(error !== undefined ? { error } : {})}
+              autoFocus
+              onChange={(e) => {
+                setValue(e.target.value);
+                setError(undefined);
+              }}
+            />
+          </div>
         )}
       </Modal>
       <ConfirmModal

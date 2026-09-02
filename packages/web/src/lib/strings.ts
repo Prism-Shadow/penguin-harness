@@ -2547,6 +2547,27 @@ Benchmark：
         `让 ${name} 离任？它会移出组织图，其下属改为汇报给它的上级；Agent 本身与所有会话保留。`,
       left: (name: string): string => `${name} 已离任`,
       saved: "组织图已更新",
+      /** The page: zoom control, legend, counts, a failed refresh, the detached row. */
+      zoom: "缩放",
+      zoomIn: "放大",
+      zoomOut: "缩小",
+      zoomFit: "适应宽度",
+      legend: "运行态图例",
+      employeeCount: (n: number): string => `${n} 位员工`,
+      spend: "本周期支出",
+      refreshFailed: (error: string): string => `刷新失败：${error}`,
+      detached: "上级不在组织图中",
+      detachedNotice: (n: number): string =>
+        `${n} 位员工的汇报线接不到 CEO：上级已离开组织，或汇报线成环。用「调整汇报线」把它们接回员工树。`,
+      /** Hire and edit dialogs: the two sections, the current value, and the field hints. */
+      hireAgentSection: "Agent",
+      hirePositionSection: "职位",
+      agentHint: "只列出本 Project 中尚未加入组织的 Agent",
+      budgetPlaceholder: "例如 30",
+      clearBudget: "设为不限",
+      currentValue: (value: string): string => `当前：${value}`,
+      manager: "上级",
+      reportsToHint: "只列出不在其下属范围内的员工",
     },
     calendar: {
       title: "日历",
