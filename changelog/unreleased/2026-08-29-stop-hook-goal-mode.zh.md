@@ -38,11 +38,4 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——**stop*
 
 ## 兼容性
 
-- **`@prismshadow/penguin-skills` 弃用**，该名下不再发布新版本；发布链改发 `@penguinharness/*` 各插件包（由 `@prismshadow/penguin-core` 加载）。
-- **既有已装 Skill 带的是自然数版本**，会读作空版本，因此插件库会把它们各报一次可更新；从库重装即带上日期版本。
-- **既有 Agent 没有任何钩子包**——不会向已存在的 Agent 自动安装。这样的 Agent 上发起目标会收到 `409 goal_plugin_not_installed`，直到从插件库装上 `goal` 插件；此后新建的 `default_agent` 自带。
-- **`goal_finished` 与 `goal` 运行选项不复存在**（连同上一轮迭代的 `goal_state` 表一起移除）；`goal_*` 服务端事件不变。早期版本的 Trace 仍带 `goal_finished` 记录，读取方把它当作未知事件。
-- **`[goal]` 标记不复存在**——`parseGoalMessage`、`isGoalRoundInput`、`downgradeGoalInput` 与 `GoalRoundMessage` 不再导出，`MARKER_TAGS` 也不再有 `goal` 标签。旧 Trace 中带 `[goal]` 块的轮消息按纯文本渲染（块原样可见、没有轮次小注），照常开对话索引条目、照常进输入历史；新的轮消息改带 `sender: "harness"` 标记。
-- **`system_config.yaml` 的 `hooks.skill_summary`** 不再读取：装上 `continual-learning` 插件就是开关。
-- **此前安装的 Skill 与钩子包没有图标**（当时没有任何东西把图标写在它们旁边），其行显示书本或钩子图形，直到从库重装或更新该插件——那会把插件图标写到位。
-- Agent 创建的 `skills: string[]` 字段与 CLI 的 `--skills` 改为 `plugins` / `--plugins`。
+完整记录见[向后兼容](2026-09-02-backward-compatibility.zh.md)：`goal_state` 表由第 3 号迁移删除（`drop-goal-state`，首个只能重启应用的迁移——向运行中的运行时热推送会被拒绝，直到重启；正常重启在打开时应用它），既有 Agent 不获得钩子包（目标模式回 `409 goal_plugin_not_installed`，直到从插件库装上 `goal`），从旧技能库装上的 Skill 各报一次可更新、更新前保留旧图标，旧 Trace 的 `goal_finished` 记录与 `[goal]` 轮消息分别读作未知事件与纯文本，`@prismshadow/penguin-skills` 弃用，Agent 创建的 `skills` / `--skills` 改为 `plugins` / `--plugins`。
