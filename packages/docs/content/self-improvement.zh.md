@@ -38,6 +38,10 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。E
 
 每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；第一次比较允许直接用 Candidate 的多 Run 平均分比较 Formal Baseline 的单 Run 分数，不为 Baseline 补跑。假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
+## 从评估中心发起
+
+Web App 的评估中心不需要手写提示词就能启动同样的两个 Session。**新建 Benchmark → 让 AI 创建**选定被测 Agent 并描述需求后，在新对话里把 `benchmark-design` 请求——Agent id、期望基线分、Pilot 迭代上限——发给 Project 的默认 Agent；**手动配置**则按下文的目录结构从表单写出一个 Benchmark，可直接评测。Benchmark 行上的**优化**把 `agent-optimization` 请求——被测 Agent、Benchmark id、每题运行次数、最多轮数、目标分数——发给所选的优化 Agent，既可从表单填写，也可写一段自由提示词、参数相同。评测 Runtime 从不在那里选择：Optimizer 沿用基线记录的模型对与推理强度。
+
 ## Benchmark 存储
 
 Benchmark 按 Agent 存放在 `benchmarks/<id>/` 下：
