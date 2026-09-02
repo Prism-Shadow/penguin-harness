@@ -31,6 +31,10 @@ export const FOLDER_OPEN_ICON =
  * nav): a robot head with an antenna, two ears, two eyes and a smile — lucide's `bot` with the
  * mouth added. The face is the point: an Agent is the thing in this product a person talks to,
  * and the friendliest mark on the rail should be the one that stands for it.
+ *
+ * The landing page draws the same Agent from its own copy of this string (`BotIcon` in
+ * packages/landing/src/components/icons.tsx — it carries no icon dependency to share one
+ * with); redraw this and redraw that. Its agent-glyph-sync test fails if only one moves.
  */
 export const AGENT_GROUP_ICON =
   "M12 8V4H8M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM2 14h2M20 14h2M9 13h.01M15 13h.01M10 16.5s.8 1 2 1 2-1 2-1";
