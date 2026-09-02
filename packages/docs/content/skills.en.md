@@ -32,7 +32,7 @@ Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name
 
 ## Anatomy of a Skill
 
-A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Skills carry no icon of their own — the icon belongs to the plugin (`icon.svg` beside `plugin.json`), and an installed skill or hook package shows the icon of the plugin it came from; one with no icon (a user-authored skill, say) shows its name's initial instead. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
+A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Skills carry no icon of their own — the icon belongs to the plugin (`icon.svg` beside `plugin.json`), and an installed skill or hook package shows the icon of the plugin it came from; one with no icon (a user-authored skill, say) shows the uniform mark of its kind instead — the book for a skill, the hook for a hook package. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
 
 A library `SKILL.md`'s frontmatter carries only two fields — everything else lives in `plugin.json`:
 

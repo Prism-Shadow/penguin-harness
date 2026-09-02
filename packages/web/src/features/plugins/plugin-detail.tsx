@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../../components/ui/modal";
 import { Badge } from "../../components/ui/badge";
+import { PLUGIN_ICON } from "../../components/ui/icons";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -153,7 +154,13 @@ export function PluginDetailModal({
     <Modal open title={plugin.name} onClose={onClose} widthClass="sm:max-w-4xl">
       {/* Header: icon tile + full description + the card's metadata line + hook points. */}
       <div className="flex items-start gap-3">
-        <SkillTile icon={plugin.icon} name={plugin.name} size={40} glyph={22} />
+        <SkillTile
+          icon={plugin.icon}
+          name={plugin.name}
+          fallback={PLUGIN_ICON}
+          size={40}
+          glyph={22}
+        />
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
             {localizedText(locale, plugin.description, plugin.descriptionZh)}

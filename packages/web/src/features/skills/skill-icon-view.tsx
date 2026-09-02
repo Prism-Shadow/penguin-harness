@@ -1,16 +1,19 @@
 /**
- * Skill and plugin icons. An icon belongs to a plugin: the library card and the detail Modal
- * show the plugin's own `icon.svg`, and an installed skill or hook package shows the icon of
- * the plugin it came from (written into its directory at install time). Nothing has an icon of
- * its own kind — there is no book for skills and no hook glyph for hook packages — so where a
- * subject has no icon (a user-authored or zip-imported skill, an install older than the icon
- * copy), the tile shows the name's initial instead, the way an Agent avatar does.
+ * Skill, hook package and plugin icons. An icon belongs to a plugin: the library card and the
+ * detail Modal show the plugin's own `icon.svg`, and an installed skill or hook package shows
+ * the icon of the plugin it came from (written into its directory at install time). Where a
+ * subject has no icon — a user-authored or zip-imported skill, an install older than the icon
+ * copy, a custom plugin without an icon.svg — the mark falls back to one uniform glyph for its
+ * kind: the book for a skill, the hook for a hook package, the puzzle piece for a plugin. The
+ * caller names the kind through `fallback`; never a letter or a per-name mark.
  *
- * `SkillIcon` is the bare mark (inline beside a name: the composer's chips and pick list) and
- * renders nothing without a usable icon; `SkillTile` is the tinted square the rows and cards
- * lead with, and always draws something. A DTO icon (raw icon.svg) is rendered inline once it
- * passes sanitizeSkillIcon (stroke uses currentColor, following text color).
+ * `SkillIcon` is the bare mark (inline beside a name: the composer's chips and pick list);
+ * `SkillTile` is the tinted square the rows and cards lead with. A DTO icon (raw icon.svg) is
+ * rendered inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text
+ * color).
  */
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { BOOK_ICON } from "../chat/skill-use";
 import { sanitizeSkillIcon } from "./skill-icon";
 
 /**
@@ -48,18 +51,21 @@ export function skillTileColor(name: string): string {
   return SKILL_TILE_COLORS[h % SKILL_TILE_COLORS.length]!;
 }
 
-/** The bare icon, inline: the sanitized svg at `size`, or nothing when there is no usable icon. */
+/** The bare mark, inline: the sanitized svg at `size`, else the kind's glyph (`fallback`; the book unless the subject is not a skill). */
 export function SkillIcon({
   icon,
+  fallback = BOOK_ICON,
   size = 20,
   className = "",
 }: {
   icon?: string;
+  /** 24×24 line path drawn when there is no usable `icon`: the uniform mark of the subject's kind. */
+  fallback?: string;
   size?: number;
   className?: string;
 }) {
   const safe = sanitizeSkillIcon(icon);
-  if (!safe) return null;
+  if (!safe) return <GlyphIcon d={fallback} size={size} className={className} />;
   return (
     <span
       aria-hidden
@@ -70,46 +76,37 @@ export function SkillIcon({
   );
 }
 
-/** The first letter of a name, uppercased — what a tile shows when its subject has no icon. */
-export function skillInitial(name: string): string {
-  return (name.trim()[0] ?? "?").toUpperCase();
-}
-
 /**
  * The tinted square a row or card leads with: the icon at `glyph` px inside a `size` px box in
- * the name's palette color, or the name's initial when there is no usable icon. Decorative —
- * the name beside it is the carrier.
+ * the name's palette color, or the kind's glyph (`fallback`) when there is no usable icon.
+ * Decorative — the name beside it is the carrier.
  */
 export function SkillTile({
   icon,
   name,
+  fallback = BOOK_ICON,
   size = 36,
   glyph = 20,
   className = "",
 }: {
   icon?: string;
-  /** Names the tile's color, and supplies the initial drawn without an icon. */
+  /** Names the tile's color. */
   name: string;
+  /** 24×24 line path drawn without an icon: the book for a skill, the hook for a hook package, the puzzle piece for a plugin. */
+  fallback?: string;
   /** Box edge in px. */
   size?: number;
-  /** Icon edge in px (unused when the initial is drawn). */
+  /** Icon edge in px. */
   glyph?: number;
   className?: string;
 }) {
-  const safe = sanitizeSkillIcon(icon);
   return (
     <span
       aria-hidden
       style={{ width: size, height: size }}
       className={`flex shrink-0 items-center justify-center rounded-lg ${skillTileColor(name)} ${className}`}
     >
-      {safe ? (
-        <SkillIcon icon={icon} size={glyph} />
-      ) : (
-        <span className="font-semibold leading-none" style={{ fontSize: Math.round(size * 0.44) }}>
-          {skillInitial(name)}
-        </span>
-      )}
+      <SkillIcon icon={icon} fallback={fallback} size={glyph} />
     </span>
   );
 }

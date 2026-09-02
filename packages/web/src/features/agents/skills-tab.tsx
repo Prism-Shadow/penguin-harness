@@ -2,7 +2,7 @@
  * Agent settings page "Skills" tab: the skills installed on this Agent
  * (agent_state/skills/<name>/ — the files are the single source of truth, so the list is
  * re-fetched from the API after every mutation instead of trusting client state). Rows lead
- * with the icon of the plugin the skill came from (the name's initial when it has none), then
+ * with the icon of the plugin the skill came from (the book glyph when it has none), then
  * the name, localized short description and version; uninstall
  * confirms first (deletes the whole directory, local edits included). The "Import skill"
  * modal offers two paths: the recommended chat install (a source field accepting a web

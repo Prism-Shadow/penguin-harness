@@ -52,7 +52,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { GEAR_ICON, HOOK_ICON } from "../../components/ui/icons";
+import { GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -107,10 +107,11 @@ const STAT_LINK_CLASS =
 
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
- * already carries (name, descriptions, icon, version).
+ * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
+ * puzzle piece rather than the book.
  */
 function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
-  return plugins.map((plugin) => ({ ...plugin }));
+  return plugins.map((plugin) => ({ ...plugin, fallbackIcon: PLUGIN_ICON }));
 }
 
 export function AgentsPage() {

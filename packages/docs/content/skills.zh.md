@@ -32,7 +32,7 @@ plugins/<plugin>/
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。Skill 本身不带图标——图标属于插件（`plugin.json` 同级的 `icon.svg`），已装 Skill 与钩子包显示的是所属插件的图标；没有图标的（例如用户自建的 Skill）显示名称首字母。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。Skill 本身不带图标——图标属于插件（`plugin.json` 同级的 `icon.svg`），已装 Skill 与钩子包显示的是所属插件的图标；没有图标的（例如用户自建的 Skill）显示该类事物的统一图形——Skill 是书本，钩子包是钩子。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
 
 库内 `SKILL.md` 的 frontmatter 只有两个字段——其余全部放在 `plugin.json`：
 

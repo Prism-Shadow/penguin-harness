@@ -8,7 +8,7 @@
  * row on narrow screens. Each card = a rounded icon tile centered against the two text rows
  * (its color comes from skillTileColor — a per-name palette hashed from the plugin name; DTO
  * icon = the plugin's raw icon.svg (beside plugin.json), rendered inline once it passes
- * sanitize, otherwise the name's initial) + a name (monospace) and short description on the
+ * sanitize, otherwise the puzzle piece) + a name (monospace) and short description on the
  * right, one line each
  * (single-line truncation, falling back to the full description when missing) + a line below
  * both with what the plugin contains ("N skills", one "<event> hook" badge per hook point)
@@ -62,6 +62,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
@@ -667,7 +668,13 @@ function PluginCard({
             own palette color — see SkillTile; deliberately a bit smaller than the two rows),
             with the name and short description on one line each to the right. */}
         <div className="flex items-center gap-3">
-          <SkillTile icon={plugin.icon} name={plugin.name} size={36} glyph={20} />
+          <SkillTile
+            icon={plugin.icon}
+            name={plugin.name}
+            fallback={PLUGIN_ICON}
+            size={36}
+            glyph={20}
+          />
           <div className="min-w-0 flex-1">
             <span
               className="block truncate font-mono text-[13px] font-semibold"

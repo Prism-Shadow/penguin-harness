@@ -3044,7 +3044,7 @@ export interface SkillMetadataItem {
    * Raw icon.svg text from the installed skill directory: the plugin's icon for a library
    * install (written beside SKILL.md at install time), a custom one for a user-authored skill.
    * Only installed lists carry it — the library listing's skills share their plugin's icon,
-   * which the plugin item carries once. Absent, the frontend shows the name's initial.
+   * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
   /** Version (`YYYY-MM-DD.N`, frontmatter version); an empty string when the frontmatter carries none or a malformed one. */
@@ -3061,7 +3061,7 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
-  /** The plugin's raw icon.svg, written beside the manifest at install time; absent for a package installed before icons travelled with it (the frontend shows the name's initial). */
+  /** The plugin's raw icon.svg, written beside the manifest at install time; absent for a package installed before icons travelled with it (the frontend draws the hook glyph). */
   icon?: string;
 }
 
@@ -3080,7 +3080,7 @@ export interface PluginItem {
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend shows the name's initial without it. */
+  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
 }
 
