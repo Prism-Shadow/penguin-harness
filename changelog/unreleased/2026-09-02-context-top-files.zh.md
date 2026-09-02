@@ -3,6 +3,7 @@
 - **Date:** 2026-09-02
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#584](https://github.com/Prism-Shadow/penguin-harness/pull/584)
 
 [English](2026-09-02-context-top-files.md)
 
