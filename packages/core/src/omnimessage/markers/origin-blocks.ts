@@ -18,8 +18,9 @@ import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
  *
  *     "[use_skills]\nskills: web-design\n[/use_skills]\n\nfix the layout"  →  "fix the layout"
  *
- * Used where a prefixed input doubles as user-facing content — e.g. goal mode deriving
- * the objective (re-injected each round, recorded in GOAL.yaml) from the round-1 input.
+ * Used where a prefixed input doubles as user-facing content — e.g. the goal route deriving
+ * the objective from the round-1 input before handing it to the goal plugin, which records it
+ * in the Session's GOAL.json and restates it each round.
  */
 export function stripLeadingMarkerBlocks(text: string): string {
   let out = text;

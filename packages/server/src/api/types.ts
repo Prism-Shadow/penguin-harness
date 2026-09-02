@@ -1481,7 +1481,7 @@ export interface TaskCreateRequest {
   goal?: { budget?: number };
 }
 
-/** Goal-mode run state, read from the Session's GOAL.yaml (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
+/** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
 export interface GoalStateView {
   objective: string;
   status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";

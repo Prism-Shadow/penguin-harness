@@ -36,7 +36,6 @@ import {
   findLatestTraceFile,
   isSessionMeta,
   parseUserSteeringText,
-  stripLeadingMarkerBlocks,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type {

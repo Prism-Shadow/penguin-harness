@@ -255,7 +255,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //   - scheduler           stop() now; successor start() reconciles missed fires
     //   - messaging bridge    stop() closes the channel connections; successor start()
     //                         reconnects every enabled binding from the DB
-    //   - agent runs          approvals → deny, drives → abort; a goal's GOAL.yaml reads
+    //   - agent runs          approvals → deny, drives → abort; a goal's GOAL.json reads
     //                         as aborted once its Session is idle (GET /goal)
     //   - session environments dispose() after the drive settles — kills background
     //                         commands (dev servers etc.) that would otherwise run on
