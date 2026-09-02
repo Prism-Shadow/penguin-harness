@@ -3,7 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** fix
 - **Scope:** `landing`, `web`
-- **PR:** [#544](https://github.com/Prism-Shadow/penguin-harness/pull/544)
+- **PR:** [#579](https://github.com/Prism-Shadow/penguin-harness/pull/579)
 
 [English](2026-09-01-landing-agent-glyph.md)
 
