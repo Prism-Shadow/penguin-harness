@@ -48,6 +48,9 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     listAliases: () => ["build-box", "nas"],
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
+    // An install asks the machine who it is before writing anything; a host with nothing on
+    // it yet answers stopped with no id, which is the shape that refuses nothing.
+    probe: async () => ({ state: { kind: "stopped" as const }, machineId: null }),
     install: async (opts): Promise<RemoteInstallOutcome> => {
       opts.onProgress?.("Pushing…");
       return { kind: "installed", output: "done", identity: IDENTITY };
@@ -231,6 +234,51 @@ describe("machines API", () => {
         kind: "already-installed",
         version: "9.9.9",
       });
+    });
+
+    it("an alias that points back at this machine is refused by the machine's own id, before anything is written", async () => {
+      // `Host localhost`, or a second alias for this host: the address is new to the store,
+      // so nothing recorded says "that is here" — only the machine can, and it does.
+      let installs = 0;
+      await boot({
+        probe: async () => ({
+          state: { kind: "running" as const, port: 7364, pid: 1 },
+          machineId: LOCAL_ID,
+        }),
+        install: async () => {
+          installs++;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+      });
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        message: expect.stringContaining("this very machine"),
+      });
+      expect(installs).toBe(0);
+      expect(recordsInStore()).toEqual({});
+    });
+
+    it("records the platform the install found, and probes the machine in that dialect", async () => {
+      const dialects: (string | null)[] = [];
+      await boot({
+        install: async () => ({
+          kind: "installed",
+          output: "",
+          identity: { ...IDENTITY, platform: "win32" as const },
+        }),
+        probe: async (_target, _run, platform) => {
+          dialects.push(platform ?? null);
+          return { state: { kind: "stopped" as const }, machineId: null };
+        },
+      });
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.get("ssh:nas")?.platform).toBe("win32");
+      // Before the install nothing was known (null); after it the probe speaks cmd.exe.
+      await admin.post(`/api/projects/${PROJECT}/machines/probe`);
+      expect(dialects).toEqual([null, "win32"]);
     });
 
     it("a throw from the push path still ends the job", async () => {
@@ -438,6 +486,15 @@ describe("machines API", () => {
   });
 
   describe("refusals decided before any ssh runs", () => {
+    it("409s an install through an alias a probe has already heard this machine's id from", async () => {
+      await boot();
+      machinesRepo.patch("ssh:nas", { machineId: LOCAL_ID });
+      const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("self_install");
+      expect(t.deps.machines.job()).toBeNull();
+    });
+
     it("409s an install onto the machine this server runs on", async () => {
       await boot();
       const res = await admin.post(`/api/projects/${PROJECT}/machines/local/install`);

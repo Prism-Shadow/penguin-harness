@@ -193,7 +193,11 @@ export class MachinesService {
           });
           continue;
         }
-        const probe = await this.#effects.probe(target, this.#effects.runOn);
+        const probe = await this.#effects.probe(
+          target,
+          this.#effects.runOn,
+          this.repo.get(machine.id)?.platform ?? null,
+        );
         const state = probe.state;
         this.#statuses.set(machine.id, {
           state: state.kind,
@@ -253,10 +257,14 @@ export class MachinesService {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
     // Never this machine: a server does not push this build over its own program directory
-    // while running from it.
+    // while running from it. The synthetic row is the obvious case. An alias that points
+    // back home — `Host localhost`, a second name for this host — is the same machine at
+    // another address, and the id a probe once heard from it says so without any ssh; an
+    // alias never probed is asked inside the job, before anything is written.
     if (machineId === LOCAL_MACHINE_ID) return { ok: false, why: "self" };
     const alias = this.#effects.listAliases().find((entry) => `ssh:${entry}` === machineId);
     if (alias === undefined) return { ok: false, why: "unknown-machine" };
+    if (this.repo.get(machineId)?.machineId === this.#machineId) return { ok: false, why: "self" };
 
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
@@ -278,13 +286,28 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
+        // The alias IS the target: what it means — user, host, port, key, jump host — is
+        // ssh's to resolve, from its own config, every time it is handed the alias.
+        const target = { alias, user: "" };
         say(`Installing ${plan.version} on ${alias}…`);
+        // Asked before anything is written: only the machine can say whether this alias is
+        // this host under another name. Unreachable is not a refusal — a host with nothing
+        // installed yet answers exactly that — this server's own id is.
+        const heard = await this.#effects.probe(target, this.#effects.runOn, null);
+        this.#rememberMachineId(machineId, heard.machineId);
+        if (heard.machineId !== null && heard.machineId === this.#machineId) {
+          job.result = {
+            ok: false,
+            step: "connect",
+            message:
+              "That alias reaches this very machine — it answered with this server's own id. A server does not push this build over the program directory it is running from.",
+          };
+          return;
+        }
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
-          // The alias IS the target: what it means — user, host, port, key, jump host — is
-          // ssh's to resolve, from its own config, every time it is handed the alias.
-          target: { alias, user: "" },
+          target,
           plan,
           onProgress: say,
           assets: this.#assets,
@@ -297,7 +320,11 @@ export class MachinesService {
         // Remembered BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
-        this.repo.patch(machineId, { version, installedAt: this.#effects.now().toISOString() });
+        this.repo.patch(machineId, {
+          version,
+          installedAt: this.#effects.now().toISOString(),
+          platform: outcome.identity.platform,
+        });
         this.#setMember(projectId, machineId, true);
         job.result = { ok: true, kind: outcome.kind, version };
       } catch (err) {

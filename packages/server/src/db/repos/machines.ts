@@ -23,6 +23,8 @@ export interface MachineRow {
   sessionPid: number | null;
   /** The port its server was bound to over there, as of the last connect. */
   remotePort: number | null;
+  /** What the install found the machine to be; null until one has. The status probe speaks that dialect. */
+  platform: "linux" | "darwin" | "win32" | null;
 }
 
 /** Everything but the address may be patched; absent fields keep their value. */
@@ -75,12 +77,13 @@ export class MachinesRepo {
         installedAt: null,
         sessionPid: null,
         remotePort: null,
+        platform: null,
       }),
       ...patch,
     };
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, session_pid, remote_port) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         address,
@@ -89,6 +92,7 @@ export class MachinesRepo {
         next.installedAt,
         next.sessionPid,
         next.remotePort,
+        next.platform,
       );
   }
 
@@ -115,5 +119,6 @@ function toRow(row: Record<string, unknown>): MachineRow {
     installedAt: (row.installed_at as string | null) ?? null,
     sessionPid: (row.session_pid as number | null) ?? null,
     remotePort: (row.remote_port as number | null) ?? null,
+    platform: (row.platform as MachineRow["platform"]) ?? null,
   };
 }

@@ -15,7 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { openExistingDatabase } from "./db/database.js";
+import { openDatabaseReadOnly } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { liveServerLock } from "./lock.js";
 
@@ -49,13 +49,13 @@ export async function readMachineStatus(
 }
 
 /**
- * Reads the id and changes nothing.
+ * Reads the id and changes nothing — and cannot: the connection is read-only.
  *
- * `openExistingDatabase`, never `openDatabase`: the latter is the SCHEMA path — CREATE TABLE,
+ * `openDatabaseReadOnly`, never `openDatabase`: the latter is the SCHEMA path — CREATE TABLE,
  * the ensureColumn list, an ALTER with a backfill, and the migrations. A controller asking a
  * machine what it is would then reshape that machine's database under the prepared statements
- * of the server running there, on a build that may be older than this question. That is the
- * distinction openExistingDatabase was written for, and a status probe is exactly its case.
+ * of the server running there, on a build that may be older than this question. A read-only
+ * open makes that impossible rather than merely not done.
  *
  * Existence-checked first, because opening would create the file (and its directory) on a
  * root no server has ever used — a probe must not leave a data root behind it. A machine
@@ -64,7 +64,7 @@ export async function readMachineStatus(
  */
 function readMachineId(dbPath: string): string | null {
   if (!fs.existsSync(dbPath)) return null;
-  const db = openExistingDatabase(dbPath);
+  const db = openDatabaseReadOnly(dbPath);
   try {
     return new MachinesRepo(db).peekOwnId();
   } catch {

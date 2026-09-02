@@ -6,9 +6,10 @@
  * carries no parser for a shell's output. ssh's own failure is not a separate condition —
  * it IS the answer "cannot reach this machine", carrying OpenSSH's diagnostic.
  */
-import { REMOTE_PENGUIN } from "./commands.js";
+import { remotePenguin } from "./commands.js";
 import { jsonAnswer } from "./answer.js";
 import type { RemoteTarget } from "./commands.js";
+import type { RemotePlatform } from "./detect.js";
 import type { ExecResult } from "./transport/index.js";
 import type { MachineStatus } from "../machine-status.js";
 
@@ -17,8 +18,8 @@ import type { MachineStatus } from "../machine-status.js";
  * that is not there) comes back as text rather than being swallowed by the shared shell,
  * which merges the streams and reports an empty stderr.
  */
-export function readServerStateCommand(): string {
-  return `${REMOTE_PENGUIN} server status 2>&1`;
+export function readServerStateCommand(platform: RemotePlatform): string {
+  return `${remotePenguin(platform)} server status 2>&1`;
 }
 
 type MachineServerState =
@@ -81,8 +82,26 @@ export function parseProbe(stdout: string): MachineProbe {
 export async function probeServerState(
   target: RemoteTarget,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
+  /**
+   * The dialect to ask in — what the install found the machine to be. Null when nothing is
+   * on record: the POSIX form is tried first and, if it holds no answer, the Windows form,
+   * the same way detectRemote asks. One round trip for a machine that is known, two at most
+   * for one that is not.
+   */
+  platform: RemotePlatform | null = null,
 ): Promise<MachineProbe> {
-  const result = await exec(target, readServerStateCommand());
+  const first = await probeIn(target, exec, platform ?? "linux");
+  if (platform !== null || first.state.kind !== "unreachable") return first;
+  const second = await probeIn(target, exec, "win32");
+  return second.state.kind === "unreachable" ? first : second;
+}
+
+async function probeIn(
+  target: RemoteTarget,
+  exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
+  platform: RemotePlatform,
+): Promise<MachineProbe> {
+  const result = await exec(target, readServerStateCommand(platform));
   if (result.code !== 0) {
     // stdout as the fallback, not just stderr: over the shared shell the two streams are
     // merged and stderr arrives empty (ssh-session.ts), so reading only stderr threw away

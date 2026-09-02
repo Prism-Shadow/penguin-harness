@@ -12,7 +12,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
-import { parseProbe } from "../src/machines/server-state.js";
+import {
+  parseProbe,
+  probeServerState,
+  readServerStateCommand,
+} from "../src/machines/server-state.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   cmdQuote,
@@ -331,6 +335,75 @@ describe("shipping the installers", () => {
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
     const source = path.resolve(__dirname, "..", "..", "..", name);
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
+  });
+});
+
+describe("asking `penguin server status` in the machine's own dialect", () => {
+  const target = { alias: "nas", user: "deploy" };
+  const answered = {
+    code: 0,
+    stdout: `${JSON.stringify({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })}\n`,
+    stderr: "",
+    timedOut: false,
+  };
+  // What cmd.exe says to `"$HOME/.penguin/node/bin/node"`: not "no such command", a path
+  // with four literal characters in it.
+  const cmdSaid = {
+    code: 1,
+    stdout: "The system cannot find the path specified.\r\n",
+    stderr: "",
+    timedOut: false,
+  };
+
+  it("speaks cmd.exe to a Windows machine: no $HOME, node.exe, backslashes", () => {
+    const command = readServerStateCommand("win32");
+    expect(command).toContain("%USERPROFILE%\\.penguin\\node\\node.exe");
+    expect(command).toContain("lib\\dist\\penguin-hmr.js");
+    expect(command).not.toContain("$HOME");
+    expect(readServerStateCommand("linux")).toContain("$HOME/.penguin/node/bin/node");
+  });
+
+  it("a machine whose platform is on record is asked once, in that dialect", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return answered;
+      },
+      "win32",
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("%USERPROFILE%");
+    expect(probe.state).toMatchObject({ kind: "running", port: 7364 });
+  });
+
+  it("a machine whose platform is unknown is asked the POSIX way, then the Windows way", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return command.includes("%USERPROFILE%") ? answered : cmdSaid;
+      },
+      null,
+    );
+    expect(asked).toHaveLength(2);
+    expect(probe).toMatchObject({ state: { kind: "running" }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("when neither dialect answers, what the POSIX attempt heard is what is reported", async () => {
+    const refused = {
+      code: 255,
+      stdout: "",
+      stderr: "ssh: connect to host nas port 22: Connection refused",
+      timedOut: false,
+    };
+    const probe = await probeServerState(target, async () => refused, null);
+    expect(probe.state).toMatchObject({
+      kind: "unreachable",
+      detail: expect.stringContaining("Connection refused"),
+    });
   });
 });
 

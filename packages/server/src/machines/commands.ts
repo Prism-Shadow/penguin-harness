@@ -94,6 +94,22 @@ export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
  */
 export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
 
+/**
+ * The same program directory as cmd.exe names it. A Windows sshd hands a command to cmd.exe,
+ * where `$HOME` is four literal characters and the bundled runtime is `node\node.exe`
+ * (scripts/launchers/penguin.cmd) — so the POSIX form above is not "not found" there, it is
+ * a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
+ */
+export const REMOTE_PROGRAM_DIR_WINDOWS = "%USERPROFILE%\\.penguin";
+
+/** The pushed CLI, invoked in the dialect of the shell that will read the command. */
+export function remotePenguin(platform: "linux" | "darwin" | "win32"): string {
+  if (platform === "win32") {
+    return `"${REMOTE_PROGRAM_DIR_WINDOWS}\\node\\node.exe" "${REMOTE_PROGRAM_DIR_WINDOWS}\\lib\\dist\\penguin-hmr.js"`;
+  }
+  return REMOTE_PENGUIN;
+}
+
 /** `ssh <options> <alias> <remote command>`. */
 export function sshArgs(target: RemoteTarget, remoteCommand: string): string[] {
   return [...connectionOptions(target), target.alias, remoteCommand];

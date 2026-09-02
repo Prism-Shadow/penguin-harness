@@ -3,6 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** feature
 - **Scope:** `server`, `cli`, `docs`
+- **PR:** [#568](https://github.com/Prism-Shadow/penguin-harness/pull/568)
 
 [中文版](2026-09-01-machines-identity.zh.md)
 
@@ -31,7 +32,7 @@ penguin server status
 # {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
 ```
 
-Machine-facing on purpose. The question used to be asked in shell — `cat` the lock, `sed` the pid out, `kill -0`, `cat` a second file for the id — which meant a parser on this side for a format nobody defined, and no answer at all from a Windows remote, `kill -0` having no cmd.exe equivalent. Asking the machine's own CLI moves both problems to the side that has Node.
+Machine-facing on purpose. The question used to be asked in shell — `cat` the lock, `sed` the pid out, `kill -0`, `cat` a second file for the id — which meant a parser on this side for a format nobody defined, and no answer at all from a Windows remote, `kill -0` having no cmd.exe equivalent. Asking the machine's own CLI moves both problems to the side that has Node. The invocation is shaped for the platform the install found — `$HOME/.penguin/node/bin/node` on POSIX, `%USERPROFILE%\.penguin\node\node.exe` under cmd.exe — and a machine whose platform is not on record is asked both ways.
 
 `running` requires the recorded pid to be alive **and** its port to accept, which the shell version could not do: it only had `kill -0`, and a recycled pid reads as a live server.
 

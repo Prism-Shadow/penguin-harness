@@ -3,6 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** feature
 - **Scope:** `server`, `cli`, `docs`
+- **PR:** [#568](https://github.com/Prism-Shadow/penguin-harness/pull/568)
 
 [English](2026-09-01-machines-identity.md)
 
@@ -31,7 +32,7 @@ penguin server status
 # {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
 ```
 
-它刻意是面向机器的。这个问题过去是用 shell 问的——`cat` 锁文件、`sed` 出 pid、`kill -0`、再 `cat` 第二个文件取 id——这意味着本侧要为一个无人定义的格式写解析器，而且 Windows 远端根本给不出答案，`kill -0` 在 cmd.exe 里没有对应物。改为询问机器自己的 CLI，把这两个问题都挪到了有 Node 的那一侧。
+它刻意是面向机器的。这个问题过去是用 shell 问的——`cat` 锁文件、`sed` 出 pid、`kill -0`、再 `cat` 第二个文件取 id——这意味着本侧要为一个无人定义的格式写解析器，而且 Windows 远端根本给不出答案，`kill -0` 在 cmd.exe 里没有对应物。改为询问机器自己的 CLI，把这两个问题都挪到了有 Node 的那一侧。调用形态按安装时探明的平台生成——POSIX 上是 `$HOME/.penguin/node/bin/node`，cmd.exe 下是 `%USERPROFILE%\.penguin\node\node.exe`——记录里没有平台的机器则两种都问一遍。
 
 `running` 为真要求记录的 pid 存活**且**其端口可建立连接，这是 shell 版本做不到的：它只有 `kill -0`，而被回收复用的 pid 会被读成一个活着的服务。
 

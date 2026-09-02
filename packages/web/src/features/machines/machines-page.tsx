@@ -124,7 +124,9 @@ export function MachinesPage() {
     };
   }, [running]);
 
-  const machines = useMemo(() => state?.machines ?? [], [state]);
+  // The picker offers targets, and this machine is never one: a server does not push this
+  // build over the program directory it is running from (the API says 409 to the attempt).
+  const machines = useMemo(() => (state?.machines ?? []).filter((m) => !m.local), [state]);
   const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
   const matched = useMemo(() => matchMachines(machines, query), [machines, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);

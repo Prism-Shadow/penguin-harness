@@ -209,3 +209,20 @@ describe("installedMachines", () => {
     expect(state.machines.map((m) => m.alias)).toEqual(["a", "c"]);
   });
 });
+
+describe("this machine in the list", () => {
+  /** The entry the server puts first: the host serving this page. */
+  const here = (): MachineInfo => ({
+    id: "local",
+    alias: "workstation",
+    machineId: "LNrJdHAZJ91G58i0",
+    installed: INSTALLED,
+    local: true,
+    status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
+  });
+
+  it("is never one of the installed remotes: there is nothing to reinstall from here", () => {
+    const listed = installedMachines(response(null, { machines: [here(), carrying("nas")] }));
+    expect(listed.map((m) => m.id)).toEqual(["ssh:nas"]);
+  });
+});
