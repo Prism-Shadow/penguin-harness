@@ -115,6 +115,23 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
    * boot failure or a bad web manifest leaves the previously committed version
    * untouched.
    */
+  /**
+   * Which of these blobs the store lacks, so the push that follows carries only those. A
+   * pusher that gets a 404 here is talking to a runtime older than the probe and sends
+   * everything inline, as it always did.
+   */
+  routes.post("/assets/probe", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { hashes?: unknown } | null;
+    const hashes = body?.hashes;
+    if (!Array.isArray(hashes) || hashes.some((h) => typeof h !== "string")) {
+      throw new HttpError(400, "bad_request", "expected { hashes: string[] }");
+    }
+    if (hashes.length > 50_000) {
+      throw new HttpError(400, "bad_request", "too many hashes in one probe");
+    }
+    return c.json({ missing: hmr.missingBlobs(hashes as string[]) });
+  });
+
   routes.post("/upgrade", async (c) => {
     const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
     if (contentType !== "application/gzip" && contentType !== "application/octet-stream") {
@@ -129,7 +146,12 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
       platform?: string;
       cli?: string;
       web?: { files?: Record<string, string> };
-      assets?: { files?: Record<string, string>; exec?: string[] };
+      assets?: {
+        files?: Record<string, string>;
+        manifest?: Record<string, { sha: string }>;
+        blobs?: Record<string, string>;
+        exec?: string[];
+      };
       source?: { repo: string; revision: string };
     };
     try {
@@ -162,11 +184,15 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
         cli: payload.cli,
         web: payload.web.files,
         // Optional: a push that needs no real files on disk (no native module, no helper
-        // binary) simply omits it, and older pushers keep working unchanged.
-        ...(payload.assets?.files
+        // binary) simply omits it, and older pushers keep working unchanged. Two shapes:
+        // every file inline (`files`), or a manifest of hashes plus only the blobs this
+        // store said it was missing (`manifest` + `blobs`, after /assets/probe).
+        ...(payload.assets?.files || payload.assets?.manifest
           ? {
               assets: {
-                files: payload.assets.files,
+                ...(payload.assets.files ? { files: payload.assets.files } : {}),
+                ...(payload.assets.manifest ? { manifest: payload.assets.manifest } : {}),
+                ...(payload.assets.blobs ? { blobs: payload.assets.blobs } : {}),
                 ...(payload.assets.exec ? { exec: payload.assets.exec } : {}),
               },
             }
