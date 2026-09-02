@@ -25,6 +25,15 @@ export interface WorkspaceEntry {
   path: string;
   /** Display name overriding the path basename (set via 重命名工作区; absent = basename). */
   alias?: string;
+  /**
+   * The machine this directory is ON, by its own id. Absent means the local machine —
+   * which is also every entry registered before workspaces could name one, so absence has
+   * to keep meaning "here" rather than "unknown".
+   *
+   * A path is only meaningful together with its machine: `/srv/app` on two machines is two
+   * different directories, so the pair is the identity and `path` alone is not.
+   */
+  machineId?: string;
 }
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
@@ -68,7 +77,13 @@ function parseEntry(x: unknown): WorkspaceEntry | null {
     if (p === "") return null;
     const rawAlias = (x as { alias?: unknown }).alias;
     const alias = typeof rawAlias === "string" ? rawAlias.trim() : "";
-    return alias === "" ? { path: p } : { path: p, alias };
+    const rawMachine = (x as { machineId?: unknown }).machineId;
+    const machineId = typeof rawMachine === "string" && rawMachine !== "" ? rawMachine : undefined;
+    return {
+      path: p,
+      ...(alias === "" ? {} : { alias }),
+      ...(machineId === undefined ? {} : { machineId }),
+    };
   }
   return null;
 }
@@ -123,10 +138,16 @@ export function saveWorkspaceRegistry(
 export function registerWorkspace(
   entries: readonly WorkspaceEntry[],
   path: string,
+  machineId?: string,
 ): readonly WorkspaceEntry[] {
   const p = normalizeWorkspacePath(path);
-  if (p === "" || isTempWorkspace(p) || entries.some((e) => e.path === p)) return entries;
-  return [{ path: p }, ...entries];
+  if (p === "" || isTempWorkspace(p)) return entries;
+  // Deduped on the PAIR: the same path on two machines is two different directories, and
+  // collapsing them would hide one behind the other with no way to tell which.
+  if (entries.some((e) => e.path === p && (e.machineId ?? null) === (machineId ?? null))) {
+    return entries;
+  }
+  return [{ path: p, ...(machineId === undefined ? {} : { machineId }) }, ...entries];
 }
 
 /**
