@@ -1159,7 +1159,7 @@ export const zh = {
       /** `weekday` is the locale's short weekday name (周一 / Monday). */
       everyWeek: (weekday: string, time: string): string => `每${weekday} ${time}`,
       everyDays: (n: number, time: string): string => `每 ${n} 天 ${time}`,
-      everyHours: (n: number): string => `每 ${n} 小时`,
+      everyHours: (n: number): string => (n === 1 ? "每小时" : `每 ${n} 小时`),
       everyMinutes: (n: number): string => `每 ${n} 分钟`,
       /** A one-off task and when it fires. */
       once: (when: string): string => `一次性 · ${when}`,

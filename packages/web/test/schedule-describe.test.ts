@@ -82,6 +82,9 @@ describe("describeSchedule", () => {
     expect(describeSchedule({ status: "active", period: "6h", startAt: MONDAY }, "zh", NOW)).toBe(
       "每 6 小时",
     );
+    expect(describeSchedule({ status: "active", period: "1h", startAt: MONDAY }, "zh", NOW)).toBe(
+      "每小时",
+    );
     // 90 minutes is not a whole number of hours.
     expect(describeSchedule({ status: "active", period: "90m", startAt: MONDAY }, "zh", NOW)).toBe(
       "每 90 分钟",
