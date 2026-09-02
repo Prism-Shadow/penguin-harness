@@ -48,6 +48,8 @@ A row's actions come at two levels:
 - **Hovering** a row replaces the trailing last-active time with two icon buttons — archive and delete. They are reachable from the keyboard too: tabbing onto either one reveals it;
 - **Right-clicking** a row opens the full menu at the pointer: pin, rename, archive, delete. A **long press** on touch and **Shift+F10** on the keyboard open the same menu, since neither hover nor a secondary click exists there. Escape, a click elsewhere, or scrolling the list dismisses it; the browser's own context menu is taken over on conversation rows only, and stays as usual everywhere else on the page.
 
+Beside a row's title sit its status marks: a turning hourglass while the Session runs (a squeezing bar while it compacts), a green dot once a run finished that you have not looked at yet, and a small layered-stack mark while the Session still owns **background tasks** — commands running on past their yield window and background subagents mid-round. Its tooltip counts them ("2 background tasks"). The mark is independent of the others: an idle conversation whose dev server is still up keeps it, and it disappears the moment the last task ends, pushed live without a refresh.
+
 Pinning is offered only in the active list — the archived, subagent and scheduled folders leave it out — and a pinned conversation sorts to the top of its group. The choice is remembered per Project in the browser.
 
 ### Streaming Rendering
@@ -59,7 +61,7 @@ Pinning is offered only in the active list — the archived, subagent and schedu
 
 ### Header Stats and the Details Card
 
-The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. Below those:
+The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. Right of the elapsed time, while the conversation still owns background tasks, a small pill shows their count — the same figure the conversation list's mark carries. Below those:
 
 - **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid — plus, on running rows, a link to the service the process serves when one was detected (the last local URL its output printed, else a listen-port probe of its process group). Running rows carry a **Stop** button (kills the whole process group and drops the row) — the conversation is told the process is down, as **stopped** rather than failed, so the model knows the dev server is gone without reading it as a crash to restart; exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list. Removal is immediate and final: the entry leaves the runtime registry together with the output captured from that process, so afterwards the model can no longer be asked to read it — keep the row until you are done with its output.
 

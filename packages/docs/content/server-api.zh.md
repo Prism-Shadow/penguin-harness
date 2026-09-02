@@ -413,7 +413,7 @@ Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | Session 级 | GET /api/sessions/:sessionId/stream | 该 Session 的消息流与运行事件 |
-| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / schedule_fired / schedule_queued / session_created） |
+| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / session_background / schedule_fired / schedule_queued / session_created） |
 
 ### 传输格式
 
@@ -425,6 +425,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -439,6 +440,7 @@ export type ServerEvent =
 | task_state | Session 运行状态翻转（idle / running / compacting） |
 | session_title | 首轮后模型生成的标题已持久化 |
 | session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
+| session_background | 某个 Session 的后台任务计数发生变化——命令超过 yield 窗口转入后台或以 `run_in_background` 启动、进程退出或被停止、后台子智能体开始一轮、结束一轮或被释放。携带此刻的 `SessionInfo.backgroundTasks`（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转后台、正在跑一轮的子会话数），归零时同样推送，列表据此即可撤下标记而无需重新拉取；列表行与单条查询在计数为零时省略该字段。受众与 `session_state` 相同 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
