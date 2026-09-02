@@ -3409,6 +3409,10 @@ export interface OrganizationSettings {
   budgetWarnRatio: number;
   budgetPauseRatio: number;
   createdBy: string;
+  /** The shared workspace root when it is not the organization's own `workspace/` (absolute path). */
+  workspace?: string;
+  /** The model desks and ticket sessions run on when the employee names none; absent = the Project default. */
+  model?: { provider: string; modelId: string };
 }
 
 /** Period spend against the CEO's budget (= the whole organization). */
@@ -3673,6 +3677,10 @@ export interface OrganizationCreateRequest {
   name?: string;
   mission: string;
   timezone?: string;
+  /** An existing absolute directory to use as the shared workspace; default = the organization's own `workspace/`. */
+  workspace?: string;
+  /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
+  model?: { provider: string; modelId: string };
 }
 
 export interface OrganizationPatchRequest {
@@ -3684,6 +3692,10 @@ export interface OrganizationPatchRequest {
   mentionChainLimit?: number;
   budgetWarnRatio?: number;
   budgetPauseRatio?: number;
+  /** null returns to the organization's own `workspace/`. */
+  workspace?: string | null;
+  /** null returns to the Project default. */
+  model?: { provider: string; modelId: string } | null;
 }
 
 export interface OrgHireRequest {

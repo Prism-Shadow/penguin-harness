@@ -219,6 +219,49 @@ describe("organization runtime", () => {
     expect(detail.ceoDeskSessionId).toBe(started[0]!.sessionId);
   });
 
+  it("uses the chosen shared workspace and model for desks and ticket sessions", async () => {
+    const shared = path.join(root, "company-ws");
+    await fs.mkdir(shared, { recursive: true });
+    await service.create(
+      P,
+      {
+        orgId: ORG,
+        mission: "Build it",
+        workspace: shared,
+        model: { provider: "custom", modelId: "m-bench" },
+      },
+      "alice",
+    );
+    expect(created[0]!.workspace).toBe(shared);
+    expect(sessions.findById(started[0]!.sessionId)?.modelId).toBe("m-bench");
+    const detail = await service.detail(P, ORG, "alice");
+    expect(detail.settings.workspace).toBe(shared);
+    expect(detail.settings.model).toEqual({ provider: "custom", modelId: "m-bench" });
+    // A sub-directory of the chosen root is what an employee's relative workspace resolves to.
+    await fs.mkdir(path.join(shared, "site"));
+    const item = await service.hire(P, ORG, {
+      newAgent: { agentId: HR },
+      title: "Dev",
+      reportsTo: CEO,
+      workspace: "site",
+    });
+    expect(item.resolvedWorkspace).toBe(path.join(shared, "site"));
+    await expect(
+      service.create(
+        P,
+        { orgId: "other", mission: "x", workspace: path.join(root, "missing") },
+        "alice",
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      service.create(
+        P,
+        { orgId: "other", mission: "x", model: { provider: "custom", modelId: "nope" } },
+        "alice",
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {
     await createOrg();
     await expect(createOrg()).rejects.toMatchObject({ status: 409, code: "org_exists" });

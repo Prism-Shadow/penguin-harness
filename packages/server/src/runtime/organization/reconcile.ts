@@ -21,7 +21,7 @@ import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend, TicketForSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
-import { loadOrg } from "./model.js";
+import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { dispatchToDesk, ensureDesk, syncDeskCache } from "./triggers.js";
 
@@ -111,7 +111,7 @@ async function renewMovedDesks(deps: OrgDeps, org: LoadedOrg): Promise<void> {
   for (const [agentId, desk] of Object.entries(org.desks)) {
     const employee = org.byId.get(agentId);
     if (!employee) continue;
-    const resolved = await deps.store.resolveWorkspace(org.dir, employee.workspace);
+    const resolved = await deps.store.resolveWorkspace(sharedWorkspace(org), employee.workspace);
     if (resolved === null || resolved === desk.workspace) continue;
     const r = await ensureDesk(deps, org, agentId);
     if (!r.ok) recordError(deps, org, "org_desk_unavailable", r.error, agentId);

@@ -422,10 +422,18 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     .requiredOption("--org-id <id>", t.org.newOrgId)
     .requiredOption("--mission <text>", t.org.mission)
     .option("--name <name>", t.org.orgName)
+    .option("--workspace <path>", t.common.workspace)
+    .option("--model-id <id>", t.common.modelId)
+    .option("--provider <name>", t.common.provider)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (opts) => {
+      // A model reference is always the complete (provider, modelId) pair, like everywhere else.
+      if ((opts.modelId !== undefined) !== (opts.provider !== undefined)) {
+        fail(t, t.modelRefIncomplete());
+        return;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const detail = await client.request<OrganizationDetail>(
@@ -435,6 +443,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
           orgId: String(opts.orgId),
           mission: String(opts.mission),
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
+          ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
+          ...(opts.modelId !== undefined
+            ? { model: { provider: String(opts.provider), modelId: String(opts.modelId) } }
+            : {}),
         },
       );
       if (opts.json === true) printJson(detail);

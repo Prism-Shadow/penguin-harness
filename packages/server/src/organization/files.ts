@@ -8,6 +8,7 @@
  * Fact files (`desks.toml`, a ticket's `Sessions` header, chat lines) are written by the
  * server only. An invalid file is reported, never repaired in place.
  */
+import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
@@ -43,6 +44,10 @@ export interface OrgConfig {
   budgetWarnRatio: number;
   budgetPauseRatio: number;
   createdBy: string;
+  /** The shared workspace root when it is not the organization's own `workspace/`: an absolute directory that exists. */
+  workspace?: string;
+  /** The model desks and ticket sessions run on when the employee entry names none; absent = the Project default. */
+  model?: { provider: string; modelId: string };
 }
 
 export const ORG_CONFIG_DEFAULTS = {
@@ -99,6 +104,26 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
   const createdBy = table["created_by"];
   if (typeof createdBy !== "string" || createdBy === "")
     return fail("created_by must be a non-empty string");
+  const workspace = table["workspace"];
+  if (workspace !== undefined && (typeof workspace !== "string" || !path.isAbsolute(workspace))) {
+    return fail("workspace must be an absolute path");
+  }
+  let model: { provider: string; modelId: string } | undefined;
+  if (table["model"] !== undefined) {
+    const m = table["model"];
+    if (m === null || typeof m !== "object") return fail("model must be a table");
+    const provider = (m as Record<string, unknown>)["provider"];
+    const modelId = (m as Record<string, unknown>)["model_id"];
+    if (
+      typeof provider !== "string" ||
+      provider === "" ||
+      typeof modelId !== "string" ||
+      modelId === ""
+    ) {
+      return fail("model needs both provider and model_id");
+    }
+    model = { provider, modelId };
+  }
   return {
     ok: true,
     value: {
@@ -111,6 +136,8 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
       budgetWarnRatio: warn as number,
       budgetPauseRatio: pause as number,
       createdBy,
+      ...(typeof workspace === "string" ? { workspace } : {}),
+      ...(model !== undefined ? { model } : {}),
     },
   };
 }
@@ -126,11 +153,17 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     budget_warn_ratio: cfg.budgetWarnRatio,
     budget_pause_ratio: cfg.budgetPauseRatio,
     created_by: cfg.createdBy,
+    ...(cfg.workspace !== undefined ? { workspace: cfg.workspace } : {}),
+    ...(cfg.model !== undefined
+      ? { model: { provider: cfg.model.provider, model_id: cfg.model.modelId } }
+      : {}),
   };
   return [
     "# org_config.toml — organization settings (the id is the directory name and never changes).",
     "# status: active | paused (paused stops every automatic trigger; people can still talk to any desk).",
     "# approval_mode: allow-all | read-only | deny-all for desk and ticket sessions.",
+    "# workspace: an absolute directory used as the shared workspace instead of ./workspace (optional).",
+    "# [model]: provider + model_id for desks and ticket sessions when the employee names none (optional).",
     stringifyToml(table),
     "",
   ].join("\n");

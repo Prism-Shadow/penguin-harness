@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 /**
  * The organization service: what the routes (and through them the CLI and the Web App)
  * call. Every write is a validated edit of an organization file under the organization's
@@ -63,7 +65,7 @@ import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
-import { loadOrg } from "./model.js";
+import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { appendChatMessage, listTickets, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
@@ -199,7 +201,20 @@ export class OrganizationService {
       budgetWarnRatio: org.config.budgetWarnRatio,
       budgetPauseRatio: org.config.budgetPauseRatio,
       createdBy: org.config.createdBy,
+      ...(org.config.workspace !== undefined ? { workspace: org.config.workspace } : {}),
+      ...(org.config.model !== undefined ? { model: org.config.model } : {}),
     };
+  }
+
+  /** A shared-workspace root chosen by the user: absolute and an existing directory. */
+  private async requireWorkspaceDir(spec: string): Promise<string> {
+    if (!path.isAbsolute(spec)) throw badRequest("workspace must be an absolute path.");
+    const real = await fs.stat(spec).then(
+      (s) => (s.isDirectory() ? spec : null),
+      () => null,
+    );
+    if (real === null) throw badRequest(`workspace directory does not exist: ${spec}`);
+    return real;
   }
 
   async detail(projectId: string, orgId: string, userId: string): Promise<OrganizationDetail> {
@@ -287,6 +302,9 @@ export class OrganizationService {
       throw new HttpError(409, "agent_exists", `The CEO's Agent id is already taken: ${ceo}`);
     }
     const name = req.name?.trim() || orgId;
+    if (req.model !== undefined) await this.validateModel(projectId, req.model);
+    const workspace =
+      req.workspace !== undefined ? await this.requireWorkspaceDir(req.workspace) : undefined;
     const config: OrgConfig = {
       name,
       mission,
@@ -297,6 +315,8 @@ export class OrganizationService {
       budgetWarnRatio: ORG_CONFIG_DEFAULTS.budgetWarnRatio,
       budgetPauseRatio: ORG_CONFIG_DEFAULTS.budgetPauseRatio,
       createdBy: userId,
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
     await this.deps.store.createLayout(dir);
@@ -371,6 +391,14 @@ export class OrganizationService {
       if (req.mentionChainLimit !== undefined) next.mentionChainLimit = req.mentionChainLimit;
       if (req.budgetWarnRatio !== undefined) next.budgetWarnRatio = req.budgetWarnRatio;
       if (req.budgetPauseRatio !== undefined) next.budgetPauseRatio = req.budgetPauseRatio;
+      if (req.workspace === null) delete next.workspace;
+      else if (req.workspace !== undefined)
+        next.workspace = await this.requireWorkspaceDir(req.workspace);
+      if (req.model === null) delete next.model;
+      else if (req.model !== undefined) {
+        await this.validateModel(projectId, req.model);
+        next.model = req.model;
+      }
       await this.deps.store.writeConfig(org.dir, next);
       org.config = next;
       return this.settings(org);
@@ -402,7 +430,7 @@ export class OrganizationService {
     const out: OrgEmployeeItem[] = [];
     for (const e of org.chart.employees) {
       const exists = await this.deps.agents.exists(org.projectId, e.agentId);
-      const workspace = await this.deps.store.resolveWorkspace(org.dir, e.workspace);
+      const workspace = await this.deps.store.resolveWorkspace(sharedWorkspace(org), e.workspace);
       const invalid = !exists
         ? `Agent ${e.agentId} does not exist`
         : workspace === null
@@ -1455,7 +1483,7 @@ function initBody(org: LoadedOrg): string {
     `1. Read the handbook, then confirm your understanding of the mission with the board (${board}) in the group chat (\`penguin org chat send -m "@${board} …"\`) and ask what is unclear.`,
     `2. Hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the roles the mission needs.`,
     "3. Partition the shared workspace: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
-    "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`): a daily sweep each is a good start.",
+    "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
     "5. Turn the mission into a first batch of tickets in `proposed` (`penguin org ticket create …`), one parent ticket for the project-level goal and children per stream.",
     `6. Report to the board in the group chat, mentioning @${board}.`,
   ].join("\n");

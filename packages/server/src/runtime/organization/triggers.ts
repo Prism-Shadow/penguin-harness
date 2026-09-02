@@ -11,7 +11,7 @@ import type { TicketDoc } from "../../organization/files.js";
 import { serializeTicket } from "../../organization/files.js";
 import type { OrgDeps } from "./deps.js";
 import type { LoadedOrg } from "./model.js";
-import { employeeLine } from "./model.js";
+import { employeeLine, sharedWorkspace } from "./model.js";
 
 export interface DeskHandle {
   sessionId: string;
@@ -39,13 +39,14 @@ export async function ensureDesk(
   if (!(await deps.agents.exists(org.projectId, agentId))) {
     return { ok: false, error: `Agent ${agentId} does not exist` };
   }
-  const workspace = await deps.store.resolveWorkspace(org.dir, employee.workspace);
+  const workspace = await deps.store.resolveWorkspace(sharedWorkspace(org), employee.workspace);
   if (workspace === null) {
     return {
       ok: false,
       error: `workspace directory does not exist for ${agentId}: ${employee.workspace}`,
     };
   }
+  const model = employee.model ?? org.config.model;
   const existing = org.desks[agentId];
   if (
     existing &&
@@ -69,9 +70,7 @@ export async function ensureDesk(
       projectId: org.projectId,
       agentId,
       workspace,
-      ...(employee.model !== undefined
-        ? { modelId: employee.model.modelId, provider: employee.model.provider }
-        : {}),
+      ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
     });
   } catch (err) {
@@ -186,7 +185,7 @@ export async function openTicketSession(
   const employee = org.byId.get(agentId);
   if (!employee) return { ok: false, error: `${agentId} is not an employee of ${org.orgId}` };
   const workspace = await deps.store.resolveWorkspace(
-    org.dir,
+    sharedWorkspace(org),
     opts.workspace ?? employee.workspace,
   );
   if (workspace === null) {
@@ -195,15 +194,14 @@ export async function openTicketSession(
       error: `workspace directory does not exist: ${opts.workspace ?? employee.workspace}`,
     };
   }
+  const model = employee.model ?? org.config.model;
   let created: { sessionId: string; workspace: string };
   try {
     created = await deps.sessionCreator.createSession({
       projectId: org.projectId,
       agentId,
       workspace,
-      ...(employee.model !== undefined
-        ? { modelId: employee.model.modelId, provider: employee.model.provider }
-        : {}),
+      ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
     });
   } catch (err) {

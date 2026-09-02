@@ -386,8 +386,7 @@ export class OrgStore {
    * workspace (and it must stay inside it); absolute → as given. Null when the directory
    * does not exist — the caller reports the entry as invalid rather than creating anything.
    */
-  async resolveWorkspace(dir: string, spec: string): Promise<string | null> {
-    const shared = workspaceDir(dir);
+  async resolveWorkspace(shared: string, spec: string): Promise<string | null> {
     const target = path.isAbsolute(spec) ? spec : path.resolve(shared, spec);
     if (!path.isAbsolute(spec)) {
       const rel = path.relative(shared, target);

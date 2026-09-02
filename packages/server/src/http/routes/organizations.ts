@@ -107,6 +107,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const mission = requireString(body, "mission", { minLen: 1, maxLen: 4000 });
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
     const timezone = optionalString(body, "timezone", { minLen: 1, maxLen: 64 });
+    const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
+    const model = parseModel(body);
     const detail = await deps.orgService.create(
       projectId,
       {
@@ -114,6 +116,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
         mission,
         ...(name !== undefined ? { name } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
     );
@@ -143,6 +147,11 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     });
     const budgetWarnRatio = optionalNumber(body, "budgetWarnRatio", { nonNegative: true });
     const budgetPauseRatio = optionalNumber(body, "budgetPauseRatio", { nonNegative: true });
+    const workspace =
+      body.workspace === null
+        ? null
+        : optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
+    const model = parseModel(body);
     const settings = await deps.orgService.patch(projectId, orgId, {
       ...(name !== undefined ? { name } : {}),
       ...(mission !== undefined ? { mission } : {}),
@@ -152,6 +161,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(mentionChainLimit !== undefined ? { mentionChainLimit } : {}),
       ...(budgetWarnRatio !== undefined ? { budgetWarnRatio } : {}),
       ...(budgetPauseRatio !== undefined ? { budgetPauseRatio } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(model !== undefined ? { model } : {}),
     });
     return c.json(settings);
   });

@@ -35,7 +35,9 @@ ${input.mission}
 - The **group chat** is the organization's public channel. Only \`@<employee>\` and \`@all\`
   deliver a message to someone's desk; everything else is just recorded.
 - The **calendar** is the only periodic driver: an event's prompt tells the employee what to
-  look at. HR keeps every employee on at least one enabled event.
+  look at. HR keeps every employee on exactly one recurring event at its own hour — a rota,
+  not a broadcast: cadences differ by role (daily owners, 2–3 days for reviewers, weekly for
+  finance) and no two desks share a start minute.
 - **Budgets** are monthly caps per employee (own spend plus every subordinate). Reaching the
   warning ratio posts a system message here; reaching the pause ratio stops that employee's
   calendar until the next month or a raised budget. People can always talk to a desk directly.
@@ -52,7 +54,7 @@ ${input.mission}
 | \`calendar/<agent_id>/<event>.toml\` | calendar events, one file each (same fields as scheduled tasks, no target) | employees (\`penguin org calendar …\`) |
 | \`tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md\` | tickets; the column directory is the status | anyone (\`penguin org ticket …\`) |
 | \`chat/<yyyy-mm-dd>.jsonl\` | group chat, one message per line | the server (\`penguin org chat send\`) |
-| \`workspace/\` | the shared workspace; the CEO assigns sub-directories to desks | employees |
+| \`workspace/\` (or the \`workspace\` path in \`org_config.toml\`) | the shared workspace; the CEO assigns sub-directories to desks | employees |
 
 Paths in prompts use \`<app_data_dir>\` placeholders; resolve them from the Environment section
 of your system prompt. Never write absolute paths into files other people read.

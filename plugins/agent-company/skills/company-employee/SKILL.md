@@ -137,6 +137,8 @@ penguin org finance [--period <YYYY-MM>] [--json]               # spend (cumulat
 
 ## Cautions
 
+- A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee.
+
 - **Facts are the server's.** `desks.toml`, a ticket's `Sessions` line and the chat files are written by the server; for everything else you would edit by hand, the CLI is the writer.
 - **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the `Status` line together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. Ticket ids are `<yyyy-mm-dd>-<slug>` and stay in their creation month's directory; moving columns never changes the month.
 - **Unattended means unattended.** Desk and ticket sessions run under the organization's approval mode with nobody watching; do not plan on a human approving a step mid-run — block the ticket and say what you need.

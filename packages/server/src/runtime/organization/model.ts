@@ -6,7 +6,7 @@
  */
 import type { Desks, OrgChart, OrgConfig, OrgEmployee } from "../../organization/files.js";
 import { ORG_CONFIG_DEFAULTS, ancestorsOf } from "../../organization/files.js";
-import { ceoAgentId } from "../../organization/paths.js";
+import { ceoAgentId, workspaceDir } from "../../organization/paths.js";
 import type { OrgDeps } from "./deps.js";
 
 export interface LoadedOrg {
@@ -91,4 +91,9 @@ export function lineOf(org: LoadedOrg, agentId: string): string[] {
 
 export function isCeo(org: LoadedOrg, agentId: string): boolean {
   return agentId === ceoAgentId(org.orgId);
+}
+
+/** The shared workspace root: the directory named in the config, else the organization's own `workspace/`. */
+export function sharedWorkspace(org: LoadedOrg): string {
+  return org.config.workspace ?? workspaceDir(org.dir);
 }

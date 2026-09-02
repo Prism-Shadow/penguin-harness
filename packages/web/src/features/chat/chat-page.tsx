@@ -512,10 +512,15 @@ export function ChatPage() {
   // menu advises compacting first, since the change invalidates the model's cached
   // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
+  // The Agent list may not carry this Session's Agent yet (an Agent an organization created
+  // moments ago): the probe below reloads the list, and this effect re-runs once it lands.
+  const selectedAgentKnown =
+    selectedAgentId !== null && agents.some((a) => a.agentId === selectedAgentId);
   useEffect(() => {
-    if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
+    if (selectedSessionId && selectedAgentId && selectedAgentKnown)
+      setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
+  }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
   // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
   // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
@@ -615,8 +620,12 @@ export function ChatPage() {
       (res) => {
         if (cancelled) return;
         const session = sessionForProject(res.session, projectId);
-        if (session) addSession(session);
-        else setProbeFailedKey(probeKey);
+        if (session) {
+          addSession(session);
+          // A Session of an Agent the list has not loaded (company mode creates Agents
+          // server-side): fetch the list, or the page has no Agent to render under.
+          if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
+        } else setProbeFailedKey(probeKey);
       },
       () => {
         if (!cancelled) setProbeFailedKey(probeKey);

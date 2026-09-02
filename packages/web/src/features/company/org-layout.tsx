@@ -117,11 +117,15 @@ export function OrgLayout() {
   const { projects, currentProject, setCurrentProjectId } = useProject();
   const key = orgKey(projectId, orgId);
 
-  // A deep link into an organization is a choice of mode.
-  const { available, workMode, setWorkMode, setCurrentOrg } = company;
+  // Entering an organization route is a choice of mode — asserted when the route is entered,
+  // never re-asserted when the mode later changes: the user's own switch to development
+  // navigates away, and re-forcing company mode here would undo the click before this
+  // layout unmounts.
+  const { available, setWorkMode, setCurrentOrg } = company;
   useEffect(() => {
-    if (available && workMode !== "company") setWorkMode("company");
-  }, [available, workMode, setWorkMode]);
+    if (available) setWorkMode("company");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- route entry only, not on every mode change
+  }, [available, key, setWorkMode]);
 
   // The session list and the Agent set belong to the Project, so it follows the route.
   const currentProjectId = currentProject?.projectId ?? null;

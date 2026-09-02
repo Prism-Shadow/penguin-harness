@@ -62,15 +62,26 @@ Shared inputs — specs, brand assets, data — live at the workspace root where
 
 ## Scheduling
 
-The calendar is the only recurring driver. Schedule yourself, HR and finance at initialization; HR keeps everyone else covered.
+The calendar is the only recurring driver. Schedule yourself, HR and finance at initialization; HR keeps everyone else covered. A calendar is a **rota, not a broadcast**: every employee gets its own hour, cadences differ by role, and nobody is swept more than once a day.
+
+| Role | Cadence | Hour (organization timezone) |
+| --- | --- | --- |
+| CEO (you) | daily | 09:00 |
+| HR | every 3 days | 10:00 |
+| Finance | weekly | 16:00 |
+| Developers, writers, operators | daily | a distinct half-hour between 09:30 and 12:00 |
+| Reviewers, marketing, research | every 2–3 days | a distinct hour in the afternoon |
+
+Rules that follow from the table: never `--start-at now` for a recurring event (it pins everyone to the same minute); compute the next occurrence of the role's hour as an ISO instant with the organization's UTC offset; one recurring event per employee (a second one only for a different cadence, such as a weekly retrospective beside a daily sweep); no two employees on the same start minute; leave weekends to the weekly and 3-day cadences rather than adding events.
 
 ```bash
-penguin org calendar add board-sweep --prompt "Sweep the board: decide on every proposed ticket, review what is in review, check the ticket sessions of the in_progress tickets you own, block what is stuck, and report to the board in chat if anything needs a decision." --start-at now --period 1d
-penguin org calendar add hr-daily --agent-id <org_id>_hr --prompt "Check that every employee has at least one enabled calendar event and add one for anyone without. Evaluate whoever finished a ticket this week." --start-at now --period 1d
-penguin org calendar add finance-daily --agent-id <org_id>_finance --prompt "Run the daily audit: penguin org finance against the budgets; explain any alert in chat and propose savings." --start-at now --period 1d
+# Tomorrow 09:00 in Asia/Shanghai (UTC+8): write the instant with its offset.
+penguin org calendar add board-sweep --prompt "Sweep the board: decide on every proposed ticket, review what is in review, check the ticket sessions of the in_progress tickets you own, block what is stuck, and report to the board in chat if anything needs a decision." --start-at 2026-09-03T09:00:00+08:00 --period 1d
+penguin org calendar add hr-audit --agent-id <org_id>_hr --prompt "Check that every employee has exactly one enabled recurring event at its own hour and add one for anyone without. Evaluate whoever finished a ticket since your last run." --start-at 2026-09-03T10:00:00+08:00 --period 3d
+penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Run the weekly audit: penguin org finance against the budgets; explain any alert in chat and propose savings." --start-at 2026-09-04T16:00:00+08:00 --period 7d
 ```
 
-`--period` is at least `5m`; `1d` is right for a sweep, and hourly is rarely worth its cost. Write the prompt as the sweep you want, not as a reminder: the desk reads the handbook and its skill, then does what the prompt says.
+`--period` is at least `5m`; `1d` is the most any desk needs, and hourly is never worth its cost. Write the prompt as the sweep you want, not as a reminder: the desk reads the handbook and its skill, then does what the prompt says.
 
 ## Reviewing tickets
 
@@ -99,7 +110,7 @@ A `kind: init` trigger is the first message of a new organization's CEO; its bod
 1. **Confirm the mission.** State your reading of it — goals, deadline, what "done" means — and your open questions at the top of your reply; the creator usually has this session open right after creating the organization. Put the same in chat, @-mentioning the creator, so it is on record. Proceed with the rest of the checklist on that reading: a wrong assumption costs a ticket edit, an idle organization costs a day.
 2. **Hire HR and finance** (above), then the first roles the ticket tree needs. Give each an AGENTS.md brief.
 3. **Partition the workspace**: one sub-directory per employee, created before it is assigned.
-4. **Schedule** yourself, HR and finance with `penguin org calendar add`.
+4. **Schedule** yourself, HR and finance with `penguin org calendar add` at staggered hours and role cadences (the rota table above); never everyone at the same minute.
 5. **Write the first tickets**: the parent per goal and the first children per stream, owners assigned, all left in `proposed` until the creator has confirmed the mission; accept them on your next sweep once the reading holds.
 6. **Report** to the creator in one chat message: what you understood, whom you hired, how the workspace is split, what is scheduled, and which tickets await acceptance.
 
