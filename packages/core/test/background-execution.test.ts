@@ -351,6 +351,79 @@ describe("exec_command run_in_background", () => {
   });
 });
 
+describe("background-state listener", () => {
+  it("pings on a background launch, again when the process exits, and on a kill", async () => {
+    const { env } = await makeEnv();
+    let pings = 0;
+    env.setBackgroundStateListener(() => {
+      pings += 1;
+    });
+    const res = await runTool(env, "exec_command", {
+      cmd: "printf done; exit 0",
+      run_in_background: true,
+    });
+    extractProcessId(res.output);
+    // Registration pinged synchronously, inside the launching call.
+    expect(pings).toBeGreaterThanOrEqual(1);
+    // The exit pings on its own: the row stays listed (exited) but leaves the running set.
+    await waitFor(() => env.listBackgroundCommands().every((p) => !p.running));
+    await waitFor(() => pings >= 2);
+
+    const settled = pings;
+    const long = await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+    const id = extractProcessId(long.output);
+    expect(pings).toBe(settled + 1);
+    // A deliberate kill disarms the completion report but not this: the registry removal
+    // pings synchronously, and the group's later exit adds nothing the host has to act on.
+    const killed = await runTool(env, "input_command", { process_id: id, kill: true });
+    expect(killed.stopReason).toBe("completed");
+    expect(pings).toBeGreaterThan(settled + 1);
+    expect(env.listBackgroundCommands().find((p) => p.processId === id)).toBeUndefined();
+  });
+
+  it("pings when a subagent is promoted to the background and when its round settles", async () => {
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt }) {
+      await new Promise<void>((r) => gates.set(prompt, r));
+      yield withHop(assistantText(`answer to: ${prompt}`));
+    });
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [SUB_DEF], mcpServers: [] },
+      services: { subagentRunner: runner },
+    });
+    cleanups.push(async () => {
+      env.dispose();
+      await rm(dir, { recursive: true, force: true });
+    });
+    let pings = 0;
+    env.setBackgroundStateListener(() => {
+      pings += 1;
+    });
+    const res = await runTool(env, "run_subagent", { prompt: "bg task", run_in_background: true });
+    expect(res.stopReason).toBe("completed");
+    expect(pings).toBeGreaterThanOrEqual(1);
+    // Promoted (it holds a subagent_id) and mid-round: what a host counts as a background subagent.
+    expect(env.listBackgroundSubagents()).toMatchObject([{ running: true }]);
+    expect(env.listBackgroundSubagents()[0]!.subagentId).not.toBeNull();
+
+    const launched = pings;
+    await waitFor(() => gates.has("bg task"));
+    gates.get("bg task")!();
+    await waitFor(() => !env.hasRunningBackgroundSubagents());
+    // The round settling rides the same listener as the registry changes: one subscription
+    // hears everything that moves the count.
+    expect(pings).toBeGreaterThan(launched);
+    expect(env.listBackgroundSubagents()).toMatchObject([{ running: false }]);
+
+    // Disposal is silent: the Session has ended, and its registries emptying is not news.
+    const beforeDispose = pings;
+    env.dispose();
+    expect(pings).toBe(beforeDispose);
+  });
+});
+
 describe("input_command defaults", () => {
   it("the default empty-poll wait is 120000ms", () => {
     expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(120_000);
