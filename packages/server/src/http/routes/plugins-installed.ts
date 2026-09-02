@@ -3,6 +3,7 @@
  * the process actually holds:
  *
  *   GET  /api/plugins/installed                 the list, joined with what loaded (any member)
+ *   GET  /api/plugins/installed?shipped=1        …plus which plugins the build ships (a tag)
  *   POST /api/plugins/installed { specifier }   npm-install the package, then list it (admin)
  *   PUT  /api/plugins/installed { plugins }     rewrite the list itself (admin)
  *   DELETE /api/plugins/installed?specifier=…   drop it from the list and from disk (admin)
@@ -62,11 +63,11 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     });
     const loaded = deps.loadedModules();
     const bases = pluginBases(deps.root, deps.assetsDir());
-    // Builtins first, then the listed ones — the same order the loader loads them in, and a
-    // listed builtin appears once, as builtin.
-    const builtin = await discoverBuiltinPlugins(bases);
+    // Exactly what plugins.json lists: a plugin the build ships is not installed until an
+    // operator says so. `builtin` on a row is where the package CAME FROM, a tag, not a
+    // second way of being installed.
     const plugins: InstalledPlugin[] = [];
-    for (const specifier of [...new Set([...builtin, ...listed])]) {
+    for (const specifier of listed) {
       const declared = await readPluginDeclaration(specifier, bases);
       if ("error" in declared) {
         plugins.push({
@@ -92,6 +93,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
     return {
       plugins,
+      // What the build ships, installed or not: the catalogue marks these rows "built in",
+      // and installing one is a list edit rather than a download.
+      shipped: await discoverBuiltinPlugins(bases),
       file: PLUGINS_FILE,
       // A listed plugin that is not active loads at the next start; nothing here can load it.
       restartPending: plugins.some((p) => !p.active && p.error === undefined),
@@ -118,15 +122,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   app.post("/", async (c) => {
     requireAdmin(c);
     const specifier = specifierOf((await readJson(c)).specifier);
-    // The package first, the list second: a listed plugin that is not on disk is exactly the
-    // state this route exists to avoid, and npm failing must leave the deployment unchanged.
-    try {
-      await installPluginPackage(deps.root, specifier);
-    } catch (err) {
-      if (err instanceof PluginInstallError) {
-        throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+    // A plugin the build ships is already on the machine: installing it is consent, not a
+    // download. Everything else goes through npm — the package first, the list second, since
+    // a listed plugin that is not on disk is exactly the state this route exists to avoid,
+    // and npm failing must leave the deployment unchanged.
+    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
+    if (!shipped.includes(specifier)) {
+      try {
+        await installPluginPackage(deps.root, specifier);
+      } catch (err) {
+        if (err instanceof PluginInstallError) {
+          throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+        }
+        throw err;
       }
-      throw err;
     }
     // `pkg@1.2.3` installs that version but is LISTED by name: the list names what to load,
     // and a pinned range in it would be read as part of the package name at load time.
