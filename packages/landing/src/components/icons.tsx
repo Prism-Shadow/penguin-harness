@@ -274,12 +274,16 @@ export function FeatherIcon(props: IconProps) {
   );
 }
 
+/**
+ * Agent glyph, byte-identical to the Web App's AGENT_GROUP_ICON
+ * (packages/web/src/components/ui/group-list.tsx): the product and the page that sells it must
+ * not draw the same thing two ways. Kept as ONE path rather than this file's usual element mix
+ * so the two are literally the same string — test/agent-glyph-sync.test.ts fails when they drift.
+ */
 export function BotIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M12 8V4H8" />
-      <rect x="4" y="8" width="16" height="12" rx="2" />
-      <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+      <path d="M12 8V4H8M6 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM2 14h2M20 14h2M9 13h.01M15 13h.01M10 16.5s.8 1 2 1 2-1 2-1" />
     </Icon>
   );
 }
