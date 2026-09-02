@@ -1,15 +1,18 @@
 /**
- * calendar-geom.ts unit tests: the month grid (six Monday-based rows), the week, the view
- * ranges and stepping, period parsing, and the expansion of an event's startAt / period /
- * endAt into the instances of a range — including which past instance carries the recorded
- * outcome. Dates are built with the local Date constructor, so the assertions hold in every
- * timezone.
+ * calendar-geom.ts unit tests: the month grid (as many Monday-based rows as the month
+ * needs), the week, the view ranges and stepping, period parsing, the expansion of an
+ * event's startAt / period / endAt into the instances of a range — including which past
+ * instance carries the recorded outcome — the cadence an event reads as, and the lanes
+ * overlapping chips take. Dates are built with the local Date constructor, so the
+ * assertions hold in every timezone.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgCalendarItem } from "@prismshadow/penguin-server/api";
 import {
   MAX_INSTANCES_PER_EVENT,
   addDays,
+  cadenceOf,
+  chipLanes,
   dayFraction,
   dayKey,
   employeeOrder,
@@ -51,16 +54,22 @@ describe("day and week arithmetic", () => {
     expect(dayKey(addDays(local(2026, 8, 30), 1))).toBe("2026-10-01");
   });
 
-  it("lays the month out as six Monday-based rows, marking the days outside it", () => {
+  it("lays the month out as Monday-based rows, only as many as it needs, marking the days outside it", () => {
+    // September 2026: Tuesday the 1st to Wednesday the 30th spans five Monday-based weeks.
     const grid = monthGrid(local(2026, 8, 15));
-    expect(grid).toHaveLength(6);
+    expect(grid).toHaveLength(5);
     expect(grid.every((row) => row.length === 7)).toBe(true);
     expect(grid[0]![0]!.key).toBe("2026-08-31");
     expect(grid[0]![0]!.inMonth).toBe(false);
     expect(grid[0]![1]!.key).toBe("2026-09-01");
     expect(grid[0]![1]!.inMonth).toBe(true);
-    expect(grid[5]![6]!.key).toBe("2026-10-11");
+    expect(grid[4]![6]!.key).toBe("2026-10-04");
+    expect(grid[4]![6]!.inMonth).toBe(false);
     expect(monthKey(local(2026, 8, 15))).toBe("2026-09");
+    // August 2026 starts on a Saturday and ends on a Monday: six rows.
+    expect(monthGrid(local(2026, 7, 10))).toHaveLength(6);
+    // February 2027 starts on a Monday and has 28 days: exactly four.
+    expect(monthGrid(local(2027, 1, 10))).toHaveLength(4);
   });
 
   it("the week is Monday to Sunday around the anchor", () => {
@@ -81,7 +90,7 @@ describe("day and week arithmetic", () => {
     const week = viewRange(local(2026, 8, 2, 10), "week");
     expect([dayKey(week.startMs), dayKey(week.endMs)]).toEqual(["2026-08-31", "2026-09-07"]);
     const month = viewRange(local(2026, 8, 2, 10), "month");
-    expect([dayKey(month.startMs), dayKey(month.endMs)]).toEqual(["2026-08-31", "2026-10-12"]);
+    expect([dayKey(month.startMs), dayKey(month.endMs)]).toEqual(["2026-08-31", "2026-10-05"]);
   });
 
   it("steps the anchor by a day, a week or a month — clamping the day of a shorter month", () => {
@@ -183,5 +192,82 @@ describe("expandEvents", () => {
     expect([...byDay.keys()]).toEqual(["2026-09-02"]);
     expect(byDay.get("2026-09-02")!.map((i) => i.event.agentId)).toEqual(["a", "b"]);
     expect(employeeOrder([b, a, b])).toEqual(["b", "a"]);
+  });
+});
+
+describe("cadenceOf", () => {
+  const start = new Date(local(2026, 8, 2, 9, 30)).toISOString();
+
+  it("reads whole-day periods as day and week cadences with the time of day", () => {
+    expect(cadenceOf({ startAt: start, period: "1d" })).toEqual({
+      kind: "days",
+      n: 1,
+      time: "09:30",
+    });
+    expect(cadenceOf({ startAt: start, period: "3d" })).toEqual({
+      kind: "days",
+      n: 3,
+      time: "09:30",
+    });
+    expect(cadenceOf({ startAt: start, period: "7d" })).toEqual({
+      kind: "weeks",
+      n: 1,
+      time: "09:30",
+    });
+    expect(cadenceOf({ startAt: start, period: "14d" })).toEqual({
+      kind: "weeks",
+      n: 2,
+      time: "09:30",
+    });
+  });
+
+  it("keeps sub-day periods in their own unit, and no period is a one-off", () => {
+    expect(cadenceOf({ startAt: start, period: "12h" })).toEqual({ kind: "hours", n: 12 });
+    expect(cadenceOf({ startAt: start, period: "90m" })).toEqual({ kind: "minutes", n: 90 });
+    expect(cadenceOf({ startAt: start, period: "48h" })).toEqual({
+      kind: "days",
+      n: 2,
+      time: "09:30",
+    });
+    expect(cadenceOf({ startAt: start })).toEqual({ kind: "once", atMs: local(2026, 8, 2, 9, 30) });
+  });
+
+  it("is invalid for an unparseable start or period", () => {
+    expect(cadenceOf({ startAt: "nope", period: "1d" })).toEqual({ kind: "invalid" });
+    expect(cadenceOf({ startAt: start, period: "1w" })).toEqual({ kind: "invalid" });
+  });
+});
+
+describe("chipLanes", () => {
+  const slot = 30 * 60_000;
+  const at = (h: number, m: number, key: string) => ({ atMs: local(2026, 8, 2, h, m), key });
+
+  it("gives a lone chip the full width and packs overlapping chips side by side", () => {
+    const out = chipLanes([at(14, 0, "c"), at(9, 0, "a"), at(9, 10, "b")], slot);
+    expect(out.map((s) => [s.item.key, s.lane, s.lanes])).toEqual([
+      ["a", 0, 2],
+      ["b", 1, 2],
+      ["c", 0, 1],
+    ]);
+  });
+
+  it("chains overlaps into one cluster and reuses a lane once it is free", () => {
+    // a 09:00–09:30, b 09:20–09:50, c 09:40–10:10: b overlaps both, a and c can share lane 0.
+    const out = chipLanes([at(9, 0, "a"), at(9, 20, "b"), at(9, 40, "c")], slot);
+    expect(out.map((s) => [s.item.key, s.lane, s.lanes])).toEqual([
+      ["a", 0, 2],
+      ["b", 1, 2],
+      ["c", 0, 2],
+    ]);
+  });
+
+  it("touching slots do not overlap, and the same instant sorts by key", () => {
+    const out = chipLanes([at(9, 30, "b"), at(9, 0, "a"), at(9, 0, "c")], slot);
+    expect(out.map((s) => [s.item.key, s.lane, s.lanes])).toEqual([
+      ["a", 0, 2],
+      ["c", 1, 2],
+      ["b", 0, 1],
+    ]);
+    expect(chipLanes([], slot)).toEqual([]);
   });
 });

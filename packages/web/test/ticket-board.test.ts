@@ -1,7 +1,8 @@
 /**
  * ticket-board.ts unit tests: the five columns in lifecycle order, card sorting (priority,
- * then due, then id), the blocked-only filter, the counts the overview shows, which moves
- * need a reason, and the "blocked on me" selection.
+ * then due, then id), the blocked-only filter and the search box, the counts the overview
+ * shows, which moves need a reason, the "blocked on me" selection, the overdue test, the
+ * day read off a ticket id, and the invalid-ticket list.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketItem, OrgTicketsResponse } from "@prismshadow/penguin-server/api";
@@ -12,10 +13,14 @@ import {
   boardColumns,
   boardCounts,
   canMove,
+  invalidTickets,
   isBlocked,
+  isOverdue,
   isTicketStatus,
+  matchesTicketQuery,
   moveNeedsReason,
   sortTickets,
+  ticketCreatedDate,
 } from "../src/features/company/ticket-board";
 
 function ticket(over: Partial<OrgTicketItem> & { ticketId: string }): OrgTicketItem {
@@ -79,6 +84,36 @@ describe("columns", () => {
     expect(allTickets(res).map((t) => t.ticketId)).toEqual(["a", "b", "c"]);
   });
 
+  it("the search box matches title, id, owner and parent, case-insensitively, and the owner's name through the chart", () => {
+    const t = ticket({
+      ticketId: "2026-09-02-site",
+      title: "Build the Marketplace site",
+      owner: "agent:mk_dev",
+      parent: "2026-09-02-launch",
+    });
+    const names = new Map([["mk_dev", "Dev"]]);
+    expect(matchesTicketQuery(t, "")).toBe(true);
+    expect(matchesTicketQuery(t, "  marketplace ")).toBe(true);
+    expect(matchesTicketQuery(t, "09-02-site")).toBe(true);
+    expect(matchesTicketQuery(t, "mk_dev")).toBe(true);
+    expect(matchesTicketQuery(t, "launch")).toBe(true);
+    expect(matchesTicketQuery(t, "dev", names)).toBe(true);
+    expect(matchesTicketQuery(t, "seo")).toBe(false);
+    const res = board({
+      proposed: [t, ticket({ ticketId: "x", title: "SEO", blocked: "r" })],
+      done: [ticket({ ticketId: "y", title: "Marketplace launch post", status: "done" })],
+    });
+    expect(
+      boardColumns(res, { query: "market" }).map((c) => c.tickets.map((x) => x.ticketId)),
+    ).toEqual([["2026-09-02-site"], [], [], ["y"], []]);
+    // Both narrowings apply at once.
+    expect(
+      boardColumns(res, { query: "seo", blockedOnly: true }).map((c) =>
+        c.tickets.map((x) => x.ticketId),
+      ),
+    ).toEqual([["x"], [], [], [], []]);
+  });
+
   it("counts per column and the blocked total", () => {
     const res = board({
       in_progress: [ticket({ ticketId: "x", blocked: "r" }), ticket({ ticketId: "y" })],
@@ -107,5 +142,30 @@ describe("moves and blocks", () => {
       ticket({ ticketId: "c", blockedBy: "user:alice" }),
     ];
     expect(blockedOnUser(list, "alice").map((t) => t.ticketId)).toEqual(["a"]);
+  });
+});
+
+describe("card facts", () => {
+  it("a due date is overdue only once today has passed it", () => {
+    expect(isOverdue("2026-09-01", "2026-09-02")).toBe(true);
+    expect(isOverdue("2026-09-02", "2026-09-02")).toBe(false);
+    expect(isOverdue("2026-09-03", "2026-09-02")).toBe(false);
+    expect(isOverdue(undefined, "2026-09-02")).toBe(false);
+    expect(isOverdue("soon", "2026-09-02")).toBe(false);
+  });
+
+  it("reads the creation day off the id and leaves other shapes alone", () => {
+    expect(ticketCreatedDate("2026-09-02-marketplace")).toBe("2026-09-02");
+    expect(ticketCreatedDate("2026-09-02-t-fb79d3")).toBe("2026-09-02");
+    expect(ticketCreatedDate("marketplace")).toBeNull();
+    expect(ticketCreatedDate("2026-09-02")).toBeNull();
+  });
+
+  it("lists the tickets the server flagged, in column order", () => {
+    const res = board({
+      proposed: [ticket({ ticketId: "a" }), ticket({ ticketId: "b", invalid: "duplicate id" })],
+      review: [ticket({ ticketId: "c", status: "review", invalid: "status mismatch" })],
+    });
+    expect(invalidTickets(res).map((t) => t.ticketId)).toEqual(["b", "c"]);
   });
 });
