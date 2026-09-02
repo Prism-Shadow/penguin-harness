@@ -23,7 +23,7 @@ The list opens with **this machine** — the host the server runs on, named by i
 
 Every installed machine then carries its server's state: running with the port, stopped, or unreachable with OpenSSH's own diagnostic behind it. There is deliberately no separate "ssh" status — ssh is the transport, so a machine it cannot reach reads as one thing rather than two a reader has to combine.
 
-Status costs an ssh round trip per machine, so it is **never taken at list time** and never for the whole ssh config — only for the machines this Project actually installed on, five at a time, and only when `POST …/machines/probe` asks.
+Status costs an ssh round trip per machine, so it is **never taken at list time** and never for the whole ssh config — only for the machines this Project actually installed on, five at a time, and only when `POST …/machines/probe` asks. A machine is asked one thing at a time: however many askers, the second waits for the first, so no number of tabs opens a second connection to it. Concurrent probe requests for a Project share one round rather than each starting their own.
 
 ## `penguin server status`
 

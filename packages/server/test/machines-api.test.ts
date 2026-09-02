@@ -471,6 +471,29 @@ describe("machines API", () => {
       expect(machinesRepo.get("ssh:nas")?.machineId).toBe("second0000000000");
     });
 
+    it("two probe requests at once share one round: each machine is asked once", async () => {
+      let probes = 0;
+      await boot({
+        probe: async () => {
+          probes++;
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return { state: { kind: "stopped" as const }, machineId: null };
+        },
+      });
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      probes = 0;
+      // Two tabs, one Project: the second asker joins the round the first started.
+      await Promise.all([
+        admin.post(`/api/projects/${PROJECT}/machines/probe`),
+        admin.post(`/api/projects/${PROJECT}/machines/probe`),
+      ]);
+      expect(probes).toBe(1);
+      // A round that has settled is not reused: the next ask is a fresh one.
+      await admin.post(`/api/projects/${PROJECT}/machines/probe`);
+      expect(probes).toBe(2);
+    });
+
     it("a machine with no server yet has no id, and says stopped rather than guessing", async () => {
       await boot(answering({ running: false, machineId: null }));
       await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);

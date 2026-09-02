@@ -29,7 +29,7 @@ import os from "node:os";
 import { VERSION } from "@prismshadow/penguin-core";
 import type { MachineInfo, MachineInstallJob, MachineServerStatus } from "../api/types.js";
 import { readServerLock } from "../lock.js";
-import { listHostAliases } from "./transport/index.js";
+import { connectionTo, listHostAliases } from "./transport/index.js";
 import type { ExecResult } from "./transport/index.js";
 import type { RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
@@ -70,6 +70,12 @@ export class MachinesService {
    * it was taken, so one that outlived its App would be a claim nobody measured.
    */
   readonly #statuses = new Map<string, MachineServerStatus>();
+  /**
+   * The probe round in flight per Project. Concurrent askers — every open tab schedules its
+   * own — share the round rather than each starting five workers: the answer is the same,
+   * and five was meant as a bound, not as a unit of multiplication.
+   */
+  readonly #probing = new Map<string, Promise<void>>();
   readonly #effects: MachinesEffects;
   readonly #machineId: string;
 
@@ -93,16 +99,20 @@ export class MachinesService {
       probe: probeServerState,
       // 30s: a probe is one short command, and a machine that cannot answer it in that time
       // is one the list should call unreachable rather than wait on.
-      runOn: (target, command) => run("ssh", sshArgs(target, command), { timeoutMs: 30_000 }),
+      // One at a time per machine (transport/lane.ts): however many askers, a machine sees
+      // one of these commands at once, and the rest wait their turn on it.
+      runOn: (target, command) => connectionTo(target).exec(command),
       now: () => new Date(),
       ...effects,
     };
   }
 
-  /** The ssh target for an alias, or null when ssh cannot resolve it. */
-  async #targetOf(alias: string): Promise<RemoteTarget | null> {
-    const resolved = await this.#effects.resolveTarget(alias);
-    return resolved === null ? null : { alias, user: resolved.settings.user };
+  /**
+   * A machine's ssh target is its alias and nothing else — what the alias means is ssh's to
+   * resolve, from its own config, every time it is handed one.
+   */
+  #targetOf(alias: string): RemoteTarget {
+    return { alias, user: "" };
   }
 
   /**
@@ -180,19 +190,19 @@ export class MachinesService {
    * load is not a reason to open one to every host in a config.
    */
   async probeInstalled(projectId: string): Promise<void> {
+    const inFlight = this.#probing.get(projectId);
+    if (inFlight !== undefined) return inFlight;
+    const round = this.#probeRound(projectId).finally(() => this.#probing.delete(projectId));
+    this.#probing.set(projectId, round);
+    return round;
+  }
+
+  async #probeRound(projectId: string): Promise<void> {
     const queue = this.list(projectId).filter((m) => !m.local && m.installed !== null);
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
         const checkedAt = this.#effects.now().toISOString();
-        const target = await this.#targetOf(machine.alias);
-        if (target === null) {
-          this.#statuses.set(machine.id, {
-            state: "unreachable",
-            checkedAt,
-            detail: "ssh could not resolve that host.",
-          });
-          continue;
-        }
+        const target = this.#targetOf(machine.alias);
         const probe = await this.#effects.probe(
           target,
           this.#effects.runOn,
