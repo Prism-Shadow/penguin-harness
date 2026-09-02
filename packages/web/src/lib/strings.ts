@@ -50,6 +50,32 @@ export const zh = {
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
+    /** Heading of the entry for the machine this server itself runs on. */
+    localTitle: "本机",
+    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
+    statusRunning: "运行中",
+    statusRunningOn: (port: number) => `运行中 · 端口 ${port}`,
+    statusStopped: "未运行",
+    statusUnreachable: "连不上",
+    statusUnknown: "未检查",
+    /** A machine carrying a different build from the one this server would install. */
+    update: "更新",
+    behind: "版本不一致",
+    upToDate: "已是最新",
+    /** Bringing a machine's server up and holding a tunnel to it. */
+    replaceProgram: "在那边安装程序并重启",
+    replaceProgramWhy:
+      "那台机器上的 PenguinHarness 接不了这次更新——本服务端推送过的东西还没到它那里。安装会把一份放上去并重启它的服务，正在用它的人会被打断。",
+    restart: "重启",
+    restarting: "重启中\u2026",
+    connect: "连接",
+    connecting: "连接中…",
+    disconnect: "断开",
+    /** A connected machine: its filesystem and API can be reached from here. */
+    reachable: "可访问",
+    /** Manual re-probe, for when you already know something changed. */
+    refresh: "刷新",
+    checking: "检查中…",
     /** Heading of the standing list of machines this server has installed on. */
     installedTitle: (count: number) => `已安装的机器（${count}）`,
     /** What the selected machine already carries, remembered on the server across restarts. */
@@ -57,12 +83,16 @@ export const zh = {
     install: "安装",
     installing: "安装中…",
     reinstall: "重新安装",
+    /** This server already installed there for another project: taking it costs no transfer. */
+    adopt: "加入本项目",
+    installedElsewhere: (version: string) =>
+      `这台机器已装有 ${version}，但属于其他项目。加入本项目无需重新传输。`,
     /** Terminal states of a finished job. */
     installed: (version: string) => `已安装 ${version}。`,
     alreadyInstalled: (version: string) => `已经是 ${version}，无需安装。`,
-    failedAt: (step: string) => `安装失败（${step}）。`,
+    failedAt: (step: string) => `失败于「${step}」。`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "安装输出",
+    output: "输出",
     adminOnly: "只有管理员可以安装到机器上。",
   },
 
@@ -1285,6 +1315,13 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
+    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
+    workspaceMachine: "机器",
+    workspaceHere: "本机",
+    /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
+    workspaceMachineWhy: {
+      "no-identity": "待识别",
+    },
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
