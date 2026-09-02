@@ -121,9 +121,15 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 - Two things a chart cannot draw. A bucket with **no rate** — an entity that made no request in it, or a bucket with no cache traffic — has its line carried across at the top of the axis so the stroke stays continuous; the hover table prints a dash there, never a percentage, and a real 0% (requests were made and all of them failed) still prints 0%. A bucket that recorded **nothing at all** is not plotted: every chart drops it and packs the rest left to right, so all four share one x axis that skips the quiet intervals and carries a break mark at each skip. Emptiness is judged per bucket, never per entity — an interval anything ran in stays, with the entities that were idle in it showing their zeros and dashes;
 - A server error panel: summary stats plus an errors table paged at a fixed page size (no scrolling).
 
-## Benchmark (/benchmark)
+## Evaluation Center (/benchmark)
 
-Read-only scoreboards per Benchmark: switch the metric (score / cost / duration), drill into each Case's runs, and jump to the linked Session and Trace. Works together with the [Self-Improvement](/self-improvement) workflow.
+Every Benchmark of the Project, grouped by the agent it tests. A row shows the newest score with its change from the previous evaluation, a sparkline of the scoreboard, the case and run counts and when it was last evaluated; **View** opens the detail — the score chart split by model, the evaluation table with per-case and per-run rows, and the case browser — in a right pane on wide screens and in place of the list on narrow ones. A guide folded under the title spells out the loop for a first-timer: create a Benchmark, read its scores, optimize the agent against it.
+
+- **New Benchmark** (top right) is the split create button. **Create with AI** asks for the Test Agent and a description of the capability and scenarios; the prompt's fixed tail hands the `benchmark-design` Skill the agent id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken. **Set up manually** is a form — title, id, description, runs per case, and one statement plus rubric per case — that the server writes to disk in the layout the Skills read (`POST …/benchmarks`, owner only).
+- **Optimize** on every row opens a dialog with two modes over one prompt: **Set up manually** picks the optimizer agent (with a warning when it lacks the `agent-optimization` Skill), the model of the optimizer's own conversation, runs per case, a round limit, a target score (ten above the baseline by default) and an optional focus; **Write a prompt** is free text with examples over the same parameter tail. Both end in the same footer: send to the agent, or open the conversation with the prompt prefilled. The evaluation model is not chosen here — the Skill reuses what the baseline recorded.
+- The row's overflow menu copies the Benchmark's directory path or, for the owner, deletes the directory whole (`DELETE …/benchmarks/:id`). `?agentId=` expands only that agent's group; `?benchmark=<agent>/<id>` opens one Benchmark directly.
+
+Works together with the [Self-Improvement](/self-improvement) workflow.
 
 ## System Settings
 
