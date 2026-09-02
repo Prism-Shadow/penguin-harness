@@ -1313,6 +1313,8 @@ export const en: Strings = {
     installedEmpty: "No plugins installed yet.",
     stateActive: "running",
     builtin: "built in",
+    builtinHint:
+      "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
     installedRestart: "restart to load",
     stateInactive: "not loaded",
     replacesLabel: "replaces",

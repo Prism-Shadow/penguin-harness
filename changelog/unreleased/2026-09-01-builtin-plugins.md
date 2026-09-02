@@ -14,9 +14,9 @@ The plugins this repository builds — the sandbox backends and the language flo
 
 ## Where they land, and how they load
 
-A hot push ships the prefix among its assets (`plugins/…`); the desktop build stages it beside `skills/` (`scripts/build-assets.mjs`, `electron-builder.yml`). The loader resolves plugins from, in order: `<root>/plugins` (what the Plugins page installs), the committed push's `plugins/` (read from `harness.json`, no host needed), the installation's `plugins/`, and the installation entry. **Builtins load without being listed** — a package under a builtin prefix whose `package.json` declares `penguin` is loaded at start; `plugins.json` adds to that set, and listing a builtin does not load it twice. A sandbox backend that does not apply to the platform answers its probe with `null`, which is what makes loading all of them safe. The installed-plugins surface marks them *built in* and offers no removal; the catalogue row shows the same chip instead of Install.
+A hot push ships the prefix among its assets (`plugins/…`); the desktop build stages it beside `skills/` (`scripts/build-assets.mjs`, `electron-builder.yml`). The loader resolves plugins from, in order: `<root>/plugins` (what the Plugins page installs), the committed push's `plugins/` (read from `harness.json`, no host needed), the installation's `plugins/`, and the installation entry. **Shipping one is not installing it.** `builtin` is a tag on where a package came from, never a second way of being installed: a plugin the build carries appears in the catalogue marked *built in* — installing it copies nothing over the network — and it is installed, loaded and removed exactly like any other, by an operator listing it in `plugins.json`. Installing a shipped plugin therefore runs no npm; it is a list edit. The installed view reports the shipped set separately from what is installed, so a row can carry the tag without implying consent nobody gave.
 
-Loading is the runtime's, once per process: a push that carries newer builtins takes effect for loading at the next start, like every other plugin change.
+Loading is the runtime's, once per process: a push that carries newer builtins takes effect at the next start, like every other plugin change.
 
 ## A push carries only what the target lacks
 

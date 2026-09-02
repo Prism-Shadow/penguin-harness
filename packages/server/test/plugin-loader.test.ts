@@ -198,7 +198,7 @@ describe("builtin plugins", () => {
     );
   }
 
-  it("discovers the plugins under a builtin prefix, scoped and unscoped, and not under the root's own prefix", async () => {
+  it("lists what the build ships, scoped and unscoped, and not what the root's own prefix holds", async () => {
     const assets = path.join(root, "hmr", "store", "assets", "abc");
     await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
     await writeBuiltin(path.join(assets, "plugins"), "plain-plugin", "Plain");
@@ -213,7 +213,7 @@ describe("builtin plugins", () => {
     ]);
   });
 
-  it("loads the builtins of the committed assets without them being listed, once even when listed", async () => {
+  it("does not load a shipped plugin until it is listed, and then loads it from the shipped prefix", async () => {
     const assetsRel = path.join("store", "assets", "abc");
     const assets = path.join(root, "hmr", assetsRel);
     await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
@@ -224,6 +224,12 @@ describe("builtin plugins", () => {
       JSON.stringify({ assets: { dir: assetsRel.split(path.sep).join("/") } }),
       "utf8",
     );
+    // Shipped, and nothing lists it: available is not installed.
+    await writeConfig({ plugins: [] });
+    expect((await loadPlugins(root)).loaded).toEqual([]);
+
+    // Listed: it loads, resolved from the assets the push carried — no npm, nothing under
+    // <root>/plugins.
     await writeConfig({ plugins: ["@acme/penguin-plugin-one"] });
     const result = await loadPlugins(root);
     expect([...result.failed.entries()]).toEqual([]);
