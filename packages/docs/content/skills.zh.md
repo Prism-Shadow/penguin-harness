@@ -22,17 +22,17 @@ plugins/<plugin>/
 | `description` / `description_zh` | 单行描述（只含钩子的插件必须写英文描述；Skill 插件缺省回退到首个 Skill 的描述） |
 | `short_description` / `short_description_zh` | 卡片短标签（回退到首个 Skill 的） |
 | `version` | `YYYY-MM-DD.N`——日期加当日序号 |
-| `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-tuning`、`session-hooks` 之一；缺失或未知归入「其他」 |
+| `category` | `office-productivity`、`software-development`、`ai-app-development` 之一；缺失或未知归入「其他」 |
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各[钩子点](/agent-loop#stop-hook)的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径相对 `hooks/`，超时以秒计 |
 
 插件名即目录名（`^[A-Za-z0-9_-]+$`）。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
 
-每个插件都是独立的 npm 包——`@penguinharness/<name>`，仓库内位于 `plugins/<name>/`。loader 在 `@prismshadow/penguin-core` 里，它依赖这些插件包并解析各自目录（desktop 构建则把同样的目录打包在旁）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
+每个插件都是独立的 npm 包——`@penguinharness/<name>`，仓库内位于 `plugins/<name>/`。loader 在 `@prismshadow/penguin-core` 里：从宿主包的依赖清单读出插件名，再逐包经 Node 解析（desktop 应用把同样的包声明为依赖，随安装包一并打包）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。Skill 本身不带图标——图标属于插件（`plugin.json` 同级的 `icon.svg`）；单独展示的已装 Skill 回退默认书本图标。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，以及它引用的其他文件（例如链接到的 `reference/` 子目录）。Skill 本身不带图标——图标属于插件（`plugin.json` 同级的 `icon.svg`），已装 Skill 与钩子包显示的是所属插件的图标；没有图标的（例如用户自建的 Skill）显示名称首字母。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`；frontmatter 中的 `name` 以目录名为准。
 
 库内 `SKILL.md` 的 frontmatter 只有两个字段——其余全部放在 `plugin.json`：
 
@@ -83,11 +83,11 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整插件库（标记 `preinstall: false` 的插件除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的插件库页，或经 SDK；
-- 安装 Skill 即写入它的可安装 `SKILL.md`（frontmatter 已按插件元数据重新生成，见上），目录内其他文件（保留子目录）一并拷贝（用户自建或导入的 Skill 可自带 `icon.svg`，同样拷贝）；安装钩子包即写入 `hooks.json` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
+- 安装 Skill 即写入它的可安装 `SKILL.md`（frontmatter 已按插件元数据重新生成，见上）、插件的 `icon.svg`，以及目录内其他文件（保留子目录）（用户自建或导入的 Skill 可自带 `icon.svg`，此时拷贝的是它自己的）；安装钩子包即写入 `hooks.json`、插件的 `icon.svg` 与插件 `hooks/` 下的全部文件。每次安装整目录替换，因此重装会丢弃新版本不再携带的文件——重装就是更新已装副本的方式，Agent 列表页会标出已装 Skill 或钩子包落后于库的插件。
 
 ## 内置插件库
 
-内置插件按分类列出（分类清单是 `packages/plugins/src/index.ts` 的 `PLUGIN_CATEGORIES`；新增插件以库目录为准）：
+内置插件按分类列出（分类清单是 `packages/core/src/plugins/index.ts` 的 `PLUGIN_CATEGORIES`；新增插件以库目录为准）：
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
@@ -95,18 +95,18 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 | | `firecrawl` | 经 Firecrawl API 做网页搜索与抓取，输出干净的 markdown |
 | | `bento-slides` | 编写与编辑 Bento 演示文稿：单文件 `.bento.html`，文档即 JSON，素材映射到图表、morph 转场与状态页 |
 | | `humanizer` | 剥除任意语言散文中的 AI 写作痕迹，改写为书籍、报刊与百科的语体（不预装：需要时从库安装） |
+| | `goal` | [目标模式](/goal-mode)背后的 stop hook：让会话持续朝目标工作，直到完成、受阻或 token 预算耗尽（预装） |
+| | `continual-learning` | 单个任务结束时轮次超过 30，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
 | 软件开发 | `software-development` | 端到端的软件开发——两个 Skill：`software-engineering`（最小范围的调查、实现与验证）与 `web-design`（生成网页的 Penguin 视觉规范） |
 | | `remote-claude-code` | 经 SSH 在远程主机上运行 Claude Code——持久 expect 会话、headless `-p`、tmux 驱动的交互式 TUI 与多轮延续（不预装：需要时从库安装） |
 | AI 应用开发 | `agent-development` | 基于 PenguinHarness 的智能体开发——四个 Skill：`penguin-sdk`（用 SDK 构建智能体/AI/RAG 应用）、`unified-llm-api`（经 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认模型与 Vault 机密）、`penguin-orchestration`（在 shell 里编排智能体、会话、成本与定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发——三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）、`vllm`（以 OpenAI 兼容端点部署服务） |
 | | `skill-porting` | 从外部来源移植 Skill——插件市场、skills.sh 注册表、GitHub 仓库或本地目录——经审阅与规范化后装入 Agent |
-| Agent 调优 | `agent-tuning` | 调优闭环的四个 Skill：`agent-initialization`（依据需求初始化 Agent）、`benchmark-design`（设计并校准能力 Benchmark）、`agent-evaluation`（隔离执行并评分单个 Case）、`agent-optimization`（根据测得结果改进 Agent） |
-| 会话钩子 | `goal` | [目标模式](/goal-mode)背后的 stop hook：让会话持续朝目标工作，直到完成、受阻或 token 预算耗尽（预装） |
-| | `skill-summary` | 单个任务结束时轮次超过 30，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
+| | `agent-tuning` | 调优闭环的四个 Skill：`agent-initialization`（依据需求初始化 Agent）、`benchmark-design`（设计并校准能力 Benchmark）、`agent-evaluation`（隔离执行并评分单个 Case）、`agent-optimization`（根据测得结果改进 Agent） |
 
 ## 编写与优化
 
 - 手工安装：在 `agent_state/skills/<name>/` 下建目录并写入 `SKILL.md` 即可，系统组装系统 Prompt 时扫描 `skills/` 注入元数据；没有 `SKILL.md` 的目录不计为 Skill。
 - 卸载即删除整个 `skills/<name>/`（或 `hooks/<name>/`）目录，操作幂等。
 - Agent 可以在任务中直接改写自己的 SKILL.md——配合 Benchmark 评测与优化形成闭环，见 [自我进化](/self-improvement)。改完把 `version` 记成当天日期加下一个序号。
-- 长任务可以自己回流：装上 `skill-summary` 插件后，某个任务结束时轮次超过 30，它的 stop hook 就把该任务的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。
+- 长任务可以自己回流：装上 `continual-learning` 插件后，某个任务结束时轮次超过 30，它的 stop hook 就把该任务的浓缩摘录交给一个后台子 Session，由它把值得沉淀的发现写进相关 SKILL.md——见[运行循环](/agent-loop#stop-hook)。

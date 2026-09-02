@@ -4,9 +4,9 @@
 # unignored in every other working copy, one `git add -A` away from a commit.
 #   bin/     — generated `penguin` / `penguin.cmd` CLI launchers
 #   out/     — electron-builder output
-#   official/ — a copy of packages/plugins/official, which is tracked at its source
-#   plugins/, skills/ — the same copy under its earlier names, still on disk in older
-#             working trees (and still produced by older branches' build scripts)
+#   official/, plugins/, skills/ — the plugin library copy under the names earlier build
+#             scripts staged it at (it now travels as declared dependencies instead),
+#             still on disk in older working trees
 #   stage/    — the assembled app directory, on branches that stage before packing
 bin/
 out/

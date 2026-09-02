@@ -15,6 +15,20 @@
     "pack:mac": "node scripts/preflight.mjs && electron-builder --mac",
     "pack:win": "node scripts/preflight.mjs && electron-builder --win"
   },
+  "dependencies": {
+    "@penguinharness/agent-development": "workspace:*",
+    "@penguinharness/agent-tuning": "workspace:*",
+    "@penguinharness/bento-slides": "workspace:*",
+    "@penguinharness/continual-learning": "workspace:*",
+    "@penguinharness/data-analysis": "workspace:*",
+    "@penguinharness/firecrawl": "workspace:*",
+    "@penguinharness/goal": "workspace:*",
+    "@penguinharness/humanizer": "workspace:*",
+    "@penguinharness/model-development": "workspace:*",
+    "@penguinharness/remote-claude-code": "workspace:*",
+    "@penguinharness/skill-porting": "workspace:*",
+    "@penguinharness/software-development": "workspace:*"
+  },
   "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",

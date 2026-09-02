@@ -29,7 +29,7 @@ PenguinHarness is a pnpm monorepo whose center is the execution engine in `@pris
 | `packages/cli` | Terminal Human implementation: REPL and one-shot runs, embeds core in-process |
 | `packages/server` | Web Human implementation: HTTP for input and approvals, SSE for the output stream |
 | `packages/web` | Rendering SPA: streams by the OmniMessage protocol, contains no engine logic |
-| `packages/plugins` | The built-in plugin library: skills (`SKILL.md` directories) and session hooks (script packages) |
+| `plugins/*` | The built-in plugin library, one package per plugin: skills (`SKILL.md` directories) and session hooks (script packages), loaded by core |
 
 ## Division of responsibilities
 
@@ -89,7 +89,6 @@ packages/
 ├── cli/src                         # commander entry + run / chat / config / serve commands and approval prompts
 ├── server/src                      # app assembly · db (node:sqlite) · auth · http/routes · runtime · services
 ├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages
-├── plugins/                        # loader + the plugins/<name>/ library (skills and hook packages)
 ├── landing/                        # the product landing page (with the blog)
 └── docs/                           # this documentation site
 ```

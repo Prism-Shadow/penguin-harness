@@ -103,7 +103,7 @@ Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while th
 
 ## Plugin Library (/plugins)
 
-Browse the plugin library by category — skills and session hooks alike — install a plugin onto an Agent (its skills and hook package together), update installs the library has moved past, or quick-invoke a skill into a chat draft. Each card carries a semantic metadata line (`v<version> · updated N days ago · used by N agents`) and opens a detail Modal: the plugin's full description, its skills — each row opens a simple SKILL.md reader — and the hook points its hook package answers at.
+Browse the plugin library by category — skills and session hooks alike — install a plugin onto an Agent (its skills and hook package together), update installs the library has moved past, or quick-invoke a skill into a chat draft. Each card carries a semantic metadata line (`v<version> · updated N days ago · used by N agents`) and opens a detail Modal: the plugin's full description and the hook points its hook package answers at, then a file browser over everything it ships — a tree on the left with one collapsible group per skill (its SKILL.md and reference files) and one for the hook scripts, any number open at once, and a preview on the right that renders the selected file without leaving the summary or the tree.
 
 ## Model Configuration (/models)
 

@@ -59,7 +59,7 @@ export interface StopHookResult {
   subagent?: HookSubagentRequest;
 }
 
-/** A named stop hook. The name identifies its `hook` events (e.g. `goal`, `skill-summary`). */
+/** A named stop hook. The name identifies its `hook` events (e.g. `goal`, `continual-learning`). */
 export interface StopHook {
   name: string;
   run(input: StopHookInput): Promise<StopHookResult | void>;

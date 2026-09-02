@@ -20,8 +20,9 @@ import type {
   AgentCreateResponse,
   AgentsResponse,
   AgentSkillsResponse,
-  ProjectCreateResponse,
+  PluginFilesResponse,
   PluginLibraryResponse,
+  ProjectCreateResponse,
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -76,8 +77,6 @@ describe("skills api", () => {
       "office-productivity",
       "software-development",
       "ai-app-development",
-      "agent-tuning",
-      "session-hooks",
     ]);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
@@ -95,7 +94,7 @@ describe("skills api", () => {
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
-        // every returned skill; skills carry no icon of their own (the plugin owns it);
+        // every returned skill; a skill's icon is its plugin's, sent once on the plugin item;
         // bodies never are.
         expect(skill.shortDescription, skill.name).toBeTruthy();
         expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
@@ -108,7 +107,7 @@ describe("skills api", () => {
     expect(goal).toMatchObject({ preinstall: true, hooks: ["user_prompt", "stop"], skills: [] });
     expect(goal.descriptionZh).toBeTruthy();
     expect("files" in goal).toBe(false);
-    expect(plugins.find((p) => p.name === "skill-summary")).toMatchObject({
+    expect(plugins.find((p) => p.name === "continual-learning")).toMatchObject({
       preinstall: false,
       hooks: ["stop"],
     });
@@ -116,6 +115,32 @@ describe("skills api", () => {
       preinstall: false,
       hooks: [],
     });
+  });
+
+  it("GET /api/plugins/:plugin/files: what a plugin ships, keyed by path — skills' installable files and hook scripts", async () => {
+    const dev = await member.get("/api/plugins/software-development/files");
+    expect(dev.status).toBe(200);
+    const devFiles = ((await dev.json()) as PluginFilesResponse).files;
+    expect(Object.keys(devFiles)).toEqual([
+      "skills/software-engineering/SKILL.md",
+      "skills/web-design/SKILL.md",
+    ]);
+    // The installable copy (frontmatter stamped), the same text an install writes.
+    expect(devFiles["skills/web-design/SKILL.md"]).toBe(librarySkill("web-design")!.skill.content);
+
+    const goal = await member.get("/api/plugins/goal/files");
+    expect(Object.keys(((await goal.json()) as PluginFilesResponse).files).sort()).toEqual([
+      "hooks/lib.mjs",
+      "hooks/start.mjs",
+      "hooks/stop.mjs",
+    ]);
+
+    // A skill's auxiliary files keep their subdirectory path.
+    const humanizer = await member.get("/api/plugins/humanizer/files");
+    const humanizerFiles = ((await humanizer.json()) as PluginFilesResponse).files;
+    expect(Object.keys(humanizerFiles)).toContain("skills/humanizer/reference/tells.md");
+
+    expect((await member.get("/api/plugins/no-such-plugin/files")).status).toBe(404);
   });
 
   it("members can install and uninstall; installs land verbatim on disk, the directory disappears after uninstall", async () => {
@@ -134,23 +159,27 @@ describe("skills api", () => {
       "software-engineering",
       "web-design",
     ]);
-    // The installed list likewise passes through the short description and icon
-    // (icon.svg is copied on install, identical to the library's resolved icon —
-    // web-design keeps its own file inside the merged plugin).
+    // The installed list likewise passes through the short description and the icon — the
+    // plugin's, written as icon.svg beside SKILL.md on install (a skill has none of its own).
     const installed = body.skills.find((s) => s.name === "web-design")!;
     expect(installed.shortDescription).toBeTruthy();
-    expect(installed.icon).toBeUndefined();
+    const pluginIcon = librarySkill("web-design")!.plugin.icon;
+    expect(pluginIcon).toBeDefined();
+    expect(installed.icon).toBe(pluginIcon);
 
-    // The on-disk content matches the library's SKILL.md verbatim (including frontmatter);
-    // library skills carry no icon, so no icon.svg is written.
+    // The on-disk content matches the library's SKILL.md verbatim (including frontmatter),
+    // and the icon beside it is the plugin's.
     const skillFile = (name: string) =>
       path.join(skillsDir(t.root, projectId, "bare_agent"), name, "SKILL.md");
     expect(await fs.readFile(skillFile("web-design"), "utf8")).toBe(
       librarySkill("web-design")!.skill.content,
     );
-    await expect(
-      fs.access(path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg")),
-    ).rejects.toThrow();
+    expect(
+      await fs.readFile(
+        path.join(skillsDir(t.root, projectId, "bare_agent"), "web-design", "icon.svg"),
+        "utf8",
+      ),
+    ).toBe(pluginIcon);
 
     // Member uninstalls one skill: 204, the whole skills/<name>/ directory disappears, and the list is updated.
     expect((await member.delete(`${url}/web-design`)).status).toBe(204);
@@ -231,12 +260,12 @@ describe("skills api", () => {
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
     // The installed list likewise passes through the Chinese and short descriptions
-    // (listInstalledSkills parses these from the on-disk frontmatter); library skills carry
-    // no icon.svg, so no installed one does either.
+    // (listInstalledSkills parses these from the on-disk frontmatter) and the icon each
+    // install wrote beside SKILL.md — its plugin's.
     for (const skill of body.skills) {
       expect(skill.shortDescription, skill.name).toBeTruthy();
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
-      expect(skill.icon, skill.name).toBeUndefined();
+      expect(skill.icon, skill.name).toBe(librarySkill(skill.name)!.plugin.icon);
     }
 
     // Manual install from the library still works for a preinstall:false skill.

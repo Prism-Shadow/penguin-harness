@@ -107,14 +107,10 @@ const STAT_LINK_CLASS =
 
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
- * already carries (name, descriptions, icon, version); a plugin that ships no skill has no
- * icon.svg to show and names the hook glyph instead of the book.
+ * already carries (name, descriptions, icon, version).
  */
 function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
-  return plugins.map((plugin) => ({
-    ...plugin,
-    ...(plugin.skills.length === 0 ? { fallbackIcon: HOOK_ICON } : {}),
-  }));
+  return plugins.map((plugin) => ({ ...plugin }));
 }
 
 export function AgentsPage() {
@@ -407,28 +403,33 @@ export function AgentsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-          <Button variant="primary" onClick={openCreate}>
-            {S.agent.create}
-          </Button>
-        </div>
+        {/* The title row and the notice under it share one block, so the gap below the block
+            (to the list) is the same whether or not the notice is showing — the models page's
+            header has the same shape. */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
+            <Button variant="primary" onClick={openCreate}>
+              {S.agent.create}
+            </Button>
+          </div>
 
-        {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
-            An Agent's kernel is never NEW — the Agent already exists and its config is simply
-            behind the defaults generation — so the line states the upgradable count alone
-            rather than padding it with a zero the page has no meaning for. The per-card capsule
-            below and the per-Agent update in settings are untouched. */}
-        {kernelTodo && (
-          <TodoNotice
-            text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
-            actionLabel={S.todo.updateNow}
-            busy={kernelRunning}
-            onAction={() => setKernelConfirmOpen(true)}
-            dismissLabel={S.todo.dismiss}
-            onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
-          />
-        )}
+          {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
+              An Agent's kernel is never NEW — the Agent already exists and its config is simply
+              behind the defaults generation — so the line states the upgradable count alone
+              rather than padding it with a zero the page has no meaning for. The per-card capsule
+              below and the per-Agent update in settings are untouched. */}
+          {kernelTodo && (
+            <TodoNotice
+              text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
+              actionLabel={S.todo.updateNow}
+              busy={kernelRunning}
+              onAction={() => setKernelConfirmOpen(true)}
+              dismissLabel={S.todo.dismiss}
+              onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
+            />
+          )}
+        </div>
 
         {agentsLoading ? (
           /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a

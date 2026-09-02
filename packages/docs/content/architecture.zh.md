@@ -29,7 +29,7 @@ PenguinHarness 是一个 pnpm monorepo，核心是 `@prismshadow/penguin-core` �
 | `packages/cli` | 终端 Human 实现：REPL 与单次运行，直接内嵌 core |
 | `packages/server` | Web Human 实现：HTTP 承接输入与审批，SSE 推送输出流 |
 | `packages/web` | 渲染层 SPA：按 OmniMessage 协议流式渲染，不含业务引擎 |
-| `packages/plugins` | 内置插件库：Skill（`SKILL.md` 目录）与会话钩子（脚本包） |
+| `plugins/*` | 内置插件库，一插件一包：Skill（`SKILL.md` 目录）与会话钩子（脚本包），由 core 加载 |
 
 ## 职责划分
 
@@ -89,7 +89,6 @@ packages/
 ├── cli/src                         # commander 入口 + run / chat / config / serve 命令与审批交互
 ├── server/src                      # app 组装 · db(node:sqlite)· auth · http/routes · runtime · services
 ├── web/src                         # api 客户端 · state · lib/omni 流渲染 · components · features 各页面
-├── plugins/                        # 加载器 + plugins/<name>/ 插件库（Skill 与钩子包）
 ├── landing/                        # 产品落地页(含博客)
 └── docs/                           # 本文档站
 ```

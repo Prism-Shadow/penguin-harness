@@ -3040,7 +3040,12 @@ export interface SkillMetadataItem {
   /** Short description for frontend display (frontmatter short_description, optional; falls back to description if missing). */
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** Custom icon (raw icon.svg text from the skill directory, optional; frontend falls back to a default book icon if missing). */
+  /**
+   * Raw icon.svg text from the installed skill directory: the plugin's icon for a library
+   * install (written beside SKILL.md at install time), a custom one for a user-authored skill.
+   * Only installed lists carry it — the library listing's skills share their plugin's icon,
+   * which the plugin item carries once. Absent, the frontend shows the name's initial.
+   */
   icon?: string;
   /** Version (`YYYY-MM-DD.N`, frontmatter version); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
@@ -3056,6 +3061,8 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
+  /** The plugin's raw icon.svg, written beside the manifest at install time; absent for a package installed before icons travelled with it (the frontend shows the name's initial). */
+  icon?: string;
 }
 
 /** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
@@ -3073,7 +3080,7 @@ export interface PluginItem {
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one); the frontend falls back to a glyph without it. */
+  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend shows the name's initial without it. */
   icon?: string;
 }
 
@@ -3090,10 +3097,14 @@ export interface PluginLibraryResponse {
   groups: PluginGroupItem[];
 }
 
-/** GET /api/plugins/:plugin/skills/:skill: one library skill's full SKILL.md (frontmatter included) for the detail view's reader. */
-export interface PluginSkillContentResponse {
-  name: string;
-  content: string;
+/**
+ * GET /api/plugins/:plugin/files: everything a library plugin ships, for the detail view's file
+ * browser — each skill's installable SKILL.md and auxiliary files under `skills/<name>/`, the
+ * hook package's scripts under `hooks/` — keyed by path relative to the plugin directory. The
+ * manifest and the icon are not among them: the listing already carries both.
+ */
+export interface PluginFilesResponse {
+  files: Record<string, string>;
 }
 
 /**

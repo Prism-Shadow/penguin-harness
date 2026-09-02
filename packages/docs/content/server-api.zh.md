@@ -205,9 +205,9 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET | /agents/:agentId/skills | 已安装 Skill 列表（从库安装走 `/plugins`） |
 | DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
 | POST | /agents/:agentId/plugins | 按名称安装库内插件——各自的 Skill 与钩子包，重装即更新。`{ names }` → 201 `{ skills, hooks }`；404 `unknown_plugin` 时什么都不写 |
-| GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点 |
+| GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点、所属插件的图标 |
 | GET | `/api/plugins`（全局） | 按分类列出插件库——每个插件带其 Skill 元数据与钩子点（任意已登录用户） |
-| GET | `/api/plugins/:plugin/skills/:skill`（全局） | 单个库内 Skill 的完整 SKILL.md 内容，供插件详情弹窗的阅读器使用（任意已登录用户） |
+| GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
 | DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
 | GET | /agents/:agentId/benchmarks | Benchmark 评分数据（只读） |
 

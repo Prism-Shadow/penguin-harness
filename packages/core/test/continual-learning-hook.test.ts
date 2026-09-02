@@ -1,5 +1,5 @@
 /**
- * The skill-summary plugin's stop script, run as the harness runs it (a Node subprocess with
+ * The continual-learning plugin's stop script, run as the harness runs it (a Node subprocess with
  * JSON on stdin) against a fake Trace and skills directory: silent while the just-ended Task
  * stays at or under the threshold, a subagent request with the condensed excerpt once a Task
  * exceeds it — the window is the Task itself, so it fires at most once per Task.
@@ -10,7 +10,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const script = path.resolve(import.meta.dirname, "../../../plugins/skill-summary/hooks/stop.mjs");
+const script = path.resolve(
+  import.meta.dirname,
+  "../../../plugins/continual-learning/hooks/stop.mjs",
+);
 
 let root: string;
 let agentState: string;
@@ -88,7 +91,7 @@ const turn = (i: number) => [
 const append = (records: unknown[]) =>
   fs.appendFile(tracePath, records.map((r) => `${JSON.stringify(r)}\n`).join(""), "utf8");
 
-describe("skill-summary stop.mjs", () => {
+describe("continual-learning stop.mjs", () => {
   it("is silent while the task stays at 30 turns, fires with the condensed task once it exceeds them", async () => {
     await append([
       meta(),

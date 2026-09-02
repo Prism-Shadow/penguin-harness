@@ -459,7 +459,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   skills: {
     eyebrow: "Built-in Skills",
     title: "The built-in Skill library at a glance",
-    subtitle: "Four Skill groups out of the box — agents can write and optimize their own, too.",
+    subtitle: "Three Skill groups out of the box — agents can write and optimize their own, too.",
     groups: [
       {
         title: "Office Productivity",
@@ -480,11 +480,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "ollama",
           "llamafactory",
           "skill-porting",
-        ],
-      },
-      {
-        title: "agent tuning",
-        skills: [
           "agent-initialization",
           "benchmark-design",
           "agent-evaluation",

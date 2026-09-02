@@ -3,8 +3,9 @@
  * (agent_state/hooks/<name>/ — a manifest plus the scripts the harness runs at the loop's
  * hook points, e.g. after every Task). The files are the single source of truth, so the list
  * is re-fetched from the API after every mutation instead of trusting client state, the way
- * the Skills tab does. Rows show the hook glyph, the package name, its localized description,
- * the hook points it answers at (one chip each) and its version; uninstall confirms first
+ * the Skills tab does. Rows lead with the icon of the plugin the package came from (the name's
+ * initial when it has none), then the package name, its localized description, the hook points
+ * it answers at (one chip each) and its version; uninstall confirms first
  * (it deletes the whole package directory, local edits included). Installing happens through
  * the plugin library — a hook package is part of a plugin, installed with it — so there is no
  * import entry here. Read and mutate are both member-level, matching the hooks routes.
@@ -22,11 +23,10 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HelpFold } from "../../components/ui/help-fold";
-import { HOOK_ICON } from "../../components/ui/icons";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
-import { skillTileColor } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills/skill-icon-view";
 import { TRASH_ICON } from "./skills-tab";
 
 export function HooksTab({ agentId }: { agentId: string }) {
@@ -99,11 +99,7 @@ export function HooksTab({ agentId }: { agentId: string }) {
                 key={hook.name}
                 className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
               >
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(hook.name)}`}
-                >
-                  <GlyphIcon d={HOOK_ICON} size={20} />
-                </span>
+                <SkillTile icon={hook.icon} name={hook.name} size={36} glyph={20} />
                 <div className="min-w-0 flex-1">
                   <span
                     className="block truncate font-mono text-[13px] font-semibold"

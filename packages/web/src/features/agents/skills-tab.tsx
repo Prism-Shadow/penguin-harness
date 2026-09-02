@@ -1,8 +1,9 @@
 /**
  * Agent settings page "Skills" tab: the skills installed on this Agent
  * (agent_state/skills/<name>/ — the files are the single source of truth, so the list is
- * re-fetched from the API after every mutation instead of trusting client state). Rows show
- * the skill icon, name, localized short description and version; uninstall
+ * re-fetched from the API after every mutation instead of trusting client state). Rows lead
+ * with the icon of the plugin the skill came from (the name's initial when it has none), then
+ * the name, localized short description and version; uninstall
  * confirms first (deletes the whole directory, local edits included). The "Import skill"
  * modal offers two paths: the recommended chat install (a source field accepting a web
  * page / repo URL / local path / foreign install command — see skill-import-source.ts —
@@ -38,7 +39,7 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
@@ -312,11 +313,7 @@ export function SkillsTab({
               key={skill.name}
               className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
             >
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
-              >
-                <SkillIcon icon={skill.icon} size={20} />
-              </span>
+              <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
               <div className="min-w-0 flex-1">
                 <span
                   className="block truncate font-mono text-[13px] font-semibold"

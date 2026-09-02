@@ -22,17 +22,17 @@ plugins/<plugin>/
 | `description` / `description_zh` | One-line description (English required for a hook-only plugin; a skill plugin falls back to its first skill's) |
 | `short_description` / `short_description_zh` | Card labels (fall back to the first skill's) |
 | `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
-| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-tuning`, `session-hooks`; missing or unknown lands in "Other" |
+| `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`). Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
 
-Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name>/` in the repo. The loader lives in `@prismshadow/penguin-core`, which depends on the plugin packages and resolves their directories (the desktop build bundles the same directories beside it instead). At runtime the plugin files are the source of truth for library content, read on every call.
+Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name>/` in the repo. The loader lives in `@prismshadow/penguin-core`: it reads the plugin names off the host package's dependency list and resolves each package through Node (the desktop app declares the same packages as dependencies, which its installer packs). At runtime the plugin files are the source of truth for library content, read on every call.
 
 ## Anatomy of a Skill
 
-A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Skills carry no icon of their own — the icon belongs to the plugin (`icon.svg` beside `plugin.json`); an installed skill shown on its own falls back to a default book glyph. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
+A Skill is a directory containing a `SKILL.md` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). Skills carry no icon of their own — the icon belongs to the plugin (`icon.svg` beside `plugin.json`), and an installed skill or hook package shows the icon of the plugin it came from; one with no icon (a user-authored skill, say) shows its name's initial instead. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
 
 A library `SKILL.md`'s frontmatter carries only two fields — everything else lives in `plugin.json`:
 
@@ -83,11 +83,11 @@ Installed Skills live under `agent_state/skills/<name>/`, hook packages under `a
 
 - The built-in Agent `default_agent` gets the whole library installed at initialization, except plugins marked `preinstall: false` — those are only ever installed manually;
 - other Agents install on demand — through the Web UI's plugin library page, or via the SDK;
-- installing a skill writes its installable `SKILL.md` (the frontmatter regenerated with the plugin's metadata, see above) and copies any other files in the skill directory (subdirectories preserved) alongside it (a user-authored or imported skill may include its own `icon.svg`, which is copied too); installing a hook package writes `hooks.json` and every file under the plugin's `hooks/`. Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships — reinstalling is how an installed copy is updated, and the Agents page flags a plugin whose installed skill or hook package is behind the library.
+- installing a skill writes its installable `SKILL.md` (the frontmatter regenerated with the plugin's metadata, see above), the plugin's `icon.svg`, and any other files in the skill directory (subdirectories preserved) alongside it (a user-authored or imported skill may include its own `icon.svg`, which is copied instead); installing a hook package writes `hooks.json`, the plugin's `icon.svg` and every file under the plugin's `hooks/`. Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships — reinstalling is how an installed copy is updated, and the Agents page flags a plugin whose installed skill or hook package is behind the library.
 
 ## Built-in library
 
-The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/plugins/src/index.ts`; the library directory is the source of truth as plugins are added):
+The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins/index.ts`; the library directory is the source of truth as plugins are added):
 
 | Category | Plugin | Purpose |
 | --- | --- | --- |
@@ -95,18 +95,18 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/plugins/src/
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
+| | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the session working toward an objective until it is complete, blocked, or out of token budget (preinstalled) |
+| | `continual-learning` | When a task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
 | Software Development | `software-development` | Software development end to end — two skills: `software-engineering` (investigate, implement and validate with minimal scope) and `web-design` (the Penguin visual language for generated web UIs) |
 | | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
 | AI App Development | `agent-development` | Agent development on PenguinHarness — four skills: `penguin-sdk` (build agent/AI/RAG apps on the SDK), `unified-llm-api` (call model APIs through `@prismshadow/agenthub`), `penguin-config` (manage model keys, defaults and Vault secrets) and `penguin-orchestration` (drive agents, sessions, costs and schedules from a shell) |
 | | `model-development` | Model development on your own hardware — three skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
-| Agent Tuning | `agent-tuning` | The tuning loop as four skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated Case) and `agent-optimization` (improve the agent from measured results) |
-| Session Hooks | `goal` | The stop hook behind [goal mode](/goal-mode): keeps the session working toward an objective until it is complete, blocked, or out of token budget (preinstalled) |
-| | `skill-summary` | When a task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
+| | `agent-tuning` | The tuning loop as four skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated Case) and `agent-optimization` (improve the agent from measured results) |
 
 ## Writing and optimizing Skills
 
 - Manual install: create a directory under `agent_state/skills/<name>/` and write a `SKILL.md`; the system scans `skills/` when assembling the system prompt and injects the metadata. A directory without a `SKILL.md` does not count as a Skill.
 - Uninstalling deletes the whole `skills/<name>/` (or `hooks/<name>/`) directory and is idempotent.
 - An Agent can rewrite its own SKILL.md as part of a task — combined with Benchmark evaluation and optimization this closes the improvement loop, see [Self-Improvement](/self-improvement). Bump `version` to today's date with the next sequence number when you do.
-- Long tasks can feed back on their own: with the `skill-summary` plugin installed, a task that ends after more than 30 turns has its stop hook hand a condensed excerpt of that task to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).
+- Long tasks can feed back on their own: with the `continual-learning` plugin installed, a task that ends after more than 30 turns has its stop hook hand a condensed excerpt of that task to a background subagent, which folds the durable findings into the relevant SKILL.md files — see [The Agent Loop](/agent-loop#stop-hooks).

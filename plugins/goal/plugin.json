@@ -4,7 +4,7 @@
   "short_description": "Loop the session on an objective until it is done.",
   "short_description_zh": "让会话循环推进一个目标直到完成。",
   "version": "2026-09-01.1",
-  "category": "session-hooks",
+  "category": "office-productivity",
   "hooks": {
     "user_prompt": [
       {

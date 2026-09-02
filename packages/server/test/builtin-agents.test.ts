@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadPreinstalledPlugins } from "@prismshadow/penguin-core";
+import { libraryPlugin, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type { BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 
@@ -62,7 +62,23 @@ describe("built-in Agent provisioning", () => {
       path.join(t.root, projectId, "agents", "default_agent", "agent_state", "hooks"),
     );
     expect(hooksOf).toContain("goal");
-    expect(hooksOf).not.toContain("skill-summary");
+    expect(hooksOf).not.toContain("continual-learning");
+    // The hook package carries its plugin's icon beside the manifest, the way an installed skill does.
+    expect(
+      await fs.readFile(
+        path.join(
+          t.root,
+          projectId,
+          "agents",
+          "default_agent",
+          "agent_state",
+          "hooks",
+          "goal",
+          "icon.svg",
+        ),
+        "utf8",
+      ),
+    ).toBe(libraryPlugin("goal")!.icon);
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workflows section).

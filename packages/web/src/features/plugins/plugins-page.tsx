@@ -8,8 +8,8 @@
  * row on narrow screens. Each card = a rounded icon tile centered against the two text rows
  * (its color comes from skillTileColor — a per-name palette hashed from the plugin name; DTO
  * icon = the plugin's raw icon.svg (beside plugin.json), rendered inline once it passes
- * sanitize, otherwise the default book icon — or the hook glyph for a plugin that ships no
- * skill) + a name (monospace) and short description on the right, one line each
+ * sanitize, otherwise the name's initial) + a name (monospace) and short description on the
+ * right, one line each
  * (single-line truncation, falling back to the full description when missing) + a line below
  * both with what the plugin contains ("N skills", one "<event> hook" badge per hook point)
  * and its metadata (version · usage count "used by N Agents"); group and card copy follow the
@@ -62,7 +62,6 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { HOOK_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
@@ -75,7 +74,7 @@ import { parkActiveDraft } from "../chat/draft-sessions";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
 import { formatRelativeDate } from "../../lib/format";
-import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -665,19 +664,10 @@ function PluginCard({
         className="min-w-0 flex-1 text-left"
       >
         {/* Header: the plugin icon centered across the two text rows (rounded tile in the plugin's
-            own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
-            with the name and short description on one line each to the right. A plugin that
-            ships no skill has no icon.svg to show and draws the hook glyph instead of the book. */}
+            own palette color — see SkillTile; deliberately a bit smaller than the two rows),
+            with the name and short description on one line each to the right. */}
         <div className="flex items-center gap-3">
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(plugin.name)}`}
-          >
-            <SkillIcon
-              icon={plugin.icon}
-              fallback={plugin.skills.length === 0 ? HOOK_ICON : undefined}
-              size={20}
-            />
-          </span>
+          <SkillTile icon={plugin.icon} name={plugin.name} size={36} glyph={20} />
           <div className="min-w-0 flex-1">
             <span
               className="block truncate font-mono text-[13px] font-semibold"

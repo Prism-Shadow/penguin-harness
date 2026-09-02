@@ -475,9 +475,10 @@ function assertSafeSkillFile(rel: string): void {
 
 /**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg and
- * any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`, subdirectories
- * preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
+ * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg
+ * (a library skill's is its plugin's icon, stamped by the loader; a user-authored or zip-imported
+ * skill's is its own) and any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`,
+ * subdirectories preserved) are written alongside it. The directory is replaced wholesale, so reinstalling
  * updates to the latest content and drops files the new version no longer ships — the directory
  * content always matches the Skill being installed. Each file path is checked to stay within the
  * skill directory before anything is written.
@@ -560,7 +561,7 @@ export async function removeSkill(
 
 /** An installed Skill entry: frontmatter metadata (including an optional short description) + the optional icon.svg content in the directory. */
 export interface InstalledSkill extends SkillMetadata {
-  /** The raw content of `skills/<name>/icon.svg` (a custom icon copied alongside SKILL.md at install time); the field is omitted when missing (the frontend falls back to a default book icon). */
+  /** The raw content of `skills/<name>/icon.svg` — the plugin's icon for a library install, a custom one for a user-authored skill — copied alongside SKILL.md at install time; the field is omitted when missing (the frontend then shows the name's initial). */
   icon?: string;
 }
 
@@ -625,6 +626,8 @@ export async function listInstalledSkills(
  * Installs one library plugin: every skill it ships through `installSkill`, and its hook
  * package (when it has one) through `installHook` — the same writers the library routes use,
  * so a plugin picked at Agent creation and one installed from the library land identically.
+ * The plugin's icon lands with both: stamped onto each skill by the loader, and written beside
+ * the hook package's manifest here.
  */
 export async function installPlugin(
   root: string,
@@ -634,14 +637,23 @@ export async function installPlugin(
 ): Promise<void> {
   for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
   if (plugin.hooks) {
-    await installHook(root, projectId, agentId, plugin.hooks.manifest, plugin.hooks.files);
+    await installHook(
+      root,
+      projectId,
+      agentId,
+      plugin.hooks.manifest,
+      plugin.hooks.files,
+      plugin.icon,
+    );
   }
 }
 
 /**
- * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json` plus the package's
- * files (relative path → content, subdirectories preserved), replacing the whole directory
- * like a skill install does. Each file path is checked to stay within the directory.
+ * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's
+ * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
+ * installed skill does), plus the package's files (relative path → content, subdirectories
+ * preserved), replacing the whole directory like a skill install does. Each file path is
+ * checked to stay within the directory.
  * Docs: /docs/skills § "Hooks".
  */
 export async function installHook(
@@ -650,6 +662,7 @@ export async function installHook(
   agentId: string,
   manifest: HookManifest,
   files: Record<string, string>,
+  icon?: string,
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
@@ -658,6 +671,7 @@ export async function installHook(
   const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
   await replaceSkillDirectory(dir, [
     ["hooks.json", `${JSON.stringify(manifest, null, 2)}\n`],
+    ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
     ...Object.entries(files),
   ]);
 }
@@ -681,13 +695,15 @@ export async function removeHook(
 /** An installed hook package: its manifest plus the directory its commands resolve against. */
 export interface InstalledHook extends HookManifest {
   dir: string;
+  /** The raw content of `hooks/<name>/icon.svg` (the plugin's icon, written beside the manifest at install time); omitted when missing. */
+  icon?: string;
 }
 
 /**
- * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json`.
- * Tolerant like the skills scan: a directory without a parseable manifest is not a hook
- * package; the directory name is the identity (a manifest naming something else is
- * corrected). Sorted by name; [] when hooks/ doesn't exist.
+ * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json`, and
+ * reads the optional icon.svg beside it. Tolerant like the skills scan: a directory without a
+ * parseable manifest is not a hook package; the directory name is the identity (a manifest
+ * naming something else is corrected). Sorted by name; [] when hooks/ doesn't exist.
  */
 export async function listInstalledHooks(
   root: string,
@@ -716,6 +732,12 @@ export async function listInstalledHooks(
       continue;
     }
     if (manifest === null || typeof manifest !== "object") continue;
+    let icon: string | undefined;
+    try {
+      icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");
+    } catch {
+      // icon.svg is optional: a package installed before icons were written beside manifests has none.
+    }
     const commands = (list?: HookCommand[]): HookCommand[] =>
       Array.isArray(list)
         ? list
@@ -738,6 +760,7 @@ export async function listInstalledHooks(
       ...(preToolUse.length > 0 ? { pre_tool_use: preToolUse } : {}),
       ...(userPrompt.length > 0 ? { user_prompt: userPrompt } : {}),
       dir,
+      ...(icon !== undefined ? { icon } : {}),
     });
   }
   return hooks.sort((a, b) => a.name.localeCompare(b.name));

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The skill-summary stop hook: when the Task that just ended ran more than TURNS_THRESHOLD
+// The continual-learning stop hook: when the Task that just ended ran more than TURNS_THRESHOLD
 // completed turns, it condenses that Task into an excerpt and asks the harness to hand it to
 // a background subagent, whose prompt folds the durable findings into the agent's own skills.
 // The window is the Task itself, so a Task triggers at most once — at its end — and short
@@ -182,7 +182,7 @@ if (turns <= TURNS_THRESHOLD) process.exit(0);
 const invoked = invokedSkills(window);
 const agentId = path.basename(path.dirname(agentState));
 const prompt = [
-  `Automated session review (skill-summary hook). The transcript excerpt below covers the task that just ended (${turns} turns) in session ${sessionId}, run by agent ${agentId}. Extract the durable findings and fold them into this agent's skills, then reply with one paragraph on what you changed — or that nothing was worth recording.`,
+  `Automated session review (continual-learning hook). The transcript excerpt below covers the task that just ended (${turns} turns) in session ${sessionId}, run by agent ${agentId}. Extract the durable findings and fold them into this agent's skills, then reply with one paragraph on what you changed — or that nothing was worth recording.`,
   "",
   `Skills directory: ${visiblePath(skillsDir)}`,
   `Installed skills: ${skills.join(", ")}`,

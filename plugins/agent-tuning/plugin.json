@@ -4,5 +4,5 @@
   "short_description": "Initialize, benchmark, evaluate and improve agents.",
   "short_description_zh": "初始化、评测、评分与改进 Agent。",
   "version": "2026-09-02.1",
-  "category": "agent-tuning"
+  "category": "ai-app-development"
 }

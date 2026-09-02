@@ -41,7 +41,6 @@ const GROUPS = [
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
-  /Agent Tuning|Agent 调优/,
 ];
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [

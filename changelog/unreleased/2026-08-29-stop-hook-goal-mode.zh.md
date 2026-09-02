@@ -1,4 +1,4 @@
-# Hook 进核心，目标模式与技能沉淀成插件，技能库改为插件库
+# Hook 进核心，目标模式与持续学习成插件，技能库改为插件库
 
 - **Date:** 2026-08-29
 - **Type:** feature
@@ -7,7 +7,7 @@
 
 [English](2026-08-29-stop-hook-goal-mode.md)
 
-Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前一个，**stop**，即一个 Task 结束的那一刻——钩子本身来自插件的**钩子包**：装进 `agent_state/hooks/`（与 `agent_state/skills/` 并列）的纯 Node 脚本。目标模式整个搬出核心，成为 `goal` 插件的 stop hook，ralph loop 式：一份状态文件，钩子在每个 Task 结束后读它、重写它。第二个钩子包 `skill-summary` 把长会话的发现交给后台子会话。技能库重整为插件库——每个插件一个 npm 包（`@penguinharness/<name>`）、Skill 与钩子包放在其中、版本按日期编号，由 `@prismshadow/penguin-core` 加载——`@prismshadow/penguin-skills` 弃用。
+Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前一个，**stop**，即一个 Task 结束的那一刻——钩子本身来自插件的**钩子包**：装进 `agent_state/hooks/`（与 `agent_state/skills/` 并列）的纯 Node 脚本。目标模式整个搬出核心，成为 `goal` 插件的 stop hook，ralph loop 式：一份状态文件，钩子在每个 Task 结束后读它、重写它。第二个钩子包 `continual-learning` 把长任务的发现交给后台子会话。技能库重整为插件库——每个插件一个 npm 包（`@penguinharness/<name>`）、Skill 与钩子包放在其中、版本按日期编号，由 `@prismshadow/penguin-core` 加载——`@prismshadow/penguin-skills` 弃用。
 
 ## Stop hook
 
@@ -24,16 +24,16 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 - 服务端对 `goal: { budget }` 先查钩子包是否已装（未装 `409 goal_plugin_not_installed`），运行 `agent_state/hooks/goal/start.mjs`，把你的消息原样在前（文本与图片，一字不动）、它打印的协议消息带 harness 标记随后提交；后续轮从目标文件复述目标文本。`GET /goal` 读 `GOAL.json`（钩子尚未结束的文件在 Session 空闲时读作 `aborted`）。`goal_*` 服务端事件、聊天页 banner、`/goal` 命令与 `penguin run --goal` 行为不变——`goal_round` 与 CLI 的轮次行改为统计 harness 注入的输入而非解析文本；CLI 从 `goal_finished` 服务端事件读结局。文件附件被拒绝。顺带修复：`startGoal` 此前不把种入的第 1 轮消息发布到会话频道（core 从不回吐运行自己的初始输入），同一会话的第二个 goal 在已订阅页面上既看不到用户消息也看不到协议消息——任务边界与统计行随之缺失——直到刷新；`goal_round` 的第 1 轮现在真正发出（计自种入输入）。
 - 在没装插件的 Agent 上发起目标时，Web App 弹出提示。轮消息渲染为一张紧凑的折叠卡片（「由 harness 注入」，后台任务通知同款形态，展开见全文）——「目标 · 第 N 轮」的折叠不复存在；输入历史与对话索引凭标记跳过 harness 注入的输入（后台完成回报保留自己的轮次）。
 
-## `skill-summary` 插件
+## `continual-learning` 插件
 
 - 不预装。刚结束的 Task 跑了超过 30 个完成的轮次时，它的 stop 脚本把该 Task 浓缩（截断的 user / assistant 文本、工具调用与输出），以 `subagent` 请求作答，prompt 请子会话把值得沉淀的发现写进相关 `SKILL.md` 并递增版本。窗口就是 Task 本身，因此一个任务至多在结束时触发一次，短任务从不触发。没有安装任何 Skill 的 Agent 不会触发。
 
 ## 插件库
 
-- **每个插件都是独立的 npm 包**：`@penguinharness/<name>`，仓库根目录 `plugins/` 下一包一插件（`plugin.json` + `icon.svg` + `skills/<name>/` + `hooks/`）；loader 并入 `@prismshadow/penguin-core`（取代 `packages/skills` 包）——core 依赖这些插件包并解析各自目录，desktop 形态优先读 host 包根旁的 `official/` 目录，否则逐包解析。四组合并为多 Skill 插件：`software-development`（software-engineering＋web-design）、`model-development`（llamafactory＋ollama＋vllm）、`agent-development`（penguin-sdk＋`unified-llm-api`〔原 agenthub-models〕＋`penguin-config`〔原 penguin-cli〕＋penguin-orchestration）、`agent-tuning`（initialization＋benchmark-design＋evaluation＋optimization）；其余仍各自成包，预装口径不变，合并成员的 Skill 目录保留各自的身份图标。两个钩子包归入 **Session Hooks（会话钩子）** 分类。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）；图标是 `plugin.json` 同级的 `icon.svg`（每个内置插件都有，钩子包也不例外）——**Skill 本身不带图标**（单独展示回退书本图标；用户自建/导入的 Skill 仍可自带）；自然数 `version` 与 `updated` 时间戳退场。
+- **每个插件都是独立的 npm 包**：`@penguinharness/<name>`，仓库根目录 `plugins/` 下一包一插件（`plugin.json` + `icon.svg` + `skills/<name>/` + `hooks/`）；loader 并入 `@prismshadow/penguin-core`（取代 `packages/skills` 包）——从宿主包的依赖清单读出插件名，再从自身所在位置经 Node 逐包解析：工作区、npm 安装与 desktop 应用各自落在自己的副本上（desktop 应用把各插件包声明为依赖，electron-builder 打包时收进应用，打包产物检查会逐个核对）。四组合并为多 Skill 插件：`software-development`（software-engineering＋web-design）、`model-development`（llamafactory＋ollama＋vllm）、`agent-development`（penguin-sdk＋`unified-llm-api`〔原 agenthub-models〕＋`penguin-config`〔原 penguin-cli〕＋penguin-orchestration）、`agent-tuning`（initialization＋benchmark-design＋evaluation＋optimization）；其余仍各自成包，预装口径不变。三个分类：办公效率（两个钩子包也在这里——目标模式与持续学习服务的正是这群用户）、软件开发、AI 应用开发（含 `agent-tuning`；Agent 调优与会话钩子两个分类退场）。版本一律 `YYYY-MM-DD.N`，`plugin.json` 是插件唯一的元数据载体——库内 `SKILL.md` 的 frontmatter 只写 `name` 与 `description`，短描述与版本由 loader 盖章进可安装副本（已装 frontmatter 保持自描述，供更新检查与 UI 读取）。**图标属于插件**——`plugin.json` 同级的 `icon.svg`，每个内置插件都有——插件携带的一切都继承它：loader 把它盖章到每个 Skill 上，安装时写在 Skill 的 `SKILL.md` 旁与钩子包的 `hooks.json` 旁，设置页的技能与钩子标签页、输入区的技能选择器与对话里的技能标签显示的都是它。Skill 不再有书本图标、钩子包不再有钩子图标；没有图标的 Skill（用户自建或 zip 导入且未自带）显示名称首字母。自然数 `version` 与 `updated` 时间戳退场。
 - Agent State：`agent_state/hooks/<plugin>/` 存放钩子包（由清单生成的 `hooks.json` 加脚本），与 `agent_state/skills/` 并列；状态层新增 `installPlugin`、`installHook`、`removeHook`、`listInstalledHooks`。`default_agent` 预装全部未标 `preinstall: false` 的插件。
-- API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
-- Web App：技能库页改为**插件库**（`/plugins`）——每张卡片带一行语义化元信息（`v<版本> · N 天前更新 · N 个 Agent 在用`，日期直接解析自版本号），点开即详情 Modal：完整描述、插件携带的 Skill（每行可点开简单的 SKILL.md 阅读器，经新增的 `GET /api/plugins/:plugin/skills/:skill` 取全文）与钩子点；按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
+- API：`GET /api/plugins`（分类 → 插件，含各自 Skill 元数据与钩子点）、`GET /api/plugins/:plugin/files`（插件携带的全部文件，按路径键入的文本：各 Skill 的可安装 `SKILL.md` 与参考文件、钩子脚本）、`POST …/agents/:a/plugins { names }`（整插件安装；重装即更新）、`GET|DELETE …/agents/:a/hooks[/:name]`（`HookItem` 带插件的 `icon`）。`GET /api/skills` 与 `POST …/skills { names }` 移除；已装 Skill 的路由（列表、zip 导入导出、卸载）保留。Agent 创建改收 `plugins` 而非 `skills`；`AgentSummary` 报告 `hookCount` 与 `pluginUpdates`（原 `skillUpdates`）；`SkillMetadataItem.version` 改为字符串、`updated` 移除。
+- Web App：技能库页改为**插件库**（`/plugins`）——每张卡片带一行语义化元信息（`v<版本> · N 天前更新 · N 个 Agent 在用`，日期直接解析自版本号），点开即详情 Modal：完整描述与钩子点，其下是插件全部文件的浏览器，形态同 Benchmark 的 Case 浏览器——左侧文件树按 Skill 分组、钩子脚本单独一组，可同时展开任意多组，右侧预览所选文件，打开文件不会覆盖摘要与文件树；按整插件安装与更新；Agent 设置页新增**钩子**标签页；创建弹窗按插件选装。CLI：`penguin agent create --plugins`。
 - 设计规格已同步改写（[penguin-harness-design #86](https://github.com/Prism-Shadow/penguin-harness-design/pull/86)）。
 
 ## 兼容性
@@ -43,5 +43,6 @@ Session 新增了通用的 hook 机制：核心只编码钩子*点*——目前�
 - **既有 Agent 没有任何钩子包**——不会向已存在的 Agent 自动安装。这样的 Agent 上发起目标会收到 `409 goal_plugin_not_installed`，直到从插件库装上 `goal` 插件；此后新建的 `default_agent` 自带。
 - **`goal_finished` 与 `goal` 运行选项不复存在**（连同上一轮迭代的 `goal_state` 表一起移除）；`goal_*` 服务端事件不变。早期版本的 Trace 仍带 `goal_finished` 记录，读取方把它当作未知事件。
 - **`[goal]` 标记不复存在**——`parseGoalMessage`、`isGoalRoundInput`、`downgradeGoalInput` 与 `GoalRoundMessage` 不再导出。旧 Trace 中带 `[goal]` 块的轮消息按纯文本渲染（块原样可见、没有轮次小注），照常开对话索引条目、照常进输入历史；新的轮消息改带 `sender: "harness"` 标记。
-- **`system_config.yaml` 的 `hooks.skill_summary`** 不再读取：装上 `skill-summary` 插件就是开关。
+- **`system_config.yaml` 的 `hooks.skill_summary`** 不再读取：装上 `continual-learning` 插件就是开关。
+- **此前安装的 Skill 与钩子包没有图标**（当时没有任何东西把图标写在它们旁边），其行显示名称首字母，直到从库重装或更新该插件——那会把插件图标写到位。
 - Agent 创建的 `skills: string[]` 字段与 CLI 的 `--skills` 改为 `plugins` / `--plugins`。

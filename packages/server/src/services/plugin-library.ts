@@ -28,7 +28,7 @@ export function resolveLibraryPlugins(names: readonly string[]): LibraryPlugin[]
   });
 }
 
-/** A skill as the API describes it — the library side, the installed side and the directory side all carry these fields. */
+/** A skill as the API describes it — the library side, the installed side and the directory side all carry these fields. `icon` travels when the caller passes one: installed lists do, the library listing does not (see toPluginItem). */
 export function toSkillItem(skill: SkillMetadata & { icon?: string }): SkillMetadataItem {
   return {
     name: skill.name,
@@ -51,20 +51,40 @@ export function hookEvents(manifest: HookManifest): string[] {
   ];
 }
 
-/** An installed hook package as the API describes it: the manifest without its scripts. */
-export function toHookItem(hook: HookManifest): HookItem {
+/** An installed hook package as the API describes it: the manifest without its scripts, plus the icon installed beside it. */
+export function toHookItem(hook: HookManifest & { icon?: string }): HookItem {
   return {
     name: hook.name,
     description: hook.description,
     ...(hook.descriptionZh !== undefined ? { descriptionZh: hook.descriptionZh } : {}),
     version: hook.version,
     events: hookEvents(hook),
+    ...(hook.icon !== undefined ? { icon: hook.icon } : {}),
   };
 }
 
-/** A library plugin as the listing describes it. */
+/**
+ * Everything a plugin ships as files the detail view can open, keyed by path relative to the
+ * plugin directory: each skill's installable SKILL.md (frontmatter stamped, what an install
+ * writes) and its auxiliary files under `skills/<name>/`, then the hook package's scripts
+ * under `hooks/`.
+ */
+export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const skill of plugin.skills) {
+    files[`skills/${skill.name}/SKILL.md`] = skill.content;
+    for (const [rel, text] of Object.entries(skill.files ?? {})) {
+      files[`skills/${skill.name}/${rel}`] = text;
+    }
+  }
+  for (const [rel, text] of Object.entries(plugin.hooks?.files ?? {})) {
+    files[`hooks/${rel}`] = text;
+  }
+  return files;
+}
+
+/** A library plugin as the listing describes it. Its skills go without their icon: it is the plugin's, sent once on the plugin itself. */
 export function toPluginItem(plugin: LibraryPlugin): PluginItem {
-  const icon = plugin.icon ?? plugin.skills.find((s) => s.icon !== undefined)?.icon;
   return {
     name: plugin.name,
     description: plugin.description,
@@ -75,8 +95,8 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       : {}),
     version: plugin.version,
     preinstall: plugin.preinstall,
-    skills: plugin.skills.map(toSkillItem),
+    skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
-    ...(icon !== undefined ? { icon } : {}),
+    ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
   };
 }

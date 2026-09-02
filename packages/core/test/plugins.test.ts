@@ -77,9 +77,9 @@ describe("loadLibraryPlugins", () => {
         expect(skill.version).toBe(plugin.version);
         expect(meta.shortDescriptionZh).toBe(plugin.shortDescriptionZh);
         expect(skill.content.endsWith(file.replace(/^---\n[\s\S]*?\n---/, ""))).toBe(true);
-        // Skills carry no icons — the icon belongs to the plugin alone, and no skill
-        // directory ships an icon.svg of its own.
-        expect("icon" in skill, `${plugin.name}/${skill.name} icon`).toBe(false);
+        // A skill's icon is its plugin's, stamped by the loader — no skill directory ships
+        // an icon.svg of its own.
+        expect(skill.icon, `${plugin.name}/${skill.name} icon`).toBe(plugin.icon);
         await expect(fs.access(path.join(dir, "icon.svg"))).rejects.toThrow();
         // Every shipped skill asks before starting when the message only names it.
         expect(skill.content, `${skill.name} lacks ## Before you start`).toMatch(
@@ -108,9 +108,9 @@ describe("loadLibraryPlugins", () => {
     expect(goal!.hooks!.manifest.descriptionZh).toBeDefined();
     expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
     expect(goal!.skills).toEqual([]);
-    const summary = libraryPlugin("skill-summary");
-    expect(summary?.hooks?.manifest.stop).toEqual([{ command: "stop.mjs", timeout: 60 }]);
-    expect(Object.keys(summary!.hooks!.files)).toEqual(["stop.mjs"]);
+    const learning = libraryPlugin("continual-learning");
+    expect(learning?.hooks?.manifest.stop).toEqual([{ command: "stop.mjs", timeout: 60 }]);
+    expect(Object.keys(learning!.hooks!.files)).toEqual(["stop.mjs"]);
   });
 
   it("a single-skill plugin's manifest may fall back to its skill's descriptions", () => {
@@ -130,7 +130,7 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["skill-summary", "humanizer", "remote-claude-code"]) {
+    for (const manual of ["continual-learning", "humanizer", "remote-claude-code"]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -151,26 +151,37 @@ describe("comparePluginVersions", () => {
 describe("groupPlugins / loadPluginGroups", () => {
   it("groups by category in manifest order, members sorted, empty categories omitted, unknown ones in Other", () => {
     const groups = groupPlugins([
-      fakePlugin("b", "agent-tuning"),
-      fakePlugin("a", "agent-tuning"),
+      fakePlugin("b", "ai-app-development"),
+      fakePlugin("a", "ai-app-development"),
       fakePlugin("z"),
       fakePlugin("y", "made-up"),
-      fakePlugin("h", "session-hooks"),
+      fakePlugin("h", "office-productivity"),
     ]);
     expect(groups.map((g) => [g.id, g.plugins.map((p) => p.name)])).toEqual([
-      ["agent-tuning", ["a", "b"]],
-      ["session-hooks", ["h"]],
+      ["office-productivity", ["h"]],
+      ["ai-app-development", ["a", "b"]],
       ["other", ["y", "z"]],
     ]);
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
   });
 
-  it("the library itself fills the five categories and leaves no Other group", () => {
+  it("the library itself fills the three categories and leaves no Other group; hook packages sit with their audience", () => {
     const groups = loadPluginGroups();
     expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
-    expect(groups.find((g) => g.id === "session-hooks")?.plugins.map((p) => p.name)).toEqual([
+    const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
+    expect(names("office-productivity")).toEqual([
+      "bento-slides",
+      "continual-learning",
+      "data-analysis",
+      "firecrawl",
       "goal",
-      "skill-summary",
+      "humanizer",
+    ]);
+    expect(names("ai-app-development")).toEqual([
+      "agent-development",
+      "agent-tuning",
+      "model-development",
+      "skill-porting",
     ]);
   });
 });

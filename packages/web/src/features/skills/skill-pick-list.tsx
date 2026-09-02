@@ -6,8 +6,9 @@
  * the bulk controls.
  *
  * A row is a Skill's metadata. The create dialog's library picker lists plugins, whose manifest
- * carries the same fields (name, descriptions, icon, version), so a plugin is a row too; one that
- * ships no skill has no icon and names the glyph to draw instead of the book (`fallbackIcon`).
+ * carries the same fields (name, descriptions, icon, version), so a plugin is a row too. A row's
+ * icon is its plugin's — an installed skill carries the icon of the plugin it came from — and a
+ * row without one shows no mark at all.
  *
  * `onSelectAll` / `onSelectNone` render the bulk row, and both receive the names **currently
  * matching the search box**. With an empty query that is the whole list, which is the common
@@ -29,7 +30,7 @@ const bulkActionClass =
   "hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200";
 
 /** One pickable row: a Skill's metadata, plus the glyph to draw when it carries no icon (the book when absent). */
-export type PickableItem = SkillMetadataItem & { fallbackIcon?: string };
+export type PickableItem = SkillMetadataItem;
 
 export function SkillPickList({
   skills,
@@ -114,10 +115,9 @@ export function SkillPickList({
                     : "text-gray-600 dark:text-gray-400"
                 }`}
               >
-                {/* Each row's custom icon (icon.svg, sanitized and inlined; falls back to the book icon, or the row's own glyph, if missing). */}
+                {/* Each row's icon (icon.svg, sanitized and inlined); nothing is drawn without one. */}
                 <SkillIcon
                   icon={s.icon}
-                  fallback={s.fallbackIcon}
                   size={ICON_SIZE.inlineGlyph}
                   className="shrink-0 text-gray-400 dark:text-gray-500"
                 />

@@ -32,7 +32,7 @@ const librarySkills = readdirSync(pluginsRoot, { withFileTypes: true })
   )
   .sort();
 
-/** Every Skill name a dictionary's Skills section renders, flattened across its four cards. */
+/** Every Skill name a dictionary's Skills section renders, flattened across its cards. */
 const listedSkills = (dict: Strings): string[] =>
   dict.skills.groups.flatMap((group) => group.skills);
 
@@ -69,7 +69,7 @@ describe("landing ↔ skill library sync", () => {
   }
 
   /**
-   * Card by card rather than as one flat list: the two dictionaries render the same four cards
+   * Card by card rather than as one flat list: the two dictionaries render the same cards
    * in the same order, so a Skill that moves card in one language and not the other is drift a
    * flattened comparison cannot see. Membership inside a card only — the chips are free to be
    * reordered.

@@ -57,6 +57,9 @@ importers:
       '@penguinharness/bento-slides':
         specifier: workspace:*
         version: link:../../plugins/bento-slides
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -78,9 +81,6 @@ importers:
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
-      '@penguinharness/skill-summary':
-        specifier: workspace:*
-        version: link:../../plugins/skill-summary
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
@@ -136,6 +136,9 @@ importers:
       '@penguinharness/bento-slides':
         specifier: workspace:*
         version: link:../../plugins/bento-slides
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -157,9 +160,6 @@ importers:
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
-      '@penguinharness/skill-summary':
-        specifier: workspace:*
-        version: link:../../plugins/skill-summary
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
@@ -202,6 +202,43 @@ importers:
         version: 4.4.3
 
   packages/desktop:
+    dependencies:
+      '@penguinharness/agent-development':
+        specifier: workspace:*
+        version: link:../../plugins/agent-development
+      '@penguinharness/agent-tuning':
+        specifier: workspace:*
+        version: link:../../plugins/agent-tuning
+      '@penguinharness/bento-slides':
+        specifier: workspace:*
+        version: link:../../plugins/bento-slides
+      '@penguinharness/continual-learning':
+        specifier: workspace:*
+        version: link:../../plugins/continual-learning
+      '@penguinharness/data-analysis':
+        specifier: workspace:*
+        version: link:../../plugins/data-analysis
+      '@penguinharness/firecrawl':
+        specifier: workspace:*
+        version: link:../../plugins/firecrawl
+      '@penguinharness/goal':
+        specifier: workspace:*
+        version: link:../../plugins/goal
+      '@penguinharness/humanizer':
+        specifier: workspace:*
+        version: link:../../plugins/humanizer
+      '@penguinharness/model-development':
+        specifier: workspace:*
+        version: link:../../plugins/model-development
+      '@penguinharness/remote-claude-code':
+        specifier: workspace:*
+        version: link:../../plugins/remote-claude-code
+      '@penguinharness/skill-porting':
+        specifier: workspace:*
+        version: link:../../plugins/skill-porting
+      '@penguinharness/software-development':
+        specifier: workspace:*
+        version: link:../../plugins/software-development
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
@@ -505,6 +542,8 @@ importers:
 
   plugins/bento-slides: {}
 
+  plugins/continual-learning: {}
+
   plugins/data-analysis: {}
 
   plugins/firecrawl: {}
@@ -518,8 +557,6 @@ importers:
   plugins/remote-claude-code: {}
 
   plugins/skill-porting: {}
-
-  plugins/skill-summary: {}
 
   plugins/software-development: {}
 
@@ -1060,6 +1097,9 @@ packages:
   '@penguinharness/bento-slides@file:plugins/bento-slides':
     resolution: {directory: plugins/bento-slides, type: directory}
 
+  '@penguinharness/continual-learning@file:plugins/continual-learning':
+    resolution: {directory: plugins/continual-learning, type: directory}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
@@ -1080,9 +1120,6 @@ packages:
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
-
-  '@penguinharness/skill-summary@file:plugins/skill-summary':
-    resolution: {directory: plugins/skill-summary, type: directory}
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
@@ -4747,6 +4784,8 @@ snapshots:
 
   '@penguinharness/bento-slides@file:plugins/bento-slides': {}
 
+  '@penguinharness/continual-learning@file:plugins/continual-learning': {}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
   '@penguinharness/firecrawl@file:plugins/firecrawl': {}
@@ -4760,8 +4799,6 @@ snapshots:
   '@penguinharness/remote-claude-code@file:plugins/remote-claude-code': {}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
-
-  '@penguinharness/skill-summary@file:plugins/skill-summary': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
 
@@ -4805,6 +4842,7 @@ snapshots:
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/bento-slides': file:plugins/bento-slides
+      '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/firecrawl': file:plugins/firecrawl
       '@penguinharness/goal': file:plugins/goal
@@ -4812,7 +4850,6 @@ snapshots:
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/remote-claude-code': file:plugins/remote-claude-code
       '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skill-summary': file:plugins/skill-summary
       '@penguinharness/software-development': file:plugins/software-development
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -4836,6 +4873,7 @@ snapshots:
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/bento-slides': file:plugins/bento-slides
+      '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/firecrawl': file:plugins/firecrawl
       '@penguinharness/goal': file:plugins/goal
@@ -4843,7 +4881,6 @@ snapshots:
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/remote-claude-code': file:plugins/remote-claude-code
       '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skill-summary': file:plugins/skill-summary
       '@penguinharness/software-development': file:plugins/software-development
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
@@ -4863,6 +4900,7 @@ snapshots:
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/bento-slides': file:plugins/bento-slides
+      '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/firecrawl': file:plugins/firecrawl
       '@penguinharness/goal': file:plugins/goal
@@ -4870,7 +4908,6 @@ snapshots:
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/remote-claude-code': file:plugins/remote-claude-code
       '@penguinharness/skill-porting': file:plugins/skill-porting
-      '@penguinharness/skill-summary': file:plugins/skill-summary
       '@penguinharness/software-development': file:plugins/software-development
       '@prismshadow/agenthub': 0.4.8(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
