@@ -11,15 +11,26 @@
  * is left for what the title cannot say — why a compaction failed, and, while a summarize
  * runs, the hint that its body is being streamed into.
  *
- * The body follows the work group: **two stacked disclosure rows, each collapsed by default
- * exactly like a thinking block** — 「思考」/ "Thinking", what the compaction request thought
- * ahead of its summary (present only once any arrived; a model that does not think leaves
- * no empty row), and 「压缩结果」/ "Result", the summary itself. Both carry the thinking
- * block's own body (`md-body` + the streaming `Md`) and stream while the request writes
- * them; the header's chevron is there from the moment a summarize compaction starts, so the
- * reader can expand it to watch the request work, or read the outcome afterwards. A
- * `discard` compaction produces no text at all and stays chevron-less, as does a failed one:
- * a compaction that did not complete wrote no adopted summary, and the reducer discards its
+ * The body follows the work group: **two stacked disclosure rows, each with its own status
+ * icon and wall time exactly like a thinking block** — 「思考」/ "Thinking", what the
+ * compaction request thought ahead of its summary (present only once any arrived; a model
+ * that does not think leaves no empty row), and 「压缩结果」/ "Result", the summary itself.
+ * Both carry the thinking block's own body (`md-body` + the streaming `Md`) and stream while
+ * the request writes them.
+ *
+ * Two layers, and the running row opens exactly one of them (StepBanner's expand policy, the
+ * work group's): while the compaction runs the banner is open, so the two section rows are on
+ * screen with their labels and their ticking times — the reader can see that they are there
+ * and how long each is taking — while the sections themselves stay closed (DisclosureRow's
+ * default), because their contents are the compaction's raw workings and not what the row is
+ * for. Once the compaction settles the banner closes itself again, leaving the one-line
+ * summary. The result section shows `…` for its time until the first summary token arrives,
+ * which is also the honest reading of that moment: the request is thinking, not writing yet.
+ *
+ * The header's chevron is there from the moment a summarize compaction starts, so the reader
+ * can reopen it to watch the request work, or read the outcome afterwards. A `discard`
+ * compaction produces no text at all and stays chevron-less, as does a failed one: a
+ * compaction that did not complete wrote no adopted summary, and the reducer discards its
  * half-written drafts (see stream-model's compaction_end handling), so there is nothing left
  * to show.
  *
@@ -30,26 +41,36 @@
  * compaction turns separately); see the task-stats module comments.
  */
 import { S } from "../../lib/strings";
+import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
 import { compactionSummaryText } from "../../lib/omni/compaction-summary";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { DisclosureRow } from "./disclosure-row";
+import { LiveDuration } from "./live-duration";
 import { Md } from "./md";
 import { StepBanner } from "./step-banner";
 
 /**
- * One body section: the thinking block's row (status icon + label + chevron) over the
- * thinking block's text body. Sticky like a row inside the work group, so a long expanded
- * section keeps its own label pinned under the stuck banner header.
+ * One body section: the thinking block's row (status icon + label + wall time + chevron) over
+ * the thinking block's text body — the same three marks in the same order, so a compaction
+ * section and a thinking block read as the one thing they are. Sticky like a row inside the
+ * work group, so a long expanded section keeps its own label pinned under the stuck banner
+ * header.
  */
 function CompactionSection({
   label,
   text,
   streaming,
+  startedAtMs,
+  durationMs,
 }: {
   label: string;
   text: string;
   streaming: boolean;
+  /** Ticks from here while the section streams (`…` until its first content lands). */
+  startedAtMs?: number;
+  /** Settled wall time once the section closes (see CompactionItem for the boundaries). */
+  durationMs?: number;
 }) {
   return (
     <DisclosureRow
@@ -61,6 +82,15 @@ function CompactionSection({
         />
       }
       label={label}
+      trailing={
+        <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+          {streaming ? (
+            <LiveDuration sinceMs={startedAtMs} />
+          ) : durationMs !== undefined ? (
+            humanizeDuration(durationMs)
+          ) : null}
+        </span>
+      }
     >
       <div className="md-body anim-fade mx-3 mb-2 rounded-md bg-gray-50 px-3 py-2 text-sm leading-relaxed text-gray-600 dark:bg-gray-900/60 dark:text-gray-400">
         <Md text={text} streaming={streaming} />
@@ -84,9 +114,17 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
           label={S.chat.thinking}
           text={thinking}
           streaming={item.thinkingStreaming === true}
+          startedAtMs={item.thinkingStartedAtMs}
+          durationMs={item.thinkingDurationMs}
         />
       )}
-      <CompactionSection label={S.chat.compactionResult} text={summary} streaming={item.running} />
+      <CompactionSection
+        label={S.chat.compactionResult}
+        text={summary}
+        streaming={item.running}
+        startedAtMs={item.summaryStartedAtMs}
+        durationMs={item.summaryDurationMs}
+      />
     </>
   ) : null;
 

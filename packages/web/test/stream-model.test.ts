@@ -542,6 +542,110 @@ describe("approvals and events", () => {
     pushMessage(m, partialText("delta", "[summary]the plan[/summary]"));
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
     expect(banner).toMatchObject({ thinkingText: "half a thought", thinkingStreaming: false });
+    // Its wall time settles with the flag, so the row never shows a settled section with no number.
+    expect(banner.thinkingDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("times each body section over exactly the window it shows itself running (live fragments)", () => {
+    const m = createStreamModel();
+    const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
+    const ms = (sec: number) => Date.parse(t(sec));
+    pushMessage(
+      m,
+      at(compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }), t(0)),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    // A content-free start opens the fragment but starts no clock: the section is not on
+    // screen yet, and a request that never thinks must leave no stray wall time behind.
+    pushMessage(m, at(partialThinking("start"), t(1)));
+    expect(banner.thinkingStartedAtMs).toBeUndefined();
+    pushMessage(m, at(partialThinking("delta", "weighing "), t(2)));
+    pushMessage(m, at(partialThinking("delta", "the transcript"), t(3)));
+    expect(banner.thinkingStartedAtMs).toBe(ms(2));
+    expect(banner.thinkingDurationMs).toBeUndefined();
+    // Thinking settles at its own stop — the moment its spinner stops.
+    pushMessage(m, at(partialThinking("stop"), t(6)));
+    expect(banner.thinkingDurationMs).toBe(4000);
+    // The result section's clock starts at its first token, not at its fragment's start.
+    pushMessage(m, at(partialText("start"), t(6)));
+    expect(banner.summaryStartedAtMs).toBeUndefined();
+    pushMessage(m, at(partialText("delta", "[summary]the plan[/summary]"), t(7)));
+    expect(banner.summaryStartedAtMs).toBe(ms(7));
+    // ...and runs on past its own stop, because the section keeps showing itself running
+    // until the row does: settling earlier would print a number the spinner contradicts.
+    pushMessage(m, at(partialText("stop"), t(8)));
+    expect(banner.summaryDurationMs).toBeUndefined();
+    pushMessage(
+      m,
+      at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(10)),
+    );
+    expect(banner).toMatchObject({
+      durationMs: 10000,
+      thinkingDurationMs: 4000,
+      summaryDurationMs: 3000,
+    });
+  });
+
+  it("a retried compaction times the whole span its concatenated draft covers", () => {
+    const m = createStreamModel();
+    const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
+    pushMessage(
+      m,
+      at(compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }), t(0)),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    // Attempt 1: thinks, starts writing, then the request dies and the engine resends.
+    pushMessage(m, at(partialThinking("start"), t(1)));
+    pushMessage(m, at(partialThinking("delta", "first pass"), t(2)));
+    pushMessage(m, at(partialThinking("stop"), t(3)));
+    pushMessage(m, at(partialText("delta", "[summary]half"), t(4)));
+    // Attempt 2 continues the same span, so both drafts concatenate.
+    pushMessage(m, at(partialThinking("start"), t(5)));
+    pushMessage(m, at(partialThinking("delta", " second pass"), t(6)));
+    pushMessage(m, at(partialThinking("stop"), t(9)));
+    pushMessage(m, at(partialText("delta", " the plan[/summary]"), t(10)));
+    pushMessage(
+      m,
+      at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(12)),
+    );
+    // Each start is recorded once and each later stop only extends it: the wall time covers
+    // the span that produced the prose on screen, the failed attempt included. Timing the
+    // last attempt alone would print 3s against text that took nine.
+    expect(banner).toMatchObject({
+      thinkingText: "first pass second pass",
+      thinkingStartedAtMs: Date.parse(t(2)),
+      thinkingDurationMs: 7000,
+      summaryStartedAtMs: Date.parse(t(4)),
+      summaryDurationMs: 8000,
+    });
+  });
+
+  it("history replay rebuilds the same section timings from the span's complete messages", () => {
+    // The Trace records no fragments, so each section's start is approximated by the previous
+    // message's time — the ThinkingItem convention — and a reload lands within a message hop
+    // of what the live viewer watched tick.
+    const m = createStreamModel();
+    const t = (sec: number) => `2026-01-01T00:00:${String(sec).padStart(2, "0")}.000Z`;
+    pushMessage(
+      m,
+      at(compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }), t(0)),
+    );
+    pushMessage(m, at(userText("COMPACT NOW"), t(1)));
+    pushMessage(m, at(requestBegin(), t(2)));
+    pushMessage(m, at(thinkingMessage("planning"), t(6)));
+    pushMessage(m, at(assistantText("[summary]the plan[/summary]"), t(9)));
+    pushMessage(m, at(requestEnd("completed"), t(9)));
+    pushMessage(
+      m,
+      at(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }), t(10)),
+    );
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    expect(banner).toMatchObject({
+      thinkingStartedAtMs: Date.parse(t(2)),
+      thinkingDurationMs: 4000,
+      summaryStartedAtMs: Date.parse(t(6)),
+      summaryDurationMs: 4000,
+    });
   });
 
   it("history replay rebuilds the banner's summary text from the compaction span's assistant output", () => {
@@ -628,6 +732,11 @@ describe("approvals and events", () => {
     expect(banner.summaryText).toBeUndefined();
     expect(banner.thinkingText).toBeUndefined();
     expect(banner.thinkingStreaming).toBeUndefined();
+    // Nothing is left to time either: no section renders, so no wall time may survive it.
+    expect(banner.thinkingStartedAtMs).toBeUndefined();
+    expect(banner.thinkingDurationMs).toBeUndefined();
+    expect(banner.summaryStartedAtMs).toBeUndefined();
+    expect(banner.summaryDurationMs).toBeUndefined();
   });
 
   it("a completed compaction keeps its summary for the collapsed body", () => {

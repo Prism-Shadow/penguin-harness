@@ -323,6 +323,34 @@ export interface CompactionItem {
   thinkingText?: string;
   /** True while a thinking fragment of the compaction request is open (the section streams); settled by its stop, or by the end event. */
   thinkingStreaming?: boolean;
+  /**
+   * Start of the thinking section's wall time, and with it the rule both sections follow:
+   * **a section is timed over exactly the window in which it shows itself running**, so the
+   * number and the spinner beside it can never disagree.
+   *
+   * Thinking therefore starts at the first fragment that carried thinking and settles at that
+   * fragment's stop — the moment the section stops spinning. The result section shows itself
+   * running for the whole compaction (it has no fragment flag of its own), so it starts at the
+   * first summary text and settles at `compaction_end`; its share of the header's begin-to-end
+   * span is what the request spent writing plus the adoption behind it.
+   *
+   * History rebuild has no fragments: the previous message's time approximates each start and
+   * the complete message's own time settles it — the ThinkingItem convention (see
+   * `settleThinkingDuration`), so a reload lands within a message hop of the live numbers.
+   *
+   * A retried compaction concatenates every attempt into one draft (`thinkingText` and
+   * `summaryText` both), so a start is recorded once and a later stop only extends the settled
+   * value: the wall time covers the whole span that produced the prose on screen, the failed
+   * attempts and the gaps between them included. Timing the last attempt alone would print a
+   * short number against text it did not write.
+   */
+  thinkingStartedAtMs?: number;
+  /** Settled thinking wall time (boundaries: see thinkingStartedAtMs). */
+  thinkingDurationMs?: number;
+  /** Start of the result section's wall time (boundaries: see thinkingStartedAtMs). */
+  summaryStartedAtMs?: number;
+  /** Settled result wall time (boundaries: see thinkingStartedAtMs). */
+  summaryDurationMs?: number;
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -639,6 +667,7 @@ export function pushMessage(
     // viewer watched being written.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
+      const tsMs = tsOf(msg.timestamp);
       if (isPartialPayload(msg.payload)) {
         const p = msg.payload as {
           type?: string;
@@ -646,20 +675,26 @@ export function pushMessage(
           text?: string;
           thinking?: string;
         };
-        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text);
+        // Live, a section is timed by its own fragment, so this one timestamp both starts it
+        // (its first content) and, on the stop phase, settles it.
+        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text, tsMs);
         else if (p.type === "partial_thinking") {
-          appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop");
+          appendCompactionThinking(model, p.thinking ?? "", p.event_type !== "stop", tsMs, tsMs);
         }
         // Partials never advance lastTs (same rule as the normal path below).
         return;
       }
-      advanceLastTs(model, msg.timestamp);
       const p = msg.payload as { type?: string; role?: string; text?: string; thinking?: string };
+      // History rebuild has no fragments: the previous message's time approximates the
+      // section's start (the ThinkingItem convention), this message's own time settles it.
+      // Read before advanceLastTs below, exactly as the ordinary complete path reads it.
+      const startMs = model.lastTsMs > 0 ? model.lastTsMs : undefined;
       if (p.type === "text" && p.role === "assistant" && p.text) {
-        appendCompactionSummaryText(model, p.text);
+        appendCompactionSummaryText(model, p.text, startMs);
       } else if (p.type === "thinking" && p.thinking) {
-        appendCompactionThinking(model, p.thinking, false);
+        appendCompactionThinking(model, p.thinking, false, startMs, tsMs);
       }
+      advanceLastTs(model, msg.timestamp);
       return;
     }
     if (isPartialPayload(msg.payload)) {
@@ -1649,6 +1684,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
+        // The result section runs for as long as the row does, so its wall time ends here too.
+        if (tsMs !== undefined && item.summaryStartedAtMs !== undefined) {
+          item.summaryDurationMs = Math.max(0, tsMs - item.summaryStartedAtMs);
+        }
         // A compaction that did not complete produced no summary — only a half-written
         // draft that was never adopted (a user quitting mid-compaction is the common case,
         // closed as `failed` when the session next loads). Discard it, and the thinking that
@@ -1658,9 +1697,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           delete item.summaryText;
           delete item.thinkingText;
           delete item.thinkingStreaming;
+          delete item.thinkingStartedAtMs;
+          delete item.thinkingDurationMs;
+          delete item.summaryStartedAtMs;
+          delete item.summaryDurationMs;
         } else if (item.thinkingStreaming) {
-          // Nothing streams past the end: a fragment whose stop never arrived settles here.
+          // Nothing streams past the end: a fragment whose stop never arrived settles here,
+          // and its wall time settles with it rather than leaving the row without a number.
           item.thinkingStreaming = false;
+          settleCompactionThinking(item, tsMs);
         }
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
@@ -1803,24 +1848,55 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
   return null;
 }
 
-/** Appends streamed/replayed summary text onto the running compaction banner (no-op without one). */
-function appendCompactionSummaryText(model: StreamModel, text: string): void {
+/**
+ * Appends streamed/replayed summary text onto the running compaction banner and starts the
+ * result section's wall time on its first content (no-op without a running banner); the
+ * section settles at compaction_end, where it stops showing itself as running.
+ */
+function appendCompactionSummaryText(
+  model: StreamModel,
+  text: string,
+  startMs: number | undefined,
+): void {
   if (!text) return;
   const item = findLastRunningCompaction(model);
-  if (item) item.summaryText = (item.summaryText ?? "") + text;
+  if (!item) return;
+  item.summaryText = (item.summaryText ?? "") + text;
+  if (startMs !== undefined && item.summaryStartedAtMs === undefined) {
+    item.summaryStartedAtMs = startMs;
+  }
 }
 
 /**
- * Appends streamed/replayed thinking onto the running compaction banner and records whether
- * its fragment is still open (no-op without a running banner). A content-free phase (the
- * start, the stop) only moves the streaming flag, so a request that never thought leaves no
- * empty draft behind.
+ * Appends streamed/replayed thinking onto the running compaction banner, records whether its
+ * fragment is still open, and times the section from its first content to the stop that closes
+ * it (no-op without a running banner). A content-free phase (the start, the stop) only moves
+ * the streaming flag, so a request that never thought leaves no empty draft — and no stray
+ * wall time — behind.
  */
-function appendCompactionThinking(model: StreamModel, text: string, streaming: boolean): void {
+function appendCompactionThinking(
+  model: StreamModel,
+  text: string,
+  streaming: boolean,
+  startMs: number | undefined,
+  endMs: number | undefined,
+): void {
   const item = findLastRunningCompaction(model);
   if (!item) return;
-  if (text) item.thinkingText = (item.thinkingText ?? "") + text;
+  if (text) {
+    item.thinkingText = (item.thinkingText ?? "") + text;
+    if (startMs !== undefined && item.thinkingStartedAtMs === undefined) {
+      item.thinkingStartedAtMs = startMs;
+    }
+  }
   item.thinkingStreaming = streaming;
+  if (!streaming) settleCompactionThinking(item, endMs);
+}
+
+/** Settle the thinking section: end time - its recorded start (a later attempt's stop extends the same span). */
+function settleCompactionThinking(item: CompactionItem, endMs: number | undefined): void {
+  if (endMs === undefined || item.thinkingStartedAtMs === undefined) return;
+  item.thinkingDurationMs = Math.max(0, endMs - item.thinkingStartedAtMs);
 }
 
 /**

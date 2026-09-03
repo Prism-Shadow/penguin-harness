@@ -1,12 +1,14 @@
 /**
- * What a compaction row shows: the text inside its collapsed body (compaction-summary.ts)
+ * What a compaction row shows: the text inside its result section (compaction-summary.ts)
  * and the title above it (the dictionaries' mode-aware `compactionTitle`).
  *
- * The row itself is a StepBanner whose body stacks a thinking section and a result section,
- * each collapsed by default exactly like a thinking block — the reader expands them to watch
- * the request think and write, or to read the outcome afterwards. What the result section
- * contains is this pure helper's job, and it is what these tests pin (the Web suite runs in
- * a node environment and renders no React).
+ * The row itself is a StepBanner whose body stacks a thinking section and a result section.
+ * The banner opens while the compaction runs and closes itself once it settles; the two
+ * sections stay closed throughout, showing only their labels and their wall times — the
+ * reader expands one to watch the request think or write, or to read the outcome afterwards.
+ * What the result section then contains is this pure helper's job, and it is what these tests
+ * pin; the section timings behind those wall times are pinned in stream-model.test.ts (the
+ * Web suite runs in a node environment and renders no React).
  */
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
