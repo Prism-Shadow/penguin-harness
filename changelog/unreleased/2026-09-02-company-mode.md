@@ -59,7 +59,9 @@ budget marks) and each user's chat read cursor.
   ls|show|create|move|assign|block|unblock|progress|start|attach`, `chat tail|send`,
   `finance` — a thin client over the API with `--json` everywhere.
 - Web: a 「开发 | 公司」 mode switch above the Project switcher, an organization switcher with
-  creation and settings, six pages (overview, org chart, calendar, tickets, finance, chat), a
+  creation and settings, seven pages (overview, org chart, calendar, tickets, finance, chat,
+  handbook — the knowledge base as a file list beside the rendered document, with editing in
+  place, new documents and deletion), a
   session list grouped by organization with desk and ticket sub-folders, an 「组织」 folder in
   development mode, the `[org_trigger]` banner in conversations, and the two switches on the
   settings page.

@@ -19,7 +19,7 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 - 控制环境：工位与工单会话的命令子进程额外获得 `PENGUIN_ORG_ID`，在会话内 `penguin org` 不必再传 `--org-id`。
 - Core：标记清单新增 `[org_trigger]`（与 `[scheduled_task]` 同属标题噪声），并提供 `buildOrgTriggerMessage` / `parseOrgTriggerMessage`。
 - CLI：`penguin org` 命令族——`ls`、`create`、`show`、`chart`、`hire`、`employee set`、`leave`、`desk show|renew`、`calendar ls|add|update|rm`、`ticket ls|show|create|move|assign|block|unblock|progress|start|attach`、`chat tail|send`、`finance`——作为 API 的瘦客户端，处处支持 `--json`。
-- Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、六个页面（概览、组织图、日历、工单、财务、群聊）、按组织分组并带工位 / 工单子夹的会话列表、开发模式下的「组织」自动子夹、对话中的 `[org_trigger]` 横幅，以及设置页上的两个开关。
+- Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、七个页面（概览、组织图、日历、工单、财务、群聊、手册——以文件列表加渲染正文呈现知识库，支持就地编辑、新建与删除）、按组织分组并带工位 / 工单子夹的会话列表、开发模式下的「组织」自动子夹、对话中的 `[org_trigger]` 横幅，以及设置页上的两个开关。
 - 创建选项：新建组织时可指定 **Model**（已配置的成对引用，员工条目未指定时工位与工单会话都用它）与**公司工作区**（一个已存在的绝对目录，替代组织目录内的 `workspace/` 作为公共工作区）；二者都是 `org_config.toml` 的字段，可在组织设置里修改，也可经 `penguin org create --workspace … --model-id … --provider …` 指定。
 - 决策关口：CEO 只提案、董事会拍板——初始化会话先发一份完整提案（使命理解、首批工单、招募角色及预算与 Model、工作区划分）并结束本轮；招募、预算、拒绝他人的工单、跳过审核关闭 P0/P1 工单、任何触及组织之外的动作以及结构变更都要等创建者在群聊里确认。员工把这类事项上报给 CEO。写进 `company-ceo` / `company-employee` Skill、初始化会话与组织手册。
 - 组织手册是一个目录 `handbook/`，也是公司知识库：根部 `README.md` 是每次触发都指向的索引（目录布局、协议、职责约定，以及一份文档清单——每份一行，写明何时需要读）；董事会决策、约定与操作指南以 Markdown 文档放在旁边、按需读取。API 可列出、读写与删除文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事，Web App 的「手册」页可浏览、编辑与新建；索引不可删除。
