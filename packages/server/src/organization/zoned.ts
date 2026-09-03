@@ -1,5 +1,5 @@
 /**
- * Timezone arithmetic for organizations: budget periods are natural months and chat files
+ * Timezone arithmetic for organizations: budget periods are natural months and channel files
  * are split by day **in the organization's timezone**, while every stored instant stays
  * UTC. Intl is the only clock-zone source Node ships with, so the conversions go through
  * `formatToParts` rather than a bundled zone table.

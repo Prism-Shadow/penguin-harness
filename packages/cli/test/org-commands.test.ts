@@ -841,7 +841,7 @@ describe("penguin org chat", () => {
         "2026-09-02-site",
       ]),
     ).toBe(0);
-    expect(lastRequest("POST", "/chat")?.body).toEqual({
+    expect(lastRequest("POST", "/channels/default_channel/messages")?.body).toEqual({
       text: "@agent:ceo the site is up",
       refs: { ticket: "2026-09-02-site" },
       sessionId: DESK_SESSION,
@@ -852,7 +852,9 @@ describe("penguin org chat", () => {
 
     delete process.env.PENGUIN_SESSION_ID;
     expect(await cli(["org", "chat", "send", "-m", "plain"])).toBe(0);
-    expect(lastRequest("POST", "/chat")?.body).toEqual({ text: "plain" });
+    expect(lastRequest("POST", "/channels/default_channel/messages")?.body).toEqual({
+      text: "plain",
+    });
   });
 });
 

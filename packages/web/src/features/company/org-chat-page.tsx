@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type { OrgChatMessage } from "@prismshadow/penguin-server/api";
+import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -111,7 +111,7 @@ export function OrgChatPage() {
       .then((res) => setMembers(res.members.map((m) => m.userId)))
       .catch(() => undefined);
     try {
-      const res = await api.getOrgChat(projectId, orgId);
+      const res = await api.getOrgChannelMessages(projectId, orgId, api.DEFAULT_CHANNEL_ID);
       setDays([{ date: res.date, messages: res.messages }]);
       setMeta((prev) => ({
         today: res.date,
@@ -135,7 +135,7 @@ export function OrgChatPage() {
     if (target === null) return;
     setLoadingEarlier(true);
     try {
-      const res = await api.getOrgChat(projectId, orgId, target);
+      const res = await api.getOrgChannelMessages(projectId, orgId, api.DEFAULT_CHANNEL_ID, target);
       setDays((prev) =>
         prev === null || prev.some((d) => d.date === target)
           ? prev
@@ -157,7 +157,7 @@ export function OrgChatPage() {
   const latestDays = useRef(days);
   latestDays.current = days;
   useCompanyEvents((ev) => {
-    if (ev.type !== "org_chat" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
+    if (ev.type !== "org_channel" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
     const current = latestDays.current;
     if (meta === null || current === null) return;
     const next = appendMessage(current, meta.today, ev.message);
@@ -222,7 +222,9 @@ export function OrgChatPage() {
     if (!atBottom || lastId === null || lastId === markedRef.current) return;
     markedRef.current = lastId;
     company.setChatCounters(0, 0);
-    void api.readOrgChat(projectId, orgId, { upTo: lastId }).catch(() => undefined);
+    void api
+      .readOrgChannel(projectId, orgId, api.DEFAULT_CHANNEL_ID, { upTo: lastId })
+      .catch(() => undefined);
   }, [atBottom, lastId, company, projectId, orgId]);
 
   const jumpToLatest = () => {
@@ -235,7 +237,9 @@ export function OrgChatPage() {
 
   const send = async (text: string): Promise<boolean> => {
     try {
-      const msg = await api.sendOrgChat(projectId, orgId, { text });
+      const msg = await api.sendOrgChannelMessage(projectId, orgId, api.DEFAULT_CHANNEL_ID, {
+        text,
+      });
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
@@ -265,7 +269,7 @@ export function OrgChatPage() {
   const scrollToMessage = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 
-  const renderText = (m: OrgChatMessage) =>
+  const renderText = (m: OrgChannelMessage) =>
     mentionRuns(m.text).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
@@ -279,7 +283,7 @@ export function OrgChatPage() {
       ),
     );
 
-  const renderRefs = (m: OrgChatMessage) => {
+  const renderRefs = (m: OrgChannelMessage) => {
     // Destructured, so each id narrows to `string` inside the chips' closures too.
     const { ticket, session, replyTo } = m.refs ?? {};
     if (ticket === undefined && session === undefined && replyTo === undefined) return null;

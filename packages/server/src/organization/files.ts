@@ -3,17 +3,17 @@
  * work, no I/O: the store reads and writes, the service decides.
  *
  * Intent files (`org_config.toml`, `org_chart.yaml`, calendar events, tickets, the
- * handbook) are edited by people and employees; the API is a validating writer over the
- * same format, so a hand-edited file and an API-written one parse under one set of rules.
- * Fact files (`desks.toml`, a ticket's `Sessions` header, chat lines) are written by the
- * server only. An invalid file is reported, never repaired in place.
+ * handbook, `channel.toml`) are edited by people and employees; the API is a validating
+ * writer over the same format, so a hand-edited file and an API-written one parse under one
+ * set of rules. Fact files (`desks.toml`, a ticket's `Sessions` header, message lines) are
+ * written by the server only. An invalid file is reported, never repaired in place.
  */
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   OrgApprovalMode,
-  OrgChatMessage,
+  OrgChannelMessage,
   OrgStatus,
   OrgTicketPriority,
   OrgTicketProgressEntry,
@@ -22,7 +22,7 @@ import type {
 import { parseScheduleFile } from "../runtime/schedule-file.js";
 import type { ScheduleDefinition } from "../runtime/schedule-file.js";
 import { SEMANTIC_ID_PATTERN } from "../services/ids.js";
-import { ALL_CHANNEL_ID, ceoAgentId, isTicketColumn } from "./paths.js";
+import { DEFAULT_CHANNEL_ID, ceoAgentId, isTicketColumn } from "./paths.js";
 import { parsePrincipal, splitPrincipalList } from "./principal.js";
 import { isValidTimeZone } from "./zoned.js";
 
@@ -675,11 +675,11 @@ export function parseProgressLine(line: string): OrgTicketProgressEntry | null {
 }
 
 // ---------------------------------------------------------------------------
-// chat/<channel_id>/channel.toml
+// channels/<channel_id>/channel.toml
 // ---------------------------------------------------------------------------
 
 /**
- * A chat channel's intent file. `everyone` and `members` are the two shapes of membership
+ * A channel's intent file. `everyone` and `members` are the two shapes of membership
  * and exactly one of them applies: the all-hands channel is `everyone = true` (every
  * employee and every Project member, no list to keep), every other channel carries the
  * explicit list its members edit through the API.
@@ -730,11 +730,11 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
   if (typeof archived !== "boolean") return fail("archived must be a boolean");
   const everyone = table["everyone"] ?? false;
   if (typeof everyone !== "boolean") return fail("everyone must be a boolean");
-  if (everyone !== (channelId === ALL_CHANNEL_ID)) {
+  if (everyone !== (channelId === DEFAULT_CHANNEL_ID)) {
     return fail(
       everyone
-        ? `everyone belongs to the all-hands channel ${ALL_CHANNEL_ID} and to no other`
-        : `the all-hands channel ${ALL_CHANNEL_ID} must be everyone = true`,
+        ? `everyone belongs to the all-hands channel ${DEFAULT_CHANNEL_ID} and to no other`
+        : `the all-hands channel ${DEFAULT_CHANNEL_ID} must be everyone = true`,
     );
   }
   const rawMembers = table["members"];
@@ -783,7 +783,7 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
     ...(cfg.everyone === true ? { everyone: true } : { members: cfg.members ?? [] }),
   };
   return [
-    "# channel.toml — a chat channel (the id is the directory name under chat/).",
+    "# channel.toml — a channel (the id is the directory name under channels/).",
     "# members: agent:<id> / user:<id>; only members read and post, and only a member's",
     "# mention reaches a desk. everyone = true marks the all-hands channel instead: every",
     "# employee and every Project member belongs to it and there is no list to keep.",
@@ -794,12 +794,12 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
 }
 
 // ---------------------------------------------------------------------------
-// chat/<channel_id>/<yyyy-mm-dd>.jsonl
+// channels/<channel_id>/<yyyy-mm-dd>.jsonl
 // ---------------------------------------------------------------------------
 
-export const CHAT_MESSAGE_ID_PATTERN = /^msg-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/;
+export const CHANNEL_MESSAGE_ID_PATTERN = /^msg-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/;
 
-export function parseChatLine(line: string): ParseResult<OrgChatMessage> {
+export function parseChannelMessageLine(line: string): ParseResult<OrgChannelMessage> {
   let v: unknown;
   try {
     v = JSON.parse(line);
@@ -808,7 +808,7 @@ export function parseChatLine(line: string): ParseResult<OrgChatMessage> {
   }
   if (v === null || typeof v !== "object") return fail("line is not a JSON object");
   const o = v as Record<string, unknown>;
-  if (typeof o["id"] !== "string" || !CHAT_MESSAGE_ID_PATTERN.test(o["id"]))
+  if (typeof o["id"] !== "string" || !CHANNEL_MESSAGE_ID_PATTERN.test(o["id"]))
     return fail("id is not a message id");
   if (typeof o["time"] !== "string" || Number.isNaN(Date.parse(o["time"])))
     return fail("time is not an instant");
@@ -825,7 +825,7 @@ export function parseChatLine(line: string): ParseResult<OrgChatMessage> {
   ) {
     return fail("mentions must be a list of principals");
   }
-  let refs: OrgChatMessage["refs"];
+  let refs: OrgChannelMessage["refs"];
   if (o["refs"] !== undefined) {
     const r = o["refs"];
     if (r === null || typeof r !== "object") return fail("refs must be an object");
@@ -850,7 +850,7 @@ export function parseChatLine(line: string): ParseResult<OrgChatMessage> {
   };
 }
 
-export function serializeChatLine(msg: OrgChatMessage): string {
+export function serializeChannelMessageLine(msg: OrgChannelMessage): string {
   const refs =
     msg.refs === undefined
       ? undefined
@@ -877,7 +877,7 @@ export interface MentionToken {
   id: string;
 }
 
-/** The `@` tokens in a chat text: `@id`, `@agent:id`, `@user:id`, `@all`; who they resolve to is the service's call. */
+/** The `@` tokens in a message: `@id`, `@agent:id`, `@user:id`, `@all`; who they resolve to is the service's call. */
 export function extractMentionTokens(text: string): MentionToken[] {
   const out: MentionToken[] = [];
   const re = /(^|[^A-Za-z0-9_@])@(?:(agent|user):)?([A-Za-z0-9][A-Za-z0-9_.-]*)/g;

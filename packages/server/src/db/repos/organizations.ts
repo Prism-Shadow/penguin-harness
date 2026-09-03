@@ -1,7 +1,7 @@
 /**
  * Company-mode caches. Every table here is a projection of an organization's files (which
  * desk session an employee has, which sessions contribute to a ticket, how far a calendar
- * event or a chat scan has got, what a ticket looked like when it was last notified) or a
+ * event or a channel scan has got, what a ticket looked like when it was last notified) or a
  * user's own read cursor. The service rebuilds the projections every reconcile pass, so a
  * dropped table costs one pass of silence, never a wrong answer.
  */
@@ -15,7 +15,7 @@ export interface OrgSessionRow {
   agentId: string;
   /** The employee's current desk (renewed desks stay for cost attribution). */
   current: boolean;
-  /** Hop of the last chat-chain trigger delivered to this session. */
+  /** Hop of the last mention-chain trigger delivered to this session. */
   triggerHop: number;
 }
 
@@ -426,18 +426,18 @@ export class OrgCacheRepo {
     }
   }
 
-  // ---- chat cursors ----
+  // ---- channel cursors ----
 
-  chatOffset(projectId: string, orgId: string, channelId: string, date: string): number {
+  channelOffset(projectId: string, orgId: string, channelId: string, date: string): number {
     const r = this.db
       .prepare(
-        "SELECT offset_bytes FROM org_chat_state WHERE project_id = ? AND org_id = ? AND channel_id = ? AND date = ?",
+        "SELECT offset_bytes FROM org_channel_state WHERE project_id = ? AND org_id = ? AND channel_id = ? AND date = ?",
       )
       .get(projectId, orgId, channelId, date) as { offset_bytes: number } | undefined;
     return r ? Number(r.offset_bytes) : 0;
   }
 
-  setChatOffset(
+  setChannelOffset(
     projectId: string,
     orgId: string,
     channelId: string,
@@ -446,7 +446,7 @@ export class OrgCacheRepo {
   ): void {
     this.db
       .prepare(
-        `INSERT INTO org_chat_state (project_id, org_id, channel_id, date, offset_bytes) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO org_channel_state (project_id, org_id, channel_id, date, offset_bytes) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(project_id, org_id, channel_id, date) DO UPDATE SET offset_bytes = excluded.offset_bytes`,
       )
       .run(projectId, orgId, channelId, date, offset);
@@ -455,7 +455,7 @@ export class OrgCacheRepo {
   readCursor(projectId: string, orgId: string, channelId: string, userId: string): string | null {
     const r = this.db
       .prepare(
-        "SELECT last_read_id FROM org_chat_reads WHERE project_id = ? AND org_id = ? AND channel_id = ? AND user_id = ?",
+        "SELECT last_read_id FROM org_channel_reads WHERE project_id = ? AND org_id = ? AND channel_id = ? AND user_id = ?",
       )
       .get(projectId, orgId, channelId, userId) as { last_read_id: string } | undefined;
     return r ? r.last_read_id : null;
@@ -470,7 +470,7 @@ export class OrgCacheRepo {
   ): void {
     this.db
       .prepare(
-        `INSERT INTO org_chat_reads (project_id, org_id, channel_id, user_id, last_read_id) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO org_channel_reads (project_id, org_id, channel_id, user_id, last_read_id) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(project_id, org_id, channel_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
       )
       .run(projectId, orgId, channelId, userId, lastReadId);
@@ -538,8 +538,8 @@ export class OrgCacheRepo {
       "org_ticket_sessions",
       "org_calendar_state",
       "org_ticket_state",
-      "org_chat_state",
-      "org_chat_reads",
+      "org_channel_state",
+      "org_channel_reads",
       "org_budget_state",
     ]) {
       this.db
@@ -554,8 +554,8 @@ export class OrgCacheRepo {
       "org_ticket_sessions",
       "org_calendar_state",
       "org_ticket_state",
-      "org_chat_state",
-      "org_chat_reads",
+      "org_channel_state",
+      "org_channel_reads",
       "org_budget_state",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(projectId);

@@ -5,20 +5,20 @@
  * into a run under a single header — plus the day arithmetic the separators and the
  * "earlier" paging need, and the immutable append a live message goes through.
  */
-import type { OrgChatMessage } from "@prismshadow/penguin-server/api";
+import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import { parsePrincipal } from "./principals";
 
 /** One day file as loaded: the organization-timezone date and its messages in file order. */
 export interface ChatDay {
   date: string;
-  messages: OrgChatMessage[];
+  messages: OrgChannelMessage[];
 }
 
 export type StreamItem =
   | { kind: "day"; date: string }
   | { kind: "unread" }
-  | { kind: "system"; message: OrgChatMessage }
-  | { kind: "run"; sender: string; hop: number; messages: OrgChatMessage[] };
+  | { kind: "system"; message: OrgChannelMessage }
+  | { kind: "run"; sender: string; hop: number; messages: OrgChannelMessage[] };
 
 /** Messages by one sender closer together than this join one run (the same idiom as any chat client). */
 export const RUN_GAP_MS = 5 * 60_000;
@@ -97,7 +97,11 @@ export function earlierDay(days: readonly string[], earliest: string): string | 
  * new array, or the same one back when the id is already present, so a live event that
  * repeats a message the send already added changes nothing.
  */
-export function appendMessage(days: ChatDay[], date: string, message: OrgChatMessage): ChatDay[] {
+export function appendMessage(
+  days: ChatDay[],
+  date: string,
+  message: OrgChannelMessage,
+): ChatDay[] {
   if (days.some((d) => d.messages.some((m) => m.id === message.id))) return days;
   const idx = days.findIndex((d) => d.date === date);
   if (idx === -1) return [...days, { date, messages: [message] }];

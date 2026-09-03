@@ -3557,7 +3557,7 @@ export interface OrgTicketsResponse {
   invalidFiles: Array<{ path: string; error: string }>;
 }
 
-export interface OrgChatMessage {
+export interface OrgChannelMessage {
   id: string;
   /** ISO 8601 UTC. */
   time: string;
@@ -3571,9 +3571,9 @@ export interface OrgChatMessage {
 }
 
 /**
- * One chat channel as the API reports it. The all-hands channel (`all`, `everyone: true`)
- * exists for as long as the organization does and every employee and Project member is in
- * it; every other channel carries the membership its members edit.
+ * One channel as the API reports it. The all-hands channel (`default_channel`,
+ * `everyone: true`) exists for as long as the organization does and every employee and
+ * Project member is in it; every other channel carries the membership its members edit.
  */
 export interface OrgChannelItem {
   channelId: string;
@@ -3581,7 +3581,7 @@ export interface OrgChannelItem {
   name: string;
   /** "" when unset. */
   purpose: string;
-  /** True only for the all-hands channel: membership is implicit. */
+  /** True only for `default_channel`: membership is implicit. */
   everyone: boolean;
   /** An archived channel is read-only and folded away. */
   archived: boolean;
@@ -3613,7 +3613,7 @@ export interface OrgChannelDetail extends OrgChannelItem {
 }
 
 export interface OrgChannelsResponse {
-  /** The all-hands channel first, then by name. */
+  /** `default_channel` first, then by name. */
   channels: OrgChannelItem[];
 }
 
@@ -3634,14 +3634,14 @@ export interface OrgChannelMemberRequest {
   principal: string;
 }
 
-export interface OrgChatResponse {
-  /** The channel served (`all` unless the request named another). */
+export interface OrgChannelMessagesResponse {
+  /** The channel served. */
   channelId: string;
   /** The day file served (`yyyy-mm-dd` in the organization's timezone). */
   date: string;
-  /** The days that have a chat file, newest first, for paging back. */
+  /** The days this channel has a file for, newest first, for paging back. */
   days: string[];
-  messages: OrgChatMessage[];
+  messages: OrgChannelMessage[];
   /** Messages of this channel after the caller's read cursor in it, across the recent days. */
   unread: number;
   /** Of those, the ones that mention the caller (or all). */
@@ -3731,7 +3731,8 @@ export interface OrganizationDetail extends OrganizationSummary {
     reviewTickets: OrgTicketItem[];
     blockedByMe: OrgTicketItem[];
   };
-  recentChat: OrgChatMessage[];
+  /** The last messages of the all-hands channel. */
+  recentMessages: OrgChannelMessage[];
   alerts: OrgBudgetAlert[];
   /** The CEO's desk session once opened (creation opens it). */
   ceoDeskSessionId?: string;
@@ -3866,9 +3867,7 @@ export interface OrgTicketAttachRequest {
   sessionId: string;
 }
 
-export interface OrgChatSendRequest {
-  /** The channel to post in; defaults to the all-hands channel. */
-  channel?: string;
+export interface OrgChannelMessageSendRequest {
   text: string;
   refs?: { ticket?: string; session?: string; replyTo?: string };
   /**
@@ -3879,9 +3878,7 @@ export interface OrgChatSendRequest {
   sessionId?: string;
 }
 
-export interface OrgChatReadRequest {
-  /** The channel whose cursor moves; defaults to the all-hands channel. */
-  channel?: string;
+export interface OrgChannelReadRequest {
   /** Mark everything up to this message id as read. */
   upTo: string;
 }
@@ -3923,13 +3920,13 @@ export type CompanyServerEvent =
       sessionId: string;
       kind: OrgTriggerKind;
     }
-  /** A new chat message (mentions included, so the client can tell whether it is addressed). */
+  /** A new channel message (mentions included, so the client can tell whether it is addressed). */
   | {
-      type: "org_chat";
+      type: "org_channel";
       projectId: string;
       orgId: string;
       channelId: string;
-      message: OrgChatMessage;
+      message: OrgChannelMessage;
     }
   /** A ticket's status, owner, blocked state or contributing sessions changed. */
   | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }

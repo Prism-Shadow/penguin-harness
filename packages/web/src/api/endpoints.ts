@@ -148,10 +148,10 @@ import type {
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
   OrgChartResponse,
-  OrgChatMessage,
-  OrgChatReadRequest,
-  OrgChatResponse,
-  OrgChatSendRequest,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
+  OrgChannelReadRequest,
   OrgDeskResponse,
   OrgEmployeeItem,
   OrgEmployeePatchRequest,
@@ -1449,17 +1449,40 @@ export const attachOrgTicket = (
   body: OrgTicketAttachRequest,
 ) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "attach", body);
 
-/** One day of the organization's chat (today in its timezone when `date` is omitted). */
-export const getOrgChat = (projectId: string, orgId: string, date?: string) =>
-  apiFetch<OrgChatResponse>(`${orgBase(projectId, orgId)}/chat`, {
+/** The all-hands channel, the one every employee and Project member belongs to. */
+export const DEFAULT_CHANNEL_ID = "default_channel";
+
+const channelBase = (projectId: string, orgId: string, channelId: string) =>
+  `${orgBase(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;
+
+/** One day of a channel (today in the organization's timezone when `date` is omitted). */
+export const getOrgChannelMessages = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  date?: string,
+) =>
+  apiFetch<OrgChannelMessagesResponse>(`${channelBase(projectId, orgId, channelId)}/messages`, {
     query: { date },
   });
 
-export const sendOrgChat = (projectId: string, orgId: string, body: OrgChatSendRequest) =>
-  apiFetch<OrgChatMessage>(`${orgBase(projectId, orgId)}/chat`, { method: "POST", body });
+export const sendOrgChannelMessage = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelMessageSendRequest,
+) =>
+  apiFetch<OrgChannelMessage>(`${channelBase(projectId, orgId, channelId)}/messages`, {
+    method: "POST",
+    body,
+  });
 
-export const readOrgChat = (projectId: string, orgId: string, body: OrgChatReadRequest) =>
-  apiFetch<void>(`${orgBase(projectId, orgId)}/chat/read`, { method: "POST", body });
+export const readOrgChannel = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelReadRequest,
+) => apiFetch<void>(`${channelBase(projectId, orgId, channelId)}/read`, { method: "POST", body });
 
 /** Budget and spend for one `yyyy-mm` period (the current one when omitted). */
 export const getOrgFinance = (projectId: string, orgId: string, period?: string) =>

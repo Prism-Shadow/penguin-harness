@@ -84,6 +84,7 @@ const encoder = new TextEncoder();
 /** The fake's fixed clock for company mode (the day file, the period, minted ids). */
 const ORG_NOW = "2026-09-02T10:00:00.000Z";
 const ORG_TODAY = "2026-09-02";
+const DEFAULT_CHANNEL_ID = "default_channel";
 const ORG_PERIOD = "2026-09";
 const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
 const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
@@ -402,7 +403,7 @@ export class FakeServer {
     return ticket;
   }
 
-  /** Appends a chat message (OrgChatMessage shape) at the fake's clock unless `time` is given. */
+  /** Appends a channel message (OrgChannelMessage shape) at the fake's clock unless `time` is given. */
   addChat(orgId: string, msg: Json & { sender: string; text: string }): Json {
     const org = this.orgs.get(orgId)!;
     const message: Json = {
@@ -461,7 +462,7 @@ export class FakeServer {
         reviewTickets: tickets.filter((x) => x.status === "review").map((x) => this.ticketItem(x)),
         blockedByMe: [],
       },
-      recentChat: org.chat.slice(-5),
+      recentMessages: org.chat.slice(-5),
       alerts: [],
       ...(org.ceoDeskSessionId !== undefined ? { ceoDeskSessionId: org.ceoDeskSessionId } : {}),
     };
@@ -827,7 +828,8 @@ export class FakeServer {
       }
     }
 
-    if (a === "chat" && b === undefined) {
+    if (a === "channels" && c === "messages") {
+      const channelId = b ?? DEFAULT_CHANNEL_ID;
       if (method === "POST") {
         if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
         const actor = this.actorOf(body);
@@ -843,7 +845,7 @@ export class FakeServer {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return this.badRequest("date must be yyyy-mm-dd.");
       const days = [...new Set(org.chat.map((m) => String(m.time).slice(0, 10)))].sort().reverse();
       const messages = org.chat.filter((m) => String(m.time).startsWith(date));
-      return this.json({ date, days, messages, unread: 0, mentionsMe: 0 });
+      return this.json({ channelId, date, days, messages, unread: 0, mentionsMe: 0 });
     }
 
     if (a === "finance" && b === undefined && method === "GET") {

@@ -42,8 +42,8 @@ import type {
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgChartResponse,
-  OrgChatMessage,
-  OrgChatResponse,
+  OrgChannelMessage,
+  OrgChannelMessagesResponse,
   OrgHandbookFileResponse,
   OrgHandbookFilesResponse,
   OrgDeskResponse,
@@ -367,7 +367,10 @@ function renderFinance(res: OrgFinanceResponse, t: Messages): string {
 }
 
 /** One chat message per line: `time  sender  text` (a multi-line text keeps its lines). */
-function chatLine(m: OrgChatMessage): string {
+/** The all-hands channel; the channel family the Web App and the CLI build on lands later. */
+const DEFAULT_CHANNEL_ID = "default_channel";
+
+function chatLine(m: OrgChannelMessage): string {
   return `${m.time}  ${m.sender}  ${m.text}`;
 }
 
@@ -1070,7 +1073,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const qs = opts.date !== undefined ? `?date=${enc(String(opts.date))}` : "";
-    const res = await scope.client.request<OrgChatResponse>("GET", `${scope.base}/chat${qs}`);
+    const res = await scope.client.request<OrgChannelMessagesResponse>(
+      "GET",
+      `${scope.base}/channels/${DEFAULT_CHANNEL_ID}/messages${qs}`,
+    );
     const messages = res.messages.slice(-count);
     if (opts.json === true) {
       printJson({ ...res, messages });
@@ -1098,11 +1104,15 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       ...(opts.refTicket !== undefined ? { ticket: String(opts.refTicket) } : {}),
       ...(opts.refSession !== undefined ? { session: String(opts.refSession) } : {}),
     };
-    const msg = await scope.client.request<OrgChatMessage>("POST", `${scope.base}/chat`, {
-      text: String(opts.message),
-      ...(Object.keys(refs).length > 0 ? { refs } : {}),
-      ...actorFields(),
-    });
+    const msg = await scope.client.request<OrgChannelMessage>(
+      "POST",
+      `${scope.base}/channels/${DEFAULT_CHANNEL_ID}/messages`,
+      {
+        text: String(opts.message),
+        ...(Object.keys(refs).length > 0 ? { refs } : {}),
+        ...actorFields(),
+      },
+    );
     if (opts.json === true) printJson(msg);
     else printLine(t.org.chatSent(msg.id));
   });

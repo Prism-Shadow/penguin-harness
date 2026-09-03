@@ -2,21 +2,21 @@
  * One reconcile pass over an organization — the same pass whether the scheduler's timer
  * or a route's write asks for it. Files in, decisions out: caches are projected from the
  * ledger and the tickets, desks are renewed where the chart moved them, due calendar
- * events fire, ticket changes are noticed, new chat mentions are delivered, budgets are
+ * events fire, ticket changes are noticed, new channel mentions are delivered, budgets are
  * checked. Missed work is never backfilled: a slot that passed while the server was down,
  * the organization paused or the switch off is consumed and skipped, like a schedule.
  */
 import { createHash } from "node:crypto";
-import type { OrgCalendarOutcome, OrgChatMessage, OrgTicketChange } from "../../api/types.js";
+import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
-import { parseChatLine, serializeChatLine } from "../../organization/files.js";
+import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import {
   agentPrincipal,
   parsePrincipal,
   principalAgentId,
   userPrincipal,
 } from "../../organization/principal.js";
-import { ALL_CHANNEL_ID } from "../../organization/paths.js";
+import { DEFAULT_CHANNEL_ID } from "../../organization/paths.js";
 import { zonedDate } from "../../organization/zoned.js";
 import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
@@ -258,7 +258,7 @@ async function notifyTicket(
     await appendSystemMessage(
       deps,
       org,
-      ALL_CHANNEL_ID,
+      DEFAULT_CHANNEL_ID,
       `Ticket ${t.ticketId} (${t.doc.title}) is now ${change === "blocked" ? "blocked" : t.doc.status}: ${users
         .map(userPrincipal)
         .map((u) => `@${u}`)
@@ -377,7 +377,7 @@ async function reconcileTickets(
 }
 
 // ---------------------------------------------------------------------------
-// Chat
+// Channels
 // ---------------------------------------------------------------------------
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -402,23 +402,23 @@ export function newMessageId(nowMs: number): string {
 }
 
 /** Appends a message to a channel's file for today (organization timezone) and returns it; delivery happens in the scan. */
-export async function appendChatMessage(
+export async function appendChannelMessage(
   deps: OrgDeps,
   org: LoadedOrg,
   channelId: string,
-  msg: Omit<OrgChatMessage, "id" | "time">,
-): Promise<OrgChatMessage> {
+  msg: Omit<OrgChannelMessage, "id" | "time">,
+): Promise<OrgChannelMessage> {
   const nowMs = nowOf(deps);
-  const full: OrgChatMessage = {
+  const full: OrgChannelMessage = {
     id: newMessageId(nowMs),
     time: new Date(nowMs).toISOString(),
     ...msg,
   };
-  await deps.store.appendChatLine(
+  await deps.store.appendMessageLine(
     org.dir,
     channelId,
     zonedDate(org.config.timezone, nowMs),
-    serializeChatLine(full),
+    serializeChannelMessageLine(full),
   );
   return full;
 }
@@ -434,9 +434,9 @@ export async function appendSystemMessage(
   channelId: string,
   text: string,
   mentions: string[],
-  refs?: OrgChatMessage["refs"],
-): Promise<OrgChatMessage> {
-  return appendChatMessage(deps, org, channelId, {
+  refs?: OrgChannelMessage["refs"],
+): Promise<OrgChannelMessage> {
+  return appendChannelMessage(deps, org, channelId, {
     sender: "system",
     hop: 0,
     text,
@@ -446,7 +446,7 @@ export async function appendSystemMessage(
 }
 
 /** The body of a mention trigger: the message, then up to 20 earlier messages of that channel's day as context. */
-function mentionBody(all: readonly OrgChatMessage[], msg: OrgChatMessage): string {
+function mentionBody(all: readonly OrgChannelMessage[], msg: OrgChannelMessage): string {
   const idx = all.findIndex((m) => m.id === msg.id);
   const earlier = (idx > 0 ? all.slice(Math.max(0, idx - 20), idx) : []).map(
     (m) => `> ${m.time} ${m.sender}: ${m.text.replace(/\n/g, "\n> ")}`,
@@ -475,7 +475,7 @@ function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
  * mentions inside that channel's membership. Archived channels take no posts, so there is
  * nothing new to find in them; an invalid `channel.toml` is reported and the channel skipped.
  */
-export async function scanChat(
+export async function scanChannels(
   deps: OrgDeps,
   org: LoadedOrg,
   spend: OrgSpend,
@@ -495,30 +495,35 @@ export async function scanChat(
     if (channel.archived) continue;
     const members = channelAgents(org, channel);
     const channelId = file.channelId;
-    const days = (await deps.store.listChatDays(org.dir, channelId)).slice(0, 3);
+    const days = (await deps.store.listMessageDays(org.dir, channelId)).slice(0, 3);
     for (const date of days.reverse()) {
-      const offset = deps.cache.chatOffset(org.projectId, org.orgId, channelId, date);
-      const { lines, nextOffset } = await deps.store.readChatFrom(org.dir, channelId, date, offset);
+      const offset = deps.cache.channelOffset(org.projectId, org.orgId, channelId, date);
+      const { lines, nextOffset } = await deps.store.readMessagesFrom(
+        org.dir,
+        channelId,
+        date,
+        offset,
+      );
       if (lines.length === 0) {
         if (nextOffset !== offset)
-          deps.cache.setChatOffset(org.projectId, org.orgId, channelId, date, nextOffset);
+          deps.cache.setChannelOffset(org.projectId, org.orgId, channelId, date, nextOffset);
         continue;
       }
-      const all = (await deps.store.readChatDay(org.dir, channelId, date)).messages;
+      const all = (await deps.store.readMessageDay(org.dir, channelId, date)).messages;
       for (const line of lines) {
-        const parsed = parseChatLine(line);
+        const parsed = parseChannelMessageLine(line);
         if (!parsed.ok) {
           recordError(
             deps,
             org,
-            "org_chat_invalid",
-            `Invalid chat line in ${channelId}/${date}.jsonl: ${parsed.error}`,
+            "org_channel_message_invalid",
+            `Invalid message line in ${channelId}/${date}.jsonl: ${parsed.error}`,
           );
           continue;
         }
         const msg = parsed.value;
         deps.notifyProject(org.projectId, {
-          type: "org_chat",
+          type: "org_channel",
           projectId: org.projectId,
           orgId: org.orgId,
           channelId,
@@ -555,7 +560,7 @@ export async function scanChat(
           );
         }
       }
-      deps.cache.setChatOffset(org.projectId, org.orgId, channelId, date, nextOffset);
+      deps.cache.setChannelOffset(org.projectId, org.orgId, channelId, date, nextOffset);
     }
   }
 }
@@ -589,7 +594,7 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
         await appendSystemMessage(
           deps,
           org,
-          ALL_CHANNEL_ID,
+          DEFAULT_CHANNEL_ID,
           `Budget pause: ${agentPrincipal(e.agentId)} reached ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
           [],
         );
@@ -609,7 +614,7 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
       await appendSystemMessage(
         deps,
         org,
-        ALL_CHANNEL_ID,
+        DEFAULT_CHANNEL_ID,
         `Budget warning: ${agentPrincipal(e.agentId)} has used ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD).`,
         [],
       );
@@ -655,6 +660,6 @@ export async function reconcileOrg(
   const paused = pausedEmployees(deps, org, spend.period);
   await reconcileCalendar(deps, org, spend, paused, triggers);
   await reconcileTickets(deps, org, tickets, spend, triggers);
-  await scanChat(deps, org, spend, triggers);
+  await scanChannels(deps, org, spend, triggers);
   return { org, tickets, spend };
 }

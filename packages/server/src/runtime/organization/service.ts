@@ -16,10 +16,10 @@ import type {
   OrgChannelMember,
   OrgChannelPatchRequest,
   OrgChannelsResponse,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
   OrgChartResponse,
-  OrgChatMessage,
-  OrgChatResponse,
-  OrgChatSendRequest,
   OrgDeskResponse,
   OrgEmployeeItem,
   OrgEmployeePatchRequest,
@@ -59,7 +59,7 @@ import {
 } from "../../organization/files.js";
 import { renderHandbook } from "../../organization/handbook.js";
 import {
-  ALL_CHANNEL_ID,
+  DEFAULT_CHANNEL_ID,
   ORG_TICKET_COLUMNS,
   ceoAgentId,
   isChannelId,
@@ -81,7 +81,7 @@ import type { OrgSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
-import { appendChatMessage, listTickets, syncCaches } from "./reconcile.js";
+import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
 import type { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
@@ -274,11 +274,11 @@ export class OrganizationService {
       return inDay(e.nextFireAt) || inDay(e.lastFiredAt);
     });
     // The overview opens even when the all-hands channel's file is missing or unreadable (a
-    // hand edit): it then reports no recent chat instead of refusing the page.
-    const allChannel = await this.deps.store.readChannel(org.dir, ALL_CHANNEL_ID);
-    const chat =
-      allChannel?.parsed.ok === true
-        ? await this.chat(projectId, orgId, { userId }, { channel: ALL_CHANNEL_ID })
+    // hand edit): it then reports no recent messages instead of refusing the page.
+    const allHands = await this.deps.store.readChannel(org.dir, DEFAULT_CHANNEL_ID);
+    const recent =
+      allHands?.parsed.ok === true
+        ? await this.channelMessages(projectId, orgId, { userId }, DEFAULT_CHANNEL_ID, {})
         : null;
     const mentions = await this.pendingMentions(org, userId);
     const me = userPrincipal(userId);
@@ -294,7 +294,7 @@ export class OrganizationService {
         reviewTickets: items.filter((t) => t.status === "review"),
         blockedByMe: items.filter((t) => t.blockedBy === me),
       },
-      recentChat: chat?.messages.slice(-20) ?? [],
+      recentMessages: recent?.messages.slice(-20) ?? [],
       alerts: this.alerts(org, spend.period),
       ...(ceoDesk !== undefined ? { ceoDeskSessionId: ceoDesk.sessionId } : {}),
     };
@@ -609,7 +609,7 @@ export class OrganizationService {
         ...(req.model !== undefined ? { model: req.model } : {}),
       };
       await this.writeChart(org, [...org.chart.employees, employee]);
-      await appendChatMessage(this.deps, org, ALL_CHANNEL_ID, {
+      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
         sender: "system",
         hop: 0,
         text: `${agentPrincipal(agentId)} joined as ${title}, reporting to ${agentPrincipal(req.reportsTo)}.`,
@@ -698,7 +698,7 @@ export class OrganizationService {
           members: members.filter((m) => m !== agentPrincipal(agentId)),
         });
       }
-      await appendChatMessage(this.deps, org, ALL_CHANNEL_ID, {
+      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
         sender: "system",
         hop: 0,
         text: `${agentPrincipal(agentId)} left the organization; reports now go to ${agentPrincipal(manager)}.`,
@@ -1342,7 +1342,7 @@ export class OrganizationService {
   }
 
   // ---------------------------------------------------------------------------
-  // Chat channels
+  // Channels
   // ---------------------------------------------------------------------------
 
   /** Who is asking: an employee when the call came from one of its sessions, else the signed-in person. */
@@ -1402,10 +1402,10 @@ export class OrganizationService {
     channelId: string,
     userId: string | null,
   ): Promise<{ unread: number; mentionsMe: number; lastMessageAt: string | null }> {
-    const days = await this.deps.store.listChatDays(org.dir, channelId);
+    const days = await this.deps.store.listMessageDays(org.dir, channelId);
     let lastMessageAt: string | null = null;
     for (const d of days) {
-      const list = (await this.deps.store.readChatDay(org.dir, channelId, d)).messages;
+      const list = (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
       if (list.length > 0) {
         lastMessageAt = list.at(-1)!.time;
         break;
@@ -1418,7 +1418,7 @@ export class OrganizationService {
     let unread = 0;
     let mentionsMe = 0;
     for (const d of days.slice(0, 7)) {
-      for (const m of (await this.deps.store.readChatDay(org.dir, channelId, d)).messages) {
+      for (const m of (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages) {
         if (lastReadId !== null && m.id <= lastReadId) continue;
         unread++;
         if (m.mentions.includes(me)) mentionsMe++;
@@ -1488,9 +1488,9 @@ export class OrganizationService {
       channels.push(item);
     }
     channels.sort((a, b) =>
-      a.channelId === ALL_CHANNEL_ID
+      a.channelId === DEFAULT_CHANNEL_ID
         ? -1
-        : b.channelId === ALL_CHANNEL_ID
+        : b.channelId === DEFAULT_CHANNEL_ID
           ? 1
           : a.name.localeCompare(b.name) || a.channelId.localeCompare(b.channelId),
     );
@@ -1525,7 +1525,7 @@ export class OrganizationService {
         members: [caller.principal],
       };
       await this.deps.store.writeChannel(org.dir, channelId, cfg);
-      await appendChatMessage(this.deps, org, channelId, {
+      await appendChannelMessage(this.deps, org, channelId, {
         sender: "system",
         hop: 0,
         text: `${caller.principal} created the channel.`,
@@ -1575,7 +1575,7 @@ export class OrganizationService {
       const caller = this.caller(org, actor);
       const members = this.channelMemberPrincipals(org, cfg);
       if (req.archived !== undefined) {
-        if (channelId === ALL_CHANNEL_ID) {
+        if (channelId === DEFAULT_CHANNEL_ID) {
           throw allHandsImmutable("The all-hands channel cannot be archived.");
         }
         if (caller.agentId !== null) {
@@ -1598,7 +1598,7 @@ export class OrganizationService {
       // The notice is written before the flag: an archived channel is skipped by the scan,
       // so a line written after it would wait for the unarchive to reach the event stream.
       if (archiveChanged) {
-        await appendChatMessage(this.deps, org, channelId, {
+        await appendChannelMessage(this.deps, org, channelId, {
           sender: "system",
           hop: 0,
           text: `${caller.principal} ${req.archived === true ? "archived" : "unarchived"} the channel.`,
@@ -1638,7 +1638,7 @@ export class OrganizationService {
     const detail = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
       const cfg = await this.requireChannel(org, channelId);
-      if (channelId === ALL_CHANNEL_ID) {
+      if (channelId === DEFAULT_CHANNEL_ID) {
         throw allHandsImmutable("Everyone is in the all-hands channel already.");
       }
       if (cfg.archived) throw channelArchived(channelId);
@@ -1659,7 +1659,7 @@ export class OrganizationService {
       if (members.includes(principal)) return this.channelDetail(org, channelId, cfg, caller);
       const next: ChannelConfig = { ...cfg, members: [...members, principal] };
       await this.deps.store.writeChannel(org.dir, channelId, next);
-      await appendChatMessage(this.deps, org, channelId, {
+      await appendChannelMessage(this.deps, org, channelId, {
         sender: "system",
         hop: 0,
         text:
@@ -1685,7 +1685,7 @@ export class OrganizationService {
     await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
       const cfg = await this.requireChannel(org, channelId);
-      if (channelId === ALL_CHANNEL_ID) {
+      if (channelId === DEFAULT_CHANNEL_ID) {
         throw allHandsImmutable("Nobody leaves the all-hands channel.");
       }
       if (cfg.archived) throw channelArchived(channelId);
@@ -1709,7 +1709,7 @@ export class OrganizationService {
         ...cfg,
         members: members.filter((m) => m !== principal),
       });
-      await appendChatMessage(this.deps, org, channelId, {
+      await appendChannelMessage(this.deps, org, channelId, {
         sender: "system",
         hop: 0,
         text:
@@ -1723,24 +1723,24 @@ export class OrganizationService {
   }
 
   // ---------------------------------------------------------------------------
-  // Chat
+  // Channel messages
   // ---------------------------------------------------------------------------
 
-  async chat(
+  async channelMessages(
     projectId: string,
     orgId: string,
     actor: Actor,
-    opts: { channel?: string; date?: string },
-  ): Promise<OrgChatResponse> {
+    channelId: string,
+    opts: { date?: string },
+  ): Promise<OrgChannelMessagesResponse> {
     const org = await this.requireOrg(projectId, orgId);
-    const channelId = opts.channel ?? ALL_CHANNEL_ID;
     const cfg = await this.requireChannel(org, channelId);
     const caller = this.caller(org, actor);
     this.requireReadAccess(org, channelId, cfg, caller);
-    const days = await this.deps.store.listChatDays(org.dir, channelId);
+    const days = await this.deps.store.listMessageDays(org.dir, channelId);
     const today = zonedDate(org.config.timezone, this.now());
     const date = opts.date ?? today;
-    const messages = (await this.deps.store.readChatDay(org.dir, channelId, date)).messages;
+    const messages = (await this.deps.store.readMessageDay(org.dir, channelId, date)).messages;
     const lastReadId =
       caller.userId === null
         ? null
@@ -1753,7 +1753,7 @@ export class OrganizationService {
         const list =
           d === date
             ? messages
-            : (await this.deps.store.readChatDay(org.dir, channelId, d)).messages;
+            : (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
         for (const m of list) {
           if (lastReadId !== null && m.id <= lastReadId) continue;
           unread++;
@@ -1797,13 +1797,13 @@ export class OrganizationService {
     return out;
   }
 
-  async sendChat(
+  async sendChannelMessage(
     projectId: string,
     orgId: string,
     userId: string,
-    req: OrgChatSendRequest,
-  ): Promise<OrgChatMessage> {
-    const channelId = req.channel ?? ALL_CHANNEL_ID;
+    channelId: string,
+    req: OrgChannelMessageSendRequest,
+  ): Promise<OrgChannelMessage> {
     const msg = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
       const text = req.text.trim();
@@ -1838,7 +1838,7 @@ export class OrganizationService {
         );
       }
       const refs = req.refs;
-      return appendChatMessage(this.deps, org, channelId, {
+      return appendChannelMessage(this.deps, org, channelId, {
         sender,
         hop,
         text,
@@ -2003,13 +2003,13 @@ function initBody(org: LoadedOrg): string {
     `Mission: ${org.config.mission}`,
     "",
     "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
-    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org chat send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
+    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
     "2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — `penguin org hire --new-agent " +
       `${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
     "3. Partition the shared workspace as confirmed: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
     "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream.",
-    "6. Open one chat channel per stream (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
+    "6. Open one channel per stream (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
     `7. Report to the board in the all-hands channel, mentioning @${board}, and name the next decision you need, if any.`,
   ].join("\n");
 }

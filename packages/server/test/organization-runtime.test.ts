@@ -4,7 +4,7 @@
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
- * chat mentions reach desks and the chain stops at the limit; budgets warn, pause and resume.
+ * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and resume.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +19,7 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
-import { ALL_CHANNEL_ID } from "../src/organization/paths.js";
+import { DEFAULT_CHANNEL_ID } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
@@ -228,16 +228,16 @@ describe("organization runtime", () => {
       "desks.toml",
       "calendar",
       "tickets",
-      "chat",
-      "chat/all/channel.toml",
+      "channels",
+      "channels/default_channel/channel.toml",
       "workspace",
     ]) {
       await expect(fs.stat(path.join(dir, f))).resolves.toBeTruthy();
     }
     // The all-hands channel is created with the organization and belongs to everyone.
     const allChannel = parseChannelConfig(
-      "all",
-      await fs.readFile(path.join(dir, "chat", "all", "channel.toml"), "utf8"),
+      DEFAULT_CHANNEL_ID,
+      await fs.readFile(path.join(dir, "channels", DEFAULT_CHANNEL_ID, "channel.toml"), "utf8"),
     );
     expect(allChannel).toMatchObject({
       ok: true,
@@ -320,7 +320,7 @@ describe("organization runtime", () => {
     ).rejects.toMatchObject({ code: "invalid_org_id" });
   });
 
-  it("hires through the API, writes the chart and announces it in chat", async () => {
+  it("hires through the API, writes the chart and announces it in the all-hands channel", async () => {
     await createOrg();
     await fs.mkdir(path.join(orgDir(), "workspace", "people"));
     const item = await service.hire(P, ORG, {
@@ -335,9 +335,15 @@ describe("organization runtime", () => {
     expect(agentsCreated.map((a) => a.agentId)).toEqual([CEO, HR]);
     const chart = await service.chart(P, ORG);
     expect(chart.employees.map((e) => e.agentId)).toEqual([CEO, HR]);
-    const chat = await service.chat(P, ORG, { userId: "alice" }, {});
+    const allHands = await service.channelMessages(
+      P,
+      ORG,
+      { userId: "alice" },
+      DEFAULT_CHANNEL_ID,
+      {},
+    );
     expect(
-      chat.messages.some(
+      allHands.messages.some(
         (m) => m.sender === "system" && m.text.includes("agent:acme_hr joined as HR"),
       ),
     ).toBe(true);
@@ -555,15 +561,23 @@ describe("organization runtime", () => {
       const notices = started
         .map((s) => parseOrgTriggerMessage(s.text)?.origin)
         .filter((o) => o?.kind === "ticket_notice");
-      // Notify = CEO (agent) and the initiator alice (user): the CEO's desk gets a notice, alice a system chat line.
+      // Notify = CEO (agent) and the initiator alice (user): the CEO's desk gets a notice, alice a system line.
       expect(notices).toHaveLength(1);
       expect(notices[0]).toMatchObject({
         ticket: t.ticketId,
         change: "done",
         employee: `${CEO} (CEO)`,
       });
-      const chat = await service.chat(P, ORG, { userId: "alice" }, {});
-      const line = chat.messages.find((m) => m.sender === "system" && m.text.includes(t.ticketId));
+      const allHands = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      const line = allHands.messages.find(
+        (m) => m.sender === "system" && m.text.includes(t.ticketId),
+      );
       expect(line?.mentions).toEqual(["user:alice"]);
       expect(events.some((e) => e.type === "org_ticket" && e.change === "status:done")).toBe(true);
       const board = await service.tickets(P, ORG);
@@ -617,7 +631,7 @@ describe("organization runtime", () => {
     });
   });
 
-  describe("chat", () => {
+  describe("channel messages", () => {
     beforeEach(async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -625,7 +639,7 @@ describe("organization runtime", () => {
     });
 
     it("delivers mentions to desks, records the rest, and stops the chain at the limit", async () => {
-      const m1 = await service.sendChat(P, ORG, "alice", {
+      const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: "@acme_hr welcome, and @nobody too",
       });
       expect(m1.sender).toBe("user:alice");
@@ -638,7 +652,7 @@ describe("organization runtime", () => {
       const hrDesk = started[0]!.sessionId;
 
       // HR answers from its desk: hop 1, delivered to the CEO.
-      const m2 = await service.sendChat(P, ORG, "alice", {
+      const m2 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${CEO} done`,
         sessionId: hrDesk,
       });
@@ -649,13 +663,13 @@ describe("organization runtime", () => {
       expect(cache.ownerOfSession(ceoDesk)?.agentId).toBe(CEO);
 
       // CEO replies: hop 2, delivered to HR; HR replies: hop 3 = the limit, recorded only.
-      const m3 = await service.sendChat(P, ORG, "alice", {
+      const m3 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${HR} thanks`,
         sessionId: ceoDesk,
       });
       expect(m3.hop).toBe(2);
       expect(started).toHaveLength(3);
-      const m4 = await service.sendChat(P, ORG, "alice", {
+      const m4 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${CEO} anytime`,
         sessionId: hrDesk,
       });
@@ -664,21 +678,35 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(3);
 
       // A plain message reaches nobody; @all reaches everyone but the sender.
-      await service.sendChat(P, ORG, "alice", { text: "just noting" });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "just noting",
+      });
       expect(started).toHaveLength(3);
-      await service.sendChat(P, ORG, "alice", { text: "@all standup in 5" });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@all standup in 5",
+      });
       expect(started).toHaveLength(5);
 
-      const chat = await service.chat(P, ORG, { userId: "alice" }, {});
-      expect(chat.messages.map((m) => m.id)).toContain(m1.id);
-      expect(chat.unread).toBeGreaterThanOrEqual(6);
-      await service.markRead(P, ORG, "alice", ALL_CHANNEL_ID, chat.messages.at(-1)!.id);
-      expect((await service.chat(P, ORG, { userId: "alice" }, {})).unread).toBe(0);
+      const allHands = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      expect(allHands.messages.map((m) => m.id)).toContain(m1.id);
+      expect(allHands.unread).toBeGreaterThanOrEqual(6);
+      await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, allHands.messages.at(-1)!.id);
+      expect(
+        (await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})).unread,
+      ).toBe(0);
     });
 
     it("the system's own lines and a paused organization deliver nothing", async () => {
       await service.patch(P, ORG, { status: "paused" });
-      await service.sendChat(P, ORG, "alice", { text: `@${HR} hello?` });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${HR} hello?`,
+      });
       expect(started).toHaveLength(0);
     });
   });
@@ -724,7 +752,7 @@ describe("organization runtime", () => {
       expect((await service.channel(P, ORG, "site", alice)).members).toEqual([
         { principal: "user:alice", name: "alice", kind: "user" },
       ]);
-      const all = await service.channel(P, ORG, ALL_CHANNEL_ID, alice);
+      const all = await service.channel(P, ORG, DEFAULT_CHANNEL_ID, alice);
       expect(all.everyone).toBe(true);
       expect(all.members.map((m) => m.principal).sort()).toEqual(
         [`agent:${CEO}`, `agent:${HR}`, "user:alice"].sort(),
@@ -735,7 +763,7 @@ describe("organization runtime", () => {
         service.createChannel(P, ORG, { channelId: "site" }, alice),
       ).rejects.toMatchObject({ status: 409, code: "channel_exists" });
       await expect(
-        service.createChannel(P, ORG, { channelId: ALL_CHANNEL_ID }, alice),
+        service.createChannel(P, ORG, { channelId: DEFAULT_CHANNEL_ID }, alice),
       ).rejects.toMatchObject({ code: "channel_exists" });
       await expect(
         service.createChannel(P, ORG, { channelId: "Site" }, alice),
@@ -779,7 +807,7 @@ describe("organization runtime", () => {
         ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
       }
       expect(
-        (await service.chat(P, ORG, alice, { channel: "site" })).messages.map((m) => m.text),
+        (await service.channelMessages(P, ORG, alice, "site", {})).messages.map((m) => m.text),
       ).toEqual([
         `agent:${CEO} created the channel.`,
         "user:alice joined the channel.",
@@ -805,7 +833,7 @@ describe("organization runtime", () => {
       expect(
         (await service.channel(P, ORG, "site", alice)).members.map((m) => m.principal),
       ).toEqual(["user:alice"]);
-      const texts = (await service.chat(P, ORG, alice, { channel: "site" })).messages.map(
+      const texts = (await service.channelMessages(P, ORG, alice, "site", {})).messages.map(
         (m) => m.text,
       );
       expect(texts).toContain(`agent:${HR} left the channel.`);
@@ -823,7 +851,7 @@ describe("organization runtime", () => {
         true,
       );
       await expect(
-        service.sendChat(P, ORG, "alice", { channel: "site", text: "hi", sessionId: ceoDesk }),
+        service.sendChannelMessage(P, ORG, "alice", "site", { text: "hi", sessionId: ceoDesk }),
       ).rejects.toMatchObject({ status: 409, code: "channel_archived" });
       await expect(
         service.addChannelMember(P, ORG, "site", `agent:${HR}`, alice),
@@ -840,7 +868,7 @@ describe("organization runtime", () => {
       ).toBe(false);
       const renamed = await service.patchChannel(P, ORG, "site", { name: "Site" }, asCeo());
       expect(renamed.name).toBe("Site");
-      const texts = (await service.chat(P, ORG, alice, { channel: "site" })).messages.map(
+      const texts = (await service.channelMessages(P, ORG, alice, "site", {})).messages.map(
         (m) => m.text,
       );
       expect(texts).toContain("user:alice archived the channel.");
@@ -849,15 +877,15 @@ describe("organization runtime", () => {
 
     it("the all-hands channel cannot be archived, joined or left", async () => {
       for (const call of [
-        () => service.patchChannel(P, ORG, ALL_CHANNEL_ID, { archived: true }, alice),
-        () => service.addChannelMember(P, ORG, ALL_CHANNEL_ID, `agent:${HR}`, alice),
-        () => service.removeChannelMember(P, ORG, ALL_CHANNEL_ID, "user:alice", alice),
+        () => service.patchChannel(P, ORG, DEFAULT_CHANNEL_ID, { archived: true }, alice),
+        () => service.addChannelMember(P, ORG, DEFAULT_CHANNEL_ID, `agent:${HR}`, alice),
+        () => service.removeChannelMember(P, ORG, DEFAULT_CHANNEL_ID, "user:alice", alice),
       ]) {
         await expect(call()).rejects.toMatchObject({ status: 400, code: "all_hands_immutable" });
       }
       // Renaming it is allowed; the UI renders its own label for it anyway.
       expect(
-        (await service.patchChannel(P, ORG, ALL_CHANNEL_ID, { name: "Everyone" }, alice)).name,
+        (await service.patchChannel(P, ORG, DEFAULT_CHANNEL_ID, { name: "Everyone" }, alice)).name,
       ).toBe("Everyone");
     });
 
@@ -867,10 +895,10 @@ describe("organization runtime", () => {
       started.length = 0;
 
       await expect(
-        service.sendChat(P, ORG, "alice", { channel: "site", text: "hello", sessionId: hrDesk }),
+        service.sendChannelMessage(P, ORG, "alice", "site", { text: "hello", sessionId: hrDesk }),
       ).rejects.toMatchObject({ status: 403, code: "not_a_member" });
       await expect(
-        service.sendChat(P, ORG, "alice", { channel: "site", text: `@${HR} look at this` }),
+        service.sendChannelMessage(P, ORG, "alice", "site", { text: `@${HR} look at this` }),
       ).rejects.toMatchObject({
         status: 400,
         code: "mention_not_member",
@@ -878,14 +906,13 @@ describe("organization runtime", () => {
       });
       // Nothing was written and nobody was woken.
       expect(
-        (await service.chat(P, ORG, alice, { channel: "site" })).messages.filter(
+        (await service.channelMessages(P, ORG, alice, "site", {})).messages.filter(
           (m) => m.sender !== "system",
         ),
       ).toEqual([]);
       expect(started).toHaveLength(0);
 
-      const msg = await service.sendChat(P, ORG, "alice", {
-        channel: "site",
+      const msg = await service.sendChannelMessage(P, ORG, "alice", "site", {
         text: "@all kickoff",
       });
       expect(started).toHaveLength(1);
@@ -899,73 +926,75 @@ describe("organization runtime", () => {
       expect(parsed?.rest).toContain("kickoff");
       expect(
         events.some(
-          (e) => e.type === "org_chat" && e.channelId === "site" && e.message.id === msg.id,
+          (e) => e.type === "org_channel" && e.channelId === "site" && e.message.id === msg.id,
         ),
       ).toBe(true);
 
       // The same `@all` in the all-hands channel is every employee.
       started.length = 0;
-      await service.sendChat(P, ORG, "alice", { text: "@all standup" });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@all standup",
+      });
       expect(started.map((s) => s.sessionId).sort()).toEqual([ceoDesk, hrDesk].sort());
-      expect(parseOrgTriggerMessage(started[0]!.text)?.origin.channel).toBe(ALL_CHANNEL_ID);
+      expect(parseOrgTriggerMessage(started[0]!.text)?.origin.channel).toBe(DEFAULT_CHANNEL_ID);
     });
 
     it("counts unread per channel and shows an employee only the channels it is in", async () => {
       await service.createChannel(P, ORG, { channelId: "site" }, alice);
       await service.addChannelMember(P, ORG, "site", `agent:${CEO}`, alice);
-      const ping = await service.sendChat(P, ORG, "alice", {
-        channel: "site",
+      const ping = await service.sendChannelMessage(P, ORG, "alice", "site", {
         text: "@user:alice ping",
         sessionId: ceoDesk,
       });
-      await service.sendChat(P, ORG, "alice", { text: "plain line" });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, { text: "plain line" });
 
       const listed = await service.channels(P, ORG, alice);
-      expect(listed.channels.map((c) => c.channelId)).toEqual([ALL_CHANNEL_ID, "site"]);
+      expect(listed.channels.map((c) => c.channelId)).toEqual([DEFAULT_CHANNEL_ID, "site"]);
       const byId = new Map(listed.channels.map((c) => [c.channelId, c]));
       expect(byId.get("site")).toMatchObject({ isMember: true, memberCount: 2, mentionsMe: 1 });
       expect(byId.get("site")!.lastMessageAt).toBe(ping.time);
-      expect(byId.get(ALL_CHANNEL_ID)).toMatchObject({ mentionsMe: 0, memberCount: 3 });
-      expect(byId.get(ALL_CHANNEL_ID)!.unread).toBeGreaterThan(0);
+      expect(byId.get(DEFAULT_CHANNEL_ID)).toMatchObject({ mentionsMe: 0, memberCount: 3 });
+      expect(byId.get(DEFAULT_CHANNEL_ID)!.unread).toBeGreaterThan(0);
 
       // Reading one channel leaves the other's cursor where it was.
-      const site = await service.chat(P, ORG, alice, { channel: "site" });
+      const site = await service.channelMessages(P, ORG, alice, "site", {});
       expect(site.channelId).toBe("site");
       await service.markRead(P, ORG, "alice", "site", site.messages.at(-1)!.id);
       const after = new Map(
         (await service.channels(P, ORG, alice)).channels.map((c) => [c.channelId, c]),
       );
       expect(after.get("site")).toMatchObject({ unread: 0, mentionsMe: 0 });
-      expect(after.get(ALL_CHANNEL_ID)!.unread).toBeGreaterThan(0);
+      expect(after.get(DEFAULT_CHANNEL_ID)!.unread).toBeGreaterThan(0);
 
       expect((await service.channels(P, ORG, asHr())).channels.map((c) => c.channelId)).toEqual([
-        ALL_CHANNEL_ID,
+        DEFAULT_CHANNEL_ID,
       ]);
       const ceoView = await service.channels(P, ORG, asCeo());
-      expect(ceoView.channels.map((c) => c.channelId)).toEqual([ALL_CHANNEL_ID, "site"]);
+      expect(ceoView.channels.map((c) => c.channelId)).toEqual([DEFAULT_CHANNEL_ID, "site"]);
       // An employee has no read cursor of its own; it reads through its triggers.
       expect(
         ceoView.channels.every((c) => c.isMember && c.unread === 0 && c.mentionsMe === 0),
       ).toBe(true);
-      await expect(service.chat(P, ORG, asHr(), { channel: "site" })).rejects.toMatchObject({
+      await expect(service.channelMessages(P, ORG, asHr(), "site", {})).rejects.toMatchObject({
         status: 403,
         code: "not_a_member",
       });
     });
 
-    it("ignores a stray file under chat/ and reports a channel whose file does not parse", async () => {
-      // An organization written before channels existed keeps its day files at the root.
-      await fs.writeFile(path.join(orgDir(), "chat", "2026-08-31.jsonl"), "{}\n", "utf8");
-      await fs.mkdir(path.join(orgDir(), "chat", "broken"), { recursive: true });
+    it("ignores a stray entry under channels/ and reports a channel whose file does not parse", async () => {
+      // A directory without a channel.toml, and a plain file, are not channels.
+      await fs.writeFile(path.join(orgDir(), "channels", "notes.md"), "scratch\n", "utf8");
+      await fs.mkdir(path.join(orgDir(), "channels", "empty"), { recursive: true });
+      await fs.mkdir(path.join(orgDir(), "channels", "broken"), { recursive: true });
       await fs.writeFile(
-        path.join(orgDir(), "chat", "broken", "channel.toml"),
+        path.join(orgDir(), "channels", "broken", "channel.toml"),
         'name = "Broken"\n',
         "utf8",
       );
       errors.length = 0;
       await scheduler.tickOnce();
       expect((await service.channels(P, ORG, alice)).channels.map((c) => c.channelId)).toEqual([
-        ALL_CHANNEL_ID,
+        DEFAULT_CHANNEL_ID,
       ]);
       expect(errors.filter((e) => e.code === "org_channel_invalid")).toHaveLength(1);
       await expect(service.channel(P, ORG, "broken", alice)).rejects.toMatchObject({
@@ -1028,16 +1057,25 @@ describe("organization runtime", () => {
         "paused",
       );
       // The warning went to the day it fired on, the pause to the next day's file.
-      const warned = await service.chat(
+      const warned = await service.channelMessages(
         P,
         ORG,
         { userId: "alice" },
-        { date: zonedDate("Asia/Shanghai", T0) },
+        DEFAULT_CHANNEL_ID,
+        {
+          date: zonedDate("Asia/Shanghai", T0),
+        },
       );
       expect(
         warned.messages.some((m) => m.sender === "system" && m.text.startsWith("Budget warning")),
       ).toBe(true);
-      const paused = await service.chat(P, ORG, { userId: "alice" }, {});
+      const paused = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
       expect(
         paused.messages.some((m) => m.sender === "system" && m.text.startsWith("Budget pause")),
       ).toBe(true);

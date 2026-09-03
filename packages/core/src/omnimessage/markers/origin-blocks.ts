@@ -239,7 +239,7 @@ export interface OrgTriggerOrigin {
   firedAt?: string;
   /** kind=mention: `<message id> from <principal>`. */
   message?: string;
-  /** kind=mention: the chat channel the message was posted in, and the one to answer in. */
+  /** kind=mention: the channel the message was posted in, and the one to answer in. */
   channel?: string;
   /** kind=ticket_notice / ticket_work: the ticket id. */
   ticket?: string;

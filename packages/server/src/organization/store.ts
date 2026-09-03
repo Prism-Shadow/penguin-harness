@@ -6,7 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OrgChatMessage, OrgTicketStatus } from "../api/types.js";
+import type { OrgChannelMessage, OrgTicketStatus } from "../api/types.js";
 import type {
   CalendarEvent,
   ChannelConfig,
@@ -19,7 +19,7 @@ import type {
 import {
   parseCalendarEvent,
   parseChannelConfig,
-  parseChatLine,
+  parseChannelMessageLine,
   parseDesks,
   parseOrgChart,
   parseOrgConfig,
@@ -31,13 +31,14 @@ import {
   serializeTicket,
 } from "./files.js";
 import {
-  ALL_CHANNEL_ID,
+  DEFAULT_CHANNEL_ID,
   ORG_TICKET_COLUMNS,
   calendarDir,
   calendarEventPath,
   channelConfigPath,
-  chatDir,
-  chatFilePath,
+  channelDayPath,
+  channelDir,
+  channelsDir,
   desksPath,
   handbookDir,
   handbookFilePath,
@@ -78,7 +79,7 @@ export interface CalendarFile {
   mtimeMs: number;
 }
 
-/** One `chat/<channel_id>/channel.toml`, parsed; the id is the directory name. */
+/** One `channels/<channel_id>/channel.toml`, parsed; the id is the directory name. */
 export interface ChannelFile {
   channelId: string;
   raw: string;
@@ -156,12 +157,12 @@ export class OrgStore {
       handbookDir(dir),
       calendarDir(dir),
       ticketsDir(dir),
-      chatDir(dir),
+      channelsDir(dir),
       workspaceDir(dir),
     ]) {
       await fs.mkdir(sub, { recursive: true });
     }
-    await this.writeChannel(dir, ALL_CHANNEL_ID, {
+    await this.writeChannel(dir, DEFAULT_CHANNEL_ID, {
       name: "All hands",
       purpose: "Everyone in the organization; the board reads here.",
       createdBy: "system",
@@ -408,18 +409,17 @@ export class OrgStore {
     if (from !== to) await fs.unlink(ticketPath(dir, ticketId, from)).catch(() => {});
   }
 
-  // ---- chat channels ----
+  // ---- channels ----
 
   /**
    * Every channel directory that carries a `channel.toml`, by id. A plain file under
-   * `chat/` is not a channel and is skipped rather than reported: organizations created
-   * before channels existed keep their `chat/<date>.jsonl` files at the root, and one of
-   * those must not make the whole listing an error.
+   * `channels/` is not a channel and is skipped rather than reported, and neither is a
+   * directory without that file — a stray entry must not make the whole listing an error.
    */
   async listChannels(dir: string): Promise<ChannelFile[]> {
     let entries: import("node:fs").Dirent[];
     try {
-      entries = await fs.readdir(chatDir(dir), { withFileTypes: true });
+      entries = await fs.readdir(channelsDir(dir), { withFileTypes: true });
     } catch {
       return [];
     }
@@ -445,12 +445,12 @@ export class OrgStore {
     await writeText(channelConfigPath(dir, channelId), serializeChannelConfig(cfg));
   }
 
-  // ---- chat ----
+  // ---- channel messages ----
 
-  async listChatDays(dir: string, channelId: string): Promise<string[]> {
+  async listMessageDays(dir: string, channelId: string): Promise<string[]> {
     let files: import("node:fs").Dirent[];
     try {
-      files = await fs.readdir(chatDir(dir, channelId), { withFileTypes: true });
+      files = await fs.readdir(channelDir(dir, channelId), { withFileTypes: true });
     } catch {
       return [];
     }
@@ -464,25 +464,30 @@ export class OrgStore {
       .reverse();
   }
 
-  async appendChatLine(dir: string, channelId: string, date: string, line: string): Promise<void> {
-    const p = chatFilePath(dir, channelId, date);
+  async appendMessageLine(
+    dir: string,
+    channelId: string,
+    date: string,
+    line: string,
+  ): Promise<void> {
+    const p = channelDayPath(dir, channelId, date);
     await fs.mkdir(path.dirname(p), { recursive: true });
     await fs.appendFile(p, `${line}\n`, "utf8");
   }
 
   /** Every parsable message of a day, in file order; malformed lines are reported alongside. */
-  async readChatDay(
+  async readMessageDay(
     dir: string,
     channelId: string,
     date: string,
-  ): Promise<{ messages: OrgChatMessage[]; invalid: number }> {
-    const raw = await readText(chatFilePath(dir, channelId, date));
+  ): Promise<{ messages: OrgChannelMessage[]; invalid: number }> {
+    const raw = await readText(channelDayPath(dir, channelId, date));
     if (raw === null) return { messages: [], invalid: 0 };
-    const messages: OrgChatMessage[] = [];
+    const messages: OrgChannelMessage[] = [];
     let invalid = 0;
     for (const line of raw.split("\n")) {
       if (line.trim() === "") continue;
-      const r = parseChatLine(line);
+      const r = parseChannelMessageLine(line);
       if (r.ok) messages.push(r.value);
       else invalid++;
     }
@@ -493,13 +498,13 @@ export class OrgStore {
    * Tail scan: the complete lines after a byte offset, and the offset they end at. A file
    * shorter than the offset (rewritten by hand) is re-read from the start.
    */
-  async readChatFrom(
+  async readMessagesFrom(
     dir: string,
     channelId: string,
     date: string,
     offset: number,
   ): Promise<{ lines: string[]; nextOffset: number }> {
-    const p = chatFilePath(dir, channelId, date);
+    const p = channelDayPath(dir, channelId, date);
     let buf: Buffer;
     try {
       buf = await fs.readFile(p);

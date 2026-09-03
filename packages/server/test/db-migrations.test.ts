@@ -56,8 +56,8 @@ function dropCompanyModeTables(db: DatabaseSync): void {
     "org_ticket_sessions",
     "org_calendar_state",
     "org_ticket_state",
-    "org_chat_state",
-    "org_chat_reads",
+    "org_channel_state",
+    "org_channel_reads",
     "org_budget_state",
   ]) {
     db.exec(`DROP TABLE IF EXISTS ${table}`);
@@ -77,11 +77,12 @@ function open024(): DatabaseSync {
 
 /**
  * The two chat tables as migration 4 declared them (frozen: company mode's chat became
- * channels in migration 5, and the migration that recreates them must not learn a new shape).
+ * channels in migration 5 — renamed tables, `channel_id` in the primary keys — and the
+ * migration that recreates them must not learn a new shape).
  */
 const PRE_CHANNEL_CHAT_DDL = `
-  DROP TABLE IF EXISTS org_chat_state;
-  DROP TABLE IF EXISTS org_chat_reads;
+  DROP TABLE IF EXISTS org_channel_state;
+  DROP TABLE IF EXISTS org_channel_reads;
   CREATE TABLE org_chat_state (
     project_id   TEXT NOT NULL,
     org_id       TEXT NOT NULL,
@@ -315,7 +316,7 @@ describe("0.2.9 → current: drop-goal-state", () => {
 });
 
 describe("migration 4 → current: company-mode-channels", () => {
-  it("puts channel_id in both chat tables' primary keys, recreating them empty", () => {
+  it("renames both chat tables and puts channel_id in their primary keys, recreating them empty", () => {
     const db = open4();
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
@@ -330,14 +331,20 @@ describe("migration 4 → current: company-mode-channels", () => {
         MIGRATIONS.filter((m) => m.version > 4).map((m) => m.name),
       );
       expect(shape(db)).toBe(shape(fresh));
-      // Recreated, not altered: nothing is carried over, and a row now names its channel.
-      expect(db.prepare("SELECT COUNT(*) AS n FROM org_chat_reads").get()).toEqual({ n: 0 });
+      // Renamed and recreated, not altered: the old tables are gone, nothing is carried
+      // over, and a row now names its channel.
+      expect(
+        db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'org_chat_reads'")
+          .get(),
+      ).toBeUndefined();
+      expect(db.prepare("SELECT COUNT(*) AS n FROM org_channel_reads").get()).toEqual({ n: 0 });
       db.exec(
-        "INSERT INTO org_chat_reads (project_id, org_id, channel_id, user_id, last_read_id)" +
-          " VALUES ('p1', 'acme', 'all', 'alice', 'msg-2026-09-01-00-00-00-00000000')",
+        "INSERT INTO org_channel_reads (project_id, org_id, channel_id, user_id, last_read_id)" +
+          " VALUES ('p1', 'acme', 'default_channel', 'alice', 'msg-2026-09-01-00-00-00-00000000')",
       );
-      expect(db.prepare("SELECT channel_id FROM org_chat_reads").all()).toEqual([
-        { channel_id: "all" },
+      expect(db.prepare("SELECT channel_id FROM org_channel_reads").all()).toEqual([
+        { channel_id: "default_channel" },
       ]);
     } finally {
       db.close();
@@ -345,7 +352,7 @@ describe("migration 4 → current: company-mode-channels", () => {
     }
   });
 
-  it("down puts the single-chat shape back, empty", () => {
+  it("down puts the old tables and the single-chat shape back, empty", () => {
     const db = open4();
     const at4 = open4();
     try {
