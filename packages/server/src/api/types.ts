@@ -3776,7 +3776,11 @@ export interface OrgTicketBlockRequest {
 
 export interface OrgTicketProgressRequest {
   text: string;
-  /** The calling session (CLI: PENGUIN_SESSION_ID); the entry is attributed to its Agent and carries `session:<id>`. */
+  /**
+   * The calling session (CLI: PENGUIN_SESSION_ID); the entry is attributed to its Agent and
+   * carries `session:<id>`. Honoured only for a request carrying the local API token — the
+   * control environment's credential; a signed-in user's write is attributed to the user.
+   */
   sessionId?: string;
 }
 
@@ -3799,7 +3803,11 @@ export interface OrgTicketAttachRequest {
 export interface OrgChatSendRequest {
   text: string;
   refs?: { ticket?: string; session?: string; replyTo?: string };
-  /** The calling session (CLI: PENGUIN_SESSION_ID): the message is sent as its Agent and inherits its hop. */
+  /**
+   * The calling session (CLI: PENGUIN_SESSION_ID): the message is sent as its Agent and
+   * inherits its hop. Honoured only for a request carrying the local API token — the control
+   * environment's credential; a signed-in user's message is sent as the user, at hop 0.
+   */
   sessionId?: string;
 }
 

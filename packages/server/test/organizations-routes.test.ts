@@ -3,8 +3,9 @@
  * is reported by /api/me and /api/admin/settings; Project authorization gates reads and
  * writes (an outsider gets 404, a member may write, only the owner may delete); bodies are
  * validated before the service is asked; and the calling session rides write bodies as
- * `sessionId`. The service itself is a recording fake here — its semantics have their own
- * suites — so no Agent is created and no session runs.
+ * `sessionId`, but only from the control environment's API token — a signed-in member's
+ * claim is dropped. The service itself is a recording fake here — its semantics have their
+ * own suites — so no Agent is created and no session runs.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ServerSettingsResponse } from "../src/api/types.js";
@@ -51,6 +52,21 @@ function fakeService(calls: Call[]): OrganizationService {
     },
   };
   return new Proxy({}, handler) as unknown as OrganizationService;
+}
+
+/**
+ * A write as a Session's subprocess would send it: the boot's local API token as a Bearer
+ * header and no cookie, which is what `controlEnv` hands the CLI (auth/api-token.ts).
+ */
+function fromSession(t: TestApp, apiPath: string, body: unknown) {
+  return t.app.request(apiPath, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${t.deps.authService.localApiToken()}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 describe("organization routes", () => {
@@ -191,7 +207,10 @@ describe("organization routes", () => {
 
   it("passes the calling session through write bodies so the file records the employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
-    const res = await owner.post(`${base}/progress`, {
+    // The control environment's credential: the admin joins the Project the CLI writes to.
+    const grant = await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" });
+    expect([200, 201]).toContain(grant.status);
+    const res = await fromSession(t, `${base}/progress`, {
       text: "half done",
       sessionId: "session-desk",
     });
@@ -203,7 +222,7 @@ describe("organization routes", () => {
         "acme",
         "2026-09-01-site",
         "half done",
-        { userId: "olivia", sessionId: "session-desk" },
+        { userId: "admin", sessionId: "session-desk" },
       ],
     });
     const start = await owner.post(`${base}/start`, { agentId: "acme_dev", message: "go" });
@@ -225,5 +244,43 @@ describe("organization routes", () => {
     const unblock = await owner.post(`${base}/unblock`);
     expect(unblock.status).toBe(200);
     expect(calls.at(-1)).toMatchObject({ method: "unblockTicket" });
+  });
+
+  it("drops a signed-in member's session id: the write cannot be attributed to that employee", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme`;
+    const mallory = await provisionUser(t.app, "mallory");
+    expect([200, 201]).toContain(
+      (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mallory" })).status,
+    );
+    const memberApi = apiClient(t.app, mallory.cookie);
+
+    // The CEO desk session id is in the GET /:orgId response, so every member can quote it.
+    const chat = await memberApi.post(`${base}/chat`, {
+      text: "ship it",
+      sessionId: "session-ceo-desk",
+    });
+    expect(chat.status).toBe(201);
+    expect(calls.at(-1)?.args).toEqual([ownerProject, "acme", "mallory", { text: "ship it" }]);
+
+    const progress = await memberApi.post(`${base}/tickets/2026-09-01-site/progress`, {
+      text: "done",
+      sessionId: "session-ceo-desk",
+    });
+    expect(progress.status).toBe(200);
+    expect(calls.at(-1)?.args.at(-1)).toEqual({ userId: "mallory" });
+
+    // `attach` takes the Session to attach in the same field: it still arrives, as an argument
+    // rather than an identity — this is the Web App's attach button.
+    const attach = await memberApi.post(`${base}/tickets/2026-09-01-site/attach`, {
+      sessionId: "session-dev",
+    });
+    expect(attach.status).toBe(200);
+    expect(calls.at(-1)?.args).toEqual([
+      ownerProject,
+      "acme",
+      "2026-09-01-site",
+      "session-dev",
+      { userId: "mallory" },
+    ]);
   });
 });

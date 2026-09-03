@@ -19,7 +19,8 @@
  * tree, the handbook) and creates organizations, like creating an Agent; deleting one is the
  * owner's. Every route answers 404 while the admin master switch is off. A write carries the
  * caller's session id when it comes from inside a session (the CLI's control environment), so
- * the file records the employee rather than the token's user.
+ * the file records the employee rather than the token's user — see {@link callerSessionId} for
+ * why only the control environment may make that claim.
  */
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
@@ -31,6 +32,7 @@ import type {
   OrganizationsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import type { SessionVia } from "../../auth/service.js";
 import type { AppDeps } from "../../app.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName } from "../../organization/paths.js";
@@ -78,8 +80,29 @@ function nullableString(
   return optionalString(body, key, { minLen: 1, maxLen: rule.maxLen ?? 200 });
 }
 
-function actorOf(c: { var: { user: { userId: string } } }, body: Record<string, unknown>): Actor {
+/**
+ * The body's `sessionId` is an identity claim — "this write comes from inside that Session" —
+ * and the only credential that backs it is the boot's local API token: `controlEnv` (app.ts)
+ * hands it to a Session's subprocesses together with PENGUIN_SESSION_ID, and holding it is
+ * already admin authority. A cookie proves a person, not a session, so a cookie-authenticated
+ * claim is dropped and the write is attributed to that person; otherwise any Project member
+ * could quote the CEO desk session id `GET /:orgId` returns and write as `agent:<org>_ceo`.
+ * Dropped rather than rejected because the field is not always a claim: `tickets/:id/attach`
+ * takes the Session to attach in the same field, and the Web App sends it over a cookie.
+ */
+function callerSessionId(
+  c: { var: { sessionVia: SessionVia } },
+  body: Record<string, unknown>,
+): string | undefined {
   const sessionId = optionalString(body, "sessionId", { minLen: 1, maxLen: 200 });
+  return c.var.sessionVia === "token" ? sessionId : undefined;
+}
+
+function actorOf(
+  c: { var: { user: { userId: string }; sessionVia: SessionVia } },
+  body: Record<string, unknown>,
+): Actor {
+  const sessionId = callerSessionId(c, body);
   return { userId: c.var.user.userId, ...(sessionId !== undefined ? { sessionId } : {}) };
 }
 
@@ -621,7 +644,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const text = requireString(body, "text", { minLen: 1, maxLen: 20_000 });
-    const sessionId = optionalString(body, "sessionId", { minLen: 1, maxLen: 200 });
+    const sessionId = callerSessionId(c, body);
     let refs: { ticket?: string; session?: string; replyTo?: string } | undefined;
     if (body.refs !== undefined && body.refs !== null) {
       if (typeof body.refs !== "object") throw badRequest("refs must be an object.");
