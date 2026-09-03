@@ -35,7 +35,7 @@ const EXT_TO_MIME: Record<string, string> = {
 const SNIFF_BYTES = 12;
 
 /** Sniffs the mime type from the file header's magic number; returns null if unrecognized. */
-export function sniffImageMime(buf: Buffer): string | null {
+function sniffImageMime(buf: Buffer): string | null {
   if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47) return "image/png";
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
     return "image/jpeg";
@@ -55,7 +55,7 @@ export function sniffImageMime(buf: Buffer): string | null {
 }
 
 /** Infers the mime type from a path / URL pathname's extension; returns null if it can't be inferred. */
-export function imageMimeFromExt(p: string): string | null {
+function imageMimeFromExt(p: string): string | null {
   return EXT_TO_MIME[path.extname(p).toLowerCase()] ?? null;
 }
 

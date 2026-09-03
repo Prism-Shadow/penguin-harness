@@ -124,7 +124,7 @@ The tools' arguments (explicit keys):
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   kill?: boolean;          // true = terminate: kill the whole process group, return undelivered output, remove the session
-  yield_time_ms?: number;  // wait; defaults 250 for writes, 120000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
+  yield_time_ms?: number;  // wait; defaults 250 for writes, 110000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
   description: string;     // required while call_description is on
 }
 ```

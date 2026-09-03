@@ -148,6 +148,10 @@ describe("pendingFilePayload", () => {
     expect(pendingFilePayload("read_file", '{"file_path":"a.txt","offset":3,"limit":5}')).toBe(
       "file_path: a.txt\noffset: 3\nlimit: 5",
     );
+    // read_file's image branch forwards `prompt` to the vision model: it must be visible too.
+    expect(
+      pendingFilePayload("read_file", '{"file_path":"shot.png","prompt":"read the error"}'),
+    ).toBe("file_path: shot.png\nprompt: read the error");
   });
 
   it("returns null for non-file tools and incomplete JSON", () => {

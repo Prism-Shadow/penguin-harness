@@ -163,6 +163,8 @@ export function pendingFilePayload(name: string, argsJson: string): string | nul
   if (name === "read_file") {
     push("offset", args["offset"]);
     push("limit", args["limit"]);
+    // The image branch's question is sent to the vision model, so it is part of what is approved.
+    push("prompt", args["prompt"]);
   } else if (name === "edit_file") {
     push("old_string", args["old_string"]);
     push("new_string", args["new_string"]);

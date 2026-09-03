@@ -122,7 +122,7 @@ exec_command(cmd)
 {
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
-  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 120000(一次轮询等完多数构建;想快速查看可传更小值)
+  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 110000(一次轮询等完多数构建;想快速查看可传更小值)
   description: string;     // 开关开启时必填
 }
 

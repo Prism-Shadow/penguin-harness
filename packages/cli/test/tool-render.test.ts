@@ -251,6 +251,13 @@ describe("renderFileToolApprovalPayload", () => {
     expect(
       renderFileToolApprovalPayload("read_file", '{"file_path":"a.txt","offset":3,"limit":5}'),
     ).toBe(["file_path: a.txt", "offset: 3", "limit: 5"].join("\n"));
+    // read_file's image branch forwards `prompt` to the vision model: it must be visible too.
+    expect(
+      renderFileToolApprovalPayload(
+        "read_file",
+        '{"file_path":"shot.png","prompt":"read the error"}',
+      ),
+    ).toBe(["file_path: shot.png", "prompt: read the error"].join("\n"));
   });
 
   it("bounds the payload to a line count with an explicit elision note", () => {
