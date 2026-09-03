@@ -85,6 +85,9 @@ describe("relativeAge", () => {
       [14 * DAY, "2 周前", "2 weeks ago"],
       [29 * DAY, "4 周前", "4 weeks ago"],
       [45 * DAY, "1 个月前", "1 month ago"],
+      // The last day before a year still counts in months: rounding it up to years would
+      // floor to zero.
+      [364 * DAY, "12 个月前", "12 months ago"],
       [400 * DAY, "1 年前", "1 year ago"],
     ];
     for (const [ago, zhText, enText] of cases) {

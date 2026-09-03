@@ -99,13 +99,12 @@ export function appRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     const force = c.req.query("refresh") === "1";
     const entries = await listAppFiles(deps.config.root, projectId);
-    const apps = await Promise.all(
-      entries
-        .filter((e) => e.parsed.ok)
-        .map((e) => toItem(deps, projectId, e, e.parsed.ok ? e.parsed.def : null, force)),
-    );
     const res: AppsResponse = {
-      apps: apps.filter((a): a is AppItem => a !== null),
+      apps: await Promise.all(
+        entries.flatMap((e) =>
+          e.parsed.ok ? [toItem(deps, projectId, e, e.parsed.def, force)] : [],
+        ),
+      ),
       invalidFiles: entries.flatMap((e) =>
         e.parsed.ok ? [] : [{ id: e.id, error: e.parsed.error }],
       ),
@@ -270,7 +269,7 @@ async function readItem(
   const entry = await readAppFile(deps.config.root, projectId, id);
   if (!entry) throw new HttpError(404, "app_not_found", `App does not exist: ${id}`);
   if (!entry.parsed.ok) throw badRequest(`Invalid app file: ${entry.parsed.error}`);
-  return (await toItem(deps, projectId, entry, entry.parsed.def, force))!;
+  return toItem(deps, projectId, entry, entry.parsed.def, force);
 }
 
 /** The API view of one file: definition + owning-Session facts + the probed status. */
@@ -278,10 +277,9 @@ async function toItem(
   deps: AppDeps,
   projectId: string,
   entry: AppFileEntry,
-  def: AppDefinition | null,
+  def: AppDefinition,
   force: boolean,
-): Promise<AppItem | null> {
-  if (def === null) return null;
+): Promise<AppItem> {
   const row = deps.sessionsRepo.findById(def.sessionId);
   const probe = await deps.appProbe.status(probeUrl(def), { force });
   const fallbackAt = new Date(entry.mtimeMs).toISOString();

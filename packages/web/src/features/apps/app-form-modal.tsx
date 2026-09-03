@@ -56,11 +56,15 @@ function AppFormDialog({ open, projectId, app, sessions, onClose, onSaved }: App
   const [startCommand, setStartCommand] = useState(app?.startCommand ?? "");
   const [stopCommand, setStopCommand] = useState(app?.stopCommand ?? "");
   const [kind, setKind] = useState<AppKind>(app?.kind ?? "web");
-  const [sessionId, setSessionId] = useState(app?.sessionId ?? candidates[0]?.sessionId ?? "");
+  const [sessionId, setSessionId] = useState(app?.sessionId ?? "");
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
-  const ready = !saving && sessionId !== "";
+  // Falling back at render, not at mount: the sidebar's Session list may still be loading when
+  // the dialog opens, and a mount-time default would then stay "" after it arrives, leaving the
+  // select showing a Session that Save refuses.
+  const selected = sessionId || (candidates[0]?.sessionId ?? "");
+  const ready = !saving && selected !== "";
 
   const submit = async () => {
     if (name.trim() === "") {
@@ -69,7 +73,7 @@ function AppFormDialog({ open, projectId, app, sessions, onClose, onSaved }: App
     }
     const body: AppUpsertRequest = {
       name: name.trim(),
-      sessionId,
+      sessionId: selected,
       kind,
       ...(opt(description) !== undefined ? { description: opt(description) } : {}),
       ...(opt(url) !== undefined ? { url: opt(url) } : {}),
@@ -138,7 +142,7 @@ function AppFormDialog({ open, projectId, app, sessions, onClose, onSaved }: App
             label={S.apps.form.session}
             required
             hint={candidates.length === 0 ? S.apps.form.noSessions : S.apps.form.sessionHint}
-            value={sessionId}
+            value={selected}
             onChange={(e) => setSessionId(e.target.value)}
             disabled={candidates.length === 0}
           >

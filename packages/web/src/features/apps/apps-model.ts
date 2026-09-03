@@ -81,7 +81,9 @@ export function relativeAge(iso: string, locale: "zh" | "en", nowMs = Date.now()
   const weeks = Math.floor(days / 7);
   if (days < 30) return zh ? `${weeks} 周前` : enAgo(weeks, "week");
   const months = Math.floor(days / 30);
-  if (months < 12) return zh ? `${months} 个月前` : enAgo(months, "month");
+  // Every step is bounded in days, months included: `months < 12` would leave 360-364 days to
+  // the year branch, where `days / 365` floors to zero ("0 years ago").
+  if (days < 365) return zh ? `${months} 个月前` : enAgo(months, "month");
   const years = Math.floor(days / 365);
   return zh ? `${years} 年前` : enAgo(years, "year");
 }

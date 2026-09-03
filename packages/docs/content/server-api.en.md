@@ -228,7 +228,7 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 | GET / PUT / DELETE | /apps/:id | Read one app (`?refresh=1` re-probes) / replace its registration / unregister it |
 | POST | /apps/:id/actions | `{action: "restart" \| "stop"}` → 202 `{sessionId, delivery}`: the request reaches the owning Session as a new Task (`task`), a follow-up queued behind a compaction (`queued`) or steering into the running Task (`steer`); 409 `app_session_missing` once that Session is gone |
 
-Apps live in `<project>/apps/<id>.toml` — the file is the truth, the API a validated writer. `sessionId` must name a Session of the Project (400 `app_session_unknown` otherwise); `agentId` and `workspace` default to that Session's; `kind` defaults to `web`. The status is probed from `healthUrl ?? url` with a short timeout — any HTTP response is `running`, a refused connection or a timeout `stopped`, no URL `unknown` — and cached per URL for a few seconds.
+App writes (register, edit, unregister) are owner-only; any member can read and send actions. Apps live in `<project>/apps/<id>.toml` — the file is the truth, the API a validated writer. `sessionId` must name a Session of the Project (400 `app_session_unknown` otherwise); `agentId` and `workspace` default to that Session's; `kind` defaults to `web`. The status is probed from `healthUrl ?? url` with a short timeout — any HTTP response is `running`, a refused connection or a timeout `stopped`, no URL `unknown` — and cached per URL for a few seconds.
 
 ### Session Creation and Directory Browsing
 

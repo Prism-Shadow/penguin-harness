@@ -228,7 +228,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET / PUT / DELETE | /apps/:id | 读取单个应用（`?refresh=1` 重新探测）/ 整体替换登记信息 / 取消登记 |
 | POST | /apps/:id/actions | `{action: "restart" \| "stop"}` → 202 `{sessionId, delivery}`：请求以新 Task（`task`）、排在压缩之后的跟进消息（`queued`）或对运行中 Task 的 steering（`steer`）送达所属 Session；该 Session 已删除则 409 `app_session_missing` |
 
-应用存放于 `<project>/apps/<id>.toml`——文件是唯一真相源，API 是带校验的写入器。`sessionId` 必须是本 Project 的 Session（否则 400 `app_session_unknown`）；`agentId` 与 `workspace` 缺省取该 Session 的值；`kind` 缺省 `web`。状态以短超时探测 `healthUrl ?? url`——任何 HTTP 响应即 `running`，连接被拒或超时即 `stopped`，无地址即 `unknown`——并按地址缓存数秒。
+登记、修改与取消登记仅 Owner；任意成员可读取与发送动作。应用存放于 `<project>/apps/<id>.toml`——文件是唯一真相源，API 是带校验的写入器。`sessionId` 必须是本 Project 的 Session（否则 400 `app_session_unknown`）；`agentId` 与 `workspace` 缺省取该 Session 的值；`kind` 缺省 `web`。状态以短超时探测 `healthUrl ?? url`——任何 HTTP 响应即 `running`，连接被拒或超时即 `stopped`，无地址即 `unknown`——并按地址缓存数秒。
 
 ### Session 创建与目录浏览
 

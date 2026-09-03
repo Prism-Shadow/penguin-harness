@@ -68,8 +68,13 @@ export function AppsPage() {
   const { currentProject, agents, setCurrentAgentId } = useProject();
   const { sessions } = useSessions();
   const projectId = currentProject?.projectId ?? null;
+  // Registering, editing and unregistering are owner-only server-side (like schedules), so a
+  // member is offered neither entry point; reading and the restart / stop actions are theirs.
+  const isOwner = currentProject?.role === "owner";
 
   const [data, setData] = useState<AppsResponse | null>(null);
+  /** First-load failure, shown in place of the list; a later poll failure leaves the list standing. */
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AppStatusFilter>("all");
   /** Ids with a restart / stop request in flight (their buttons are disabled meanwhile). */
@@ -84,8 +89,11 @@ export function AppsPage() {
       if (!projectId) return;
       try {
         setData(await api.listApps(projectId, refresh));
+        setError(null);
       } catch (err) {
-        toastError(apiErrorText(err));
+        // Recorded, not toasted: the 20s re-probe would otherwise stack one toast per tick for
+        // as long as the server is unreachable.
+        setError(apiErrorText(err));
       }
     },
     [projectId],
@@ -93,6 +101,7 @@ export function AppsPage() {
 
   useEffect(() => {
     setData(null);
+    setError(null);
     void load(false);
     const timer = setInterval(() => void load(false), REFRESH_MS);
     return () => clearInterval(timer);
@@ -163,11 +172,13 @@ export function AppsPage() {
             >
               <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
             </Button>
-            <CreateMenuButton
-              label={S.apps.create}
-              onAi={() => setAiOpen(true)}
-              onManual={() => setForm({ app: null })}
-            />
+            {isOwner && (
+              <CreateMenuButton
+                label={S.apps.create}
+                onAi={() => setAiOpen(true)}
+                onManual={() => setForm({ app: null })}
+              />
+            )}
           </div>
         </div>
 
@@ -192,15 +203,21 @@ export function AppsPage() {
         </div>
 
         {data === null ? (
-          <div className="mt-4 space-y-2">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </div>
+          error !== null ? (
+            <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )
         ) : data.apps.length === 0 ? (
           <EmptyState
             title={S.apps.emptyTitle}
             description={S.apps.emptyDesc}
-            action={<AiCreateButton variant="primary" onClick={() => setAiOpen(true)} />}
+            {...(isOwner
+              ? { action: <AiCreateButton variant="primary" onClick={() => setAiOpen(true)} /> }
+              : {})}
           />
         ) : visible.length === 0 ? (
           <EmptyState title={S.apps.noMatch} />
@@ -263,6 +280,7 @@ export function AppsPage() {
                     </Button>
                     <AppRowMenu
                       app={app}
+                      canWrite={isOwner}
                       onGoToSession={() => goToSession(app)}
                       onEdit={() => setForm({ app })}
                       onUnregister={() => setUnregisterTarget(app)}
@@ -323,14 +341,19 @@ export function AppsPage() {
   );
 }
 
-/** The row's ellipsis menu: jump to the owning Session, edit the registration, unregister. */
+/**
+ * The row's ellipsis menu: jump to the owning Session, and — for the Project owner, who is the
+ * only one the API lets write — edit the registration or unregister it.
+ */
 function AppRowMenu({
   app,
+  canWrite,
   onGoToSession,
   onEdit,
   onUnregister,
 }: {
   app: AppItem;
+  canWrite: boolean;
   onGoToSession: () => void;
   onEdit: () => void;
   onUnregister: () => void;
@@ -372,24 +395,28 @@ function AppRowMenu({
           {overflowMenuGlyph(MESSAGING_ICON)}
           {S.apps.goToSession}
         </button>
-        <button
-          type="button"
-          role="menuitem"
-          className={overflowMenuRowClass}
-          onClick={() => run(onEdit)}
-        >
-          {overflowMenuGlyph(PENCIL_ICON)}
-          {S.apps.edit}
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          className={overflowMenuDangerClass}
-          onClick={() => run(onUnregister)}
-        >
-          {overflowMenuGlyph(TRASH_ICON)}
-          {S.apps.unregister}
-        </button>
+        {canWrite && (
+          <>
+            <button
+              type="button"
+              role="menuitem"
+              className={overflowMenuRowClass}
+              onClick={() => run(onEdit)}
+            >
+              {overflowMenuGlyph(PENCIL_ICON)}
+              {S.apps.edit}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className={overflowMenuDangerClass}
+              onClick={() => run(onUnregister)}
+            >
+              {overflowMenuGlyph(TRASH_ICON)}
+              {S.apps.unregister}
+            </button>
+          </>
+        )}
       </div>
     </Dropdown>
   );
