@@ -595,6 +595,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Same Gemini cache conventions as the gemini-3.7-flash row below. OpenRouter passes
+    // Google's launch discount through without deepening it the way it does for 3.7, so it
+    // bills $0.075/$0.75/$3.75 — the list price less 50%, declared in `discount` so the
+    // $0.15/$1.50/$7.50 list survives the promotion.
+    modelId: "google/gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // Same Gemini cache conventions as the gemini-3.6-flash row below. The stored rates are
     // what OpenRouter currently bills: the default Google endpoint runs `discount: 0.75` off
     // the $0.15/$1.50/$7.50 list price (Google's launch discount through 2026-12-31, which
@@ -1385,6 +1400,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: MINIMAX_BASE_URL,
   },
   // -- Google Gemini (official USD pricing) --
+  {
+    // Same list price and same launch discount as gemini-3.7-flash below: Google halves all
+    // three rates through 2026-12-31. This row declares that promotion in `discount` instead
+    // of leaving it out, so the list price stays on file while a Project is preset with — and
+    // the cost center bills — the 0.075/0.75/3.75 Google actually charges today. One field to
+    // delete when the promotion lapses.
+    modelId: "gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
+    supportsVision: true,
+  },
   {
     // Official list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
     // Google's price page). Google halves all three rates as a launch discount through

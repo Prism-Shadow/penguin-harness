@@ -45,6 +45,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 
 | Family           | Official IDs                                                          | Gateway variants                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini 3.8       | `gemini-3.8-flash`                                                    | OpenRouter `google/gemini-3.8-flash`                                                                                                            |
 | Gemini 3.7       | `gemini-3.7-flash`                                                    | OpenRouter `google/gemini-3.7-flash`                                                                                                            |
 | Gemini 3.6       | `gemini-3.6-flash`, `gemini-3.5-flash-lite`                           | —                                                                                                                                               |
 | Gemini 3         | `gemini-3.1-pro-preview`, `gemini-3.5-flash`, `gemini-3.1-flash-lite` | —                                                                                                                                               |
