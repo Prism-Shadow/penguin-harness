@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#605](https://github.com/Prism-Shadow/penguin-harness/pull/605)
 
 [English](2026-09-03-steering-returned-on-interrupt.md)
 
