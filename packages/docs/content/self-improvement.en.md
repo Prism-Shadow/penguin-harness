@@ -57,6 +57,8 @@ benchmarks/<id>/
 
 The separation of `rubric/` from `statement/` is deliberate: the Target Agent sees only the task statement and never touches the scoring rubric.
 
+`benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. Deleting a Benchmark while an evaluation is still running leaves such a directory behind, because the running evaluation keeps writing to the paths it was deleted from. A Benchmark that has simply never been evaluated still has its config and is listed as usual; a leftover directory is safe to delete by hand.
+
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 - the evaluation runtime: a user-specified `(provider, model_id)` pair takes priority, otherwise the pair is inherited from the Builder Session; `thinking_level` is read from the Target Agent config and does not depend on Trace metadata;

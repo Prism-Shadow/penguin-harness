@@ -57,6 +57,8 @@ benchmarks/<id>/
 
 `rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
 
+`benchmark_config.toml` 是目录成为 Benchmark 的标志：`benchmarks/` 下缺少该文件的目录不会被列出。在评测运行期间删除 Benchmark 会留下这样的目录——正在运行的评测仍在向被删除的路径写入。从未评测过的 Benchmark 仍带有配置文件，照常列出；残留目录可以手工删除。
+
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
 - 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
