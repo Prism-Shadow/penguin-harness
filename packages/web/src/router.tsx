@@ -25,6 +25,7 @@ import { CalendarPage } from "./features/company/calendar-page";
 import { TicketsPage } from "./features/company/tickets-page";
 import { FinancePage } from "./features/company/finance-page";
 import { OrgChatPage } from "./features/company/org-chat-page";
+import { HandbookPage } from "./features/company/handbook-page";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -97,6 +98,7 @@ export function AppRouter() {
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="finance" element={<FinancePage />} />
             <Route path="chat" element={<OrgChatPage />} />
+            <Route path="handbook" element={<HandbookPage />} />
             <Route path="*" element={<Navigate to="overview" replace />} />
           </Route>
           {/* System settings and user management live in the settings dialog now (see

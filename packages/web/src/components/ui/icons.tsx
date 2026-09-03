@@ -7,6 +7,9 @@ import type { ButtonHTMLAttributes } from "react";
 import { S } from "../../lib/strings";
 import { AGENT_GROUP_ICON, CALENDAR_ICON } from "./group-list";
 
+/** File glyph (a page with a folded corner): the files card's mark and each file row's lead, the handbook's document rows. */
+export const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
+
 /** Downward caret on Select / OptionMenu / composer dropdown triggers. Color follows currentColor (callers add text-gray-400). */
 export function ChevronDown({ size = 12, className = "" }: { size?: number; className?: string }) {
   return (
@@ -240,6 +243,8 @@ export const NAV_ICONS = {
    */
   orgChat:
     "M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",
+  /** The handbook, the company's knowledge base (lucide book-open: two pages meeting at the spine). */
+  orgHandbook: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
 } as const;
 
 /** Company mode (lucide building-2: a tower with wings and windows), the mode switch's second option and the collapsed rail's toggle. */

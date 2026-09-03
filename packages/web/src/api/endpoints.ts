@@ -156,6 +156,8 @@ import type {
   OrgEmployeeItem,
   OrgEmployeePatchRequest,
   OrgFinanceResponse,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
   OrgHandbookResponse,
   OrgHireRequest,
   OrgSessionsResponse,
@@ -1319,6 +1321,30 @@ export const putOrgHandbook = (projectId: string, orgId: string, content: string
     method: "PUT",
     body: { content },
   });
+
+/** A handbook file's URL: the path is relative to `handbook/`, so each segment is encoded and the `/` between them kept. */
+const handbookFileUrl = (projectId: string, orgId: string, path: string) =>
+  `${orgBase(projectId, orgId)}/handbook/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+
+export const listOrgHandbookFiles = (projectId: string, orgId: string) =>
+  apiFetch<OrgHandbookFilesResponse>(`${orgBase(projectId, orgId)}/handbook/files`);
+
+export const getOrgHandbookFile = (projectId: string, orgId: string, path: string) =>
+  apiFetch<OrgHandbookFileResponse>(handbookFileUrl(projectId, orgId, path));
+
+export const putOrgHandbookFile = (
+  projectId: string,
+  orgId: string,
+  path: string,
+  content: string,
+) =>
+  apiFetch<OrgHandbookFileResponse>(handbookFileUrl(projectId, orgId, path), {
+    method: "PUT",
+    body: { content },
+  });
+
+export const deleteOrgHandbookFile = (projectId: string, orgId: string, path: string) =>
+  apiFetch<void>(handbookFileUrl(projectId, orgId, path), { method: "DELETE" });
 
 export const listOrgCalendar = (projectId: string, orgId: string) =>
   apiFetch<OrgCalendarResponse>(`${orgBase(projectId, orgId)}/calendar`);

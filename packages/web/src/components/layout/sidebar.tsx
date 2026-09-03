@@ -1525,7 +1525,7 @@ export function Sidebar({
   /**
    * Page entries of the collapsible nav group. Development mode: 智能体 → 评估中心, driven by
    * the NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach. Company
-   * mode: the organization's six pages (COMPANY_NAV_KEYS), the chat entry carrying the
+   * mode: the organization's seven pages (COMPANY_NAV_KEYS), the chat entry carrying the
    * unread / @me badge. Always mounted — the collapse animates their height to zero and
    * turns them inert.
    */

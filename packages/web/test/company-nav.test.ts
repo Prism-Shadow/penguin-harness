@@ -1,5 +1,5 @@
 /**
- * company-nav.ts and work-mode.ts unit tests: the company-mode nav manifest (the six pages
+ * company-nav.ts and work-mode.ts unit tests: the company-mode nav manifest (the seven pages
  * in rendered order, each with a zh label, an en label and a glyph — the sidebar, the rail
  * and the router all derive their rows from it), the `<projectId>/<orgId>` key and the
  * `/org/:projectId/:orgId/<page>` grammar, where `/org` lands without an organization, the
@@ -39,7 +39,7 @@ function memStorage(): WorkModeStorage & { map: Map<string, string> } {
 }
 
 describe("COMPANY_NAV_KEYS", () => {
-  it("lists the six organization pages in the spec's order", () => {
+  it("lists the seven organization pages in the spec's order", () => {
     expect([...COMPANY_NAV_KEYS]).toEqual([
       "overview",
       "chart",
@@ -47,6 +47,7 @@ describe("COMPANY_NAV_KEYS", () => {
       "tickets",
       "finance",
       "chat",
+      "handbook",
     ]);
   });
 
@@ -59,6 +60,7 @@ describe("COMPANY_NAV_KEYS", () => {
       tickets: ["工单", "Tickets"],
       finance: ["财务", "Finance"],
       chat: ["群聊", "Chat"],
+      handbook: ["手册", "Handbook"],
     } as const;
     for (const key of COMPANY_NAV_KEYS) {
       expect(zh.nav.org[key]).toBe(expected[key][0]);
@@ -91,6 +93,7 @@ describe("org keys and paths", () => {
   it("builds page paths under the /org prefix, encoding the ids", () => {
     expect(orgPagePath("p1", "acme", "tickets")).toBe("/org/p1/acme/tickets");
     expect(orgPagePath("alice-proj", "a b", "chat")).toBe("/org/alice-proj/a%20b/chat");
+    expect(orgPagePath("p1", "acme", "handbook")).toBe("/org/p1/acme/handbook");
   });
 
   it("tells organization routes from the shared chat route", () => {

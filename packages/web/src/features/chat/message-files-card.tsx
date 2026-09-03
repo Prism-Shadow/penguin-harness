@@ -17,10 +17,8 @@ import { S } from "../../lib/strings";
 import { isFilePathLike, toWorkspaceRelative } from "../../lib/file-path";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Chevron } from "../../components/ui/chevron";
+import { FILE_ICON } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
-
-/** File glyph (a page with a folded corner), the card header's mark and each row's lead. */
-const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
 
 const MAX_VISIBLE = 3;
 

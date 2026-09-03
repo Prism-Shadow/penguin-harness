@@ -1,5 +1,5 @@
 /**
- * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
+ * Company mode's navigation manifest and route grammar (pure, unit tested): the seven page
  * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
  * `<projectId>/<orgId>` key the shell remembers an organization by, and where `/org` lands
  * when it is opened without naming an organization. The sidebar, the collapsed rail and the
@@ -18,6 +18,7 @@ export const COMPANY_NAV_KEYS = [
   "tickets",
   "finance",
   "chat",
+  "handbook",
 ] as const;
 export type CompanyNavKey = (typeof COMPANY_NAV_KEYS)[number];
 

@@ -23,7 +23,8 @@ employee's budget, workspace and model), `desks.toml` (the server's ledger of de
 `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` (an Agent-Notes-style header — Status,
 Initiator, Owner, Parent, Notify, Priority, Due, Blocked, Blocked-by, Sessions — over Goal,
 Acceptance criteria, Progress and Result sections), `chat/<yyyy-mm-dd>.jsonl` and the handbook
-`README.md`. SQLite holds only caches rebuilt from those files on every pass (desk and ticket
+directory `handbook/` — the company's knowledge base, whose `README.md` is the index every
+trigger tells the employee to read first. SQLite holds only caches rebuilt from those files on every pass (desk and ticket
 session ownership, calendar run state, the last noticed ticket state, chat scan cursors,
 budget marks) and each user's chat read cursor.
 
@@ -58,7 +59,9 @@ budget marks) and each user's chat read cursor.
   ls|show|create|move|assign|block|unblock|progress|start|attach`, `chat tail|send`,
   `finance` — a thin client over the API with `--json` everywhere.
 - Web: a 「开发 | 公司」 mode switch above the Project switcher, an organization switcher with
-  creation and settings, six pages (overview, org chart, calendar, tickets, finance, chat), a
+  creation and settings, seven pages (overview, org chart, calendar, tickets, finance, chat,
+  handbook — the knowledge base as a file list beside the rendered document, with editing in
+  place, new documents and deletion), a
   session list grouped by organization with desk and ticket sub-folders, an 「组织」 folder in
   development mode, the `[org_trigger]` banner in conversations, and the two switches on the
   settings page.

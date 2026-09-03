@@ -36,6 +36,7 @@ export const en: Strings = {
       tickets: "Tickets",
       finance: "Finance",
       chat: "Chat",
+      handbook: "Handbook",
     },
   },
 
@@ -2964,6 +2965,35 @@ Scenarios:
       systemMessage: "System message",
       sentAt: (time: string): string => `Sent at ${time}`,
     },
+    /** The handbook page: the knowledge base directory, its index and its documents. */
+    handbook: {
+      info: "The company's knowledge base: the Markdown documents under handbook/. The index (README.md) is the page every trigger makes the employee Agent read first; the other documents are listed from it and read on demand.",
+      /** The pinned first row: the index, and why it is pinned. */
+      indexLabel: "Index · read first every run",
+      documents: "Documents",
+      noOtherDocuments: "No other documents yet. Create one and list it in the index.",
+      emptyDocument: "This document is still empty.",
+      newDocument: "New document",
+      creating: "Creating…",
+      pathField: "Path",
+      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
+      pathHint:
+        "Relative to handbook/, folders separated by /; each segment starts with a letter or digit and uses only letters, digits, . _ -; .md is added when the extension is left out.",
+      pathInvalid:
+        "Invalid path: each segment starts with a letter or digit and uses only letters, digits, . _ -, folders separated by /, at most eight levels.",
+      pathExists: "That document already exists.",
+      documentCreated: "Document created",
+      deleteDocument: "Delete document",
+      deleteConfirm: (path: string): string =>
+        `Delete ${path}? The document is removed from handbook/; the index entry pointing at it is not updated automatically.`,
+      documentDeleted: "Document deleted",
+      loadFailed: "Could not load the handbook",
+      documentLoadFailed: "Could not load the document",
+      /** A row's tooltip: when the file was last written, and its size. */
+      updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
+      /** Beside the editor's buttons: what the text is, and the shortcut. */
+      editorHint: "Markdown · Ctrl/⌘+S to save",
+    },
   },
   errors: {
     networkError: "Network error, please check your connection",
@@ -3078,6 +3108,8 @@ Scenarios:
       ticket_not_found: "That ticket no longer exists.",
       ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
       ticket_session_failed: "The ticket session could not be started.",
+      handbook_file_not_found: "That document no longer exists.",
+      handbook_index_required: "The handbook index (README.md) cannot be deleted.",
     },
   },
 };

@@ -13,4 +13,5 @@ export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   tickets: NAV_ICONS.orgTickets,
   finance: NAV_ICONS.orgFinance,
   chat: NAV_ICONS.orgChat,
+  handbook: NAV_ICONS.orgHandbook,
 };
