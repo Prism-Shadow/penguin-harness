@@ -1,10 +1,10 @@
 /**
- * The organization chat's composer: a growing textarea (Enter sends, Shift+Enter breaks the
+ * A channel's composer: a growing textarea (Enter sends, Shift+Enter breaks the
  * line, an IME's accepting Enter never sends), the send button, the one-line hint that only
  * an @ reaches an employee, and the `@` autocomplete — a portaled panel above the box
- * (through Dropdown's portal, so no ancestor's overflow clips it) listing employees with
- * their titles, then members, then everyone, ranked against what was typed, walked with
- * the arrow keys and picked with Enter or Tab. A pick types the bare id (`@ceo`), which is
+ * (through Dropdown's portal, so no ancestor's overflow clips it) listing the channel's own members —
+ * employees with their titles, then people, then everyone — ranked against what was typed,
+ * walked with the arrow keys and picked with Enter or Tab. A pick types the bare id (`@ceo`), which is
  * what the server resolves; Escape dismisses the panel for that token until it changes.
  */
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -20,19 +20,19 @@ import {
   mentionInsertId,
   mentionQueryAt,
   rankMentionCandidates,
-} from "./chat-mentions";
-import type { MentionCandidate, MentionKind } from "./chat-mentions";
+} from "./channel-mentions";
+import type { MentionCandidate, MentionKind } from "./channel-mentions";
 
 /** The box grows with the draft up to this many pixels, then scrolls inside. */
 const MAX_BOX_PX = 160;
 
 function kindTitle(kind: MentionKind): string {
-  if (kind === "employee") return S.company.chat.employees;
-  if (kind === "member") return S.company.chat.members;
-  return S.company.chat.mentionAll;
+  if (kind === "employee") return S.company.channels.employees;
+  if (kind === "member") return S.company.channels.members;
+  return S.company.channels.mentionAll;
 }
 
-export function ChatComposer({
+export function ChannelComposer({
   candidates,
   names,
   onSend,
@@ -143,8 +143,8 @@ export function ChatComposer({
               ref={inputRef}
               rows={1}
               value={text}
-              placeholder={S.company.chat.placeholder}
-              aria-label={S.company.chat.placeholder}
+              placeholder={S.company.channels.placeholder}
+              aria-label={S.company.channels.placeholder}
               aria-autocomplete="list"
               aria-expanded={panelOpen}
               aria-controls={panelOpen ? listId : undefined}
@@ -164,7 +164,7 @@ export function ChatComposer({
             />
           }
         >
-          <div id={listId} role="listbox" aria-label={S.company.chat.mentionPanel}>
+          <div id={listId} role="listbox" aria-label={S.company.channels.mentionPanel}>
             {rows.map(({ c, i, head }) => (
               <div key={c.principal}>
                 {head && (
@@ -189,7 +189,7 @@ export function ChatComposer({
                   </span>
                   <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
                     {c.kind === "all"
-                      ? S.company.chat.mentionAllDesc
+                      ? S.company.channels.mentionAllDesc
                       : c.kind === "employee"
                         ? (c.detail ?? "")
                         : ""}
@@ -204,11 +204,11 @@ export function ChatComposer({
           disabled={sending || text.trim() === ""}
           onClick={() => void send()}
         >
-          {S.company.chat.send}
+          {S.company.channels.send}
         </Button>
       </div>
       <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-        {S.company.chat.composerHint}
+        {S.company.channels.composerHint}
       </p>
     </div>
   );

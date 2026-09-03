@@ -4,7 +4,7 @@
  * strip — employees (on desk / running / paused), the board as a segmented bar with its
  * blocked count, today's calendar, the spend — then what needs the user ("for me": mentions,
  * tickets in review, tickets blocked on them) beside today's timeline with each instance's
- * outcome, and the latest chat beside the budget alerts. Every value is a link to the page
+ * outcome, and the all-hands channel's latest beside the budget alerts. Every value is a link to the page
  * it summarizes. A brand-new organization (nobody hired, empty board) gets the three-step
  * guide in place of the empty sections.
  *
@@ -38,8 +38,10 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { orgPagePath } from "./company-nav";
+import { orgChannelPath, orgPagePath } from "./company-nav";
 import type { CompanyNavKey } from "./company-nav";
+import { DEFAULT_CHANNEL_ID } from "./channel-list";
+import { CHANNEL_ICON } from "./channel-sidebar";
 import { OrgEmptyLine, OrgPage, OrgPageSkeleton, OrgSection, useOrg } from "./org-layout";
 import {
   BudgetBar,
@@ -56,7 +58,7 @@ import {
   FIRST_STEPS,
   TIMELINE_TONE,
   boardSummary,
-  chatTail,
+  messageTail,
   employeeCounts,
   firstSteps,
   pendingRows,
@@ -67,7 +69,7 @@ import type { FirstStep, TimelineMark } from "./overview-summary";
 
 /** How many of each list the page shows before pointing at the page that holds the rest. */
 const TIMELINE_ROWS = 6;
-const CHAT_ROWS = 6;
+const MESSAGE_ROWS = 6;
 
 /** A row of a section: full width, quiet hover, the content decides the rest. */
 const rowClass =
@@ -259,13 +261,15 @@ export function OverviewPage() {
   }, [projectId, orgId]);
 
   // Every event family moves something on this page: reload on any of them.
-  const { chat, tickets, runs, budget } = company.versions;
+  const { messages, tickets, runs, budget } = company.versions;
   useEffect(() => {
     void load();
-  }, [load, chat, tickets, runs, budget]);
+  }, [load, messages, tickets, runs, budget]);
 
   const page = (key: CompanyNavKey, query = "") =>
     navigate(`${orgPagePath(projectId, orgId, key)}${query}`);
+  /** The all-hands channel, where the recent messages and the waiting mentions live. */
+  const openAllHands = () => navigate(orgChannelPath(projectId, orgId, DEFAULT_CHANNEL_ID));
   const openTicket = (ticketId: string) =>
     page("tickets", `?ticket=${encodeURIComponent(ticketId)}`);
 
@@ -570,9 +574,9 @@ export function OverviewPage() {
                     if (row.kind === "mentions") {
                       return (
                         <li key="mentions">
-                          <button type="button" onClick={() => page("chat")} className={rowClass}>
+                          <button type="button" onClick={openAllHands} className={rowClass}>
                             <span className={`shrink-0 ${toneInk.attention}`}>
-                              <GlyphIcon d={NAV_ICONS.orgChat} size={ICON_SIZE.rowLead} />
+                              <GlyphIcon d={CHANNEL_ICON} size={ICON_SIZE.rowLead} />
                             </span>
                             <span className="min-w-0 flex-1 truncate font-medium">
                               {S.company.overview.mentions(row.count)}
@@ -679,26 +683,26 @@ export function OverviewPage() {
           </div>
 
           <div className="mt-8 grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-2">
-            {/* The latest chat: sender, when, the text; a message addressed to the user reads bold. */}
+            {/* The all-hands channel's latest: sender, when, the text; a message addressed to the user reads bold. */}
             <OrgSection
-              title={S.company.overview.recentChat}
+              title={S.company.overview.recentMessages}
               actions={
-                <Button size="sm" onClick={() => page("chat")}>
-                  {S.company.overview.openChat}
+                <Button size="sm" onClick={openAllHands}>
+                  {S.company.overview.openAllHands}
                 </Button>
               }
             >
               {detail.recentMessages.length === 0 ? (
-                <OrgEmptyLine>{S.company.overview.recentChatEmpty}</OrgEmptyLine>
+                <OrgEmptyLine>{S.company.overview.recentMessagesEmpty}</OrgEmptyLine>
               ) : (
                 <ul className="space-y-0.5">
-                  {chatTail(detail.recentMessages, CHAT_ROWS).map((m) => {
+                  {messageTail(detail.recentMessages, MESSAGE_ROWS).map((m) => {
                     const addressed = m.mentions.includes(me) || m.mentions.includes("all");
                     return (
                       <li key={m.id}>
                         <button
                           type="button"
-                          onClick={() => page("chat")}
+                          onClick={openAllHands}
                           className={`${rowClass} items-start`}
                         >
                           <span className="min-w-0 flex-1">

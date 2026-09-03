@@ -217,6 +217,6 @@ export function firstSteps(input: {
 }
 
 /** The last `n` messages, oldest first (the section reads top to bottom). */
-export function chatTail<T>(messages: readonly T[], n: number): T[] {
+export function messageTail<T>(messages: readonly T[], n: number): T[] {
   return n <= 0 ? [] : messages.slice(-n);
 }

@@ -10,7 +10,7 @@ import {
   FIRST_STEPS,
   TIMELINE_TONE,
   boardSummary,
-  chatTail,
+  messageTail,
   employeeCounts,
   firstSteps,
   pendingRows,
@@ -231,10 +231,10 @@ describe("firstSteps", () => {
   });
 });
 
-describe("chatTail", () => {
+describe("messageTail", () => {
   it("returns the last n messages oldest first", () => {
-    expect(chatTail([1, 2, 3, 4], 2)).toEqual([3, 4]);
-    expect(chatTail([1, 2], 5)).toEqual([1, 2]);
-    expect(chatTail([1, 2], 0)).toEqual([]);
+    expect(messageTail([1, 2, 3, 4], 2)).toEqual([3, 4]);
+    expect(messageTail([1, 2], 5)).toEqual([1, 2]);
+    expect(messageTail([1, 2], 0)).toEqual([]);
   });
 });

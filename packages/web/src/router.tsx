@@ -24,8 +24,9 @@ import { OrgChartPage } from "./features/company/org-chart-page";
 import { CalendarPage } from "./features/company/calendar-page";
 import { TicketsPage } from "./features/company/tickets-page";
 import { FinancePage } from "./features/company/finance-page";
-import { OrgChatPage } from "./features/company/org-chat-page";
+import { ChannelView } from "./features/company/channel-view";
 import { HandbookPage } from "./features/company/handbook-page";
+import { DEFAULT_CHANNEL_ID } from "./features/company/channel-list";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -86,20 +87,21 @@ export function AppRouter() {
               everyone else, so a member only ever reaches this by typing the URL. */}
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
-          {/* Company mode: /org resolves to an organization (or the empty landing), and each
-              organization's pages live under its Project and id. Both fall back to /chat while
-              company mode is unavailable (see OrgLayout). */}
+          {/* Company mode: /org resolves to an organization (or the empty landing), and an
+              organization opens on its all-hands channel — channels are the mode's home
+              surface, its pages hang beside them. Both fall back to /chat while company mode
+              is unavailable (see OrgLayout). */}
           <Route path="/org" element={<OrgIndexRedirect />} />
           <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
-            <Route index element={<Navigate to="overview" replace />} />
+            <Route index element={<Navigate to={`channels/${DEFAULT_CHANNEL_ID}`} replace />} />
             <Route path="overview" element={<OverviewPage />} />
             <Route path="chart" element={<OrgChartPage />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="finance" element={<FinancePage />} />
-            <Route path="chat" element={<OrgChatPage />} />
             <Route path="handbook" element={<HandbookPage />} />
-            <Route path="*" element={<Navigate to="overview" replace />} />
+            <Route path="channels/:channelId" element={<ChannelView />} />
+            <Route path="*" element={<Navigate to={`channels/${DEFAULT_CHANNEL_ID}`} replace />} />
           </Route>
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}

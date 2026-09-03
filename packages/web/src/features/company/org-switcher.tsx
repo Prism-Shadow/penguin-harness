@@ -2,7 +2,7 @@
  * The organization switcher that stands where the Project switcher stands in development
  * mode. The trigger names the open organization with its status dot and, beneath it, the
  * Project it belongs to; the menu lists every organization the user can reach, grouped by
- * Project with a check mark on the open one, then the two entries that make and shape one —
+ * Project with a check mark on the open one (picking one opens its all-hands channel), then the two entries that make and shape one —
  * "New organization" (success lands in the CEO's desk session) and "Organization settings".
  * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
  */
@@ -10,13 +10,15 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
+import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Badge } from "../../components/ui/badge";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
-import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
+import { groupOrganizationsByProject, orgChannelPath, orgKey, parseOrgKey } from "./company-nav";
+import { DEFAULT_CHANNEL_ID } from "./channel-list";
 import { CreateOrganizationDialog, OrganizationSettingsDialog } from "./org-dialogs";
 import { OrgStatusDot } from "./shared";
 
@@ -51,6 +53,18 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
     current !== null
       ? S.company.inProject(projectName(current.projectId), current.name)
       : S.company.switcher;
+  /**
+   * What is waiting in this organization's channels, summed over the ones the user belongs
+   * to: mentions first, since they are addressed to it. The list below carries the same
+   * numbers per channel — this is the copy that survives the list being scrolled away, and
+   * the only one on a phone before the drawer is opened.
+   */
+  const channelNote =
+    company.channelMentions > 0
+      ? S.company.channels.badgeMentions(company.channelMentions)
+      : company.channelUnread > 0
+        ? S.company.channels.badgeUnread(company.channelUnread)
+        : null;
 
   return (
     <>
@@ -63,8 +77,8 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            title={triggerTitle}
-            aria-label={triggerTitle}
+            title={channelNote !== null ? `${triggerTitle} · ${channelNote}` : triggerTitle}
+            aria-label={channelNote !== null ? `${triggerTitle} · ${channelNote}` : triggerTitle}
             aria-haspopup="menu"
             aria-expanded={open}
             className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
@@ -87,6 +101,20 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                 </span>
               )}
             </span>
+            {channelNote !== null && (
+              <span
+                aria-hidden
+                className={`shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                  company.channelMentions > 0
+                    ? toneSurface.attention
+                    : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                }`}
+              >
+                {company.channelMentions > 0
+                  ? `@${company.channelMentions}`
+                  : company.channelUnread}
+              </span>
+            )}
             <span className="text-gray-400">
               <ChevronDown />
             </span>
@@ -109,7 +137,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   aria-current={active ? "true" : undefined}
                   onClick={() => {
                     setOpen(false);
-                    go(orgPagePath(o.projectId, o.orgId, "overview"));
+                    go(orgChannelPath(o.projectId, o.orgId, DEFAULT_CHANNEL_ID));
                   }}
                   className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
                 >
@@ -178,7 +206,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           go(
             detail.ceoDeskSessionId !== undefined
               ? `/chat/${detail.ceoDeskSessionId}`
-              : orgPagePath(detail.projectId, detail.orgId, "overview"),
+              : orgChannelPath(detail.projectId, detail.orgId, DEFAULT_CHANNEL_ID),
           );
         }}
       />

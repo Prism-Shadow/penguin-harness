@@ -1,23 +1,28 @@
 /**
- * Company mode's navigation manifest and route grammar (pure, unit tested): the seven page
+ * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
  * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
- * `<projectId>/<orgId>` key the shell remembers an organization by, and where `/org` lands
- * when it is opened without naming an organization. The sidebar, the collapsed rail and the
- * router all derive their rows from this file, so the covered range is pinned here (and in
- * the unit tests) rather than duplicated.
+ * `/channels/:channelId` path of a channel, the `<projectId>/<orgId>` key the shell remembers
+ * an organization by, and where `/org` lands when it is opened without naming an
+ * organization. The sidebar, the collapsed rail and the router all derive their rows from
+ * this file, so the covered range is pinned here (and in the unit tests) rather than
+ * duplicated.
  */
 
 /** The two work modes of the shell: development (the default) or company. */
 export type WorkMode = "dev" | "company";
 
-/** Company-mode page entries, in rendered order: each key names its route segment, its S.nav label (`S.nav.org.<key>`) and its NAV_ICONS glyph (`NAV_ICONS.org<Key>`). */
+/**
+ * Company-mode page entries, in rendered order: each key names its route segment, its S.nav
+ * label (`S.nav.org.<key>`) and its NAV_ICONS glyph (`NAV_ICONS.org<Key>`). Channels are not
+ * among them — they are the sidebar's own list, the way conversations are in development
+ * mode, and they live under `/channels/:channelId` rather than behind a nav row.
+ */
 export const COMPANY_NAV_KEYS = [
   "overview",
   "chart",
   "calendar",
   "tickets",
   "finance",
-  "chat",
   "handbook",
 ] as const;
 export type CompanyNavKey = (typeof COMPANY_NAV_KEYS)[number];
@@ -43,12 +48,26 @@ export function parseOrgKey(
   return { projectId, orgId };
 }
 
-/** Path of one company-mode page of one organization. */
-export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKey): string {
-  return `${ORG_ROUTE_PREFIX}/${encodeURIComponent(projectId)}/${encodeURIComponent(orgId)}/${page}`;
+/** The `/org/<projectId>/<orgId>` prefix every surface of one organization hangs off. */
+function orgRoot(projectId: string, orgId: string): string {
+  return `${ORG_ROUTE_PREFIX}/${encodeURIComponent(projectId)}/${encodeURIComponent(orgId)}`;
 }
 
-/** Whether a location is inside company mode's own routes (the chat page is shared by both modes and is not). */
+/** Path of one company-mode page of one organization. */
+export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKey): string {
+  return `${orgRoot(projectId, orgId)}/${page}`;
+}
+
+/**
+ * Path of one channel of one organization — company mode's home surface, which is why the
+ * organization switcher and a bare `/org/<projectId>/<orgId>` land on the all-hands channel
+ * rather than on a page.
+ */
+export function orgChannelPath(projectId: string, orgId: string, channelId: string): string {
+  return `${orgRoot(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;
+}
+
+/** Whether a location is inside company mode's own routes (a Session's own page is shared by both modes and is not). */
 export function isOrgRoute(pathname: string): boolean {
   return pathname === ORG_ROUTE_PREFIX || pathname.startsWith(`${ORG_ROUTE_PREFIX}/`);
 }

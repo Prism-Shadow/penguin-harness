@@ -236,16 +236,18 @@ export const NAV_ICONS = {
   /** Finance (lucide circle-dollar-sign). */
   orgFinance:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
-  /**
-   * The organization chat (lucide messages-square: two overlapping bubbles). Deliberately not
-   * the single bubble MESSAGING_ICON draws — that one marks a messaging binding, and one
-   * glyph for two things a row apart would read as one setting.
-   */
-  orgChat:
-    "M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",
   /** The handbook, the company's knowledge base (lucide book-open: two pages meeting at the spine). */
   orgHandbook: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
 } as const;
+
+/**
+ * An organization's desk and ticket sessions (lucide messages-square: two overlapping
+ * bubbles), the mark on the channel list's "Sessions" menu. Deliberately not the single
+ * bubble MESSAGING_ICON draws — that one marks a messaging binding, and one glyph for two
+ * things a row apart would read as one setting.
+ */
+export const ORG_SESSIONS_ICON =
+  "M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1";
 
 /** Company mode (lucide building-2: a tower with wings and windows), the settings rail, the sidebar's organization groups and the collapsed rail's toggle. */
 export const COMPANY_MODE_ICON =

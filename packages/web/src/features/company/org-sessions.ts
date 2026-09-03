@@ -1,9 +1,9 @@
 /**
- * The company sidebar's session list, as pure shaping over GET …/sessions (unit tested):
- * one group per organization, each with a Desks part — one row per employee, titled by the
- * employee's name — and a Tickets part — one folder per ticket holding its contributing
- * sessions. A session attached to several tickets appears under each of them; a ticket
- * without a session is not listed (there is nothing to open).
+ * The channel list's "Sessions" menu, as pure shaping over GET …/sessions (unit tested): a
+ * Desks part — one row per employee, titled by the employee's name — and a Tickets part —
+ * one group per ticket holding its contributing sessions. A session attached to several
+ * tickets appears under each of them; a ticket without a session is not listed (there is
+ * nothing to open).
  */
 import type {
   OrgDeskItem,

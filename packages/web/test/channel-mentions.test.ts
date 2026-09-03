@@ -1,11 +1,12 @@
 /**
- * chat-mentions.ts unit tests: the candidate list, its filter and its ranking, what a pick
- * types, the @-token at the caret, splicing a pick into the draft, splitting a stored
- * message into plain and mention runs by the server's own token grammar, and what a
- * mention run displays and whom it addresses.
+ * channel-mentions.ts unit tests: the candidate list, its narrowing to a channel's own
+ * membership, its filter and its ranking, what a pick types, the @-token at the caret,
+ * splicing a pick into the draft, splitting a stored message into plain and mention runs by
+ * the server's own token grammar, and what a mention run displays and whom it addresses.
  */
 import { describe, expect, it } from "vitest";
 import {
+  channelMentionCandidates,
   insertMention,
   mentionCandidates,
   mentionInsertId,
@@ -15,7 +16,7 @@ import {
   mentionRuns,
   mentionsUser,
   rankMentionCandidates,
-} from "../src/features/company/chat-mentions";
+} from "../src/features/company/channel-mentions";
 
 const candidates = mentionCandidates(
   [
@@ -172,5 +173,39 @@ describe("mentionLabel and mentionIsMe", () => {
     expect(mentionIsMe("bob", "bob", employees)).toBe(false);
     expect(mentionIsMe("carol", "carol", employees)).toBe(true);
     expect(mentionIsMe("all", "", employees)).toBe(false);
+  });
+});
+
+describe("channelMentionCandidates", () => {
+  const list = mentionCandidates(
+    [
+      { agentId: "ceo", name: "Alice" },
+      { agentId: "pm", name: "Product" },
+    ],
+    ["bob", "carol"],
+    "Everyone",
+  );
+
+  it("keeps only the channel's members, and `all` — which means that membership", () => {
+    const members = new Set(["agent:pm", "user:carol"]);
+    expect(channelMentionCandidates(list, members).map((c) => c.principal)).toEqual([
+      "agent:pm",
+      "user:carol",
+      "all",
+    ]);
+  });
+
+  it("offers everyone when the membership is not known yet, rather than an empty panel", () => {
+    expect(channelMentionCandidates(list, null).map((c) => c.principal)).toEqual([
+      "agent:ceo",
+      "agent:pm",
+      "user:bob",
+      "user:carol",
+      "all",
+    ]);
+  });
+
+  it("is `all` alone in a channel whose only member is the reader's own employee-free self", () => {
+    expect(channelMentionCandidates(list, new Set()).map((c) => c.principal)).toEqual(["all"]);
   });
 });
