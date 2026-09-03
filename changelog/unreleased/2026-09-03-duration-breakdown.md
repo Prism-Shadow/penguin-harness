@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#598](https://github.com/Prism-Shadow/penguin-harness/pull/598)
 
 [中文版](2026-09-03-duration-breakdown.zh.md)
 
