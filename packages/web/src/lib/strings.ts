@@ -1182,10 +1182,11 @@ export const zh = {
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
      * typed into the prompt reaches the provider, the Trace and the agent's own command line),
-     * the prompt box's placeholder, the examples and the fixed instruction tail. The tail is fed
-     * the target agent and Project because the prompt goes to the Project's default agent, which
-     * is not necessarily the agent whose vault this is; it names the data root for the same
-     * reason the models tail does.
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The examples obey
+     * that lead: the key-names-only ask comes first and none of them puts a secret in the prompt,
+     * both pinned by create-with-ai-surfaces.test.ts. The tail is fed the target agent and Project
+     * because the prompt goes to the Project's default agent, which is not necessarily the agent
+     * whose vault this is; it names the data root for the same reason the models tail does.
      */
     aiAddTitle: "让 AI 添加密钥",
     aiAddIntro:
@@ -1193,23 +1194,25 @@ export const zh = {
     aiAddPlaceholder: "要存哪个键、值是什么，或让它检查这个智能体需要哪些 API key…",
     aiAddExamples: [
       {
-        key: "set",
-        label: "存入一个 API key",
-        description: "键名加值，直接写进保险柜",
-        prompt: "把 OPENWEATHER_API_KEY 存进保险柜，值是 <粘贴 key>。",
-      },
-      {
         key: "audit",
-        label: "盘点技能需要的 key",
+        label: "盘点这个智能体需要的 key",
         description: "先建键名，值稍后手动填",
         prompt:
-          "检查这个智能体已安装的技能需要哪些 API key，逐个告诉我键名和申请地址，键名先创建、值我稍后填。",
+          "检查这个智能体已安装的技能需要哪些 API key，先把键名建好，并逐个告诉我用途和申请地址——值我自己在保险柜里填。",
       },
       {
         key: "rotate",
-        label: "更换一个 token",
-        description: "覆盖已有键的值",
-        prompt: "把 GH_TOKEN 的值换成 <新 token>。",
+        label: "重置一个过期 token",
+        description: "把值清成占位符，新值手动填",
+        prompt:
+          "GH_TOKEN 已经过期，把它重置为占位值，并告诉我去哪里申请新的——新 token 我自己在保险柜里填。",
+      },
+      {
+        key: "endpoint",
+        label: "接入一个内部服务",
+        description: "地址直接写入，token 留给你填",
+        prompt:
+          "这个智能体要访问我们内部的 Gitea（https://git.example.com）。把 GITEA_BASE_URL 设为该地址，GITEA_TOKEN 先用占位值创建，并告诉我去哪里签发 token。",
       },
     ],
     aiAddTail: (agentId: string, projectId: string): string =>

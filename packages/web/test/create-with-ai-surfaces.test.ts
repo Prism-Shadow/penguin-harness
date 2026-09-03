@@ -6,6 +6,9 @@
  * tails carry the ids they are fed, since the prompt goes to the Project's default agent rather
  * than the target. Both CLI tails also name `--root`: the harness strips `PENGUIN_HOME` from a
  * command's environment, so a `penguin config` call without it configures another data root.
+ *
+ * The vault's cards additionally have to agree with the warning printed above them, so the
+ * key-names-only ask leads and no card hands the user a secret-shaped placeholder to fill.
  */
 import { describe, expect, it } from "vitest";
 import { zh } from "../src/lib/strings";
@@ -31,6 +34,20 @@ describe.each([
     expectUsableExamples(dict.agent.aiExamples);
     expectUsableExamples(dict.models.aiAddExamples);
     expectUsableExamples(dict.vault.aiAddExamples);
+  });
+
+  it("leads the vault examples with the key-names-only ask, and never asks for a pasted secret", () => {
+    // The dialog's intro recommends letting AI create the key names and filling the values in by
+    // hand; the first card is the one a scanning eye reads as the default, so it must be that ask.
+    const examples = dict.vault.aiAddExamples;
+    expect(examples[0]?.key).toBe("audit");
+    for (const example of examples) {
+      // `<paste key>` / `<新 token>`: the placeholder shape that tells the user to put a secret
+      // into the prompt, which is exactly what the intro above the cards warns against.
+      expect(example.prompt).not.toMatch(/<[^>]+>/);
+      // Two-line card, as on the sibling surfaces.
+      expect(example.description?.trim()).toBeTruthy();
+    }
   });
 
   it("ends the agent prompt with a tail that runs agent-initialization, and seeds the onboarding agent by id", () => {

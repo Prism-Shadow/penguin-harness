@@ -280,11 +280,14 @@ export function VaultTab({
       </Modal>
 
       {/* The AI path. Its lead is an honest warning: a value typed into the prompt is recorded in
-          the conversation's Trace, whereas a value typed into the form never leaves the vault. */}
+          the conversation's Trace, whereas a value typed into the form never leaves the vault. The
+          footer follows that warning — "Edit in a new conversation" is the emphasised exit here, so
+          the prompt is read once more before it carries anything to a provider. */}
       <AiCreateModal
         open={aiAdding}
         onClose={() => setAiAdding(false)}
         title={S.vault.aiAddTitle}
+        primaryExit="edit"
         intro={
           <div className={`rounded-md border px-2.5 py-1.5 ${toneStrip.attention}`}>
             {S.vault.aiAddIntro}

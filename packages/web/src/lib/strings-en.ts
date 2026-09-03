@@ -1193,23 +1193,25 @@ export const en: Strings = {
     aiAddPlaceholder: "Which key to store and its value, or ask which API keys this agent needs…",
     aiAddExamples: [
       {
-        key: "set",
-        label: "Store an API key",
-        description: "Key name plus value, written straight into the vault",
-        prompt: "Store OPENWEATHER_API_KEY in the vault; the value is <paste key>.",
-      },
-      {
         key: "audit",
-        label: "Audit the keys the skills need",
-        description: "Creates the key names first; values filled in by hand later",
+        label: "Find the keys this agent needs",
+        description: "Key names now, values filled in by hand",
         prompt:
-          "Check which API keys this agent's installed skills need, tell me each key name and where to apply for it, and create the key names now — I will fill in the values later.",
+          "Check which API keys this agent's installed skills need, create the key names now, and tell me what each one is for and where to apply for it — I will fill in the values in the vault myself.",
       },
       {
         key: "rotate",
-        label: "Replace a token",
-        description: "Overwrites an existing key's value",
-        prompt: "Replace the value of GH_TOKEN with <new token>.",
+        label: "Reset an expired token",
+        description: "Clears the value; you paste the new one",
+        prompt:
+          "GH_TOKEN has expired. Reset it to a placeholder value and tell me where to issue a new one — I will paste the new token in the vault myself.",
+      },
+      {
+        key: "endpoint",
+        label: "Connect an internal service",
+        description: "Address set now, token left for you",
+        prompt:
+          "This agent will call our internal Gitea at https://git.example.com. Set GITEA_BASE_URL to that address, create GITEA_TOKEN with a placeholder value, and tell me where to issue the token.",
       },
     ],
     aiAddTail: (agentId: string, projectId: string): string =>
