@@ -22,15 +22,16 @@
  * absent: reading a Trace happens in the chat toolbar's panel switcher, which is the only
  * place it happens.
  */
-export const NAV_GROUP_KEYS = [
-  "agents",
-  "plugins",
-  "models",
-  "machines",
-  "usage",
-  "benchmark",
-] as const;
-export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
+import { NAV_PAGE_KEYS, PAGES } from "./pages";
+
+export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
+/**
+ * The manifest, derived from the app's own module.json (lib/pages.ts): every page whose
+ * `nav` is "main", in manifest order. The literal key type above is the set the strings
+ * and icons are typed against; pages.test.ts pins that the manifest never names a key
+ * outside it.
+ */
+export const NAV_GROUP_KEYS = NAV_PAGE_KEYS as readonly NavGroupKey[];
 
 /**
  * Entries the server refuses to a non-admin, so the sidebar does not offer them. Machines
@@ -38,7 +39,9 @@ export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
  * `/api/machines` gates on `isAdmin` — a row that always answers 403 is worse than no row.
  * On a personal or desktop server the only account IS the admin, so nothing is hidden there.
  */
-const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
+const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set(
+  PAGES.filter((p) => p.nav === "main" && p.admin).map((p) => p.key as NavGroupKey),
+);
 
 /**
  * Entries built but not yet offered. They keep their place in the manifest — the page, its
@@ -50,7 +53,9 @@ const ADMIN_ONLY_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["mac
  * That is a capability worth shipping deliberately rather than as a row that happens to appear,
  * so it waits for a release that means to introduce it.
  */
-const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set<NavGroupKey>(["machines"]);
+const UNRELEASED_NAV_KEYS: ReadonlySet<NavGroupKey> = new Set(
+  PAGES.filter((p) => p.nav === "main" && !p.released).map((p) => p.key as NavGroupKey),
+);
 
 /** The manifest as this user sees it. */
 export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {

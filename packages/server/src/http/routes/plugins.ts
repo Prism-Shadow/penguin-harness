@@ -22,7 +22,21 @@ import type {
   PluginLibraryResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { Config } from "../../hmr/capabilities.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import { Sessions as ManagerIface, SessionsModule } from "../../runtime/session-manager.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { agentHooksRoutes } from "./hooks.js";
+
+/** What these route groups reach — bound by their component below. */
+export interface PluginsRouteDeps {
+  config: ServerConfig;
+  access: ProjectAccess;
+  agentConfigService: AgentConfigService;
+  manager: ManagerIface;
+}
 import { HttpError } from "../errors.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
 import {
@@ -63,13 +77,13 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
 }
 
 /** /api/projects/:p/agents/:a/plugins: install is a Project-member operation. */
-export function agentPluginsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
@@ -97,4 +111,45 @@ export function agentPluginsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/** The plugin library and the Agent-scoped install/uninstall groups, as one route component. */
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      { id: "PluginRoutes.library", prefix: "/api/plugins", auth: "user", order: 70 },
+      {
+        id: "PluginRoutes.agent-plugins",
+        prefix: "/api/projects/:projectId/agents/:agentId/plugins",
+        auth: "user",
+        order: 222,
+      },
+      {
+        id: "PluginRoutes.agent-hooks",
+        prefix: "/api/projects/:projectId/agents/:agentId/hooks",
+        auth: "user",
+        order: 224,
+      },
+    ],
+  },
+})
+export class PluginRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly agentConfig!: AgentConfigService;
+  @Use(SessionsModule) private readonly manager!: ManagerIface;
+  @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
+  @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
+  @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
+  setup() {
+    const deps = {
+      config: this.config,
+      access: this.access,
+      agentConfigService: this.agentConfig,
+      manager: this.manager,
+    };
+    this.libraryRoutes = pluginLibraryRoutes();
+    this.pluginRoutes = agentPluginsRoutes(deps);
+    this.hookRoutes = agentHooksRoutes(deps);
+  }
 }

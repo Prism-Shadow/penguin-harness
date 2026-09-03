@@ -144,6 +144,19 @@ async function login() {
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
+  // The platform imports its generated interface table; make sure it is current.
+  const { execFileSync } = await import("node:child_process");
+  execFileSync(
+    process.execPath,
+    [
+      path.join(ROOT, "scripts/gen-ifaces.mjs"),
+      "--project",
+      path.join(ROOT, "packages/server/tsconfig.json"),
+      "--out",
+      path.join(ROOT, "packages/server/src/ifaces.json"),
+    ],
+    { stdio: "inherit" },
+  );
   const esbuild = await import("esbuild");
   await esbuild.build({
     entryPoints: [entry],

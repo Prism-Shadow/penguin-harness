@@ -17,16 +17,21 @@ import { Hono } from "hono";
 import type { DirectorySkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { requireProjectDir, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface DirectorySkillsRouteDeps {
+  access: ProjectAccess;
+}
 import { discoverDirectorySkills } from "../../services/directory-skills.js";
 import { toSkillItem } from "../../services/plugin-library.js";
 
-export function directorySkillsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function directorySkillsRoutes(deps: DirectorySkillsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
 
     const real = await requireProjectDir(c.req.query("path"));
 

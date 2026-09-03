@@ -83,6 +83,8 @@ import {
   classifyVisionProbeError,
 } from "./vision-detect.js";
 import type { PricingRates, TieredRates } from "./usage-service.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config } from "../hmr/capabilities.js";
 
 type RawTable = Record<string, unknown>;
 
@@ -254,6 +256,7 @@ const LIST_MODELS_TIMEOUT_MS = 20_000;
 const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
+@Component()
 export class ProjectConfigService {
   /**
    * Parsed-table cache, one entry per Project, keyed by the config file's mtime as
@@ -264,7 +267,10 @@ export class ProjectConfigService {
    */
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
 
-  constructor(private readonly root: string) {}
+  @Use() private readonly config!: Config;
+  private get root(): string {
+    return this.config.root;
+  }
 
   private filePath(projectId: string): string {
     return projectConfigPath(this.root, projectId);

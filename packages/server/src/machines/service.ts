@@ -56,7 +56,21 @@ import { syncModelsToMachine } from "./models-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
-import type { MachineRow, MachinesRepo } from "../db/repos/machines.js";
+import type { MachineRow } from "../db/repos/machines.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "../auth/middleware.js";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config, Hmr, Overrides } from "../hmr/capabilities.js";
+import { RuntimeModule } from "../hmr/capabilities.js";
+import { machinesRoutes } from "../http/routes/machines.js";
+import { machinesProxy } from "./proxy.js";
+import { HttpError } from "../http/errors.js";
+import type { ProjectAccess } from "../services/project-access.js";
+import { Hono } from "hono";
+import { MachinesRepo } from "../db/repos/machines.js";
+import type { DatabaseSync } from "node:sqlite";
+import { Db } from "../hmr/capabilities.js";
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
@@ -1118,4 +1132,83 @@ export class MachinesService {
       }),
     );
   }
+}
+
+export abstract class Machines extends Interface<
+  Pick<
+    MachinesService,
+    "list" | "imageVersion" | "job" | "startInstall" | "start" | "syncModelsEverywhere"
+  >
+>() {}
+
+@Module({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "MachinesModule.routes",
+        prefix: "/api/machines",
+        auth: "user",
+        order: 50,
+      },
+      {
+        id: "MachinesModule.server-proxy",
+        // The manifest is data: the literal, not machines/proxy.ts's SERVER_PROXY_PREFIX,
+        // which the generator reads statically and cannot follow.
+        prefix: "/server/",
+        auth: "user",
+        order: 51,
+      },
+    ],
+  },
+})
+export class MachinesModule {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly db!: Db;
+  @Use(RuntimeModule) private readonly hmr!: Hmr;
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use() private readonly access!: ProjectAccess;
+  @Provide() machines!: Machines;
+  @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
+  @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
+  setup({ effect }: ClassCtx) {
+    // This machine's own id is minted on the first boot of this data root and stable ever
+    // after — every stored reference to this machine, here and on the machines it reaches,
+    // points at it. A test that supplies its own service mints none.
+    const machines =
+      this.overrides.value().machines ??
+      (() => {
+        const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
+        return new MachinesService(this.config.root, repo.ownId(), repo, {}, () =>
+          this.hmr.assetsDir(),
+        );
+      })();
+    this.machines = machines;
+    this.routes = machinesRoutes({ machines, access: this.access });
+    this.serverProxyRoutes = serverProxyApp(machines);
+    // Every ssh session THIS generation opened closes with it; the successor's setup
+    // re-holds each one the install record says was held.
+    effect(() => machines.stop());
+  }
+}
+
+/**
+ * `/server/<machineId>/api/…` — a connected machine's API, forwarded over the connection held
+ * to it and addressed by the machine's OWN id. Admins only: the request is made over there as
+ * that machine's admin, with a session this server minted over the ssh access that installed
+ * it, so this server's admin session is the one credential involved.
+ */
+function serverProxyApp(machines: MachinesService): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const proxy = machinesProxy(
+    (machineId) => machines.proxyTarget(machineId),
+    (machineId, outcome) => machines.noteApiSeen(machineId, outcome),
+  );
+  app.all("*", async (c) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
+    }
+    const answer = await proxy(c.req.raw);
+    return answer ?? c.notFound();
+  });
+  return app;
 }
