@@ -222,7 +222,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 ### 组织（公司模式）
 
-以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写；删除组织仅 owner 可为。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户。这些路由背后的文件见[公司模式](/company-mode)。
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写；删除组织仅 owner 可为。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；频道的读取与成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入（仅对携带本机 API token 的请求生效），员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -245,12 +245,18 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | POST | /:orgId/tickets/:ticketId/progress | `{text}`——追加一条归属于调用方的进展 |
 | POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions` |
 | POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
-| GET / POST | /:orgId/chat | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析 |
-| POST | /:orgId/chat/read | `{upTo}`——调用方的已读游标 |
+| GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
+| GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
+| POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
+| DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
+| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员 |
+| POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
 | GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
 | GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
 
-`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_chat`（新消息，含 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
+频道相关错误：`channel_not_found`（404，频道 id 不合法时同样如此）、`channel_exists`（409）、`channel_archived`（409，归档频道在取消归档前不接受写入）、`not_a_member`（403，无成员身份的读取、发言与邀请，以及员工尝试仅限人的操作）、`all_hands_immutable`（400，归档 `default_channel` 或编辑其成员）、`mention_not_member`（400，消息提及了不在该频道的对象，整条不写入）、`invalid_principal`（400）。
+
+`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_channel`（新消息，带 `channelId` 与 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
 
 ### Session 创建与目录浏览
 

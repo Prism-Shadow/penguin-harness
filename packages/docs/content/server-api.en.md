@@ -222,7 +222,7 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 
 ### Organizations (company mode)
 
-All paths below are under `/api/projects/:projectId/organizations`. Every route answers 404 while the admin's company-mode switch is off. Any Project member reads and writes; deleting an organization is owner-only. Write bodies may carry `sessionId` — the calling session, which the CLI fills from `PENGUIN_SESSION_ID` — so the file records the employee rather than the token's user. See [Company Mode](/company-mode) for the files behind these routes.
+All paths below are under `/api/projects/:projectId/organizations`. Every route answers 404 while the admin's company-mode switch is off. Any Project member reads and writes; deleting an organization is owner-only. Write bodies may carry `sessionId` — the calling session, which the CLI fills from `PENGUIN_SESSION_ID` — so the file records the employee rather than the token's user; the channel reads and the member DELETE, which have no body, take the same session as `?sessionId=` (honoured only for a request carrying the local API token), which is how an employee is answered as itself instead of as the signed-in person. See [Company Mode](/company-mode) for the files behind these routes.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -245,12 +245,18 @@ All paths below are under `/api/projects/:projectId/organizations`. Every route 
 | POST | /:orgId/tickets/:ticketId/progress | `{text}` — appends a progress line attributed to the caller |
 | POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`: a ticket session of that employee, recorded in the ticket's `Sessions` |
 | POST | /:orgId/tickets/:ticketId/attach | `{sessionId}` — records an existing session as contributing |
-| GET / POST | /:orgId/chat | A day's messages (`?date=yyyy-mm-dd`, default today in the organization's timezone) with the caller's unread and mention counts / send `{text, refs?}`; mentions are resolved from the text |
-| POST | /:orgId/chat/read | `{upTo}` — the caller's read cursor |
+| GET / POST | /:orgId/channels | Every channel the caller may see (people: all of them; an employee: the ones it is in), `default_channel` first / open one: `{channelId, name?, purpose?}` → 201, holding only its creator (409 when the id is taken) |
+| GET / PATCH | /:orgId/channels/:channelId | The channel and its members / rename, change `purpose`, set `archived` (people only, never on `default_channel`) |
+| POST | /:orgId/channels/:channelId/members | `{principal}` — any member invites an `agent:<id>` employee or a `user:<id>` Project member; a person may add itself, an employee may not. Adding an existing member is a no-op 201 |
+| DELETE | /:orgId/channels/:channelId/members/:principal | Remove a member: anyone removes itself, a person removes anyone, an employee only itself; removing a non-member is a no-op 204 |
+| GET / POST | /:orgId/channels/:channelId/messages | A day's messages (`?date=yyyy-mm-dd`, default today in the organization's timezone) with the caller's unread and mention counts / send `{text, refs?}`; mentions are resolved from the text and must all be members |
+| POST | /:orgId/channels/:channelId/read | `{upTo}` — the caller's read cursor in this channel |
 | GET | /:orgId/finance | Spend per employee (own and cumulative along the reporting line), per ticket (rolled up along `Parent`), daily trend, alerts; `?period=yyyy-mm` |
 | GET | /:orgId/sessions | The organization's desk sessions and ticket sessions grouped by ticket |
 
-User-level events on `GET /api/events`: `org_run` (a work run or ticket session started), `org_chat` (a new message, mentions included), `org_ticket` (a ticket's status, owner, block or sessions changed), `org_budget` (warned / paused / resumed).
+Channel errors: `channel_not_found` (404 — also for an id no channel could carry), `channel_exists` (409), `channel_archived` (409 — an archived channel takes no writes until it is unarchived), `not_a_member` (403 — reading, posting or inviting without membership, and any people-only action attempted by an employee), `all_hands_immutable` (400 — archiving `default_channel` or editing its membership), `mention_not_member` (400 — the message names principals the channel does not hold; nothing is written), `invalid_principal` (400).
+
+User-level events on `GET /api/events`: `org_run` (a work run or ticket session started), `org_channel` (a new message, with its `channelId` and mentions), `org_ticket` (a ticket's status, owner, block or sessions changed), `org_budget` (warned / paused / resumed).
 
 ### Session Creation and Directory Browsing
 

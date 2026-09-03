@@ -217,7 +217,7 @@ penguin schedule rm daily-report
 
 ## penguin org
 
-公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、群聊）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。
+公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、频道）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
@@ -243,8 +243,16 @@ penguin org ticket unblock <ticket_id>
 penguin org ticket progress <ticket_id> -m <text>               # 追加一条进展，记为当前会话所写
 penguin org ticket start <ticket_id> [-m <附言>] [--workspace <path>] [--json]   # 新开一个后台处理该工单的工单会话，打印会话 id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # 把既有会话挂为贡献会话（缺省当前会话）
-penguin org chat tail [--date <d>] [-n <count>] [--json]
-penguin org chat send -m <text> [--ref-ticket <id>] [--ref-session <id>]
+penguin org channel ls [--json]                                 # 人看到全部频道，员工只看到自己所在的
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # 新频道只有创建者一人
+penguin org channel show <channel_id> [--json]                  # 用途、成员数与成员清单
+penguin org channel invite <channel_id> <principal>...          # 任一成员可邀请；每个 principal 一次 POST
+penguin org channel join <channel_id>                           # 仅限人；员工只能等成员邀请
+penguin org channel leave <channel_id>                          # 移出自己
+penguin org channel remove <channel_id> <principal>             # 仅限人
+penguin org channel archive <channel_id> | unarchive <channel_id>      # 仅限人；归档期间只读
+penguin org channel tail [--channel <id>] [--date <d>] [-n <count>] [--json]
+penguin org channel send -m <text> [--channel <id>] [--ref-ticket <id>] [--ref-session <id>]
 penguin org handbook list [--json]
 penguin org handbook show [path] [--json]
 penguin org handbook write <path> (-m <text> | --file <file>)
@@ -258,7 +266,10 @@ penguin org finance [--period <YYYY-MM>] [--json]
 
 - `calendar` 各命令的 `--agent-id` 与 `desk` 的位置参数缺省取 `PENGUIN_AGENT_ID`——员工安排自己的日程、换自己的工位。`calendar ls` 不带该选项时列出全部员工的日程项。
 - `ticket start` 在设置了 `PENGUIN_AGENT_ID` 时以它为工单会话的员工；否则由服务端取工单负责人。
-- 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与 `chat send` 携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
+- 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与频道写入（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
+- 频道读取（`ls`、`show`、`tail`）以及 `leave` 与 `remove` 背后的成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入。不带它，服务端会把员工当作登录的那个人来应答，`channel ls` 便会列出全部频道而非该员工自己的。
+
+`--channel` 缺省为 `default_channel`，即全体员工与全体 Project 成员都在其中的全员频道；`ls` 把它排在最前，并显示本地化名称而非其存储的 name。新频道只有创建者一人：员工要由成员邀请才能进入，人可以自行 `join` 任何频道，也能读到全部频道。`join` 与 `leave` 提交的都是调用方自己的 principal——在工位会话或工单会话内是该会话的员工，在会话外是登录的那个人——因此 `join` 绝不会把别人拉进频道。`join`、`remove`、`archive` 与 `unarchive` 是人的操作，因此在会话内执行时服务端返回 `403 not_a_member`——与其他 API 错误一样原样透出。
 
 分组说明：
 

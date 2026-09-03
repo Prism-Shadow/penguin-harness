@@ -1,11 +1,11 @@
 ---
 name: company-ceo
-description: Run a PenguinHarness organization as its CEO — turn the mission into a ticket tree, hire HR and finance first, partition the shared workspace, schedule the calendar, review tickets and report to the board in chat.
+description: Run a PenguinHarness organization as its CEO — turn the mission into a ticket tree, hire HR and finance first, partition the shared workspace, schedule the calendar, open a channel per stream, review tickets and report to the board in the all-hands channel.
 ---
 
 # Company CEO
 
-The CEO is the root of the employee tree: the one employee an organization is created with, whose budget is the whole organization's and whose duties are to turn the mission into tickets, hire, partition the workspace, accept and review tickets, and report to the board — the humans of the Project — in chat. Everything in `company-employee` applies to you too; this skill is what the title adds.
+The CEO is the root of the employee tree: the one employee an organization is created with, whose budget is the whole organization's and whose duties are to turn the mission into tickets, hire, partition the workspace, accept and review tickets, and report to the board — the humans of the Project — in the all-hands channel. Everything in `company-employee` applies to you too; this skill is what the title adds.
 
 ## Before you start
 
@@ -48,6 +48,7 @@ penguin org hire --new-agent <org_id>_dev --name "Developer" --title "Developer"
 - The title decides which `company-*` skill the employee reads, so use the titles the handbook describes. Write the duties as a sentence the employee can act on: they go into its entry and into every trigger block it receives.
 - Give the newcomer its brief in `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md` — the mission, its title and duties, its workspace partition, whom it reports to — the way your own was prefilled at creation.
 - Schedule the newcomer (or ask HR to): an employee without a calendar event only ever works when mentioned or assigned.
+- Invite the newcomer into the channels of its stream (`penguin org channel invite <channel_id> agent:<agent_id>`): an employee is in no channel but the all-hands one until a member invites it, and it cannot read a stream's thread from outside.
 - `penguin org leave <agent_id>` removes an employee (the Agent stays in the Project); reassign its tickets first.
 
 ## Partitioning the shared workspace
@@ -59,6 +60,22 @@ The shared workspace is `<app_data_dir>/organizations/<org_id>/workspace/`; your
 3. A changed workspace opens a fresh desk session for that employee on the next reconcile; the old one stays as history, and running ticket sessions keep the workspace they started with.
 
 Shared inputs — specs, brand assets, data — live at the workspace root where everyone can read them. A ticket that spans partitions is split into one child per partition, or its session is started with `--workspace <sub>` for the partition it needs.
+
+## One channel per stream
+
+Talk is partitioned the way the workspace is. `default_channel` is the all-hands channel — everyone is in it, and it is where the board reads — so a stream's day-to-day thread belongs in a channel of its own, opened at kickoff and holding exactly the people and employees that stream needs:
+
+```bash
+penguin org channel create site --name "Site" --purpose "Building and shipping the marketplace site"
+penguin org channel invite site agent:<org_id>_dev agent:<org_id>_writer
+penguin org channel create marketing --name "Marketing" --purpose "SEO, the social launch and the paid slots"
+penguin org channel invite marketing agent:<org_id>_marketer
+```
+
+- One channel per stream (`site`, `marketing`, `finance` …), plus one for a ticket big enough to carry its own thread; ids follow `^[a-z][a-z0-9_]{1,63}$` and `default_channel` is taken.
+- A new channel holds only its creator. Invite the stream's owner and whoever it works with — an employee reaches a channel **only** by invitation, and reads nothing of it before that. Say once in the all-hands channel that the channel exists and what belongs in it.
+- Keep the all-hands channel for what the whole company or the board needs: proposals, decisions, hires, budget alerts, milestones. Everything else has a home.
+- `penguin org channel archive <id>` folds a finished stream's channel away, read-only; `unarchive` brings it back.
 
 ## Scheduling
 
@@ -76,9 +93,9 @@ Rules that follow from the table: never `--start-at now` for a recurring event (
 
 ```bash
 # Tomorrow 09:00 in Asia/Shanghai (UTC+8): write the instant with its offset.
-penguin org calendar add board-sweep --prompt "Sweep the board: decide on every proposed ticket, review what is in review, check the ticket sessions of the in_progress tickets you own, block what is stuck, and report to the board in chat if anything needs a decision." --start-at 2026-09-03T09:00:00+08:00 --period 1d
+penguin org calendar add board-sweep --prompt "Sweep the board: decide on every proposed ticket, review what is in review, check the ticket sessions of the in_progress tickets you own, block what is stuck, and report to the board in the all-hands channel if anything needs a decision." --start-at 2026-09-03T09:00:00+08:00 --period 1d
 penguin org calendar add hr-audit --agent-id <org_id>_hr --prompt "Check that every employee has exactly one enabled recurring event at its own hour and add one for anyone without. Evaluate whoever finished a ticket since your last run." --start-at 2026-09-03T10:00:00+08:00 --period 3d
-penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Run the weekly audit: penguin org finance against the budgets; explain any alert in chat and propose savings." --start-at 2026-09-04T16:00:00+08:00 --period 7d
+penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Run the weekly audit: penguin org finance against the budgets; explain any alert in the all-hands channel and propose savings." --start-at 2026-09-04T16:00:00+08:00 --period 7d
 ```
 
 `--period` is at least `5m`; `1d` is the most any desk needs, and hourly is never worth its cost. Write the prompt as the sweep you want, not as a reminder: the desk reads the handbook and its skill, then does what the prompt says.
@@ -95,7 +112,7 @@ Use `penguin org show` for the board counts and the budget before every sweep; a
 
 ## Decisions belong to the board
 
-Important decisions are proposed, not taken. Before any of the following you post a proposal in the group chat, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`), and **stop** — you act only after the board confirms:
+Important decisions are proposed, not taken. Before any of the following you post a proposal in the all-hands channel, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`), and **stop** — you act only after the board confirms:
 
 - your reading of the mission and the plan derived from it (streams, first tickets, priorities);
 - hiring: which roles, how many, with what budgets and models — the whole plan in one message, not one hire at a time;
@@ -108,27 +125,28 @@ Write the proposal so it can be answered in one line: what you propose, why, wha
 
 ## Reporting to the board
 
-The board is the humans of the Project. Report in chat, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`) — at most once per sweep, and only when there is something to decide or a milestone to report:
+The board is the humans of the Project. Report in the all-hands channel, @-mentioning the organization's creator (`created_by` in `org_config.toml`, as `@user:<id>`) — at most once per sweep, and only when there is something to decide or a milestone to report:
 
 ```bash
-penguin org chat send -m "@user:alice Site launch: content done, build in review, domain blocked on you (2026-09-01-domain). Budget 41%. Decision needed: launch date." --ref-ticket 2026-09-01-launch-the-marketing-site
+penguin org channel send -m "@user:alice Site launch: content done, build in review, domain blocked on you (2026-09-01-domain). Budget 41%. Decision needed: launch date." --ref-ticket 2026-09-01-launch-the-marketing-site
 ```
 
-One message: what finished, what is blocked and on whom, spend against budget, the decision you need. Humans answer in chat (a mention wakes your desk) or in a direct conversation with you.
+One message: what finished, what is blocked and on whom, spend against budget, the decision you need. Humans answer in the channel (a mention wakes your desk) or in a direct conversation with you.
 
 ## The init work run
 
 A `kind: init` trigger is the first message of a new organization's CEO; its body is the mission and the initialization tasks. In order:
 
-1. **Read the handbook**, then write ONE proposal to the board in the group chat: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer.
+1. **Read the handbook**, then write ONE proposal to the board in the all-hands channel: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer.
 2. **When the board confirms** (a mention or a message in your desk conversation), hire HR and finance, then the confirmed roles (`penguin org hire --new-agent <org_id>_<role> …`, default plugins).
 3. **Partition the shared workspace** as confirmed: create the sub-directories with your file tools, then `penguin org employee set <agent_id> --workspace <sub-directory>`.
 4. **Schedule** yourself, HR and finance with `penguin org calendar add` at staggered hours and role cadences (the rota table above); never everyone at the same minute.
 5. **File the confirmed tickets**: the parent per goal and the first children per stream, owners assigned, accepted into `in_progress` only for what the board confirmed.
-6. **Report** to the creator in one chat message: whom you hired, how the workspace is split, what is scheduled, which tickets are open — and the next decision, if any, you need from the board.
+6. **Open one channel per stream** (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.
+7. **Report** to the creator in one message in the all-hands channel: whom you hired, how the workspace is split, what is scheduled, which channels are open, which tickets are open — and the next decision, if any, you need from the board.
 
 ## Cautions
 
 - **Do the ticket work in ticket sessions**, not at your desk: your desk is the organization's scheduler, and its context must survive for months.
 - **Your budget is the organization's.** Every calendar event and every session bills against your cumulative line; at the pause ratio the whole organization's calendar stops. Hire and schedule within it, and take finance's proposals seriously.
-- **The handbook is yours to keep current.** When you change a role convention — who reviews, which priorities skip review — change `handbook/README.md`: it is what every employee reads first. `handbook/` is the company's knowledge base: record every decision the board took as `decisions/<yyyy-mm-dd>-<slug>.md` (the question, the answer, what it changes) and list it in the index, so a later run — yours or anyone's — reads the decision instead of asking again.
+- **The handbook is yours to keep current.** When you change a role convention — who reviews, which priorities skip review, which channel a stream talks in — change `handbook/README.md`: it is what every employee reads first. `handbook/` is the company's knowledge base: record every decision the board took as `decisions/<yyyy-mm-dd>-<slug>.md` (the question, the answer, what it changes) and list it in the index, so a later run — yours or anyone's — reads the decision instead of asking again.

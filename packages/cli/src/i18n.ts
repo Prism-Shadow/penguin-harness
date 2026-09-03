@@ -273,9 +273,18 @@ export interface Messages {
     ticketProgressDesc: string;
     ticketStartDesc: string;
     ticketAttachDesc: string;
-    chatDesc: string;
-    chatTailDesc: string;
-    chatSendDesc: string;
+    channelDesc: string;
+    channelLsDesc: string;
+    channelCreateDesc: string;
+    channelShowDesc: string;
+    channelInviteDesc: string;
+    channelJoinDesc: string;
+    channelLeaveDesc: string;
+    channelRemoveDesc: string;
+    channelArchiveDesc: string;
+    channelUnarchiveDesc: string;
+    channelTailDesc: string;
+    channelSendDesc: string;
     handbookDesc: string;
     handbookListDesc: string;
     handbookShowDesc: string;
@@ -335,9 +344,14 @@ export interface Messages {
     startWorkspace: string;
     /** attach's --session: the session to attach (default: the calling session). */
     attachSession: string;
-    chatDate: string;
-    chatCount: string;
-    chatText: string;
+    /** tail / send's --channel: which channel to read or write in (default: the all-hands channel). */
+    channelOpt: string;
+    /** create's --name / --purpose. */
+    channelName: string;
+    channelPurpose: string;
+    channelDate: string;
+    channelCount: string;
+    channelText: string;
     handbookPath: string;
     handbookText: string;
     handbookFile: string;
@@ -394,14 +408,22 @@ export interface Messages {
     ticketUnblocked(ticketId: string): string;
     progressRecorded(ticketId: string): string;
     ticketAttached(ticketId: string, sessionId: string): string;
-    chatSent(id: string): string;
+    channelCreated(channelId: string): string;
+    channelInvited(channelId: string, principal: string): string;
+    channelJoined(channelId: string): string;
+    channelLeft(channelId: string): string;
+    channelMemberRemoved(channelId: string, principal: string): string;
+    channelArchived(channelId: string): string;
+    channelUnarchived(channelId: string): string;
+    messageSent(id: string): string;
     handbookWritten(path: string): string;
     handbookRemoved(path: string): string;
     /** Empty states. */
     empty(projectId: string): string;
     calendarEmpty(): string;
     ticketsEmpty(): string;
-    chatEmpty(date: string): string;
+    channelsEmpty(): string;
+    channelEmpty(channelId: string, date: string): string;
     /** `show`: one line per fact. */
     showHead(name: string, orgId: string, status: string): string;
     showMission(mission: string): string;
@@ -419,6 +441,15 @@ export interface Messages {
       blocked: string | undefined,
     ): string;
     ticketFigures(cost: string, rolledUp: string, sessions: number, children: number): string;
+    /** The all-hands channel's label; its stored name is never shown. */
+    allHands(): string;
+    /** `channel tail` on any channel but the default one: a dim line naming it above the messages. */
+    channelHeader(channelId: string): string;
+    /** `channel show`: the head line, then the lines the channel actually has. */
+    channelHead(name: string, channelId: string, members: number, archived: boolean): string;
+    channelPurposeLine(purpose: string): string;
+    channelCreatedBy(principal: string, createdAt: string): string;
+    channelLastMessage(time: string): string;
     financeTotal(period: string, total: string): string;
     /** stderr note under `finance`: some usage had no pricing, so the total is a lower bound. */
     unpriced(): string;
@@ -441,6 +472,11 @@ export interface Messages {
     colOwner(): string;
     colTicket(): string;
     colRolledUp(): string;
+    colMembers(): string;
+    colArchived(): string;
+    colUnread(): string;
+    colMentions(): string;
+    colPrincipal(): string;
   };
   /** Server-connection layer: resolution, auto-start, tokens, streams. */
   client: {
@@ -963,7 +999,7 @@ const en: Messages = {
     colStatus: () => "STATUS",
   },
   org: {
-    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, chat, finance)",
+    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
     lsDesc: "List the project's organizations",
     createDesc:
       "Create an organization: its CEO Agent, the CEO's desk session and the initialization run",
@@ -998,9 +1034,21 @@ const en: Messages = {
       "Open a ticket session that works on the ticket in the background; prints the session id",
     ticketAttachDesc:
       "Attach an existing session as a contributor (defaults to the calling session)",
-    chatDesc: "The organization's group chat",
-    chatTailDesc: "Print the last messages of a day (20 unless -n is given)",
-    chatSendDesc: "Send a message (@agent:<id> / @all mentions trigger the mentioned desks)",
+    channelDesc:
+      "The organization's channels (default_channel is the all-hands one everybody is in)",
+    channelLsDesc: "List the channels: every one of them for a person, its own for an employee",
+    channelCreateDesc:
+      "Open a channel; only its creator is in it, everyone else arrives by invitation",
+    channelShowDesc: "Show a channel and its members",
+    channelInviteDesc: "Invite principals into a channel (any member may)",
+    channelJoinDesc: "Join a channel yourself (people only; an employee waits to be invited)",
+    channelLeaveDesc: "Leave a channel",
+    channelRemoveDesc: "Remove another member from a channel (people only)",
+    channelArchiveDesc: "Archive a channel: read-only until it is unarchived (people only)",
+    channelUnarchiveDesc: "Unarchive a channel (people only)",
+    channelTailDesc: "Print a channel's last messages of a day (20 unless -n is given)",
+    channelSendDesc:
+      "Send a message to a channel (@agent:<id> / @all mention its members and trigger their desks)",
     handbookDesc:
       "The organization handbook: the knowledge base under handbook/, whose README.md is the index every run reads first",
     handbookListDesc: "List the handbook files (path, size, updated), the index first",
@@ -1051,9 +1099,12 @@ const en: Messages = {
       "Another directory inside the shared workspace (defaults to the employee's desk workspace)",
     attachSession:
       "The session to attach, full id or unique fragment (defaults to PENGUIN_SESSION_ID)",
-    chatDate: "Day to read (yyyy-mm-dd in the organization's timezone; defaults to today)",
-    chatCount: "Number of messages to print (default 20)",
-    chatText: "Message text (@agent:<id> or @all to mention)",
+    channelOpt: "Channel to read or write in (default: default_channel, the all-hands channel)",
+    channelName: "Display name (defaults to the id)",
+    channelPurpose: "What the channel is for",
+    channelDate: "Day to read (yyyy-mm-dd in the organization's timezone; defaults to today)",
+    channelCount: "Number of messages to print (default 20)",
+    channelText: "Message text (@agent:<id> or @all to mention, inside the channel's membership)",
     handbookPath:
       "Path relative to handbook/ (plain segments, e.g. decisions/2026-09-02-hire-plan.md)",
     handbookText: "Document text",
@@ -1100,13 +1151,21 @@ const en: Messages = {
     ticketUnblocked: (ticketId) => `Ticket ${ticketId} unblocked.`,
     progressRecorded: (ticketId) => `Progress recorded on ticket ${ticketId}.`,
     ticketAttached: (ticketId, sessionId) => `Session ${sessionId} attached to ticket ${ticketId}.`,
-    chatSent: (id) => `Message ${id} sent.`,
+    channelCreated: (channelId) => `Channel ${channelId} created.`,
+    channelInvited: (channelId, principal) => `${principal} invited to ${channelId}.`,
+    channelJoined: (channelId) => `Joined ${channelId}.`,
+    channelLeft: (channelId) => `Left ${channelId}.`,
+    channelMemberRemoved: (channelId, principal) => `${principal} removed from ${channelId}.`,
+    channelArchived: (channelId) => `Channel ${channelId} archived.`,
+    channelUnarchived: (channelId) => `Channel ${channelId} unarchived.`,
+    messageSent: (id) => `Message ${id} sent.`,
     handbookWritten: (path) => `Handbook document ${path} written.`,
     handbookRemoved: (path) => `Handbook document ${path} removed.`,
     empty: (projectId) => `No organizations in project ${projectId}.`,
     calendarEmpty: () => "No calendar events.",
     ticketsEmpty: () => "No tickets match.",
-    chatEmpty: (date) => `No chat messages on ${date}.`,
+    channelsEmpty: () => "No channels.",
+    channelEmpty: (channelId, date) => `No messages in ${channelId} on ${date}.`,
     showHead: (name, orgId, status) => `${name} (${orgId}) — ${status}`,
     showMission: (mission) => `Mission: ${mission}`,
     showEmployees: (count, running, paused) =>
@@ -1120,6 +1179,13 @@ const en: Messages = {
       `Ticket ${ticketId}: ${status}${running ? ", running" : ""}${blocked !== undefined ? `, blocked (${blocked})` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `Cost ${cost} (rolled up ${rolledUp}), ${sessions} sessions, ${children} child tickets`,
+    allHands: () => "All hands",
+    channelHeader: (channelId) => `[channel ${channelId}]`,
+    channelHead: (name, channelId, members, archived) =>
+      `${name} (${channelId}) — ${members} members${archived ? ", archived" : ""}`,
+    channelPurposeLine: (purpose) => `Purpose: ${purpose}`,
+    channelCreatedBy: (principal, createdAt) => `Created by ${principal} on ${createdAt}`,
+    channelLastMessage: (time) => `Last message: ${time}`,
     financeTotal: (period, total) => `Total (${period}): ${total}`,
     unpriced: () =>
       "[unpriced] some usage ran on a model without pricing: the figures are a lower bound",
@@ -1140,6 +1206,11 @@ const en: Messages = {
     colOwner: () => "OWNER",
     colTicket: () => "TICKET",
     colRolledUp: () => "ROLLED UP",
+    colMembers: () => "MEMBERS",
+    colArchived: () => "ARCHIVED",
+    colUnread: () => "UNREAD",
+    colMentions: () => "@ME",
+    colPrincipal: () => "PRINCIPAL",
   },
   client: {
     invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
@@ -1653,7 +1724,7 @@ const zh: Messages = {
     colStatus: () => "状态",
   },
   org: {
-    desc: "公司模式：管理组织（员工、工位、日程、工单、群聊、财务）",
+    desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
     lsDesc: "列出 Project 的组织",
     createDesc: "创建组织：生成 CEO Agent、开 CEO 的工位会话并发起初始化会话",
     showDesc: "概览：员工与状态、看板计数、预算占用、待处理事项",
@@ -1681,9 +1752,18 @@ const zh: Messages = {
     ticketProgressDesc: "追加一条进展（记为当前会话所写）",
     ticketStartDesc: "新开一个在后台处理该工单的工单会话；打印会话 id",
     ticketAttachDesc: "把既有会话挂为贡献会话（缺省当前会话）",
-    chatDesc: "组织群聊",
-    chatTailDesc: "打印某一天的最后若干条消息（未给 -n 时 20 条）",
-    chatSendDesc: "发送消息（@agent:<id> / @all 会触发被提及员工的工位）",
+    channelDesc: "组织的频道（default_channel 是全员频道，所有人都在其中）",
+    channelLsDesc: "列出频道：人看到全部频道，员工只看到自己所在的",
+    channelCreateDesc: "新建频道；初始成员只有创建者，其余人经邀请加入",
+    channelShowDesc: "查看频道及其成员",
+    channelInviteDesc: "邀请若干 principal 加入频道（任一成员均可）",
+    channelJoinDesc: "自行加入频道（仅限人；员工只能等成员邀请）",
+    channelLeaveDesc: "退出频道",
+    channelRemoveDesc: "把另一位成员移出频道（仅限人）",
+    channelArchiveDesc: "归档频道：在取消归档前只读（仅限人）",
+    channelUnarchiveDesc: "取消频道的归档（仅限人）",
+    channelTailDesc: "打印某个频道某一天的最后若干条消息（未给 -n 时 20 条）",
+    channelSendDesc: "向频道发送消息（@agent:<id> / @all 提及频道成员并触发其工位）",
     handbookDesc: "组织手册：handbook/ 下的知识库，其 README.md 是每轮先读的索引",
     handbookListDesc: "列出手册文件（路径、大小、更新时间），索引在前",
     handbookShowDesc: "打印一份手册文档（不给路径时打印索引）",
@@ -1726,9 +1806,12 @@ const zh: Messages = {
     startMessage: "附在工单正文之后、随会话首条输入发出的附言",
     startWorkspace: "公共工作区内的另一个目录（缺省为该员工工位的 Workspace）",
     attachSession: "要挂接的会话，完整 id 或唯一片段（缺省 PENGUIN_SESSION_ID）",
-    chatDate: "要读的日期（组织时区的 yyyy-mm-dd；缺省今天）",
-    chatCount: "打印的消息条数（缺省 20）",
-    chatText: "消息内容（@agent:<id> 或 @all 表示提及）",
+    channelOpt: "要读取或写入的频道（缺省 default_channel，即全员频道）",
+    channelName: "显示名（缺省同 id）",
+    channelPurpose: "频道用途",
+    channelDate: "要读的日期（组织时区的 yyyy-mm-dd；缺省今天）",
+    channelCount: "打印的消息条数（缺省 20）",
+    channelText: "消息内容（@agent:<id> 或 @all 表示提及，只能提及频道内的成员）",
     handbookPath: "相对 handbook/ 的路径（普通片段，如 decisions/2026-09-02-hire-plan.md）",
     handbookText: "文档内容",
     handbookFile: "从本地文件读取文档内容",
@@ -1772,13 +1855,21 @@ const zh: Messages = {
     ticketUnblocked: (ticketId) => `工单 ${ticketId} 已解除阻塞。`,
     progressRecorded: (ticketId) => `已在工单 ${ticketId} 记录进展。`,
     ticketAttached: (ticketId, sessionId) => `会话 ${sessionId} 已挂接到工单 ${ticketId}。`,
-    chatSent: (id) => `消息 ${id} 已发送。`,
+    channelCreated: (channelId) => `已创建频道 ${channelId}。`,
+    channelInvited: (channelId, principal) => `已邀请 ${principal} 加入 ${channelId}。`,
+    channelJoined: (channelId) => `已加入 ${channelId}。`,
+    channelLeft: (channelId) => `已退出 ${channelId}。`,
+    channelMemberRemoved: (channelId, principal) => `已把 ${principal} 移出 ${channelId}。`,
+    channelArchived: (channelId) => `频道 ${channelId} 已归档。`,
+    channelUnarchived: (channelId) => `频道 ${channelId} 已取消归档。`,
+    messageSent: (id) => `消息 ${id} 已发送。`,
     handbookWritten: (path) => `手册文档 ${path} 已写入。`,
     handbookRemoved: (path) => `手册文档 ${path} 已删除。`,
     empty: (projectId) => `Project ${projectId} 没有组织。`,
     calendarEmpty: () => "没有日程项。",
     ticketsEmpty: () => "没有匹配的工单。",
-    chatEmpty: (date) => `${date} 没有群聊消息。`,
+    channelsEmpty: () => "没有频道。",
+    channelEmpty: (channelId, date) => `${channelId} 在 ${date} 没有消息。`,
     showHead: (name, orgId, status) => `${name}（${orgId}）——${status}`,
     showMission: (mission) => `使命：${mission}`,
     showEmployees: (count, running, paused) =>
@@ -1792,6 +1883,13 @@ const zh: Messages = {
       `工单 ${ticketId}：${status}${running ? "，运行中" : ""}${blocked !== undefined ? `，已阻塞（${blocked}）` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `成本 ${cost}（含子工单 ${rolledUp}），贡献会话 ${sessions} 个，子工单 ${children} 个`,
+    allHands: () => "全员频道",
+    channelHeader: (channelId) => `[频道 ${channelId}]`,
+    channelHead: (name, channelId, members, archived) =>
+      `${name}（${channelId}）——成员 ${members}${archived ? "，已归档" : ""}`,
+    channelPurposeLine: (purpose) => `用途：${purpose}`,
+    channelCreatedBy: (principal, createdAt) => `由 ${principal} 创建于 ${createdAt}`,
+    channelLastMessage: (time) => `最后一条消息：${time}`,
     financeTotal: (period, total) => `合计（${period}）：${total}`,
     unpriced: () => "[unpriced] 部分用量所用模型未配置价格：以上数字是下限",
     colEmployees: () => "员工数",
@@ -1811,6 +1909,11 @@ const zh: Messages = {
     colOwner: () => "负责人",
     colTicket: () => "工单",
     colRolledUp: () => "含子工单",
+    colMembers: () => "成员数",
+    colArchived: () => "归档",
+    colUnread: () => "未读",
+    colMentions: () => "@我",
+    colPrincipal: () => "主体",
   },
   client: {
     invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,

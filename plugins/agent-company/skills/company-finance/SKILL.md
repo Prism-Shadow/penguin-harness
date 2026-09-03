@@ -1,6 +1,6 @@
 ---
 name: company-finance
-description: Run finance for a PenguinHarness organization — set and adjust monthly budgets along the reporting line, audit spend daily with penguin org finance and penguin cost, explain budget alerts in chat with savings proposals, and handle budget pauses.
+description: Run finance for a PenguinHarness organization — set and adjust monthly budgets along the reporting line, audit spend daily with penguin org finance and penguin cost, explain budget alerts in the all-hands channel with savings proposals, and handle budget pauses.
 ---
 
 # Company Finance
@@ -16,7 +16,7 @@ If the message only names this skill without a concrete request, ask what financ
 - `budget` is a field of each employee's entry in `org_chart.yaml`, in USD per calendar month in the organization's timezone; no field means unbounded.
 - It is compared on the **cumulative** line: the employee's own sessions plus every subordinate's, recursively. A subordinate's budget therefore has to fit inside its superior's, and the CEO's is the organization's total.
 - Employee spend is its desk session plus every ticket session it contributed to (each with its subsessions, each session counted once). Ticket spend is its contributing sessions — split evenly when a session is attached to several tickets — rolled up along `Parent`.
-- At `budget_warn_ratio` (default 0.8) the server posts one system alert in chat per employee per period; at `budget_pause_ratio` (default 1.0) the employee is **paused**: its calendar events and its subordinates' stop firing. Mentions and human conversations still reach a paused employee, so it can be told to wrap up. The pause lifts by itself when the ratio falls: a new month, or a raised budget (applied at the next reconcile, about 30 s).
+- At `budget_warn_ratio` (default 0.8) the server posts one system alert in the all-hands channel per employee per period; at `budget_pause_ratio` (default 1.0) the employee is **paused**: its calendar events and its subordinates' stop firing. Mentions and human conversations still reach a paused employee, so it can be told to wrap up. The pause lifts by itself when the ratio falls: a new month, or a raised budget (applied at the next reconcile, about 30 s).
 - Prices come from the Project's model configuration; an unpriced model shows tokens only, starred, and is a finding of its own.
 
 ## Setting budgets
@@ -27,7 +27,7 @@ penguin org employee set <org_id>_ceo --budget 500       # the organization's mo
 penguin org employee set <org_id>_dev --budget 200       # inside the CEO's; the dev's subordinates share it
 ```
 
-- Start from the total the board gave (ask the creator in chat when nobody did), give the CEO that number, then split down the tree with a reserve at each level: a superior's budget minus its subordinates' budgets is what the superior itself can spend, so never allocate a level to 100%.
+- Start from the total the board gave (ask the creator in the all-hands channel when nobody did), give the CEO that number, then split down the tree with a reserve at each level: a superior's budget minus its subordinates' budgets is what the superior itself can spend, so never allocate a level to 100%.
 - Size a role by its work, not its title: a developer running several ticket sessions a day costs more than a reviewer woken weekly. Use the first week's `penguin org finance` to correct the guesses.
 - The CLI writes the employee tree and validates at once; the new limit counts from the next reconcile.
 
@@ -35,10 +35,10 @@ penguin org employee set <org_id>_dev --budget 200       # inside the CEO's; the
 
 The CEO hires finance at initialization, before there is a budget tree. On your first work run:
 
-1. Read `org_config.toml` for `timezone` (the month boundary), `budget_warn_ratio` and `budget_pause_ratio`; ask the CEO in chat before proposing a change to the ratios.
-2. If the CEO's entry has no `budget`, ask the board for the monthly total — `penguin org chat send -m "@user:<creator> What is the organization's monthly budget in USD?"` — and block on the answer rather than inventing one; `created_by` in `org_config.toml` names the creator.
+1. Read `org_config.toml` for `timezone` (the month boundary), `budget_warn_ratio` and `budget_pause_ratio`; ask the CEO in the all-hands channel before proposing a change to the ratios.
+2. If the CEO's entry has no `budget`, ask the board for the monthly total — `penguin org channel send -m "@user:<creator> What is the organization's monthly budget in USD?"` (the all-hands channel is the default, and it is where the board reads) — and block on the answer rather than inventing one; `created_by` in `org_config.toml` names the creator.
 3. Set the tree top-down (above), leaving each superior its reserve.
-4. Open the month's finance ticket to carry the audit lines: `penguin org ticket create --title "Finance <yyyy-mm>" --goal "Keep the organization within budget this month" --criteria "Every alert explained in chat; one audit line per day" --owner agent:<your_agent_id>`.
+4. Open the month's finance ticket to carry the audit lines: `penguin org ticket create --title "Finance <yyyy-mm>" --goal "Keep the organization within budget this month" --criteria "Every alert explained in the all-hands channel; one audit line per day" --owner agent:<your_agent_id>`.
 5. Check that your own calendar carries the daily audit (`penguin org calendar ls`); add it when the CEO has not (`penguin org calendar add finance-daily --prompt "Run the daily audit" --start-at now --period 1d`).
 
 ## The daily audit
@@ -54,11 +54,13 @@ Read, in order: anyone paused; anyone above the warn ratio; spend against days e
 
 ## Explaining alerts and proposing savings
 
-A budget alert is a system message: it triggers nobody, so finance reads it in the audit and answers it. One chat message, @-mentioning the employee's superior (and the employee when it can act on the advice), with the number, the cause and a proposal:
+A budget alert is a system message: it triggers nobody, so finance reads it in the audit and answers it. Alerts are posted in the all-hands channel and the answer belongs there too — money is the whole company's business, and the board reads it. One message, @-mentioning the employee's superior (and the employee when it can act on the advice), with the number, the cause and a proposal:
 
 ```bash
-penguin org chat send -m "@acme_ceo acme_dev is at 85% (170/200 USD) on day 12: three ticket sessions per day on 2026-09-01-site-build. Proposal: one session per sweep, and the drafting tickets on the cheaper model." --ref-ticket 2026-09-01-site-build
+penguin org channel send -m "@acme_ceo acme_dev is at 85% (170/200 USD) on day 12: three ticket sessions per day on 2026-09-01-site-build. Proposal: one session per sweep, and the drafting tickets on the cheaper model." --ref-ticket 2026-09-01-site-build
 ```
+
+Take a detail that only one stream needs into that stream's channel instead — but the alert itself is always answered where it was posted.
 
 Proposals, cheapest to enact first:
 
@@ -71,9 +73,9 @@ Proposals, cheapest to enact first:
 
 When `penguin org finance` shows an employee paused:
 
-- Its calendar and its subordinates' calendars are silent until the ratio falls; the tickets they own will not move on their own. Tell the superior in chat what is frozen and when it resumes — the new month, or a raise.
+- Its calendar and its subordinates' calendars are silent until the ratio falls; the tickets they own will not move on their own. Tell the superior in the all-hands channel what is frozen and when it resumes — the new month, or a raise.
 - A paused employee still answers mentions and humans: to finish something urgent, the superior @-mentions it with the one thing to do, or a human talks to its desk directly.
-- To lift the pause now, raise the budget (`penguin org employee set <id> --budget <usd>`, inside the superior's) and say so in chat; otherwise wait for the month to turn. Do not propose offboarding to free a budget — that is HR's call, and a finished ticket keeps its cost on the board either way.
+- To lift the pause now, raise the budget (`penguin org employee set <id> --budget <usd>`, inside the superior's) and say so in the all-hands channel; otherwise wait for the month to turn. Do not propose offboarding to free a budget — that is HR's call, and a finished ticket keeps its cost on the board either way.
 
 ## Cautions
 

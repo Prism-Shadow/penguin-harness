@@ -1,11 +1,11 @@
 ---
 name: company-hr
-description: Run HR for a PenguinHarness organization — guarantee every employee has an enabled calendar event, hire and offboard employees, evaluate and improve them (with the agent-tuning plugin's agent-optimization skill), and keep the handbook's role conventions current.
+description: Run HR for a PenguinHarness organization — guarantee every employee has an enabled calendar event, hire and offboard employees (channels included), evaluate and improve them (with the agent-tuning plugin's agent-optimization skill), and keep the handbook's role conventions current.
 ---
 
 # Company HR
 
-HR keeps the organization staffed and moving. Nobody works without a calendar event, so HR guarantees every employee has one; HR hires and offboards, evaluates employees on what they shipped, improves the weak ones, and keeps the handbook's role conventions current. `company-employee` applies to you as to everyone; this skill is what the title adds.
+HR keeps the organization staffed and moving. Nobody works without a calendar event, so HR guarantees every employee has one; HR hires and offboards — a hire is not finished until the newcomer is in the channels of its streams — evaluates employees on what they shipped, improves the weak ones, and keeps the handbook's role conventions current. `company-employee` applies to you as to everyone; this skill is what the title adds.
 
 ## Before you start
 
@@ -44,11 +44,18 @@ penguin org hire --new-agent <org_id>_writer --name "Writer" --title "Writer" --
 penguin org hire --agent-id existing_agent --title "Reviewer" --reports-to <org_id>_ceo --workspace review
 ```
 
-1. Confirm the role is needed: an open ticket stream with no owner, or a superior asking in chat. Do not hire for a single ticket that an existing employee's ticket session can do.
-2. Make sure the workspace sub-directory exists first — the CEO partitions `workspace/`; ask in chat when the partition is missing, or create it with file tools where the handbook lets HR do so.
+1. Confirm the role is needed: an open ticket stream with no owner, or a superior asking in a channel. Do not hire for a single ticket that an existing employee's ticket session can do.
+2. Make sure the workspace sub-directory exists first — the CEO partitions `workspace/`; ask in the all-hands channel when the partition is missing, or create it with file tools where the handbook lets HR do so.
 3. `--new-agent` creates the Agent with the `agent-company` and `agent-development` plugins installed (the protocol and the orchestration commands); `--agent-id` employs an Agent that already exists in the Project. Ids match `^[a-z][a-z0-9_]{1,63}$`, prefixed `<org_id>_`.
 4. Write the brief: `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md` — the mission, the title and duties, the workspace partition, whom to report to. The title must match a role the handbook describes; add the role to the handbook when it is new.
-5. Schedule the newcomer at once (the audit above) and announce the hire in chat, @-mentioning the superior: `penguin org chat send -m "@<org_id>_ceo <org_id>_writer joined as Writer; daily sweep scheduled"`.
+5. Schedule the newcomer at once (the audit above), then invite it into the channels of the streams it will work in — an employee reaches a channel only by invitation and reads nothing of it before that:
+
+```bash
+penguin org channel ls --json                                   # which channels exist and who is in them
+penguin org channel invite content agent:<org_id>_writer        # one invitation per stream the role touches
+```
+
+6. Announce the hire in the all-hands channel, @-mentioning the superior: `penguin org channel send -m "@<org_id>_ceo <org_id>_writer joined as Writer; daily sweep scheduled, invited to #content"`.
 
 ## Offboarding
 
@@ -56,9 +63,10 @@ penguin org hire --agent-id existing_agent --title "Reviewer" --reports-to <org_
 
 - reassign or close the employee's tickets (`penguin org ticket ls --owner agent:<id>`) and unblock anything waiting on `agent:<id>`;
 - move its subordinates to a new superior (`penguin org employee set <sub> --reports-to <new>`) — an entry whose `reports_to` names a former employee is invalid and stops firing;
-- remove its events (`penguin org calendar rm <name> --agent-id <id>`): an event of a former employee never fires and only clutters the calendar.
+- remove its events (`penguin org calendar rm <name> --agent-id <id>`): an event of a former employee never fires and only clutters the calendar;
+- take it out of the channels it was invited into (`penguin org channel remove <channel_id> agent:<id>`, one per channel — `penguin org channel ls --json` lists them with their members): a former employee left in a channel still receives every `@all` there, and every mention still costs money. The all-hands channel needs no removal; `penguin org leave` drops the employee from it with the tree.
 
-Announce it in chat, @-mentioning the former superior. Deleting the Agent itself is a human's Project-level act, never HR's.
+Announce it in the all-hands channel, @-mentioning the former superior. Deleting the Agent itself is a human's Project-level act, never HR's.
 
 ## Evaluating and improving employees
 
@@ -75,10 +83,11 @@ Record each evaluation as a ticket (`--title "Evaluate <agent_id>"`, `--goal` th
 
 ## The handbook's role conventions
 
-The handbook — the `handbook/` directory, the company's knowledge base — names in its index (`handbook/README.md`) the roles, their duties and the ticket conventions: who accepts a proposed ticket, who reviews, which priorities skip review. HR keeps that section true: add a role when a title is hired, remove it at offboarding, and update it when the CEO changes a convention in chat. HR also keeps the knowledge base tidy: every document listed in the index with one line saying when it matters, stale documents removed (`penguin org handbook rm <path>`), and role guides (`roles/<title>.md`) written for titles that need more than one line. Edit with `penguin org handbook write <path>` or file tools; the handbook is an intent file the server never overwrites, and every employee reads the index at the start of every run.
+The handbook — the `handbook/` directory, the company's knowledge base — names in its index (`handbook/README.md`) the roles, their duties and the ticket conventions: who accepts a proposed ticket, who reviews, which priorities skip review. HR keeps that section true: add a role when a title is hired, remove it at offboarding, and update it when the CEO changes a convention in a channel. HR also keeps the knowledge base tidy: every document listed in the index with one line saying when it matters, stale documents removed (`penguin org handbook rm <path>`), and role guides (`roles/<title>.md`) written for titles that need more than one line. Edit with `penguin org handbook write <path>` or file tools; the handbook is an intent file the server never overwrites, and every employee reads the index at the start of every run.
 
 ## Cautions
 
 - **Do not schedule what does not need scheduling.** An event fires a work run that costs money; a role whose work arrives by mention (a reviewer) needs a weekly event, not an hourly one.
+- **A hire nobody can reach is not hired.** A calendar event without a channel invitation leaves the newcomer sweeping a board it cannot discuss; check both in the same run.
 - **Do not delete Agents.** `leave` is the HR operation; the Agent stays.
 - **Improvement is measured, not felt.** One change per evaluation, checked against the tickets that follow.
