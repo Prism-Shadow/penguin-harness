@@ -80,6 +80,12 @@ them the URL and wait. A restart prints a fresh one, so it is recoverable, but o
 them. Being blocked here is an acceptable outcome: report how far you got and what stayed
 unverified rather than guessing.
 
+**Under `pnpm dev` the printed link carries the wrong port.** `index.ts` builds it as
+`http://<host>:<port>/api/auth/claim?token=…` from the server's own listener, which in dev is the
+backend on 7368 — but the App is Vite on 7365, and Vite is what serves the page the redirect lands
+on. Swap the port before handing the link over: `http://localhost:7365/api/auth/claim?token=…`.
+The token is the same either way; only the origin that ends up holding the cookie changes.
+
 ## Editing while it runs
 
 Changes to `core` or `skills` do not reach a running dev server — web/server consume snapshot
