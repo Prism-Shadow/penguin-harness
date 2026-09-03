@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** fix
 - **Scope:** `core`, `skills`
+- **PR:** [#604](https://github.com/Prism-Shadow/penguin-harness/pull/604)
 
 [English](2026-09-03-search-scope-and-dev-instance-rules.md)
 
