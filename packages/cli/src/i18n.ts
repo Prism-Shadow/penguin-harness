@@ -168,6 +168,20 @@ export interface Messages {
     colName(): string;
     colSessions(): string;
     colDescription(): string;
+    /** `agent export <agent-id>`: the portable bundle, distinct from an Agent State snapshot. */
+    exportDesc: string;
+    exportOut: string;
+    exportKind: string;
+    exportKindInvalid: () => string;
+    exported(file: string): string;
+    /** `agent import <file>`: a bundle zip or a bare penguin-agent.json. */
+    importDesc: string;
+    importAgentId: string;
+    imported(agentId: string, projectId: string): string;
+    importInstalled(skills: number, hooks: number): string;
+    /** Heading over the definition's entries the import could not apply, one per line below it. */
+    importSkipped(): string;
+    importVaultKeys(keys: string): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -700,6 +714,21 @@ const en: Messages = {
     colName: () => "NAME",
     colSessions: () => "SESSIONS",
     colDescription: () => "DESCRIPTION",
+    exportDesc:
+      "Export an agent as a portable bundle (zip): its definition, skills, hooks and an integration guide — not an Agent State snapshot",
+    exportOut: "File or directory to write the bundle to (defaults to the current directory)",
+    exportKind:
+      "What to pack around the definition: api (integration guide and call examples, the default) or docker (a container that serves the agent)",
+    exportKindInvalid: () => 'kind must be "api" or "docker"',
+    exported: (file) => `Bundle written to ${file}`,
+    importDesc:
+      "Create an agent from an exported bundle (.zip) or a bare penguin-agent.json; vault values are never carried",
+    importAgentId: "Id for the new agent (defaults to the id inside the file)",
+    imported: (agentId, projectId) => `Agent ${agentId} imported into project ${projectId}.`,
+    importInstalled: (skills, hooks) =>
+      `Installed ${skills} skill(s) and ${hooks} hook package(s).`,
+    importSkipped: () => "Not applied:",
+    importVaultKeys: (keys) => `Vault keys to set: ${keys}`,
   },
   project: {
     desc: "Manage projects",
@@ -1213,6 +1242,18 @@ const zh: Messages = {
     colName: () => "名称",
     colSessions: () => "会话数",
     colDescription: () => "描述",
+    exportDesc: "把 Agent 导出为可移植包（zip）：定义、技能、钩子与接入文档——不是 Agent State 快照",
+    exportOut: "写入的文件或目录（缺省为当前目录）",
+    exportKind:
+      "在定义之外打包什么：api（接入文档与调用示例，缺省）或 docker（能直接跑起来的容器）",
+    exportKindInvalid: () => 'kind 只能是 "api" 或 "docker"',
+    exported: (file) => `已写入 ${file}`,
+    importDesc: "从导出的包（.zip）或单独的 penguin-agent.json 创建 Agent；密钥值不会随包携带",
+    importAgentId: "新 Agent 的 id（缺省取文件内的 id）",
+    imported: (agentId, projectId) => `已把 Agent ${agentId} 导入 Project ${projectId}。`,
+    importInstalled: (skills, hooks) => `已安装 ${skills} 个技能与 ${hooks} 个钩子包。`,
+    importSkipped: () => "未应用：",
+    importVaultKeys: (keys) => `需要设置的 Vault 密钥：${keys}`,
   },
   project: {
     desc: "管理 Project",

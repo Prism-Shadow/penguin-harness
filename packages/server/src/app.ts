@@ -153,6 +153,7 @@ import {
   agentPluginsRoutes,
   pluginLibraryRoutes,
 } from "./http/routes/plugins.js";
+import { agentPortingRoutes } from "./http/routes/agent-porting.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -1202,6 +1203,7 @@ export function createApp(
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
+  app.route("/api/projects/:projectId/agents", agentPortingRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));

@@ -13,6 +13,9 @@ import type {
   AgentConfigUpdateRequest,
   AgentCreateRequest,
   AgentCreateResponse,
+  AgentBundleImportRequest,
+  AgentBundleKind,
+  AgentBundleImportResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -1165,6 +1168,23 @@ export const agentExportUrl = (projectId: string, agentId: string): string =>
 export const importAgent = (projectId: string, agentId: string, body: AgentImportRequest) =>
   apiFetch<AgentImportResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
+    { method: "POST", body },
+  );
+
+// Agent porting: the portable definition and its integration bundle ---------------------
+
+/** Bundle (zip) download URL: the server sets Content-Disposition attachment, so it serves a bare <a download> or a fetch-and-save. */
+export const agentBundleUrl = (
+  projectId: string,
+  agentId: string,
+  kind: AgentBundleKind = "api",
+): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}`;
+
+/** Creates an Agent from a bundle zip or a bare penguin-agent.json (base64 either way); 409 agent_exists when the id is taken. */
+export const importAgentBundle = (projectId: string, body: AgentBundleImportRequest) =>
+  apiFetch<AgentBundleImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/import`,
     { method: "POST", body },
   );
 

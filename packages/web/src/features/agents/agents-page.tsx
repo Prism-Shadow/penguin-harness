@@ -57,6 +57,8 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
+import { AgentExportModal } from "./agent-export-modal";
+import { AgentImportModal } from "./agent-import-modal";
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,
@@ -92,6 +94,8 @@ const CARD_ICONS = {
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  /** Export the portable agent bundle (arrow down into a tray) */
+  exportBundle: "M12 4v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
   /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
   memory:
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
@@ -126,6 +130,10 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The "Import agent" dialog (agent-import-modal.tsx) is open. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** The Agent whose "Export agent" dialog is open, or null (agent-export-modal.tsx). */
+  const [exportingId, setExportingId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -410,9 +418,14 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <Button variant="primary" onClick={openCreate}>
-              {S.agent.create}
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Import (a bundle or another tool's setup) sits beside Create: it makes a new
+                  Agent too, unlike the snapshot import on the settings page. */}
+              <Button onClick={() => setImportOpen(true)}>{S.agent.importAgent}</Button>
+              <Button variant="primary" onClick={openCreate}>
+                {S.agent.create}
+              </Button>
+            </div>
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -624,6 +637,18 @@ export function AgentsPage() {
                     >
                       <GlyphIcon
                         d={CARD_ICONS.usage}
+                        size={15}
+                        className="text-gray-600 dark:text-gray-300"
+                      />
+                    </Button>
+                    <Button
+                      size="icon"
+                      title={S.agent.exportAgent}
+                      aria-label={S.agent.exportAgent}
+                      onClick={() => setExportingId(a.agentId)}
+                    >
+                      <GlyphIcon
+                        d={CARD_ICONS.exportBundle}
                         size={15}
                         className="text-gray-600 dark:text-gray-300"
                       />
@@ -879,6 +904,33 @@ export function AgentsPage() {
             </ul>
           </div>
         </ConfirmModal>
+      )}
+
+      {/* Import agent (a bundle from disk, or the AI path): creates an Agent, so it sits beside
+          Create; the snapshot seed inside the create dialog restores state instead. */}
+      {projectId !== undefined && (
+        <AgentImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          projectId={projectId}
+          agents={agents}
+          onImported={() => {
+            setImportOpen(false);
+            reloadAgents().catch((e: unknown) => toastError(apiErrorText(e)));
+          }}
+        />
+      )}
+
+      {/* Export agent: the mirror of the import dialog — two shapes the server packs, plus the
+          prompt path for what they do not cover. */}
+      {projectId !== undefined && exportingId !== null && (
+        <AgentExportModal
+          open
+          onClose={() => setExportingId(null)}
+          projectId={projectId}
+          agentId={exportingId}
+          agents={agents}
+        />
       )}
 
       {/* Delete confirmation (shared ConfirmModal) */}

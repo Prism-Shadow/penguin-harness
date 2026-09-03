@@ -202,6 +202,8 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | POST | /agents/:agentId/memory/scopes/:key/import | 把这样一份文档写回（仅 owner）：`{payload, mode?, confirm?}`。`mode` 为 `skip`（缺省，只添加作用域尚未有的名字）、`overwrite`（覆盖同名文件）或 `replace`（并删除文档中没有的文件）；任何会覆盖或删除的操作都需要 `confirm`，否则返回 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
 | POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
+| GET | /agents/:agentId/bundle | 导出 Agent 的可移植包（zip 下载）：`penguin-agent.json`、已安装的 `skills/` 与 `hooks/` 目录、接入文档与可运行的客户端示例——绝不含 Vault 值 |
+| POST | /agents/import | 从可移植包 zip 或单独的 `penguin-agent.json` 创建 Agent：`{dataBase64, agentId?}` → 201 `{agent, installed, skipped, vaultKeys}`；id 已占用时 409 `agent_exists` |
 | GET | /agents/:agentId/skills | 已安装 Skill 列表（从库安装走 `/plugins`） |
 | DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
 | POST | /agents/:agentId/plugins | 按名称安装库内插件——各自的 Skill 与钩子包，重装即更新。`{ names }` → 201 `{ skills, hooks }`；404 `unknown_plugin` 时什么都不写 |

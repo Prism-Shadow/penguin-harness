@@ -532,6 +532,100 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    importAgent: "Import agent",
+    importAgentDesc:
+      "Turn a Claude Code, Codex or Pi agent setup, or an agent bundle exported from PenguinHarness, into a new agent of this Project. Not the snapshot import: a snapshot backs up and restores, this ports and integrates.",
+    importModeFile: "From a file",
+    importModeAi: "Let AI import",
+    importFileLabel: "Bundle file",
+    importFilePick: "Choose a file",
+    importFileHint: "An <id>-export.zip exported from PenguinHarness, or a bare penguin-agent.json",
+    importFileClear: "Remove the selected file",
+    importAgentIdHint: "Leave empty to use the id inside the file",
+    importAgentExists: "That id is taken: enter a new agent id and retry",
+    importAgentAction: "Import",
+    importAgentBusy: "Importing…",
+    importAgentDone: (id: string): string => `Agent ${id} imported`,
+    importAgentSkipped: (notes: string): string => `Not mapped: ${notes}`,
+    importAgentVaultKeys: (keys: string): string => `Vault keys to set: ${keys}`,
+    exportAgent: "Export agent",
+    exportAgentDesc:
+      "Pick a shape. None of them carry vault values, memory, Traces or snapshots; the first two both carry the definition, skills and hooks, so either re-imports.",
+    exportModeApi: "API call examples",
+    exportModeApiDesc:
+      "Definition, skills and hooks, plus the integration guide, the endpoint reference and runnable curl / Python / TypeScript examples",
+    exportModeDocker: "Docker files",
+    exportModeDockerDesc:
+      "Dockerfile, compose file, entrypoint and .env.example: the container imports this agent on first boot and serves the same API",
+    exportModeAi: "Let AI export it",
+    exportModeAiDesc:
+      "Describe the shape you want and an agent writes it — for what the two above do not cover",
+    exportAction: "Download",
+    exportBusy: "Packing…",
+    aiExportIntro:
+      "An agent reads this agent's definition and documents and produces what you describe; vault values are never written into the output.",
+    aiExportExamples: [
+      {
+        key: "sdk",
+        label: "Generate an SDK that calls it",
+        description: "A typed client",
+        prompt:
+          "Generate a typed TypeScript client package for this agent, wrapping create-session, send-message and read-result, with a minimal runnable example",
+      },
+      {
+        key: "k8s",
+        label: "Generate Kubernetes manifests",
+        description: "Deployment + Service",
+        prompt:
+          "Rewrite this agent's Docker export as Kubernetes manifests: Deployment, Service, Secret and a persistent volume, with the model key in the Secret",
+      },
+      {
+        key: "openapi",
+        label: "Generate an OpenAPI description",
+        description: "For another system",
+        prompt:
+          "Write an OpenAPI 3.1 description of the endpoints that drive this agent, treating it as a service another system integrates with",
+      },
+      {
+        key: "handoff",
+        label: "Write a handover document",
+        description: "For whoever takes it over",
+        prompt:
+          "Write a handover document: what this agent does, which skills and hooks it carries, which secrets it needs, and how to run it locally and on a server",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
+    aiExportTail: (projectId: string, agentId: string): string =>
+      `Use the agent-porting skill. The target is agent ${agentId} in Project ${projectId}: first run \`penguin agent export ${agentId} --project-id ${projectId} --out <dir>\` to get its portable bundle, read the penguin-agent.json and the documents in it, then produce what was asked for and write it into the Workspace. Never write a vault value into the output — list the key names the reader has to set instead. Finish by telling me where the files are and how to use them.`,
+    aiImportIntro:
+      "The agent reads the source, writes the portable definition and runs the import; secrets are never copied, and the keys to set are listed in its report.",
+    aiImportExamples: [
+      {
+        key: "claude",
+        label: "Import my Claude Code setup",
+        description: "~/.claude",
+        prompt: "Import my local Claude Code setup (~/.claude) as an agent",
+      },
+      {
+        key: "codex",
+        label: "Import my Codex settings",
+        description: "~/.codex",
+        prompt: "Import the Codex settings in ~/.codex as an agent",
+      },
+      {
+        key: "pi",
+        label: "Import Pi's agent settings",
+        description: "~/.pi",
+        prompt: "Import Pi's agent settings (~/.pi)",
+      },
+      {
+        key: "bundle",
+        label: "Import an exported bundle",
+        description: "researcher-export.zip",
+        prompt: "Import ~/exports/researcher-export.zip",
+      },
+    ],
+    aiImportTail: (projectId: string): string =>
+      `Use the agent-porting skill. Read the source fully, not just a summary; build the portable definition from it (penguin-agent.json, with skills/ directories where needed); import it into project ${projectId} with \`penguin agent import\`; then report the new agent id, what was mapped and what was not, and the vault keys I need to set.`,
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,

@@ -15,7 +15,7 @@ import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
+import { libraryPlugin, librarySkill, loadPreinstalledPlugins } from "@prismshadow/penguin-core";
 import type {
   AgentCreateResponse,
   AgentsResponse,
@@ -26,6 +26,13 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+
+/** The skills the named library plugins ship, in the name order an installed list reports them — derived, so a plugin gaining a skill changes nothing here. */
+function librarySkillNames(...plugins: string[]): string[] {
+  return plugins
+    .flatMap((name) => libraryPlugin(name)!.skills.map((skill) => skill.name))
+    .sort((a, b) => a.localeCompare(b));
+}
 
 describe("skills api", () => {
   let t: TestApp;
@@ -205,12 +212,7 @@ describe("skills api", () => {
     const res = await owner.post(toPlugins(url), { names: ["agent-development"] });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.map((s) => s.name)).toEqual([
-      "penguin-config",
-      "penguin-orchestration",
-      "penguin-sdk",
-      "unified-llm-api",
-    ]);
+    expect(body.skills.map((s) => s.name)).toEqual(librarySkillNames("agent-development"));
     expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-config")!.skill.content);
   });
 
@@ -299,19 +301,13 @@ describe("skills api", () => {
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(6);
+    const seeded = librarySkillNames("agent-development", "software-development");
+    expect(summary.agent.skillCount).toBe(seeded.length);
 
     // The installed list is the same shape a library install produces (name-sorted):
     // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
-    expect(listed.skills.map((s) => s.name)).toEqual([
-      "penguin-config",
-      "penguin-orchestration",
-      "penguin-sdk",
-      "software-engineering",
-      "unified-llm-api",
-      "web-design",
-    ]);
+    expect(listed.skills.map((s) => s.name)).toEqual(seeded);
     // Installed through the same writer as the Skills tab: SKILL.md is the library file verbatim.
     const onDisk = await fs.readFile(
       path.join(skillsDir(t.root, projectId, "seeded_agent"), "penguin-sdk", "SKILL.md"),
@@ -588,7 +584,7 @@ describe("skills api", () => {
       ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(4);
+      expect(fresh.skillCount).toBe(librarySkillNames("agent-development").length);
       expect(fresh.pluginUpdates).toEqual([]);
 
       // Age one installed copy: the library now carries a higher version than the disk does.

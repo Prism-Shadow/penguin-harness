@@ -522,6 +522,105 @@ export const zh = {
       "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
     createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
     createSnapshotClear: "移除已选快照包",
+    /**
+     * Agent porting — the list header's import dialog, and the bundle export on a card and on
+     * the settings overview. Apart from the snapshot above on purpose: a snapshot backs up and
+     * restores one existing Agent's state, a bundle moves an Agent's definition between
+     * installs and tools.
+     */
+    importAgent: "导入智能体",
+    importAgentDesc:
+      "把 Claude Code、Codex、Pi 的智能体设置，或 PenguinHarness 导出的智能体包，导入为本 Project 的一个新智能体。与「导入快照」不同：快照是备份与还原，这里是移植与接入。",
+    importModeFile: "从文件导入",
+    importModeAi: "让 AI 导入",
+    importFileLabel: "包文件",
+    importFilePick: "选择文件",
+    importFileHint: "PenguinHarness 导出的 <id>-export.zip，或单独的 penguin-agent.json",
+    importFileClear: "移除已选文件",
+    importAgentIdHint: "留空则使用包内的 id",
+    importAgentExists: "该 id 已被占用，填写一个新的 Agent id 后重试",
+    importAgentAction: "导入",
+    importAgentBusy: "导入中…",
+    importAgentDone: (id: string): string => `已导入智能体 ${id}`,
+    importAgentSkipped: (notes: string): string => `未映射：${notes}`,
+    importAgentVaultKeys: (keys: string): string => `需要设置的密钥：${keys}`,
+    exportAgent: "导出智能体",
+    exportAgentDesc:
+      "选择导出形态。三种都不含密钥值、记忆、Trace 与快照；前两种都带定义、技能与钩子，因此都能再导入回来。",
+    /** The three export shapes: two packed by the server, one written by an agent. */
+    exportModeApi: "导出 API 调用示例",
+    exportModeApiDesc: "定义、技能、钩子，加接入文档、端点说明与 curl / Python / TypeScript 示例",
+    exportModeDocker: "导出 Docker 文件",
+    exportModeDockerDesc:
+      "Dockerfile、compose 文件、entrypoint 与 .env.example：容器起来即导入该智能体并对外提供同一套 API",
+    exportModeAi: "让 AI 导出",
+    exportModeAiDesc: "描述你要的形态，交给智能体生成——上面两种覆盖不到时用它",
+    exportAction: "下载",
+    exportBusy: "打包中…",
+    aiExportIntro:
+      "由智能体读取该智能体的定义与文档并按你的描述产出文件；密钥值不会被写进导出内容。",
+    aiExportExamples: [
+      {
+        key: "sdk",
+        label: "生成一个调用它的 SDK",
+        description: "带类型的客户端",
+        prompt:
+          "为这个智能体生成一个带类型的 TypeScript 客户端包，封装建会话、发消息、读结果三步，并附最小可运行示例",
+      },
+      {
+        key: "k8s",
+        label: "生成 Kubernetes 部署清单",
+        description: "Deployment + Service",
+        prompt:
+          "把这个智能体的 Docker 导出改写成 Kubernetes 清单：Deployment、Service、Secret 与持久卷，模型密钥走 Secret",
+      },
+      {
+        key: "openapi",
+        label: "生成 OpenAPI 描述",
+        description: "给别的系统对接",
+        prompt:
+          "为调用这个智能体的那几个端点写一份 OpenAPI 3.1 描述，把它当成一个可被别的系统对接的服务",
+      },
+      {
+        key: "handoff",
+        label: "写一份交接文档",
+        description: "给接手的同事",
+        prompt:
+          "写一份交接文档：这个智能体是做什么的、装了哪些技能与钩子、需要哪些密钥、怎么在本地和服务器上把它跑起来",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
+    aiExportTail: (projectId: string, agentId: string): string =>
+      `使用 agent-porting 技能。目标是 Project ${projectId} 的智能体 ${agentId}：先用 \`penguin agent export ${agentId} --project-id ${projectId} --out <目录>\` 取得它的可移植包，读完其中的 penguin-agent.json 与文档，再按上面的要求产出文件、写进工作区；不要把任何密钥值写进导出内容，需要对方自行设置的键名单独列出。最后告诉我文件放在哪里、怎么用。`,
+    aiImportIntro:
+      "由智能体读取来源、生成可移植定义并执行导入；密钥不会被复制，需要设置的会在结果中列出。",
+    aiImportExamples: [
+      {
+        key: "claude",
+        label: "导入 Claude Code 配置",
+        description: "~/.claude",
+        prompt: "把我本机 Claude Code 的配置（~/.claude）导入为一个智能体",
+      },
+      {
+        key: "codex",
+        label: "导入 Codex 设置",
+        description: "~/.codex",
+        prompt: "把 ~/.codex 的 Codex 设置导入为一个智能体",
+      },
+      {
+        key: "pi",
+        label: "导入 Pi 的 agent 设置",
+        description: "~/.pi",
+        prompt: "把 Pi 的 agent 设置（~/.pi）导入",
+      },
+      {
+        key: "bundle",
+        label: "导入导出的智能体包",
+        description: "researcher-export.zip",
+        prompt: "从 ~/exports/researcher-export.zip 导入",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
+    aiImportTail: (projectId: string): string =>
+      `使用 agent-porting 技能。完整读取来源，不要只看摘要；据此构建可移植定义（penguin-agent.json，必要时附 skills/ 目录）；用 \`penguin agent import\` 导入到 Project ${projectId}；最后报告新智能体的 id、哪些内容完成了映射、哪些没有映射，以及需要我设置的密钥。`,
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,

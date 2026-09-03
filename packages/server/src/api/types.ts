@@ -2948,6 +2948,94 @@ export interface AgentImportResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Agent porting: the portable definition and the integration bundle
+// ---------------------------------------------------------------------------
+
+/** A skill the definition names; the bundle's `skills/<name>/` directory carries its files. */
+export interface PortableSkillRef {
+  name: string;
+  version?: string;
+  description?: string;
+}
+
+/** A hook package the definition names; the bundle's `hooks/<name>/` directory carries its manifest and scripts. */
+export interface PortableHookRef {
+  name: string;
+  version?: string;
+  description?: string;
+}
+
+/**
+ * `penguin-agent.json`: what an Agent is, apart from its state — enough to recreate it in
+ * another PenguinHarness install or to write one by hand from another tool's settings. Vault
+ * values never travel (only the key names the agent expects) and credential-looking MCP
+ * `env` / `headers` values are blanked on export; nothing else is redacted, so a secret
+ * placed elsewhere in an MCP config (a `url` query string, stdio `args`) does travel. Memory,
+ * Traces, schedules and snapshots are Agent State, not definition, and stay behind.
+ */
+export interface PortableAgentDefinition {
+  format: "penguin-agent/1";
+  /** The Agent id the definition was exported under; the import uses it unless the request overrides it. */
+  id: string;
+  name: string;
+  description?: string;
+  /** The Agent's instructions — its AGENTS.md verbatim; a CLAUDE.md or another tool's AGENTS.md maps here. */
+  prompt: string;
+  /** The `system_prompt` template (PenguinHarness placeholders); absent on import means the default template. */
+  systemPrompt?: string;
+  skills: PortableSkillRef[];
+  hooks: PortableHookRef[];
+  /** Built-in tool names enabled on the source Agent; absent on import keeps the default toolset. */
+  tools?: { builtin: string[] };
+  /** MCP Server entries, with credential-looking `env` / `headers` values blanked. */
+  mcpServers?: MCPServerConfig[];
+  /** Model preferences — never credentials. */
+  model?: { thinkingLevel?: ThinkingLevelName; maxTokens?: number; timeoutMs?: number };
+  /** Vault key names the Agent expects to find; the importer sets their values by hand. */
+  vaultKeys?: string[];
+  /** ISO 8601 export time. */
+  exportedAt: string;
+  /** Where the definition came from (informational). */
+  source?: { projectId: string; agentId: string; version: number };
+}
+
+/**
+ * POST /api/projects/:p/agents/import (any member): create an Agent from a portable bundle.
+ * The bundle is the zip `GET …/agents/:agentId/bundle` produces (`penguin-agent.json` plus
+ * `skills/<name>/…` and `hooks/<name>/…` directories) or a bare `penguin-agent.json`
+ * document; the server tells them apart by content. 409 `agent_exists` when the id is
+ * taken, 400 for a malformed bundle or definition, nothing left behind on failure.
+ */
+/**
+ * What an agent export is packed for. Both kinds carry the portable definition plus the
+ * agent's `skills/` and `hooks/`, so either zip re-imports; they differ in what is packed
+ * around that core.
+ *
+ * - `api` — the integration bundle: a README written for whoever wires the agent into another
+ *   system, the endpoint reference and runnable curl / Python / TypeScript examples.
+ * - `docker` — a runnable container: Dockerfile, compose file, entrypoint and `.env.example`,
+ *   so the agent serves the same HTTP API from an image instead of a local install.
+ */
+export type AgentBundleKind = "api" | "docker";
+
+export interface AgentBundleImportRequest {
+  /** Base64 of the bundle zip or of a bare `penguin-agent.json` (decoded size capped at 14MB). */
+  dataBase64: string;
+  /** The new Agent's id; defaults to the definition's `id`. */
+  agentId?: string;
+}
+
+export interface AgentBundleImportResponse {
+  agent: AgentSummary;
+  /** Skills and hook packages installed from the bundle's directories. */
+  installed: { skills: string[]; hooks: string[] };
+  /** What the definition named but the import could not apply — a skill the bundle has no directory for, a built-in tool this install lacks — one sentence each. */
+  skipped: string[];
+  /** Vault key names the definition expects the user to set. */
+  vaultKeys: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Benchmark scoring (read-only display)
 // ---------------------------------------------------------------------------
 

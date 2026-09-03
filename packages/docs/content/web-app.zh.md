@@ -87,11 +87,11 @@ Web App 里凡是通过表单创建的对象——Agent、模型分组、Benchma
 
 ## Agent 管理（/agents）
 
-列表页支持创建与删除 Agent——创建弹窗可选从导出的 Agent State 快照包直接初始化（名称与描述留空沿用包内值；此时技能选择不可用，包自带技能）；点击进入 `/agents/:agentId` 设置页，按标签页组织：
+列表页支持创建与删除 Agent——创建弹窗可选从导出的 Agent State 快照包直接初始化（名称与描述留空沿用包内值；此时技能选择不可用，包自带技能）。页头的**导入智能体**按钮把 Claude Code、Codex、Pi 的设置或导出的智能体包变成一个新 Agent：**从文件导入**上传 `<id>-export.zip` 或单独的 `penguin-agent.json`（Agent id 按文件名预填、可改；id 已占用时就地提示，换一个 id 即可重试），**让 AI 导入**经[让 AI 创建](#让-ai-创建)的提示词框把来源交给 Project 的默认 Agent，由它用 `agent-porting` 技能完成。每张卡片的**导出智能体**打开与导入对称的弹窗，分三段：**导出 API 调用示例**下载可移植包（`penguin-agent.json`、技能与钩子、接入文档与可运行的客户端示例），**导出 Docker 文件**下载一个容器——起来即导入该 Agent 并对外提供同一套 API，**让 AI 导出**则把前两者覆盖不到的形态（SDK、Kubernetes 清单、交接文档）描述出来交给 Agent 生成。三者都不含 Vault 值。二者都与 Agent State 快照分开：快照是对某个既有 Agent 的备份与还原。点击卡片进入 `/agents/:agentId` 设置页，按标签页组织：
 
 | 标签页 | 内容 |
 | --- | --- |
-| Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
+| Overview | 基本信息、可移植智能体包的导出、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
 | Memory | Agent 级开关，以及按作用域分组的全部记忆——用户记忆在前、每个 Workspace 一组，分组可折叠并带添加、导出与导入入口——每行提供查看 / 删除 / 对话编辑 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
