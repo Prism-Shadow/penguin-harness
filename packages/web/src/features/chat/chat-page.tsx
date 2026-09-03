@@ -125,7 +125,7 @@ import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope"
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
@@ -1754,12 +1754,14 @@ export function ChatPage() {
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
-                      mid-round: a quiet pill with their count, the same figure and glyph as
-                      the session row's mark, read live off the row. */}
+                      mid-round: their count, in the live-status green, the same figure and
+                      glyph as the session row's mark and read live off the row. Bare ink like
+                      the chips beside it, not a tinted pill: this is one more reading in the
+                      stat row, not a badge that should out-weigh them. */}
                   {backgroundCount > 0 && (
                     <span
                       title={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} rounded-full px-1.5 py-0.5 font-mono text-xs ${toneSurface.busy}`}
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
                       <GlyphIcon d={BACKGROUND_TASKS_ICON} />
                       {backgroundCount}
