@@ -164,6 +164,14 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
+/**
+ * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
+ * pull-open buttons, the dock header's move-dock buttons and the floating launcher's ball, so
+ * one mark stands for one edge everywhere.
+ */
+export const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
+export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
+
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 

@@ -29,7 +29,8 @@ import type {
 } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS, PANEL_RIGHT_ICON } from "../../components/ui/icons";
+import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
 import { scrollMovesAnchor } from "../../lib/context-menu";
@@ -63,8 +64,6 @@ import {
   type FanDirection,
 } from "./dock-launcher-state";
 
-/** Window with a right pane — the toolbar's right-dock toggle draws the same mark. */
-const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
 /** The ball's inset from the body's right edge (px). */
 const EDGE_INSET = 14;
 /** Movement that turns a press into a drag (px); under it the press is a click. */
@@ -73,19 +72,6 @@ const DRAG_THRESHOLD = 4;
 const FAN_EXIT_MS = 140;
 /** Delay between one entry's entrance and the next, nearest the ball first (ms). */
 const FAN_STAGGER_MS = 28;
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
 
 export interface DockLauncherProps {
   /** A pending approval inside a subagent: the amber dot rides the ball and the agents entry. */
