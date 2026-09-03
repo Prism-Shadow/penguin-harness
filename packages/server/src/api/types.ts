@@ -3808,7 +3808,29 @@ export interface OrgChatReadRequest {
   upTo: string;
 }
 
+/** The handbook index (`handbook/README.md`), the file every work run reads first. */
 export interface OrgHandbookResponse {
+  content: string;
+}
+
+/** One file of the organization handbook (`handbook/`, the company's knowledge base); `path` is relative to that directory. */
+export interface OrgHandbookFile {
+  path: string;
+  size: number;
+  updatedAt: string;
+}
+
+export interface OrgHandbookFilesResponse {
+  /** The index first, then the other documents by path. */
+  files: OrgHandbookFile[];
+}
+
+export interface OrgHandbookFileResponse {
+  path: string;
+  content: string;
+}
+
+export interface OrgHandbookFileWriteRequest {
   content: string;
 }
 

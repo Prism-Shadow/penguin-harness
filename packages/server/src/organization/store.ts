@@ -27,6 +27,8 @@ import {
   chatDir,
   chatFilePath,
   desksPath,
+  handbookDir,
+  handbookFilePath,
   handbookPath,
   isTicketColumn,
   orgChartPath,
@@ -48,6 +50,13 @@ const MONTH = /^\d{4}-\d{2}$/;
 export interface OrgFile<T> {
   raw: string;
   parsed: ParseResult<T>;
+}
+
+/** One file of the handbook, `path` relative to `handbook/` with `/` separators. */
+export interface HandbookFile {
+  path: string;
+  size: number;
+  mtimeMs: number;
 }
 
 export interface CalendarFile {
@@ -121,7 +130,13 @@ export class OrgStore {
     await fs.mkdir(path.dirname(dir), { recursive: true });
     // Not recursive: an existing directory is a taken id, never something to reuse.
     await fs.mkdir(dir, { recursive: false });
-    for (const sub of [calendarDir(dir), ticketsDir(dir), chatDir(dir), workspaceDir(dir)]) {
+    for (const sub of [
+      handbookDir(dir),
+      calendarDir(dir),
+      ticketsDir(dir),
+      chatDir(dir),
+      workspaceDir(dir),
+    ]) {
       await fs.mkdir(sub, { recursive: true });
     }
   }
@@ -130,7 +145,7 @@ export class OrgStore {
     await fs.rm(dir, { recursive: true, force: true });
   }
 
-  // ---- org_config.toml / org_chart.yaml / desks.toml / README.md ----
+  // ---- org_config.toml / org_chart.yaml / desks.toml / handbook/ ----
 
   async readConfig(dir: string): Promise<OrgFile<OrgConfig> | null> {
     const raw = await readText(orgConfigPath(dir));
@@ -168,6 +183,59 @@ export class OrgStore {
 
   async writeHandbook(dir: string, content: string): Promise<void> {
     await writeText(handbookPath(dir), content);
+  }
+
+  /** Every file under `handbook/` (hidden entries skipped), the index first, then by path. */
+  async listHandbookFiles(dir: string): Promise<HandbookFile[]> {
+    const base = handbookDir(dir);
+    const out: HandbookFile[] = [];
+    const walk = async (rel: string[]): Promise<void> => {
+      let entries: import("node:fs").Dirent[];
+      try {
+        entries = await fs.readdir(path.join(base, ...rel), { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (e.name.startsWith(".")) continue;
+        const next = [...rel, e.name];
+        if (e.isDirectory()) {
+          await walk(next);
+        } else if (e.isFile()) {
+          const st = await fs.stat(path.join(base, ...next));
+          out.push({ path: next.join("/"), size: st.size, mtimeMs: st.mtimeMs });
+        }
+      }
+    };
+    await walk([]);
+    out.sort((a, b) =>
+      a.path === "README.md" ? -1 : b.path === "README.md" ? 1 : a.path.localeCompare(b.path),
+    );
+    return out;
+  }
+
+  async readHandbookFile(dir: string, rel: string): Promise<string | null> {
+    return readText(handbookFilePath(dir, rel));
+  }
+
+  async writeHandbookFile(dir: string, rel: string, content: string): Promise<void> {
+    await writeText(handbookFilePath(dir, rel), content);
+  }
+
+  /** Removes the file and any directory it leaves empty, up to (not including) `handbook/`. */
+  async deleteHandbookFile(dir: string, rel: string): Promise<void> {
+    const file = handbookFilePath(dir, rel);
+    await fs.rm(file, { force: true });
+    const base = handbookDir(dir);
+    let parent = path.dirname(file);
+    while (parent !== base && parent.startsWith(base)) {
+      try {
+        await fs.rmdir(parent);
+      } catch {
+        break;
+      }
+      parent = path.dirname(parent);
+    }
   }
 
   // ---- calendar ----

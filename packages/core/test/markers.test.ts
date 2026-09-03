@@ -205,7 +205,7 @@ describe("[org_trigger] (company-mode work runs and ticket sessions)", () => {
     };
     const text = buildOrgTriggerMessage(origin, "Sweep the board.");
     expect(text.startsWith("[org_trigger]\n")).toBe(true);
-    expect(text).toContain("<app_data_dir>/organizations/acme/README.md");
+    expect(text).toContain("<app_data_dir>/organizations/acme/handbook/README.md");
     expect(parseOrgTriggerMessage(text)).toEqual({ origin, rest: "Sweep the board." });
   });
 

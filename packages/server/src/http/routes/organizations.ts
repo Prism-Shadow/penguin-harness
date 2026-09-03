@@ -6,7 +6,9 @@
  *   POST          …/:orgId/employees                        # hire
  *   PATCH|DELETE  …/:orgId/employees/:agentId
  *   GET|POST      …/:orgId/employees/:agentId/desk           # the desk session (GET opens it if needed; POST renews)
- *   GET|PUT       …/:orgId/handbook
+ *   GET|PUT       …/:orgId/handbook                 (the index, handbook/README.md)
+ *   GET           …/:orgId/handbook/files
+ *   GET|PUT|DELETE …/:orgId/handbook/files/<path>
  *   GET|POST      …/:orgId/calendar ; GET|PUT|DELETE …/:orgId/calendar/:agentId/:name
  *   GET|POST      …/:orgId/tickets ; GET|PUT …/:orgId/tickets/:ticketId
  *   POST          …/:orgId/tickets/:ticketId/(move|block|unblock|progress|start|attach)
@@ -295,6 +297,39 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const content = requireString(body, "content", { maxLen: 200_000 });
     await deps.orgService.writeHandbook(projectId, orgId, content);
     return c.json({ content });
+  });
+
+  app.get("/:orgId/handbook/files", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    return c.json(await deps.orgService.handbookFiles(projectId, orgId));
+  });
+
+  app.get("/:orgId/handbook/files/:path{.+}", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    return c.json(await deps.orgService.handbookFile(projectId, orgId, c.req.param("path")));
+  });
+
+  app.put("/:orgId/handbook/files/:path{.+}", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    const body = await readJson(c);
+    const content = requireString(body, "content", { maxLen: 200_000 });
+    return c.json(
+      await deps.orgService.writeHandbookFile(projectId, orgId, c.req.param("path"), content),
+    );
+  });
+
+  app.delete("/:orgId/handbook/files/:path{.+}", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    await deps.orgService.deleteHandbookFile(projectId, orgId, c.req.param("path"));
+    return c.body(null, 204);
   });
 
   // ---- calendar ----

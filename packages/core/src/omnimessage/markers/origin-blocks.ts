@@ -267,7 +267,7 @@ const ORG_TRIGGER_KEYS = [
  */
 export function buildOrgTriggerMessage(origin: OrgTriggerOrigin, body: string): string {
   const lines = [
-    `This message was sent automatically by the organization scheduler. Read the organization handbook at <app_data_dir>/organizations/${origin.org}/README.md before acting, then follow its procedures; the trigger's details are listed below and its content follows.`,
+    `This message was sent automatically by the organization scheduler. Read the organization handbook at <app_data_dir>/organizations/${origin.org}/handbook/README.md before acting, then follow its procedures; the trigger's details are listed below and its content follows.`,
     `org: ${origin.org}`,
     `employee: ${origin.employee}`,
     `kind: ${origin.kind}`,

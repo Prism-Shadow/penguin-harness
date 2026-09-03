@@ -33,6 +33,8 @@ import type {
   OrganizationSettings,
   OrganizationSummary,
   ScheduleStatus,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
 } from "../../api/types.js";
 import { HttpError } from "../../http/errors.js";
 import { badRequest } from "../../http/validate.js";
@@ -50,7 +52,12 @@ import {
   slugify,
 } from "../../organization/files.js";
 import { renderHandbook } from "../../organization/handbook.js";
-import { ORG_TICKET_COLUMNS, ceoAgentId, isTicketColumn } from "../../organization/paths.js";
+import {
+  ORG_TICKET_COLUMNS,
+  ceoAgentId,
+  isHandbookFilePath,
+  isTicketColumn,
+} from "../../organization/paths.js";
 import {
   agentPrincipal,
   parsePrincipal,
@@ -670,6 +677,59 @@ export class OrganizationService {
   async writeHandbook(projectId: string, orgId: string, content: string): Promise<void> {
     const org = await this.requireOrg(projectId, orgId);
     await this.deps.store.writeHandbook(org.dir, content);
+  }
+
+  /** The handbook directory is the company's knowledge base; the index is listed first. */
+  async handbookFiles(projectId: string, orgId: string): Promise<OrgHandbookFilesResponse> {
+    const org = await this.requireOrg(projectId, orgId);
+    const files = await this.deps.store.listHandbookFiles(org.dir);
+    return {
+      files: files.map((f) => ({
+        path: f.path,
+        size: f.size,
+        updatedAt: new Date(f.mtimeMs).toISOString(),
+      })),
+    };
+  }
+
+  async handbookFile(
+    projectId: string,
+    orgId: string,
+    rel: string,
+  ): Promise<OrgHandbookFileResponse> {
+    requireHandbookPath(rel);
+    const org = await this.requireOrg(projectId, orgId);
+    const content = await this.deps.store.readHandbookFile(org.dir, rel);
+    if (content === null)
+      throw new HttpError(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+    return { path: rel, content };
+  }
+
+  async writeHandbookFile(
+    projectId: string,
+    orgId: string,
+    rel: string,
+    content: string,
+  ): Promise<OrgHandbookFileResponse> {
+    requireHandbookPath(rel);
+    const org = await this.requireOrg(projectId, orgId);
+    await this.deps.store.writeHandbookFile(org.dir, rel, content);
+    return { path: rel, content };
+  }
+
+  /** The index stays: it is what every trigger tells the employee to read. */
+  async deleteHandbookFile(projectId: string, orgId: string, rel: string): Promise<void> {
+    requireHandbookPath(rel);
+    if (rel === "README.md")
+      throw new HttpError(
+        400,
+        "handbook_index_required",
+        "The handbook index (README.md) cannot be deleted.",
+      );
+    const org = await this.requireOrg(projectId, orgId);
+    if ((await this.deps.store.readHandbookFile(org.dir, rel)) === null)
+      throw new HttpError(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+    await this.deps.store.deleteHandbookFile(org.dir, rel);
   }
 
   // ---------------------------------------------------------------------------
@@ -1453,6 +1513,15 @@ export class OrganizationService {
 // Texts
 // ---------------------------------------------------------------------------
 
+function requireHandbookPath(rel: string): void {
+  if (!isHandbookFilePath(rel))
+    throw new HttpError(
+      400,
+      "invalid_path",
+      `${rel} is not a handbook path: plain segments, no hidden files, no traversal.`,
+    );
+}
+
 /** The AGENTS.md written for an Agent created as an employee: who it is in this organization and where the handbook is. */
 export function employeeBrief(input: {
   orgId: string;
@@ -1469,7 +1538,7 @@ You are \`${input.agentId}\`, ${input.title} of the organization **${input.name}
 
 Mission: ${input.mission}
 ${input.duties !== undefined ? `\nDuties: ${input.duties}\n` : ""}
-Your organization directory is \`<app_data_dir>/organizations/${input.orgId}/\`. At the start of every work run read its \`README.md\` (the handbook), then follow the \`company-employee\` skill; use \`company-ceo\`, \`company-hr\` or \`company-finance\` when your title is that role. Inside your sessions the \`penguin org\` commands already know your organization, Project, Agent and session from the environment.
+Your organization directory is \`<app_data_dir>/organizations/${input.orgId}/\`. At the start of every work run read \`handbook/README.md\` (the handbook index; the directory is the company's knowledge base), then follow the \`company-employee\` skill; use \`company-ceo\`, \`company-hr\` or \`company-finance\` when your title is that role. Inside your sessions the \`penguin org\` commands already know your organization, Project, Agent and session from the environment.
 `;
 }
 

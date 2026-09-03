@@ -1,8 +1,9 @@
 /**
- * The organization handbook — `README.md` at the root of the organization directory, the
- * index every work run reads first (progressive loading: the trigger block points here, the
- * handbook points at the files). Generated once at creation from this template; the CEO and
- * HR own it afterwards and may rewrite any of it.
+ * The organization handbook index — `handbook/README.md`; the `handbook/` directory is the
+ * company's knowledge base and this file is the one every work run reads first (progressive
+ * loading: the trigger block points here, the index points at the files and documents).
+ * Generated once at creation from this template; the CEO and HR own it afterwards and may
+ * rewrite any of it.
  */
 
 export interface HandbookInput {
@@ -50,6 +51,7 @@ ${input.mission}
 | --- | --- | --- |
 | \`org_config.toml\` | name, mission, status, timezone, approval mode, chat and budget thresholds | people, CEO |
 | \`org_chart.yaml\` | employee tree: title, reports_to, duties, workspace, budget, model | CEO, HR (\`penguin org hire\` / \`employee set\`) |
+| \`handbook/\` | the knowledge base: this index (\`README.md\`) and the documents it lists | CEO, HR, employees (\`penguin org handbook …\` or file tools) |
 | \`desks.toml\` | employee → current desk session (fact file) | the server |
 | \`calendar/<agent_id>/<event>.toml\` | calendar events, one file each (same fields as scheduled tasks, no target) | employees (\`penguin org calendar …\`) |
 | \`tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md\` | tickets; the column directory is the status | anyone (\`penguin org ticket …\`) |
@@ -104,6 +106,20 @@ the CEO takes them to the board. Routine work inside an accepted plan needs no c
   proposes savings.
 - **Everyone** (\`company-employee\` skill): reads this handbook first, sweeps the board, opens
   and tracks ticket sessions, writes results back, blocks instead of idling, reports in chat.
+
+## Knowledge base
+
+This directory (\`handbook/\`) is the company's knowledge base and this file is its index —
+the one file every run reads first. Keep durable knowledge here, one Markdown file per
+subject: decisions the board took (\`decisions/<yyyy-mm-dd>-<slug>.md\`), conventions,
+how-tos, product and market facts, anything the next run must not have to rediscover.
+List every document below with one line saying when it matters, so a run reads a document
+only when its line says so. \`penguin org handbook list | show <path> | write <path>\`
+reads and writes documents; the index cannot be deleted.
+
+## Documents
+
+_None yet._
 
 ## Command reference
 

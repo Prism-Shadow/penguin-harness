@@ -41,8 +41,30 @@ export function desksPath(dir: string): string {
   return path.join(dir, "desks.toml");
 }
 
+/** `handbook/`: the organization handbook, the company's knowledge base. */
+export function handbookDir(dir: string): string {
+  return path.join(dir, "handbook");
+}
+
+/** `handbook/README.md`: the index every work run reads first. */
 export function handbookPath(dir: string): string {
-  return path.join(dir, "README.md");
+  return path.join(handbookDir(dir), "README.md");
+}
+
+/**
+ * A path inside the handbook, relative to `handbook/`: plain segments (no hidden files, no
+ * `.`/`..`, at most eight levels), so a request can never name a file outside the directory.
+ */
+export const HANDBOOK_FILE_PATTERN =
+  /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/){0,7}[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+export function isHandbookFilePath(rel: string): boolean {
+  return HANDBOOK_FILE_PATTERN.test(rel);
+}
+
+export function handbookFilePath(dir: string, rel: string): string {
+  if (!isHandbookFilePath(rel)) throw new Error(`invalid handbook path: ${rel}`);
+  return path.join(handbookDir(dir), ...rel.split("/"));
 }
 
 export function calendarDir(dir: string, agentId?: string): string {
