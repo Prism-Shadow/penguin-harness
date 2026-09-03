@@ -48,7 +48,7 @@ interface Subscriber {
 const encoder = new TextEncoder();
 
 export class FakeServer {
-  readonly requests: Array<{ method: string; path: string; body?: Json }> = [];
+  readonly requests: Array<{ method: string; path: string; query?: string; body?: Json }> = [];
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -252,7 +252,12 @@ export class FakeServer {
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
     }
-    this.requests.push({ method, path: apiPath, ...(body !== undefined ? { body } : {}) });
+    this.requests.push({
+      method,
+      path: apiPath,
+      ...(url.search !== "" ? { query: url.search } : {}),
+      ...(body !== undefined ? { body } : {}),
+    });
 
     // Session create
     let m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
@@ -284,11 +289,18 @@ export class FakeServer {
     // Agent porting: the bundle download and the bundle import.
     m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/bundle$/.exec(apiPath);
     if (m && method === "GET") {
+      // Named after the requested kind, as the real route is: a fake that always answered
+      // `-export.zip` would hide a client that never sent the kind at all.
+      const kind = url.searchParams.get("kind");
+      if (kind !== null && kind !== "api" && kind !== "docker") {
+        return this.error(400, "bad_request", 'kind must be "api" or "docker".');
+      }
+      const suffix = kind === "docker" ? "docker" : "export";
       return new Response(this.bundle, {
         status: 200,
         headers: {
           "content-type": "application/zip",
-          "content-disposition": `attachment; filename="${decodeURIComponent(m[2]!)}-export.zip"`,
+          "content-disposition": `attachment; filename="${decodeURIComponent(m[2]!)}-${suffix}.zip"`,
         },
       });
     }

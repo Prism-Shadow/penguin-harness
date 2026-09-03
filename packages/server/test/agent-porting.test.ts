@@ -162,6 +162,54 @@ describe("agent porting", () => {
     expect(strFromU8(entries["examples/client.py"]!)).toContain(`PROJECT_ID = "${projectId}"`);
   });
 
+  it("?kind=docker packs a runnable container around the same portable core", async () => {
+    await seedSource();
+    const res = await member.get(`${base}/researcher/bundle?kind=docker`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("researcher-docker.zip");
+    const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    const names = Object.keys(entries).filter((n) => !n.endsWith("/"));
+    for (const doc of ["Dockerfile", "docker-compose.yml", ".env.example", "entrypoint.sh"]) {
+      expect(names).toContain(doc);
+    }
+    // The portable core travels too, so this zip re-imports exactly like the API one.
+    expect(names).toContain("penguin-agent.json");
+    expect(names).toContain("skills/skill-porting/SKILL.md");
+    expect(names).toContain("hooks/goal/hooks.json");
+    // The API bundle's guide and examples are NOT what this kind is for.
+    expect(names).not.toContain("examples/client.py");
+
+    const entrypoint = strFromU8(entries["entrypoint.sh"]!);
+    // The first boot configures a model against the data root, then imports this agent by id.
+    expect(entrypoint).toContain("penguin config model add");
+    expect(entrypoint).toContain("--set-default");
+    expect(entrypoint).toContain("penguin agent import penguin-agent.json");
+    expect(entrypoint).toContain("researcher");
+    // Shell expansions must survive templating rather than being interpolated at export time.
+    expect(entrypoint).toContain('"$PENGUIN_HOME"');
+    expect(entrypoint).toContain("${PENGUIN_MODEL_API_KEY:-}");
+    expect(entrypoint).not.toContain("undefined");
+
+    const dockerfile = strFromU8(entries["Dockerfile"]!);
+    expect(dockerfile).toContain("@prismshadow/penguin-cli@${PENGUIN_VERSION}");
+    expect(dockerfile).toContain("ENV PENGUIN_HOME=/data");
+
+    // Every vault key the agent declares is listed for the operator to fill in — and no value.
+    const env = strFromU8(entries[".env.example"]!);
+    expect(env).toContain("SEARCH_API_KEY=");
+    expect(env).toContain("PENGUIN_MODEL_API_KEY=");
+    for (const [name, data] of Object.entries(entries)) {
+      expect(strFromU8(data).includes("s3cret"), name).toBe(false);
+      expect(strFromU8(data).includes("topsecret"), name).toBe(false);
+    }
+  });
+
+  it("an unknown export kind is refused rather than silently packing the default", async () => {
+    await seedSource();
+    const res = await member.get(`${base}/researcher/bundle?kind=zip`);
+    expect(res.status).toBe(400);
+  });
+
   it("round-trips: the bundle imports into a fresh Project as the same Agent, then 409s on the taken id", async () => {
     await seedSource();
     const bundle = Buffer.from(await (await owner.get(`${base}/researcher/bundle`)).arrayBuffer());

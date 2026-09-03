@@ -57,8 +57,8 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
+import { AgentExportModal } from "./agent-export-modal";
 import { AgentImportModal } from "./agent-import-modal";
-import { downloadAgentBundle } from "./agent-bundle-file";
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,
@@ -132,7 +132,7 @@ export function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   /** The "Import agent" dialog (agent-import-modal.tsx) is open. */
   const [importOpen, setImportOpen] = useState(false);
-  /** The Agent whose bundle is being fetched, or null: packing a large one takes a moment, and the card's button has no other way to say so. */
+  /** The Agent whose "Export agent" dialog is open, or null (agent-export-modal.tsx). */
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
@@ -350,19 +350,6 @@ export function AgentsPage() {
   ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
-  };
-
-  /** A card's "Export agent": the portable bundle, fetched first so a failure is a toast rather than a saved error file. */
-  const exportBundle = async (agentId: string) => {
-    if (!projectId) return;
-    setExportingId(agentId);
-    try {
-      await downloadAgentBundle(projectId, agentId);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setExportingId(null);
-    }
   };
 
   const doDelete = async () => {
@@ -658,8 +645,7 @@ export function AgentsPage() {
                       size="icon"
                       title={S.agent.exportAgent}
                       aria-label={S.agent.exportAgent}
-                      disabled={exportingId !== null}
-                      onClick={() => void exportBundle(a.agentId)}
+                      onClick={() => setExportingId(a.agentId)}
                     >
                       <GlyphIcon
                         d={CARD_ICONS.exportBundle}
@@ -932,6 +918,18 @@ export function AgentsPage() {
             setImportOpen(false);
             reloadAgents().catch((e: unknown) => toastError(apiErrorText(e)));
           }}
+        />
+      )}
+
+      {/* Export agent: the mirror of the import dialog — two shapes the server packs, plus the
+          prompt path for what they do not cover. */}
+      {projectId !== undefined && exportingId !== null && (
+        <AgentExportModal
+          open
+          onClose={() => setExportingId(null)}
+          projectId={projectId}
+          agentId={exportingId}
+          agents={agents}
         />
       )}
 

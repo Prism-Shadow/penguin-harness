@@ -550,7 +550,52 @@ export const en: Strings = {
     importAgentVaultKeys: (keys: string): string => `Vault keys to set: ${keys}`,
     exportAgent: "Export agent",
     exportAgentDesc:
-      "Download the portable agent bundle (zip): definition, skills, hooks and an integration guide; no vault values, memory, Traces or snapshots",
+      "Pick a shape. None of them carry vault values, memory, Traces or snapshots; the first two both carry the definition, skills and hooks, so either re-imports.",
+    exportModeApi: "API call examples",
+    exportModeApiDesc:
+      "Definition, skills and hooks, plus the integration guide, the endpoint reference and runnable curl / Python / TypeScript examples",
+    exportModeDocker: "Docker files",
+    exportModeDockerDesc:
+      "Dockerfile, compose file, entrypoint and .env.example: the container imports this agent on first boot and serves the same API",
+    exportModeAi: "Let AI export it",
+    exportModeAiDesc:
+      "Describe the shape you want and an agent writes it — for what the two above do not cover",
+    exportAction: "Download",
+    exportBusy: "Packing…",
+    aiExportIntro:
+      "An agent reads this agent's definition and documents and produces what you describe; vault values are never written into the output.",
+    aiExportExamples: [
+      {
+        key: "sdk",
+        label: "Generate an SDK that calls it",
+        description: "A typed client",
+        prompt:
+          "Generate a typed TypeScript client package for this agent, wrapping create-session, send-message and read-result, with a minimal runnable example",
+      },
+      {
+        key: "k8s",
+        label: "Generate Kubernetes manifests",
+        description: "Deployment + Service",
+        prompt:
+          "Rewrite this agent's Docker export as Kubernetes manifests: Deployment, Service, Secret and a persistent volume, with the model key in the Secret",
+      },
+      {
+        key: "openapi",
+        label: "Generate an OpenAPI description",
+        description: "For another system",
+        prompt:
+          "Write an OpenAPI 3.1 description of the endpoints that drive this agent, treating it as a service another system integrates with",
+      },
+      {
+        key: "handoff",
+        label: "Write a handover document",
+        description: "For whoever takes it over",
+        prompt:
+          "Write a handover document: what this agent does, which skills and hooks it carries, which secrets it needs, and how to run it locally and on a server",
+      },
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
+    aiExportTail: (projectId: string, agentId: string): string =>
+      `Use the agent-porting skill. The target is agent ${agentId} in Project ${projectId}: first run \`penguin agent export ${agentId} --project-id ${projectId} --out <dir>\` to get its portable bundle, read the penguin-agent.json and the documents in it, then produce what was asked for and write it into the Workspace. Never write a vault value into the output — list the key names the reader has to set instead. Finish by telling me where the files are and how to use them.`,
     aiImportIntro:
       "The agent reads the source, writes the portable definition and runs the import; secrets are never copied, and the keys to set are listed in its report.",
     aiImportExamples: [

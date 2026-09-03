@@ -3006,6 +3006,18 @@ export interface PortableAgentDefinition {
  * document; the server tells them apart by content. 409 `agent_exists` when the id is
  * taken, 400 for a malformed bundle or definition, nothing left behind on failure.
  */
+/**
+ * What an agent export is packed for. Both kinds carry the portable definition plus the
+ * agent's `skills/` and `hooks/`, so either zip re-imports; they differ in what is packed
+ * around that core.
+ *
+ * - `api` — the integration bundle: a README written for whoever wires the agent into another
+ *   system, the endpoint reference and runnable curl / Python / TypeScript examples.
+ * - `docker` — a runnable container: Dockerfile, compose file, entrypoint and `.env.example`,
+ *   so the agent serves the same HTTP API from an image instead of a local install.
+ */
+export type AgentBundleKind = "api" | "docker";
+
 export interface AgentBundleImportRequest {
   /** Base64 of the bundle zip or of a bare `penguin-agent.json` (decoded size capped at 14MB). */
   dataBase64: string;

@@ -82,16 +82,24 @@ Tell the user: the new agent's id and Project; what was mapped (instructions, N 
 ## Export
 
 ```bash
-penguin agent export <id> [--out <dir-or-file>] [--project-id <project>]   # writes <id>-export.zip
+penguin agent export <id> [--out <dir-or-file>] [--kind api|docker] [--project-id <project>]
+# --kind api (default) writes <id>-export.zip; --kind docker writes <id>-docker.zip
 ```
 
-The bundle carries `penguin-agent.json`, `skills/`, `hooks/`, `README.md` (an integration guide written for a coding agent: what the agent is, the four server API calls that run it with the Project and agent ids filled in, the CLI commands, its skills and tools, its limits), `api/ENDPOINTS.md`, and `examples/curl.sh` / `client.py` / `client.ts` — runnable clients that create a Session, send a task and print the final answer, reading `PENGUIN_SERVER` and `PENGUIN_API_TOKEN` from the environment. Vault values, memory, Traces, schedules and snapshots are not in it; the README lists the vault key names to set. Credential-looking MCP `env` / `headers` values are blanked and nothing else is, so read `mcpServers` for a token in a `url` query string or in stdio `args` before you hand the bundle to anyone.
+Both kinds carry `penguin-agent.json`, `skills/` and `hooks/`, so either zip re-imports. They differ in what is packed around that core, and the Agents page's Export button offers the same two plus a third path that asks an agent for a shape neither covers (an SDK, Kubernetes manifests, a handover document — that path is you, reading this skill).
 
-Three ways to use it:
+The `api` bundle carries `penguin-agent.json`, `skills/`, `hooks/`, `README.md` (an integration guide written for a coding agent: what the agent is, the four server API calls that run it with the Project and agent ids filled in, the CLI commands, its skills and tools, its limits), `api/ENDPOINTS.md`, and `examples/curl.sh` / `client.py` / `client.ts` — runnable clients that create a Session, send a task and print the final answer, reading `PENGUIN_SERVER` and `PENGUIN_API_TOKEN` from the environment. Vault values, memory, Traces, schedules and snapshots are not in it; the README lists the vault key names to set. Credential-looking MCP `env` / `headers` values are blanked and nothing else is, so read `mcpServers` for a token in a `url` query string or in stdio `args` before you hand the bundle to anyone.
+
+The `docker` bundle carries `Dockerfile`, `docker-compose.yml`, `entrypoint.sh`, `.env.example`, a README for running it and `api/ENDPOINTS.md`. The container installs the CLI, and on first boot writes the model configuration from the environment, starts the server, imports the agent and drops a sentinel so restarts skip the import; the data root is a volume, so removing it re-imports. It reads `PENGUIN_MODEL_PROVIDER` / `PENGUIN_MODEL_ID` / `PENGUIN_MODEL_API_KEY` (plus `PENGUIN_MODEL_BASE_URL` for an OpenAI-compatible endpoint), `PENGUIN_ADMIN_PASSWORD`, and one variable per vault key the agent declares. The image pins nothing by default: pass `--build-arg PENGUIN_VERSION=<version>` for anything you intend to keep.
+
+Four ways to use an export:
 
 - **Move the agent** to another PenguinHarness: `penguin agent import <id>-export.zip` there (or the Agents page's Import agent button), then set the vault keys.
 - **Hand it to a coding agent**: unzip it and give that agent `README.md` and `examples/` — enough to call this agent from its own code. Point it at the server URL and give it a token (`~/.penguin/data/api-token` on the server's machine, or `penguin auth login --server <url>` from elsewhere); never paste a token into a file that gets committed.
 - **Publish the agent as an HTTP API**: the PenguinHarness server already is that API, and `api/ENDPOINTS.md` documents it for this agent. Run the server where the callers can reach it (`penguin server --host <address> --port <port>`, or behind a reverse proxy), hand out tokens, and keep `allow-all` or `read-only` approval for unattended callers.
+- **Ship it as a container**: `--kind docker`, fill in `.env`, `docker compose up --build`. The agent's tools then run inside the container with its permissions — which is the reason to containerise it — but it still reaches the network, and nothing in the bundle terminates TLS or authenticates anyone but the built-in admin. Put it behind something that does before exposing it.
+
+When you are asked to produce a shape none of these cover, start from `penguin agent export <id> --out <dir>`, read the definition and its documents, and write the result into the Workspace. Never write a vault value into what you produce; list the key names the reader has to set.
 
 ## Cautions
 

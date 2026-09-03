@@ -58,6 +58,34 @@ describe("penguin agent export", () => {
     ).toBe(true);
   });
 
+  it("--kind docker asks for the container bundle and saves it under the server's name", async () => {
+    server.bundle = new TextEncoder().encode("PKdocker");
+    const code = await cli(["agent", "export", "researcher", "--kind", "docker", "--out", scratch]);
+    expect(code).toBe(0);
+    const file = path.join(scratch, "researcher-docker.zip");
+    expect(fs.readFileSync(file, "utf8")).toBe("PKdocker");
+    const req = server.requests.find(
+      (r) =>
+        r.method === "GET" && r.path === "/api/projects/default_project/agents/researcher/bundle",
+    );
+    expect(req?.query).toBe("?kind=docker");
+  });
+
+  it("an unknown --kind is refused before a request goes out", async () => {
+    const before = server.requests.length;
+    const code = await cli([
+      "agent",
+      "export",
+      "researcher",
+      "--kind",
+      "tarball",
+      "--out",
+      scratch,
+    ]);
+    expect(code).toBe(1);
+    expect(server.requests.length).toBe(before);
+  });
+
   it("--out <file> names the file, creating its parent; --json prints the record", async () => {
     const file = path.join(scratch, "nested", "bundle.zip");
     const code = await cli(["agent", "export", "researcher", "--out", file, "--json"]);

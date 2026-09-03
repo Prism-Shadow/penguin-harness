@@ -29,6 +29,7 @@ import {
 import type { HookCommand, HookManifest, MCPServerConfig } from "@prismshadow/penguin-core";
 import type {
   AgentBundleImportResponse,
+  AgentBundleKind,
   PortableAgentDefinition,
   PortableHookRef,
   PortableSkillRef,
@@ -42,7 +43,7 @@ import {
 } from "../http/validate.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import type { AgentListItem, AgentService } from "./agent-service.js";
-import { renderBundleDocs } from "./agent-porting-templates.js";
+import { renderBundleDocs, renderDockerDocs } from "./agent-porting-templates.js";
 import { MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES } from "./skill-import-limits.js";
 
 export const PORTABLE_AGENT_FORMAT = "penguin-agent/1";
@@ -202,12 +203,16 @@ export async function exportAgentBundle(
   deps: PortingDeps,
   projectId: string,
   agentId: string,
+  kind: AgentBundleKind = "api",
 ): Promise<ExportedBundle> {
   const definition = await portableDefinition(deps, projectId, agentId);
   const files: Record<string, Uint8Array> = {
     [DEFINITION_FILE]: strToU8(`${JSON.stringify(definition, null, 2)}\n`),
   };
-  for (const [rel, text] of Object.entries(renderBundleDocs(definition))) {
+  // Both kinds carry the definition and the directories below, so either zip re-imports;
+  // only the documents around that core differ.
+  const docs = kind === "docker" ? renderDockerDocs(definition) : renderBundleDocs(definition);
+  for (const [rel, text] of Object.entries(docs)) {
     files[rel] = strToU8(text);
   }
   for (const skill of definition.skills) {
@@ -228,7 +233,8 @@ export async function exportAgentBundle(
       ),
     );
   }
-  return { fileName: `${agentId}-export.zip`, bytes: zipSync(files), definition };
+  const suffix = kind === "docker" ? "docker" : "export";
+  return { fileName: `${agentId}-${suffix}.zip`, bytes: zipSync(files), definition };
 }
 
 // ---------------------------------------------------------------------------

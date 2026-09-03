@@ -421,3 +421,232 @@ export function renderBundleDocs(definition: PortableAgentDefinition): Record<st
     "examples/client.ts": renderTsExample(definition),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Docker export
+// ---------------------------------------------------------------------------
+
+/**
+ * Environment the container reads. The model triple is required — a PenguinHarness install
+ * with no model configured starts but cannot answer — and each vault key the definition
+ * declares is listed too, so the operator sees everything that has to be filled in in one file
+ * rather than discovering it from a failing run.
+ */
+function dockerEnvNames(definition: PortableAgentDefinition): string[] {
+  return [
+    "PENGUIN_MODEL_PROVIDER",
+    "PENGUIN_MODEL_ID",
+    "PENGUIN_MODEL_API_KEY",
+    "PENGUIN_MODEL_BASE_URL",
+    "PENGUIN_ADMIN_PASSWORD",
+    ...(definition.vaultKeys ?? []),
+  ];
+}
+
+function renderDockerfile(): string {
+  // `latest` rather than a pinned version: the bundle cannot know which release the reader
+  // wants to run, and a stale pin ages worse than a documented ARG they can set.
+  return `# syntax=docker/dockerfile:1
+# PenguinHarness agent container. Build:  docker build --build-arg PENGUIN_VERSION=<version> -t <name> .
+ARG PENGUIN_VERSION=latest
+FROM node:24-slim
+
+# git and ca-certificates: agents routinely clone and reach HTTPS endpoints from their tools.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git curl \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG PENGUIN_VERSION
+RUN npm install -g @prismshadow/penguin-cli@\${PENGUIN_VERSION}
+
+# The data root holds the Project config, the agent and every Trace: mount it to keep them.
+ENV PENGUIN_HOME=/data
+ENV PORT=7364
+ENV HOST=0.0.0.0
+VOLUME ["/data"]
+
+WORKDIR /bundle
+COPY penguin-agent.json ./penguin-agent.json
+COPY skills ./skills
+COPY hooks ./hooks
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 7364
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+`;
+}
+
+/**
+ * First boot configures the model and imports the agent, then the server runs in the
+ * foreground. The import goes through the running server (that route is the only importer),
+ * so the script starts it, waits for it to answer, imports, and then hands the process the
+ * terminal signals by waiting on it. A sentinel keeps restarts from re-importing — the second
+ * attempt would answer 409 anyway, but a container that logs an error on every restart reads
+ * as broken.
+ */
+function renderEntrypoint(definition: PortableAgentDefinition): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+: "\${PENGUIN_HOME:=/data}"
+: "\${PORT:=7364}"
+: "\${HOST:=0.0.0.0}"
+SENTINEL="\$PENGUIN_HOME/.agent-imported"
+
+if [ -z "\${PENGUIN_MODEL_API_KEY:-}" ]; then
+  echo "PENGUIN_MODEL_API_KEY is unset — the agent will start but cannot call a model." >&2
+fi
+
+# The admin password is pinned so the API is reachable without the first-login link; without
+# one the server seeds a random password and prints a claim link instead.
+if [ -n "\${PENGUIN_ADMIN_PASSWORD:-}" ]; then
+  export PENGUIN_SEED_ADMIN_PASSWORD="\$PENGUIN_ADMIN_PASSWORD"
+fi
+
+if [ ! -f "\$SENTINEL" ]; then
+  if [ -n "\${PENGUIN_MODEL_API_KEY:-}" ]; then
+    # Model config is written straight to the data root, so it is in place before the server
+    # (and therefore the agent) ever starts.
+    penguin config model add \\
+      --provider "\${PENGUIN_MODEL_PROVIDER:-custom}" \\
+      --model-id "\${PENGUIN_MODEL_ID:?PENGUIN_MODEL_ID is required}" \\
+      --api-key "\$PENGUIN_MODEL_API_KEY" \\
+      \${PENGUIN_MODEL_BASE_URL:+--base-url "\$PENGUIN_MODEL_BASE_URL"} \\
+      --root "\$PENGUIN_HOME" \\
+      --set-default
+  fi
+fi
+
+penguin server --host "\$HOST" --port "\$PORT" &
+SERVER_PID=\$!
+trap 'kill -TERM "\$SERVER_PID" 2>/dev/null || true; wait "\$SERVER_PID" 2>/dev/null || true' TERM INT
+
+for _ in \$(seq 1 60); do
+  curl -sf "http://127.0.0.1:\$PORT/api/install" >/dev/null 2>&1 && break
+  sleep 1
+done
+
+if [ ! -f "\$SENTINEL" ]; then
+  echo "Importing agent ${definition.id} …"
+  cd /bundle
+  penguin agent import penguin-agent.json \\
+    --agent-id "\${PENGUIN_AGENT_ID:-${definition.id}}" \\
+    --project-id "\${PENGUIN_PROJECT_ID:-default_project}" \\
+    --server "http://127.0.0.1:\$PORT"
+  touch "\$SENTINEL"
+fi
+
+wait "\$SERVER_PID"
+`;
+}
+
+function renderCompose(definition: PortableAgentDefinition): string {
+  // No per-key env here: `env_file` already loads .env, and listing the vault keys twice
+  // would let the two drift.
+  return `services:
+  ${definition.id}:
+    build:
+      context: .
+      args:
+        PENGUIN_VERSION: \${PENGUIN_VERSION:-latest}
+    env_file: .env
+    ports:
+      - "\${PORT:-7364}:7364"
+    volumes:
+      # The data root: Project config, the agent and its Traces. Drop this and every run
+      # starts from an empty install that re-imports the agent.
+      - penguin-data:/data
+    restart: unless-stopped
+
+volumes:
+  penguin-data:
+`;
+}
+
+function renderEnvExample(definition: PortableAgentDefinition): string {
+  const vault = (definition.vaultKeys ?? []).map(
+    (k) => `# ${k} — read by the agent's tools from its vault.\n${k}=`,
+  );
+  return `# Model the agent runs on. The provider group and the upstream model id are a pair, and
+# an OpenAI-compatible endpoint also needs PENGUIN_MODEL_BASE_URL.
+PENGUIN_MODEL_PROVIDER=
+PENGUIN_MODEL_ID=
+PENGUIN_MODEL_API_KEY=
+PENGUIN_MODEL_BASE_URL=
+
+# Pins the built-in admin's password so the API is reachable without the first-login link.
+PENGUIN_ADMIN_PASSWORD=
+
+# Host port the container is published on.
+PORT=7364
+${vault.length > 0 ? `\n${vault.join("\n")}\n` : ""}`;
+}
+
+function renderDockerReadme(definition: PortableAgentDefinition): string {
+  const vaultKeys = definition.vaultKeys ?? [];
+  return `# ${definition.name} — running in a container
+
+This bundle runs the agent as a self-contained PenguinHarness install: the container brings up
+the server, imports \`${definition.id}\` on first boot, and serves the same HTTP API a local
+install does. Exported ${definition.exportedAt}.
+
+## Run it
+
+\`\`\`bash
+cp .env.example .env    # fill in the model provider, id and API key
+docker compose up --build
+\`\`\`
+
+The API is then on \`http://localhost:\${PORT:-7364}\`, signed in as \`admin\` with
+\`PENGUIN_ADMIN_PASSWORD\`. \`api/ENDPOINTS.md\` and \`examples/\` in the API bundle show how to
+drive it; the endpoints are identical here.
+
+## What the first boot does
+
+1. Writes the model configuration into the data root from the environment.
+2. Starts the server.
+3. Imports \`penguin-agent.json\` together with the bundled \`skills/\` and \`hooks/\`.
+4. Drops a sentinel in the data root so restarts skip the import.
+
+The data root is the \`penguin-data\` volume. Removing it resets the install, and the next
+start imports the agent again.
+
+## What you have to fill in
+
+${
+  vaultKeys.length > 0
+    ? `The agent expects these vault keys: ${vaultKeys.map((k) => `\`${k}\``).join(", ")}. Values never travel in a bundle — put them in \`.env\`, then set them on the agent with \`penguin config vault set --agent-id ${definition.id} --key <NAME> --value <value>\` inside the container (\`docker compose exec\`), or on its Vault tab.`
+    : "The agent declares no vault keys, so the model credentials in `.env` are the whole of it."
+}
+
+## Caveats worth reading before you deploy this
+
+- The image installs \`@prismshadow/penguin-cli@latest\` unless you pass
+  \`--build-arg PENGUIN_VERSION=<version>\`. Pin it for anything you intend to keep.
+- The agent's tools run **inside the container with its permissions**, which is the point of
+  containerising it, but the container still reaches the network by default.
+- Nothing here terminates TLS or authenticates anyone but the built-in admin. Put it behind
+  something that does before exposing it beyond localhost.
+`;
+}
+
+/**
+ * The Docker export's files. The portable definition, skills and hooks travel with them
+ * (assembled by the caller), so the same zip both runs the agent and re-imports it.
+ */
+export function renderDockerDocs(definition: PortableAgentDefinition): Record<string, string> {
+  return {
+    Dockerfile: renderDockerfile(),
+    "docker-compose.yml": renderCompose(definition),
+    ".env.example": renderEnvExample(definition),
+    "entrypoint.sh": renderEntrypoint(definition),
+    "README.md": renderDockerReadme(definition),
+    "api/ENDPOINTS.md": renderEndpoints(definition),
+  };
+}
+
+/** Names of the environment variables the Docker export's container reads (documented in .env.example). */
+export function dockerEnvironmentNames(definition: PortableAgentDefinition): string[] {
+  return dockerEnvNames(definition);
+}

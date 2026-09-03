@@ -127,18 +127,28 @@ export function registerAgentCommand(program: Command, t: Messages): void {
     .command("export <agent-id>")
     .description(t.agent.exportDesc)
     .option("--out <path>", t.agent.exportOut)
+    .option("--kind <kind>", t.agent.exportKind)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
     .action(async (agentId: string, opts) => {
+      // Rejected here rather than passed through: the server would answer 400, but a typo is
+      // worth naming before a request goes out (the schedule commands reject their conflicting
+      // options the same way).
+      const kind = typeof opts.kind === "string" ? opts.kind : "api";
+      if (kind !== "api" && kind !== "docker") {
+        process.stderr.write(`${t.error(t.agent.exportKindInvalid())}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const { bytes, fileName } = await client.download(
-        `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle`,
+        `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}`,
       );
       const file = await resolveOutPath(
         typeof opts.out === "string" ? opts.out : undefined,
-        fileName ?? `${agentId}-export.zip`,
+        fileName ?? `${agentId}-${kind === "docker" ? "docker" : "export"}.zip`,
       );
       await fs.writeFile(file, bytes);
       if (opts.json === true) {

@@ -5,7 +5,8 @@
  *   POST /api/projects/:p/agents/import            (any member; creates an Agent from a bundle or a bare penguin-agent.json)
  */
 import { Hono } from "hono";
-import type { AgentBundleImportResponse, AgentSummary } from "../../api/types.js";
+import type { AgentBundleImportResponse, AgentBundleKind, AgentSummary } from "../../api/types.js";
+import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { exportAgentBundle, importAgentBundle } from "../../services/agent-porting.js";
@@ -26,7 +27,14 @@ export function agentPortingRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    const { fileName, bytes } = await exportAgentBundle(porting, projectId, agentId);
+    // ?kind= picks what is packed around the portable core; an absent or unknown value keeps
+    // the integration bundle, which is what every existing caller (the CLI included) expects.
+    const kindParam = c.req.query("kind");
+    if (kindParam !== undefined && kindParam !== "api" && kindParam !== "docker") {
+      throw new HttpError(400, "bad_request", 'kind must be "api" or "docker".');
+    }
+    const kind: AgentBundleKind = kindParam === "docker" ? "docker" : "api";
+    const { fileName, bytes } = await exportAgentBundle(porting, projectId, agentId, kind);
     return new Response(bytes, {
       headers: {
         "Content-Type": "application/zip",
