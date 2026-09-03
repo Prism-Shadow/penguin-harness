@@ -18,6 +18,15 @@
  */
 import { BUILD_DATE, VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse } from "../api/types.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "../auth/middleware.js";
+import type { Hono } from "hono";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config, Lifecycle, Overrides } from "../hmr/capabilities.js";
+import { UpdateJobService } from "./update-job.js";
+import { RuntimeModule } from "../hmr/capabilities.js";
+import { versionRoutes } from "../http/routes/version.js";
 
 /** Repository the released artifacts come from (same slug as cli/update.ts's REPO_SLUG). */
 const REPO_SLUG = "Prism-Shadow/penguin-harness";
@@ -137,5 +146,40 @@ export class UpdateCheckService {
       releaseUrl: typeof body.html_url === "string" ? body.html_url : null,
       publishedAt: typeof body.published_at === "string" ? body.published_at : null,
     };
+  }
+}
+
+export abstract class UpdateCheck extends Interface<Pick<UpdateCheckService, "check">>() {}
+
+@Module({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "VersionModule.routes",
+        prefix: "/api/version",
+        auth: "user",
+        order: 20,
+      },
+    ],
+  },
+})
+export class VersionModule {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use(RuntimeModule) private readonly lifecycle!: Lifecycle;
+  @Provide() updateCheck!: UpdateCheck;
+  @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
+  setup() {
+    const overrides = this.overrides.value();
+    const updateCheck =
+      overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
+    this.updateCheck = updateCheck;
+    const updateJob = overrides.updateJob ?? new UpdateJobService();
+    this.routes = versionRoutes({
+      config: this.config,
+      updateCheck,
+      updateJob,
+      lifecycle: this.lifecycle,
+    });
   }
 }

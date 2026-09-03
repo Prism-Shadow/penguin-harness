@@ -2,9 +2,10 @@
  * sessions table repo:
  * Session index, approval mode, and auto-generated title; Session-level routes use this to look up project ownership.
  */
-import type { DatabaseSync } from "node:sqlite";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { ApprovalMode } from "../../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
 
 export interface SessionRow {
   sessionId: string;
@@ -71,8 +72,9 @@ function mapRow(r: Record<string, unknown>): SessionRow {
   };
 }
 
+@Component()
 export class SessionsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   insert(row: SessionRow): void {
     this.runInsert("INSERT", row);

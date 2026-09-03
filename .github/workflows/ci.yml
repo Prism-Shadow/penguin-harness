@@ -216,6 +216,15 @@ jobs:
         with:
           build: ${{ matrix.build }}
 
+      # The server's own `test` script runs `gen:ifaces` first, because src/ifaces.json is
+      # generated and not committed and src/platform.ts imports it at load. The server
+      # shards here call `exec vitest` instead — the script cannot take `--shard` — so they
+      # skip that half and every file that reaches platform.ts fails to resolve it. The
+      # other platforms run the script and never notice.
+      - name: Generate the interface table
+        if: startsWith(matrix.shard, 'server')
+        run: pnpm --filter @prismshadow/penguin-server gen:ifaces
+
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
       # failure that has no failing test at all — a tinypool `ERR_IPC_CHANNEL_CLOSED` raised

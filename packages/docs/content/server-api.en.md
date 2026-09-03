@@ -21,7 +21,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 
 ```text
 packages/server/src
-├── index.ts / config.ts / app.ts   # startup entry · env config · Hono assembly (createApp binds no port — testable)
+├── index.ts / config.ts / app.ts   # startup entry · env config · Hono assembly (the runtime app; the business routes are assembled by the http module under src/modules — no port bound — testable)
 ├── api/types.ts                    # the outward DTO contract (type-only import via the "./api" subpath)
 ├── auth/                           # scrypt passwords, admin seeding, cookie sessions, auth middleware
 ├── db/                             # node:sqlite connection, schema SQL, one repo per table

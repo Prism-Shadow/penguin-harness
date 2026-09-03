@@ -95,7 +95,9 @@ import type {
   WeChatInboundEvent,
   WeChatTransport,
 } from "./wechat-api.js";
-import { WECHAT_API_BASE } from "./wechat-api.js";
+import { WECHAT_API_BASE, createWeChatTransport } from "./wechat-api.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Overrides, RuntimeModule } from "../../hmr/capabilities.js";
 
 /** The WeChat binding's stored config document (`messaging_bindings.config_json`). */
 export interface WeChatBindingConfig extends Record<string, unknown> {
@@ -408,5 +410,28 @@ export class WeChatConnector implements MessagingChannelConnector {
       };
       signal.addEventListener("abort", onAbort, { once: true });
     });
+  }
+}
+
+/** The wechat connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-wechat.connector",
+        channel: "wechat",
+      },
+    ],
+  },
+})
+export class WechatMessaging {
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Bind("messaging-wechat.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const overrides = this.overrides.value();
+    this.connector = new WeChatConnector(
+      overrides.wechatTransport ?? createWeChatTransport(),
+      overrides.wechatRetryDelayMs ? { retryDelayMs: overrides.wechatRetryDelayMs } : {},
+    );
   }
 }

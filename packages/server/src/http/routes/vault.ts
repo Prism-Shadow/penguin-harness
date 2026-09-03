@@ -9,7 +9,16 @@ import { Hono } from "hono";
 import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface VaultRouteDeps {
+  agentConfigService: AgentConfigService;
+  manager: SessionManager;
+  access: ProjectAccess;
+}
 
 /** Validate the PUT request body and shape it into a VaultUpdateRequest (semantic checks like key-name rules live in the service layer). */
 function parseVaultUpdate(body: Record<string, unknown>): VaultUpdateRequest {
@@ -33,21 +42,21 @@ function parseVaultUpdate(body: Record<string, unknown>): VaultUpdateRequest {
   return { entries };
 }
 
-export function vaultRoutes(deps: AppDeps): Hono<AppEnv> {
+export function vaultRoutes(deps: VaultRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.agentConfigService.getVault(projectId, agentId));
   });
 
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const req = parseVaultUpdate(await readJson(c));
     const res = await deps.agentConfigService.updateVault(projectId, agentId, req);
     // No runtime invalidation: like every Agent State change, the new values reach a
@@ -62,7 +71,7 @@ export function vaultRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/template-placeholder", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,

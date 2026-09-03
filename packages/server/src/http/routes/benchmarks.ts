@@ -15,9 +15,9 @@
 import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
 import type { BenchmarkCreateResponse, CaseMaterial } from "../../api/types.js";
-import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
+import type { BenchmarkCaseInput, BenchmarkService } from "../../services/benchmark-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
 import {
   badRequest,
   optionalNumber,
@@ -26,6 +26,12 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface BenchmarksRouteDeps {
+  benchmarks: BenchmarkService;
+  access: ProjectAccess;
+}
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 
@@ -78,12 +84,12 @@ function requireCases(body: Record<string, unknown>): BenchmarkCaseInput[] {
   });
 }
 
-function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
+function listCaseFiles(deps: BenchmarksRouteDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(
       await deps.benchmarks.listCaseFiles(
         projectId,
@@ -96,12 +102,12 @@ function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
   };
 }
 
-function readCaseFile(deps: AppDeps, material: CaseMaterial) {
+function readCaseFile(deps: BenchmarksRouteDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const download = c.req.query("download") === "1";
     const boundedPreview = !download && c.req.query("preview") === "1";
     const { data, fileName, contentType, scriptable, truncated } =
@@ -130,12 +136,12 @@ function readCaseFile(deps: AppDeps, material: CaseMaterial) {
   };
 }
 
-export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
+export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.benchmarks.list(projectId));
   });
 
@@ -143,7 +149,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     // Writing into the Project's benchmarks directory is Project management: owner only, like
     // schedules and imports.
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const id = requireString(body, "id", { minLen: 1, maxLen: 100 });
     if (!isValidId(id)) throw badRequest('id may only contain letters, digits, "_" and "-".');
@@ -167,7 +173,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:benchmarkId", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const benchmarkId = requireValidId(c, "benchmarkId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.benchmarks.remove(projectId, benchmarkId);
     return c.body(null, 204);
   });
@@ -175,7 +181,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:benchmarkId/cases", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const benchmarkId = requireValidId(c, "benchmarkId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.benchmarks.listCases(projectId, benchmarkId));
   });
 

@@ -9,28 +9,29 @@
  * its own, so anchoring at the bundle would find nothing.
  *
  * Failure is per-entry and non-fatal: an unresolvable or malformed plugin is reported
- * and skipped, leaving its capability unavailable rather than failing the boot.
+ * and skipped, leaving its capability unavailable rather than failing the boot. An
+ * plugin is a set of modules (core plugin/index.ts): `package.json#penguin.modules`
+ * carries the manifests, the default export the code, paired by name.
  */
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
+import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
+import type { LoadedPlugin } from "./host.js";
 
 /** The config file's name inside the data root. */
 export const PLUGINS_FILE = "plugins.json";
 
-export interface LoadedPlugin {
-  specifier: string;
-  plugin: Plugin;
-}
+export type { LoadedPlugin } from "./host.js";
 
 export interface PluginLoadResult {
   loaded: LoadedPlugin[];
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
 }
-
 /**
  * An ABSENT file means "no plugins" — the default deployment shape, not an error. Any
  * other outcome is: a file that exists but cannot be read (a permission, a directory in
@@ -64,23 +65,69 @@ export async function readPluginList(root: string): Promise<string[]> {
 }
 
 /** Resolved against the installation rather than the bundle's location. */
-async function importPlugin(specifier: string): Promise<unknown> {
+async function importPlugin(specifier: string): Promise<{ module: unknown; file: string | null }> {
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
     try {
       const resolved = createRequire(entry).resolve(specifier);
-      return await import(pathToFileURL(resolved).href);
+      return { module: await import(pathToFileURL(resolved).href), file: resolved };
     } catch {
       // Fall through: a dev checkout resolves the specifier directly.
     }
   }
-  return await import(specifier);
+  return { module: await import(specifier), file: null };
 }
 
-/** A plugin module's contract is one named export: `activate(ctx)`. */
+/**
+ * The package's manifests (`package.json#penguin.modules`), found by walking up from the
+ * resolved entry file. Each entry is one module's static half; its `name` is what the
+ * default export's `modules` is keyed by. Absent = not a plugin package.
+ */
+async function readPackageManifests(
+  file: string | null,
+): Promise<{ where: string; manifests: ModuleDef["manifest"][] } | null> {
+  if (file === null) return null;
+  let dir = path.dirname(file);
+  for (;;) {
+    const where = path.join(dir, "package.json");
+    try {
+      const raw = JSON.parse(await fs.readFile(where, "utf8")) as { penguin?: unknown };
+      if (raw.penguin === undefined) return null;
+      const list = (raw.penguin as { modules?: unknown }).modules;
+      if (!Array.isArray(list)) {
+        throw new Error(`${where}#penguin: expected { "modules": [ … ] }`);
+      }
+      return {
+        where,
+        manifests: list.map((doc, i) => {
+          const d = (doc ?? {}) as Record<string, unknown>;
+          return parseManifest(
+            {
+              name: d.name,
+              requires: d.requires ?? {},
+              provides: d.provides ?? {},
+              contributes: d.contributes ?? {},
+              ...(d.context !== undefined ? { context: d.context } : {}),
+              children: d.children ?? [],
+            },
+            `${where}#penguin.modules[${i}]`,
+          );
+        }),
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** The package's default export as a Plugin, or null when it is not one. */
 function asPlugin(module: unknown): Plugin | null {
-  const activate = (module as { activate?: unknown }).activate;
-  return typeof activate === "function" ? { activate: activate as Plugin["activate"] } : null;
+  const def = (module as { default?: unknown }).default;
+  const modules = (def as { modules?: unknown } | null)?.modules;
+  return modules !== null && typeof modules === "object" ? (def as Plugin) : null;
 }
 
 /**
@@ -100,12 +147,39 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     try {
-      const plugin = asPlugin(await importPlugin(specifier));
-      if (plugin === null) {
-        failed.set(specifier, "module does not export an activate(ctx) function");
+      const { module, file } = await importPlugin(specifier);
+      const read = await readPackageManifests(file);
+      if (read === null) {
+        failed.set(specifier, "not a plugin package: no package.json#penguin.modules above it");
         continue;
       }
-      loaded.push({ specifier, plugin });
+      const plugin = asPlugin(module);
+      if (plugin === null) {
+        failed.set(
+          specifier,
+          "the default export is not a Plugin ({ modules: { <name>: { create } } })",
+        );
+        continue;
+      }
+      const modules: ModuleDef[] = [];
+      for (const manifest of read.manifests) {
+        const impl = plugin.modules[manifest.name];
+        if (impl === undefined || typeof impl.create !== "function") {
+          throw new Error(
+            `${read.where}#penguin names module '${manifest.name}', but the default export's modules has no create() for it`,
+          );
+        }
+        modules.push({ manifest, ...impl });
+      }
+      const declared = new Set(read.manifests.map((m) => m.name));
+      for (const name of Object.keys(plugin.modules)) {
+        if (!declared.has(name)) {
+          throw new Error(
+            `the default export has a module '${name}' that ${read.where}#penguin does not declare`,
+          );
+        }
+      }
+      loaded.push({ specifier, modules });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

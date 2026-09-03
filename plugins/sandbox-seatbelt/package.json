@@ -26,5 +26,28 @@
     "@prismshadow/penguin-core": "workspace:*",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "modules": [
+      {
+        "name": "SandboxSeatbelt",
+        "requires": {},
+        "provides": {},
+        "contributes": {
+          "SandboxModule.providers": [
+            {
+              "id": "sandbox-seatbelt.provider",
+              "name": "penguin-seatbelt",
+              "dimensions": [
+                "fs-write",
+                "network",
+                "mask-paths"
+              ]
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
   }
 }
