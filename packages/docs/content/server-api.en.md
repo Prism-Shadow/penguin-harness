@@ -227,7 +227,7 @@ All paths below are under `/api/projects/:projectId/organizations`. Every route 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | / | List organizations / create one: `{orgId, mission, name?, timezone?, workspace?, model?}` → 201 with the organization detail (creation makes the CEO Agent and opens its desk with an initialization run; 409 when the id or the CEO's Agent id is taken) |
-| GET / PATCH / DELETE | /:orgId | Overview (settings, board counts, today's calendar, pending items, recent chat, alerts) / change name, mission, `status` (`active` / `paused`), `approvalMode`, `timezone`, thresholds / delete (the employee Agents and their sessions stay) |
+| GET / PATCH / DELETE | /:orgId | Overview (settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, alerts) / change name, mission, `status` (`active` / `paused`), `approvalMode`, `timezone`, thresholds / delete (the employee Agents and their sessions stay) |
 | GET | /:orgId/chart | The employee tree with live state, desk and period spend per employee |
 | POST | /:orgId/employees | Hire: `{agentId}` for an existing Agent or `{newAgent: {agentId, name?, description?, plugins?}}`, plus `title`, `reportsTo`, `workspace?`, `budget?`, `duties?`, `model?` |
 | PATCH / DELETE | /:orgId/employees/:agentId | Change title, manager, workspace, budget (`null` clears), duties, model / leave (subordinates move up to the manager; the CEO cannot leave) |
