@@ -32,6 +32,25 @@ const BUNDLE_DOCS = [
   "examples/client.ts",
 ];
 
+/**
+ * Rewrites the uncompressed size an entry declares, in the central directory record fflate
+ * reads and in the local header beside it. A zip's size fields are self-reported — nothing in
+ * the archive has to agree with them, and fflate believes the central directory.
+ */
+function declareUncompressedSize(zip: Uint8Array, entry: string, size: number): Uint8Array {
+  const out = Buffer.from(zip);
+  const name = Buffer.from(entry, "utf8");
+  for (let i = 0; i + 46 <= out.length; i++) {
+    if (out.readUInt32LE(i) !== 0x02014b50) continue; // central directory header
+    if (!out.subarray(i + 46, i + 46 + out.readUInt16LE(i + 28)).equals(name)) continue;
+    out.writeUInt32LE(size, i + 24);
+    const local = out.readUInt32LE(i + 42);
+    if (out.readUInt32LE(local) === 0x04034b50) out.writeUInt32LE(size, local + 22);
+    return new Uint8Array(out);
+  }
+  throw new Error(`no central directory record for ${entry}`);
+}
+
 describe("agent porting", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
@@ -267,5 +286,34 @@ describe("agent porting", () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("bundle_too_large");
     const list = (await (await owner.get(base)).json()) as AgentsResponse;
     expect(list.agents.map((a) => a.agentId)).not.toContain("bomb");
+  });
+
+  it("refuses an entry that lies about its size, which no later check can catch", async () => {
+    // fflate allocates the declared uncompressed size up front and then hands back a view as
+    // long as what actually inflated: 5 bytes declaring 512MB costs 512MB of heap and still
+    // measures 5 bytes afterwards, so every cap applied to decoded bytes waves it through
+    // (before the filter this archive imported, 201, and created the Agent). Only the central
+    // directory's own number gives it away — which is why this one is under a kilobyte and
+    // must still be refused.
+    const bomb = declareUncompressedSize(
+      zipSync({
+        "penguin-agent.json": strToU8(JSON.stringify({ format: "penguin-agent/1", id: "liar" })),
+        "payload.bin": strToU8("hello"),
+      }),
+      "payload.bin",
+      512 * 1024 * 1024,
+    );
+    expect(bomb.byteLength).toBeLessThan(1024);
+    const res = await owner.post(`${base}/import`, {
+      dataBase64: Buffer.from(bomb).toString("base64"),
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("bundle_too_large");
+    // The per-file branch names the entry, so the refusal came off that declaration and not
+    // off some total measured later.
+    expect(body.error.message).toContain("payload.bin");
+    const list = (await (await owner.get(base)).json()) as AgentsResponse;
+    expect(list.agents.map((a) => a.agentId)).not.toContain("liar");
   });
 });
