@@ -1,4 +1,5 @@
 import { S } from "../../lib/strings";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
 import { GlyphIcon } from "./glyph-icon";
@@ -27,8 +28,8 @@ type Activity = Exclude<SessionActivity, null>;
  * legible only to a sighted user with full colour vision. The read state announces nothing
  * because it renders nothing, which is correct — there is no state to report.
  *
- * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): a
- * layered stack in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
+ * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): an
+ * activity trace in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
  * Session can still own a dev server or a background subagent, and the row says both.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
@@ -62,14 +63,19 @@ export function sessionActivityLabel(activity: Activity): string {
 }
 
 /**
- * The background-task mark: a session row's and the chat header's "this conversation still
- * has work going on behind it" — command processes past their yield window and background
- * subagents mid-round. `busy` ink, because that is what it means; the count lives in the
- * accessible name and tooltip ("3 background tasks"), never in colour alone. Rendered only
- * while the count is non-zero — the caller decides, so the row reserves no box for it.
+ * The background-task mark: "work is going on behind this" wherever the app says so — a
+ * session row and the chat header, where it stands for the conversation's whole set of
+ * background command processes and subagents, and a tool row, where it marks the one call
+ * that was made with `run_in_background`. `busy` ink, because that is what it means.
+ *
+ * Both props are the caller's to decide, because the two placements genuinely differ: the
+ * label names a count in one place and a single call in the other, and the size is the rung
+ * the surrounding row already uses (a session row's trailing marks, a tool row's inline
+ * glyphs). The label is the only carrier of the state — colour and shape never are — so it
+ * is required rather than defaulted. Rendered only when there is background work to report:
+ * the caller decides, so no row reserves a box for it.
  */
-export function BackgroundTasksMark({ count, size = 12 }: { count: number; size?: number }) {
-  const label = S.chat.backgroundTasks(count);
+export function BackgroundTasksMark({ label, size }: { label: string; size: number }) {
   return (
     <span
       role="img"
@@ -82,13 +88,8 @@ export function BackgroundTasksMark({ count, size = 12 }: { count: number; size?
   );
 }
 
-export function SessionActivityIcon({
-  activity,
-  size = 12,
-}: {
-  activity: Activity;
-  size?: number;
-}) {
+export function SessionActivityIcon({ activity }: { activity: Activity }) {
+  const size = ICON_SIZE.rowMark;
   const label = sessionActivityLabel(activity);
   if (activity === "completedUnread") {
     // The dot itself is exactly the Session status dot's geometry — `h-1.5 w-1.5`, 6px, the same

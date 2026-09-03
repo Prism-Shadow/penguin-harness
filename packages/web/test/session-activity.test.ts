@@ -10,6 +10,7 @@ import {
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
 import { BACKGROUND_TASKS_ICON } from "../src/components/ui/icons";
+import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
 import { readFileSync } from "node:fs";
@@ -63,27 +64,39 @@ describe("sessionBackgroundTasks", () => {
 });
 
 /**
- * The background-task mark: rendered only while the count is non-zero (the caller's
- * decision), in the `busy` tone, naming its count in the accessible name and tooltip so the
- * glyph is never the only carrier.
+ * The background-task mark: one glyph in the `busy` tone for both of its placements — a
+ * session row / the chat header, where it stands for a count, and a tool row, where it marks
+ * the single call made with `run_in_background`. Rendered only when there is background work
+ * to report (the caller's decision), and always naming what it means in the accessible name
+ * and tooltip, so the glyph is never the only carrier.
  */
 describe("BackgroundTasksMark", () => {
-  const render = (count: number) =>
-    renderToStaticMarkup(createElement(BackgroundTasksMark, { count }));
+  const render = (label: string, size: number) =>
+    renderToStaticMarkup(createElement(BackgroundTasksMark, { label, size }));
 
-  it("names the count for screen readers and hover", () => {
-    const markup = render(3);
+  it("names the count where it stands for a count", () => {
+    const markup = render(S.chat.backgroundTasks(3), ICON_SIZE.rowMark);
     expect(markup).toContain(`aria-label="${S.chat.backgroundTasks(3)}"`);
     expect(markup).toContain(`title="${S.chat.backgroundTasks(3)}"`);
     expect(markup).toContain('role="img"');
     expect(S.chat.backgroundTasks(3)).toContain("3");
   });
 
-  it("draws the layered-stack glyph in the busy tone, on the same 12px box as the activity glyphs", () => {
-    const markup = render(1);
+  it("names one call where it marks one call, rather than a count of one", () => {
+    // The tool row marks a single run_in_background call: "1 background task" would be a
+    // count the row is not making, and would read as the conversation's total.
+    const markup = render(S.chat.backgroundCall, ICON_SIZE.inlineGlyph);
+    expect(markup).toContain(`aria-label="${S.chat.backgroundCall}"`);
+    expect(S.chat.backgroundCall).not.toBe(S.chat.backgroundTasks(1));
+    expect(S.chat.backgroundCall).not.toMatch(/\d/);
+  });
+
+  it("draws the activity trace in the busy tone, at the rung its caller passes", () => {
+    expect(render(S.chat.backgroundCall, ICON_SIZE.rowMark)).toMatch(/width="12"/);
+    expect(render(S.chat.backgroundCall, ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
+    const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
     expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
     expect(markup).toContain(toneInk.busy);
-    expect(markup).toMatch(/width="12"/);
     // Not one of the activity glyphs, and no motion: it is a fact about the Session, not a
     // live-progress indicator.
     expect(markup).not.toContain(ACTIVITY_GLYPH.running);

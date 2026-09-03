@@ -2633,7 +2633,7 @@ function SessionRow({
               title={S.chat.pinnedSession}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={PIN_ICON} size={12} />
+              <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
@@ -2645,7 +2645,7 @@ function SessionRow({
               title={S.messaging.enabledIndicator[s.messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={12} />
+              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
@@ -2653,7 +2653,12 @@ function SessionRow({
           <StatusGlyph activity={activity} />
           {/* Beside the glyph, not instead of it: an idle row can still own background work,
               and the mark leaves with the last task (live via session_background). */}
-          {background > 0 && <BackgroundTasksMark count={background} />}
+          {background > 0 && (
+            <BackgroundTasksMark
+              label={S.chat.backgroundTasks(background)}
+              size={ICON_SIZE.rowMark}
+            />
+          )}
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

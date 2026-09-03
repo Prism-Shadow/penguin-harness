@@ -1573,6 +1573,8 @@ Scenarios:
     statusCompletedUnread: "Done, unread",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
+    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
+    backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

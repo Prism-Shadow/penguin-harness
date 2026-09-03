@@ -1541,6 +1541,8 @@ Benchmark：
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
+    backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

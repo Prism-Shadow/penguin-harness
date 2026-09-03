@@ -8,10 +8,12 @@
 [中文版](2026-09-02-session-background-indicator.zh.md)
 
 A conversation that has started a dev server or a background subagent now says so in the
-sidebar: its row carries a small layered-stack mark beside the usual status glyph, the chat
+sidebar: its row carries a small activity trace beside the usual status glyph, the chat
 header counts the same tasks in a small pill, and both follow the server live — the mark
 appears when a command is promoted past its yield window or launched in the background,
-and leaves the moment the last task ends, without a list refresh.
+and leaves the moment the last task ends, without a list refresh. The same mark sits on the
+tool row of a call made with `run_in_background`, so the transcript and the conversation
+list say the same thing about the same work.
 
 ## Details
 
@@ -35,4 +37,11 @@ and leaves the moment the last task ends, without a list refresh.
   keeps the mark. The chat header's former "running services" count became this pill; it now
   includes background subagents and reads the row's live figure instead of the process poll,
   and a count change also re-reads the process list at once.
+- A tool row whose call carries `run_in_background: true` draws the same mark right of its
+  duration, where it names one call rather than a count ("Runs in the background" / 「在后台
+  运行」) — a backgrounded call returns at once, and its row otherwise looks like any settled
+  step.
+- The mark is an activity trace — a flat line with one tall beat — rather than the layered
+  stack first shipped in this branch, which read as "layers" instead of "still running" and
+  whose two parallelograms merged into a smudge at the row's 12px.
 - The Web App, server API and design docs describe the mark, the field and the event.
