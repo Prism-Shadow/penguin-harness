@@ -20,19 +20,28 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentConfigRouteDeps {
+  agentConfigService: AgentConfigService;
+  manager: SessionManager;
+  access: ProjectAccess;
+}
 
 /** Ceiling on a single mcp-test probe's connect budget (an entry may configure minutes). */
 const MCP_TEST_TIMEOUT_CAP_MS = 30_000;
 
-export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentConfigRoutes(deps: AgentConfigRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,
@@ -43,7 +52,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: AgentConfigUpdateRequest = {};
     const agentsMd = optionalString(body, "agentsMd", { label: "agentsMd" });
@@ -72,7 +81,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/mcp-test", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     if (typeof body.name !== "string" || body.name.length === 0) {
       throw badRequest("name must be a non-empty string.");
@@ -136,7 +145,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/kernel-update", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const result = await deps.agentConfigService.kernelUpdate(projectId, agentId);
     return c.json(result satisfies AgentKernelUpdateResponse);
   });
@@ -147,7 +156,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/reset", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.resetConfig(projectId, agentId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({

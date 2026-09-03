@@ -20,6 +20,10 @@ import type {
   SandboxSettings,
 } from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Slot } from "@prismshadow/penguin-core/kernel";
+import { Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 
 interface MountedProvider {
   name: string;
@@ -158,4 +162,53 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
     ...(settings.network !== undefined ? { network: settings.network } : {}),
     ...(settings.maskPaths !== undefined ? { maskPaths: [...settings.maskPaths] } : {}),
   };
+}
+
+/** Confinement: settings, the active confiner, and which backends are mounted. */
+export abstract class Sandbox extends Interface<
+  Pick<
+    SandboxService,
+    "configure" | "currentSettings" | "parkedSettings" | "backends" | "confiner" | "whenReady"
+  >
+>() {}
+
+export interface SandboxSlots {
+  /**
+   * A backend: its static half here (name, the dimensions it implements), its code half
+   * bound by the contributor — a provider, or a promise of one for backends that probe.
+   */
+  providers: Slot<{ name: string; dimensions: SandboxDimension[] }, SandboxProviderSource>;
+}
+
+@Module({
+  context: {
+    version: 1,
+    schema: {
+      "settings?": {
+        mode: "'read-only'|'workspace-write'|'danger-full-access'",
+        "network?": "'none'",
+        "maskPaths?": "string[]",
+      },
+    },
+  },
+})
+export class SandboxModule {
+  @Provide() sandbox!: Sandbox;
+  setup({ contributions }: ClassCtx, context: Json) {
+    const providers = (contributions.providers ?? []).map(
+      (c) =>
+        [c.data.name as string, c.code as SandboxProviderSource] as [string, SandboxProviderSource],
+    );
+    const sandbox = new SandboxService(providers);
+    // Parked settings ride the swap: without this every push would construct a fresh
+    // service on defaults and silently un-confine a confining deployment.
+    const parked = (context as { settings?: SandboxSettings } | null)?.settings;
+    if (parked !== undefined) sandbox.configure(parked);
+    this.sandbox = sandbox;
+  }
+
+  park(): Json {
+    const settings = this.sandbox.parkedSettings();
+    return settings === undefined ? null : { settings };
+  }
 }

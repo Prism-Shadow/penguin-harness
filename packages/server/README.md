@@ -4,7 +4,7 @@ The PenguinHarness Web backend — the Web implementation of the SDK's Human bou
 
 ## Architecture
 
-- **HTTP**: Hono + `@hono/node-server`; `createApp(deps)` is pure assembly (no port bind — tests drive it via `app.request()`); `index.ts` is the startup entry (dotenv, graceful shutdown).
+- **HTTP**: Hono + `@hono/node-server`; the `http` module (src/http/app.ts) assembles the business surface from every module's `HttpModule.routes` contributions and binds no port (tests drive it via `app.request()`); `index.ts` is the startup entry (dotenv, graceful shutdown).
 - **Storage**: SQLite via Node's built-in `node:sqlite` (WAL) holds only indexes and aggregates (users, auth sessions, Project authorization, Agent/Session indexes, usage, UI prefs, error records). Agent State, Traces and Workspaces stay as files under `~/.penguin/data/<project>/agents/<agent>/`, fully shared with the SDK and CLI.
 - **Runtime**: a session manager keeps active Sessions (get-or-resume-or-heal, per-Session mutex, run/compact driving); approvals surface over SSE as `approval_request` and decisions re-read the stored approval mode each time; interrupts converge pending approvals to deny before aborting; a scheduler fires `agent_state/schedule/*.toml` tasks while the service runs.
 - **SSE**: per-channel monotonic event ids with a bounded replay buffer (1000 events / 2MB); reconnects replay from `Last-Event-ID` or receive `resync_required`; heartbeat comment every 20s.

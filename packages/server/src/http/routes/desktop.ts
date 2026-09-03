@@ -15,7 +15,11 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { DesktopUpdateStatusResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface DesktopRouteDeps {
+  desktop: DesktopService | null;
+}
 import type { DesktopService } from "../../services/desktop-service.js";
 
 /**
@@ -25,7 +29,7 @@ import type { DesktopService } from "../../services/desktop-service.js";
  * users and memberships in the data root are untouched; only the management routes are
  * closed while the server runs under the desktop shell.
  */
-export function rejectInDesktopMode(deps: AppDeps): MiddlewareHandler {
+export function rejectInDesktopMode(deps: DesktopRouteDeps): MiddlewareHandler {
   return async (_c, next) => {
     if (deps.desktop !== null) {
       throw new HttpError(
@@ -41,7 +45,7 @@ export function rejectInDesktopMode(deps: AppDeps): MiddlewareHandler {
 /** Delay between answering 202 and starting shutdown: lets the response flush. */
 const SHUTDOWN_DELAY_MS = 50;
 
-export function desktopRoutes(deps: AppDeps): Hono {
+export function desktopRoutes(deps: DesktopRouteDeps): Hono {
   const app = new Hono();
 
   app.post("/shutdown", (c) => {
@@ -68,7 +72,7 @@ export function desktopRoutes(deps: AppDeps): Hono {
  * fetches only the release the shell has offered, and `install` restarts only into what
  * its updater already downloaded and verified.
  */
-export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
+export function desktopUpdateRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const requireShellSession = (c: Context<AppEnv>): DesktopService => {

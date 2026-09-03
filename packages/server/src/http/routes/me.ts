@@ -12,7 +12,20 @@ import { toUserInfo } from "../../auth/service.js";
 import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { AuthService } from "../../auth/service.js";
+import type { ServerConfig } from "../../config.js";
+import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import type { UiPrefsRepo } from "../../db/repos/ui-prefs.js";
+import type { DesktopService } from "../../services/desktop-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MeRouteDeps {
+  authService: AuthService;
+  config: ServerConfig;
+  desktop: DesktopService | null;
+  prefsRepo: UiPrefsRepo;
+  serverSettingsRepo: ServerSettingsRepo;
+}
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
 import {
@@ -21,8 +34,12 @@ import {
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
 } from "../../services/attachment-limits.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Config, Desktop } from "../../hmr/capabilities.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
 
-export function meRoutes(deps: AppDeps): Hono<AppEnv> {
+export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) => {
@@ -125,4 +142,34 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "MeRoutes.routes",
+        prefix: "/api/me",
+        auth: "user",
+        order: 10,
+      },
+    ],
+  },
+})
+export class MeRoutes {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly desktop!: Desktop;
+  @Use() private readonly auth!: AuthService;
+  @Use() private readonly prefs!: UiPrefsRepo;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = meRoutes({
+      authService: this.auth,
+      config: this.config,
+      desktop: this.desktop.current() as DesktopService | null,
+      prefsRepo: this.prefs,
+      serverSettingsRepo: this.settings,
+    });
+  }
 }

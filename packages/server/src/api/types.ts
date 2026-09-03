@@ -3433,3 +3433,23 @@ export interface MachinesResponse {
   imageVersion: string | null;
   job: MachineJob | null;
 }
+
+// ---------------------------------------------------------------------------
+// Web contributions (GET /api/contributions)
+// ---------------------------------------------------------------------------
+
+/** How the web app renders a contributed surface: a name from its own registry, or an iframe. */
+export type RendererRef = { builtin: string } | { iframe: { src: string; namespace: string } };
+
+/** One contribution to a web slot: its id, the contributing module, and the slot's data. */
+export interface WebContribution {
+  id: string;
+  from: string;
+  [key: string]: unknown;
+}
+
+export interface ContributionsResponse {
+  pages: WebContribution[];
+  agentTabs: WebContribution[];
+  sessionTabs: WebContribution[];
+}
