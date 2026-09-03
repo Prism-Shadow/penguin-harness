@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gen-ifaces: project every interface class (`extends Interface<…>()`) and every @Component
+ * gen-ifaces: project every interface class (`@Interface()`, or `extends Interface<…>()`) and every @Component
  * class of a package into the
  * kernel's signature-level form (core kernel/sig.ts) and write ONE `ifaces.json` per
  * package — the table the module-tree check (kernel/check.ts) runs over.
@@ -121,17 +121,63 @@ for (const project of projects) {
   const sourceFiles = program
     .getSourceFiles()
     .filter((sf) => !sf.isDeclarationFile && !sf.fileName.includes("/node_modules/"));
-  /** `abstract class X extends Interface<…>() {}` — an interface handle, wherever it is declared. */
+  /** An `@Interface()` decorator, like every other decorator here a factory call. */
+  const hasInterfaceDecorator = (d) =>
+    (ts.getDecorators?.(d) ?? []).some(
+      (dec) =>
+        ts.isCallExpression(dec.expression) &&
+        ts.isIdentifier(dec.expression.expression) &&
+        dec.expression.expression.text === "Interface",
+    );
+  /**
+   * An interface handle, wherever it is declared, in either spelling: `@Interface()`
+   * on a class that declares its own abstract members, or `extends Interface<…>()` for
+   * an interface that IS an existing type (see core kernel/markers.ts).
+   */
   const isInterfaceClassDecl = (d) =>
     ts.isClassDeclaration(d) &&
-    (d.heritageClauses ?? []).some((h) =>
-      h.types.some(
-        (t) =>
-          ts.isCallExpression(t.expression) &&
-          ts.isIdentifier(t.expression.expression) &&
-          t.expression.expression.text === "Interface",
-      ),
-    );
+    (hasInterfaceDecorator(d) ||
+      (d.heritageClauses ?? []).some((h) =>
+        h.types.some(
+          (t) =>
+            ts.isCallExpression(t.expression) &&
+            ts.isIdentifier(t.expression.expression) &&
+            t.expression.expression.text === "Interface",
+        ),
+      ));
+  /**
+   * A decorated interface class must be exactly a declaration. Anything else — a base to
+   * inherit members from, a constructor, a member with a body, a private one — would put
+   * implementation into the contract or hide part of it, and which of the two was meant
+   * is not something to guess at.
+   */
+  const checkDecoratedInterface = (d, file) => {
+    if (!ts.isClassDeclaration(d) || !hasInterfaceDecorator(d)) return;
+    const name = d.name?.text ?? "?";
+    const abstract = (d.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.AbstractKeyword);
+    if (!abstract) errors.push(`${file}: @Interface() ${name}: must be an abstract class`);
+    if ((d.heritageClauses ?? []).length > 0)
+      errors.push(
+        `${file}: @Interface() ${name}: must not extend or implement anything — an interface that IS an existing type uses \`extends Interface<T>()\``,
+      );
+    for (const m of d.members) {
+      const mods = m.modifiers ?? [];
+      const has = (k) => mods.some((x) => x.kind === k);
+      const label = m.name?.getText?.() ?? "member";
+      if (ts.isConstructorDeclaration(m)) {
+        errors.push(`${file}: @Interface() ${name}: must not declare a constructor`);
+        continue;
+      }
+      if (has(ts.SyntaxKind.PrivateKeyword) || has(ts.SyntaxKind.ProtectedKeyword))
+        errors.push(`${file}: @Interface() ${name}.${label}: every member is public`);
+      if (has(ts.SyntaxKind.StaticKeyword))
+        errors.push(`${file}: @Interface() ${name}.${label}: static members are not part of it`);
+      if (!has(ts.SyntaxKind.AbstractKeyword))
+        errors.push(
+          `${file}: @Interface() ${name}.${label}: must be abstract — a member with a body is implementation`,
+        );
+    }
+  };
 
   // Module manifests: the first argument of every defineModule(...) call, which must be a
   // pure literal — the static half that is checked before any module code runs.
@@ -740,7 +786,7 @@ for (const project of projects) {
     return slots;
   }
 
-  // Every exported interface class (`extends Interface<…>()`) anywhere in the package is
+  // Every exported interface class (either spelling) anywhere in the package is
   // a table entry, and an exported `<Name>Slots` interface beside one names its slots;
   // everything else is a data type, reached only through references.
   const slotCompanions = [];
@@ -758,6 +804,7 @@ for (const project of projects) {
         continue;
       }
       if (!isInterfaceClassDecl(decl)) continue;
+      checkDecoratedInterface(decl, path.relative(process.cwd(), sf.fileName));
       keyOf(symbol, decl, sf);
     }
   }
@@ -776,7 +823,7 @@ for (const project of projects) {
     const decl = sym?.declarations?.find((d) => isInterfaceClassDecl(d));
     if (!decl) {
       errors.push(
-        `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}')`,
+        `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}')`,
       );
       return "?";
     }

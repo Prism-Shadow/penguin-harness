@@ -388,6 +388,37 @@ describe("bootModules", () => {
   });
 });
 
+describe("Interface, in both spellings", () => {
+  // The interface declares its own members.
+  @Interface()
+  abstract class Clock {
+    abstract now(): number;
+  }
+  // The interface IS an existing type.
+  type StoreShape = { get(key: string): string | undefined };
+  abstract class Store extends Interface<StoreShape>() {}
+
+  it("is a runtime handle either way, so a manifest can name it by reference", () => {
+    expect(typeof Clock).toBe("function");
+    expect(Clock.name).toBe("Clock");
+    expect(typeof Store).toBe("function");
+  });
+
+  it("types a consumer the same either way", () => {
+    class RealClock {
+      now() {
+        return 7;
+      }
+    }
+    const satisfiesClock: RealClock extends Clock ? true : never = true;
+    const store: Store = { get: (k) => (k === "a" ? "1" : undefined) };
+    expect(satisfiesClock).toBe(true);
+    expect(store.get("a")).toBe("1");
+    const clock: Clock = new RealClock();
+    expect(clock.now()).toBe(7);
+  });
+});
+
 describe("class form: @Module / @Use / @Provide / @Bind", () => {
   abstract class Sessions extends Interface<{
     startTask(id: string): Promise<{ sessionId: string }>;
