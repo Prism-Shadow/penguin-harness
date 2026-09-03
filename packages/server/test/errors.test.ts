@@ -1301,11 +1301,19 @@ describe("HTTP onError persistence (integration)", () => {
     expect(await ranged.json()).toEqual({ deleted: 1 });
     expect(errorRows().map((r) => r.code)).toEqual(["before_range", "after_range"]);
 
-    // No filter clears the Project's whole history, which is what an unfiltered panel showed.
-    expect(await (await api.delete(`/api/projects/${projectId}/usage/errors`)).json()).toEqual({
-      deleted: 2,
-    });
-    expect(errorRows()).toHaveLength(0);
+    // A missing bound is refused rather than read as unbounded: an open side is the Project's
+    // whole history, which is wider than any filter a panel could have shown.
+    for (const query of ["", "?from=2026-07-06", "?to=2026-07-06"]) {
+      const refused = await api.delete(`/api/projects/${projectId}/usage/errors${query}`);
+      expect(refused.status).toBe(400);
+    }
+    // Those refusals are themselves recorded by onError, so the seeded rows are what is
+    // checked: nothing outside the two deletes above went.
+    expect(
+      errorRows()
+        .map((r) => r.code)
+        .filter((code) => code !== "bad_request"),
+    ).toEqual(["before_range", "after_range"]);
   });
 
   it("a trailing-window clear deletes exactly the rows the window listed", async () => {
@@ -1394,7 +1402,9 @@ describe("HTTP onError persistence (integration)", () => {
     ).json()) as UsageErrorsPage;
     expect(before.items.map((e) => e.code)).toEqual(["uncaught_exception"]);
 
-    const cleared = await adminApi.delete(`/api/projects/default_project/usage/errors`);
+    const cleared = await adminApi.delete(
+      `/api/projects/default_project/usage/errors?from=2026-07-06&to=2026-07-06`,
+    );
     expect(await cleared.json()).toEqual({ deleted: 1 });
     expect(errorRows().filter((r) => r.project_id === null)).toHaveLength(0);
   });

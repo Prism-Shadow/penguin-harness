@@ -11,7 +11,7 @@
 
 ## 细节
 
-- `GET` 与 `DELETE /api/projects/:projectId/usage/errors` 接受 `fromTs` / `toTs`（同给或同不给、须有序，与看板一致）；看板上的异常统计同样遵循这一对参数。两端均为闭区间。
+- `GET` 与 `DELETE /api/projects/:projectId/usage/errors` 接受 `fromTs` / `toTs`（同给或同不给、须有序，与看板一致）；看板上的异常统计同样遵循这一对参数。两端均为闭区间。清空另外要求 `from` 与 `to` 必填（缺一即 400），与面板此前提供该操作的前提一致——开区间等于整段历史，而非一次筛选。
 - 删除的触及范围与调用者的读取范围相同：管理员的清空包含无归属记录，成员（其读取从不显示这些行）的清空从不包含。原先用于表示两者之差的 `UsageErrors.clearable` 已移除——`total` 即一次清空会删掉的数量。
 - 新增字符串 `usage.errorsClearRangePreset` / `usage.errorsClearRangeCustom` 供 `usage.errorsClearScope` 与 `usage.errorsClearScopeAgent` 使用，后两者现在以一个短语接收范围。
 - Web App 与服务端 API 文档描述了清空的触及范围。

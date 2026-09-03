@@ -2824,6 +2824,9 @@ export interface UsageErrorsPage {
  * Scoped to the filter rather than the Project's whole history, so a clear takes exactly the
  * rows on screen — for an admin, the unattributed rows an admin's panel shows included; a
  * member's panel never shows them and a member's clear never takes them.
+ *
+ * `from` and `to` are both required (400 otherwise), where the reads treat them as optional:
+ * an absent bound is unbounded on that side, which is the whole history rather than a filter.
  */
 export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */

@@ -9,8 +9,8 @@
  * of the error detail table, for paging back past the first page the dashboard already
  * returns;
  * DELETE /api/projects/:p/usage/errors?from&to&fromTs&toTs&agentId — empties that table for
- * the filter the panel is showing (owner only; an admin's clear also takes the unattributed
- * rows an admin's read shows);
+ * the filter the panel is showing (owner only; `from`/`to` are required, unlike on the reads;
+ * an admin's clear also takes the unattributed rows an admin's read shows);
  * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
  */
 import { Hono } from "hono";
@@ -153,9 +153,10 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Empties the error table for the filter the panel is showing. Takes the same date, window
   // and agent filter as the two reads above and no other: a clear removes exactly the rows the
-  // caller was looking at, never the Project's whole history behind a narrowed view. `kind` is
-  // not accepted — the panel has no control for it, so a clear can offer no narrowing its
-  // reader could have seen on screen.
+  // caller was looking at, never the Project's whole history behind a narrowed view — the date
+  // range is required for that reason, where the reads leave it optional. `kind` is not
+  // accepted — the panel has no control for it, so a clear can offer no narrowing its reader
+  // could have seen on screen.
   app.delete("/errors", (c) => {
     const projectId = requireValidId(c, "projectId");
     // Owner only, the rule Agent deletion applies to error rows already (it cascade-deletes
@@ -164,6 +165,15 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
+    // Both bounds are required here, unlike on the two reads: a missing bound reads as
+    // unbounded on that side, and an unbounded clear is the Project's entire history — for an
+    // admin, every unattributed row in the instance along with it, rows that sit in every
+    // other Project's admin panel. The panel already withholds the action while either date
+    // input is blank (see clearableFilter); this is that same rule where it can be enforced,
+    // rather than a promise only the caller who uses the UI keeps.
+    if (from === undefined || to === undefined) {
+      throw badRequest("from and to are both required.");
+    }
     const window = tsWindowQuery(c);
     const agentId = c.req.query("agentId");
     // The same admin visibility the reads above carry, so a clear takes exactly the rows the
@@ -172,8 +182,8 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     // clear can never become a way to remove a row its caller was not allowed to see.
     const deleted = deps.usageService.clearErrors(projectId, {
       includeGlobalErrors: c.var.user.isAdmin,
-      ...(from !== undefined ? { from } : {}),
-      ...(to !== undefined ? { to } : {}),
+      from,
+      to,
       ...window,
       ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
     });
