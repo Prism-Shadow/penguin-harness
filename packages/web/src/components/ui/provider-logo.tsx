@@ -7,8 +7,10 @@
  * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); custom models use a generic cube. All
- * are pure paths, no external image assets.
+ * exact reproduction of the trademark); vLLM, whose own mark is a gradient
+ * wordmark this monochrome set cannot carry, gets a plain geometric V that makes
+ * no claim to be it; custom models use a generic cube. All are pure paths, no
+ * external image assets.
  *
  * Vendor ids outside the preset table are user-defined groups: instead of all
  * sharing the cube (which made same-named models across groups
@@ -136,6 +138,14 @@ const GLYPHS: Record<string, Glyph> = {
         <path d="M318.563 221.755C300.863 221.755 284.979 211.247 278.206 194.978L196.549 0H244.342L318.842 178.361L393.273 0H441.066L358.92 195.048C352.112 211.247 336.263 221.755 318.563 221.755Z" />
         <path d="M425.111 314.933C407.481 314.933 391.667 304.494 384.824 288.366C377.947 272.097 381.507 253.524 393.936 240.921L542.657 90.2803L561.229 134.094L425.076 271.748L619.147 270.666L637.72 314.479L425.146 315.003L425.076 314.933H425.111Z" />
         <path d="M0 314.408L18.5727 270.595L212.643 271.677L76.525 133.988L95.0977 90.1748L243.819 240.816C256.247 253.384 259.843 272.026 252.93 288.26C246.088 304.424 230.203 314.827 212.643 314.827L0.0698221 314.339L0 314.408Z" />
+      </>
+    ),
+  },
+  vllm: {
+    stroke: true,
+    path: (
+      <>
+        <path d="M4.2 5.2h3.4L12 16.1l4.4-10.9h3.4L13.5 20h-3L4.2 5.2Z" />
       </>
     ),
   },

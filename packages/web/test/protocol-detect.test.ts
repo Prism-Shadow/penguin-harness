@@ -99,6 +99,17 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
     expect(clientTypeAfterProviderChange("my-group", "ant-messages")).toBe("ant-messages");
   });
+
+  it("rewrites to the group's own protocol when one is pinned, whatever the entry carried", () => {
+    // The pin is the group's semantics, not a fallback: an entry dragged into vLLM speaks
+    // what the rest of the group speaks, including one that had already picked a protocol.
+    expect(clientTypeAfterProviderChange("vllm", "")).toBe("vllm-openai-chat");
+    expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("vllm-openai-chat");
+    expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("vllm-openai-chat");
+    expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("vllm-openai-chat");
+    // And moving back out of it does not carry the pin along.
+    expect(clientTypeAfterProviderChange("custom", "vllm-openai-chat")).toBe("openai-chat");
+  });
 });
 
 describe("isCustomLikeGroup", () => {
@@ -107,6 +118,8 @@ describe("isCustomLikeGroup", () => {
     expect(isCustomLikeGroup("my-group")).toBe(true);
     expect(isCustomLikeGroup("openai")).toBe(false);
     expect(isCustomLikeGroup("anthropic")).toBe(false);
+    // A group that pins its protocol picks nothing: the choice is already made for it.
+    expect(isCustomLikeGroup("vllm")).toBe(false);
   });
 });
 
@@ -124,6 +137,8 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
   it("never probes for vendor groups, nor for actions other than save", () => {
     // A vendor group auto-routes by model id; an empty protocol there is correct.
     expect(needsProtocolDetectOnSave("save", "openai", "")).toBe(false);
+    // A pinned group has nothing to probe for — the group already knows the answer.
+    expect(needsProtocolDetectOnSave("save", "vllm", "")).toBe(false);
     expect(needsProtocolDetectOnSave("remove", "custom", "")).toBe(false);
     expect(needsProtocolDetectOnSave("setDefault", "custom", "")).toBe(false);
     expect(needsProtocolDetectOnSave("setVisionModel", "custom", "")).toBe(false);
@@ -147,6 +162,13 @@ describe("envHintClientType (custom groups never infer a client from the model i
     expect(envFor("custom", "whatever", "openai-responses")).toBe("OPENAI_API_KEY");
   });
 
+  it("resolves a pinned group against its pin rather than the model id", () => {
+    // deepseek-ai/DeepSeek-V4-Pro would otherwise route by id to DEEPSEEK_API_KEY, which is
+    // not what an entry saved on the vLLM client reads.
+    expect(envHintClientType("vllm", "")).toBe("vllm-openai-chat");
+    expect(envFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "")).toBe("OPENAI_API_KEY");
+  });
+
   it("leaves vendor groups routing by model id, which is how they really work", () => {
     expect(envHintClientType("anthropic", "")).toBeUndefined();
     expect(envFor("anthropic", "claude-sonnet-5", "")).toBe("ANTHROPIC_API_KEY");
@@ -166,6 +188,13 @@ describe("protocolForPersist (an empty protocol must never reach the config)", (
     expect(protocolForPersist("custom", "ant-messages")).toBe("ant-messages");
     expect(protocolForPersist("custom", "openai-responses")).toBe("openai-responses");
     expect(protocolForPersist("my-group", " openai-chat ")).toBe("openai-chat");
+  });
+
+  it("writes a pinned group's protocol rather than leaving it to inference", () => {
+    expect(protocolForPersist("vllm", "")).toBe("vllm-openai-chat");
+    expect(protocolForPersist("vllm", "   ")).toBe("vllm-openai-chat");
+    // An explicit value still wins — this is the last-resort net, not an override.
+    expect(protocolForPersist("vllm", "openai-chat")).toBe("openai-chat");
   });
 
   it("leaves preset / vendor groups empty so AgentHub still infers from the model id", () => {

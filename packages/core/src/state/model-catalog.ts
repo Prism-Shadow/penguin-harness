@@ -7,7 +7,8 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the vLLM group: 2026-09-03 — per each provider's
+ * docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -31,7 +32,10 @@
  * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
  * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
- * preset base URL.
+ * preset base URL. The vLLM group pins one too, but as a property of the GROUP rather than
+ * of each row (ModelProviderInfo.clientType, read through providerClientType): a model the
+ * user adds there speaks the same protocol as the presets, and has no preset base URL to
+ * inherit — see the group's own block comment.
  * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
@@ -41,7 +45,9 @@
  *   Completions client — the bare "openai" spelling is a deprecated upstream alias, see
  *   canonicalClientType);
  * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
- *   OpenAI Responses server (see the OpenRouter block comment for why only those rows).
+ *   OpenAI Responses server (see the OpenRouter block comment for why only those rows);
+ * - `vllm-openai-chat` for the vLLM group, which is Chat Completions on the wire but maps
+ *   the thinking level onto the served model's own chat template (VLLM_CLIENT_TYPE).
  * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
  * endpoint.
  *
@@ -93,6 +99,22 @@ export interface ModelProviderInfo {
    */
   oauth?: ModelProviderOAuth;
   /**
+   * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
+   *
+   * Set it only where the group itself decides the answer and no other property already
+   * implies it: the gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
+   * `custom` / user-defined groups deliberately declare nothing — their whole point is that
+   * the protocol is detected from the endpoint or picked by hand, and a pin here would
+   * take that choice away.
+   *
+   * Where it IS set, it outranks every group-shape guess in the app: the add-model dialog
+   * preselects it, moving an entry into the group rewrites the entry to it, the API-key env
+   * hint resolves against it, and protocol detection is skipped because the group already
+   * knows. Read it through providerClientType rather than reaching for the field, so those
+   * call sites keep answering as one.
+   */
+  clientType?: string;
+  /**
    * The group the product recommends, captioned as such on the models page. It marks the
    * GROUP, not a position: a user who drags the group elsewhere keeps the caption with it,
    * and the default sequence below is what places it first for everyone else.
@@ -135,6 +157,15 @@ export interface ModelCatalogEntry {
   /** Preset base URL: inlined into gateway and direct MiniMax entries so only an API key is required. */
   baseUrl?: string;
 }
+
+/**
+ * AgentHub's client for models served by vLLM's OpenAI-compatible Chat Completions API. It
+ * is Chat Completions on the wire, but a distinct client: it maps the thinking level onto
+ * the `chat_template_kwargs` the SERVED model's chat template reads, which differs per model
+ * family, and AgentHub matches this name by exact equality (before its `openai` substring
+ * branches) so `openai-chat` would silently lose that mapping.
+ */
+const VLLM_CLIENT_TYPE = "vllm-openai-chat";
 
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -283,6 +314,17 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl:
       "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
     gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    // Self-hosted: the user runs the server, so there is no console to mint a key at
+    // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
+    // index, which is where the served ids in this group are documented.
+    id: "vllm",
+    label: "vLLM",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    modelsUrl: "https://recipes.vllm.ai/",
+    clientType: VLLM_CLIENT_TYPE,
   },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
 ];
@@ -1663,6 +1705,94 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.7, 4, 21),
     supportsVision: true,
   },
+  // -- vLLM (self-hosted: the models AgentHub's vllm-openai-chat client carries a per-model
+  // thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
+  //
+  // Three things every row here omits, all for the same reason — the user runs the server:
+  // - **no pricing**. There is no seller and no rate. An unpriced row is not a free one: three
+  //   zero buckets are a genuine $0 tier (the "free" badge, and costs that compute to 0), so
+  //   the field stays absent rather than zeroed.
+  // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
+  // - **no auto-routing**. Each row pins vllm-openai-chat explicitly, and the pin is
+  //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
+  //   would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains "deepseek-v4"
+  //   and would reach DeepSeek's first-party Responses client — pointed at a vLLM server.
+  //
+  // contextWindow is the recipe's NATIVE length, which is the most a deployment can serve
+  // without reconfiguration; an operator may serve less (`--max-model-len` below the native
+  // limit) or, for the Qwen rows, far more with YaRN rope scaling. The catalog cannot know
+  // which, and it derives the compaction thresholds from this number, so the honest default
+  // is the checkpoint's own figure — an entry without one would be assumed to be 128000.
+  // The DeepSeek rows additionally document `--max-model-len >= 393216` as the floor for
+  // their top reasoning levels, which is well inside the window recorded here.
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "vllm",
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    // The experimental vision revision: DeepSeek's first multimodal V4, a ViT tower on the
+    // same language backbone. Its recipe verifies a 32K deployment and notes the 1M the
+    // checkpoint advertises was not what was measured; the window below is the checkpoint's,
+    // matching every other DeepSeek V4 row in this catalog.
+    modelId: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "vllm",
+    contextWindow: 1000000,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "vllm",
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-0.8B",
+    displayName: "Qwen 3.5 0.8B",
+    provider: "vllm",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-9B",
+    displayName: "Qwen 3.5 9B",
+    provider: "vllm",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.6-35B-A3B",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "vllm",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-27B",
+    displayName: "Qwen 3.8 27B",
+    provider: "vllm",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-Flash-Next",
+    displayName: "Qwen 3.8 Flash Next",
+    provider: "vllm",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
 ];
 
 /**
@@ -1690,6 +1820,20 @@ export function catalogEntryFor(
 /** Looks up provider info by provider id; returns undefined for an unknown id. */
 export function providerInfo(providerId: string): ModelProviderInfo | undefined {
   return MODEL_PROVIDERS.find((p) => p.id === providerId);
+}
+
+/**
+ * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
+ * undefined when the group pins none — an unknown id (a user-defined group) included.
+ *
+ * The single entry point for the pin, so the places that decide a saved model's client_type
+ * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
+ * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
+ * CLI's `config model add`. A group without a pin keeps whatever those call sites already
+ * derive from its shape.
+ */
+export function providerClientType(providerId: string): string | undefined {
+  return providerInfo(providerId)?.clientType;
 }
 
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
@@ -1738,8 +1882,10 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
   if (t.includes("ant-messages")) return env("ANTHROPIC");
   // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
-  // bare "openai" as a deprecated alias), openai-responses and openai-embedding — all read
-  // the OPENAI_* pair.
+  // bare "openai" as a deprecated alias), openai-responses, openai-embedding, and
+  // vllm-openai-chat (an openai_chat subclass, so it reads the same pair) — all read the
+  // OPENAI_* pair. AutoLLMClient matches vllm-openai-chat by exact equality one branch
+  // earlier; the substring lands on the same answer, so the order costs nothing here.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }
@@ -1814,6 +1960,9 @@ export function fastModeProtocol(
   if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
   if (t.includes("deepseek-v4")) return undefined;
   if (t.includes("ant-messages")) return "anthropic";
+  // vllm-openai-chat is not carved out: it subclasses openai_chat without touching fast
+  // mode, so it maps the parameter exactly as the substring branch below reports. What a
+  // self-hosted server then does with `service_tier` is the third-party residue named above.
   if (t.includes("openai-responses")) return "openai";
   if (t.includes("openai") && t.includes("embedding")) return undefined;
   if (t.includes("openai")) return "openai";
@@ -1888,6 +2037,13 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
     const m = /^kimi-k(\d+)\.(\d+)$/.exec(modelId);
     return m
       ? `https://platform.kimi.com/docs/pricing/chat-k${m[1]}${m[2]}`
+      : providerInfo(provider)?.modelsUrl;
+  }
+  if (provider === "vllm") {
+    // recipes.vllm.ai has a page per model vLLM published a recipe for, which is exactly what
+    // this group presets; an id the user serves themselves has no page, so it gets the index.
+    return catalogEntryFor(provider, modelId) !== undefined
+      ? `https://recipes.vllm.ai/${modelId}`
       : providerInfo(provider)?.modelsUrl;
   }
   if (provider === "custom") return undefined;

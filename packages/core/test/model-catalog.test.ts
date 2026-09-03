@@ -15,6 +15,7 @@ import {
   offPeakAt,
   DEEPSEEK_OFF_PEAK,
   presetModelEntries,
+  providerClientType,
   providerInfo,
   fastModeProtocol,
   resolveModelEnv,
@@ -30,9 +31,10 @@ describe("model-catalog", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
     // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
-    // first (the recommended group), DeepSeek next (the default model's provider) and custom
-    // always last. This is the page's DEFAULT only — a Project that has reordered its groups
-    // stores every key and keeps its own arrangement (web's model-group-order.ts).
+    // first (the recommended group), DeepSeek next (the default model's provider), vLLM last
+    // among the vendors (self-hosted, so nothing in it runs until the user names a server)
+    // and custom always last. This is the page's DEFAULT only — a Project that has reordered
+    // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
       "deepseek",
@@ -47,6 +49,7 @@ describe("model-catalog", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "vllm",
       "custom",
     ]);
     // Exactly one group is marked recommended, and it is the one that leads the default
@@ -73,12 +76,17 @@ describe("model-catalog", () => {
       expect(providerIds.has(m.provider)).toBe(true);
       expect(m.provider).not.toBe("custom");
     }
-    // Except for custom, every provider gives a console link to "get an API key" (shown in the
-    // frontend's group header) and a model list / docs link to "get a model id" (shown in the add-model dialog).
+    // Every provider gives a console link to "get an API key" (shown in the frontend's group
+    // header) and a model list / docs link to "get a model id" (shown in the add-model
+    // dialog) — except where there is no such page to link. custom has neither; vLLM has no
+    // console at all (the user runs the server), but its served ids are documented.
     for (const p of MODEL_PROVIDERS) {
       if (p.id === "custom") {
         expect(p.apiKeyUrl).toBeUndefined();
         expect(p.modelsUrl).toBeUndefined();
+      } else if (p.id === "vllm") {
+        expect(p.apiKeyUrl).toBeUndefined();
+        expect(p.modelsUrl).toBe("https://recipes.vllm.ai/");
       } else {
         expect(p.apiKeyUrl).toMatch(/^https:\/\//);
         expect(p.modelsUrl).toMatch(/^https:\/\//);
@@ -111,7 +119,12 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+      if (m.provider === "vllm") {
+        // Self-hosted: no seller, so no rate to record. Deliberately ABSENT rather than
+        // zeroed — three zero buckets are a genuine $0 tier (the free badge below), and a
+        // model the user pays their own GPUs for is not that.
+        expect(m.pricing, m.modelId).toBeUndefined();
+      } else if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
         // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
         // $0 price (not "unknown"), so costs compute to 0.
         expect(m.pricing, m.modelId).toBeDefined();
@@ -128,6 +141,68 @@ describe("model-catalog", () => {
       expect(Number.isInteger(m.contextWindow)).toBe(true);
       expect(m.contextWindow!).toBeGreaterThan(0);
     }
+  });
+
+  it("vLLM (self-hosted): the group pins vllm-openai-chat, and presets carry no price and no endpoint", () => {
+    const vllm = MODEL_CATALOG.filter((m) => m.provider === "vllm");
+    // Dictionary order by upstream id, case-insensitive (as in siliconflow): deepseek-ai/
+    // before Qwen/, and the flash revision before the vision revision it prefixes.
+    expect(vllm.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-ai/DeepSeek-V4-Flash", 1000000, false],
+      ["deepseek-ai/DeepSeek-V4-Flash-Vision-Exp", 1000000, true],
+      ["deepseek-ai/DeepSeek-V4-Pro", 1000000, false],
+      ["Qwen/Qwen3.5-0.8B", 262144, true],
+      ["Qwen/Qwen3.5-9B", 262144, true],
+      ["Qwen/Qwen3.6-35B-A3B", 262144, true],
+      ["Qwen/Qwen3.8-27B", 262144, true],
+      ["Qwen/Qwen3.8-Flash-Next", 262144, true],
+    ]);
+    for (const m of vllm) {
+      // The pin is load-bearing on every row: Qwen/* matches none of AutoLLMClient's rules
+      // and would be rejected, and deepseek-ai/DeepSeek-V4-* contains "deepseek-v4", which
+      // would reach DeepSeek's first-party Responses client pointed at a vLLM server.
+      expect(m.clientType, m.modelId).toBe("vllm-openai-chat");
+      // No seller and no shared endpoint: the user runs the server and supplies its URL.
+      expect(m.pricing, m.modelId).toBeUndefined();
+      expect(m.baseUrl, m.modelId).toBeUndefined();
+      // Chat Completions on the wire, so the credential fallback is the OPENAI_* pair.
+      expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
+    }
+    // The upstream id survives verbatim, capitals and all — it is what the vLLM server was
+    // started with, and AgentHub's per-model thinking table lowercases it on its own side.
+    expect(catalogEntryFor("vllm", "Qwen/Qwen3.8-27B")?.displayName).toBe("Qwen 3.8 27B");
+    expect(catalogEntryFor("vllm", "qwen/qwen3.8-27b")).toBeUndefined();
+    // The same upstream ids are resold by SiliconFlow, and the pair lookup keeps the two
+    // apart: same id, different group, different protocol and endpoint.
+    expect(catalogEntryFor("siliconflow", "deepseek-ai/DeepSeek-V4-Pro")?.clientType).toBe(
+      "openai-chat",
+    );
+    // The group pin, read the one way every call site reads it.
+    expect(providerClientType("vllm")).toBe("vllm-openai-chat");
+    expect(providerInfo("vllm")!.gatewayBaseUrl).toBeUndefined();
+    // No group but vLLM declares one: the gateways derive openai-chat from their preset
+    // endpoint, and custom / user-defined groups leave the protocol to detection.
+    expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
+      "vllm",
+    ]);
+    expect(providerClientType("custom")).toBeUndefined();
+    expect(providerClientType("my-own-group")).toBeUndefined();
+    // Presets reach a Project with the pin and without a price or an endpoint.
+    const preset = presetModelEntries().filter((e) => e.provider === "vllm");
+    expect(preset).toHaveLength(8);
+    for (const e of preset) {
+      expect(e.client_type, e.model_id).toBe("vllm-openai-chat");
+      expect(e.pricing, e.model_id).toBeUndefined();
+      expect(e.base_url, e.model_id).toBeUndefined();
+    }
+    // Each preset id has a recipe page; an id the user serves themselves has none, so it
+    // falls back to the recipe index.
+    expect(modelHomepageUrl("vllm", "Qwen/Qwen3.8-27B")).toBe(
+      "https://recipes.vllm.ai/Qwen/Qwen3.8-27B",
+    );
+    expect(modelHomepageUrl("vllm", "my-own-finetune")).toBe("https://recipes.vllm.ai/");
+    // Fast mode rides on the client, and the vLLM client inherits openai_chat's mapping.
+    expect(fastModeProtocol("Qwen/Qwen3.8-27B", "vllm-openai-chat")).toBe("openai");
   });
 
   it("providerInfo matches by id; unknown ids return undefined", () => {
@@ -457,6 +532,7 @@ describe("model-catalog", () => {
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
+      "vllm",
       "custom",
     ]) {
       expect(providerInfo(id)!.envKey).toBe("OPENAI_API_KEY");
