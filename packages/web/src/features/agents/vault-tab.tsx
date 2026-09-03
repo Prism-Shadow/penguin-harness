@@ -29,6 +29,8 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
+import { toneStrip } from "../../lib/tone";
+import { AiCreateModal, AiWandButton } from "../ai-create";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -41,7 +43,7 @@ export function VaultTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const { currentProject, reloadAgents } = useProject();
+  const { currentProject, agents, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
@@ -59,6 +61,8 @@ export function VaultTab({
   const [busy, setBusy] = useState(false);
   // Add modal: form state and per-field errors travel with the modal (a tab-level error would be hidden behind it).
   const [adding, setAdding] = useState(false);
+  /** "Add with AI" dialog: its prompt goes to the Project's default agent, naming this agent as the target. */
+  const [aiAdding, setAiAdding] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [valueInput, setValueInput] = useState("");
   const [addErrors, setAddErrors] = useState<{ key?: string; value?: string }>({});
@@ -214,11 +218,15 @@ export function VaultTab({
         </div>
       )}
 
-      {/* Add entry point (owner): the form lives in a modal; submitting the same key name overwrites the original value. */}
+      {/* Add entry points (owner): the form lives in a modal (submitting the same key name
+          overwrites the original value), and the wand beside it opens the AI path. */}
       {isOwner && entries !== null && (
-        <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>
-          {S.vault.add}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>
+            {S.vault.add}
+          </Button>
+          <AiWandButton disabled={busy} onClick={() => setAiAdding(true)} />
+        </div>
       )}
 
       {promptSection}
@@ -270,6 +278,26 @@ export function VaultTab({
           />
         </div>
       </Modal>
+
+      {/* The AI path. Its lead is an honest warning: a value typed into the prompt is recorded in
+          the conversation's Trace, whereas a value typed into the form never leaves the vault. The
+          footer follows that warning — "Edit in a new conversation" is the emphasised exit here, so
+          the prompt is read once more before it carries anything to a provider. */}
+      <AiCreateModal
+        open={aiAdding}
+        onClose={() => setAiAdding(false)}
+        title={S.vault.aiAddTitle}
+        primaryExit="edit"
+        intro={
+          <div className={`rounded-md border px-2.5 py-1.5 ${toneStrip.attention}`}>
+            {S.vault.aiAddIntro}
+          </div>
+        }
+        placeholder={S.vault.aiAddPlaceholder}
+        examples={S.vault.aiAddExamples}
+        tail={S.vault.aiAddTail(agentId, projectId)}
+        agents={agents}
+      />
 
       {/* Overwrite confirmation: the add modal stays underneath, so cancel returns to the form. */}
       <ConfirmModal

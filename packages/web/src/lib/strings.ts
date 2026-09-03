@@ -522,6 +522,63 @@ export const zh = {
       "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
     createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
     createSnapshotClear: "移除已选快照包",
+    /**
+     * The create dialog's AI path: the lead line, the prompt box's placeholder, the clickable
+     * examples and the fixed instruction tail joined after the draft (composeAiPrompt). The
+     * tail follows the agent-initialization skill's contract — a new agent under the current
+     * Project, only the skills it needs, no other agent touched, the id reported at the end.
+     */
+    aiCreateIntro:
+      "描述这个智能体要做什么、面向谁、产出什么；执行的智能体会用 agent-initialization 技能在当前 Project 里创建它。",
+    aiCreatePlaceholder: "例如：创建一个帮我把会议录音整理成待办清单的智能体…",
+    aiExamples: [
+      {
+        key: "jotting",
+        label: "随记智能体",
+        description: "零碎想法整理成一套 Markdown 文件体系",
+        prompt:
+          "创建一个随记智能体：我会不断向它发送零碎的想法和只言片语，它要在工作区里把这些内容整理成一套 Markdown 文件体系（按主题建文件、维护一个索引文件、合并重复内容、保留时间线），每次收到内容后回复归档到了哪个文件。",
+      },
+      {
+        key: "finance",
+        label: "金融 Copilot",
+        description: "财报、行情与新闻的基本面与估值分析",
+        prompt:
+          "创建一个金融 Copilot 智能体：能读取我提供的财报、行情数据与新闻链接，做基本面与估值分析，用表格与要点输出结论，标注不确定性与数据来源，不给出直接的买卖建议。",
+      },
+      {
+        key: "rag",
+        label: "文档 RAG 智能体",
+        description: "先给 docs/ 建索引，回答时引用出处",
+        prompt:
+          "创建一个文档问答智能体：我会把资料放进工作区的 docs/ 目录，它要先建立索引（按文件与章节写摘要），回答问题时引用具体文件与段落，没有依据时明确说不知道。",
+      },
+      {
+        key: "research",
+        label: "深度研究报告智能体",
+        description: "提纲、多轮检索与交叉验证，产出带引用的报告",
+        prompt:
+          "创建一个深度研究报告智能体：给定一个课题，它要先制定研究提纲，多轮检索与阅读资料并交叉验证事实，最后在工作区生成一份带目录、引用与附录的 Markdown 报告。",
+      },
+      {
+        key: "report-writer",
+        label: "报告写作智能体",
+        description: "零散材料整理成结构化报告；id 为 report-writer",
+        prompt:
+          "创建一个报告写作智能体，agent id 用 report-writer：擅长把零散材料整理成结构化的商业或技术报告（摘要、背景、分析、结论与建议），产出 Markdown 文件，并附一份写作检查清单。",
+      },
+    ],
+    aiCreateTail: [
+      "请使用 agent-initialization 技能，在当前 Project 中按上面的描述新建一个智能体：",
+      "- 上面给了 agent id 就用它，否则取一个简短的语义 id（小写字母开头，可含数字、下划线或连字符）；目标目录已存在时停下来告诉我，不要覆盖。",
+      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，把角色与行为规则写进它的 agent_state/AGENTS.md。",
+      "- 只从插件库（default_agent 已安装的技能目录）复制它真正需要的技能，不要多装。",
+      "- 不要改动其他智能体；完成后按技能要求做校验。",
+      "最后告诉我：新智能体的 id、安装了哪些技能，以及怎样开始和它对话（Agents 页该智能体卡片上的「新建对话」）。",
+    ].join("\n"),
+    /** The list's call to action while the Project has no agent beyond the built-in default. */
+    firstAgentTitle: "还没有自己的智能体",
+    firstAgentDesc: "描述你想要的智能体，让 AI 帮你创建；也可以手动配置。",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -762,6 +819,58 @@ export const zh = {
       "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
+    /**
+     * The header's "add models with AI" entry: the button label, the dialog's title and lead,
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The tail
+     * follows the penguin-config skill — one `penguin config model add` per model with
+     * `--provider` mandatory, the config file never touched by hand, `penguin config model list`
+     * at the end — and carries the Project id and the data root, which the CLI would otherwise
+     * take from its own defaults (the harness strips `PENGUIN_HOME` from a command's
+     * environment, so the CLI's default root is not the one the server runs on).
+     */
+    aiAdd: "让 AI 添加模型",
+    aiAddTitle: "让 AI 添加模型分组",
+    aiAddIntro:
+      "把模型列表页的链接或服务信息交给智能体，它会用 penguin config 命令把这些模型加为一个分组。能直接列出模型的 OpenAI 兼容端点，用「新增分组 → 导入模型」更快。",
+    aiAddPlaceholder: "粘贴模型列表页的 URL，或描述要接入的服务（网关地址、鉴权方式、模型 id）…",
+    aiAddExamples: [
+      {
+        key: "openrouter",
+        label: "OpenRouter 热门模型",
+        description: "读取模型列表页，加为一个分组",
+        prompt:
+          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+      },
+      {
+        key: "vllm",
+        label: "自建 vLLM 服务",
+        description: "OpenAI 兼容端点加指定的模型 id",
+        prompt:
+          "接入我自建的 vLLM 服务 http://10.0.0.5:8000/v1，模型 id 为 qwen3-32b，加为一个 vllm 分组。",
+      },
+      {
+        key: "ollama",
+        label: "本机 Ollama",
+        description: "把本机已有的模型加为一组",
+        prompt: "把本机 Ollama（http://localhost:11434）上已有的模型加为一个 ollama 分组。",
+      },
+      {
+        key: "deepseek",
+        label: "DeepSeek 官方模型",
+        description: "加进 deepseek 分组并设为默认",
+        prompt: "把 DeepSeek 官方的 deepseek-v4-pro 加进 deepseek 分组并设为默认模型。",
+      },
+    ],
+    aiAddTail: (projectId: string): string =>
+      [
+        "请使用 penguin-config 技能完成上面的配置：",
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
+        "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
+        "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
+        "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
+        `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
+      ].join("\n"),
     homepage: "模型主页",
     speedTest: "测速",
     speedTestTitle: "分组测速",
@@ -1070,6 +1179,50 @@ export const zh = {
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
     valueRequired: "值不能为空",
+    /**
+     * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
+     * typed into the prompt reaches the provider, the Trace and the agent's own command line),
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The examples obey
+     * that lead: the key-names-only ask comes first and none of them puts a secret in the prompt,
+     * both pinned by create-with-ai-surfaces.test.ts. The tail is fed the target agent and Project
+     * because the prompt goes to the Project's default agent, which is not necessarily the agent
+     * whose vault this is; it names the data root for the same reason the models tail does.
+     */
+    aiAddTitle: "让 AI 添加密钥",
+    aiAddIntro:
+      "写进提示词的密钥值会发给模型服务商、写入对话记录（Trace），还会出现在智能体执行的命令里。更稳妥的做法是让 AI 只创建键名并告诉你用途，值在保险柜里手动填写。",
+    aiAddPlaceholder: "让它检查这个智能体需要哪些 API key，或说明要建哪些键名…",
+    aiAddExamples: [
+      {
+        key: "audit",
+        label: "盘点这个智能体需要的 key",
+        description: "先建键名，值稍后手动填",
+        prompt:
+          "检查这个智能体已安装的技能需要哪些 API key，先把键名建好，并逐个告诉我用途和申请地址——值我自己在保险柜里填。",
+      },
+      {
+        key: "rotate",
+        label: "重置一个过期 token",
+        description: "把值清成占位符，新值手动填",
+        prompt:
+          "GH_TOKEN 已经过期，把它重置为占位值，并告诉我去哪里申请新的——新 token 我自己在保险柜里填。",
+      },
+      {
+        key: "endpoint",
+        label: "接入一个内部服务",
+        description: "地址直接写入，token 留给你填",
+        prompt:
+          "这个智能体要访问我们内部的 Gitea（https://git.example.com）。把 GITEA_BASE_URL 设为该地址，GITEA_TOKEN 先用占位值创建，并告诉我去哪里签发 token。",
+      },
+    ],
+    aiAddTail: (agentId: string, projectId: string): string =>
+      [
+        `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
+        "- 不要在回复里复述任何值，不要读取 .vault.toml。",
+        `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
+      ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "启用密钥保险柜",

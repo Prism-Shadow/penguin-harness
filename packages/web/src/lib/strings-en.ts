@@ -532,6 +532,56 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    aiCreateIntro:
+      "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
+    aiCreatePlaceholder: "e.g. Create an agent that turns my meeting recordings into to-do lists…",
+    aiExamples: [
+      {
+        key: "jotting",
+        label: "Jotting agent",
+        description: "Fragments of thought filed into a Markdown file system",
+        prompt:
+          "Create a jotting agent: I will keep sending it fragments of thoughts and half-sentences, and it organizes them into a Markdown file system in the Workspace (one file per topic, an index file it maintains, duplicates merged, a timeline kept), replying after each message with where it filed the content.",
+      },
+      {
+        key: "finance",
+        label: "Financial Copilot",
+        description: "Fundamentals and valuation from filings, quotes and news",
+        prompt:
+          "Create a financial Copilot agent: it reads the filings, market data and news links I give it, does fundamental and valuation analysis, presents conclusions as tables and bullet points, flags uncertainty and cites data sources, and never gives direct buy or sell advice.",
+      },
+      {
+        key: "rag",
+        label: "Document RAG agent",
+        description: "Indexes docs/ first, then answers with citations",
+        prompt:
+          "Create a document Q&A agent: I will put material into the Workspace's docs/ directory; it first builds an index (a summary per file and section), cites the specific file and passage in every answer, and says plainly that it does not know when the material gives no basis for an answer.",
+      },
+      {
+        key: "research",
+        label: "Deep research report agent",
+        description: "Outline, multi-round search, cross-checked, a cited report",
+        prompt:
+          "Create a deep research report agent: given a topic, it first drafts a research outline, then searches and reads sources over several rounds and cross-checks the facts, and finally writes a Markdown report in the Workspace with a table of contents, citations and appendices.",
+      },
+      {
+        key: "report-writer",
+        label: "Report-writing agent",
+        description: "Structured reports from loose material; id report-writer",
+        prompt:
+          "Create a report-writing agent with the agent id report-writer: it turns loose material into structured business or technical reports (summary, background, analysis, conclusions and recommendations), produces Markdown files, and attaches a writing checklist.",
+      },
+    ],
+    aiCreateTail: [
+      "Use the agent-initialization skill to create a new agent in the current Project from the description above:",
+      "- Use the agent id given above if there is one; otherwise pick a short semantic id (starting with a lowercase letter; letters, digits, underscores or hyphens). If the target directory already exists, stop and tell me instead of overwriting it.",
+      "- Start from default_agent's system_config.yaml, set its name, description and version, and write the role and rules into its agent_state/AGENTS.md.",
+      "- Copy only the skills it really needs from the plugin library (the skill directories default_agent carries); do not over-equip it.",
+      "- Do not touch any other agent; run the skill's validation when done.",
+      "Finish by telling me the new agent's id, the skills you installed, and how to start a conversation with it (the New chat button on its card on the Agents page).",
+    ].join("\n"),
+    firstAgentTitle: "No agent of your own yet",
+    firstAgentDesc: "Describe the agent you want and let AI create it — or set one up manually.",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
@@ -799,6 +849,52 @@ export const en: Strings = {
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
+    aiAdd: "Add models with AI",
+    aiAddTitle: "Add a model group with AI",
+    aiAddIntro:
+      "Hand the agent a model listing page or a description of the service, and it adds the models as one group with penguin config commands. For an OpenAI-compatible endpoint that lists its own models, Add group → Import models is faster.",
+    aiAddPlaceholder:
+      "Paste the URL of a model listing page, or describe the service to connect (gateway URL, authentication, model ids)…",
+    aiAddExamples: [
+      {
+        key: "openrouter",
+        label: "OpenRouter's popular models",
+        description: "Reads the listing page, adds one group",
+        prompt:
+          "Add the popular models on https://openrouter.ai/models as an OpenRouter group (ask me for the API key first).",
+      },
+      {
+        key: "vllm",
+        label: "A self-hosted vLLM server",
+        description: "OpenAI-compatible endpoint plus a model id",
+        prompt:
+          "Connect my self-hosted vLLM server at http://10.0.0.5:8000/v1, model id qwen3-32b, as a vllm group.",
+      },
+      {
+        key: "ollama",
+        label: "Local Ollama",
+        description: "Adds the models already pulled locally",
+        prompt:
+          "Add the models already available on my local Ollama (http://localhost:11434) as an ollama group.",
+      },
+      {
+        key: "deepseek",
+        label: "DeepSeek's official model",
+        description: "Into the deepseek group, set as the default",
+        prompt:
+          "Add DeepSeek's official deepseek-v4-pro to the deepseek group and make it the default model.",
+      },
+    ],
+    aiAddTail: (projectId: string): string =>
+      [
+        "Use the penguin-config skill for the configuration above:",
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` configures a different one and nothing reaches this Project.",
+        `- Run \`penguin config model add --provider <group> --model-id <upstream id> --project-id ${projectId} --root <data root> [--base-url <endpoint>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\` once per model: \`--provider\` is mandatory, \`--model-id\` takes the gateway's own model id, and an OpenAI-compatible endpoint gets \`--client-type openai --base-url <endpoint>\`.`,
+        "- When the source is a web page, fetch it first: add the models I named, or the most popular ones when I named none, about 10 at most.",
+        "- When an API key is needed and I did not give one, ask me once; if I do not provide it, leave the key empty and tell me to fill it in on the Models page.",
+        "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
+        `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
+      ].join("\n"),
     homepage: "Model page",
     speedTest: "Speed test",
     speedTestTitle: "Speed test",
@@ -1091,6 +1187,41 @@ export const en: Strings = {
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
     valueRequired: "Value must not be empty",
+    aiAddTitle: "Add secrets with AI",
+    aiAddIntro:
+      "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
+    aiAddPlaceholder: "Ask which API keys this agent needs, or name the keys to create…",
+    aiAddExamples: [
+      {
+        key: "audit",
+        label: "Find the keys this agent needs",
+        description: "Key names now, values filled in by hand",
+        prompt:
+          "Check which API keys this agent's installed skills need, create the key names now, and tell me what each one is for and where to apply for it — I will fill in the values in the vault myself.",
+      },
+      {
+        key: "rotate",
+        label: "Reset an expired token",
+        description: "Clears the value; you paste the new one",
+        prompt:
+          "GH_TOKEN has expired. Reset it to a placeholder value and tell me where to issue a new one — I will paste the new token in the vault myself.",
+      },
+      {
+        key: "endpoint",
+        label: "Connect an internal service",
+        description: "Address set now, token left for you",
+        prompt:
+          "This agent will call our internal Gitea at https://git.example.com. Set GITEA_BASE_URL to that address, create GITEA_TOKEN with a placeholder value, and tell me where to issue the token.",
+      },
+    ],
+    aiAddTail: (agentId: string, projectId: string): string =>
+      [
+        `Use the penguin-config skill to write the secrets above into the vault of agent ${agentId} (Project ${projectId}):`,
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` writes into a different one and this agent's vault stays empty.",
+        `- Run \`penguin config vault set --key <NAME> --value <value> --agent-id ${agentId} --project-id ${projectId} --root <data root>\` once per secret; when only the key name is wanted, store the placeholder value TODO and tell me what the key is for and where to apply for it.`,
+        "- Never repeat a value back in your reply, and never read .vault.toml.",
+        `- Finish with \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <data root>\` to list the key names.`,
+      ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "Enable vault",
