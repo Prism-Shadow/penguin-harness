@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#602](https://github.com/Prism-Shadow/penguin-harness/pull/602)
 
 [中文版](2026-09-03-modal-focus-trap.zh.md)
 
