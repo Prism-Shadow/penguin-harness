@@ -41,6 +41,17 @@ proxy. Use `curl --noproxy '*'`. Browsers and the server itself are unaffected.
 desktop app — holds `<root>/server.lock`. The lock is per root, not per port, so `PORT=` will not
 get past it. Use a different root; do not kill their process.
 
+## One instance at a time
+
+Only one local dev instance runs at a time, counting every agent's. A separate root gets you past
+the lock but not past the browser: cookies and the admin claim are shared across instances, so
+bringing a second one up corrupts the first's session state. Stop the previous PR's instance before
+starting the next.
+
+The slot belongs to the task that genuinely needs a running server — watching a live stream,
+driving a real tool call. The rest verify statically: for an icon-legibility or spacing question a
+throwaway HTML render shows the same pixels at a fraction of the cost.
+
 ## PENGUIN_HOME
 
 Never export it. `scripts/run-with-env.mjs` applies each `VAR=value` only when unset, so an
@@ -61,6 +72,13 @@ Unset it rather than blanking it: `run-with-env` reads empty as unset, but `reso
 
 A fresh root seeds `admin` with a random `penguin-<4 digits>` password, printed once at startup.
 `PENGUIN_SEED_ADMIN_PASSWORD` pins it, which is how the e2e harness logs in.
+
+The first-login link the server prints is the user's to open, not yours — no `curl`, no browser, no
+headless fetch. It redeems into whichever cookie jar made the request, and the desktop shell's
+variant is spent on first use, so following it can lock the user out of their own instance. Hand
+them the URL and wait. A restart prints a fresh one, so it is recoverable, but only by interrupting
+them. Being blocked here is an acceptable outcome: report how far you got and what stayed
+unverified rather than guessing.
 
 ## Editing while it runs
 

@@ -15,13 +15,15 @@ Two repositories sit side by side: the implementation repo (`penguin-harness`) a
 - `AGENTS.md` → `design/AGENTS.md`
 - `CLAUDE.md` → `AGENTS.md`
 
-Editing `AGENTS.md`, `CLAUDE.md` or anything under `specs/` edits **the design repo's files**. Commit them there, on their own branch, in their own PR. They can never appear in an implementation-repo PR. A fresh clone has none of the three links; recreate them by hand.
+Editing `AGENTS.md`, `CLAUDE.md` or anything under `specs/` edits **the design repo's files**. Commit them there, on their own branch, in their own PR. They can never appear in an implementation-repo PR. A fresh clone has none of the three links; recreate them by hand. A clone with no design repo beside it — the normal state for a remote or throwaway environment — has nothing to link to, so it carries no `AGENTS.md` at all and these skills are its whole contract.
 
 Both repos take changes through branch + PR against `main`, squash-merged. Do not push to `main`.
 
 Branches are `feat/<topic>`, `fix/<topic>`, `docs/<topic>` in both repos. Some older branches here read `docs-<topic>` instead: a remote branch literally named `docs` once held that ref namespace and made the slashed form unpushable. It is gone — if a push is ever rejected as a directory/file conflict again, `git ls-remote --heads origin` names the branch responsible.
 
 Independent changes each get their own git worktree under `../penguin-harness-wt/<topic>/` so several can run in parallel.
+
+**Searches stay inside the worktree you are working in.** No `find /`, no scan of the home directory or the whole disk: it is slow, and what it turns up outside the tree is another checkout's copy of the file you are already looking at. When a path does not resolve, narrow — reason about the package layout, ask `git ls-files`, follow the conventions above — rather than widening the root. The only paths outside the worktree worth reading are the siblings named here: `../penguin-harness-design` for specs, `../penguin-harness-wt/*` for another topic's tree, and `../agenthub` where it is checked out. Reach them by name; never find them by scanning. Say all of this to every subagent you dispatch — widening the search root is the first move a subagent makes when a path does not resolve.
 
 ## Verify what you changed
 
@@ -76,6 +78,8 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 **There is no index file.** Do not add one, and do not port the index step from agenthub's own workflow: the index was a single file every PR had to touch, which is precisely why it was deleted.
 
 **Reasoning does not go on disk.** No `## Why`, `## Problem`, `## Decision`, `## Alternatives considered`, `## Verification`, `## Risks`, and no claims about what the codebase currently *is*. The thinking is still required — report it in the conversation and write it into the PR description, which stays attached to its diff.
+
+**A conclusion is not a deliverable.** Do not package findings as a standalone page, artifact or report file: it detaches them from the diff they are about and no one opens it twice. A review's findings go in PR comments, on the lines they concern; everything else goes in the PR description and in the reply to whoever asked.
 
 **Numbers are links, and half of them are issues.** A bare `#N` does not render as a link in Markdown. Worse, this repository's bug reports and its PRs share one numbering space: `#83`, `#85`, `#102`, `#136`–`#140`, `#150`, `#170`, `#215`, `#218`, `#229`, `#239` are issues. Classify before writing — `gh api repos/Prism-Shadow/penguin-harness/issues/N --jq 'if .pull_request then "PR" else "ISSUE" end'` — and route them to `Issue`, not `PR`. A cross-repo reference names its repo: `agenthub [#162](https://github.com/Prism-Shadow/agenthub/pull/162)`.
 

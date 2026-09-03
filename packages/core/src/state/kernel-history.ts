@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-09-01";
+export const KERNEL_VERSION = "2026-09-03";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -185,13 +185,18 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
  *   that must outlive the conversation takes the new-Session form, and a subagent omits the
  *   field): the schedules tab moved.
- * - `2026-09-01` (current) — `model.timeoutMs` rose to 300000: the value is the idle budget
- *   between upstream events, and a model that keeps its reasoning off the wire spends its
- *   whole thinking phase inside the wait for the first one, which 120000 cut short. The
- *   runtime tab moved.
+ * - `2026-09-01` — `model.timeoutMs` rose to 300000: the value is the idle budget between
+ *   upstream events, and a model that keeps its reasoning off the wire spends its whole
+ *   thinking phase inside the wait for the first one, which 120000 cut short. The runtime tab
+ *   moved.
+ * - `2026-09-03` (current) — the default system prompt's # File system section gained a
+ *   search-scope rule: searches run from `CWD` down, never `find /` and never across the
+ *   user's home or the whole filesystem, and a path that does not resolve is narrowed by
+ *   reasoning about the project's layout instead of by widening the root. The prompt tab
+ *   moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
+  prompt: "bb70a347596764b0cb0453db901b76fef2fa9ba7e1df687a9f79700cdffdc195",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
@@ -214,8 +219,10 @@ export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
 export type KernelSupersededTabHashes = Readonly<Partial<Record<KernelTab, readonly string[]>>>;
 
 export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
-  // The pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257).
-  prompt: ["99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932"],
+  prompt: [
+    "99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932", // the pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257)
+    "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254", // the toggles template, before the # File system search-scope rule
+  ],
   runtime: [
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
     "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20", // model.timeoutMs was 120000, before the rise to 300000
