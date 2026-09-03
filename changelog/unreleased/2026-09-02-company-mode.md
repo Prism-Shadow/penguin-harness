@@ -1,4 +1,4 @@
-# Company mode: organizations of Agents driven by a calendar, a ticket board and a group chat
+# Company mode: organizations of Agents driven by a calendar, a ticket board and channels
 
 - **Date:** 2026-09-02
 - **Type:** feature
@@ -10,7 +10,7 @@
 The Web App gained a second work mode. In company mode a Project's Agents form an
 **organization**: a CEO at the root of a reporting tree, one standing **desk session** per
 employee, a **calendar** that is the only periodic driver, a five-column **ticket board** that
-carries the work, a **group chat** where only `@` mentions reach anyone, and monthly
+carries the work, **channels** where only `@` mentions reach anyone, and monthly
 **budgets** per employee that warn at 80% and pause the employee's calendar at 100%. Creating
 an organization takes one sentence — the mission — and produces only the CEO; the CEO hires
 HR, finance and the rest, partitions the shared workspace, schedules everyone and files the
@@ -22,11 +22,13 @@ employee's budget, workspace and model), `desks.toml` (the server's ledger of de
 `calendar/<agent_id>/<event>.toml` (the scheduled-task format without target fields),
 `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` (an Agent-Notes-style header — Status,
 Initiator, Owner, Parent, Notify, Priority, Due, Blocked, Blocked-by, Sessions — over Goal,
-Acceptance criteria, Progress and Result sections), `chat/<yyyy-mm-dd>.jsonl` and the handbook directory `handbook/` (the company's knowledge base, whose
+Acceptance criteria, Progress and Result sections), `channels/<channel_id>/` (one directory
+per channel: a `channel.toml` intent file with its name, purpose and members, and a
+`<yyyy-mm-dd>.jsonl` per day of messages) and the handbook directory `handbook/` (the company's knowledge base, whose
 `README.md` is the index every trigger makes the employee read first; the other documents are
 listed there and read on demand). SQLite holds only caches rebuilt from those files on every pass (desk and ticket
-session ownership, calendar run state, the last noticed ticket state, chat scan cursors,
-budget marks) and each user's chat read cursor.
+session ownership, calendar run state, the last noticed ticket state, the per-channel scan
+cursors, budget marks) and each user's read cursor per channel.
 
 ## Details
 
@@ -35,8 +37,8 @@ budget marks) and each user's chat read cursor.
   and the tickets into the caches, renews a desk whose workspace the chart moved, fires due
   calendar events to desks (queued behind a running Task, held while the organization or the
   employee is paused, never backfilled), notices ticket changes once (assigned, blocked,
-  blocker closed, done, rejected — employees on their desks, people through a system chat
-  line), delivers chat mentions with a hop chain that stops at the organization's limit, and
+  blocker closed, done, rejected — employees on their desks, people through a system line in
+  the all-hands channel), delivers channel mentions with a hop chain that stops at the organization's limit, and
   recomputes budgets. Every trigger is one user input that starts with an `[org_trigger]`
   block; ticket sessions are ordinary sessions of the employee's Agent, appended to the
   ticket's `Sessions` header. Spend is attributed by session: an employee's own sessions plus
@@ -44,9 +46,10 @@ budget marks) and each user's chat read cursor.
   rolled up along `Parent`.
 - API: `/api/projects/:projectId/organizations` and its sub-routes for the chart, employees,
   desks, the handbook, the calendar, tickets (move, block, unblock, progress, start, attach),
-  chat (with a read cursor), finance and the organization's sessions; user-level events
-  `org_run`, `org_chat`, `org_ticket` and `org_budget`. Any Project member reads and writes;
-  only the owner deletes. Migration 4 adds the seven organization tables.
+  channels (their members, messages and read cursor), finance and the organization's
+  sessions; user-level events `org_run`, `org_channel`, `org_ticket` and `org_budget`. Any
+  Project member reads and writes; only the owner deletes. Migration 4 adds the seven
+  organization tables.
 - Switches: an admin master switch (`companyMode` in server settings, default on; off stops
   the scheduler, 404s the routes and hides the mode switch, reported by `GET /api/me`), a
   personal switch in `ui_prefs`, and an organization's own `status: paused`.
@@ -56,16 +59,18 @@ budget marks) and each user's chat read cursor.
   `buildOrgTriggerMessage` / `parseOrgTriggerMessage`.
 - CLI: the `penguin org` family — `ls`, `create`, `show`, `chart`, `hire`, `employee set`,
   `leave`, `desk show|renew`, `calendar ls|add|update|rm`, `ticket
-  ls|show|create|move|assign|block|unblock|progress|start|attach`, `chat tail|send`,
-  `handbook list|show|write|rm`, `finance` — a thin client over the API with `--json`
-  everywhere.
-- Web: a Development | Company mode switch above the Project switcher, an organization switcher with
-  creation and settings, seven pages (overview, org chart, calendar, tickets, finance, chat,
-  handbook — the knowledge base as a file list beside the rendered document, with editing in
-  place, new documents and deletion), a
-  session list grouped by organization with desk and ticket sub-folders, an Organization folder in
-  development mode, the `[org_trigger]` banner in conversations, and the two switches on the
-  settings page.
+  ls|show|create|move|assign|block|unblock|progress|start|attach`, `channel
+  ls|create|show|invite|join|leave|remove|archive|unarchive|tail|send` (`--channel` defaults
+  to `default_channel`), `handbook list|show|write|rm`, `finance` — a thin client over the
+  API with `--json` everywhere.
+- Web: a Development | Company mode switch above the Project switcher, an organization
+  switcher with creation and settings, six nav pages (overview, org chart, calendar, tickets,
+  finance, handbook — the knowledge base as a file list beside the rendered document, with
+  editing in place, new documents and deletion) plus the channel view, 频道 / Channels as the
+  sidebar's own list where development mode lists conversations (all-hands pinned, 我的频道,
+  others with a 加入 action, archived folded), desk and ticket sessions reached from a 「会话」
+  menu instead of a sidebar list, an Organization folder in development mode, the
+  `[org_trigger]` banner in conversations, and the two switches on the settings page.
 - Creation options: an organization may be created with a **model** (a configured pair, used
   by every desk and ticket session whose employee names none) and a **company workspace** (an
   existing absolute directory used as the shared workspace instead of the organization's own
@@ -75,7 +80,7 @@ budget marks) and each user's chat read cursor.
   proposal (mission reading, first tickets, hiring plan with budgets and model, workspace
   split) and ends; hiring, budgets, rejecting others' tickets, closing P0/P1 tickets without
   review, anything outside the organization and structural changes wait for the creator's
-  confirmation in chat. Employees escalate such matters to the CEO. Encoded in the
+  confirmation in the all-hands channel. Employees escalate such matters to the CEO. Encoded in the
   `company-ceo` / `company-employee` skills, the init run and the handbook.
 - The handbook is a directory, `handbook/`, and the company's knowledge base: its `README.md` is
   the index every trigger points at (layout, protocols, role conventions, and a list of documents
@@ -90,5 +95,20 @@ budget marks) and each user's chat read cursor.
   `preinstall: false`) with the `company-employee`, `company-ceo`, `company-hr` and
   `company-finance` skills; the CEO and every hired Agent get it together with
   `agent-development`.
+- Channels: an organization's talk is a set of channels, each a directory under `channels/`
+  with a `channel.toml` intent file. `default_channel` is the all-hands channel created with
+  the organization, that every employee and every Project member is in implicitly and where
+  budget alerts, ticket notices to people and hire notices land. Anyone — a person or an
+  employee — opens more; a new channel holds only its creator, an employee gets in only when
+  a member invites it, and a person may join any channel and read every one of them. Delivery
+  follows membership: `@agent:<id>` wakes a desk only inside the channel, `@all` is that
+  channel's members minus the sender, and a message naming a non-member is refused with
+  `mention_not_member` before anything is written. The `[org_trigger]` block for
+  `kind: mention` carries a `channel:` line, so an employee answers where it was addressed.
+  Archiving (people only) makes a channel read-only; the all-hands channel cannot be
+  archived, left, or have its membership edited. The scan cursor and each person's read
+  cursor are per channel — migration 5 recreates the two tables as `org_channel_state` and
+  `org_channel_reads`. `penguin org channel` is the CLI family, and channels are the Web
+  App's primary list in company mode, with desk and ticket sessions moved into a 「会话」 menu.
 - Docs: a Company Mode guide with the marketplace walkthrough, the `penguin org` reference,
   and the organization routes in the server API reference.

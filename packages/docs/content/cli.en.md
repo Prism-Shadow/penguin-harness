@@ -217,7 +217,7 @@ penguin schedule rm daily-report
 
 ## penguin org
 
-Company mode's command family — a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, calendar, tickets, chat) stay the single source of truth; every subcommand reads a projection of them or writes through the route that edits them, with the same validated-writer contract `schedule` has: API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits.
+Company mode's command family — a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, calendar, tickets, channels) stay the single source of truth; every subcommand reads a projection of them or writes through the route that edits them, with the same validated-writer contract `schedule` has: API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits.
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
@@ -243,8 +243,16 @@ penguin org ticket unblock <ticket_id>
 penguin org ticket progress <ticket_id> -m <text>               # a progress entry, attributed to the calling session
 penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--json]   # a ticket session working on the ticket in the background; prints its id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # an existing session as a contributor (default: the calling session)
-penguin org chat tail [--date <d>] [-n <count>] [--json]
-penguin org chat send -m <text> [--ref-ticket <id>] [--ref-session <id>]
+penguin org channel ls [--json]                                 # every channel for a person, its own for an employee
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holds only its creator
+penguin org channel show <channel_id> [--json]                  # purpose, member count and the member list
+penguin org channel invite <channel_id> <principal>...          # any member invites; one POST per principal
+penguin org channel join <channel_id>                           # people only; an employee waits to be invited
+penguin org channel leave <channel_id>                          # self-removal
+penguin org channel remove <channel_id> <principal>             # people only
+penguin org channel archive <channel_id> | unarchive <channel_id>      # people only; read-only while archived
+penguin org channel tail [--channel <id>] [--date <d>] [-n <count>] [--json]
+penguin org channel send -m <text> [--channel <id>] [--ref-ticket <id>] [--ref-session <id>]
 penguin org handbook list [--json]
 penguin org handbook show [path] [--json]
 penguin org handbook write <path> (-m <text> | --file <file>)
@@ -258,7 +266,10 @@ The same environment identifies the caller inside a session:
 
 - `--agent-id` on the `calendar` commands and the positional of `desk` default to `PENGUIN_AGENT_ID` — an employee schedules its own events and renews its own desk. `calendar ls` without the flag lists every employee's events.
 - `ticket start` runs the ticket session as `PENGUIN_AGENT_ID` when it is set; otherwise the server picks the ticket's owner.
-- The ticket writes (`create`, `assign`, `move`, `block`, `unblock`, `progress`) and `chat send` carry `PENGUIN_SESSION_ID`, so the file records the session's employee rather than the token's user; `ticket attach` attaches that session when `--session` is omitted (a full id or a unique fragment, as everywhere).
+- The ticket writes (`create`, `assign`, `move`, `block`, `unblock`, `progress`) and the channel writes (`create`, `invite`, `join`, `archive`, `unarchive`, `send`) carry `PENGUIN_SESSION_ID` in their body, so the file records the session's employee rather than the token's user; `ticket attach` attaches that session when `--session` is omitted (a full id or a unique fragment, as everywhere).
+- The channel reads (`ls`, `show`, `tail`) and the member DELETE behind `leave` and `remove` have no body, so they carry the same session as `?sessionId=`. Without it the server answers an employee as the signed-in person, and `channel ls` would list every channel instead of the employee's own.
+
+`--channel` defaults to `default_channel`, the all-hands channel every employee and Project member is in; `ls` prints it first, under its localized label rather than its stored name. A new channel holds only its creator: an employee gets in when a member invites it, a person may `join` any channel and read every one of them. `join`, `remove`, `archive` and `unarchive` are people's actions, so inside a desk or ticket session the server answers them `403 not_a_member` — like every other API error, printed verbatim.
 
 Per group:
 

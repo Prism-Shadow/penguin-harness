@@ -2,8 +2,8 @@
  * `penguin org` wiring, driven through `cli()` in-process against the fake server's
  * organization routes: list / overview / chart rendering, creation, hiring (both forms
  * and the exclusivity rule), the calendar writer, the ticket writes (their bodies, and
- * the caller identity taken from the control environment), chat, finance, the --org-id
- * default and --json output.
+ * the caller identity taken from the control environment), the channel family with its
+ * membership rules, finance, the --org-id default and --json output.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -781,26 +781,240 @@ describe("penguin org handbook", () => {
     expect(await cli(["org", "handbook", "write", "../x.md", "-m", "x"])).toBe(1);
     expect(await cli(["org", "leave", ".."])).toBe(1);
     expect(await cli(["org", "employee", "set", "..", "--title", "CEO"])).toBe(1);
+    // `channels/site/members/../../..` is the organization too, so the channel arguments
+    // that reach a path are guarded the same way.
+    expect(await cli(["org", "channel", "show", ".."])).toBe(1);
+    expect(await cli(["org", "channel", "remove", "site", "../../.."])).toBe(1);
+    expect(await cli(["org", "channel", "tail", "--channel", ".."])).toBe(1);
     expect(server.orgs.has("acme")).toBe(true);
     expect(server.requests).toEqual([]);
   });
 });
 
-describe("penguin org chat", () => {
+describe("penguin org channel", () => {
+  /** The all-hands channel, created with every organization and the default of `--channel`. */
+  const DEFAULT = "default_channel";
+  /** The desk session's employee, set up by the tests that run inside a session. */
+  const employeeInSession = (agentId: string) => {
+    server.addEmployee("acme", { agentId });
+    server.addSession({ sessionId: DESK_SESSION, agentId });
+    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+  };
+
+  it("ls lists the channels — the all-hands label, member counts, unread and @me; --json passes the response", async () => {
+    server.addEmployee("acme", { agentId: "dev1" });
+    const site = server.addChannel("acme", "site", {
+      name: "Site launch",
+      members: ["user:admin", "agent:dev1"],
+    });
+    site.unread = 3;
+    site.mentionsMe = 1;
+    server.addChannel("acme", "marketing", { name: "Marketing", archived: true });
+    expect(await cli(["org", "channel", "ls"])).toBe(0);
+    const lines = out().trimEnd().split("\n");
+    // The all-hands channel comes first and under its label, never its stored name.
+    expect(lines[1]).toMatch(/^default_channel\s+All hands\s+3\s/);
+    expect(lines[1]).not.toContain("All hands (");
+    const row = (id: string) => lines.find((l) => l.startsWith(`${id} `))!;
+    expect(row("site")).toContain("Site launch");
+    expect(row("site")).toMatch(/\s3\s+1$/);
+    expect(row("marketing")).toContain("archived");
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "ls", "--json"])).toBe(0);
+    const parsed = JSON.parse(out()) as { channels: Array<{ channelId: string }> };
+    // default_channel first, then by name: Marketing before Site launch.
+    expect(parsed.channels.map((c) => c.channelId)).toEqual([DEFAULT, "marketing", "site"]);
+  });
+
+  it("an employee sees only its own channels, and the read says which employee is asking", async () => {
+    employeeInSession("dev1");
+    server.addChannel("acme", "site", { members: ["agent:dev1"] });
+    server.addChannel("acme", "marketing", { members: ["user:admin"] });
+    expect(await cli(["org", "channel", "ls", "--json"])).toBe(0);
+    const parsed = JSON.parse(out()) as { channels: Array<{ channelId: string }> };
+    expect(parsed.channels.map((c) => c.channelId)).toEqual([DEFAULT, "site"]);
+    // The read has no body, so the identity rides the query; without it the server would
+    // answer the employee as the signed-in person and list every channel.
+    expect(lastRequest("GET", "/channels")?.search).toBe(`?sessionId=${DESK_SESSION}`);
+
+    delete process.env.PENGUIN_SESSION_ID;
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "ls", "--json"])).toBe(0);
+    const asPerson = JSON.parse(out()) as { channels: Array<{ channelId: string }> };
+    expect(asPerson.channels.map((c) => c.channelId)).toEqual([DEFAULT, "marketing", "site"]);
+    expect(lastRequest("GET", "/channels")?.search).toBe("");
+  });
+
+  it("create opens a channel holding only its creator; show prints it with its members", async () => {
+    expect(
+      await cli([
+        "org",
+        "channel",
+        "create",
+        "site",
+        "--name",
+        "Site launch",
+        "--purpose",
+        "Ship the site",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/channels")?.body).toEqual({
+      channelId: "site",
+      name: "Site launch",
+      purpose: "Ship the site",
+    });
+    expect(out()).toBe(`${t.org.channelCreated("site")}\n`);
+    const site = org().channels.get("site")!;
+    expect(site.members).toEqual(["user:admin"]);
+    // Creation leaves its own system line in the new channel.
+    expect(site.messages.map((m) => m.text)).toEqual(["user:admin created the channel."]);
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "show", "site"])).toBe(0);
+    const text = out();
+    expect(text).toContain(t.org.channelHead("Site launch", "site", 1, false));
+    expect(text).toContain(t.org.channelPurposeLine("Ship the site"));
+    expect(text).toContain(t.org.channelCreatedBy("user:admin", site.createdAt));
+    expect(text).toContain("user:admin");
+
+    // The all-hands channel is shown under its label and holds everybody.
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "show", DEFAULT])).toBe(0);
+    expect(out()).toContain(t.org.channelHead(t.org.allHands(), DEFAULT, 2, false));
+    expect(out()).toContain("agent:ceo");
+
+    // A taken id is the server's 409, verbatim.
+    expect(await cli(["org", "channel", "create", "site"])).toBe(1);
+    expect(err()).toContain("channel_exists");
+  });
+
+  it("create inside a session makes an agent-owned channel", async () => {
+    employeeInSession("dev1");
+    expect(await cli(["org", "channel", "create", "site", "--json"])).toBe(0);
+    expect(lastRequest("POST", "/channels")?.body).toEqual({
+      channelId: "site",
+      sessionId: DESK_SESSION,
+    });
+    expect(JSON.parse(out())).toMatchObject({ channelId: "site", createdBy: "agent:dev1" });
+    expect(org().channels.get("site")!.members).toEqual(["agent:dev1"]);
+  });
+
+  it("invite posts one principal at a time and prints each; a stranger is refused", async () => {
+    server.addEmployee("acme", { agentId: "dev1" });
+    server.addEmployee("acme", { agentId: "hr" });
+    server.addChannel("acme", "site", { members: ["user:admin"] });
+    expect(await cli(["org", "channel", "invite", "site", "agent:dev1", "agent:hr"])).toBe(0);
+    expect(
+      server.requests.filter(
+        (r) => r.method === "POST" && r.path.endsWith("/channels/site/members"),
+      ),
+    ).toHaveLength(2);
+    expect(out()).toBe(
+      `${t.org.channelInvited("site", "agent:dev1")}\n${t.org.channelInvited("site", "agent:hr")}\n`,
+    );
+    expect(org().channels.get("site")!.members).toEqual(["user:admin", "agent:dev1", "agent:hr"]);
+
+    // Only an employee or a Project member can be in a channel.
+    expect(await cli(["org", "channel", "invite", "site", "agent:nobody"])).toBe(1);
+    expect(err()).toContain("invalid_principal");
+    // The all-hands channel already holds everyone.
+    expect(await cli(["org", "channel", "invite", DEFAULT, "agent:dev1"])).toBe(1);
+    expect(err()).toContain("all_hands_immutable");
+  });
+
+  it("join adds the signed-in person; inside a session the employee is refused", async () => {
+    server.addChannel("acme", "site", { members: ["agent:ceo"], createdBy: "agent:ceo" });
+    expect(await cli(["org", "channel", "join", "site"])).toBe(0);
+    // The principal is the caller's own, which only the server knows: GET /api/me answers it.
+    expect(lastRequest("GET", "/api/me")).toBeDefined();
+    expect(lastRequest("POST", "/channels/site/members")?.body).toEqual({
+      principal: "user:admin",
+    });
+    expect(org().channels.get("site")!.members).toEqual(["agent:ceo", "user:admin"]);
+    expect(out()).toBe(`${t.org.channelJoined("site")}\n`);
+
+    employeeInSession("dev1");
+    server.addChannel("acme", "marketing", { members: ["agent:ceo"] });
+    expect(await cli(["org", "channel", "join", "marketing"])).toBe(1);
+    expect(err()).toContain("not_a_member");
+    expect(org().channels.get("marketing")!.members).toEqual(["agent:ceo"]);
+  });
+
+  it("leave removes the caller's own principal: the employee's in a session, the person's outside one", async () => {
+    employeeInSession("dev1");
+    server.addChannel("acme", "site", { members: ["user:admin", "agent:dev1"] });
+    expect(await cli(["org", "channel", "leave", "site"])).toBe(0);
+    const asEmployee = lastRequest("DELETE", `/members/${encodeURIComponent("agent:dev1")}`);
+    expect(asEmployee?.search).toBe(`?sessionId=${DESK_SESSION}`);
+    expect(org().channels.get("site")!.members).toEqual(["user:admin"]);
+    expect(out()).toBe(`${t.org.channelLeft("site")}\n`);
+
+    delete process.env.PENGUIN_SESSION_ID;
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "leave", "site"])).toBe(0);
+    expect(lastRequest("DELETE", `/members/${encodeURIComponent("user:admin")}`)?.search).toBe("");
+    expect(org().channels.get("site")!.members).toEqual([]);
+
+    // Nobody leaves the all-hands channel.
+    expect(await cli(["org", "channel", "leave", DEFAULT])).toBe(1);
+    expect(err()).toContain("all_hands_immutable");
+  });
+
+  it("remove takes another member out; an employee may only remove itself", async () => {
+    server.addEmployee("acme", { agentId: "dev1" });
+    server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
+    server.addChannel("acme", "site", { members: ["user:admin", "agent:dev1"] });
+    expect(await cli(["org", "channel", "remove", "site", "agent:dev1"])).toBe(0);
+    expect(out()).toBe(`${t.org.channelMemberRemoved("site", "agent:dev1")}\n`);
+    expect(org().channels.get("site")!.members).toEqual(["user:admin"]);
+
+    server.addChannel("acme", "marketing", { members: ["user:admin", "agent:dev1"] });
+    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+    expect(await cli(["org", "channel", "remove", "marketing", "user:admin"])).toBe(1);
+    expect(err()).toContain("An employee removes only itself from a channel.");
+    expect(org().channels.get("marketing")!.members).toEqual(["user:admin", "agent:dev1"]);
+  });
+
+  it("archive makes a channel read-only, unarchive lifts it; the all-hands channel and employees are refused", async () => {
+    server.addChannel("acme", "site", { members: ["user:admin"] });
+    expect(await cli(["org", "channel", "archive", "site"])).toBe(0);
+    expect(lastRequest("PATCH", "/channels/site")?.body).toEqual({ archived: true });
+    expect(org().channels.get("site")!.archived).toBe(true);
+    expect(out()).toBe(`${t.org.channelArchived("site")}\n`);
+
+    // An archived channel takes no messages until it is unarchived.
+    expect(await cli(["org", "channel", "send", "--channel", "site", "-m", "hello"])).toBe(1);
+    expect(err()).toContain("channel_archived");
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "unarchive", "site"])).toBe(0);
+    expect(lastRequest("PATCH", "/channels/site")?.body).toEqual({ archived: false });
+    expect(org().channels.get("site")!.archived).toBe(false);
+    expect(out()).toBe(`${t.org.channelUnarchived("site")}\n`);
+
+    expect(await cli(["org", "channel", "archive", DEFAULT])).toBe(1);
+    expect(err()).toContain("all_hands_immutable");
+
+    employeeInSession("dev1");
+    expect(await cli(["org", "channel", "archive", "site"])).toBe(1);
+    expect(err()).toContain("Only people archive a channel.");
+  });
+
   it("tail prints the day's last messages as `time  sender  text`; -n limits, --date picks the day, --json carries it", async () => {
     for (let i = 1; i <= 3; i++) {
-      server.addChat("acme", {
+      server.addMessage("acme", {
         sender: "agent:ceo",
         text: `message ${i}`,
         time: `2026-09-02T10:0${i}:00.000Z`,
       });
     }
-    server.addChat("acme", {
+    server.addMessage("acme", {
       sender: "user:admin",
       text: "yesterday",
       time: "2026-09-01T09:00:00.000Z",
     });
-    expect(await cli(["org", "chat", "tail"])).toBe(0);
+    expect(await cli(["org", "channel", "tail"])).toBe(0);
     expect(out()).toBe(
       [
         "2026-09-02T10:01:00.000Z  agent:ceo  message 1",
@@ -811,29 +1025,52 @@ describe("penguin org chat", () => {
     );
 
     stdout.length = 0;
-    expect(await cli(["org", "chat", "tail", "-n", "1"])).toBe(0);
+    expect(await cli(["org", "channel", "tail", "-n", "1"])).toBe(0);
     expect(out()).toBe("2026-09-02T10:03:00.000Z  agent:ceo  message 3\n");
 
     stdout.length = 0;
-    expect(await cli(["org", "chat", "tail", "--date", "2026-09-01", "--json"])).toBe(0);
-    const parsed = JSON.parse(out()) as { date: string; messages: Array<{ text: string }> };
+    expect(await cli(["org", "channel", "tail", "--date", "2026-09-01", "--json"])).toBe(0);
+    const parsed = JSON.parse(out()) as {
+      channelId: string;
+      date: string;
+      messages: Array<{ text: string }>;
+    };
+    expect(parsed.channelId).toBe(DEFAULT);
     expect(parsed.date).toBe("2026-09-01");
     expect(parsed.messages.map((m) => m.text)).toEqual(["yesterday"]);
 
-    expect(await cli(["org", "chat", "tail", "-n", "0"])).toBe(1);
+    expect(await cli(["org", "channel", "tail", "-n", "0"])).toBe(1);
     stdout.length = 0;
-    expect(await cli(["org", "chat", "tail", "--date", "2026-08-01"])).toBe(0);
-    expect(out()).toBe(`${t.org.chatEmpty("2026-08-01")}\n`);
+    expect(await cli(["org", "channel", "tail", "--date", "2026-08-01"])).toBe(0);
+    expect(out()).toBe(`${t.org.channelEmpty(DEFAULT, "2026-08-01")}\n`);
   });
 
-  it("send posts the text with refs and the calling session; the reply's id is printed", async () => {
-    server.addEmployee("acme", { agentId: "dev1" });
-    server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
-    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+  it("tail reads the channel --channel names and names it above the messages; the default one says nothing", async () => {
+    server.addChannel("acme", "site", { members: ["user:admin"] });
+    server.addMessage("acme", { sender: "user:admin", text: "kickoff" }, "site");
+    server.addMessage("acme", { sender: "user:admin", text: "all hands" });
+    expect(await cli(["org", "channel", "tail", "--channel", "site"])).toBe(0);
+    expect(out()).toContain(t.org.channelHeader("site"));
+    expect(out()).toContain("2026-09-02T10:00:00.000Z  user:admin  kickoff");
+    expect(out()).not.toContain("all hands");
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "tail"])).toBe(0);
+    expect(out()).toBe("2026-09-02T10:00:00.000Z  user:admin  all hands\n");
+
+    // The empty line names the channel it read.
+    stdout.length = 0;
+    server.addChannel("acme", "quiet", { members: ["user:admin"] });
+    expect(await cli(["org", "channel", "tail", "--channel", "quiet"])).toBe(0);
+    expect(out()).toBe(`${t.org.channelEmpty("quiet", "2026-09-02")}\n`);
+  });
+
+  it("send posts the text with refs and the calling session; --channel picks the channel", async () => {
+    employeeInSession("dev1");
     expect(
       await cli([
         "org",
-        "chat",
+        "channel",
         "send",
         "-m",
         "@agent:ceo the site is up",
@@ -841,20 +1078,63 @@ describe("penguin org chat", () => {
         "2026-09-02-site",
       ]),
     ).toBe(0);
-    expect(lastRequest("POST", "/channels/default_channel/messages")?.body).toEqual({
+    expect(lastRequest("POST", `/channels/${DEFAULT}/messages`)?.body).toEqual({
       text: "@agent:ceo the site is up",
       refs: { ticket: "2026-09-02-site" },
       sessionId: DESK_SESSION,
     });
-    const msg = org().chat[0]!;
+    const msg = org().channels.get(DEFAULT)!.messages[0]!;
     expect(msg).toMatchObject({ sender: "agent:dev1", mentions: ["agent:ceo"] });
-    expect(out()).toBe(`${t.org.chatSent(String(msg.id))}\n`);
+    expect(out()).toBe(`${t.org.messageSent(String(msg.id))}\n`);
+
+    server.addChannel("acme", "site", { members: ["agent:dev1", "agent:ceo"] });
+    stdout.length = 0;
+    expect(
+      await cli(["org", "channel", "send", "--channel", "site", "-m", "@agent:ceo look"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/channels/site/messages")?.body).toEqual({
+      text: "@agent:ceo look",
+      sessionId: DESK_SESSION,
+    });
+    expect(org().channels.get("site")!.messages).toHaveLength(1);
+    expect(org().channels.get(DEFAULT)!.messages).toHaveLength(1);
 
     delete process.env.PENGUIN_SESSION_ID;
-    expect(await cli(["org", "chat", "send", "-m", "plain"])).toBe(0);
-    expect(lastRequest("POST", "/channels/default_channel/messages")?.body).toEqual({
-      text: "plain",
-    });
+    expect(await cli(["org", "channel", "send", "-m", "plain"])).toBe(0);
+    expect(lastRequest("POST", `/channels/${DEFAULT}/messages`)?.body).toEqual({ text: "plain" });
+  });
+
+  it("the server's refusals surface verbatim: a mention outside the membership, a channel the caller is not in, an id no channel carries", async () => {
+    server.addEmployee("acme", { agentId: "dev1" });
+    server.addSession({ sessionId: DESK_SESSION, agentId: "dev1" });
+    server.addChannel("acme", "site", { members: ["user:admin"] });
+
+    // A message naming a non-member is refused before anything is written.
+    expect(
+      await cli(["org", "channel", "send", "--channel", "site", "-m", "@agent:dev1 look"]),
+    ).toBe(1);
+    expect(err()).toContain("mention_not_member");
+    expect(org().channels.get("site")!.messages).toEqual([]);
+
+    // An employee reads and posts only in the channels it belongs to.
+    process.env.PENGUIN_SESSION_ID = DESK_SESSION;
+    expect(await cli(["org", "channel", "tail", "--channel", "site"])).toBe(1);
+    expect(err()).toContain("not_a_member");
+    expect(await cli(["org", "channel", "show", "site"])).toBe(1);
+    expect(err()).toContain("not_a_member");
+    expect(await cli(["org", "channel", "send", "--channel", "site", "-m", "hi"])).toBe(1);
+    expect(err()).toContain("not_a_member");
+    delete process.env.PENGUIN_SESSION_ID;
+
+    // An unknown channel is a 404, and so is an id no channel could carry.
+    expect(await cli(["org", "channel", "show", "nope"])).toBe(1);
+    expect(err()).toContain("channel_not_found");
+    expect(await cli(["org", "channel", "tail", "--channel", "Bad-Id"])).toBe(1);
+    expect(err()).toContain("channel_not_found");
+
+    // A malformed id in a body is the create route's bad_request; the CLI adds no rule of its own.
+    expect(await cli(["org", "channel", "create", "Bad-Id"])).toBe(1);
+    expect(err()).toContain("Invalid channel id");
   });
 });
 

@@ -1,10 +1,10 @@
 /**
  * `penguin org` — company mode: a thin client over the organization API. Every
  * subcommand addresses one organization of one Project. The organization's files under
- * the Project directory (the employee tree, the desks ledger, calendar, tickets, chat)
- * stay the single source of truth; each command reads a projection of them or writes
- * through the route that edits them, with the same validated-writer contract `schedule`
- * has — API errors surface verbatim, so an agent gets synchronous validation.
+ * the Project directory (the employee tree, the desks ledger, calendar, tickets,
+ * channels) stay the single source of truth; each command reads a projection of them or
+ * writes through the route that edits them, with the same validated-writer contract
+ * `schedule` has — API errors surface verbatim, so an agent gets synchronous validation.
  *
  *   penguin org ls [--project-id <id>] [--json] [--server <url>]
  *   penguin org create --org-id <id> --mission <s> [--name <s>]
@@ -19,7 +19,10 @@
  *   penguin org ticket ls [--status] [--owner] [--blocked] | show <id> | create … | move <id> --to <col>
  *                    | assign <id> --owner <p> | block <id> --reason <s> [--by] | unblock <id>
  *                    | progress <id> -m <text> | start <id> [-m] [--workspace] | attach <id> [--session]
- *   penguin org chat tail [--date <d>] [-n <count>] | send -m <text> [--ref-ticket] [--ref-session]
+ *   penguin org channel ls | create <id> [--name] [--purpose] | show <id> | invite <id> <principal>...
+ *                    | join <id> | leave <id> | remove <id> <principal> | archive <id> | unarchive <id>
+ *                    | tail [--channel <id>] [--date <d>] [-n <count>]
+ *                    | send -m <text> [--channel <id>] [--ref-ticket] [--ref-session]
  *   penguin org handbook list | show [path] | write <path> (-m <text> | --file <f>) | rm <path>
  *   penguin org finance [--period <yyyy-mm>]
  *
@@ -29,9 +32,13 @@
  * identifies the caller: `--agent-id` on the calendar commands and the desk positional
  * default to PENGUIN_AGENT_ID; `ticket start` sends it as the employee the ticket
  * session runs as (the server otherwise picks the ticket owner); the ticket writes and
- * `chat send` carry PENGUIN_SESSION_ID so the file records the employee rather than the
- * token's user, and `ticket attach` attaches that session by default. `--json` prints
- * the response DTO as one line (`ticket ls` its filtered list, `chat tail` the messages
+ * the channel writes carry PENGUIN_SESSION_ID in their body so the file records the
+ * employee rather than the token's user, and `ticket attach` attaches that session by
+ * default. The reads that depend on who is asking — `channel ls`, `channel show`,
+ * `channel tail` — and the member DELETE behind `leave` / `remove` carry the same
+ * session as `?sessionId=`, having no body to put it in: without it the server answers
+ * an employee as the signed-in person and shows it every channel. `--json` prints the
+ * response DTO as one line (`ticket ls` its filtered list, `channel tail` the messages
  * it shows); write commands otherwise print a one-line confirmation.
  * Docs: /docs/cli § "penguin org".
  */
@@ -39,11 +46,15 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
 import type {
+  MeResponse,
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgChartResponse,
+  OrgChannelDetail,
+  OrgChannelItem,
   OrgChannelMessage,
   OrgChannelMessagesResponse,
+  OrgChannelsResponse,
   OrgHandbookFileResponse,
   OrgHandbookFilesResponse,
   OrgDeskResponse,
@@ -65,6 +76,8 @@ import {
   resolveSessionRef,
   ServerClient,
 } from "../client.js";
+import { getSessionInfo } from "../server-session.js";
+import { dim } from "../render.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
@@ -79,8 +92,10 @@ const TICKET_COLUMNS: readonly OrgTicketStatus[] = [
   "rejected",
 ];
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
-/** `chat tail` without `-n`. */
-const DEFAULT_CHAT_COUNT = 20;
+/** `channel tail` without `-n`. */
+const DEFAULT_MESSAGE_COUNT = 20;
+/** The all-hands channel: what `--channel` means when it is not given (the server's own default). */
+const DEFAULT_CHANNEL_ID = "default_channel";
 
 // ---------------------------------------------------------------------------
 // Scope: the organization, its Project and the connection
@@ -154,6 +169,43 @@ function callerSessionId(): string | undefined {
 function actorFields(): { sessionId?: string } {
   const sessionId = callerSessionId();
   return sessionId !== undefined ? { sessionId } : {};
+}
+
+/**
+ * A `?`-prefixed query string over the entries that have a value; empty when none has.
+ * `sessionId` rides here on the channel reads and the member DELETE, which have no body to
+ * carry the identity {@link actorFields} puts in one — without it the server answers an
+ * employee as the signed-in person, and `channel ls` shows it every channel.
+ */
+function query(entries: Array<[string, string | undefined]>): string {
+  const parts = entries
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .map(([key, value]) => `${key}=${enc(value)}`);
+  return parts.length > 0 ? `?${parts.join("&")}` : "";
+}
+
+/** `--channel`, trimmed; the all-hands channel when the flag is absent or empty. */
+function channelOf(raw: unknown): string {
+  return (typeof raw === "string" ? raw.trim() : "") || DEFAULT_CHANNEL_ID;
+}
+
+/**
+ * The caller as a channel principal, which `leave` has to name itself: inside a desk or
+ * ticket session it is that session's employee — the identity the server derives from the
+ * `sessionId` {@link actorFields} sends — and outside one the signed-in person, whom only
+ * the server knows.
+ */
+async function callerPrincipal(client: ServerClient): Promise<string> {
+  const sessionId = callerSessionId();
+  if (sessionId !== undefined) {
+    return `agent:${(await getSessionInfo(client, sessionId)).agentId}`;
+  }
+  return `user:${await callerUserId(client)}`;
+}
+
+/** The signed-in user's own id, as the server sees this connection. */
+async function callerUserId(client: ServerClient): Promise<string> {
+  return (await client.request<MeResponse>("GET", "/api/me")).user.userId;
 }
 
 function printJson(value: unknown): void {
@@ -366,12 +418,51 @@ function renderFinance(res: OrgFinanceResponse, t: Messages): string {
   return `${employees}${tickets}\n${t.org.financeTotal(res.period, usd(res.total))}\n`;
 }
 
-/** One chat message per line: `time  sender  text` (a multi-line text keeps its lines). */
-/** The all-hands channel; the channel family the Web App and the CLI build on lands later. */
-const DEFAULT_CHANNEL_ID = "default_channel";
-
-function chatLine(m: OrgChannelMessage): string {
+/** One channel message per line: `time  sender  text` (a multi-line text keeps its lines). */
+function messageLine(m: OrgChannelMessage): string {
   return `${m.time}  ${m.sender}  ${m.text}`;
+}
+
+/** A channel's display name: the all-hands channel is labelled here, its stored name never shown. */
+function channelLabel(item: { everyone: boolean; name: string }, t: Messages): string {
+  return item.everyone ? t.org.allHands() : item.name;
+}
+
+/** `channel ls`: one row per channel, the caller's unread counts in the last two columns. */
+function renderChannels(items: readonly OrgChannelItem[], t: Messages): string {
+  return renderTable(
+    [
+      t.agent.colId(),
+      t.agent.colName(),
+      t.org.colMembers(),
+      t.org.colArchived(),
+      t.org.colUnread(),
+      t.org.colMentions(),
+    ],
+    items.map((c) => [
+      c.channelId,
+      channelLabel(c, t),
+      String(c.memberCount),
+      c.archived ? "archived" : "",
+      String(c.unread),
+      String(c.mentionsMe),
+    ]),
+  );
+}
+
+/** `channel show`: the facts the channel carries, then its members. */
+function renderChannelDetail(d: OrgChannelDetail, t: Messages): string {
+  const lines = [
+    t.org.channelHead(channelLabel(d, t), d.channelId, d.memberCount, d.archived),
+    ...(d.purpose !== "" ? [t.org.channelPurposeLine(d.purpose)] : []),
+    t.org.channelCreatedBy(d.createdBy, d.createdAt),
+    ...(d.lastMessageAt !== null ? [t.org.channelLastMessage(d.lastMessageAt)] : []),
+  ];
+  const members = renderTable(
+    [t.org.colPrincipal(), t.agent.colName()],
+    d.members.map((m) => [m.principal, m.name]),
+  );
+  return `${lines.join("\n")}\n\n${members}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,26 +1147,189 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     else printLine(t.org.ticketAttached(detail.ticketId, sessionId));
   });
 
-  // ---- chat ----
+  // ---- channels ----
 
-  const chat = org.command("chat").description(t.org.chatDesc);
+  const channel = org.command("channel").description(t.org.channelDesc);
 
-  scoped(
-    chat
-      .command("tail")
-      .description(t.org.chatTailDesc)
-      .option("--date <date>", t.org.chatDate)
-      .option("-n, --count <count>", t.org.chatCount),
-    t,
-  ).action(async (opts) => {
-    const count = opts.count !== undefined ? parseCount(String(opts.count), t) : DEFAULT_CHAT_COUNT;
-    if (count === null) return;
+  /** `archive` / `unarchive`: the same PATCH with the flag flipped. */
+  const setArchived = async (
+    channelId: string,
+    archived: boolean,
+    opts: { orgId?: string; projectId?: string; server?: string; json?: boolean },
+  ): Promise<void> => {
+    if (refuseDotSegments(channelId, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const qs = opts.date !== undefined ? `?date=${enc(String(opts.date))}` : "";
+    const item = await scope.client.request<OrgChannelItem>(
+      "PATCH",
+      `${scope.base}/channels/${enc(channelId)}`,
+      { archived, ...actorFields() },
+    );
+    if (opts.json === true) printJson(item);
+    else {
+      printLine(
+        archived ? t.org.channelArchived(item.channelId) : t.org.channelUnarchived(item.channelId),
+      );
+    }
+  };
+
+  scoped(channel.command("ls").description(t.org.channelLsDesc), t).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const res = await scope.client.request<OrgChannelsResponse>(
+      "GET",
+      `${scope.base}/channels${query([["sessionId", callerSessionId()]])}`,
+    );
+    if (opts.json === true) {
+      printJson(res);
+      return;
+    }
+    if (res.channels.length === 0) {
+      printLine(t.org.channelsEmpty());
+      return;
+    }
+    process.stdout.write(renderChannels(res.channels, t));
+  });
+
+  scoped(
+    channel
+      .command("create <channel_id>")
+      .description(t.org.channelCreateDesc)
+      .option("--name <name>", t.org.channelName)
+      .option("--purpose <text>", t.org.channelPurpose),
+    t,
+  ).action(async (channelId: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    // The id travels in the body, so the server owns every rule about it; a bad one is its
+    // bad_request, not a second opinion here.
+    const item = await scope.client.request<OrgChannelItem>("POST", `${scope.base}/channels`, {
+      channelId,
+      ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
+      ...(opts.purpose !== undefined ? { purpose: String(opts.purpose) } : {}),
+      ...actorFields(),
+    });
+    if (opts.json === true) printJson(item);
+    else printLine(t.org.channelCreated(item.channelId));
+  });
+
+  scoped(channel.command("show <channel_id>").description(t.org.channelShowDesc), t).action(
+    async (channelId: string, opts) => {
+      if (refuseDotSegments(channelId, t)) return;
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const detail = await scope.client.request<OrgChannelDetail>(
+        "GET",
+        `${scope.base}/channels/${enc(channelId)}${query([["sessionId", callerSessionId()]])}`,
+      );
+      if (opts.json === true) printJson(detail);
+      else process.stdout.write(renderChannelDetail(detail, t));
+    },
+  );
+
+  scoped(
+    channel.command("invite <channel_id> <principals...>").description(t.org.channelInviteDesc),
+    t,
+  ).action(async (channelId: string, principals: string[], opts) => {
+    if (refuseDotSegments(channelId, t)) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    // One POST per principal, in order, each printed as it lands: the route takes one
+    // principal, and a refusal then stops on the one it refused with the rest unsent.
+    for (const principal of principals) {
+      const detail = await scope.client.request<OrgChannelDetail>(
+        "POST",
+        `${scope.base}/channels/${enc(channelId)}/members`,
+        { principal, ...actorFields() },
+      );
+      if (opts.json === true) printJson(detail);
+      else printLine(t.org.channelInvited(detail.channelId, principal));
+    }
+  });
+
+  scoped(channel.command("join <channel_id>").description(t.org.channelJoinDesc), t).action(
+    async (channelId: string, opts) => {
+      if (refuseDotSegments(channelId, t)) return;
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      // Joining is a person's move, so the principal is the signed-in user. Inside a session
+      // the actor is the employee, which is not a member, and the server refuses (403).
+      const principal = `user:${await callerUserId(scope.client)}`;
+      const detail = await scope.client.request<OrgChannelDetail>(
+        "POST",
+        `${scope.base}/channels/${enc(channelId)}/members`,
+        { principal, ...actorFields() },
+      );
+      if (opts.json === true) printJson(detail);
+      else printLine(t.org.channelJoined(detail.channelId));
+    },
+  );
+
+  scoped(channel.command("leave <channel_id>").description(t.org.channelLeaveDesc), t).action(
+    async (channelId: string, opts) => {
+      if (refuseDotSegments(channelId, t)) return;
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const principal = await callerPrincipal(scope.client);
+      await scope.client.request(
+        "DELETE",
+        `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query([
+          ["sessionId", callerSessionId()],
+        ])}`,
+      );
+      if (opts.json === true) printJson({ channelId, principal });
+      else printLine(t.org.channelLeft(channelId));
+    },
+  );
+
+  scoped(
+    channel.command("remove <channel_id> <principal>").description(t.org.channelRemoveDesc),
+    t,
+  ).action(async (channelId: string, principal: string, opts) => {
+    if (refuseDotSegments(channelId, t) || refuseDotSegments(principal, t)) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    await scope.client.request(
+      "DELETE",
+      `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query([
+        ["sessionId", callerSessionId()],
+      ])}`,
+    );
+    if (opts.json === true) printJson({ channelId, principal });
+    else printLine(t.org.channelMemberRemoved(channelId, principal));
+  });
+
+  scoped(channel.command("archive <channel_id>").description(t.org.channelArchiveDesc), t).action(
+    async (channelId: string, opts) => setArchived(channelId, true, opts),
+  );
+
+  scoped(
+    channel.command("unarchive <channel_id>").description(t.org.channelUnarchiveDesc),
+    t,
+  ).action(async (channelId: string, opts) => setArchived(channelId, false, opts));
+
+  scoped(
+    channel
+      .command("tail")
+      .description(t.org.channelTailDesc)
+      .option("--channel <id>", t.org.channelOpt)
+      .option("--date <date>", t.org.channelDate)
+      .option("-n, --count <count>", t.org.channelCount),
+    t,
+  ).action(async (opts) => {
+    const count =
+      opts.count !== undefined ? parseCount(String(opts.count), t) : DEFAULT_MESSAGE_COUNT;
+    if (count === null) return;
+    const channelId = channelOf(opts.channel);
+    if (refuseDotSegments(channelId, t)) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
     const res = await scope.client.request<OrgChannelMessagesResponse>(
       "GET",
-      `${scope.base}/channels/${DEFAULT_CHANNEL_ID}/messages${qs}`,
+      `${scope.base}/channels/${enc(channelId)}/messages${query([
+        ["date", opts.date !== undefined ? String(opts.date) : undefined],
+        ["sessionId", callerSessionId()],
+      ])}`,
     );
     const messages = res.messages.slice(-count);
     if (opts.json === true) {
@@ -1083,21 +1337,27 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       return;
     }
     if (messages.length === 0) {
-      printLine(t.org.chatEmpty(res.date));
+      printLine(t.org.channelEmpty(res.channelId, res.date));
       return;
     }
-    process.stdout.write(`${messages.map(chatLine).join("\n")}\n`);
+    // Message lines carry the sender, never the channel; name it above them whenever the
+    // reader did not get the default one.
+    if (res.channelId !== DEFAULT_CHANNEL_ID) printLine(dim(t.org.channelHeader(res.channelId)));
+    process.stdout.write(`${messages.map(messageLine).join("\n")}\n`);
   });
 
   scoped(
-    chat
+    channel
       .command("send")
-      .description(t.org.chatSendDesc)
-      .requiredOption("-m, --message <text>", t.org.chatText)
+      .description(t.org.channelSendDesc)
+      .requiredOption("-m, --message <text>", t.org.channelText)
+      .option("--channel <id>", t.org.channelOpt)
       .option("--ref-ticket <ticket_id>", t.org.refTicket)
       .option("--ref-session <session_id>", t.org.refSession),
     t,
   ).action(async (opts) => {
+    const channelId = channelOf(opts.channel);
+    if (refuseDotSegments(channelId, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const refs = {
@@ -1106,7 +1366,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     };
     const msg = await scope.client.request<OrgChannelMessage>(
       "POST",
-      `${scope.base}/channels/${DEFAULT_CHANNEL_ID}/messages`,
+      `${scope.base}/channels/${enc(channelId)}/messages`,
       {
         text: String(opts.message),
         ...(Object.keys(refs).length > 0 ? { refs } : {}),
@@ -1114,7 +1374,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       },
     );
     if (opts.json === true) printJson(msg);
-    else printLine(t.org.chatSent(msg.id));
+    else printLine(t.org.messageSent(msg.id));
   });
 
   // ---- handbook ----

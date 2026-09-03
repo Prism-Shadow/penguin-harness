@@ -106,7 +106,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 | | `model-development` | 在自己的硬件上做模型开发——三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）、`vllm`（以 OpenAI 兼容端点部署服务） |
 | | `skill-porting` | 从外部来源移植 Skill——插件市场、skills.sh 注册表、GitHub 仓库或本地目录——经审阅与规范化后装入 Agent |
 | | `agent-tuning` | 调优闭环的四个 Skill：`agent-initialization`（依据需求初始化 Agent）、`benchmark-design`（设计并校准能力 Benchmark）、`agent-evaluation`（隔离执行并评分单个 Case）、`agent-optimization`（根据测得结果改进 Agent） |
-| Agent 公司 | `agent-company` | 公司模式的员工工具箱——四个 Skill：`company-employee`（每个工位会话与工单会话都遵循的协议：触发块、工单看板、阻塞、群聊礼仪、预算）、`company-ceo`（使命拆解为工单、招募、划分工作区、审核、向董事会汇报）、`company-hr`（保证日程有安排、招募与离任、评估）、`company-finance`（预算、每日巡检、告警与暂停处置）（不预装：组织创建 CEO 与招募员工时自行安装） |
+| Agent 公司 | `agent-company` | 公司模式的员工工具箱——四个 Skill：`company-employee`（每个工位会话与工单会话都遵循的协议：触发块、工单看板、阻塞、频道礼仪、预算）、`company-ceo`（使命拆解为工单、招募、划分工作区、审核、向董事会汇报）、`company-hr`（保证日程有安排、招募与离任、评估）、`company-finance`（预算、每日巡检、告警与暂停处置）（不预装：组织创建 CEO 与招募员工时自行安装） |
 
 ## 编写与优化
 
