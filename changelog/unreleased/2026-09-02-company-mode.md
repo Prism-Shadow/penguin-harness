@@ -46,7 +46,7 @@ budget marks) and each user's chat read cursor.
   desks, the handbook, the calendar, tickets (move, block, unblock, progress, start, attach),
   chat (with a read cursor), finance and the organization's sessions; user-level events
   `org_run`, `org_chat`, `org_ticket` and `org_budget`. Any Project member reads and writes;
-  only the owner deletes. Migration 4 adds the seven cache tables.
+  only the owner deletes. Migration 4 adds the seven organization tables.
 - Switches: an admin master switch (`companyMode` in server settings, default on; off stops
   the scheduler, 404s the routes and hides the mode switch, reported by `GET /api/me`), a
   personal switch in `ui_prefs`, and an organization's own `status: paused`.
@@ -57,12 +57,13 @@ budget marks) and each user's chat read cursor.
 - CLI: the `penguin org` family — `ls`, `create`, `show`, `chart`, `hire`, `employee set`,
   `leave`, `desk show|renew`, `calendar ls|add|update|rm`, `ticket
   ls|show|create|move|assign|block|unblock|progress|start|attach`, `chat tail|send`,
-  `finance` — a thin client over the API with `--json` everywhere.
-- Web: a 「开发 | 公司」 mode switch above the Project switcher, an organization switcher with
+  `handbook list|show|write|rm`, `finance` — a thin client over the API with `--json`
+  everywhere.
+- Web: a Development | Company mode switch above the Project switcher, an organization switcher with
   creation and settings, seven pages (overview, org chart, calendar, tickets, finance, chat,
   handbook — the knowledge base as a file list beside the rendered document, with editing in
   place, new documents and deletion), a
-  session list grouped by organization with desk and ticket sub-folders, an 「组织」 folder in
+  session list grouped by organization with desk and ticket sub-folders, an Organization folder in
   development mode, the `[org_trigger]` banner in conversations, and the two switches on the
   settings page.
 - Creation options: an organization may be created with a **model** (a configured pair, used

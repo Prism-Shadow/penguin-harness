@@ -30,7 +30,7 @@ import {
   handbookDir,
   handbookFilePath,
   handbookPath,
-  isTicketColumn,
+  isCalendarEventName,
   orgChartPath,
   orgConfigPath,
   orgDir,
@@ -42,8 +42,6 @@ import {
 
 /** Directory names that are Agent ids (organizations, calendar owners). */
 const ID = /^[a-z][a-z0-9_]{1,63}$/;
-/** Calendar event names: the same rule as any user-named file (hyphens included). */
-const EVENT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
 
@@ -254,7 +252,7 @@ export class OrgStore {
       for (const f of files) {
         if (!f.isFile() || !f.name.endsWith(".toml")) continue;
         const name = f.name.slice(0, -".toml".length);
-        if (!EVENT_NAME.test(name)) continue;
+        if (!isCalendarEventName(name)) continue;
         const p = calendarEventPath(dir, a.name, name);
         const [raw, stat] = await Promise.all([fs.readFile(p, "utf8"), fs.stat(p)]);
         out.push({
@@ -466,9 +464,5 @@ export class OrgStore {
     } catch {
       return null;
     }
-  }
-
-  isColumn(value: string): value is OrgTicketStatus {
-    return isTicketColumn(value);
   }
 }

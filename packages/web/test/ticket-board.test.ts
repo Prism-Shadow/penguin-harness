@@ -9,9 +9,7 @@ import type { OrgTicketItem, OrgTicketsResponse } from "@prismshadow/penguin-ser
 import {
   TICKET_COLUMNS,
   allTickets,
-  blockedOnUser,
   boardColumns,
-  boardCounts,
   canMove,
   invalidTickets,
   isBlocked,
@@ -113,17 +111,6 @@ describe("columns", () => {
       ),
     ).toEqual([["x"], [], [], [], []]);
   });
-
-  it("counts per column and the blocked total", () => {
-    const res = board({
-      in_progress: [ticket({ ticketId: "x", blocked: "r" }), ticket({ ticketId: "y" })],
-      done: [ticket({ ticketId: "z", status: "done" })],
-    });
-    expect(boardCounts(res)).toEqual({
-      byStatus: { proposed: 0, in_progress: 2, review: 0, done: 1, rejected: 0 },
-      blocked: 1,
-    });
-  });
 });
 
 describe("moves and blocks", () => {
@@ -134,14 +121,10 @@ describe("moves and blocks", () => {
     expect(canMove("proposed", "in_progress")).toBe(true);
   });
 
-  it("an empty blocked string is not blocked, and blocked-on-me matches the user principal only", () => {
+  it("an empty blocked string is not blocked", () => {
     expect(isBlocked(ticket({ ticketId: "a", blocked: "" }))).toBe(false);
-    const list = [
-      ticket({ ticketId: "a", blocked: "r", blockedBy: "user:alice" }),
-      ticket({ ticketId: "b", blocked: "r", blockedBy: "agent:alice" }),
-      ticket({ ticketId: "c", blockedBy: "user:alice" }),
-    ];
-    expect(blockedOnUser(list, "alice").map((t) => t.ticketId)).toEqual(["a"]);
+    expect(isBlocked(ticket({ ticketId: "b", blocked: "r" }))).toBe(true);
+    expect(isBlocked(ticket({ ticketId: "c" }))).toBe(false);
   });
 });
 

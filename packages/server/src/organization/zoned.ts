@@ -67,12 +67,6 @@ export function zonedDate(timeZone: string, ms: number): string {
   return `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}`;
 }
 
-/** `yyyy-mm` of an instant in a zone. */
-export function zonedMonth(timeZone: string, ms: number): string {
-  const p = zonedParts(timeZone, ms);
-  return `${pad(p.year, 4)}-${pad(p.month)}`;
-}
-
 /** The zone's UTC offset in minutes at an instant (positive east of UTC). */
 export function zonedOffsetMinutes(timeZone: string, ms: number): number {
   const p = zonedParts(timeZone, ms);

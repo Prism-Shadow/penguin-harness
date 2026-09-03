@@ -33,12 +33,11 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
-import { ORG_TICKET_COLUMNS } from "../../organization/paths.js";
+import { ORG_TICKET_COLUMNS, isCalendarEventName } from "../../organization/paths.js";
 import type { Actor } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
-  optionalBoolean,
   optionalEnum,
   optionalNumber,
   optionalString,
@@ -60,6 +59,12 @@ function requireTicketId(raw: string | undefined): string {
 
 function requireName(raw: string | undefined, label: string): string {
   if (!raw || !isValidId(raw)) throw badRequest(`Invalid ${label}.`);
+  return raw;
+}
+
+/** A calendar event name must be one the store lists, or the file would be written and never read. */
+function requireEventName(raw: string | undefined): string {
+  if (!raw || !isCalendarEventName(raw)) throw badRequest("Invalid name.");
   return raw;
 }
 
@@ -365,7 +370,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       requireString(body, "agentId", { minLen: 2, maxLen: 64 }),
       "agentId",
     );
-    const name = requireName(requireString(body, "name", { minLen: 1, maxLen: 100 }), "name");
+    const name = requireEventName(requireString(body, "name", { minLen: 1, maxLen: 100 }));
     const item = await deps.orgService.upsertCalendar(
       projectId,
       orgId,
@@ -383,7 +388,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const orgId = requireValidId(c, "orgId");
     const agentId = requireValidId(c, "agentId");
-    const name = requireName(c.req.param("name"), "name");
+    const name = requireEventName(c.req.param("name"));
     member(c, projectId);
     const list = await deps.orgService.calendar(projectId, orgId);
     const item = list.events.find((e) => e.agentId === agentId && e.name === name);
@@ -400,7 +405,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const orgId = requireValidId(c, "orgId");
     const agentId = requireValidId(c, "agentId");
-    const name = requireName(c.req.param("name"), "name");
+    const name = requireEventName(c.req.param("name"));
     member(c, projectId);
     const body = await readJson(c);
     return c.json(
@@ -414,7 +419,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const orgId = requireValidId(c, "orgId");
     const agentId = requireValidId(c, "agentId");
-    const name = requireName(c.req.param("name"), "name");
+    const name = requireEventName(c.req.param("name"));
     member(c, projectId);
     await deps.orgService.deleteCalendar(projectId, orgId, agentId, name);
     return c.body(null, 204);
@@ -691,5 +696,3 @@ function parseModel(
     modelId: requireString(m, "modelId", { minLen: 1, maxLen: 200, label: "model.modelId" }),
   };
 }
-
-export { optionalBoolean };

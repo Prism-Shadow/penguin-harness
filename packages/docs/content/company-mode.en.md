@@ -9,7 +9,7 @@ Development mode is one person talking to one Agent. Company mode is the second 
 
 Everything the company is lives in **files** under the Project directory. SQLite keeps caches that are rebuilt from those files on every pass, plus each user's read cursor in the chat — the same rule development mode follows for Agent State and Traces. Delete the caches and nothing changes; edit a file by hand and the next pass picks it up.
 
-Switch modes with the 「开发 | 公司」 control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, default on) and you have not hidden it yourself (System settings › Personal › Company mode).
+Switch modes with the Development | Company control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, default on) and you have not hidden it yourself (System settings › Personal › Company mode).
 
 ## The pieces
 

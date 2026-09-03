@@ -114,12 +114,6 @@ export function shiftAnchor(anchorMs: number, view: CalendarView, delta: number)
   return new Date(first.getFullYear(), first.getMonth(), Math.min(d.getDate(), lastDay)).getTime();
 }
 
-/** `yyyy-mm` of the month containing `ms` (the month view's heading). */
-export function monthKey(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
-}
-
 /** A fixed interval in `30m` / `12h` / `7d` form as milliseconds; null when it is not one (the server's parsePeriod rule). */
 export function parsePeriodMs(raw: string | undefined): number | null {
   if (raw === undefined) return null;
@@ -223,13 +217,6 @@ export function dayFraction(atMs: number): number {
 export function timeLabel(atMs: number): string {
   const d = new Date(atMs);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-/** The distinct employees of a list of events, in first-appearance order — the colour index each one takes. */
-export function employeeOrder(events: ReadonlyArray<{ agentId: string }>): string[] {
-  const out: string[] = [];
-  for (const e of events) if (!out.includes(e.agentId)) out.push(e.agentId);
-  return out;
 }
 
 /** Local `datetime-local` input value (`yyyy-mm-ddThh:mm`) of an ISO instant; "" when unparseable or absent. */

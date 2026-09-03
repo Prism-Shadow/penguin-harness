@@ -363,6 +363,8 @@ export interface Messages {
     criteriaNeedsGoal(): string;
     bodyFileUnreadable(file: string): string;
     countInvalid(value: string): string;
+    /** An id or handbook path with a `.` / `..` segment: the URL would collapse onto another route. */
+    pathSegmentInvalid(value: string): string;
     /** ticket attach outside a session and without --session. */
     attachSessionMissing(): string;
     /** Confirmations of the write commands. */
@@ -1075,6 +1077,8 @@ const en: Messages = {
     criteriaNeedsGoal: () => "--criteria goes with --goal.",
     bodyFileUnreadable: (file) => `Cannot read --body-file ${file}.`,
     countInvalid: (value) => `Invalid -n value "${value}": expected a positive integer.`,
+    pathSegmentInvalid: (value) =>
+      `Invalid name "${value}": "." and ".." are neither an id nor a handbook path.`,
     attachSessionMissing: () =>
       "No session to attach: pass --session <id>, or run inside a session (PENGUIN_SESSION_ID).",
     created: (orgId, ceoDeskSessionId) =>
@@ -1746,6 +1750,7 @@ const zh: Messages = {
     criteriaNeedsGoal: () => "--criteria 须与 --goal 一起使用。",
     bodyFileUnreadable: (file) => `无法读取 --body-file ${file}。`,
     countInvalid: (value) => `-n 值「${value}」无效：应为正整数。`,
+    pathSegmentInvalid: (value) => `名称「${value}」无效：「.」与「..」既不是 id，也不是手册路径。`,
     attachSessionMissing: () =>
       "没有可挂接的会话：请传 --session <id>，或在会话内运行（PENGUIN_SESSION_ID）。",
     created: (orgId, ceoDeskSessionId) =>

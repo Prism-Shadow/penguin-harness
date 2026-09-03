@@ -1,19 +1,18 @@
 /**
- * Small pieces every organization page shares: the employee state dot, the organization's
- * status pill and dot, the budget bar and ring, the ticket status and priority pills, the
- * blocked badge, the failed-refresh line, and principal naming. Every status colour here is
- * a tone from lib/tone.ts, picked by meaning.
+ * Small pieces every organization page shares: the organization's status pill and dot, the
+ * budget bar and ring, the ticket status and priority pills, the blocked badge, the
+ * failed-refresh line, and principal naming. Every status colour here is a tone from
+ * lib/tone.ts, picked by meaning.
  */
 import type { ReactNode } from "react";
 import type {
-  OrgEmployeeState,
   OrgStatus,
   OrgTicketPriority,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -28,20 +27,8 @@ import type { OrgStatusKind } from "./shell-org-status";
 /** Circled exclamation (lucide circle-alert): the danger mark of an invalid chart entry or ticket file. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
 
-/** An employee's live state as a 6px dot: busy while running, success on the desk, attention when its budget paused it. The name rides in the tooltip and sr text. */
-export function EmployeeStateDot({ state }: { state: OrgEmployeeState }) {
-  const tone: Tone = state === "running" ? "busy" : state === "paused" ? "attention" : "success";
-  const label = S.company.employeeStates[state] ?? state;
-  return (
-    <span title={label} className="inline-flex shrink-0 items-center">
-      <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
-      <span className="sr-only">{label}</span>
-    </span>
-  );
-}
-
 /** The label of an organization's headline state. */
-export function orgStatusLabel(kind: OrgStatusKind): string {
+function orgStatusLabel(kind: OrgStatusKind): string {
   if (kind === "invalid") return S.company.orgInvalid;
   return kind === "paused" ? S.company.statusPaused : S.company.statusActive;
 }
@@ -201,14 +188,6 @@ export function BudgetBar({
   compact?: boolean;
 }) {
   const tone = budgetTone(ratio);
-  const fill =
-    tone === "danger"
-      ? "bg-red-500"
-      : tone === "attention"
-        ? "bg-amber-500"
-        : tone === "success"
-          ? "bg-emerald-500"
-          : "bg-gray-300 dark:bg-gray-600";
   const width = ratio === undefined ? 0 : Math.min(100, Math.max(0, ratio * 100));
   const label =
     budget === undefined
@@ -232,7 +211,7 @@ export function BudgetBar({
         title={label}
         className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
       >
-        <div className={`h-full rounded-full ${fill}`} style={{ width: `${width}%` }} />
+        <div className={`h-full rounded-full ${toneDot[tone]}`} style={{ width: `${width}%` }} />
       </div>
     </div>
   );
@@ -253,7 +232,7 @@ export function TicketStatusBadge({ status }: { status: OrgTicketStatus }) {
 const PRIORITY_TONE: Record<OrgTicketPriority, BadgeTone> = { P0: "red", P1: "amber", P2: "gray" };
 
 export function PriorityBadge({ priority }: { priority: OrgTicketPriority }) {
-  return <Badge tone={PRIORITY_TONE[priority] ?? "gray"}>{priority}</Badge>;
+  return <Badge tone={PRIORITY_TONE[priority]}>{priority}</Badge>;
 }
 
 /** The blocked mark: an attention pill whose tooltip carries the reason and who it waits on. */
@@ -323,16 +302,5 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
         {value}
       </p>
     </div>
-  );
-}
-
-/** A tinted count pill (the overview's board block): the count in the status's own surface. */
-export function CountPill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${toneSurface[tone]}`}
-    >
-      {children}
-    </span>
   );
 }

@@ -67,6 +67,16 @@ export function handbookFilePath(dir: string, rel: string): string {
   return path.join(handbookDir(dir), ...rel.split("/"));
 }
 
+/**
+ * Calendar event names: the file's stem. The store only lists names matching this, so the
+ * writers validate against the same rule — otherwise a write lands a file no pass ever sees.
+ */
+export const CALENDAR_EVENT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+export function isCalendarEventName(name: string): boolean {
+  return CALENDAR_EVENT_NAME_PATTERN.test(name);
+}
+
 export function calendarDir(dir: string, agentId?: string): string {
   return agentId === undefined ? path.join(dir, "calendar") : path.join(dir, "calendar", agentId);
 }

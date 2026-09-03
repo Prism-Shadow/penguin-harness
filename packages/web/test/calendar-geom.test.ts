@@ -15,11 +15,9 @@ import {
   chipLanes,
   dayFraction,
   dayKey,
-  employeeOrder,
   expandEvents,
   instancesByDay,
   monthGrid,
-  monthKey,
   parsePeriodMs,
   shiftAnchor,
   startOfWeek,
@@ -65,7 +63,6 @@ describe("day and week arithmetic", () => {
     expect(grid[0]![1]!.inMonth).toBe(true);
     expect(grid[4]![6]!.key).toBe("2026-10-04");
     expect(grid[4]![6]!.inMonth).toBe(false);
-    expect(monthKey(local(2026, 8, 15))).toBe("2026-09");
     // August 2026 starts on a Saturday and ends on a Monday: six rows.
     expect(monthGrid(local(2026, 7, 10))).toHaveLength(6);
     // February 2027 starts on a Monday and has 28 days: exactly four.
@@ -191,7 +188,6 @@ describe("expandEvents", () => {
     const byDay = instancesByDay(expandEvents([b, a], rangeStart, rangeEnd, now));
     expect([...byDay.keys()]).toEqual(["2026-09-02"]);
     expect(byDay.get("2026-09-02")!.map((i) => i.event.agentId)).toEqual(["a", "b"]);
-    expect(employeeOrder([b, a, b])).toEqual(["b", "a"]);
   });
 });
 

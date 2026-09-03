@@ -132,17 +132,20 @@ describe("organization routes", () => {
       (await owner.post(`${base}/acme/tickets/2026-09-01-site/move`, { status: "flying" })).status,
     ).toBe(400);
     expect((await owner.post(`${base}/acme/employees`, { title: "HR" })).status).toBe(400); // reportsTo missing
-    expect(
-      (
-        await owner.post(`${base}/acme/calendar`, {
-          agentId: "acme_hr",
-          name: "bad name",
-          prompt: "x",
-          enabled: true,
-          startAt: "now",
-        })
-      ).status,
-    ).toBe(400);
+    // A calendar name the store would not list back is refused here, not written and then lost.
+    for (const name of ["bad name", "_daily", "a".repeat(65)]) {
+      expect(
+        (
+          await owner.post(`${base}/acme/calendar`, {
+            agentId: "acme_hr",
+            name,
+            prompt: "x",
+            enabled: true,
+            startAt: "now",
+          })
+        ).status,
+      ).toBe(400);
+    }
     expect((await owner.get(`${base}/acme/chat?date=yesterday`)).status).toBe(400);
     expect((await owner.get(`${base}/acme/finance?period=2026-9`)).status).toBe(400);
     expect(calls).toEqual([]);

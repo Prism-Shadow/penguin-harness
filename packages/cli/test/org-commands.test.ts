@@ -765,6 +765,25 @@ describe("penguin org handbook", () => {
     expect(await cli(["org", "handbook", "rm", "README.md"])).toBe(1);
     expect(err()).toContain("cannot be deleted");
   });
+
+  // A `.` / `..` segment survives encodeURIComponent and the URL parser collapses it, so an
+  // unchecked path leaves the handbook route entirely: `handbook/files/../../../victim` is
+  // the organization `victim`, and `employees/..` is the organization itself.
+  it("refuses a dot segment in a handbook path or an employee id before any request", async () => {
+    server.addOrg({ orgId: "victim", name: "Victim", mission: "Stay alive" });
+    server.requests.length = 0;
+
+    expect(await cli(["org", "handbook", "rm", "../../../victim"])).toBe(1);
+    expect(err()).toContain(t.org.pathSegmentInvalid("../../../victim"));
+    expect(server.orgs.has("victim")).toBe(true);
+
+    expect(await cli(["org", "handbook", "show", ".."])).toBe(1);
+    expect(await cli(["org", "handbook", "write", "../x.md", "-m", "x"])).toBe(1);
+    expect(await cli(["org", "leave", ".."])).toBe(1);
+    expect(await cli(["org", "employee", "set", "..", "--title", "CEO"])).toBe(1);
+    expect(server.orgs.has("acme")).toBe(true);
+    expect(server.requests).toEqual([]);
+  });
 });
 
 describe("penguin org chat", () => {

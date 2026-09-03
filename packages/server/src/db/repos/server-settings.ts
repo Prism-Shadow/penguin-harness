@@ -138,6 +138,13 @@ export class ServerSettingsRepo {
    * so no caller has to remember that the two numbers are only meaningful together (the total is
    * never below the per-file cap; the PUT enforces that against the effective post-write pair).
    */
+  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
+    return {
+      attachmentMaxMb: this.getAttachmentMaxMb(),
+      attachmentTotalMb: this.getAttachmentTotalMb(),
+    };
+  }
+
   /** Company mode master switch (default on): absent row = on. */
   getCompanyMode(): boolean {
     const raw = this.get(COMPANY_MODE_KEY);
@@ -151,12 +158,5 @@ export class ServerSettingsRepo {
 
   setCompanyMode(value: boolean): void {
     this.set(COMPANY_MODE_KEY, JSON.stringify(value));
-  }
-
-  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
-    return {
-      attachmentMaxMb: this.getAttachmentMaxMb(),
-      attachmentTotalMb: this.getAttachmentTotalMb(),
-    };
   }
 }

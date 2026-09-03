@@ -329,21 +329,6 @@ export class OrgCacheRepo {
       .run(projectId, orgId, agentId, name);
   }
 
-  markCalendarInvalid(
-    projectId: string,
-    orgId: string,
-    agentId: string,
-    name: string,
-    reason: string,
-  ): void {
-    this.db
-      .prepare(
-        `UPDATE org_calendar_state SET invalid_reason = ?
-         WHERE project_id = ? AND org_id = ? AND agent_id = ? AND name = ?`,
-      )
-      .run(reason, projectId, orgId, agentId, name);
-  }
-
   markCalendarOutcome(
     projectId: string,
     orgId: string,

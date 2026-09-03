@@ -100,24 +100,32 @@ function fail(t: Messages, message: string): void {
   process.exitCode = 1;
 }
 
-/** `--org-id` default chain: flag > PENGUIN_ORG_ID. No default organization: null after the error. */
-function resolveOrgId(flag: string | undefined, t: Messages): string | null {
-  const value = flag?.trim() || process.env.PENGUIN_ORG_ID?.trim() || "";
-  if (value !== "") return value;
-  fail(t, t.org.orgIdMissing());
-  return null;
+/**
+ * Refuses a caller-supplied id or handbook path holding a `.` / `..` segment: those survive
+ * encodeURIComponent, and the URL parser then collapses them onto a different route —
+ * `employees/..` is the organization itself, whose DELETE removes the whole company. True
+ * after the error, and the caller returns.
+ */
+function refuseDotSegments(value: string, t: Messages): boolean {
+  if (!value.split("/").some((segment) => segment === "." || segment === "..")) return false;
+  fail(t, t.org.pathSegmentInvalid(value));
+  return true;
 }
 
 /**
- * Resolves the organization's coordinates and connects. The org id is checked before the
- * connection so a missing flag never auto-starts a server. Null after the error.
+ * Resolves the organization's coordinates and connects. `--org-id` defaults to
+ * PENGUIN_ORG_ID and to nothing else; it is read before the connection so a missing one
+ * never auto-starts a server. Null after the error.
  */
 async function orgScope(
   opts: { orgId?: string; projectId?: string; server?: string },
   t: Messages,
 ): Promise<OrgScope | null> {
-  const orgId = resolveOrgId(opts.orgId, t);
-  if (orgId === null) return null;
+  const orgId = opts.orgId?.trim() || process.env.PENGUIN_ORG_ID?.trim() || "";
+  if (orgId === "") {
+    fail(t, t.org.orgIdMissing());
+    return null;
+  }
   const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
   const projectId = resolveProjectId(opts.projectId);
   return {
@@ -544,6 +552,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .option("--provider <group>", t.common.provider),
     t,
   ).action(async (agentId: string, opts) => {
+    if (refuseDotSegments(agentId, t)) return;
     if (Boolean(opts.modelId) !== Boolean(opts.provider)) {
       fail(t, t.modelRefIncomplete());
       return;
@@ -577,6 +586,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
 
   scoped(org.command("leave <agent_id>").description(t.org.leaveDesc), t).action(
     async (agentId: string, opts) => {
+      if (refuseDotSegments(agentId, t)) return;
       const scope = await orgScope(opts, t);
       if (scope === null) return;
       await scope.client.request("DELETE", `${scope.base}/employees/${enc(agentId)}`);
@@ -1126,9 +1136,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .argument("[path]", t.org.handbookPath),
     t,
   ).action(async (relArg: string | undefined, opts) => {
+    const rel = relArg ?? "README.md";
+    if (refuseDotSegments(rel, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const rel = relArg ?? "README.md";
     const res = await scope.client.request<OrgHandbookFileResponse>(
       "GET",
       `${scope.base}/handbook/files/${encPath(rel)}`,
@@ -1146,6 +1157,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .option("--file <file>", t.org.handbookFile),
     t,
   ).action(async (rel: string, opts) => {
+    if (refuseDotSegments(rel, t)) return;
     if ((opts.message === undefined) === (opts.file === undefined)) {
       fail(t, t.org.handbookOneSource);
       return;
@@ -1167,6 +1179,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     handbook.command("rm").description(t.org.handbookRmDesc).argument("<path>", t.org.handbookPath),
     t,
   ).action(async (rel: string, opts) => {
+    if (refuseDotSegments(rel, t)) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     await scope.client.request("DELETE", `${scope.base}/handbook/files/${encPath(rel)}`);

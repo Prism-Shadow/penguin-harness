@@ -83,21 +83,6 @@ export function boardColumns(
   });
 }
 
-/** Per-column counts plus how many tickets are blocked anywhere (the overview's board block). */
-export function boardCounts(res: Pick<OrgTicketsResponse, "columns">): {
-  byStatus: Record<OrgTicketStatus, number>;
-  blocked: number;
-} {
-  const byStatus = { proposed: 0, in_progress: 0, review: 0, done: 0, rejected: 0 };
-  let blocked = 0;
-  for (const status of TICKET_COLUMNS) {
-    const list = res.columns[status] ?? [];
-    byStatus[status] = list.length;
-    blocked += list.filter(isBlocked).length;
-  }
-  return { byStatus, blocked };
-}
-
 /** Moving into `rejected` records a reason under Result; every other move is a bare status change. */
 export function moveNeedsReason(target: OrgTicketStatus): boolean {
   return target === "rejected";
@@ -106,14 +91,6 @@ export function moveNeedsReason(target: OrgTicketStatus): boolean {
 /** A drop is a move only across columns; dropping a card back on its own column changes nothing. */
 export function canMove(from: OrgTicketStatus, to: OrgTicketStatus): boolean {
   return from !== to;
-}
-
-/** Tickets whose blocker is the given user (`user:<id>`) — what the overview's "blocked on me" lists. */
-export function blockedOnUser<T extends Pick<OrgTicketItem, "blocked" | "blockedBy">>(
-  tickets: readonly T[],
-  userId: string,
-): T[] {
-  return tickets.filter((t) => isBlocked(t) && t.blockedBy === `user:${userId}`);
 }
 
 /** Every ticket of the board in column order — the parent picker's list and the id → title map. */

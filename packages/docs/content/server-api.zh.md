@@ -226,7 +226,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409） |
+| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409） |
 | GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、最近群聊、告警）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone` 与阈值 / 删除（员工 Agent 与会话保留） |
 | GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
 | POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?` |

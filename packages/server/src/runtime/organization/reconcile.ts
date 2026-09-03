@@ -286,7 +286,6 @@ async function reconcileTickets(
   spend: OrgSpend,
   triggers: boolean,
 ): Promise<void> {
-  const byId = new Map(tickets.map((t) => [t.ticketId, t]));
   for (const t of tickets) {
     const cur = {
       projectId: org.projectId,
@@ -353,7 +352,7 @@ async function reconcileTickets(
         if (waiting.doc.blockedBy !== t.ticketId) continue;
         const waitingOwner =
           waiting.doc.owner === undefined ? null : principalAgentId(waiting.doc.owner);
-        if (waitingOwner !== null && byId.has(waiting.ticketId)) {
+        if (waitingOwner !== null) {
           await notifyTicket(
             deps,
             org,

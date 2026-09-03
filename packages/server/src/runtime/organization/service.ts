@@ -62,7 +62,6 @@ import {
   agentPrincipal,
   parsePrincipal,
   principalAgentId,
-  splitPrincipalList,
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
@@ -248,7 +247,7 @@ export class OrganizationService {
     });
     const chat = await this.chat(projectId, orgId, userId, {});
     const me = userPrincipal(userId);
-    const items = this.ticketItems(org, tickets, spend);
+    const items = this.ticketItems(tickets, spend);
     const ceoDesk = org.desks[ceoAgentId(orgId)];
     return {
       ...summary,
@@ -380,9 +379,7 @@ export class OrganizationService {
   ): Promise<OrganizationSettings> {
     return this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
-      if (org.invalid !== undefined && !org.invalid.startsWith("org_chart")) {
-        // A broken config is rewritten whole from the request over the defaults.
-      }
+      // A broken config is rewritten whole from the request over the defaults loadOrg filled in.
       const next: OrgConfig = { ...org.config };
       if (req.name !== undefined) {
         if (req.name.trim() === "") throw badRequest("name must not be empty.");
@@ -856,7 +853,8 @@ export class OrganizationService {
   // Tickets
   // ---------------------------------------------------------------------------
 
-  private ticketItem(org: LoadedOrg, t: LoadedTicket, spend: OrgSpend): OrgTicketItem {
+  /** `known` is every ticket id in the same listing: a `Parent` naming none is flagged invalid. */
+  private ticketItem(t: LoadedTicket, spend: OrgSpend, known: ReadonlySet<string>): OrgTicketItem {
     const d = t.doc;
     const running = d.sessions.some((s) => this.deps.runner.statusOf(s) !== "idle");
     return {
@@ -874,28 +872,15 @@ export class OrganizationService {
       sessions: d.sessions,
       running,
       cost: spend.ticket.get(t.ticketId) ?? 0,
-      ...(d.parent !== undefined && !this.hasTicket(org, d.parent)
+      ...(d.parent !== undefined && !known.has(d.parent)
         ? { invalid: `Parent ${d.parent} does not exist` }
         : {}),
     };
   }
 
-  private knownTicketIds: Map<string, Set<string>> = new Map();
-
-  private hasTicket(org: LoadedOrg, ticketId: string): boolean {
-    return this.knownTicketIds.get(`${org.projectId}\0${org.orgId}`)?.has(ticketId) ?? true;
-  }
-
-  private ticketItems(
-    org: LoadedOrg,
-    tickets: readonly LoadedTicket[],
-    spend: OrgSpend,
-  ): OrgTicketItem[] {
-    this.knownTicketIds.set(
-      `${org.projectId}\0${org.orgId}`,
-      new Set(tickets.map((t) => t.ticketId)),
-    );
-    return tickets.map((t) => this.ticketItem(org, t, spend));
+  private ticketItems(tickets: readonly LoadedTicket[], spend: OrgSpend): OrgTicketItem[] {
+    const known = new Set(tickets.map((t) => t.ticketId));
+    return tickets.map((t) => this.ticketItem(t, spend, known));
   }
 
   async tickets(projectId: string, orgId: string): Promise<OrgTicketsResponse> {
@@ -905,17 +890,16 @@ export class OrganizationService {
     const columns = Object.fromEntries(
       ORG_TICKET_COLUMNS.map((c) => [c, [] as OrgTicketItem[]]),
     ) as Record<OrgTicketStatus, OrgTicketItem[]>;
-    for (const item of this.ticketItems(org, tickets, spend)) columns[item.status].push(item);
+    for (const item of this.ticketItems(tickets, spend)) columns[item.status].push(item);
     return { columns, invalidFiles: invalid };
   }
 
   private async ticketDetail(org: LoadedOrg, ticketId: string): Promise<OrgTicketDetail> {
     const { tickets } = await listTickets(this.deps, org);
     const spend = await computeSpend(this.deps, org, tickets);
-    this.ticketItems(org, tickets, spend);
     const t = tickets.find((x) => x.ticketId === ticketId);
     if (!t) throw ticketNotFound(ticketId);
-    const item = this.ticketItem(org, t, spend);
+    const item = this.ticketItem(t, spend, new Set(tickets.map((x) => x.ticketId)));
     const sessionItems: OrgTicketSessionItem[] = t.doc.sessions.map((sessionId) => {
       const row = this.deps.sessions.findById(sessionId);
       return {
@@ -1595,5 +1579,3 @@ function calendarStatus(
   if (def.endAtMs !== undefined && nowMs > def.endAtMs) return "expired";
   return def.enabled ? "active" : "disabled";
 }
-
-export { splitPrincipalList };

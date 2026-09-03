@@ -20,7 +20,6 @@ export function parsePrincipal(raw: string): ParsedPrincipal {
 }
 
 export const agentPrincipal = (agentId: string): string => `agent:${agentId}`;
-export const userPrincipal = (userId: string): string => `user:${userId}`;
 
 /** The agent id behind an `agent:` principal, or null for anything else. */
 export function principalAgentId(raw: string): string | null {

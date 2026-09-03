@@ -14,11 +14,11 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 ## 细节
 
 - 服务端：与定时任务调度器同构的组织调度器每 30 秒、以及每次 API 写入后立即对账每个组织——把台账与工单投影到缓存，为工作区被重新划分的员工换工位，把到期的日程项发往工位（工位忙则排队，组织或员工暂停时搁置，绝不补发），对工单变化只通知一次（指派、阻塞、阻塞解除、完成、拒绝——员工收到发往工位的通知，人收到群聊系统消息），按组织的连锁上限投递群聊 @ 提及，并重算预算。每次触发都是一条以 `[org_trigger]` 块开头的用户输入；工单会话是员工 Agent 的普通会话，会话 id 追加到工单头部的 `Sessions` 字段。支出按会话归属：员工成本 = 本人会话加全部下属，工单成本 = 其贡献会话在所服务工单之间均分后的份额，沿 `Parent` 上卷。
-- API：`/api/projects/:projectId/organizations` 及其子路由——员工树、员工、工位、手册、日程、工单（移列、阻塞、解除、进展、发起、挂接）、群聊（含已读游标）、财务与组织会话列表；用户级事件 `org_run`、`org_chat`、`org_ticket`、`org_budget`。Project 成员可读写，仅 owner 可删除。迁移 4 新增七张缓存表。
+- API：`/api/projects/:projectId/organizations` 及其子路由——员工树、员工、工位、手册、日程、工单（移列、阻塞、解除、进展、发起、挂接）、群聊（含已读游标）、财务与组织会话列表；用户级事件 `org_run`、`org_chat`、`org_ticket`、`org_budget`。Project 成员可读写，仅 owner 可删除。迁移 4 新增七张组织表。
 - 开关：管理员总开关（服务器设置的 `companyMode`，缺省开；关闭即停止调度器、组织路由回 404、隐藏模式切换，并由 `GET /api/me` 报告）、`ui_prefs` 里的个人开关，以及组织自己的 `status: paused`。
 - 控制环境：工位与工单会话的命令子进程额外获得 `PENGUIN_ORG_ID`，在会话内 `penguin org` 不必再传 `--org-id`。
 - Core：标记清单新增 `[org_trigger]`（与 `[scheduled_task]` 同属标题噪声），并提供 `buildOrgTriggerMessage` / `parseOrgTriggerMessage`。
-- CLI：`penguin org` 命令族——`ls`、`create`、`show`、`chart`、`hire`、`employee set`、`leave`、`desk show|renew`、`calendar ls|add|update|rm`、`ticket ls|show|create|move|assign|block|unblock|progress|start|attach`、`chat tail|send`、`finance`——作为 API 的瘦客户端，处处支持 `--json`。
+- CLI：`penguin org` 命令族——`ls`、`create`、`show`、`chart`、`hire`、`employee set`、`leave`、`desk show|renew`、`calendar ls|add|update|rm`、`ticket ls|show|create|move|assign|block|unblock|progress|start|attach`、`chat tail|send`、`handbook list|show|write|rm`、`finance`——作为 API 的瘦客户端，处处支持 `--json`。
 - Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、七个页面（概览、组织图、日历、工单、财务、群聊、手册——以文件列表加渲染正文呈现知识库，支持就地编辑、新建与删除）、按组织分组并带工位 / 工单子夹的会话列表、开发模式下的「组织」自动子夹、对话中的 `[org_trigger]` 横幅，以及设置页上的两个开关。
 - 创建选项：新建组织时可指定 **Model**（已配置的成对引用，员工条目未指定时工位与工单会话都用它）与**公司工作区**（一个已存在的绝对目录，替代组织目录内的 `workspace/` 作为公共工作区）；二者都是 `org_config.toml` 的字段，可在组织设置里修改，也可经 `penguin org create --workspace … --model-id … --provider …` 指定。
 - 决策关口：CEO 只提案、董事会拍板——初始化会话先发一份完整提案（使命理解、首批工单、招募角色及预算与 Model、工作区划分）并结束本轮；招募、预算、拒绝他人的工单、跳过审核关闭 P0/P1 工单、任何触及组织之外的动作以及结构变更都要等创建者在群聊里确认。员工把这类事项上报给 CEO。写进 `company-ceo` / `company-employee` Skill、初始化会话与组织手册。

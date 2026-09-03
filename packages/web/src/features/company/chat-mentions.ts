@@ -107,21 +107,6 @@ export function mentionIsMe(
   return token === userId && !employeeIds.has(userId);
 }
 
-/** Case-insensitive substring match on the id, the label or the full principal; an empty query keeps everyone. */
-export function filterMentionCandidates(
-  candidates: readonly MentionCandidate[],
-  query: string,
-): MentionCandidate[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return [...candidates];
-  return candidates.filter(
-    (c) =>
-      c.id.toLowerCase().includes(q) ||
-      c.label.toLowerCase().includes(q) ||
-      c.principal.toLowerCase().includes(q),
-  );
-}
-
 /**
  * The `@token` the caret sits at the end of, if any: the `@` must start the text or follow a
  * character that cannot be part of an id, and the token runs unbroken to the caret. Null when

@@ -6,7 +6,6 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  filterMentionCandidates,
   insertMention,
   mentionCandidates,
   mentionInsertId,
@@ -27,7 +26,7 @@ const candidates = mentionCandidates(
   "Everyone",
 );
 
-describe("mentionCandidates and filterMentionCandidates", () => {
+describe("mentionCandidates", () => {
   it("lists employees, then members, then all, with their principals", () => {
     expect(candidates.map((c) => c.principal)).toEqual([
       "agent:ceo",
@@ -36,13 +35,6 @@ describe("mentionCandidates and filterMentionCandidates", () => {
       "all",
     ]);
     expect(candidates[3]).toEqual({ principal: "all", label: "Everyone", id: "all", kind: "all" });
-  });
-
-  it("matches the id, the label or the full principal, case-insensitively", () => {
-    expect(filterMentionCandidates(candidates, "ali").map((c) => c.id)).toEqual(["ceo"]);
-    expect(filterMentionCandidates(candidates, "user:").map((c) => c.id)).toEqual(["bob"]);
-    expect(filterMentionCandidates(candidates, "").length).toBe(4);
-    expect(filterMentionCandidates(candidates, "zzz")).toEqual([]);
   });
 });
 

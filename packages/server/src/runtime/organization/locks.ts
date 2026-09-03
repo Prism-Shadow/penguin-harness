@@ -9,14 +9,14 @@ export class KeyedLocks {
   async run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.tails.get(key) ?? Promise.resolve();
     const next = prev.then(fn, fn);
-    this.tails.set(
-      key,
-      next.catch(() => undefined),
-    );
+    // The tail is the settled form of `next`: a rejection must not break the chain for the
+    // next waiter. Keep that exact promise so the cleanup below can recognise its own tail.
+    const tail = next.catch(() => undefined);
+    this.tails.set(key, tail);
     try {
       return await next;
     } finally {
-      if (this.tails.get(key) === next) this.tails.delete(key);
+      if (this.tails.get(key) === tail) this.tails.delete(key);
     }
   }
 }

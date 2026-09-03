@@ -150,15 +150,22 @@ export function OrgChatPage() {
 
   // A new message on this organization lands in the stream without a refetch. While the
   // view is at the bottom it simply appears; scrolled up, it counts towards the pill.
+  // The append is decided here, not inside a setDays updater: bumping the pill is a side
+  // effect and an updater must stay pure. It reads the latest list through a ref rather
+  // than this render's `days`, so two messages arriving before React re-renders both land
+  // instead of the second overwriting the first.
+  const latestDays = useRef(days);
+  latestDays.current = days;
   useCompanyEvents((ev) => {
     if (ev.type !== "org_chat" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
-    if (meta === null) return;
-    setDays((prev) => {
-      if (prev === null) return prev;
-      const next = appendMessage(prev, meta.today, ev.message);
-      if (next !== prev && !follow.stick) setPendingNew((n) => n + 1);
-      return next;
-    });
+    const current = latestDays.current;
+    if (meta === null || current === null) return;
+    const next = appendMessage(current, meta.today, ev.message);
+    // Unchanged means the message is already in the stream — the reader's own, appended on send.
+    if (next === current) return;
+    latestDays.current = next;
+    setDays(next);
+    if (!follow.stick) setPendingNew((n) => n + 1);
   });
 
   const syncScrollState = () => {
@@ -273,26 +280,23 @@ export function OrgChatPage() {
     );
 
   const renderRefs = (m: OrgChatMessage) => {
-    const refs = m.refs;
-    if (refs === undefined) return null;
-    if (refs.ticket === undefined && refs.session === undefined && refs.replyTo === undefined)
-      return null;
+    // Destructured, so each id narrows to `string` inside the chips' closures too.
+    const { ticket, session, replyTo } = m.refs ?? {};
+    if (ticket === undefined && session === undefined && replyTo === undefined) return null;
     return (
       <span className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row}`}>
-        {refs.ticket !== undefined && (
-          <RefChip onClick={() => openTicket(refs.ticket ?? "")} icon={NAV_ICONS.orgTickets}>
-            {S.company.chat.ticketRef(refs.ticket)}
+        {ticket !== undefined && (
+          <RefChip onClick={() => openTicket(ticket)} icon={NAV_ICONS.orgTickets}>
+            {S.company.chat.ticketRef(ticket)}
           </RefChip>
         )}
-        {refs.session !== undefined && (
-          <RefChip onClick={() => navigate(`/chat/${refs.session ?? ""}`)}>
+        {session !== undefined && (
+          <RefChip onClick={() => navigate(`/chat/${session}`)}>
             {S.company.chat.sessionRef}
           </RefChip>
         )}
-        {refs.replyTo !== undefined && (
-          <RefChip onClick={() => scrollToMessage(refs.replyTo ?? "")}>
-            {S.company.chat.replyTo}
-          </RefChip>
+        {replyTo !== undefined && (
+          <RefChip onClick={() => scrollToMessage(replyTo)}>{S.company.chat.replyTo}</RefChip>
         )}
       </span>
     );
