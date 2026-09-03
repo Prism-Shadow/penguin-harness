@@ -35,6 +35,12 @@ const MAX_TITLE = 200;
 const MAX_DESCRIPTION = 2000;
 /** Statement and rubric bodies: generous, but a hand-written case is a page, not a corpus. */
 const MAX_BODY = 100_000;
+/**
+ * Runs per case. Every run is one evaluation of the Test Agent, so the count multiplies the cost
+ * of each optimization round; the Web App's Optimize dialog refuses anything beyond this, which a
+ * stored value has to stay within to remain usable.
+ */
+const MAX_RUNS = 1000;
 
 /** A required Markdown body: present, within the cap, and not blank. */
 function requireText(obj: Record<string, unknown>, key: string, maxLen: number, label: string) {
@@ -153,7 +159,9 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
     const title = requireText(body, "title", MAX_TITLE, "title");
     const description = optionalString(body, "description", { maxLen: MAX_DESCRIPTION });
     const runs = optionalNumber(body, "runs", { integer: true }) ?? 1;
-    if (runs < 1) throw badRequest("runs must be an integer of at least 1.");
+    if (runs < 1 || runs > MAX_RUNS) {
+      throw badRequest(`runs must be an integer between 1 and ${MAX_RUNS}.`);
+    }
     const cases = requireCases(body);
     const benchmark = await deps.benchmarks.create(projectId, agentId, {
       id,

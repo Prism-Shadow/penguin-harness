@@ -432,6 +432,7 @@ describe("benchmarks api", () => {
       { ...createBody, title: "   " },
       { ...createBody, runs: 0 },
       { ...createBody, runs: 1.5 },
+      { ...createBody, runs: 1001 },
       { ...createBody, cases: [] },
       { ...createBody, cases: [{ ...first, id: "excel-task" }] },
       { ...createBody, cases: [{ ...first, id: "CASE-001/../x" }] },

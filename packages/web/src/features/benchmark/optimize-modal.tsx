@@ -20,17 +20,21 @@ import { formatScore } from "../../lib/format";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
 import { Button } from "../../components/ui/button";
-import { CopyButton } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { HelpFold } from "../../components/ui/help-fold";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
-import { AiCreatePanel, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
+import {
+  AiCreatePanel,
+  PromptFold,
+  composeAiPrompt,
+  pickDefaultAgent,
+  useAiBridge,
+} from "../ai-create";
 import { defaultTargetScore, latestScore } from "./benchmark-metrics";
-import { optimizeExamples, optimizeTail } from "./benchmark-prompts";
+import { MAX_RUNS, optimizeExamples, optimizeTail } from "./benchmark-prompts";
 import type { OptimizeParams } from "./benchmark-prompts";
 
 /** The Skill the optimizer agent must carry; the dialog warns when the chosen agent lacks it. */
@@ -49,22 +53,6 @@ function intIn(raw: string, min: number, max: number): number | null {
   if (!/^\d+$/.test(raw)) return null;
   const n = Number.parseInt(raw, 10);
   return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
-}
-
-/** The folded full-prompt preview with a copy button — the same fold the AI panel shows. */
-function FullPromptFold({ text }: { text: string }) {
-  return (
-    <HelpFold title={S.aiCreate.fullPrompt}>
-      <div className="relative">
-        <pre className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 pr-8 font-sans text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-          {text}
-        </pre>
-        <div className="absolute top-1.5 right-1.5">
-          <CopyButton text={text} label={S.aiCreate.copyPrompt} />
-        </div>
-      </div>
-    </HelpFold>
-  );
 }
 
 export function OptimizeModal({
@@ -96,7 +84,9 @@ export function OptimizeModal({
   );
   // "" is the Project default model; otherwise a modelKey of one of the Project's models.
   const [model, setModel] = useState("");
-  const [runs, setRuns] = useState(String(benchmark.runs ?? 1));
+  // Clamped: benchmark_config.toml is hand-editable, and a larger count there would open the
+  // dialog on a field its own bound rejects, with Send disabled until the number is retyped.
+  const [runs, setRuns] = useState(String(Math.min(benchmark.runs ?? 1, MAX_RUNS)));
   const [roundLimit, setRoundLimit] = useState("3");
   const [targetScore, setTargetScore] = useState(String(defaultTarget));
   const [focus, setFocus] = useState("");
@@ -104,29 +94,23 @@ export function OptimizeModal({
   const [skillsByAgent, setSkillsByAgent] = useState<Record<string, string[]>>({});
 
   // The optimizer's installed Skills, fetched once per agent, for the missing-skill hint. A
-  // failed fetch leaves the hint off: the send still goes through.
+  // failed fetch leaves the hint off: the send still goes through. The result is stored under
+  // the agent it was fetched for, so it stays wanted even when the pick moved on meanwhile —
+  // dropping it would only make switching away and back refetch.
   useEffect(() => {
     if (optimizerId === null || skillsByAgent[optimizerId] !== undefined) return;
     const id = optimizerId;
-    let cancelled = false;
     api
       .getAgentSkills(projectId, id)
-      .then((res) => {
-        if (!cancelled) {
-          setSkillsByAgent((prev) => ({ ...prev, [id]: res.skills.map((s) => s.name) }));
-        }
-      })
+      .then((res) => setSkillsByAgent((prev) => ({ ...prev, [id]: res.skills.map((s) => s.name) })))
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [projectId, optimizerId, skillsByAgent]);
 
   const installed = optimizerId === null ? undefined : skillsByAgent[optimizerId];
   const missingSkill = installed !== undefined && !installed.includes(OPTIMIZATION_SKILL);
 
-  const runsValue = intIn(runs, 1, 1000);
-  const roundsValue = intIn(roundLimit, 1, 1000);
+  const runsValue = intIn(runs, 1, MAX_RUNS);
+  const roundsValue = intIn(roundLimit, 1, MAX_RUNS);
   const targetValue = intIn(targetScore, 1, 100);
   const valid = runsValue !== null && roundsValue !== null && targetValue !== null;
   const params: OptimizeParams = {
@@ -284,7 +268,7 @@ export function OptimizeModal({
               value={focus}
               onChange={(e) => setFocus(e.target.value)}
             />
-            <FullPromptFold text={text} />
+            <PromptFold text={text} />
           </>
         ) : (
           <AiCreatePanel
