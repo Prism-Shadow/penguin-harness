@@ -104,6 +104,7 @@ export type DesktopApi = Pick<
 >;
 
 /** The desktop shell's service, or null when this server is not the shell's child. */
-export abstract class Desktop extends Interface<{
-  current(): DesktopApi | null;
-}>() {}
+@Interface()
+export abstract class Desktop {
+  abstract current(): DesktopApi | null;
+}

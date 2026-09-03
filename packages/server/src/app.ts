@@ -731,6 +731,7 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  */
 
 /** Construction overrides — production publishes {}, tests publish live collaborators. */
-export abstract class Overrides extends Interface<{
-  value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
-}>() {}
+@Interface()
+export abstract class Overrides {
+  abstract value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
+}

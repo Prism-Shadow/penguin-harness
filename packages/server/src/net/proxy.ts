@@ -185,6 +185,7 @@ export function applyProxySettings(settings: ProxySettings): void {
 }
 
 /** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
-export abstract class Proxy extends Interface<{
-  apply(settings: ProxySettings): void;
-}>() {}
+@Interface()
+export abstract class Proxy {
+  abstract apply(settings: ProxySettings): void;
+}

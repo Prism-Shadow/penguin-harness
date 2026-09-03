@@ -439,6 +439,7 @@ export const packagedPlatform: PlatformBundle = {
  * platform node decides from the resource-interfaces declaration above; a module that
  * parks handles asks before claiming them back.
  */
-export abstract class ResourceGroups extends Interface<{
-  adoptable(group: string): boolean;
-}>() {}
+@Interface()
+export abstract class ResourceGroups {
+  abstract adoptable(group: string): boolean;
+}

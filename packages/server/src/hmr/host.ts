@@ -826,15 +826,16 @@ function filesMapFromGzip(gz: Buffer): Map<string, Buffer> {
 }
 
 /** The hot-update host: the cross-generation resource registry and the current App. */
-export abstract class Hmr extends Interface<{
-  resources: Resources;
-  ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
-  resolveWebSource(): Opaque<
+@Interface()
+export abstract class Hmr {
+  abstract resources: Resources;
+  abstract ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  abstract resolveWebSource(): Opaque<
     "WebSource",
     NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
   > | null;
-  assetsDir(): string | null;
-  dispose(): void;
-}>() {}
+  abstract assetsDir(): string | null;
+  abstract dispose(): void;
+}
 /** Compile-time proof the host satisfies the contract. */
 export type _HmrCheck = HmrHost extends Hmr ? true : never;

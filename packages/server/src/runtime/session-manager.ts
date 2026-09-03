@@ -2100,11 +2100,12 @@ export abstract class SessionServiceIface extends Interface<
 >() {}
 
 /** The three per-spawn policies every Session's command environment is built with. */
-export abstract class SessionEnv extends Interface<{
-  proxyEnv(): ProxyEnvPolicy | null;
-  controlEnv(ctx: ControlEnvContext): Record<string, string>;
-  confineSpawn(): SpawnConfiner | null;
-}>() {}
+@Interface()
+export abstract class SessionEnv {
+  abstract proxyEnv(): ProxyEnvPolicy | null;
+  abstract controlEnv(ctx: ControlEnvContext): Record<string, string>;
+  abstract confineSpawn(): SpawnConfiner | null;
+}
 
 @Module()
 export class SessionsModule {

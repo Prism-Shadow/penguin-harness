@@ -336,6 +336,7 @@ export class ProjectService {
 }
 
 /** What destroying a Project needs of the session runtime — declared at the consumer. */
-export abstract class ProjectRuns extends Interface<{
-  abortProject(projectId: string): Promise<void>[];
-}>() {}
+@Interface()
+export abstract class ProjectRuns {
+  abstract abortProject(projectId: string): Promise<void>[];
+}

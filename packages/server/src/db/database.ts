@@ -146,8 +146,9 @@ export function ensureColumn(
 }
 
 /** The SQLite handle (single-writer, one per process). Statements are host objects. */
-export abstract class Db extends Interface<{
-  prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
-  exec(sql: string): void;
-  close(): void;
-}>() {}
+@Interface()
+export abstract class Db {
+  abstract prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
+  abstract exec(sql: string): void;
+  abstract close(): void;
+}

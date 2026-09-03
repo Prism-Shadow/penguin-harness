@@ -17,9 +17,10 @@ import type { ProjectAccess } from "../services/project-access.js";
 import type { ServerSettingsRepo } from "../db/repos/server-settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
-export abstract class Http extends Interface<{
-  fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
-}>() {}
+@Interface()
+export abstract class Http {
+  abstract fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}
 
 export interface HttpSlots {
   /**

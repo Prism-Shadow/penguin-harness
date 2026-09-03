@@ -338,9 +338,10 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
  * needs from its host is written down and checked, not assumed.
  */
 
-export abstract class Log extends Interface<{
-  line(text: string): void;
-}>() {}
+@Interface()
+export abstract class Log {
+  abstract line(text: string): void;
+}
 
 /**
  * The claimed capabilities are handed in by the platform node, which is the one place the

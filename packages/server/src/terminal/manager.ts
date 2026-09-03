@@ -282,18 +282,19 @@ function resourceId(sessionId: string): string {
 export type Terminal = Opaque<"TerminalSession", TerminalSession>;
 
 /** Live ptys: the spawn primitive behind /api/terminals and the terminal WebSocket. */
-export abstract class Terminals extends Interface<{
-  create(request: CreateTerminalRequest): Promise<Terminal>;
-  adopt(ids: readonly string[]): void;
-  quiesce(): void;
-  handleIds(): string[];
-  require(id: string, userId: string): Terminal;
-  get(id: string): Terminal | undefined;
-  list(userId: string): Terminal[];
-  listInfo(userId: string): TerminalSessionInfo[];
-  kill(id: string, userId: string): void;
-  disposeAll(): void;
-}>() {}
+@Interface()
+export abstract class Terminals {
+  abstract create(request: CreateTerminalRequest): Promise<Terminal>;
+  abstract adopt(ids: readonly string[]): void;
+  abstract quiesce(): void;
+  abstract handleIds(): string[];
+  abstract require(id: string, userId: string): Terminal;
+  abstract get(id: string): Terminal | undefined;
+  abstract list(userId: string): Terminal[];
+  abstract listInfo(userId: string): TerminalSessionInfo[];
+  abstract kill(id: string, userId: string): void;
+  abstract disposeAll(): void;
+}
 
 /** The manager satisfies the contract; this keeps the two from drifting. */
 export type _Check = TerminalManager extends Terminals ? true : never;
