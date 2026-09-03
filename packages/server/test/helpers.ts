@@ -9,7 +9,40 @@ import path from "node:path";
 import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp } from "../src/app.js";
-import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
+import type { BuildDepsOverrides, ServerBoot } from "../src/app.js";
+import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
+import type { DatabaseSync } from "node:sqlite";
+import type { HmrHost } from "../src/hmr/host.js";
+import type { ChannelHub } from "../src/runtime/channel.js";
+import type { DesktopService } from "../src/services/desktop-service.js";
+import type { AuthService } from "../src/auth/service.js";
+import type { AdminService } from "../src/services/admin-service.js";
+import type { ProjectService } from "../src/services/project-service.js";
+import type { ProjectAccess } from "../src/services/project-access.js";
+import type { ProjectConfigService } from "../src/services/project-config-service.js";
+import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
+import type { AgentService } from "../src/services/agent-service.js";
+import type { AgentConfigService } from "../src/services/agent-config-service.js";
+import type { MemoryService } from "../src/services/memory-service.js";
+import type { SessionService } from "../src/services/session-service.js";
+import type { UsageService } from "../src/services/usage-service.js";
+import type { UpdateCheckService } from "../src/services/update-check-service.js";
+import type { WorkspaceFilesService } from "../src/services/workspace-files-service.js";
+import type { PreviewTokenSigner } from "../src/services/preview-token.js";
+import type { BenchmarkService } from "../src/services/benchmark-service.js";
+import type { SnapshotService } from "../src/services/snapshot-service.js";
+import type { SessionsRepo } from "../src/db/repos/sessions.js";
+import type { UiPrefsRepo } from "../src/db/repos/ui-prefs.js";
+import type { ServerSettingsRepo } from "../src/db/repos/server-settings.js";
+import type { SchedulesRepo } from "../src/db/repos/schedules.js";
+import type { ErrorsRepo } from "../src/db/repos/errors.js";
+import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
+import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
+import type { QQScanService } from "../src/runtime/messaging/qq-scan.js";
+import type { Scheduler } from "../src/runtime/scheduler.js";
+import type { SessionManager } from "../src/runtime/session-manager.js";
+import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
+import type { MachinesService } from "../src/machines/service.js";
 import { openDatabase } from "../src/db/database.js";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
@@ -20,6 +53,7 @@ import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -61,9 +95,98 @@ export function testConfig(root: string): ServerConfig {
   };
 }
 
+/**
+ * The module tree, flattened under the names tests have always used. Production has no
+ * such object — a module names what it needs in its manifest — but a test reaches into
+ * any service directly, and this view is the one place that maps the old names.
+ */
+export interface TestDeps {
+  config: ServerConfig;
+  db: DatabaseSync;
+  hmr: HmrHost;
+  channels: ChannelHub;
+  desktop: DesktopService | null;
+  tree: ModuleTree;
+  sessionsRepo: SessionsRepo;
+  prefsRepo: UiPrefsRepo;
+  serverSettingsRepo: ServerSettingsRepo;
+  authService: AuthService;
+  adminService: AdminService;
+  projectService: ProjectService;
+  access: ProjectAccess;
+  projectConfigService: ProjectConfigService;
+  modelOAuth: ModelOAuthService;
+  agentService: AgentService;
+  agentConfigService: AgentConfigService;
+  memoryService: MemoryService;
+  sessionService: SessionService;
+  traceService: TraceService;
+  traceIndex: TraceIndexService;
+  usageService: UsageService;
+  updateCheck: UpdateCheckService;
+  workspaceFiles: WorkspaceFilesService;
+  previewTokens: PreviewTokenSigner;
+  benchmarks: BenchmarkService;
+  snapshots: SnapshotService;
+  schedulesRepo: SchedulesRepo;
+  errorsRepo: ErrorsRepo;
+  messagingRepo: MessagingBindingsRepo;
+  messaging: MessagingBridge;
+  qqScan: QQScanService;
+  scheduler: Scheduler;
+  manager: SessionManager;
+  sessionSources: SessionSources;
+  errors: ErrorRecorder;
+  machines: MachinesService;
+}
+
+export function flattenForTests(boot: ServerBoot): TestDeps {
+  const { tree } = boot;
+  const api = <T>(module: string, alias: string): T => tree.api<T>(module, alias);
+  return {
+    config: boot.config,
+    db: boot.db,
+    hmr: boot.hmr,
+    channels: boot.channels,
+    desktop: boot.desktop,
+    tree,
+    sessionsRepo: api("SessionsRepo", "SessionsRepo"),
+    prefsRepo: api("UiPrefsRepo", "UiPrefsRepo"),
+    serverSettingsRepo: api("ServerSettingsRepo", "ServerSettingsRepo"),
+    authService: api("AuthService", "AuthService"),
+    adminService: api("AdminService", "AdminService"),
+    projectService: api("ProjectService", "ProjectService"),
+    access: api("ProjectAccess", "ProjectAccess"),
+    projectConfigService: api("ProjectConfigService", "ProjectConfigService"),
+    modelOAuth: api("ModelOAuthService", "ModelOAuthService"),
+    agentService: api("AgentService", "AgentService"),
+    agentConfigService: api("AgentConfigService", "AgentConfigService"),
+    memoryService: api("MemoryService", "MemoryService"),
+    sessionService: api("SessionsModule", "sessionService"),
+    traceService: api("TraceService", "TraceService"),
+    traceIndex: api("TraceIndexService", "TraceIndexService"),
+    usageService: api("UsageService", "UsageService"),
+    updateCheck: api("VersionModule", "updateCheck"),
+    workspaceFiles: api("WorkspaceFilesService", "WorkspaceFilesService"),
+    previewTokens: api("WorkspaceModule", "previewTokens"),
+    benchmarks: api("BenchmarkService", "BenchmarkService"),
+    snapshots: api("SnapshotService", "SnapshotService"),
+    schedulesRepo: api("SchedulesRepo", "SchedulesRepo"),
+    errorsRepo: api("ErrorsRepo", "ErrorsRepo"),
+    messagingRepo: api("MessagingBindingsRepo", "MessagingBindingsRepo"),
+    messaging: api("MessagingModule", "messaging"),
+    qqScan: api("MessagingModule", "qqScan"),
+    scheduler: api("Scheduler", "Scheduler"),
+    manager: api("SessionsModule", "manager"),
+    sessionSources: api("SessionSources", "SessionSources"),
+    errors: api("ErrorRecorder", "ErrorRecorder"),
+    machines: api("MachinesModule", "machines"),
+  };
+}
+
 export interface TestApp {
   app: Hono<AppEnv>;
-  deps: AppDeps;
+  deps: TestDeps;
   root: string;
   /** Initial password of the seeded admin (TEST_ADMIN_PASSWORD unless overridden via `config.seedAdminPassword`). */
   adminPassword: string;
@@ -82,7 +205,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
   const finalConfig = { ...testConfig(root), ...config };
-  const deps = await bootAppDeps(finalConfig, {
+  const boot = await bootAppDeps(finalConfig, {
     log: () => {},
     passwordHashCost: TEST_PASSWORD_HASH_COST,
     // The bridge's per-line pace is a real wait in production; every test but the one
@@ -91,11 +214,12 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     ...overrides,
   });
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+  const deps = flattenForTests(boot);
   await deps.authService.seedAdmin();
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
-  const app = createRuntimeApp(deps);
+  const app = createRuntimeApp(boot);
   return {
     app,
     deps,
@@ -218,13 +342,18 @@ export function makeTraceHarness(
 } {
   const db = openDatabase(":memory:");
   const sources = opts.sources ?? new SessionSources();
-  const traceIndex = new TraceIndexService(root, new TraceIndexRepo(db), sources);
+  const traceIndex = wire(TraceIndexService, {
+    config: { root },
+    repo: wire(TraceIndexRepo, { db }),
+    sources,
+  });
   const shardReads: string[] = [];
-  const service = new TraceService(root, {
+  const service = wire(TraceService, {
+    config: { root },
     index: traceIndex,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
     sources,
-    observeShardRead: (p) => shardReads.push(p),
+    observeShardRead: (p: string) => shardReads.push(p),
   });
   return { traceIndex, service, sources, shardReads, close: () => db.close() };
 }

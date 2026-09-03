@@ -17,6 +17,34 @@ import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
+import { MachinesPage } from "./features/machines/machines-page";
+import { PAGES } from "./lib/pages";
+import type { PageEntry } from "./lib/pages";
+
+/**
+ * The renderers the manifest may name. A page is a module.json entry plus one line here;
+ * a server-contributed page renders only when its `builtin` is in this registry.
+ */
+const BUILTIN_PAGES: Record<string, React.ComponentType> = {
+  ChatPage,
+  AgentsPage,
+  AgentSettingsPage,
+  PluginsPage,
+  ModelsPage,
+  MachinesPage,
+  UsagePage,
+  BenchmarkPage,
+};
+
+function renderPage(page: PageEntry): React.ReactNode {
+  if ("iframe" in page.renderer) {
+    return (
+      <iframe title={page.key} src={page.renderer.iframe.src} className="h-full w-full border-0" />
+    );
+  }
+  const Component = BUILTIN_PAGES[page.renderer.builtin];
+  return Component === undefined ? <Navigate to="/chat" replace /> : <Component />;
+}
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -66,15 +94,12 @@ export function AppRouter() {
         />
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
-          <Route path="/chat/:sessionId?" element={<ChatPage />} />
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/agents/:agentId" element={<AgentSettingsPage />} />
-          <Route path="/plugins" element={<PluginsPage />} />
-          <Route path="/models" element={<ModelsPage />} />
-          {/* Admin-only server-side (403 otherwise); the sidebar hides the row for
-              everyone else, so a member only ever reaches this by typing the URL. */}
-          <Route path="/usage" element={<UsagePage />} />
-          <Route path="/benchmark" element={<BenchmarkPage />} />
+          {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
+              server-side (403); the sidebar hides their row, so a member only ever reaches
+              one by typing the URL. */}
+          {PAGES.map((page) => (
+            <Route key={page.id} path={page.path} element={renderPage(page)} />
+          ))}
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />

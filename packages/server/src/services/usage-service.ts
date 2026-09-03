@@ -47,6 +47,9 @@ import {
   localDateMinusDays,
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Overrides } from "../hmr/capabilities.js";
+import type { ProjectConfigService } from "./project-config-service.js";
 
 /**
  * Number of most-recent entries kept in the error detail table. Also the page size the whole
@@ -146,13 +149,19 @@ function refKey(provider: string, modelId: string): string {
   return `${provider}\0${modelId}`;
 }
 
+@Component()
 export class UsageService {
-  constructor(
-    private readonly usage: UsageRepo,
-    private readonly errors: ErrorsRepo,
-    private readonly lookupPricing: PricingLookup,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  @Use() private readonly usage!: UsageRepo;
+  @Use() private readonly errors!: ErrorsRepo;
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly overrides!: Overrides;
+  private lookupPricing: PricingLookup = (projectId, provider, modelId) =>
+    this.projectConfig.getPricing(projectId, provider, modelId);
+  private now: () => Date = () => new Date();
+
+  setup(): void {
+    this.now = this.overrides.value().now ?? this.now;
+  }
 
   /**
    * The catalog's time-based schedules, as the aggregations want them.

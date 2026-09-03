@@ -34,6 +34,7 @@ import {
 import { requestOrigin } from "../src/http/routes/model-oauth.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** The catalog group under test; the flow exists only because this entry declares it. */
 const TOKENDANCE = providerInfo("tokendance")!;
@@ -192,8 +193,8 @@ describe("flow store", () => {
     clock = 1_700_000_000_000;
     applied = [];
     exchanged = [];
-    service = new ModelOAuthService({
-      applyGroupKey: async (projectId, provider, apiKey) => {
+    service = wire(ModelOAuthService, {
+      applyGroupKey: async (projectId: string, provider: string, apiKey: string) => {
         applied.push({ projectId, provider, apiKey });
         return 6;
       },
@@ -270,7 +271,7 @@ describe("flow store", () => {
   });
 
   it("a failed exchange ends the flow and reports the mapped reason", async () => {
-    service = new ModelOAuthService({
+    service = wire(ModelOAuthService, {
       applyGroupKey: async () => 6,
       fetchImpl: (async () => jsonResponse(403, {})) as unknown as typeof fetch,
       now: () => clock,
@@ -285,7 +286,7 @@ describe("flow store", () => {
   });
 
   it("a key that cannot be stored is reported as such, not as a success", async () => {
-    service = new ModelOAuthService({
+    service = wire(ModelOAuthService, {
       applyGroupKey: async () => {
         throw new Error("disk full");
       },

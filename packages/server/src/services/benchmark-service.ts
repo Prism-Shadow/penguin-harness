@@ -34,6 +34,8 @@ import type {
   WorkspaceFilesService,
 } from "./workspace-files-service.js";
 import { HttpError } from "../http/errors.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config } from "../hmr/capabilities.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
@@ -187,11 +189,13 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   };
 }
 
+@Component()
 export class BenchmarkService {
-  constructor(
-    private readonly root: string,
-    private readonly workspaceFiles: WorkspaceFilesService,
-  ) {}
+  @Use() private readonly config!: Config;
+  private get root(): string {
+    return this.config.root;
+  }
+  @Use() private readonly workspaceFiles!: WorkspaceFilesService;
 
   async list(projectId: string, agentId: string): Promise<BenchmarksResponse> {
     const dir = benchmarksDir(this.root, projectId, agentId);

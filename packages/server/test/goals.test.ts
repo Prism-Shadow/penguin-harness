@@ -5,6 +5,7 @@
  * goal hook events.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
   assistantText,
@@ -71,7 +72,7 @@ describe("SessionManager.startGoal", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    sessions = new SessionsRepo(db);
+    sessions = wire(SessionsRepo, { db: db });
     sessions.insert(ROW);
     channels = new ChannelHub();
   });

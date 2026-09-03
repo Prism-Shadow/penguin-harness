@@ -52,6 +52,7 @@ import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
 import { waitFor } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const ROW: SessionRow = {
   sessionId: "session-1",
@@ -156,7 +157,7 @@ describe("session-manager", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    sessions = new SessionsRepo(db);
+    sessions = wire(SessionsRepo, { db: db });
     sessions.insert(ROW);
     channels = new ChannelHub();
     sources = new SessionSources();

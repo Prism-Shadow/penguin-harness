@@ -3,8 +3,9 @@
  * services/trace-index.ts for the cache rules). Pure row access — reconciliation
  * policy (mtime gates, head-reads) lives in the service.
  */
-import type { DatabaseSync } from "node:sqlite";
 import type { SessionSource } from "../../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
 
 /** One indexed Trace shard. */
 export interface TraceFileRow {
@@ -58,8 +59,9 @@ function mapSession(r: Record<string, unknown>): TraceSessionRow {
   };
 }
 
+@Component()
 export class TraceIndexRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   upsertFile(row: TraceFileRow): void {
     // page_stats is a derivation of the shard's CONTENT: any observed size change voids

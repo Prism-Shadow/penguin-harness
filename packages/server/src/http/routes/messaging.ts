@@ -85,7 +85,6 @@ import {
   readJson,
   requireString,
 } from "../validate.js";
-import type { AppDeps } from "../../app.js";
 import {
   commonBindingFields,
   deliveryPatchOf,
@@ -94,6 +93,22 @@ import {
 } from "./messaging-channels.js";
 import type { MessagingChannelSpec } from "./messaging-channels.js";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import type { MessagingBindingsRepo } from "../../db/repos/messaging-bindings.js";
+import type { SessionsRepo } from "../../db/repos/sessions.js";
+import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
+import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
+import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MessagingRouteDeps {
+  messaging: MessagingBridge;
+  messagingRepo: MessagingBindingsRepo;
+  access: ProjectAccess;
+  qqScan: QQScanService;
+  wechatScan: WeChatScanService;
+  sessionsRepo: SessionsRepo;
+}
 
 /** The stored feishu config, tolerated loosely (a malformed document reads as blanks). */
 function feishuFieldsOf(row: MessagingBindingRow): {
@@ -241,7 +256,7 @@ function parseBaseDomain(raw: string | undefined): string {
 }
 
 /** Session-level entry: /api/sessions/:sessionId/messaging[...]. */
-export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
+export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   /** Same lookup-and-authz shape as the sessions routes: 404 without leaking existence. */
@@ -256,7 +271,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     try {
-      deps.projectService.requireProjectAccess(c.var.user.userId, row.projectId);
+      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
     } catch {
       throw new HttpError(
         404,
@@ -428,7 +443,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     // intents, and the toggle must work without re-submitting any credential.
     app.post(`${base}/state`, async (c) => {
       const row = resolveSession(c);
-      deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+      deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
       const enabled = await readStateBody(c);
       const binding = boundOr404(row.sessionId);
       if (enabled) guardEnable(row.sessionId, spec.channel, binding);
@@ -441,7 +456,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
     // affordance is the per-field clear (PUT clear flag), not this.
     app.delete(base, (c) => {
       const row = resolveSession(c);
-      deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+      deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
       deps.messaging.unbind(row.sessionId, spec.channel);
       return c.body(null, 204);
     });
@@ -476,7 +491,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.put("/:sessionId/messaging/feishu", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
     if (appId === "") throw badRequest("appId must not be blank.");
@@ -541,7 +556,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.put("/:sessionId/messaging/telegram", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const existing = deps.messagingRepo.find(row.sessionId, "telegram");
     const { secret: botToken, fromRequest } = resolveSecret({
@@ -614,7 +629,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.put("/:sessionId/messaging/qq", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const appId = requireString(body, "appId", { minLen: 1, maxLen: 200 }).trim();
     if (appId === "") throw badRequest("appId must not be blank.");
@@ -656,7 +671,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/qq/scan", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     guardScanStart(row.sessionId, "qq");
     let started: { taskId: string; qrUrl: string; pollMs: number };
     try {
@@ -669,7 +684,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/qq/scan/poll", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
     let result: Awaited<ReturnType<typeof deps.qqScan.poll>>;
@@ -704,7 +719,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/qq/scan/cancel", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     deps.qqScan.cancel(row.sessionId, requireString(body, "taskId", { minLen: 1, maxLen: 500 }));
     return c.body(null, 204);
@@ -747,7 +762,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
    */
   app.put("/:sessionId/messaging/wechat", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const existing = deps.messagingRepo.find(row.sessionId, "wechat");
     if (existing === null) {
@@ -795,7 +810,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/wechat/scan", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     guardScanStart(row.sessionId, "wechat");
     let started: { taskId: string; qrUrl: string; pollMs: number };
     try {
@@ -812,7 +827,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/wechat/scan/poll", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
     let result: Awaited<ReturnType<typeof deps.wechatScan.poll>>;
@@ -854,7 +869,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/wechat/scan/verify", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     const taskId = requireString(body, "taskId", { minLen: 1, maxLen: 500 });
     // The platform shows a short numeric code; the bound is generous rather than exact
@@ -874,7 +889,7 @@ export function sessionMessagingRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/messaging/wechat/scan/cancel", async (c) => {
     const row = resolveSession(c);
-    deps.projectService.requireProjectOwner(c.var.user.userId, row.projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
     const body = await readJson(c);
     deps.wechatScan.cancel(
       row.sessionId,

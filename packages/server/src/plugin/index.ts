@@ -1,30 +1,21 @@
 /**
- * What this harness offers a plugin BEYOND the contract — the
- * `@prismshadow/penguin-server/plugin` subpath.
+ * The harness's plugin surface — the `@prismshadow/penguin-server/plugin` subpath.
  *
- * The contract is `@prismshadow/penguin-core/plugin` and is CLOSED: this module does not
- * reopen it by declaration merging. Augmenting it would put `terminals` into the contract
- * itself, so a plugin type-checking against core would compile against a member only
- * THIS embedder supplies, with nothing at the core layer able to say so.
- *
- * What the harness offers beyond the contract is named here instead, on an interface that
- * EXTENDS it. Values of that type still satisfy the contract, so the seam is unchanged;
- * what changes is that a plugin wanting `terminals` writes the cast itself
- * (`ctx as HarnessContext`) and thereby states, at the point of use, that it depends on
- * running inside this harness rather than on any embedder.
- *
- * Nor does this module re-export the contract. A plugin imports the contract from core
- * and this subpath only for what its name promises, so a package's import sites say which
- * of the two it actually needs: a sandbox backend, written against the sandbox vocabulary
- * and nothing else, names core alone and does not depend on this package at all.
+ * The contract is `@prismshadow/penguin-core/plugin` (a plugin is a set of
+ * modules) and this module does not re-export it: a plugin imports the contract from
+ * core and this subpath only for what its name promises, so a package's import sites say
+ * which of the two it needs — a sandbox backend, written against the sandbox vocabulary
+ * and nothing else, names core alone. What the harness adds is the set of INTERFACES an
+ * plugin module may require — a component class (`AgentService`, whose public surface
+ * is its contract) or an abstract interface class (`extends Interface<…>()`) declared
+ * beside its owner — reachable as `<module>#<Export>` in a manifest's `requires`. Types only.
  */
-import type { PenguinContext } from "@prismshadow/penguin-core/plugin";
-import type { TerminalManager } from "../terminal/manager.js";
-
-/**
- * The instance view this harness actually hands to `"create"` handlers: the contract plus
- * the members only it owns. A plugin reaching `terminals` casts to this deliberately.
- */
-export interface HarnessContext extends PenguinContext {
-  terminals: TerminalManager;
-}
+export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
+export type { Terminals } from "../terminal/manager.js";
+export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
+export type { HostAssembly, HostAssemblySlots, ToolFactory } from "../services/host-assembly.js";
+export type { AgentService } from "../services/agent-service.js";
+export type { AgentConfigService } from "../services/agent-config-service.js";
+export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
+export type { Http, HttpSlots } from "../http/app.js";
+export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";

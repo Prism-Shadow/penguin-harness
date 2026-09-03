@@ -20,7 +20,11 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
+import { bootAppDeps, createRuntimeApp } from "./app.js";
+import type { ServerBoot } from "./app.js";
+import type { AuthService } from "./auth/service.js";
+import type { ServerSettingsRepo } from "./db/repos/server-settings.js";
+import type { ErrorRecorder } from "./runtime/error-recorder.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
@@ -69,7 +73,7 @@ class PenguinServer {
   /** Assigned by loadPlugins(); published to the platform tree by buildDeps(). */
   private plugins!: PluginHost;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
-  private deps!: AppDeps;
+  private deps!: ServerBoot;
   /** Assigned by buildApp(). */
   private app!: ReturnType<typeof createRuntimeApp>;
   /** Assigned by listen(). */
@@ -79,6 +83,11 @@ class PenguinServer {
   private ipv6Loopback: ReturnType<typeof serve> | null = null;
 
   private shuttingDown = false;
+
+  /** The current App's auth service — resolved per call, since a hot swap replaces the tree. */
+  private auth(): AuthService {
+    return this.deps.tree.api<AuthService>("AuthService", "AuthService");
+  }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
   loadEnv(): void {
@@ -130,14 +139,13 @@ class PenguinServer {
   async loadPlugins(): Promise<void> {
     this.plugins = new PluginHost();
     const result = await loadPlugins(this.config.root);
-    for (const { specifier, plugin } of result.loaded) {
-      // use() runs the plugin's activate (awaiting an async one) and rolls back whatever
-      // it registered before failing; a throw here is a LOAD failure, isolated per entry
-      // like an import failure, not a per-App handler failure.
+    for (const entry of result.loaded) {
+      // Only held here — the platform boots the modules inside its own tree, per App. A
+      // module name clash is a LOAD failure, isolated per entry like an import failure.
       try {
-        await this.plugins.use(plugin);
+        this.plugins.use(entry);
       } catch (err) {
-        result.failed.set(specifier, err instanceof Error ? err.message : String(err));
+        result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
       }
     }
     for (const [specifier, reason] of result.failed) {
@@ -165,9 +173,13 @@ class PenguinServer {
    * handlers).
    */
   applyPersistedProxy(): void {
+    const settings = this.deps.tree.api<ServerSettingsRepo>(
+      "ServerSettingsRepo",
+      "ServerSettingsRepo",
+    );
     applyProxySettings({
-      proxyForApp: this.deps.serverSettingsRepo.getProxyForApp(),
-      proxyUrl: this.deps.serverSettingsRepo.getProxyUrl(),
+      proxyForApp: settings.getProxyForApp(),
+      proxyUrl: settings.getProxyUrl(),
     });
   }
 
@@ -194,12 +206,12 @@ class PenguinServer {
    * plaintext must not keep holding it (see initial-password.ts).
    */
   async seedAdmin(): Promise<void> {
-    await this.deps.authService.seedAdmin();
+    await this.auth().seedAdmin();
     clearInitialAdminPassword(this.config.root);
     if (this.config.desktopToken !== null) return;
-    if (!this.deps.authService.adminPasswordIsInitial()) return;
+    if (!this.auth().adminPasswordIsInitial()) return;
     const pinned = this.config.seedAdminPassword;
-    if (pinned !== null && (await this.deps.authService.adminPasswordIs(pinned))) return;
+    if (pinned !== null && (await this.auth().adminPasswordIs(pinned))) return;
     this.pendingFirstLoginNotice = true;
   }
 
@@ -251,7 +263,9 @@ class PenguinServer {
     // according to its nature.
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
-      this.deps.errors.record({ source: "process", err, code: "uncaught_exception" });
+      this.deps.tree
+        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
+        .record({ source: "process", err, code: "uncaught_exception" });
       // From this point the process state can't be trusted (the error was never converged
       // by any catch): don't swallow it — wrap up per existing shutdown semantics and exit
       // with a nonzero code (equivalent to Node's default crash exit, just with an extra
@@ -263,7 +277,9 @@ class PenguinServer {
     process.on("unhandledRejection", (reason) => {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
-      this.deps.errors.record({ source: "process", err, code: "unhandled_rejection" });
+      this.deps.tree
+        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
+        .record({ source: "process", err, code: "unhandled_rejection" });
       // Unlike uncaughtException, this **doesn't** exit: a rejected promise is a localized
       // failure of some background task, and the process state isn't compromised; dragging
       // down the entire service for it (Node's default behavior) isn't worth it — persist +
@@ -310,7 +326,7 @@ class PenguinServer {
     if (this.pendingFirstLoginNotice) {
       // Minting here rather than at seed time is what keeps "exists" and "was printed" the
       // same thing for a setup session: the modes that decline to print never ask for one.
-      const link = this.deps.authService.mintFirstLogin();
+      const link = this.auth().mintFirstLogin();
       if (link !== null) {
         const token = encodeURIComponent(link);
         console.log(
@@ -364,7 +380,7 @@ class PenguinServer {
   private terminalWebSocketDeps() {
     return {
       hmr: this.deps.hmr,
-      authService: this.deps.authService,
+      authService: this.auth(),
       log: (line: string) => console.log(line),
     };
   }

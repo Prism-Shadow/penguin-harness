@@ -28,6 +28,8 @@ import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ProjectConfigService } from "./project-config-service.js";
 
 /** How the user gets the authorization code back to the harness. */
 export type ModelOAuthMode = "callback" | "manual";
@@ -201,24 +203,15 @@ export type ApplyGroupKey = (
   apiKey: string,
 ) => Promise<number>;
 
-export interface ModelOAuthDeps {
-  applyGroupKey: ApplyGroupKey;
-  /** Injected so tests never reach the network. */
-  fetchImpl?: typeof fetch;
-  now?: () => number;
-}
-
+@Component()
 export class ModelOAuthService {
   private readonly flows = new Map<string, Flow>();
-  private readonly applyGroupKey: ApplyGroupKey;
-  private readonly fetchImpl: typeof fetch;
-  private readonly now: () => number;
-
-  constructor(deps: ModelOAuthDeps) {
-    this.applyGroupKey = deps.applyGroupKey;
-    this.fetchImpl = deps.fetchImpl ?? ((...args) => fetch(...args));
-    this.now = deps.now ?? (() => Date.now());
-  }
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  private applyGroupKey: ApplyGroupKey = (projectId, provider, apiKey) =>
+    this.projectConfig.setGroupApiKey(projectId, provider, apiKey);
+  /** Replaced in tests so they never reach the network. */
+  private fetchImpl: typeof fetch = (...args) => fetch(...args);
+  private now: () => number = () => Date.now();
 
   /**
    * Open a flow for one provider group and return the page to send the user to.

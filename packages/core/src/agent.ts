@@ -42,6 +42,7 @@ import {
 } from "./state/index.js";
 import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
 import { Environment } from "./environment/index.js";
+import type { BuiltinToolFactory } from "./environment/tools/registry.js";
 import {
   Writer,
   findLatestTraceFile,
@@ -136,8 +137,8 @@ export interface CreateAgentOptions {
    */
   confineSpawn?: () => SpawnConfiner | null;
   /**
-   * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
-   * Host policy like
+   * What a host adds to every Session this Agent assembles — prompt sections and tool
+   * factories beyond the built-in ones (see {@link AgentAssembly}). Host policy like
    * `proxyEnv`: inherited by subagents' Agents, re-read at every Session creation so a
    * hot push that changes the set reaches the next Session without a restart.
    */
@@ -155,6 +156,12 @@ export interface AgentAssembly {
    * text. Empty = the prompt is exactly the Agent's own.
    */
   promptSections?(): readonly PromptSection[];
+  /**
+   * Tool factories by name, consulted BEFORE the built-in registry. A name the Agent's
+   * `tools.builtin` config lists that matches here is assembled from this factory —
+   * the config entry stays the opt-in and the source of the definition's overrides.
+   */
+  toolFactories?(): Readonly<Record<string, BuiltinToolFactory>>;
 }
 
 export interface PromptSection {
@@ -1086,6 +1093,7 @@ export class Agent {
           }
         : {}),
       ...(this.confineSpawn ? { confineSpawn: this.confineSpawn } : {}),
+      ...(this.assembly?.toolFactories ? { toolFactories: this.assembly.toolFactories() } : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its

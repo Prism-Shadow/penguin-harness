@@ -26,7 +26,16 @@ import {
 } from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface SkillsRouteDeps {
+  agentConfigService: AgentConfigService;
+  config: ServerConfig;
+  access: ProjectAccess;
+}
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { toSkillItem } from "../../services/plugin-library.js";
@@ -36,6 +45,8 @@ import {
   MAX_TOTAL_BYTES,
   skillTooLarge,
 } from "../../services/skill-import-limits.js";
+import { Bind, Component } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
 const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
@@ -166,7 +177,7 @@ function explicitSkillVersion(skillMd: string): string | null {
 }
 
 /** /api/projects/:p/agents/:a/skills: read, import/export and uninstall are all Project-member operations. */
-export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const listResponse = async (
@@ -180,7 +191,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Defensive id validation happens before any path construction: prevents path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(await listResponse(projectId, agentId));
   });
@@ -191,7 +202,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/template-placeholder", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,
@@ -206,7 +217,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
@@ -246,7 +257,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:name/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireValidId(c, "name");
     const dir = path.join(skillsDir(deps.config.root, projectId, agentId), name);
     // Installed-check uses the same criterion as listInstalledSkills: skills/<name>/SKILL.md exists.
@@ -274,7 +285,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireValidId(c, "name");
     // Installed-check uses the same criterion as listInstalledSkills: skills/<name>/SKILL.md exists.
     const file = path.join(skillsDir(deps.config.root, projectId, agentId), name, "SKILL.md");
