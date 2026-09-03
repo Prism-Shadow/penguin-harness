@@ -15,9 +15,14 @@
  */
 import { Hono } from "hono";
 import type { SessionsRepo } from "../../db/repos/sessions.js";
-import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
+import { WorkspaceFilesService } from "../../services/workspace-files-service.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import { hostOnly, requestAuthority } from "../../services/preview-token.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { createPreviewTokenSigner } from "../../services/preview-token.js";
 
 export interface PreviewDeps {
   sessionsRepo: SessionsRepo;
@@ -82,4 +87,41 @@ export function previewRoutes(deps: PreviewDeps) {
   });
 
   return app;
+}
+
+export abstract class WorkspaceFiles extends Interface<
+  Pick<WorkspaceFilesService, "list" | "read" | "write" | "statExisting">
+>() {}
+export abstract class PreviewTokens extends Interface<
+  Pick<PreviewTokenSigner, "sign" | "verify">
+>() {}
+
+@Module({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "workspace.preview",
+        prefix: "/preview",
+        auth: "none",
+        order: 900,
+      },
+    ],
+  },
+})
+export class WorkspaceModule {
+  @Use() private readonly sessionsRepo!: SessionsRepo;
+  @Provide() workspaceFiles!: WorkspaceFiles;
+  @Provide() previewTokens!: PreviewTokens;
+  @Bind("workspace.preview") previewRoutes!: ReturnType<typeof previewRoutes>;
+  setup() {
+    const workspaceFiles = new WorkspaceFilesService();
+    const previewTokens = createPreviewTokenSigner();
+    this.workspaceFiles = workspaceFiles;
+    this.previewTokens = previewTokens;
+    this.previewRoutes = previewRoutes({
+      previewTokens,
+      sessionsRepo: this.sessionsRepo,
+      workspaceFiles,
+    });
+  }
 }

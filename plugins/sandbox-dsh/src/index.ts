@@ -21,22 +21,16 @@
  * them fails THIS load — reported fail-closed by the service — instead of failing the
  * whole platform bundle's import.
  */
-import type {
-  ConfinedArgv,
-  PluginContext,
-  SandboxProvider,
-} from "@prismshadow/penguin-core/plugin";
+import type { ConfinedArgv, Plugin, SandboxProvider } from "@prismshadow/penguin-core/plugin";
 
 /** Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it. */
 export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
   const { Context } = await import("@deepseek-ai/cordis");
   const { LocalSandboxProvider } = await import("@deepseek-ai/dsh-sandbox-local");
-  const cordisCtx = new Context();
-  // A cordis plugin, not a Penguin one: `Context.plugin` is cordis's own API, and the two
-  // vocabularies share nothing but the word. Hence the name — `ctx` in this package is
-  // the PluginContext `activate` receives, below.
-  await cordisCtx.plugin(LocalSandboxProvider, {});
-  const dsh = cordisCtx.sandbox;
+  const ctx = new Context();
+  // `ctx.plugin` is cordis's own API name, not this repo's vocabulary.
+  await ctx.plugin(LocalSandboxProvider, {});
+  const dsh = ctx.sandbox;
   return {
     // DSH's own words: "Network and process visibility are outside this vocabulary."
     dimensions: ["fs-write"],
@@ -55,11 +49,16 @@ export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
   };
 }
 
-/** The plugin: registered per App creation, so a hot swap re-registers it. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("dsh-local", loadDshAdaptor());
-  });
-}
+/**
+ * The plugin: one module, whose manifest is package.json#penguin.modules[0] (one
+ * provider on the sandbox.providers slot); this default export binds the provider by
+ * that contribution id. Created per App, so a hot swap gets a fresh provider.
+ */
+const plugin: Plugin = {
+  modules: {
+    SandboxDsh: {
+      create: () => ({ api: {}, bind: { "sandbox-dsh.provider": loadDshAdaptor() } }),
+    },
+  },
+};
+export default plugin;

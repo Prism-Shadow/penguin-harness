@@ -149,6 +149,7 @@ import type {
   VersionResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
+  ContributionsResponse,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";

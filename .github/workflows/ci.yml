@@ -203,6 +203,15 @@ jobs:
         with:
           build: ${{ matrix.build }}
 
+      # The server's own `test` script runs `gen:ifaces` first, because src/ifaces.json is
+      # generated and not committed and src/platform.ts imports it at load. The server
+      # shards here call `exec vitest` instead — the script cannot take `--shard` — so they
+      # skip that half and every file that reaches platform.ts fails to resolve it. The
+      # other platforms run the script and never notice.
+      - name: Generate the interface table
+        if: startsWith(matrix.shard, 'server')
+        run: pnpm --filter @prismshadow/penguin-server gen:ifaces
+
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
       # failure that has no failing test at all — a tinypool `ERR_IPC_CHANNEL_CLOSED` raised
@@ -311,6 +320,82 @@ jobs:
             packages/desktop/out/mac
             packages/desktop/out/mac-arm64
             packages/desktop/out/mac-x64
+
+  # The interface table as a page: the module tree, every node's requires / provides /
+  # contributes and every interface at signature level, rendered from the same
+  # ifaces.json the typecheck gate generates (its sha256 is the page's title). Published
+  # to the `ifaces-pages` branch under the commit's sha and linked from the job summary
+  # and, on a pull request, one comment kept up to date — so a reviewer opens the tree
+  # this exact commit builds. Forks get the summary only (their token cannot push).
+  ifaces-page:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-core..."
+      - name: Render the interface page
+        run: pnpm ifaces:page
+      - name: Publish to the ifaces-pages branch
+        id: publish
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          hash=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("dist-ifaces/ifaces.json","utf8")).hash)')
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Publishing switches this worktree to a branch that holds only published pages,
+          # so the checkout — .github/actions/setup included — is gone until it is switched
+          # back. The setup action's own post step runs after this one and resolves itself
+          # from the worktree, so leaving it on ifaces-pages fails the job after a
+          # successful push. Remember where we were and return there.
+          here=$(git rev-parse HEAD)
+          # Every published sha stays on the branch: the un-staging below is only for the
+          # orphan's first commit (the repo checkout is staged there) — running it on an
+          # existing branch deletes every previously published page.
+          if git fetch -q origin ifaces-pages:ifaces-pages 2>/dev/null; then
+            git checkout -q ifaces-pages
+          else
+            git checkout -q --orphan ifaces-pages
+            git rm -rfq --cached . >/dev/null 2>&1 || true
+          fi
+          mkdir -p "$SHA"
+          cp dist-ifaces/index.html dist-ifaces/ifaces.json "$SHA/"
+          printf '%s\n' "$hash" > "$SHA/HASH"
+          git add "$SHA"
+          git commit -qm "ifaces: $SHA ($hash)" || true
+          git push -q origin ifaces-pages
+          git checkout -q --force "$here"
+          url="https://raw.githack.com/${{ github.repository }}/ifaces-pages/$SHA/index.html"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Module tree"
+            echo
+            echo "[$SHA]($url) — interface table \`$hash\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Link it from the pull request
+        if: github.event_name == 'pull_request' && steps.publish.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          URL: ${{ steps.publish.outputs.url }}
+          HASH: ${{ steps.publish.outputs.hash }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = "<!-- ifaces-page -->";
+            const body = `${marker}\n**Module tree** for ${process.env.SHA.slice(0, 7)}: ${process.env.URL}\n\nInterface table \`${process.env.HASH}\` — the page's \`ifaces.json\` is the table this commit builds.`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.body?.startsWith(marker));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
 
   # The aggregate gate: green only when every job above is. Mark THIS one required in
   # branch protection — it survives the shard list changing, which the individual job

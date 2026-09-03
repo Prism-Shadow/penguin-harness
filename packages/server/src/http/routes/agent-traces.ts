@@ -33,7 +33,16 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { TraceService } from "../../services/trace-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentTracesRouteDeps {
+  agentConfigService: AgentConfigService;
+  access: ProjectAccess;
+  traceService: TraceService;
+}
 
 /** Import file size cap: aligned with the snapshot import (stays within the 20MB body limit after base64). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
@@ -46,14 +55,14 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "archived",
 ];
 
-export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentTracesRoutes(deps: AgentTracesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Id validation happens before any path construction: prevents agentId path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     // Both params absent -> null -> the legacy full response, byte-for-byte as before.
     const paging = optionalPagingQuery(c);
     // Optional category filter (paging then applies within the category): only meaningful
@@ -78,7 +87,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     const { offset, limit } = paginationQuery(c);
     return c.json(
@@ -90,7 +99,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     return c.json(await deps.traceService.analyze(projectId, agentId, sessionId, index));
   });
@@ -101,7 +110,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const sessionId = requireValidId(c, "sessionId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const index = positiveIntParam(c, "index");
     const bytes = await deps.traceService.readFileRaw(projectId, agentId, sessionId, index);
     const fileName = `${sessionId}_${String(index).padStart(3, "0")}.jsonl`;
@@ -120,7 +129,7 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });

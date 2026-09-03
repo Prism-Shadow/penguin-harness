@@ -47,7 +47,7 @@ describe("NAV_GROUP_KEYS", () => {
       "benchmark",
     ]);
     // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
-    expect(zh.nav[NAV_GROUP_KEYS[0]]).toBe("智能体");
+    expect(zh.nav[NAV_GROUP_KEYS[0]!]).toBe("智能体");
     expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");
   });
 

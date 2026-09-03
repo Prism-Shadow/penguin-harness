@@ -17,6 +17,7 @@ import { initialAdminPasswordPath } from "../src/initial-password.js";
 import { acquireServerLock } from "../src/lock.js";
 import { resetAdminPassword } from "../src/reset-admin-password.js";
 import { makeTempRoot } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 describe("resetAdminPassword", () => {
   const roots: string[] = [];
@@ -36,7 +37,7 @@ describe("resetAdminPassword", () => {
   async function seedDatabase(root: string): Promise<string> {
     const dbPath = path.join(root, "web.db");
     const db = openDatabase(dbPath);
-    const users = new UsersRepo(db);
+    const users = wire(UsersRepo, { db: db });
     const createdAt = "2026-01-01T00:00:00.000Z";
     users.insert({
       userId: ADMIN_USER_ID,
@@ -52,7 +53,7 @@ describe("resetAdminPassword", () => {
       passwordIsInitial: false,
       createdAt,
     });
-    const sessions = new AuthSessionsRepo(db);
+    const sessions = wire(AuthSessionsRepo, { db: db });
     const later = "2027-01-01T00:00:00.000Z";
     sessions.insert({
       tokenHash: "admin-session",
@@ -86,15 +87,15 @@ describe("resetAdminPassword", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const admin = new UsersRepo(db).findById(ADMIN_USER_ID);
+      const admin = wire(UsersRepo, { db: db }).findById(ADMIN_USER_ID);
       expect(admin?.passwordIsInitial).toBe(true);
       // The old password no longer works, and the new one is a value nobody holds.
       expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(false);
       // The admin's session rows are deleted; a bystander's are untouched.
-      const sessions = new AuthSessionsRepo(db);
+      const sessions = wire(AuthSessionsRepo, { db: db });
       expect(sessions.findByTokenHash("admin-session")).toBeNull();
       expect(sessions.findByTokenHash("alice-session")).not.toBeNull();
-      const alice = new UsersRepo(db).findById("alice");
+      const alice = wire(UsersRepo, { db: db }).findById("alice");
       expect(await verifyPassword("alice-password-1", alice!.passwordHash)).toBe(true);
     } finally {
       db.close();
@@ -114,7 +115,7 @@ describe("resetAdminPassword", () => {
       expect(result).toMatchObject({ outcome: "server_running", lock: { port } });
       const db = openDatabase(dbPath);
       try {
-        const admin = new UsersRepo(db).findById(ADMIN_USER_ID);
+        const admin = wire(UsersRepo, { db: db }).findById(ADMIN_USER_ID);
         expect(await verifyPassword("old-password-1", admin!.passwordHash)).toBe(true);
       } finally {
         db.close();

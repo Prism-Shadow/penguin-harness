@@ -30,7 +30,7 @@ import {
 import type { HookCommand, HookManifest } from "@prismshadow/penguin-core";
 import type { AgentHooksResponse, HookItem } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { PluginsRouteDeps } from "./plugins.js";
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { toHookItem } from "../../services/plugin-library.js";
@@ -249,7 +249,7 @@ async function collectHookArchive(dir: string, name: string): Promise<Record<str
 }
 
 /** /api/projects/:p/agents/:a/hooks: read, import/export and uninstall are all Project-member operations. */
-export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const installedItems = async (projectId: string, agentId: string): Promise<HookItem[]> =>
@@ -274,7 +274,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     // Defensive id validation happens before any path construction: prevents path traversal for cross-Project privilege escalation.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json({ hooks: await installedItems(projectId, agentId) } satisfies AgentHooksResponse);
   });
@@ -283,7 +283,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
@@ -327,7 +327,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:name/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireValidId(c, "name");
     const dir = await requireInstalled(projectId, agentId, name);
     const archiveFiles = await collectHookArchive(dir, name);
@@ -359,7 +359,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireValidId(c, "name");
     await requireInstalled(projectId, agentId, name);
     await removeHook(deps.config.root, projectId, agentId, name);
