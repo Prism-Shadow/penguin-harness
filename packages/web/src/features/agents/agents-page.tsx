@@ -80,7 +80,6 @@ import {
   useAiBridge,
 } from "../ai-create";
 import type { CreateAction } from "../ai-create";
-import { agentAiExamples, agentAiTail } from "./agent-ai-prompts";
 import { recallCreateMode, rememberCreateMode, resolveCreateMode } from "./agent-create-mode";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
@@ -217,7 +216,7 @@ export function AgentsPage() {
     if (aiTarget === null) return;
     openAiChat({
       agentId: aiTarget.agentId,
-      text: composeAiPrompt(aiDraft, agentAiTail()),
+      text: composeAiPrompt(aiDraft, S.agent.aiCreateTail),
       autoSend,
     });
     setCreateOpen(false);
@@ -761,8 +760,8 @@ export function AgentsPage() {
               onChange={setAiDraft}
               placeholder={S.agent.aiCreatePlaceholder}
               intro={S.agent.aiCreateIntro}
-              examples={agentAiExamples()}
-              tail={agentAiTail()}
+              examples={S.agent.aiExamples}
+              tail={S.agent.aiCreateTail}
               agents={agents}
               agentId={aiTarget?.agentId ?? null}
             />

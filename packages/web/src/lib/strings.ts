@@ -524,7 +524,7 @@ export const zh = {
     createSnapshotClear: "移除已选快照包",
     /**
      * The create dialog's AI path: the lead line, the prompt box's placeholder, the clickable
-     * examples and the fixed instruction tail joined after the draft (agent-ai-prompts.ts). The
+     * examples and the fixed instruction tail joined after the draft (composeAiPrompt). The
      * tail follows the agent-initialization skill's contract — a new agent under the current
      * Project, only the skills it needs, no other agent touched, the id reported at the end.
      */
@@ -821,11 +821,12 @@ export const zh = {
     syncUpToDate: "预置模型已是最新",
     /**
      * The header's "add models with AI" entry: the button label, the dialog's title and lead,
-     * the prompt box's placeholder, the examples and the fixed instruction tail
-     * (models-ai-prompts.ts). The tail follows the penguin-config skill — one
-     * `penguin config model add` per model with `--provider` mandatory, the config file never
-     * touched by hand, `penguin config model list` at the end — and carries the Project id,
-     * which the CLI would otherwise default to the built-in Project.
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The tail
+     * follows the penguin-config skill — one `penguin config model add` per model with
+     * `--provider` mandatory, the config file never touched by hand, `penguin config model list`
+     * at the end — and carries the Project id and the data root, which the CLI would otherwise
+     * take from its own defaults (the harness strips `PENGUIN_HOME` from a command's
+     * environment, so the CLI's default root is not the one the server runs on).
      */
     aiAdd: "让 AI 添加模型",
     aiAddTitle: "让 AI 添加模型分组",
@@ -863,11 +864,12 @@ export const zh = {
     aiAddTail: (projectId: string): string =>
       [
         "请使用 penguin-config 技能完成上面的配置：",
-        `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
         "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
         "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
-        `- 最后运行 \`penguin config model list --project-id ${projectId}\` 把结果列给我。`,
+        `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
     homepage: "模型主页",
     speedTest: "测速",
@@ -1179,14 +1181,15 @@ export const zh = {
     valueRequired: "值不能为空",
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
-     * typed into the prompt is recorded in the conversation's Trace), the prompt box's
-     * placeholder, the examples and the fixed instruction tail (vault-ai-prompts.ts). The tail is
-     * fed the target agent and Project because the prompt goes to the Project's default agent,
-     * which is not necessarily the agent whose vault this is.
+     * typed into the prompt reaches the provider, the Trace and the agent's own command line),
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The tail is fed
+     * the target agent and Project because the prompt goes to the Project's default agent, which
+     * is not necessarily the agent whose vault this is; it names the data root for the same
+     * reason the models tail does.
      */
     aiAddTitle: "让 AI 添加密钥",
     aiAddIntro:
-      "密钥值会进入对话记录（Trace）。更稳妥的做法是让 AI 只创建键名并告诉你用途，值在保险柜里手动填写。",
+      "写进提示词的密钥值会发给模型服务商、写入对话记录（Trace），还会出现在智能体执行的命令里。更稳妥的做法是让 AI 只创建键名并告诉你用途，值在保险柜里手动填写。",
     aiAddPlaceholder: "要存哪个键、值是什么，或让它检查这个智能体需要哪些 API key…",
     aiAddExamples: [
       {
@@ -1212,9 +1215,10 @@ export const zh = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
-        `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId}\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
         "- 不要在回复里复述任何值，不要读取 .vault.toml。",
-        `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId}\` 列出键名。`,
+        `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
       ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {

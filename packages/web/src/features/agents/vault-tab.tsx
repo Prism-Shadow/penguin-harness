@@ -31,7 +31,6 @@ import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 import { toneStrip } from "../../lib/tone";
 import { AiCreateModal, AiWandButton } from "../ai-create";
-import { vaultAiExamples, vaultAiTail } from "./vault-ai-prompts";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -62,7 +61,7 @@ export function VaultTab({
   const [busy, setBusy] = useState(false);
   // Add modal: form state and per-field errors travel with the modal (a tab-level error would be hidden behind it).
   const [adding, setAdding] = useState(false);
-  /** "Add with AI" dialog (vault-ai-prompts.ts): its prompt goes to the Project's default agent, naming this agent as the target. */
+  /** "Add with AI" dialog: its prompt goes to the Project's default agent, naming this agent as the target. */
   const [aiAdding, setAiAdding] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [valueInput, setValueInput] = useState("");
@@ -292,8 +291,8 @@ export function VaultTab({
           </div>
         }
         placeholder={S.vault.aiAddPlaceholder}
-        examples={vaultAiExamples()}
-        tail={vaultAiTail(agentId, projectId)}
+        examples={S.vault.aiAddExamples}
+        tail={S.vault.aiAddTail(agentId, projectId)}
         agents={agents}
       />
 

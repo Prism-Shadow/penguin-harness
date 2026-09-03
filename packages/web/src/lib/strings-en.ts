@@ -888,11 +888,12 @@ export const en: Strings = {
     aiAddTail: (projectId: string): string =>
       [
         "Use the penguin-config skill for the configuration above:",
-        `- Run \`penguin config model add --provider <group> --model-id <upstream id> --project-id ${projectId} [--base-url <endpoint>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\` once per model: \`--provider\` is mandatory, \`--model-id\` takes the gateway's own model id, and an OpenAI-compatible endpoint gets \`--client-type openai --base-url <endpoint>\`.`,
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` configures a different one and nothing reaches this Project.",
+        `- Run \`penguin config model add --provider <group> --model-id <upstream id> --project-id ${projectId} --root <data root> [--base-url <endpoint>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\` once per model: \`--provider\` is mandatory, \`--model-id\` takes the gateway's own model id, and an OpenAI-compatible endpoint gets \`--client-type openai --base-url <endpoint>\`.`,
         "- When the source is a web page, fetch it first: add the models I named, or the most popular ones when I named none, about 10 at most.",
         "- When an API key is needed and I did not give one, ask me once; if I do not provide it, leave the key empty and tell me to fill it in on the Models page.",
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
-        `- Finish with \`penguin config model list --project-id ${projectId}\` and show me the result.`,
+        `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
     homepage: "Model page",
     speedTest: "Speed test",
@@ -1188,7 +1189,7 @@ export const en: Strings = {
     valueRequired: "Value must not be empty",
     aiAddTitle: "Add secrets with AI",
     aiAddIntro:
-      "A secret value typed here ends up in the conversation's Trace. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
+      "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
     aiAddPlaceholder: "Which key to store and its value, or ask which API keys this agent needs…",
     aiAddExamples: [
       {
@@ -1214,9 +1215,10 @@ export const en: Strings = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `Use the penguin-config skill to write the secrets above into the vault of agent ${agentId} (Project ${projectId}):`,
-        `- Run \`penguin config vault set --key <NAME> --value <value> --agent-id ${agentId} --project-id ${projectId}\` once per secret; when only the key name is wanted, store the placeholder value TODO and tell me what the key is for and where to apply for it.`,
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` writes into a different one and this agent's vault stays empty.",
+        `- Run \`penguin config vault set --key <NAME> --value <value> --agent-id ${agentId} --project-id ${projectId} --root <data root>\` once per secret; when only the key name is wanted, store the placeholder value TODO and tell me what the key is for and where to apply for it.`,
         "- Never repeat a value back in your reply, and never read .vault.toml.",
-        `- Finish with \`penguin config vault list --agent-id ${agentId} --project-id ${projectId}\` to list the key names.`,
+        `- Finish with \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <data root>\` to list the key names.`,
       ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
