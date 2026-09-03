@@ -77,13 +77,13 @@ import type {
   MessagingBindingRow,
   MessagingBindingsRepo,
 } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
-import type { ErrorSink } from "../error-recorder.js";
-import { recallStoreOf } from "../session-manager.js";
+import type { ErrorSink, ErrorRecorder } from "../error-recorder.js";
+import { recallStoreOf, SessionsModule } from "../session-manager.js";
 import type { RecallStore } from "../session-manager.js";
 import type {
   MessagingChannelConnector,
@@ -97,28 +97,21 @@ import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
 import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Slot } from "@prismshadow/penguin-core/kernel";
-import { QQScanService } from "./qq-scan.js";
-import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { QQScanService, createQQScanTransport } from "./qq-scan.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hono } from "hono";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Log } from "../../hmr/capabilities.js";
+import { Log, RuntimeModule } from "../../hmr/capabilities.js";
 import { Channels } from "../channel.js";
 import { Config } from "../../config.js";
 import { Overrides } from "../../app.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
 import { WorkspaceModule } from "../../http/routes/preview.js";
-import { SessionsModule } from "../session-manager.js";
 import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
 import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
 import { WeChatScanService, createWeChatScanTransport } from "./wechat-scan.js";
-import { createQQScanTransport } from "./qq-scan.js";
-import { toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { ErrorRecorder } from "../error-recorder.js";
 import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
 import type { ProjectAccess } from "../../services/project-access.js";

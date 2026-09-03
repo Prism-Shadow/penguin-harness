@@ -23,20 +23,28 @@
  * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
-import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "./host.js";
-import { TerminalManager } from "../terminal/manager.js";
-import type { TerminalSession } from "../terminal/session.js";
-import { identityFrom } from "../terminal/identity.js";
-import { bindTerminalStream } from "../terminal/stream.js";
 import type {
+  Impl,
+  Json,
+  Park,
   IfaceTable,
   ManifestTable,
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules } from "@prismshadow/penguin-core/kernel";
+import {
+  defineIface,
+  schema,
+  type,
+  bootModules,
+  moduleDefOf,
+  Interface,
+} from "@prismshadow/penguin-core/kernel";
+import type { PlatformBundle } from "./host.js";
+import { TerminalManager } from "../terminal/manager.js";
+import type { TerminalSession } from "../terminal/session.js";
+import { identityFrom } from "../terminal/identity.js";
+import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import type { AuthService } from "../auth/service.js";
@@ -45,7 +53,6 @@ import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
 import { platformDef } from "../platform.js";
 import { SandboxModule } from "../sandbox/service.js";
-import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import ifaceTable from "../ifaces.json" with { type: "json" };
 import { declined, seamHttp } from "./hono-seam.js";
 import {
@@ -55,7 +62,6 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
 
 export interface PlatformApi extends Park {
   info(): Json;

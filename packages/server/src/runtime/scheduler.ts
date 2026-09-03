@@ -26,7 +26,7 @@ import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { SchedulesRepo, ScheduleStateRow } from "../db/repos/schedules.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
-import type { ErrorSink } from "./error-recorder.js";
+import type { ErrorSink, ErrorRecorder } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
 import { latestSlotAt, slotInWindow } from "./schedule-file.js";
 import { ScheduleFileCache, readScheduleFile, validateScheduleModelRef } from "./schedule-store.js";
@@ -38,7 +38,6 @@ import type { Channels } from "./channel.js";
 import type { Config } from "../config.js";
 import type { Overrides } from "../app.js";
 import type { ProjectConfigService } from "../services/project-config-service.js";
-import type { ErrorRecorder } from "./error-recorder.js";
 import { userChannelKey } from "../http/routes/events.js";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */

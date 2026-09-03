@@ -21,31 +21,19 @@
  * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
-import type { ServerConfig } from "../config.js";
-import type { AuthRuntimeState } from "../auth/runtime-state.js";
+import type { Resources, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { ServerConfig, Config } from "../config.js";
+import type { AuthRuntimeState, AuthState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
-import type { ChannelHub } from "../runtime/channel.js";
-import type { ProxySettings } from "../net/proxy.js";
-import type { BuildDepsOverrides } from "../app.js";
-import type { HmrHost } from "./host.js";
-import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import { Module, Provide } from "@prismshadow/penguin-core/kernel";
-// The interfaces this module presents live beside the things they describe; only their
-// claim and their presentation are here.
-import type { Config } from "../config.js";
+import type { ChannelHub, Channels } from "../runtime/channel.js";
+import type { ProxySettings, Proxy } from "../net/proxy.js";
+import type { BuildDepsOverrides, Overrides } from "../app.js";
+import type { HmrHost, Hmr } from "./host.js";
+import type { DesktopService, Desktop } from "../services/desktop-service.js";
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../db/database.js";
-import type { Channels } from "../runtime/channel.js";
-import type { Proxy } from "../net/proxy.js";
-import type { Hmr } from "./host.js";
-import type { Desktop } from "../services/desktop-service.js";
-import type { Lifecycle } from "../services/lifecycle-service.js";
-import type { AuthState } from "../auth/runtime-state.js";
-import type { Overrides } from "../app.js";
+import type { LifecycleService, Lifecycle } from "../services/lifecycle-service.js";
 import type { ResourceGroups } from "./platform.js";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per

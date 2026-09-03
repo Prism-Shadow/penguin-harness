@@ -89,13 +89,12 @@ import type {
   QQInboundEvent,
   QQTransport,
 } from "./qq-api.js";
-import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError } from "./qq-api.js";
+import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError, createQQTransport } from "./qq-api.js";
 import { qqMarkdownOf } from "./qq-markdown.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Overrides } from "../../app.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
-import { createQQTransport } from "./qq-api.js";
 
 /** The QQ binding's stored config document (`messaging_bindings.config_json`). */
 export interface QQBindingConfig extends Record<string, unknown> {

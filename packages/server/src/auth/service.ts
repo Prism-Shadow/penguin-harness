@@ -13,13 +13,11 @@ import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
-import type { AuthRuntimeState } from "./runtime-state.js";
+import type { AuthRuntimeState, AuthState } from "./runtime-state.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { AuthState } from "./runtime-state.js";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../config.js";
 import type { Overrides } from "../app.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
 
 export const MIN_PASSWORD_LENGTH = 8;
 

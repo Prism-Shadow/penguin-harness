@@ -32,9 +32,8 @@ import {
 import type { ProjectAccess } from "./project-access.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 import type { TraceIndexService } from "./trace-index.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../config.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;

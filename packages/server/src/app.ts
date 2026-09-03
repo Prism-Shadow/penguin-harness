@@ -26,7 +26,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
+import type { ModuleTree, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { ProjectAccess } from "./services/project-access.js";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -170,9 +170,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
-import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import { Interface } from "@prismshadow/penguin-core/kernel";
+import { wire, Interface } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process

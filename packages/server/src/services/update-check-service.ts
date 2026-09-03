@@ -18,8 +18,7 @@
  */
 import { BUILD_DATE, VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse } from "../api/types.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";

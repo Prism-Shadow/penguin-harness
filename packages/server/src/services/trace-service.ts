@@ -50,7 +50,7 @@ import type {
   TraceToolSpan,
   UsageTrendPointInTrace,
 } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
@@ -75,7 +75,6 @@ import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../config.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 

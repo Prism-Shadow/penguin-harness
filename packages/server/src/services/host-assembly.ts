@@ -1,11 +1,10 @@
-import type { Opaque, Slot } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type {
   BuiltinToolFactory,
   PromptSection,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { Config } from "../config.js";
