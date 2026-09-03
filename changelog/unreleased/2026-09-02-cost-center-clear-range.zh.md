@@ -4,6 +4,7 @@
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
+- **Breaking:** yes — `GET /usage` 不再返回 `errors.clearable`；`DELETE /usage/errors` 缺任一端日期时以 400 拒绝，不再清空全部历史
 
 [English](2026-09-02-cost-center-clear-range.md)
 
@@ -15,3 +16,8 @@
 - 删除的触及范围与调用者的读取范围相同：管理员的清空包含无归属记录，成员（其读取从不显示这些行）的清空从不包含。原先用于表示两者之差的 `UsageErrors.clearable` 已移除——`total` 即一次清空会删掉的数量。
 - 新增字符串 `usage.errorsClearRangePreset` / `usage.errorsClearRangeCustom` 供 `usage.errorsClearScope` 与 `usage.errorsClearScopeAgent` 使用，后两者现在以一个短语接收范围。
 - Web App 与服务端 API 文档描述了清空的触及范围。
+
+## 兼容性
+
+- `GET /api/projects/:projectId/usage` 不再返回 `errors.clearable`，改读 `errors.total`——它现在就是一次清空会删掉的数量。Web App 与服务端一起发布，用户无需做任何事；读取 `clearable` 的 API 客户端改读 `total`。
+- `DELETE /api/projects/:projectId/usage/errors` 在缺少 `from` 或 `to` 时应答 400，而此前这样的调用会清空该 Project 的全部异常历史。请同时给出两端日期——即面板当前显示的范围。

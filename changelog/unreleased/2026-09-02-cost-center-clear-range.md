@@ -4,6 +4,7 @@
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
+- **Breaking:** yes — `GET /usage` no longer returns `errors.clearable`, and a `DELETE /usage/errors` missing either date bound is refused with 400 instead of clearing the whole history
 
 [中文版](2026-09-02-cost-center-clear-range.zh.md)
 
@@ -15,3 +16,8 @@ The cost center's **Clear** confirmation now names the range the way the picker 
 - The delete reaches exactly what the caller's reads reach: an admin's clear includes unattributed rows, a member's (whose reads never show them) never does. `UsageErrors.clearable`, which counted the difference, is gone — `total` is what a clear takes.
 - New strings `usage.errorsClearRangePreset` / `usage.errorsClearRangeCustom` feed `usage.errorsClearScope` and `usage.errorsClearScopeAgent`, which now take the range as one phrase.
 - The Web App and server API docs describe the clear's reach.
+
+## Compatibility
+
+- `GET /api/projects/:projectId/usage` no longer returns `errors.clearable`. Read `errors.total`, which is now the count a clear takes. The Web App ships with the server, so a user has nothing to do; an API client reading `clearable` switches to `total`.
+- `DELETE /api/projects/:projectId/usage/errors` answers 400 when `from` or `to` is missing, where such a call used to clear the Project's whole error history. Send both bounds — the range the panel is showing.
