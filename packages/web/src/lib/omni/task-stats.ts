@@ -96,6 +96,14 @@ export interface TaskStatsTracker {
   /** This Task's main-session LLM generation duration cumulative (ms, request_begin↔request_end wall clock; compaction requests excluded). */
   taskLlmMs: number;
   /**
+   * This Task's main-session tool EXECUTION intervals (epoch ms), merged into `sessionToolMs`
+   * when the Task closes. Kept as intervals rather than a running sum because tool calls run in
+   * parallel: summing their durations would report more tool time than the clock ever spent.
+   * Only the execution half is recorded — the argument-generation half is the model streaming
+   * arguments and is already inside `taskLlmMs`, and the human approval wait belongs to neither.
+   */
+  taskToolIntervals: Array<[number, number]>;
+  /**
    * **Pending** bucket for compaction request usage: when compaction arrives, it's not yet known
    * whether it's **mid-round** (a normal Request still follows in this round → usage belongs to
    * this round) or **after round end** (wrap-up compaction / manual /compact → usage doesn't
@@ -112,6 +120,19 @@ export interface TaskStatsTracker {
   hasUsage: boolean;
   /** Session total elapsed time (sum of each Task's elapsed time, ms). */
   sessionElapsedMs: number;
+  /**
+   * Session cumulative model-API time (ms): the sum of the finished Tasks' `taskLlmMs`. Same
+   * scope as `sessionElapsedMs` beside it — main session only, compaction excluded — so the
+   * component and the total the header shows it under are measured over the same turns.
+   */
+  sessionLlmMs: number;
+  /**
+   * Session cumulative tool wall time (ms): per Task the union of `taskToolIntervals`, summed
+   * across Tasks. May **overlap** `sessionLlmMs`, since a background tool keeps running while
+   * the model decodes: the two are measured components of the elapsed time, not a partition of
+   * it, and the display must never derive one from the other.
+   */
+  sessionToolMs: number;
   /** Compaction in progress (between compaction_begin and end). */
   compactionActive: boolean;
 }
@@ -129,14 +150,52 @@ export function createTaskStatsTracker(): TaskStatsTracker {
     taskOutput: 0,
     taskMainOutput: 0,
     taskLlmMs: 0,
+    taskToolIntervals: [],
     pendingCompactionTokens: 0,
     pendingCompactionCacheRead: 0,
     pendingCompactionCacheWrite: 0,
     pendingCompactionOutput: 0,
     hasUsage: false,
     sessionElapsedMs: 0,
+    sessionLlmMs: 0,
+    sessionToolMs: 0,
     compactionActive: false,
   };
+}
+
+/**
+ * Total length of the **union** of the given intervals (ms): overlapping and nested runs count
+ * once, so parallel tool calls yield wall time instead of a sum of durations. Input order does
+ * not matter, and repeating an identical interval changes nothing — which is what lets a tool
+ * whose duration settles twice (a streamed stop and then the complete message) be recorded
+ * twice without inflating the figure.
+ */
+export function mergedIntervalMs(intervals: ReadonlyArray<readonly [number, number]>): number {
+  if (intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let [openStart, openEnd] = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = sorted[i]!;
+    if (start > openEnd) {
+      total += openEnd - openStart;
+      openStart = start;
+      openEnd = end;
+    } else if (end > openEnd) {
+      openEnd = end;
+    }
+  }
+  return total + (openEnd - openStart);
+}
+
+/**
+ * Records one settled tool EXECUTION interval into the open Task (called by stream-model when a
+ * tool's output closes). Zero-length and reversed intervals are dropped rather than clamped:
+ * they carry no wall time, and keeping them would only grow the array.
+ */
+export function addToolExecution(t: TaskStatsTracker, startMs: number, endMs: number): void {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return;
+  t.taskToolIntervals.push([startMs, endMs]);
 }
 
 /**
@@ -153,12 +212,18 @@ export function seedPriorStats(
   prior: {
     subagentTokens: number;
     elapsedMs: number;
+    apiMs: number;
+    toolMs: number;
     sessionTokens: number;
     contextTokens: number;
   },
 ): void {
   t.subagentTotal = prior.subagentTokens;
   t.sessionElapsedMs = prior.elapsedMs;
+  // The elapsed breakdown is seeded alongside its total: seeding one without the others would
+  // show a windowed reload a full elapsed time next to components covering only the window.
+  t.sessionLlmMs = prior.apiMs;
+  t.sessionToolMs = prior.toolMs;
   t.sessionTotal = prior.sessionTokens;
   t.contextNow = prior.contextTokens;
   // The first in-window stats row's context delta measures against the pre-window
@@ -279,6 +344,9 @@ export function resetTaskCounters(t: TaskStatsTracker): void {
   t.taskOutput = 0;
   t.taskMainOutput = 0;
   t.taskLlmMs = 0;
+  // Dropped, not folded into the session cumulative — the same treatment sessionElapsedMs gets
+  // here: time measured outside a Task boundary belongs to no Task and enters no total.
+  t.taskToolIntervals = [];
   // Unsettled pending compaction usage is discarded here: the round has ended and no further
   // Request follows in this round → compaction after round end, doesn't belong to this round.
   clearPendingCompaction(t);
@@ -307,6 +375,14 @@ export interface TaskStats {
  */
 export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | null {
   t.sessionElapsedMs += elapsedMs;
+  // The two components fold on the same boundary as the total above and are cleared here, so
+  // the early return below (a Task with no usage) cannot leave them to be folded a second time.
+  // taskLlmMs is still the TPS denominator further down, so it is read out before clearing.
+  const taskLlmMs = t.taskLlmMs;
+  t.sessionLlmMs += taskLlmMs;
+  t.sessionToolMs += mergedIntervalMs(t.taskToolIntervals);
+  t.taskLlmMs = 0;
+  t.taskToolIntervals = [];
   // Unsettled pending compaction usage is discarded at close: the round's end is fixed and no
   // further Request follows in this round → compaction after round end, doesn't belong to this round.
   clearPendingCompaction(t);
@@ -326,7 +402,7 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
       cacheWrite: t.taskCacheWrite,
       output: t.taskOutput,
     },
-    outputTps: computeTps(t.taskMainOutput, t.taskLlmMs),
+    outputTps: computeTps(t.taskMainOutput, taskLlmMs),
   };
   t.contextAtLastStats = t.contextNow;
   t.taskTokens = 0;
@@ -334,10 +410,32 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
   t.taskCacheWrite = 0;
   t.taskOutput = 0;
   t.taskMainOutput = 0;
-  t.taskLlmMs = 0;
   t.hasUsage = false;
   t.compactionActive = false;
   return stats;
+}
+
+/** The two measured components of a Session's elapsed time (see sessionElapsedBreakdown). */
+export interface ElapsedBreakdown {
+  apiMs: number;
+  toolMs: number;
+}
+
+/**
+ * The elapsed time's breakdown for display: the settled cross-Task cumulative plus whatever the
+ * OPEN Task has settled so far, so the parts keep pace with the ticking total instead of lagging
+ * a whole Task behind it. Both are exact at every moment — a Request or tool still in flight
+ * joins only when it closes, which is why the parts trail the total slightly mid-turn.
+ *
+ * They are two measurements, not a partition: they can overlap (a background tool running while
+ * the model decodes) and they can undershoot (approval waits and harness overhead belong to
+ * neither), so a caller must never derive one from the elapsed total minus the other.
+ */
+export function sessionElapsedBreakdown(t: TaskStatsTracker): ElapsedBreakdown {
+  return {
+    apiMs: t.sessionLlmMs + t.taskLlmMs,
+    toolMs: t.sessionToolMs + mergedIntervalMs(t.taskToolIntervals),
+  };
 }
 
 /**

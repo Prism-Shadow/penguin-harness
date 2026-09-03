@@ -70,6 +70,7 @@ import type {
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
+  addToolExecution,
   beginCompaction,
   commitPendingCompaction,
   createTaskStatsTracker,
@@ -1105,7 +1106,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.event_type === "stop") {
         card.outputStreaming = false;
         if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
-        settleToolDuration(card, tsMs);
+        settleToolDuration(card, tsMs, model.stats);
       }
       return;
     }
@@ -1371,7 +1372,7 @@ function handleComplete(
       card.outputStreaming = false;
       card.outputComplete = true;
       if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
-      settleToolDuration(card, tsOf(timestamp));
+      settleToolDuration(card, tsOf(timestamp), model.stats);
       // This turn owes the model its results, so a compaction triggering now is mid-Task
       // and the round is not over (see turnToolOutputs).
       model.turnToolOutputs = true;
@@ -1437,7 +1438,11 @@ function settleThinkingDuration(item: ThinkingItem, endMs: number | undefined): 
  * the already-settled generation segment.
  * Degrades to a pure execution segment when the start point is missing, still never negative.
  */
-function settleToolDuration(card: ToolCallItem, endMs: number | undefined): void {
+function settleToolDuration(
+  card: ToolCallItem,
+  endMs: number | undefined,
+  stats?: TaskStatsTracker,
+): void {
   if (endMs === undefined) return;
   const execStart = card.approvalAtMs ?? card.callStartedAtMs;
   if (execStart === undefined) return;
@@ -1446,6 +1451,10 @@ function settleToolDuration(card: ToolCallItem, endMs: number | undefined): void
       ? Math.max(0, card.callStartedAtMs - card.argStartedAtMs)
       : 0;
   card.durationMs = genMs + Math.max(0, endMs - execStart);
+  // The execution half alone feeds the session's tool wall time: the generation half above is
+  // the model streaming arguments and is already inside taskLlmMs. Settling twice (a streamed
+  // stop, then the complete message) is harmless — the intervals are unioned, not summed.
+  if (stats) addToolExecution(stats, execStart, endMs);
 }
 
 /**

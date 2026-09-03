@@ -45,7 +45,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 3;
+export const CACHE_VERSION = 4;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -55,6 +55,18 @@ export interface WindowPriorStats {
   subagentTokens: number;
   /** Sum of finished Tasks' elapsed time before this point (the Web's sessionElapsedMs basis). */
   elapsedMs: number;
+  /**
+   * Sum of finished Tasks' model-API time before this point (the Web's sessionLlmMs basis):
+   * paired request spans with the human approval wait deducted, compaction requests excluded —
+   * the same scope `elapsedMs` uses, so the component and its total cover the same turns.
+   */
+  apiMs: number;
+  /**
+   * Sum of finished Tasks' tool wall time before this point (the Web's sessionToolMs basis):
+   * per Task the union of its tool execution intervals, so parallel tools count once. Overlaps
+   * `apiMs` when a tool runs on while the model decodes; the two never partition `elapsedMs`.
+   */
+  toolMs: number;
   /** The last main-session token_usage `session.total` seen before this point (0 = none). */
   sessionTokens: number;
   /** The last main-session NON-compaction token_usage `request.total` before this point (context occupancy basis). */
@@ -82,6 +94,43 @@ interface TaskCarry {
    * written by a pre-stamp core (see the user-text branch).
    */
   turnToolOutputs: boolean;
+  /** Open Request's begin timestamp (ms), null between Requests (mirrors StreamModel.openRequestBeginMs). */
+  reqBeginMs: number | null;
+  /** Approval wait accumulated inside the open Request (ms), deducted at its end (mirrors StreamModel.openApprovalWaitMs). */
+  reqApprovalWaitMs: number;
+  /** This Task's model-API time so far (ms; mirrors task-stats taskLlmMs). */
+  apiMs: number;
+  /**
+   * Tool executions still open, keyed by tool_call_id, holding each one's execution start (ms):
+   * the tool_call's own timestamp, moved forward to the approval moment once one arrives. A
+   * plain object rather than a Map because a shard is cached mid-Task and this state is JSON.
+   */
+  openTools: Record<string, number>;
+  /** This Task's settled tool execution intervals (ms), unioned when it closes (mirrors task-stats taskToolIntervals). */
+  toolIntervals: Array<[number, number]>;
+}
+
+/**
+ * Total length of the **union** of the given intervals (ms): overlapping and nested runs count
+ * once, so parallel tool calls yield wall time rather than a sum of durations. Shared with
+ * trace-service, which decomposes finished Trace files the same way.
+ */
+export function mergedIntervalMs(intervals: ReadonlyArray<readonly [number, number]>): number {
+  if (intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let [openStart, openEnd] = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = sorted[i]!;
+    if (start > openEnd) {
+      total += openEnd - openStart;
+      openStart = start;
+      openEnd = end;
+    } else if (end > openEnd) {
+      openEnd = end;
+    }
+  }
+  return total + (openEnd - openStart);
 }
 
 /** Full scanner state, serializable into a shard's cached prefix record. */
@@ -104,7 +153,15 @@ export interface ScanState {
 
 export function initialScanState(): ScanState {
   return {
-    totals: { turns: 0, subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+    totals: {
+      turns: 0,
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    },
     task: {
       open: false,
       firstTsMs: 0,
@@ -114,6 +171,11 @@ export function initialScanState(): ScanState {
       sawReply: false,
       pendingCompactionUsage: false,
       turnToolOutputs: false,
+      reqBeginMs: null,
+      reqApprovalWaitMs: 0,
+      apiMs: 0,
+      openTools: {},
+      toolIntervals: [],
     },
     compactionActive: false,
     steeringOpen: false,
@@ -156,6 +218,10 @@ function finalizeTask(state: ScanState): void {
   t.open = false;
   const endMs = t.lastReqEndMs ?? t.lastTsMs;
   state.totals.elapsedMs += Math.max(0, endMs - t.firstTsMs);
+  // The elapsed breakdown folds on the same boundary as the total (mirrors task-stats endTask).
+  // Tools still open at the close never finished within this trace and contribute nothing.
+  state.totals.apiMs += t.apiMs;
+  state.totals.toolMs += mergedIntervalMs(t.toolIntervals);
   t.pendingCompactionUsage = false;
 }
 
@@ -171,6 +237,11 @@ function startTask(state: ScanState, ms: number | null): void {
   t.sawReply = false;
   t.pendingCompactionUsage = false;
   t.turnToolOutputs = false;
+  t.reqBeginMs = null;
+  t.reqApprovalWaitMs = 0;
+  t.apiMs = 0;
+  t.openTools = {};
+  t.toolIntervals = [];
 }
 
 /** A non-user item entered the stream: the user-item run breaks (buildOutline's lastWasUser = false). */
@@ -318,6 +389,11 @@ export async function scanMessages(
       }
       if (p.type === "tool_call") {
         touchTask(state, ms);
+        // Execution starts here unless an approval follows and moves it (mirrors
+        // stream-model's settleToolDuration, which prefers approvalAtMs over callStartedAtMs).
+        if (ms !== null && typeof p.tool_call_id === "string" && p.tool_call_id !== "") {
+          state.task.openTools[p.tool_call_id] = ms;
+        }
         breakRuns(state);
         continue;
       }
@@ -325,6 +401,13 @@ export async function scanMessages(
         // Updates an existing card (no new item); the turn now owes the model its results
         // — the window a positionally-recognized notice keys on (see turnToolOutputs).
         touchTask(state, ms);
+        if (ms !== null && typeof p.tool_call_id === "string") {
+          const startMs = state.task.openTools[p.tool_call_id];
+          if (startMs !== undefined) {
+            delete state.task.openTools[p.tool_call_id];
+            if (ms > startMs) state.task.toolIntervals.push([startMs, ms]);
+          }
+        }
         state.task.turnToolOutputs = true;
         continue;
       }
@@ -354,6 +437,17 @@ export async function scanMessages(
         continue;
       }
       if (t === "request_end") {
+        // Pair with request_begin for this Task's API time, deducting the approval wait that
+        // falls inside the span (core awaits approval inside the streaming loop). Settled
+        // before the compaction guard below so a compaction Request still clears the pairing;
+        // its time is excluded here exactly as it is from the Chat page's elapsed.
+        const reqBeginMs = state.task.reqBeginMs;
+        const reqWaitMs = state.task.reqApprovalWaitMs;
+        state.task.reqBeginMs = null;
+        state.task.reqApprovalWaitMs = 0;
+        if (!state.compactionActive && reqBeginMs !== null && ms !== null) {
+          state.task.apiMs += Math.max(0, ms - reqBeginMs - reqWaitMs);
+        }
         if (state.compactionActive) continue; // compaction requests render nothing
         if (ms !== null) state.task.lastReqEndMs = ms;
         // Pending compaction usage commits at a later non-compaction request_end
@@ -405,9 +499,24 @@ export async function scanMessages(
         // outputs have been sent with it (mirrors stream-model's request_begin reset;
         // compaction requests don't consume the pending turn state).
         if (!state.compactionActive) state.task.turnToolOutputs = false;
+        if (ms !== null) state.task.reqBeginMs = ms;
         continue;
       }
-      // approval_decision / unexpanded pointers: no items, no run change.
+      if (t === "approval_decision") {
+        // The human wait ran inside the open Request (core awaits approval in the streaming
+        // loop), so it is deducted from API time; execution only begins now, so the tool's
+        // interval start moves here (mirrors stream-model noteApprovalWait + settleToolDuration).
+        const id = (p as { tool_call_id?: unknown }).tool_call_id;
+        if (ms !== null && typeof id === "string") {
+          const calledMs = state.task.openTools[id];
+          if (calledMs !== undefined) {
+            if (ms > calledMs) state.task.reqApprovalWaitMs += ms - calledMs;
+            state.task.openTools[id] = ms;
+          }
+        }
+        continue;
+      }
+      // Unexpanded pointers: no items, no run change.
       continue;
     }
     // session_meta: no item (steering window already closed above).
