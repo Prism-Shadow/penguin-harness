@@ -1197,20 +1197,32 @@ export const zh = {
       {
         key: "todo",
         label: "待办事项应用",
+        description: "Express 接口、React 前端与 SQLite 存储",
         prompt:
           "做一个前后端完整的待办事项应用：Node.js + Express 提供 REST API，React 前端，SQLite 存储，运行在 3000 端口",
       },
-      { key: "bookmarks", label: "书签管理网站", prompt: "做一个个人书签管理网站，支持标签与搜索" },
-      { key: "csv", label: "CSV 图表小工具", prompt: "做一个把 CSV 上传后自动生成图表的小工具" },
+      {
+        key: "bookmarks",
+        label: "书签管理网站",
+        description: "个人书签，支持标签与搜索",
+        prompt: "做一个个人书签管理网站，支持标签与搜索",
+      },
+      {
+        key: "csv",
+        label: "CSV 图表小工具",
+        description: "上传 CSV 文件，直接得到图表",
+        prompt: "做一个把 CSV 上传后自动生成图表的小工具",
+      },
       {
         key: "weekly",
         label: "团队周报收集页",
+        description: "提交页面，把周报汇总成 Markdown",
         prompt: "做一个团队周报收集页面，提交后汇总成 Markdown",
       },
-    ] as ReadonlyArray<{ key: string; label: string; prompt: string }>,
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
     /** Fixed instruction tail behind the user's description (shown in the panel's full-prompt fold). */
     aiCreateTail:
-      "请使用 software-engineering、web-design 与 app-center 技能：在当前 Workspace 里构建这个应用；以后台方式在固定端口运行；用 curl 之类的浏览器式检查验证它能正常访问；然后用 `penguin app register` 把它登记到应用中心（带上访问地址与启动 / 停止命令），最后告诉我访问地址。",
+      '请使用 software-engineering、web-design 与 app-center 技能：在当前 Workspace 里构建这个应用，以后台方式在固定端口运行，并用 curl 之类的浏览器式检查验证它能正常访问。然后执行 `penguin app register --name "<显示名称>" --url http://localhost:<端口> --start-command "<启动命令>" --stop-command "<只停止该应用的命令>" --kind web|api|cli|other` 把它登记到应用中心——`--name` 必填，所属会话、Agent 与 Workspace 由本会话自动填入——最后告诉我访问地址。',
     form: {
       createTitle: "手动登记应用",
       editTitle: (name: string): string => `编辑「${name}」`,

@@ -1230,29 +1230,33 @@ export const en: Strings = {
       {
         key: "todo",
         label: "Todo app",
+        description: "An Express API, a React frontend and SQLite storage",
         prompt:
           "Build a complete full-stack todo app: a Node.js + Express REST API, a React frontend, SQLite storage, running on port 3000",
       },
       {
         key: "bookmarks",
         label: "Bookmark manager",
+        description: "Personal bookmarks, kept with tags and search",
         prompt: "Build a personal bookmark manager site with tags and search",
       },
       {
         key: "csv",
         label: "CSV chart tool",
+        description: "Upload a CSV file, get charts back",
         prompt: "Build a small tool that turns an uploaded CSV file into charts",
       },
       {
         key: "weekly",
         label: "Weekly report collector",
+        description: "A submission page that compiles the entries into Markdown",
         prompt:
           "Build a team weekly-report collection page that compiles the submissions into Markdown",
       },
-    ] as ReadonlyArray<{ key: string; label: string; prompt: string }>,
+    ] as ReadonlyArray<{ key: string; label: string; description: string; prompt: string }>,
     /** Fixed instruction tail behind the user's description (shown in the panel's full-prompt fold). */
     aiCreateTail:
-      "Use the software-engineering, web-design and app-center skills: build the app in the current Workspace, run it in the background on a stable port, verify it works with a browser-like check (curl), then register it with `penguin app register` (with its URL and start / stop commands) so it appears in the App Center, and end by telling me the URL.",
+      'Use the software-engineering, web-design and app-center skills: build the app in the current Workspace, run it in the background on a stable port, and verify it answers with a browser-like check (curl). Then register it so it appears in the App Center — `penguin app register --name "<display name>" --url http://localhost:<port> --start-command "<command that starts it>" --stop-command "<command that stops only this app>" --kind web|api|cli|other`, where `--name` is required and the owning Session, its agent and its Workspace are filled in from this Session — and end by telling me the URL.',
     form: {
       createTitle: "Register an app manually",
       editTitle: (name: string): string => `Edit "${name}"`,
