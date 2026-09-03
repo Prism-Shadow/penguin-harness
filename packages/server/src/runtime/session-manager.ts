@@ -1579,6 +1579,8 @@ export class SessionManager {
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
+    /** Background-task counts the discarded runtime last reported (see the publish below). */
+    let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
     if (existing) {
       if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
         return existing;
@@ -1595,6 +1597,7 @@ export class SessionManager {
         return existing;
       }
       this.entries.delete(sessionId);
+      discardedBackgroundTasks = existing.backgroundTasks;
     }
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
@@ -1640,10 +1643,16 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
-      backgroundTasks: backgroundTaskCounts(session),
+      // Baselined on the DISCARDED runtime's counts when there was one: the replacement
+      // resumes with empty registries, so a client that saw the old counts would keep its
+      // background-task mark with no ping left to clear it. Publishing against that baseline
+      // below reports whatever the fresh runtime actually owns — nothing, in every case the
+      // discard path produces today.
+      backgroundTasks: discardedBackgroundTasks ?? backgroundTaskCounts(session),
     };
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
+    if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
     return entry;
   }
 

@@ -39,6 +39,7 @@ import type {
   OmniMessage,
   TextPayload,
 } from "@prismshadow/penguin-core";
+import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -1152,6 +1153,48 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("c")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
+  });
+
+  it("invalidateAgentRuntimes: the discarded runtime's background-task count is published as cleared", async () => {
+    // The discard path drops the entry WITHOUT disposing it, so the replacement resumes with
+    // empty registries. The counts move without any core ping to carry them: without the
+    // publish below, a Session list that had drawn the background-task mark would sit on a
+    // count nothing can move again, while a plain list fetch already reports none.
+    const withProcess: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      listBackgroundCommands: () => [
+        {
+          processId: "proc-11111111",
+          pid: 4242,
+          cmd: "pnpm dev",
+          cwd: "/tmp/w",
+          startedAt: Date.UTC(2026, 8, 2, 10, 0, 0),
+          running: true,
+        },
+      ],
+    };
+    const published: ServerEvent[] = [];
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      sources,
+      loader: loaderOf(approvalFakeSession("session-1")),
+      recorder: { record: async () => undefined },
+      notifyProjectUsers: (_projectId, event) => published.push(event),
+      log: () => {},
+    });
+    sessions.updateApprovalMode("session-1", "allow-all");
+    manager.adopt(ROW, withProcess);
+    expect(manager.backgroundTasksOf("session-1")).toEqual({ processes: 1, subagents: 0 });
+
+    manager.invalidateAgentRuntimes("p1", "a1");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+
+    expect(published.filter((e) => e.type === "session_background")).toEqual([
+      { type: "session_background", sessionId: "session-1", processes: 0, subagents: 0 },
+    ]);
+    expect(manager.backgroundTasksOf("session-1")).toBeUndefined();
   });
 
   it("invalidateAgentRuntimes mid-run: the in-flight Task keeps its runtime; the first Task after it finishes re-resumes", async () => {
