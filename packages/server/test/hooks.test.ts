@@ -247,7 +247,32 @@ describe("hooks api", () => {
         })
       ).status,
     ).toBe(400);
+    // A file entry named exactly like the single top level: its relative path would be empty,
+    // and writing it would land on the staging directory itself.
+    expect(
+      (await member.post(url, { dataBase64: zipB64({ ...packageFiles("h"), h: strToU8("x") }) }))
+        .status,
+    ).toBe(400);
     await expect(fs.readdir(hooksDir(t.root, projectId, "zip_shape_agent"))).resolves.toEqual([]);
+  });
+
+  it("archive: a compression bomb is refused off the declared sizes, without inflating", async () => {
+    await createPlainAgent("zip_bomb_agent");
+    const url = `${base("zip_bomb_agent")}/archive`;
+    // 128MB of zeros deflate to ~130KB — comfortably inside the request caps, so the only
+    // thing standing between the upload and 128MB of heap is where the size cap is applied.
+    const bomb = zipB64({ ...packageFiles("h"), "h/pad.bin": new Uint8Array(128 * 1024 * 1024) });
+    const before = process.memoryUsage().rss;
+    const res = await member.post(url, { dataBase64: bomb });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toMatch(
+      /5MB uncompressed limit/,
+    );
+    // The regression's actual subject: the entry is rejected from the central directory, so
+    // nothing is inflated. Checking the bytes after unzipSync returned would pass this
+    // assertion's status check and still have put the whole 128MB on the heap.
+    expect((process.memoryUsage().rss - before) / (1024 * 1024)).toBeLessThan(48);
+    await expect(fs.readdir(hooksDir(t.root, projectId, "zip_bomb_agent"))).resolves.toEqual([]);
   });
 
   it("archive: already installed is 409 hook_exists; overwrite replaces the directory (stale files removed)", async () => {

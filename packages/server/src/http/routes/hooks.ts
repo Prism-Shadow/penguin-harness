@@ -21,7 +21,6 @@ import { Hono } from "hono";
 import {
   PLUGIN_NAME_PATTERN,
   PLUGIN_VERSION_PATTERN,
-  hookPackageEnabled,
   hooksDir,
   listInstalledHooks,
   removeHook,
@@ -147,30 +146,43 @@ function normalizeHookManifest(
  * them); every file path is zip-slip-checked and the count/size limits enforced before
  * anything is returned. The manifest comes back normalized (see normalizeHookManifest) in
  * place of the uploaded bytes.
+ *
+ * The path and size checks run in unzipSync's `filter`, i.e. off the central directory and
+ * BEFORE inflation: unzipSync allocates each entry's declared uncompressed size up front, so
+ * a cap applied to the inflated bytes bounds nothing — 256KB of deflated zeros, well under
+ * the request cap, already puts 256MB on the heap by the time it runs. A declared size that
+ * lies is harmless: fflate inflates into exactly that buffer and truncates, it never grows it.
  */
 function parseHookArchive(archive: Buffer): ArchiveHook {
+  let count = 0;
+  let total = 0;
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(new Uint8Array(archive));
-  } catch {
+    entries = unzipSync(new Uint8Array(archive), {
+      filter: (file) => {
+        if (file.name.endsWith("/")) return false;
+        assertSafeEntryPath(file.name);
+        count += 1;
+        if (count > MAX_ARCHIVE_FILES) {
+          throw badRequest(`The zip archive exceeds the ${MAX_ARCHIVE_FILES}-file limit.`);
+        }
+        if (file.originalSize > MAX_FILE_BYTES) {
+          throw badRequest(`Zip entry exceeds the 5MB uncompressed limit: ${file.name}`);
+        }
+        total += file.originalSize;
+        if (total > MAX_TOTAL_BYTES) {
+          throw badRequest("The zip archive exceeds the 20MB uncompressed limit.");
+        }
+        return true;
+      },
+    });
+  } catch (err) {
+    // A cap the filter tripped is the answer; anything else means the bytes are not a zip.
+    if (err instanceof HttpError) throw err;
     throw badRequest("dataBase64 is not a valid zip archive.");
   }
-  const files = Object.entries(entries).filter(([name]) => !name.endsWith("/"));
+  const files = Object.entries(entries);
   if (files.length === 0) throw badRequest("The zip archive contains no files.");
-  if (files.length > MAX_ARCHIVE_FILES) {
-    throw badRequest(`The zip archive exceeds the ${MAX_ARCHIVE_FILES}-file limit.`);
-  }
-  let total = 0;
-  for (const [name, data] of files) {
-    assertSafeEntryPath(name);
-    if (data.byteLength > MAX_FILE_BYTES) {
-      throw badRequest(`Zip entry exceeds the 5MB uncompressed limit: ${name}`);
-    }
-    total += data.byteLength;
-    if (total > MAX_TOTAL_BYTES) {
-      throw badRequest("The zip archive exceeds the 20MB uncompressed limit.");
-    }
-  }
   const names = files.map(([name]) => name);
   let prefix = "";
   let dirName: string | undefined;
@@ -183,6 +195,12 @@ function parseHookArchive(archive: Buffer): ArchiveHook {
       );
     }
     prefix = `${dirName}/`;
+    // A file entry named exactly `<dirName>` (no slash) shares the single top level with the
+    // directory: stripping the prefix would leave an empty relative path, and writing it would
+    // hit the staging directory itself (EISDIR) after validation had already passed.
+    if (names.includes(dirName)) {
+      throw badRequest(`Invalid zip entry path (it is the package directory): ${dirName}`);
+    }
   }
   const relative = new Map(files.map(([n, data]) => [n.slice(prefix.length), data]));
   let raw: unknown;
@@ -357,13 +375,11 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     await requireInstalled(projectId, agentId, name);
     await setHookEnabled(deps.config.root, projectId, agentId, name, enabled);
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    // Read back for the icon and the display fields the list carries; only a concurrent
+    // uninstall can make it absent by now, which reads as the 404 this route already answers.
     const item = (await installedItems(projectId, agentId)).find((h) => h.name === name);
-    if (item === undefined || hookPackageEnabled(item) !== enabled) {
-      throw new HttpError(
-        500,
-        "hook_switch_failed",
-        `Hook package ${name} did not take the switch.`,
-      );
+    if (item === undefined) {
+      throw new HttpError(404, "not_found", `Hook package is not installed: ${name}`);
     }
     return c.json(item);
   });

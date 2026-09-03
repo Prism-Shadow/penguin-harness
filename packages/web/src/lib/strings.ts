@@ -1198,7 +1198,8 @@ export const zh = {
     /** The import modal's two modes (a Segmented control). */
     importModeUpload: "上传压缩包",
     importModeAi: "让 AI 导入",
-    importUploadDesc: "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。",
+    importUploadDesc:
+      "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。导入的钩子包默认启用：其脚本会在本机的每个钩子点运行，请只导入可信的包。",
     importUploadAction: "选择 zip 文件",
     importUploading: "上传中…",
     importDoneToast: "钩子包已安装",
@@ -2452,8 +2453,10 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
-      goal_plugin_not_installed: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
+      goal_plugin_not_installed:
+        "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
+      hook_too_large: "该钩子包过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
       not_pending: "该插话已随本轮送达模型，无法撤回。",
       follow_up_started: "该跟进消息已开始发送，无法撤回。",

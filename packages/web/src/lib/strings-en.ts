@@ -1228,7 +1228,7 @@ export const en: Strings = {
     importModeUpload: "Upload a zip",
     importModeAi: "Let AI import",
     importUploadDesc:
-      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them.",
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An imported package is switched on: its scripts run on this machine at every hook point, so import only what you trust.",
     importUploadAction: "Choose zip file",
     importUploading: "Uploading…",
     importDoneToast: "Hook package installed",
@@ -2505,8 +2505,9 @@ Scenarios:
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
-        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
+      hook_too_large: "This hook package exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",
