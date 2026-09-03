@@ -147,11 +147,13 @@ function normalizeHookManifest(
  * anything is returned. The manifest comes back normalized (see normalizeHookManifest) in
  * place of the uploaded bytes.
  *
- * The path and size checks run in unzipSync's `filter`, i.e. off the central directory and
- * BEFORE inflation: unzipSync allocates each entry's declared uncompressed size up front, so
- * a cap applied to the inflated bytes bounds nothing — 256KB of deflated zeros, well under
- * the request cap, already puts 256MB on the heap by the time it runs. A declared size that
- * lies is harmless: fflate inflates into exactly that buffer and truncates, it never grows it.
+ * The path and size checks run in unzipSync's `filter`, i.e. off the central directory's
+ * DECLARED sizes and before a byte is inflated. A cap read off the inflated result bounds
+ * nothing, in two separate ways. Honest entries: 256KB of deflated zeros — three orders of
+ * magnitude under the request cap — is already 256MB on the heap by the time such a cap runs.
+ * Lying entries are worse: unzipSync allocates the declared size and inflates into it, so a
+ * 123-byte archive whose 5-byte entry declares 512MB allocates 512MB, and what comes back is
+ * a 5-byte VIEW of that buffer — a check on the returned bytes sees 5 and installs it.
  */
 function parseHookArchive(archive: Buffer): ArchiveHook {
   let count = 0;

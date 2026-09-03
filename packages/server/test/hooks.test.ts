@@ -73,6 +73,37 @@ describe("hooks api", () => {
     [`${dir}/hooks.json`]: strToU8(manifestText(manifest)),
     [`${dir}/stop.mjs`]: strToU8(STOP_MJS),
   });
+  /**
+   * Rewrites one entry's declared uncompressed size in both the local and the central header
+   * (fflate reads the central one) and reports that record's compression method. No zip writer
+   * produces this; a hand-rolled archive does, and the declared size is what unzipSync
+   * allocates — but only on the deflate path: a stored entry (method 0) is sliced at its
+   * compressed size and never reads the declared one, so a fixture that stored its payload
+   * would reproduce nothing. The caller asserts the method for that reason.
+   */
+  const declareSize = (
+    zip: Uint8Array,
+    entry: string,
+    declared: number,
+  ): { zip: Uint8Array; method: number } => {
+    const want = strToU8(entry);
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    const nameAt = (off: number): boolean => want.every((b, k) => zip[off + k] === b);
+    let method = -1;
+    for (let i = 0; i + 46 <= zip.length; i++) {
+      const sig = dv.getUint32(i, true);
+      // Local file header: method at +8, uncompressed size at +22, name length at +26, name at +30.
+      if (sig === 0x04034b50 && dv.getUint16(i + 26, true) === want.length && nameAt(i + 30)) {
+        dv.setUint32(i + 22, declared, true);
+      }
+      // Central directory header: method at +10, uncompressed size at +24, name length at +28, name at +46.
+      if (sig === 0x02014b50 && dv.getUint16(i + 28, true) === want.length && nameAt(i + 46)) {
+        method = dv.getUint16(i + 10, true);
+        dv.setUint32(i + 24, declared, true);
+      }
+    }
+    return { zip, method };
+  };
 
   it("lists installed packages with the switch on; PATCH is the owner's and writes enabled into hooks.json", async () => {
     await createPlainAgent("sw_agent");
@@ -256,23 +287,47 @@ describe("hooks api", () => {
     await expect(fs.readdir(hooksDir(t.root, projectId, "zip_shape_agent"))).resolves.toEqual([]);
   });
 
-  it("archive: a compression bomb is refused off the declared sizes, without inflating", async () => {
+  it("archive: an entry over the per-file cap is refused however small the archive is", async () => {
     await createPlainAgent("zip_bomb_agent");
     const url = `${base("zip_bomb_agent")}/archive`;
-    // 128MB of zeros deflate to ~130KB — comfortably inside the request caps, so the only
-    // thing standing between the upload and 128MB of heap is where the size cap is applied.
-    const bomb = zipB64({ ...packageFiles("h"), "h/pad.bin": new Uint8Array(128 * 1024 * 1024) });
-    const before = process.memoryUsage().rss;
-    const res = await member.post(url, { dataBase64: bomb });
+    // 8MB of zeros deflate to a few KB, so the request caps never see it coming: the only
+    // thing between this upload and 8MB of heap is where the per-file cap is applied.
+    const zip = zipSync({ ...packageFiles("h"), "h/pad.bin": new Uint8Array(8 * 1024 * 1024) });
+    expect(zip.byteLength).toBeLessThan(64 * 1024);
+    const res = await member.post(url, { dataBase64: Buffer.from(zip).toString("base64") });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: { message: string } }).error.message).toMatch(
-      /5MB uncompressed limit/,
+    // Naming the entry pins the refusal to the per-file declared-size branch, rather than to
+    // some total measured later; the sub-64KB archive is the proof nothing post-inflation
+    // could have done it without first putting the 8MB on the heap.
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
+      "5MB uncompressed limit: h/pad.bin",
     );
-    // The regression's actual subject: the entry is rejected from the central directory, so
-    // nothing is inflated. Checking the bytes after unzipSync returned would pass this
-    // assertion's status check and still have put the whole 128MB on the heap.
-    expect((process.memoryUsage().rss - before) / (1024 * 1024)).toBeLessThan(48);
     await expect(fs.readdir(hooksDir(t.root, projectId, "zip_bomb_agent"))).resolves.toEqual([]);
+  });
+
+  it("archive: an entry that lies about its uncompressed size is refused, not installed", async () => {
+    await createPlainAgent("zip_lie_agent");
+    const url = `${base("zip_lie_agent")}/archive`;
+    // The other half of the bomb, and the one a cap on the inflated bytes cannot see at all:
+    // unzipSync allocates the DECLARED size and inflates into it, then hands back a view of
+    // the real length. So a sub-kilobyte archive whose 5-byte entry declares 512MB takes
+    // 512MB of heap and returns 5 bytes — a check on the returned bytes reads 5 and installs
+    // the package (pre-fix this route answered 201 here).
+    const { zip, method } = declareSize(
+      zipSync({ ...packageFiles("h"), "h/pad.bin": strToU8("hello") }),
+      "h/pad.bin",
+      512 * 1024 * 1024,
+    );
+    // Deflate, not stored: a stored entry is sliced at its compressed size and never reads
+    // the declared one, which would make this fixture prove nothing.
+    expect(method).toBe(8);
+    expect(zip.byteLength).toBeLessThan(1024);
+    const res = await member.post(url, { dataBase64: Buffer.from(zip).toString("base64") });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
+      "5MB uncompressed limit: h/pad.bin",
+    );
+    await expect(fs.readdir(hooksDir(t.root, projectId, "zip_lie_agent"))).resolves.toEqual([]);
   });
 
   it("archive: already installed is 409 hook_exists; overwrite replaces the directory (stale files removed)", async () => {
