@@ -661,9 +661,7 @@ export function OverviewPage() {
                               names={names}
                             />
                           </span>
-                          <span
-                            className={`shrink-0 text-xs ${tone === "muted" ? "text-gray-400 dark:text-gray-500" : toneInk[tone]}`}
-                          >
+                          <span className={`shrink-0 text-xs ${toneInk[tone]}`}>
                             {markLabel(entry.mark)}
                           </span>
                         </button>

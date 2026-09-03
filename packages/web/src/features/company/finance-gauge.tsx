@@ -32,7 +32,7 @@ export function FinanceGauge({
       viewBox={`0 0 ${size} ${size}`}
       role="img"
       aria-label={label}
-      className={`block shrink-0 ${tone === "muted" ? "text-gray-400 dark:text-gray-500" : toneInk[tone]}`}
+      className={`block shrink-0 ${toneInk[tone]}`}
     >
       <title>{label}</title>
       <circle

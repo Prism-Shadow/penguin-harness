@@ -380,9 +380,6 @@ export function CalendarPage() {
     </>
   );
 
-  const navButtonClass =
-    "flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200";
-
   /** A month cell: the day number, up to three chips, the rest folded into a count; the cell itself creates at 09:00. */
   const monthCell = (day: GridDay) => {
     const list = byDay.get(day.key) ?? [];
@@ -570,27 +567,27 @@ export function CalendarPage() {
     <OrgPage title={S.nav.org.calendar} info={S.company.calendar.info} actions={toolbar} wide>
       {/* Navigation row: previous / today / next, the heading, and the employee filter. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
+        <Button
+          size="icon"
+          variant="ghost"
           title={S.company.calendar.prev}
           aria-label={S.company.calendar.prev}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, -1))}
-          className={navButtonClass}
         >
           <GlyphIcon d={PREV_ICON} size={ICON_SIZE.iconButton} />
-        </button>
+        </Button>
         <Button size="sm" onClick={() => setAnchor(Date.now())}>
           {S.company.calendar.today}
         </Button>
-        <button
-          type="button"
+        <Button
+          size="icon"
+          variant="ghost"
           title={S.company.calendar.next}
           aria-label={S.company.calendar.next}
           onClick={() => setAnchor((a) => shiftAnchor(a, view, 1))}
-          className={navButtonClass}
         >
           <GlyphIcon d={NEXT_ICON} size={ICON_SIZE.iconButton} />
-        </button>
+        </Button>
         <span className="text-sm font-semibold tabular-nums">{heading}</span>
         <div className="ml-auto w-48">
           <Select

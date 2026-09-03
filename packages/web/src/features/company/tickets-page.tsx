@@ -217,7 +217,7 @@ export function TicketsPage() {
         }}
         onClick={() => openTicket(t.ticketId)}
         onKeyDown={onKey}
-        title={`${t.ticketId} · ${S.company.tickets.dragHint}`}
+        title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
         className={`block w-full cursor-grab rounded-md border bg-white p-2.5 text-left text-xs transition-colors duration-150 hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)]/40 dark:bg-gray-900 dark:hover:border-gray-600 ${
           t.invalid !== undefined
             ? "border-red-300 dark:border-red-800"
@@ -367,6 +367,8 @@ export function TicketsPage() {
             : columns.map((col) => (
                 <div
                   key={col.status}
+                  role="group"
+                  aria-label={`${S.company.tickets.columns[col.status] ?? col.status} · ${col.tickets.length}`}
                   {...columnDrop(col.status)}
                   className={`${columnClass} ${
                     dropOver === col.status
@@ -646,6 +648,12 @@ function CreateTicketDialog({
           onChange={(e) => {
             setTitle(e.target.value);
             setTitleError(undefined);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
           }}
         />
         <Textarea

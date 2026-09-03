@@ -251,6 +251,7 @@ export function TicketDrawer({
       <Textarea
         size="sm"
         rows={6}
+        aria-label={S.company.tickets[section]}
         value={textDraft}
         autoFocus
         onChange={(e) => setTextDraft(e.target.value)}
@@ -601,7 +602,7 @@ export function TicketDrawer({
                             </span>
                             {activity !== null && <SessionActivityIcon activity={activity} />}
                             {s.lastActiveAt !== undefined && (
-                              <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400">
+                              <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
                                 {formatDateTime(s.lastActiveAt)}
                               </span>
                             )}
@@ -665,7 +666,7 @@ export function TicketDrawer({
                           {"priority" in c && <PriorityBadge priority={c.priority} />}
                           {"status" in c && <TicketStatusBadge status={c.status} />}
                           {"cost" in c && (
-                            <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400">
+                            <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
                               {formatMoney(c.cost, currency)}
                             </span>
                           )}

@@ -23,7 +23,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -327,12 +327,13 @@ export function OrgChatPage() {
           key={`unread-${i}`}
           className={`flex items-center ${ICON_GAP.menu} py-2`}
           role="separator"
+          aria-label={S.company.chat.unreadDivider}
         >
-          <span className="h-px flex-1 bg-red-300 dark:bg-red-800" />
-          <span className="text-[11px] font-medium text-red-600 dark:text-red-400">
+          <span className={`h-px flex-1 ${toneDot.attention}`} />
+          <span className={`text-[11px] font-medium ${toneInk.attention}`}>
             {S.company.chat.unreadDivider}
           </span>
-          <span className="h-px flex-1 bg-red-300 dark:bg-red-800" />
+          <span className={`h-px flex-1 ${toneDot.attention}`} />
         </div>
       );
     }
@@ -426,6 +427,8 @@ export function OrgChatPage() {
         <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
           <div
             ref={listRef}
+            role="log"
+            aria-label={S.company.chat.title}
             onScroll={onScroll}
             onWheel={(e) => follow.wheel(e.deltaY)}
             onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}

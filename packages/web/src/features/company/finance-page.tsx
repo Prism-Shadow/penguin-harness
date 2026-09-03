@@ -506,7 +506,7 @@ export function FinancePage() {
                               />
                             </span>
                             <span
-                              className={`w-12 text-right font-medium tabular-nums ${tone === "muted" ? "text-gray-400" : toneInk[tone]}`}
+                              className={`w-12 text-right font-medium tabular-nums ${toneInk[tone]}`}
                             >
                               {formatPercent(employee.ratio)}
                             </span>
