@@ -125,6 +125,8 @@ interface Preview {
   /** Content for kind=text/md/html (may be truncated). */
   content?: string;
   truncated?: boolean;
+  /** The version the content was read at; travels with it and only ever set together. */
+  version?: string;
   /** Bumped on every previewPath call; keys the isolated HTML iframe so re-opening the
    *  same path remounts it and refetches fresh content (its src alone would not change). */
   nonce: number;
@@ -152,14 +154,20 @@ const draftKey = (sessionId: string, path: string): string => `${sessionId}\n${p
  * and nothing more of it is read. A response with no stream is thrown on rather than read
  * whole: `arrayBuffer()` would pull the entire file into memory, which is the one thing the
  * cap exists to prevent.
+ *
+ * The version marker is read alongside the bytes and is required: it is what the editor
+ * saves against, and a response that carries content without it could only mean the
+ * endpoint is broken — better a thrown read than a save with no precondition.
  */
 async function fetchTextPreview(
   url: string,
   sniff: boolean,
-): Promise<{ content: string; truncated: boolean } | null> {
+): Promise<{ content: string; truncated: boolean; version: string } | null> {
   const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) throw new Error(String(res.status));
   if (res.body === null) throw new Error("no response body");
+  const version = res.headers.get("etag");
+  if (version === null) throw new Error("no version header");
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -185,7 +193,19 @@ async function fetchTextPreview(
   }
   const truncated = total > TEXT_PREVIEW_LIMIT;
   const shown = truncated ? utf8Complete(bytes.subarray(0, TEXT_PREVIEW_LIMIT)) : bytes;
-  return { content: new TextDecoder().decode(shown), truncated };
+  return { content: new TextDecoder().decode(shown), truncated, version };
+}
+
+/**
+ * The file's current version marker, without downloading it: the body is cancelled as soon
+ * as the headers land. Null when the read did not get that far — the file is gone, or the
+ * request failed; the caller says nothing in that case, because the save's own precondition
+ * is what actually protects the file.
+ */
+async function fetchFileVersion(url: string): Promise<string | null> {
+  const res = await fetch(url, { credentials: "same-origin" });
+  await res.body?.cancel();
+  return res.ok ? res.headers.get("etag") : null;
 }
 
 /** The content endpoint's payload: the base64 body of a data URL. A string Blob encodes as UTF-8, which is what a saved text file must be. */
@@ -291,6 +311,8 @@ export function WorkspaceBrowser({
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveConfirm, setSaveConfirm] = useState(false);
+  /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
+  const [conflict, setConflict] = useState<{ name: string } | null>(null);
   /** The open "discard unsaved changes?" question, resolving with the answer. */
   const [discardPrompt, setDiscardPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(
     null,
@@ -351,6 +373,7 @@ export function WorkspaceBrowser({
     setSourceError(null);
     setEditor(null);
     setSaveConfirm(false);
+    setConflict(null);
     setDiscardPrompt(null);
     // The upload and save flows finish against the Session they captured and skip their own
     // state updates once it is no longer the one on screen — so the chrome they left behind
@@ -503,7 +526,7 @@ export function WorkspaceBrowser({
           if (!refresh) present({ path: filePath, name, kind: "unsupported", nonce });
           return;
         }
-        const { content, truncated } = result;
+        const { content, truncated, version } = result;
         // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
         // highlight=false path): feeding the whole block to remark for parsing is a one-time
         // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
@@ -516,6 +539,7 @@ export function WorkspaceBrowser({
           kind: kind === "html" ? "html" : kind === "md" ? "md" : "text",
           content,
           truncated,
+          version,
           nonce,
         });
         // A draft left behind on this file (see unsavedDrafts) reopens the editor on it.
@@ -530,7 +554,7 @@ export function WorkspaceBrowser({
           const stashed = unsavedDrafts.get(key);
           if (stashed === content) unsavedDrafts.delete(key);
           else if (stashed !== undefined) {
-            setEditor({ path: filePath, baseline: content, draft: stashed });
+            setEditor({ path: filePath, baseline: content, draft: stashed, version });
             toastInfo(S.files.unsavedRestored(name));
           }
         }
@@ -563,7 +587,12 @@ export function WorkspaceBrowser({
         // a preview the user has since navigated away from.
         setPreview((p) =>
           p !== null && p.kind === "html" && p.path === target && p.content === undefined
-            ? { ...p, content: result.content, truncated: result.truncated }
+            ? {
+                ...p,
+                content: result.content,
+                truncated: result.truncated,
+                version: result.version,
+              }
             : p,
         );
       } catch {
@@ -643,17 +672,42 @@ export function WorkspaceBrowser({
 
   // The same settled-turn signal re-reads whatever is open in the preview: watching a file
   // the Agent is editing is the reason this panel sits next to the conversation. Skipped on
-  // the first run (the mount already read it), while no preview is open, and while that file
-  // is being edited — re-reading it would put the Agent's text under the user's. Reading the
-  // path from a ref keeps this effect keyed on the signal alone.
+  // the first run (the mount already read it) and while no preview is open. Reading the path
+  // from a ref keeps this effect keyed on the signal alone.
+  //
+  // The file being edited is still not re-read — that would put the Agent's text under the
+  // user's hands. It is version-checked instead: the save can no longer clobber the Agent's
+  // write, but silence until then would leave the user typing into a file that has already
+  // moved, so the editor says so as soon as the turn lands.
   const lastReloadSignal = useRef(reloadSignal);
   useEffect(() => {
     if (reloadSignal === lastReloadSignal.current) return;
     lastReloadSignal.current = reloadSignal;
     refreshAll();
     const open = previewRef.current?.path ?? null;
-    if (open !== null && editorRef.current?.path !== open)
+    if (open === null) return;
+    const editing = editorRef.current;
+    if (editing?.path !== open) {
       void previewPath(open, { refresh: true });
+      return;
+    }
+    const sid = sessionIdRef.current;
+    void (async () => {
+      try {
+        const version = await fetchFileVersion(api.workspaceFileUrl(sid, open));
+        if (version === null) return;
+        // Compared against the editor as it stands now, not the one captured above: it may
+        // have been closed and reopened on the Agent's own version while this was in flight,
+        // and that editor is not stale.
+        setEditor((e) =>
+          e !== null && e.path === open && e.version !== version && sessionIdRef.current === sid
+            ? { ...e, changedOnDisk: true }
+            : e,
+        );
+      } catch {
+        // A failed probe says nothing; the save's precondition is the guarantee.
+      }
+    })();
   }, [reloadSignal, refreshAll, previewPath]);
 
   // External navigation command (clicking a file chip in a message / a file card): opens
@@ -746,20 +800,24 @@ export function WorkspaceBrowser({
   const startEdit = async (): Promise<void> => {
     const current = previewRef.current;
     if (current === null || !canEditPreview(current)) return;
+    // Content and version are read together and stored together, so one missing means both
+    // are: an isolated HTML preview mounted without its text. Read it now, and refuse a
+    // file the bounded read cannot hold whole — saving a partial text back would truncate
+    // the file.
     let content = current.content;
-    // An isolated HTML preview mounted without its text: read it now, and refuse a file the
-    // bounded read cannot hold whole — saving a partial text back would truncate the file.
-    if (content === undefined) {
+    let version = current.version;
+    if (content === undefined || version === undefined) {
       try {
         const result = await fetchTextPreview(api.workspaceFileUrl(sessionId, current.path), false);
         if (result === null || result.truncated) {
           toastError(S.files.editTooLarge(TEXT_PREVIEW_LIMIT / 1024));
           return;
         }
-        content = result.content;
-        const loaded = content;
+        ({ content, version } = result);
         setPreview((p) =>
-          p !== null && p.path === current.path ? { ...p, content: loaded, truncated: false } : p,
+          p !== null && p.path === current.path
+            ? { ...p, content: result.content, truncated: false, version: result.version }
+            : p,
         );
       } catch {
         toastError(S.files.loadFailed);
@@ -767,7 +825,7 @@ export function WorkspaceBrowser({
       }
     }
     if (previewRef.current?.path !== current.path) return;
-    setEditor({ path: current.path, baseline: content, draft: content });
+    setEditor({ path: current.path, baseline: content, draft: content, version });
   };
 
   const updateDraft = (draft: string): void => {
@@ -786,11 +844,23 @@ export function WorkspaceBrowser({
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    setSaveConfirm(true);
+    // Already known to have moved under the editor: the ordinary "the file will be
+    // overwritten" confirmation understates that, so ask the conflict question instead —
+    // and sending the stale precondition first would only earn the same dialog a round
+    // trip later.
+    if (current.changedOnDisk === true) setConflict({ name: baseName(current.path) });
+    else setSaveConfirm(true);
   };
 
-  const save = async (): Promise<void> => {
+  /**
+   * Writes the draft back. The save carries the version the editor opened with, so the
+   * server refuses it (409) if the file has been rewritten since — the conflict dialog then
+   * offers `overwrite`, which is the same write with no precondition. The draft is never
+   * dropped on a refusal: the editor stays exactly as the user left it.
+   */
+  const save = async (opts?: { overwrite?: boolean }): Promise<void> => {
     setSaveConfirm(false);
+    setConflict(null);
     const current = editorRef.current;
     if (current === null) return;
     const blob = new Blob([current.draft]);
@@ -801,15 +871,23 @@ export function WorkspaceBrowser({
     const sid = sessionId;
     setSaving(true);
     try {
-      await api.uploadWorkspaceFile(sid, current.path, await blobToBase64(blob));
+      await api.uploadWorkspaceFile(
+        sid,
+        current.path,
+        await blobToBase64(blob),
+        opts?.overwrite ? undefined : current.version,
+      );
       if (sessionIdRef.current !== sid) return;
       unsavedDrafts.delete(draftKey(sid, current.path));
       setEditor(null);
       // The preview now shows what was written; a fresh nonce remounts an HTML iframe onto it.
+      // The bytes are known, the version the write produced is not — it is dropped rather
+      // than kept at its pre-save value, which would make the next Edit save against a
+      // version the file has already left. startEdit re-reads when it finds none.
       const nonce = ++previewSeq;
       setPreview((p) =>
         p !== null && p.path === current.path
-          ? { ...p, content: current.draft, truncated: false, nonce }
+          ? { ...p, content: current.draft, truncated: false, version: undefined, nonce }
           : p,
       );
       const dir = parentDir(current.path);
@@ -824,6 +902,15 @@ export function WorkspaceBrowser({
       void loadDir(dir);
       toastSuccess(S.common.saved);
     } catch (err) {
+      if (sessionIdRef.current !== sid) return;
+      // The write precondition refused it: the file is no longer the one that was opened.
+      // Ask rather than report — overwriting is a legitimate answer, it just has to be the
+      // user's, and neither answer costs them their text.
+      if (err instanceof ApiError && err.code === "file_changed") {
+        setEditor((e) => (e === null ? e : { ...e, changedOnDisk: true }));
+        setConflict({ name: baseName(current.path) });
+        return;
+      }
       toastError(apiErrorText(err));
     } finally {
       if (sessionIdRef.current === sid) setSaving(false);
@@ -1231,6 +1318,14 @@ export function WorkspaceBrowser({
             </span>
             {editor !== null && editor.path === preview.path ? (
               <>
+                {editor.changedOnDisk === true && (
+                  <span
+                    className={`shrink-0 text-xs ${toneInk.attention}`}
+                    title={S.files.changedOnDiskHint}
+                  >
+                    {S.files.changedOnDisk}
+                  </span>
+                )}
                 {dirty && (
                   <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
                 )}
@@ -1436,6 +1531,21 @@ export function WorkspaceBrowser({
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.files.saveConfirm(editor !== null ? baseName(editor.path) : "")}
+        </p>
+      </ConfirmModal>
+
+      {/* Write-precondition conflict: the file changed after the editor opened it, so the
+          save was refused with nothing written. Cancel keeps the draft and the editor. */}
+      <ConfirmModal
+        open={conflict !== null}
+        title={S.files.conflictTitle}
+        tone="primary"
+        confirmLabel={S.files.overwriteAnyway}
+        onClose={() => setConflict(null)}
+        onConfirm={() => void save({ overwrite: true })}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.files.conflictBody(conflict?.name ?? "")}
         </p>
       </ConfirmModal>
 

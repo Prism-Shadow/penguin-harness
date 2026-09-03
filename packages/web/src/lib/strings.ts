@@ -2245,6 +2245,13 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "磁盘上已变更",
+    changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
+    conflictTitle: "文件在磁盘上已变更",
+    conflictBody: (name: string): string =>
+      `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
+    overwriteAnyway: "仍然覆盖",
   },
 
   usage: {

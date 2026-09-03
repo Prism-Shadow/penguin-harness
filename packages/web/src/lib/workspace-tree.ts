@@ -359,6 +359,13 @@ export interface EditorState {
   path: string;
   baseline: string;
   draft: string;
+  /**
+   * The version marker the baseline was read with, sent back as the save's write
+   * precondition so the write cannot land on a file the Agent has since rewritten.
+   */
+  version: string;
+  /** The file was found to carry a different version while this editor was open. */
+  changedOnDisk?: boolean;
 }
 
 export function isDirty(editor: EditorState | null): boolean {

@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-02
 - **Type:** feature
-- **Scope:** `web`, `docs`
+- **Scope:** `web`, `server`, `docs`
 - **PR:** [#589](https://github.com/Prism-Shadow/penguin-harness/pull/589)
 
 [中文版](2026-09-02-workspace-tree-editor.zh.md)
@@ -32,6 +32,16 @@ drag-and-drop upload from the desktop.
   it is sent. Unsaved changes ask before a file switch, before the panel's tab or dock closes
   (a close-guard registry the dock consults on its tab ×, its hide × and the toolbar toggle),
   and before the page unloads; a draft survives a Session switch and reopens with the file.
+- Write precondition: `GET /api/sessions/:id/files/content` now returns the file's version in
+  an `ETag` (`W/"<size>-<mtime>"`), and the write takes it back as `ifVersion` in the request
+  body. The server compares it on the open write handle immediately before truncating and
+  answers `409 file_changed` — having written nothing — when the file has moved on, so a save
+  can no longer drop what the Agent wrote to the same file during the turn. A write that
+  carries no marker is unconditional, which is what uploads and the first write of a new file
+  do. The panel turns the 409 into a question: it names the file, offers **Overwrite**, and
+  keeps the draft whichever way it is answered. It also stops waiting for the save to find
+  out — when a turn settles the edited file is version-checked (its text is still left alone)
+  and the editor header says **Changed on disk** as soon as it has.
 - Upload: OS files dropped anywhere on the panel upload into the current directory, or into
   the folder row under the pointer (highlighted while hovering), using the chat area's drag
   decision helpers; the app-shell guard keeps cancelling drops elsewhere. Picks and drops

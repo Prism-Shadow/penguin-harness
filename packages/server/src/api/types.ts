@@ -2485,6 +2485,22 @@ export interface WorkspaceFilesResponse {
   entries: WorkspaceFileEntry[];
 }
 
+/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+export interface FilesWriteRequest {
+  /** The entire file, base64-encoded (≤14MB decoded). */
+  dataBase64: string;
+  /**
+   * Write precondition: the version marker the caller read off this file's `ETag` on
+   * `GET files/content`. The server compares it against the file's state immediately
+   * before writing and answers 409 `file_changed` — having written nothing — when they
+   * differ, which is what stops the editor's save from quietly dropping what the Agent
+   * wrote during the turn. Omitted by a caller that read no version (an upload creates or
+   * replaces unconditionally); that absence, not a sentinel value, is what says there was
+   * no prior version to match.
+   */
+  ifVersion?: string;
+}
+
 /** Batch file existence check (message file cards only list files that actually exist). */
 export interface FilesStatRequest {
   /** Paths relative to the Workspace root (≤100 items, each ≤512 characters). */

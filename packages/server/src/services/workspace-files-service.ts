@@ -56,6 +56,30 @@ export interface WorkspaceFileContent {
   scriptable: "html" | "svg" | false;
   /** True when a bounded preview returned only the beginning of the file. */
   truncated?: boolean;
+  /** The file's version at the moment it was read — see {@link fileVersion}. */
+  version: string;
+}
+
+/**
+ * A file's version marker: the weak size+mtime validator the static asset route already
+ * mints (see app.ts) — the classic disk-file shape, and far cheaper than hashing every
+ * read. Opaque to clients: they get it from a read and hand it straight back on a write.
+ */
+function fileVersion(stat: { size: number; mtimeMs: number }): string {
+  return `W/"${stat.size}-${Math.round(stat.mtimeMs)}"`;
+}
+
+/**
+ * A write precondition failed: the file is not the one the caller read. 409 rather than
+ * HTTP's 412 — the marker travels in the request body, not as `If-Match`, so this is the
+ * app's own conflict and rides the same route error path as the other 409s.
+ */
+function fileChanged(): HttpError {
+  return new HttpError(
+    409,
+    "file_changed",
+    "File changed on disk since it was read; nothing was written.",
+  );
 }
 
 export interface WorkspaceFileReadOptions {
@@ -255,7 +279,16 @@ export class WorkspaceFilesService {
     return { path: rel, entries };
   }
 
-  /** Read a file (preview/download): IO on the canonical path (resolveRead has already eliminated symlink escapes). */
+  /**
+   * Read a file (preview/download): IO on the canonical path (resolveRead has already
+   * eliminated symlink escapes).
+   *
+   * The stat below runs **before** the bytes are read, and that order is load-bearing now
+   * that it also mints the version marker: a rewrite landing in between tags fresh bytes
+   * with the older marker, so the worst case is one needless conflict on the next write.
+   * Read-then-stat would fail the other way — old bytes carrying the new marker, which is
+   * exactly the write the precondition exists to refuse.
+   */
   async read(
     workspace: string,
     rel: string,
@@ -301,6 +334,7 @@ export class WorkspaceFilesService {
       contentType: CONTENT_TYPES[ext] ?? "application/octet-stream",
       scriptable: ext === ".html" || ext === ".htm" ? "html" : ext === ".svg" ? "svg" : false,
       ...(truncated ? { truncated: true } : {}),
+      version: fileVersion(stat),
     };
   }
 
@@ -311,8 +345,18 @@ export class WorkspaceFilesService {
    * O_NOFOLLOW, refusing to follow a symlink to write outside the Workspace
    * (together with resolveWriteParent's canonical-parent check, this blocks
    * sandbox escapes).
+   *
+   * `ifVersion` is the write precondition: the marker the caller got from its read, which
+   * the file must still carry. It is compared on the **open handle** — a handle names an
+   * inode, so what is stat'd is exactly what is about to be truncated, with no window in
+   * between. A caller that passes none read no version and gets the unconditional
+   * create-or-overwrite an upload wants: the field's absence, not some sentinel value, is
+   * what separates "first write of a file that isn't there" from "the file I read has
+   * changed". With a marker the file must already exist, so O_CREAT is left out — a
+   * missing file is a change like any other (ENOENT → the same 409), and a refused write
+   * must not leave an empty file behind.
    */
-  async write(workspace: string, rel: string, data: Buffer): Promise<void> {
+  async write(workspace: string, rel: string, data: Buffer, ifVersion?: string): Promise<void> {
     if (rel === "" || rel.endsWith("/")) throw badRequest("path must be a file path.");
     if (data.length > MAX_UPLOAD_BYTES) {
       throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
@@ -329,19 +373,29 @@ export class WorkspaceFilesService {
       if (st?.isSymbolicLink()) throw badRequest("path must not be a symlink.");
     }
     // O_NOFOLLOW: open reports ELOOP if the final segment is a symlink, refusing to use it as leverage to overwrite a file outside the sandbox.
-    const flags = fsc.O_WRONLY | fsc.O_CREAT | fsc.O_TRUNC | (fsc.O_NOFOLLOW ?? 0);
+    const conditional = ifVersion !== undefined;
+    const flags =
+      fsc.O_WRONLY | (fsc.O_NOFOLLOW ?? 0) | (conditional ? 0 : fsc.O_CREAT | fsc.O_TRUNC);
     let handle;
     try {
       handle = await fs.open(file, flags, 0o644);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ELOOP") throw badRequest("path must not be a symlink.");
-      if (code === "ENOENT")
+      if (code === "ENOENT") {
+        if (conditional) throw fileChanged();
         throw new HttpError(404, "path_not_found", "Parent directory does not exist.");
+      }
       if (code === "EISDIR") throw badRequest("path is a directory.");
       throw err;
     }
     try {
+      if (conditional) {
+        if (fileVersion(await handle.stat()) !== ifVersion) throw fileChanged();
+        // O_TRUNC was withheld above so the check could run first; do it now, on the same
+        // handle, immediately before the bytes go down.
+        await handle.truncate(0);
+      }
       await handle.writeFile(data);
     } finally {
       await handle.close();

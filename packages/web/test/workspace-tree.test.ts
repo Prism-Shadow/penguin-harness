@@ -231,8 +231,9 @@ describe("editing", () => {
   });
 
   it("asks before leaving typed changes, not for a clean editor or the file being edited", () => {
-    const clean = { path: "a.txt", baseline: "x", draft: "x" };
-    const dirty = { path: "a.txt", baseline: "x", draft: "xy" };
+    const version = 'W/"1-1000"';
+    const clean = { path: "a.txt", baseline: "x", draft: "x", version };
+    const dirty = { path: "a.txt", baseline: "x", draft: "xy", version };
     expect(isDirty(null)).toBe(false);
     expect(isDirty(clean)).toBe(false);
     expect(isDirty(dirty)).toBe(true);

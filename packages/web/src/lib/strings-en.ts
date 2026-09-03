@@ -2301,6 +2301,14 @@ Scenarios:
     discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
     discard: "Discard",
     unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "Changed on disk",
+    changedOnDiskHint:
+      "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    conflictTitle: "File changed on disk",
+    conflictBody: (name: string): string =>
+      `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
+    overwriteAnyway: "Overwrite",
   },
 
   usage: {
