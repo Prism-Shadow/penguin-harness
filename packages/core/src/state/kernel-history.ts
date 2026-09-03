@@ -196,7 +196,7 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "bb70a347596764b0cb0453db901b76fef2fa9ba7e1df687a9f79700cdffdc195",
+  prompt: "f9576833f73192d69c962bf21bd2049d0c8f5389ba4b9700ca9bd95ea545d3b0",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
