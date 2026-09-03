@@ -1,9 +1,5 @@
-import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type {
-  BuiltinToolFactory,
-  PromptSection,
-  ToolDefinitionConfig,
-} from "@prismshadow/penguin-core";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { PromptSection } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
@@ -20,22 +16,14 @@ import { agentSkillsRoutes } from "../http/routes/skills.js";
 import { agentTransferRoutes } from "../http/routes/agent-transfer.js";
 import { agentTracesRoutes } from "../http/routes/agent-traces.js";
 
-/** A tool factory, as a contributor binds it: the built-in factory shape. */
-export type ToolFactory = Opaque<"BuiltinToolFactory", BuiltinToolFactory>;
-
 export interface HostAssemblySlots {
   /** A section appended to every Agent's system prompt. */
   promptSections: { title: string; text: string };
-  /**
-   * A tool an Agent may list in its `tools.builtin` config: the name, and the default
-   * definition the config entry overrides field by field. The code half is the factory.
-   */
-  tools: Slot<{ name: string; definition: ToolDefinitionConfig }, ToolFactory>;
 }
 
 /**
  * What the host adds to every Session's assembly, built from this component's slots
- * (`HostAssembly.promptSections`, `HostAssembly.tools`) — plus the Agent-scoped route groups.
+ * (`HostAssembly.promptSections`) — plus the Agent-scoped route groups.
  */
 @Component({
   contributes: {
@@ -87,23 +75,16 @@ export class HostAssembly {
   @Bind("agents.transfer") transferRoutes!: Hono<AppEnv>;
   @Bind("agents.traces") tracesRoutes!: Hono<AppEnv>;
   private sections: PromptSection[] = [];
-  private factories: Record<string, ToolFactory> = {};
 
   /** Sections appended to every Agent's system prompt, under their own headings. */
   promptSections(): PromptSection[] {
     return this.sections;
-  }
-  /** Tool factories an Agent's config may opt into by name, consulted before the built-in registry. */
-  toolFactories(): Record<string, ToolFactory> {
-    return this.factories;
   }
 
   setup({ contributions }: ClassCtx) {
     this.sections = (contributions.promptSections ?? []).map(
       (c) => c.data as unknown as PromptSection,
     );
-    for (const c of contributions.tools ?? [])
-      this.factories[c.data.name as string] = c.code as ToolFactory;
     const access = this.access;
     const agentConfigService = this.agentConfig;
     this.memoryRoutes = memoryRoutes({ memoryService: this.memory, access });

@@ -320,19 +320,7 @@ export interface EnvironmentConfig {
    * default for SDK/CLI standalone use).
    */
   confineSpawn?: () => SpawnConfiner | null;
-  /**
-   * Tool factories the host adds, by tool name, consulted before the built-in registry
-   * for every `toolConfig.customTools` entry (see core `AgentAssembly`). A name found
-   * neither here nor built in is skipped, as before.
-   */
-  toolFactories?: Readonly<Record<string, ToolFactoryLike>>;
 }
-
-/** A builtin-tool factory as the environment layer sees it (the concrete type lives in environment/tools/registry). */
-export type ToolFactoryLike = (
-  definition: ToolDefinitionConfig,
-  services?: EnvironmentServices,
-) => unknown;
 
 /**
  * Proxy policy applied to command subprocess environments (see
