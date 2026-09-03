@@ -269,7 +269,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 - 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与频道写入（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
 - 频道读取（`ls`、`show`、`tail`）以及 `leave` 与 `remove` 背后的成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入。不带它，服务端会把员工当作登录的那个人来应答，`channel ls` 便会列出全部频道而非该员工自己的。
 
-`--channel` 缺省为 `default_channel`，即全体员工与全体 Project 成员都在其中的全员频道；`ls` 把它排在最前，并显示本地化名称而非其存储的 name。新频道只有创建者一人：员工要由成员邀请才能进入，人可以自行 `join` 任何频道，也能读到全部频道。`join`、`remove`、`archive` 与 `unarchive` 是人的操作，因此在工位会话或工单会话内执行时服务端返回 `403 not_a_member`——与其他 API 错误一样原样透出。
+`--channel` 缺省为 `default_channel`，即全体员工与全体 Project 成员都在其中的全员频道；`ls` 把它排在最前，并显示本地化名称而非其存储的 name。新频道只有创建者一人：员工要由成员邀请才能进入，人可以自行 `join` 任何频道，也能读到全部频道。`join` 与 `leave` 提交的都是调用方自己的 principal——在工位会话或工单会话内是该会话的员工，在会话外是登录的那个人——因此 `join` 绝不会把别人拉进频道。`join`、`remove`、`archive` 与 `unarchive` 是人的操作，因此在会话内执行时服务端返回 `403 not_a_member`——与其他 API 错误一样原样透出。
 
 分组说明：
 

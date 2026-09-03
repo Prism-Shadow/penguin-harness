@@ -923,22 +923,36 @@ describe("penguin org channel", () => {
     expect(err()).toContain("all_hands_immutable");
   });
 
-  it("join adds the signed-in person; inside a session the employee is refused", async () => {
+  it("join adds the person itself; the principal is always the caller's own", async () => {
     server.addChannel("acme", "site", { members: ["agent:ceo"], createdBy: "agent:ceo" });
     expect(await cli(["org", "channel", "join", "site"])).toBe(0);
-    // The principal is the caller's own, which only the server knows: GET /api/me answers it.
+    // Outside a session the caller is the signed-in person, whom only the server knows.
     expect(lastRequest("GET", "/api/me")).toBeDefined();
     expect(lastRequest("POST", "/channels/site/members")?.body).toEqual({
       principal: "user:admin",
     });
     expect(org().channels.get("site")!.members).toEqual(["agent:ceo", "user:admin"]);
     expect(out()).toBe(`${t.org.channelJoined("site")}\n`);
+  });
 
+  it("an employee's join asks for itself and is refused, whether or not it is already in", async () => {
     employeeInSession("dev1");
     server.addChannel("acme", "marketing", { members: ["agent:ceo"] });
     expect(await cli(["org", "channel", "join", "marketing"])).toBe(1);
-    expect(err()).toContain("not_a_member");
+    // The body names the employee, never the token's user: joining can never invite someone else.
+    expect(lastRequest("POST", "/channels/marketing/members")?.body).toEqual({
+      principal: "agent:dev1",
+      sessionId: DESK_SESSION,
+    });
+    expect(err()).toContain("An employee joins a channel only when a member invites it.");
     expect(org().channels.get("marketing")!.members).toEqual(["agent:ceo"]);
+
+    // Already a member changes nothing: an employee is still refused, and the person the
+    // token belongs to is not dragged into the channel behind its back.
+    server.addChannel("acme", "site", { members: ["agent:dev1"] });
+    expect(await cli(["org", "channel", "join", "site"])).toBe(1);
+    expect(err()).toContain("An employee joins a channel only when a member invites it.");
+    expect(org().channels.get("site")!.members).toEqual(["agent:dev1"]);
   });
 
   it("leave removes the caller's own principal: the employee's in a session, the person's outside one", async () => {

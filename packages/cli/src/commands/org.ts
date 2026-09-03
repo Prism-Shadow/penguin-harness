@@ -190,22 +190,18 @@ function channelOf(raw: unknown): string {
 }
 
 /**
- * The caller as a channel principal, which `leave` has to name itself: inside a desk or
- * ticket session it is that session's employee — the identity the server derives from the
- * `sessionId` {@link actorFields} sends — and outside one the signed-in person, whom only
- * the server knows.
+ * The caller as a channel principal, which `join` and `leave` have to name themselves:
+ * inside a desk or ticket session it is that session's employee — the identity the server
+ * derives from the `sessionId` {@link actorFields} sends — and outside one the signed-in
+ * person, whom only the server knows.
  */
 async function callerPrincipal(client: ServerClient): Promise<string> {
   const sessionId = callerSessionId();
   if (sessionId !== undefined) {
     return `agent:${(await getSessionInfo(client, sessionId)).agentId}`;
   }
-  return `user:${await callerUserId(client)}`;
-}
-
-/** The signed-in user's own id, as the server sees this connection. */
-async function callerUserId(client: ServerClient): Promise<string> {
-  return (await client.request<MeResponse>("GET", "/api/me")).user.userId;
+  const me = await client.request<MeResponse>("GET", "/api/me");
+  return `user:${me.user.userId}`;
 }
 
 function printJson(value: unknown): void {
@@ -1252,9 +1248,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       if (refuseDotSegments(channelId, t)) return;
       const scope = await orgScope(opts, t);
       if (scope === null) return;
-      // Joining is a person's move, so the principal is the signed-in user. Inside a session
-      // the actor is the employee, which is not a member, and the server refuses (403).
-      const principal = `user:${await callerUserId(scope.client)}`;
+      // The principal is the caller's own, so joining is never an invitation of someone
+      // else: a person adds itself, and an employee asks for itself and is refused — an
+      // employee reaches a channel only when a member invites it.
+      const principal = await callerPrincipal(scope.client);
       const detail = await scope.client.request<OrgChannelDetail>(
         "POST",
         `${scope.base}/channels/${enc(channelId)}/members`,
