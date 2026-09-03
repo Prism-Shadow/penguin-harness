@@ -40,12 +40,16 @@ import type { ContextFileShare, SessionContextParts } from "../api/types.js";
 /** How many entries each ranking — tools, files — names before the tail is dropped. */
 const RANKING_SIZE = 5;
 
-/** The file tools, each by the op a call of it counts as. */
-const FILE_TOOL_OPS: Record<string, keyof ContextFileShare["ops"]> = {
-  read_file: "read",
-  edit_file: "edit",
-  write_file: "write",
-};
+/**
+ * The file tools, each by the op a call of it counts as. A Map, not an object literal: the key
+ * is a tool name off the wire, and a model that hallucinates a call to `toString` would find
+ * `Object.prototype`'s member through an index signature.
+ */
+const FILE_TOOL_OPS = new Map<string, keyof ContextFileShare["ops"]>([
+  ["read_file", "read"],
+  ["edit_file", "edit"],
+  ["write_file", "write"],
+]);
 
 /** The answer for a Session with no Trace yet: measured as empty, not unknown. */
 export function emptyContextBreakdown(): SessionContextParts {
@@ -198,7 +202,7 @@ export function buildContextBreakdown(messages: OmniMessage[]): SessionContextPa
         out.toolRequests += size;
         callName.set(tc.tool_call_id, tc.name);
         bump(perTool, tc.name, size);
-        const op = FILE_TOOL_OPS[tc.name];
+        const op = FILE_TOOL_OPS.get(tc.name);
         if (op !== undefined) {
           const file = fileDisplayPath(tc.arguments, workspace);
           if (file !== null) {

@@ -63,6 +63,12 @@ import type { ContextFileShare, ContextPartKey } from "./context-parts";
 const PANEL_WIDTH = 300;
 const PANEL_MAX_WIDTH = "calc(100vw - 32px)";
 const PANEL_HEIGHT = 370;
+/**
+ * The cap usePortalPanel already assumes when it chooses a direction, made real: without it a
+ * panel taller than the space it was flipped into is simply cut off by the viewport, and its
+ * own scroll is exempt from the hook's close-on-scroll.
+ */
+const PANEL_MAX_HEIGHT = "70vh";
 
 /** Smallest painted width (px) of the filled run, so a context with a few hundred tokens in it still shows a mark rather than nothing. */
 const MIN_FILL_PX = 2;
@@ -184,8 +190,9 @@ export function ContextGauge({
               left: position.left,
               width: PANEL_WIDTH,
               maxWidth: PANEL_MAX_WIDTH,
+              maxHeight: PANEL_MAX_HEIGHT,
             }}
-            className="anim-pop z-[60] rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel sessionId={sessionId} now={now} max={max} pct={pct} unknown={unknown} />
           </div>,
