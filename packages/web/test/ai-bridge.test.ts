@@ -33,6 +33,10 @@ describe("buildAiDraft", () => {
     const draft = buildAiDraft({ handoffAgentId: "other" }, { agentId: "a", text: "t" });
     expect("handoffAgentId" in draft).toBe(false);
   });
+
+  it("marks the prompt as composed, so it is not kept or parked as text the user typed", () => {
+    expect(buildAiDraft({ text: "typed" }, { agentId: "a", text: "t" }).aiPrefill).toBe(true);
+  });
 });
 
 describe("aiChatRouteState", () => {

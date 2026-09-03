@@ -42,6 +42,15 @@ export interface DraftCache {
    * installed list once it's ready; cleared along with the entire draft on successful send.
    */
   skills?: string[];
+  /**
+   * This text was composed by a "Create with AI" surface (features/ai-create/ai-bridge.ts), not
+   * typed by anyone: it seeds exactly one draft and dies with it. The mark rides in the cache
+   * because the draft page must survive a reload, and it makes the two owners of the slot treat
+   * the prompt differently from user content — parkActiveDraft drops it instead of parking it as
+   * a draft conversation, and the draft page clears the slot when it is left unedited and unsent.
+   * Dropped by the first edit: from then on the text is the user's and is cached like any other.
+   */
+  aiPrefill?: true;
 }
 
 /** Minimal storage interface (a subset of localStorage). */
@@ -100,6 +109,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     const skills = o.skills.filter((s): s is string => typeof s === "string");
     if (skills.length > 0) out.skills = skills;
   }
+  if (o.aiPrefill === true) out.aiPrefill = true;
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)

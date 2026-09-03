@@ -7,7 +7,9 @@
  *
  * Typed-but-unsent text in the active draft is parked first (draft-sessions.ts) rather than
  * overwritten by the canned prompt, and the model selection carries over, as it does across
- * sends.
+ * sends. The composed prompt itself is written as `aiPrefill` (draft-cache.ts) so that it dies
+ * with the draft it seeds: nobody typed it, so it is never parked in turn, and leaving the draft
+ * page without editing or sending it clears the slot.
  */
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
@@ -41,7 +43,8 @@ export interface AiChatRouteState {
 /**
  * The draft cache entry for a request, merged over what the active slot holds so the model
  * carry-over survives. A leftover `/agent` handoff chip is dropped: it would forward the prompt
- * to a different agent than the one named here.
+ * to a different agent than the one named here. The text is marked as composed rather than typed
+ * (`aiPrefill`, see draft-cache.ts), which is what keeps it from outliving the draft it seeds.
  */
 export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCache {
   const draft: DraftCache = {
@@ -49,6 +52,7 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
     agentId: req.agentId,
     text: req.text,
     skills: req.skills ?? [],
+    aiPrefill: true,
   };
   if (req.workspace !== undefined) draft.workspace = req.workspace;
   delete draft.handoffAgentId;
