@@ -17,7 +17,7 @@ import {
 } from "../validate.js";
 import type { ProjectService } from "../../services/project-service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Desktop } from "../../hmr/capabilities.js";
+import type { Desktop } from "../../services/desktop-service.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
 

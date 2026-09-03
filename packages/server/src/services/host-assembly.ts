@@ -8,7 +8,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config } from "../config.js";
 import type { ProjectAccess } from "./project-access.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 import type { MemoryService } from "./memory-service.js";

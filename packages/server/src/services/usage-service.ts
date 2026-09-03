@@ -48,7 +48,7 @@ import {
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Overrides } from "../app.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 /**

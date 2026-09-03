@@ -24,6 +24,7 @@ import type { DesktopUpdateStatus, DesktopUpdaterCommandMessage } from "../api/t
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -89,3 +90,20 @@ export class DesktopService {
     return true;
   }
 }
+
+export type DesktopApi = Pick<
+  DesktopService,
+  | "verifyToken"
+  | "redeemLoginToken"
+  | "onShutdownRequest"
+  | "requestShutdown"
+  | "getUpdateStatus"
+  | "setUpdateStatus"
+  | "onUpdateCommand"
+  | "requestUpdateCommand"
+>;
+
+/** The desktop shell's service, or null when this server is not the shell's child. */
+export abstract class Desktop extends Interface<{
+  current(): DesktopApi | null;
+}>() {}

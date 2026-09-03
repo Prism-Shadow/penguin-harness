@@ -36,7 +36,8 @@ import {
 } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop } from "../../hmr/capabilities.js";
+import { Config } from "../../config.js";
+import { Desktop } from "../../services/desktop-service.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 
 export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {

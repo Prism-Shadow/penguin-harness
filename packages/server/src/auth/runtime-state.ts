@@ -14,6 +14,8 @@
  * a plain mutable bag rather than a service — it carries no behaviour to go stale, so a
  * platform newer than its runtime can still use one an older runtime published.
  */
+
+import { Interface } from "@prismshadow/penguin-core/kernel";
 export interface AuthRuntimeState {
   /** The first-login link this boot printed, or null before one was minted. */
   firstLoginToken: string | null;
@@ -28,3 +30,6 @@ export interface AuthRuntimeState {
 export function newAuthRuntimeState(): AuthRuntimeState {
   return { firstLoginToken: null, apiToken: null };
 }
+
+/** The process-scoped auth values, as the platform's modules see them. */
+export abstract class AuthState extends Interface<AuthRuntimeState>() {}

@@ -5,7 +5,7 @@
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { ApprovalMode } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
+import type { Db } from "../database.js";
 
 export interface SessionRow {
   sessionId: string;

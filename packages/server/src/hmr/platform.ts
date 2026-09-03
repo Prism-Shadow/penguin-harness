@@ -55,6 +55,7 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -426,3 +427,12 @@ export const packagedPlatform: PlatformBundle = {
   impl: platformImpl,
   context: { motd: "hello from the penguin hot platform" } satisfies PlatformCtx,
 };
+
+/**
+ * Whether a registry resource group inherited from the previous App may be adopted — the
+ * platform node decides from the resource-interfaces declaration above; a module that
+ * parks handles asks before claiming them back.
+ */
+export abstract class ResourceGroups extends Interface<{
+  adoptable(group: string): boolean;
+}>() {}

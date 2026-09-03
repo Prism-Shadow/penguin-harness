@@ -10,6 +10,8 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { migrate } from "./migrations.js";
 import { SCHEMA_SQL } from "./schema.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
 // resolution of `node:sqlite` by bundlers/vite (some tools' builtin lists don't yet
@@ -142,3 +144,10 @@ export function ensureColumn(
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   return true;
 }
+
+/** The SQLite handle (single-writer, one per process). Statements are host objects. */
+export abstract class Db extends Interface<{
+  prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
+  exec(sql: string): void;
+  close(): void;
+}>() {}

@@ -4,7 +4,7 @@
  */
 import type { ProjectRole } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
+import type { Db } from "../database.js";
 
 export interface ProjectRow {
   projectId: string;

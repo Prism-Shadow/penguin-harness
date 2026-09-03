@@ -22,7 +22,7 @@ import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } fro
 import { FeishuApiError } from "./feishu-sdk.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
+import { Overrides } from "../../app.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 import { createLarkSdk } from "./feishu-sdk.js";
 

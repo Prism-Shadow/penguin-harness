@@ -93,7 +93,7 @@ import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError } from "./qq-api.js";
 import { qqMarkdownOf } from "./qq-markdown.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
+import { Overrides } from "../../app.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 import { createQQTransport } from "./qq-api.js";
 

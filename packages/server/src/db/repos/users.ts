@@ -3,7 +3,7 @@
  * user_id is the login name (a semantic id, specified at creation, immutable).
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Db } from "../../hmr/capabilities.js";
+import type { Db } from "../database.js";
 
 export interface UserRow {
   userId: string;

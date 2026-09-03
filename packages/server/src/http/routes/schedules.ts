@@ -52,7 +52,7 @@ import {
   writeScheduleFile,
 } from "../../runtime/schedule-store.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../../hmr/capabilities.js";
+import type { Config } from "../../config.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */
 function parseUpsertBody(body: Record<string, unknown>): {

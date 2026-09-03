@@ -68,7 +68,7 @@ import {
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config } from "../config.js";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 

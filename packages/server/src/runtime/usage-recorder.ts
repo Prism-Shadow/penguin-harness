@@ -18,7 +18,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import type { UsageRepo } from "../db/repos/usage.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Overrides } from "../app.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {

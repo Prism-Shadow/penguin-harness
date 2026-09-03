@@ -20,7 +20,7 @@ import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import type { ProjectService } from "./project-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Overrides } from "../app.js";
 
 @Component()
 export class AdminService {

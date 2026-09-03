@@ -61,7 +61,7 @@ import type {
 import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
+import { Overrides } from "../../app.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 import { createTelegramTransport } from "./telegram-api.js";
 

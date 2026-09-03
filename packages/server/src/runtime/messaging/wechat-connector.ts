@@ -97,7 +97,8 @@ import type {
 } from "./wechat-api.js";
 import { WECHAT_API_BASE, createWeChatTransport } from "./wechat-api.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import { Overrides, RuntimeModule } from "../../hmr/capabilities.js";
+import { Overrides } from "../../app.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** The WeChat binding's stored config document (`messaging_bindings.config_json`). */
 export interface WeChatBindingConfig extends Record<string, unknown> {

@@ -28,7 +28,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { UpdateCheckService } from "../../services/update-check-service.js";
 import type { UpdateJobService } from "../../services/update-job.js";
-import type { Lifecycle } from "../../hmr/capabilities.js";
+import type { Lifecycle } from "../../services/lifecycle-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VersionRouteDeps {

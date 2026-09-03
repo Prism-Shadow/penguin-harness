@@ -76,6 +76,8 @@ import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
 import type { PlatformApi } from "./platform.js";
 import { packagedPlatform } from "./platform.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Resources } from "@prismshadow/penguin-core/kernel";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
@@ -817,3 +819,17 @@ function filesMapFromGzip(gz: Buffer): Map<string, Buffer> {
   }
   return mem;
 }
+
+/** The hot-update host: the cross-generation resource registry and the current App. */
+export abstract class Hmr extends Interface<{
+  resources: Resources;
+  ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  resolveWebSource(): Opaque<
+    "WebSource",
+    NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
+  > | null;
+  assetsDir(): string | null;
+  dispose(): void;
+}>() {}
+/** Compile-time proof the host satisfies the contract. */
+export type _HmrCheck = HmrHost extends Hmr ? true : never;

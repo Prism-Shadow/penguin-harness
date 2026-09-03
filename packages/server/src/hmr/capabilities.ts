@@ -32,9 +32,19 @@ import type { HmrHost } from "./host.js";
 import type { DesktopService } from "../services/desktop-service.js";
 import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { Channel } from "../runtime/channel.js";
 import { Module, Provide } from "@prismshadow/penguin-core/kernel";
+// The interfaces this module presents live beside the things they describe; only their
+// claim and their presentation are here.
+import type { Config } from "../config.js";
+import type { Db } from "../db/database.js";
+import type { Channels } from "../runtime/channel.js";
+import type { Proxy } from "../net/proxy.js";
+import type { Hmr } from "./host.js";
+import type { Desktop } from "../services/desktop-service.js";
+import type { Lifecycle } from "../services/lifecycle-service.js";
+import type { AuthState } from "../auth/runtime-state.js";
+import type { Overrides } from "../app.js";
+import type { ResourceGroups } from "./platform.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -340,87 +350,8 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
  * needs from its host is written down and checked, not assumed.
  */
 
-/** The process configuration object — one per process; the listen callback writes the real port into it. */
-export abstract class Config extends Interface<ServerConfig>() {}
-
-/** The SQLite handle (single-writer, one per process). Statements are host objects. */
-export abstract class Db extends Interface<{
-  prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
-  exec(sql: string): void;
-  close(): void;
-}>() {}
-
-/** One SSE channel (the class in runtime/channel.ts satisfies this). */
-export type ChannelApi = Pick<Channel, "publish" | "sendTo" | "subscribe" | "replayAfter">;
-
-export abstract class Channels extends Interface<{
-  get(key: string): ChannelApi;
-  peek(key: string): ChannelApi | undefined;
-  broadcast(prefix: string, data: unknown, event?: string): void;
-  dispose(): void;
-  setActivityProbe(probe: (key: string) => boolean): void;
-}>() {}
-/** Compile-time proof the hub satisfies the contract. */
-export type _ChannelsCheck = ChannelHub extends Channels ? true : never;
-
-/** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
-export abstract class Proxy extends Interface<{
-  apply(settings: ProxySettings): void;
-}>() {}
-
-/** The hot-update host: the cross-generation resource registry and the current App. */
-export abstract class Hmr extends Interface<{
-  resources: Resources;
-  ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
-  resolveWebSource(): Opaque<
-    "WebSource",
-    NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
-  > | null;
-  assetsDir(): string | null;
-  dispose(): void;
-}>() {}
-export type _HmrCheck = HmrHost extends Hmr ? true : never;
-
-export type DesktopApi = Pick<
-  DesktopService,
-  | "verifyToken"
-  | "redeemLoginToken"
-  | "onShutdownRequest"
-  | "requestShutdown"
-  | "getUpdateStatus"
-  | "setUpdateStatus"
-  | "onUpdateCommand"
-  | "requestUpdateCommand"
->;
-
-/** The desktop shell's service, or null when this server is not the shell's child. */
-export abstract class Desktop extends Interface<{
-  current(): DesktopApi | null;
-}>() {}
-
-export abstract class AuthState extends Interface<AuthRuntimeState>() {}
-
-/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
-export abstract class Lifecycle extends Interface<
-  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
->() {}
-
-/** Construction overrides — production publishes {}, tests publish live collaborators. */
-export abstract class Overrides extends Interface<{
-  value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
-}>() {}
-
 export abstract class Log extends Interface<{
   line(text: string): void;
-}>() {}
-
-/**
- * Whether a registry resource group inherited from the previous App may be adopted — the
- * platform node decides from the resource-interfaces declaration (hmr/platform.ts); a
- * module that parks handles asks before claiming them back.
- */
-export abstract class ResourceGroups extends Interface<{
-  adoptable(group: string): boolean;
 }>() {}
 
 /**

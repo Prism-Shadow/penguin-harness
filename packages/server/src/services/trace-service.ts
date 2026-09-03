@@ -74,7 +74,7 @@ import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdow
 import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config } from "../config.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;

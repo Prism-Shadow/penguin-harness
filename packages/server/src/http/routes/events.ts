@@ -8,7 +8,7 @@ import { sseEndpoint } from "../sse.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels } from "../../hmr/capabilities.js";
+import { Channels } from "../../runtime/channel.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** What this route group reaches — bound by its module (src/modules). */

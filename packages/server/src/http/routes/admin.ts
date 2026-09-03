@@ -12,7 +12,8 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { pathParam, readJson, requireString } from "../validate.js";
 import type { AdminService } from "../../services/admin-service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Desktop, Proxy } from "../../hmr/capabilities.js";
+import type { Desktop } from "../../services/desktop-service.js";
+import type { Proxy } from "../../net/proxy.js";
 import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
 import { adminSettingsRoutes } from "./admin-settings.js";
 

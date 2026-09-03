@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -154,3 +155,6 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     supervised: env.PENGUIN_SUPERVISED === "1",
   };
 }
+
+/** The process configuration object — one per process; the listen callback writes the real port into it. */
+export abstract class Config extends Interface<ServerConfig>() {}

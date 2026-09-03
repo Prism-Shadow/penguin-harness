@@ -46,6 +46,7 @@ import {
   setGlobalDispatcher,
 } from "undici";
 import type { Dispatcher } from "undici";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** Loopback names every effective NO_PROXY must contain (see module doc). */
 export const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"] as const;
@@ -182,3 +183,8 @@ export function applyProxySettings(settings: ProxySettings): void {
   current = { proxyForApp: settings.proxyForApp, proxyUrl: settings.proxyUrl };
   if (installed) setGlobalDispatcher(buildProxyDispatcher(current));
 }
+
+/** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
+export abstract class Proxy extends Interface<{
+  apply(settings: ProxySettings): void;
+}>() {}

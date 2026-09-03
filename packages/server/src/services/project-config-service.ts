@@ -84,7 +84,7 @@ import {
 } from "./vision-detect.js";
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config } from "../config.js";
 
 type RawTable = Record<string, unknown>;
 

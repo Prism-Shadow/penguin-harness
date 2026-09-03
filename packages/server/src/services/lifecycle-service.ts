@@ -1,3 +1,5 @@
+import { Interface } from "@prismshadow/penguin-core/kernel";
+
 /**
  * Process lifecycle as a runtime capability: whether a supervisor relaunches this process
  * when it exits, and the restart trigger the platform's `POST /api/version/restart` pulls
@@ -13,6 +15,10 @@
  * Mechanism only: what a restart is *for* is the platform's business (the update flow);
  * this class knows how to leave, and who is there to catch it.
  */
+export abstract class Lifecycle extends Interface<
+  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
+>() {}
+
 export class LifecycleService {
   private restartHandler: (() => void) | null = null;
 

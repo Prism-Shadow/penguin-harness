@@ -35,7 +35,7 @@ import type {
 } from "./workspace-files-service.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config } from "../config.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 

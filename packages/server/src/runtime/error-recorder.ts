@@ -55,7 +55,7 @@ import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
 import type { ErrorsRepo } from "../db/repos/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Overrides } from "../app.js";
 
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =

@@ -31,7 +31,7 @@ export interface InstallRouteDeps {
 import { ensureInstallId } from "../../install-id.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config } from "../../hmr/capabilities.js";
+import { Config } from "../../config.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
 
 export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {

@@ -171,6 +171,8 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -729,3 +731,8 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  * claim — one live instance per process, shared with the runtime. Everything else is
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
+
+/** Construction overrides — production publishes {}, tests publish live collaborators. */
+export abstract class Overrides extends Interface<{
+  value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
+}>() {}
