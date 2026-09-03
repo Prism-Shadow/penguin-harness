@@ -2455,7 +2455,7 @@ Benchmark：
     descriptionField: "描述",
     descriptionHint: "一句话说明考察什么能力、题目难在哪里",
     runsField: "每题运行次数",
-    runsHint: "整数，至少 1；优化时每道题跑这么多次取平均",
+    runsHint: "1–1000 的整数；优化时每道题跑这么多次取平均",
     runsInfo:
       "多次运行能把稳定的能力差距和偶然波动分开，但评测成本按次数倍增。AI 出题校准时固定每题 1 次；这里的值给之后的优化用。",
     casesTitle: "题目",
@@ -2476,7 +2476,7 @@ Benchmark：
     createSubmit: "创建 Benchmark",
     created: "Benchmark 已创建",
     invalidId: "仅允许字母、数字、_ 和 -",
-    invalidRuns: "必须是不小于 1 的整数",
+    invalidRuns: "必须是 1–1000 的整数",
     invalidScore: "必须是 1–100 的整数",
     // Optimize: the dialog's two modes over one parameter tail.
     optimizeTitle: (title: string): string => `优化：${title}`,

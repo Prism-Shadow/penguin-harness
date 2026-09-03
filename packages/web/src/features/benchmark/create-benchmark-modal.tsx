@@ -12,6 +12,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
@@ -24,7 +25,7 @@ import { Select } from "../../components/ui/select";
 import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { toastSuccess } from "../../components/ui/toast";
 import { pickDefaultAgent } from "../ai-create";
-import { ID_PATTERN, caseId, slugFromTitle } from "./benchmark-prompts";
+import { ID_PATTERN, caseId, isValidRuns, slugFromTitle } from "./benchmark-prompts";
 
 interface CaseDraft {
   /** Stable React key, independent of position, so removing a case keeps the others' state. */
@@ -42,7 +43,8 @@ interface FormErrors {
   id?: string;
   title?: string;
   runs?: string;
-  cases: CaseErrors[];
+  /** Keyed by CaseDraft.key, not by position: removing a case must not move another one's errors onto it. */
+  cases: Record<number, CaseErrors>;
 }
 
 export interface CreateBenchmarkModalProps {
@@ -87,7 +89,7 @@ function CreateBenchmarkDialog({
   const [description, setDescription] = useState("");
   const [runs, setRuns] = useState("1");
   const [cases, setCases] = useState<CaseDraft[]>(() => [newCase()]);
-  const [errors, setErrors] = useState<FormErrors>({ cases: [] });
+  const [errors, setErrors] = useState<FormErrors>({ cases: {} });
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -95,20 +97,21 @@ function CreateBenchmarkDialog({
     setCases((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
 
   const validate = (): FormErrors => {
-    const next: FormErrors = { cases: cases.map(() => ({})) };
+    const next: FormErrors = { cases: {} };
     if (agentId === "") next.agentId = S.common.requiredField;
     if (title.trim() === "") next.title = S.common.requiredField;
     if (id.trim() === "") next.id = S.common.requiredField;
     else if (!ID_PATTERN.test(id.trim())) next.id = S.benchmark.invalidId;
-    if (!/^\d+$/.test(runs) || Number.parseInt(runs, 10) < 1) next.runs = S.benchmark.invalidRuns;
-    cases.forEach((c, i) => {
-      const e = next.cases[i]!;
+    if (!isValidRuns(runs)) next.runs = S.benchmark.invalidRuns;
+    for (const c of cases) {
+      const e: CaseErrors = {};
       if (c.slug.trim() === "") e.slug = S.common.requiredField;
       else if (!ID_PATTERN.test(c.slug.trim())) e.slug = S.benchmark.invalidId;
       if (c.title.trim() === "") e.title = S.common.requiredField;
       if (c.statement.trim() === "") e.statement = S.common.requiredField;
       if (c.rubric.trim() === "") e.rubric = S.common.requiredField;
-    });
+      next.cases[c.key] = e;
+    }
     return next;
   };
   const hasErrors = (e: FormErrors) =>
@@ -116,7 +119,7 @@ function CreateBenchmarkDialog({
     e.id !== undefined ||
     e.title !== undefined ||
     e.runs !== undefined ||
-    e.cases.some((c) => Object.keys(c).length > 0);
+    Object.values(e.cases).some((c) => Object.keys(c).length > 0);
 
   const submit = async () => {
     const next = validate();
@@ -232,7 +235,7 @@ function CreateBenchmarkDialog({
           </div>
           <div className="space-y-3">
             {cases.map((c, i) => {
-              const e = errors.cases[i] ?? {};
+              const e = errors.cases[c.key] ?? {};
               const dirName = caseId(i + 1, c.slug.trim() || "<slug>");
               return (
                 <div
@@ -317,9 +320,7 @@ function CreateBenchmarkDialog({
             {S.benchmark.addCase}
           </Button>
         </div>
-        {submitError !== null && (
-          <p className="text-xs text-red-600 dark:text-red-400">{submitError}</p>
-        )}
+        {submitError !== null && <p className={`text-xs ${toneInk.danger}`}>{submitError}</p>}
       </div>
     </Modal>
   );

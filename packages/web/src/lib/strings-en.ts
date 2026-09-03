@@ -2504,7 +2504,8 @@ Scenarios:
     descriptionField: "Description",
     descriptionHint: "One line on what capability is tested and what makes the cases hard",
     runsField: "Runs per case",
-    runsHint: "An integer of at least 1; optimization runs every case this many times and averages",
+    runsHint:
+      "An integer from 1 to 1000; optimization runs every case this many times and averages",
     runsInfo:
       "Repeated runs separate a stable capability gap from chance, at a cost that scales with the count. AI calibration always uses one run per case; this value is for the optimization that follows.",
     casesTitle: "Cases",
@@ -2527,7 +2528,7 @@ Scenarios:
     createSubmit: "Create Benchmark",
     created: "Benchmark created",
     invalidId: "Letters, digits, _ and - only",
-    invalidRuns: "Must be an integer of at least 1",
+    invalidRuns: "Must be an integer from 1 to 1000",
     invalidScore: "Must be an integer from 1 to 100",
     optimizeTitle: (title: string): string => `Optimize: ${title}`,
     optimizeDescription:

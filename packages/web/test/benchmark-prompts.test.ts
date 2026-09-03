@@ -6,11 +6,13 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  MAX_RUNS,
   benchmarkCreateExamples,
   benchmarkCreateTail,
   benchmarkPath,
   buildOptimizePrompt,
   caseId,
+  isValidRuns,
   optimizeExamples,
   optimizeTail,
   slugFromTitle,
@@ -89,5 +91,16 @@ describe("id helpers", () => {
 
   it("benchmarkPath is the directory relative to the App Data Dir", () => {
     expect(benchmarkPath("report-writer", "v1")).toBe("agents/report-writer/benchmarks/v1");
+  });
+
+  // The create route enforces the same bound, so a Benchmark can never be created with a runs
+  // count the Optimize dialog would then refuse.
+  it("isValidRuns accepts 1..MAX_RUNS and nothing else", () => {
+    expect(isValidRuns("1")).toBe(true);
+    expect(isValidRuns(String(MAX_RUNS))).toBe(true);
+    expect(isValidRuns(String(MAX_RUNS + 1))).toBe(false);
+    expect(isValidRuns("0")).toBe(false);
+    expect(isValidRuns("")).toBe(false);
+    expect(isValidRuns("1.5")).toBe(false);
   });
 });
