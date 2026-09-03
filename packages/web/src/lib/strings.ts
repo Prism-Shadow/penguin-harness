@@ -1191,7 +1191,7 @@ export const zh = {
     aiAddTitle: "让 AI 添加密钥",
     aiAddIntro:
       "写进提示词的密钥值会发给模型服务商、写入对话记录（Trace），还会出现在智能体执行的命令里。更稳妥的做法是让 AI 只创建键名并告诉你用途，值在保险柜里手动填写。",
-    aiAddPlaceholder: "要存哪个键、值是什么，或让它检查这个智能体需要哪些 API key…",
+    aiAddPlaceholder: "让它检查这个智能体需要哪些 API key，或说明要建哪些键名…",
     aiAddExamples: [
       {
         key: "audit",

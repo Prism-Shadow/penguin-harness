@@ -1190,7 +1190,7 @@ export const en: Strings = {
     aiAddTitle: "Add secrets with AI",
     aiAddIntro:
       "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
-    aiAddPlaceholder: "Which key to store and its value, or ask which API keys this agent needs…",
+    aiAddPlaceholder: "Ask which API keys this agent needs, or name the keys to create…",
     aiAddExamples: [
       {
         key: "audit",
