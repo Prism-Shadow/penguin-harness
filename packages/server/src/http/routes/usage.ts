@@ -20,7 +20,14 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { UsageService } from "../../services/usage-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface UsageRouteDeps {
+  access: ProjectAccess;
+  usageService: UsageService;
+}
 
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
 
@@ -41,13 +48,13 @@ function optionalTsParam(value: string | undefined, label: string): string | und
   return new Date(ms).toISOString();
 }
 
-export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
+export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation.
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const groupByRaw = c.req.query("groupBy") ?? "date";
     if (!(GROUP_BYS as readonly string[]).includes(groupByRaw)) {
       throw badRequest(`groupBy must be one of ${GROUP_BYS.join(" / ")}.`);
@@ -96,7 +103,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   // than a reason to widen the models response with telemetry.
   app.get("/model-totals", (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(deps.usageService.modelTotals(projectId));
   });
 
@@ -107,7 +114,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   // narrowing the summary above does not do.
   app.get("/errors", (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const { offset, limit } = paginationQuery(c);
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
@@ -148,7 +155,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     // Owner only, the rule Agent deletion applies to error rows already (it cascade-deletes
     // them): membership is enough to READ the panel, but these rows are the Project's shared
     // history and one member emptying them takes them from everyone.
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     const agentId = c.req.query("agentId");

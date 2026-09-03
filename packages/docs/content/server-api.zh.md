@@ -21,7 +21,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 
 ```text
 packages/server/src
-├── index.ts / config.ts / app.ts   # 启动入口 · 环境变量配置 · Hono 组装(createApp 不绑端口,便于测试)
+├── index.ts / config.ts / app.ts   # 启动入口 · 环境变量配置 · Hono 组装（运行时 app；业务路由由 src/modules 下的 http 模块装配，不绑端口,便于测试)
 ├── api/types.ts                    # 对外 DTO 契约(经 "./api" 子路径供前端 type-only 引用)
 ├── auth/                           # scrypt 密码、admin 种子、cookie 会话、认证中间件
 ├── db/                             # node:sqlite 连接、建表 SQL、每表一个 repo

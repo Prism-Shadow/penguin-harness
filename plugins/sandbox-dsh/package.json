@@ -31,5 +31,26 @@
     "@prismshadow/penguin-core": "workspace:*",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "modules": [
+      {
+        "name": "SandboxDsh",
+        "requires": {},
+        "provides": {},
+        "contributes": {
+          "SandboxModule.providers": [
+            {
+              "id": "sandbox-dsh.provider",
+              "name": "dsh-local",
+              "dimensions": [
+                "fs-write"
+              ]
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
   }
 }

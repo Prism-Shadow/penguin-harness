@@ -62,7 +62,38 @@ import {
   requireEnum,
   requireValidId,
 } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import type { SessionsRepo } from "../../db/repos/sessions.js";
+import type { ChannelHub } from "../../runtime/channel.js";
+import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionSources } from "../../runtime/session-sources.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { PreviewTokenSigner } from "../../services/preview-token.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { ProjectConfigService } from "../../services/project-config-service.js";
+import type { SessionService } from "../../services/session-service.js";
+import type { TraceService } from "../../services/trace-service.js";
+import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface SessionsRouteDeps {
+  agentConfigService: AgentConfigService;
+  channels: ChannelHub;
+  config: ServerConfig;
+  manager: SessionManager;
+  messaging: MessagingBridge;
+  previewTokens: PreviewTokenSigner;
+  projectConfigService: ProjectConfigService;
+  access: ProjectAccess;
+  serverSettingsRepo: ServerSettingsRepo;
+  sessionService: SessionService;
+  sessionSources: SessionSources;
+  sessionsRepo: SessionsRepo;
+  traceService: TraceService;
+  workspaceFiles: WorkspaceFilesService;
+}
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
   assertAttachmentBudget,
@@ -79,6 +110,30 @@ import {
 } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import type { RecallStore } from "../../runtime/session-manager.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Channels, Config } from "../../hmr/capabilities.js";
+import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
+import { Messaging } from "../../runtime/messaging/bridge.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
+import { SessionsModule } from "../../runtime/session-manager.js";
+import { MessagingModule } from "../../runtime/messaging/bridge.js";
+import { WorkspaceModule } from "./preview.js";
+import { agentsRoutes } from "./agents.js";
+import { agentConfigRoutes } from "./agent-config.js";
+import { vaultRoutes } from "./vault.js";
+import { modelsRoutes } from "./models.js";
+import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
+import { chatDefaultsRoutes } from "./chat-defaults.js";
+import { commandPolicyRoutes } from "./command-policy.js";
+import { usageRoutes } from "./usage.js";
+import type { AgentService } from "../../services/agent-service.js";
+import type { SchedulesRepo } from "../../db/repos/schedules.js";
+import type { ModelOAuthService } from "../../services/model-oauth-service.js";
+import type { TraceIndexService } from "../../services/trace-index.js";
+import type { ErrorsRepo } from "../../db/repos/errors.js";
+import type { UsageService } from "../../services/usage-service.js";
+import { PreviewTokens } from "./preview.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -167,7 +222,10 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
  * Fail-soft: this is one mark on a gauge, and an Agent deleted out from under a still-indexed
  * Session (or a config that will not parse) must not take the whole composition down with it.
  */
-async function sessionCompactionThreshold(deps: AppDeps, row: SessionRow): Promise<number | null> {
+async function sessionCompactionThreshold(
+  deps: SessionsRouteDeps,
+  row: SessionRow,
+): Promise<number | null> {
   try {
     const [agent, project] = await Promise.all([
       deps.agentConfigService.getConfig(row.projectId, row.agentId),
@@ -417,7 +475,7 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
-export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
@@ -426,7 +484,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
     // limit+1 and shows limit, detecting "has more" without a response-envelope change.
@@ -466,7 +524,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const modelId = optionalString(body, "modelId", { minLen: 1, label: "modelId" });
@@ -505,7 +563,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 }
 
 /** Session-level entry point: /api/sessions/:sessionId/*. */
-export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   /** Look up ownership and check access (404 if the index has no such Session, or access is denied — never leaking existence). */
@@ -520,7 +578,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     try {
-      deps.projectService.requireProjectAccess(c.var.user.userId, row.projectId);
+      deps.access.requireProjectAccess(c.var.user.userId, row.projectId);
     } catch {
       throw new HttpError(
         404,
@@ -1392,4 +1450,181 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/**
+ * The HTTP surface that drives the session runtime — every route group that reaches the
+ * SessionManager, plus the Project-level groups that share its access checks. Routes only:
+ * this module provides nothing, it binds.
+ */
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "session-api.model-oauth-callback",
+        prefix: "/api/projects/:projectId/model-oauth/callback",
+        auth: "none",
+        order: 6,
+      },
+      {
+        id: "session-api.models",
+        prefix: "/api/projects/:projectId/models",
+        auth: "user",
+        order: 100,
+      },
+      {
+        id: "session-api.model-oauth",
+        prefix: "/api/projects/:projectId/model-oauth",
+        auth: "user",
+        order: 110,
+      },
+      {
+        id: "session-api.chat-defaults",
+        prefix: "/api/projects/:projectId/chat-defaults",
+        auth: "user",
+        order: 120,
+      },
+      {
+        id: "session-api.command-policy",
+        prefix: "/api/projects/:projectId/command-policy",
+        auth: "user",
+        order: 130,
+      },
+      {
+        id: "session-api.agents",
+        prefix: "/api/projects/:projectId/agents",
+        auth: "user",
+        order: 140,
+      },
+      {
+        id: "session-api.agent-config",
+        prefix: "/api/projects/:projectId/agents/:agentId/config",
+        auth: "user",
+        order: 170,
+      },
+      {
+        id: "session-api.vault",
+        prefix: "/api/projects/:projectId/agents/:agentId/vault",
+        auth: "user",
+        order: 180,
+      },
+      {
+        id: "session-api.agent-sessions",
+        prefix: "/api/projects/:projectId/agents/:agentId/sessions",
+        auth: "user",
+        order: 250,
+      },
+      {
+        id: "session-api.usage",
+        prefix: "/api/projects/:projectId/usage",
+        auth: "user",
+        order: 260,
+      },
+      {
+        id: "session-api.sessions",
+        prefix: "/api/sessions",
+        auth: "user",
+        order: 270,
+      },
+    ],
+  },
+})
+export class SessionApiRoutes {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly channels!: Channels;
+  @Use(SessionsModule) private readonly manager!: ManagerIface;
+  @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
+  @Use() private readonly agentConfig!: AgentConfigService;
+  @Use() private readonly agents!: AgentService;
+  @Use(MessagingModule) private readonly messaging!: Messaging;
+  @Use() private readonly schedulesRepo!: SchedulesRepo;
+  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly modelOAuth!: ModelOAuthService;
+  @Use() private readonly traceIndex!: TraceIndexService;
+  @Use() private readonly traces!: TraceService;
+  @Use() private readonly workspaceFiles!: WorkspaceFilesService;
+  @Use(WorkspaceModule) private readonly previewTokens!: PreviewTokens;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Use() private readonly sessionsRepo!: SessionsRepo;
+  @Use() private readonly sources!: SessionSources;
+  @Use() private readonly errorsRepo!: ErrorsRepo;
+  @Use() private readonly usage!: UsageService;
+  @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
+  @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
+  @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
+  @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
+  @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
+  @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
+  @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
+  @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
+  setup() {
+    const manager = this.manager as SessionManager;
+    const sessionService = this.sessionService as SessionService;
+    const agentConfigService = this.agentConfig;
+    const access = this.access;
+    const projectConfigService = this.projectConfig;
+    const sessionsRepo = this.sessionsRepo;
+    const channels = this.channels as ChannelHub;
+    const sessionsDeps = {
+      agentConfigService,
+      channels,
+      config: this.config,
+      manager,
+      messaging: this.messaging as MessagingBridge,
+      previewTokens: this.previewTokens as PreviewTokenSigner,
+      projectConfigService,
+      access,
+      serverSettingsRepo: this.settings,
+      sessionService,
+      sessionSources: this.sources,
+      sessionsRepo,
+      traceService: this.traces,
+      workspaceFiles: this.workspaceFiles,
+    };
+    const modelOAuthDeps = {
+      config: this.config,
+      manager,
+      modelOAuth: this.modelOAuth,
+      access,
+      channels,
+      projectConfigService,
+      sessionsRepo,
+    };
+    this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
+    this.modelsRoutes = modelsRoutes({
+      channels,
+      manager,
+      projectConfigService,
+      access,
+      sessionsRepo,
+    });
+    this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
+    this.chatDefaultsRoutes = chatDefaultsRoutes({
+      agentConfigService,
+      projectConfigService,
+      access,
+    });
+    this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
+    this.agentsRoutes = agentsRoutes({
+      agentConfigService,
+      agentService: this.agents,
+      errorsRepo: this.errorsRepo,
+      manager,
+      access,
+      schedulesRepo: this.schedulesRepo,
+      sessionService,
+      sessionsRepo,
+      traceIndex: this.traceIndex,
+    });
+    this.agentConfigRoutes = agentConfigRoutes({ agentConfigService, manager, access });
+    this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
+    this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
+    this.usageRoutes = usageRoutes({ access, usageService: this.usage });
+    this.sessionsRoutes = sessionsRoutes(sessionsDeps);
+  }
 }

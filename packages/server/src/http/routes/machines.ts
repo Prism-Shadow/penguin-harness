@@ -29,9 +29,14 @@ import type { DirListResponse, MachinesResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { MachinesService } from "../../machines/service.js";
 
-export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MachinesRouteDeps {
+  machines: MachinesService;
+}
+
+export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Admin AND a member of the Project: the Project scope says WHICH machines are answered,
