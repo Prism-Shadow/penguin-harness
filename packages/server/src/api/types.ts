@@ -2967,10 +2967,11 @@ export interface PortableHookRef {
 
 /**
  * `penguin-agent.json`: what an Agent is, apart from its state — enough to recreate it in
- * another PenguinHarness install or to write one by hand from another tool's settings. It
- * carries no secrets: vault values never travel (only the key names the agent expects), and
- * credential-looking MCP `env` / `headers` values are blanked on export. Memory, Traces,
- * schedules and snapshots are Agent State, not definition, and stay behind.
+ * another PenguinHarness install or to write one by hand from another tool's settings. Vault
+ * values never travel (only the key names the agent expects) and credential-looking MCP
+ * `env` / `headers` values are blanked on export; nothing else is redacted, so a secret
+ * placed elsewhere in an MCP config (a `url` query string, stdio `args`) does travel. Memory,
+ * Traces, schedules and snapshots are Agent State, not definition, and stay behind.
  */
 export interface PortableAgentDefinition {
   format: "penguin-agent/1";

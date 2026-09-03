@@ -48,10 +48,17 @@ export function renderReadme(definition: PortableAgentDefinition): string {
       `| MCP Server | \`${m.name}\` | ${String((m.config as { transport?: unknown }).transport ?? "stdio")} |`,
   );
   const vaultKeys = definition.vaultKeys ?? [];
+  // The same MCP note either way: it is the one caveat a reader of this bundle has to act on,
+  // and it must not read as an afterthought only agents with vault keys get.
+  const mcpNote =
+    "MCP `env` / `headers` entries whose names look like credentials were blanked in " +
+    "`penguin-agent.json` and need filling in. That blanking is the whole of the redaction — " +
+    "a secret written anywhere else in an MCP entry (a token in a `url` query string, a key " +
+    "in stdio `args`) is still in the file, so read `mcpServers` before passing this bundle on.";
   const vaultSection =
     vaultKeys.length > 0
-      ? `The agent expects these environment variables from its vault: ${vaultKeys.map((k) => `\`${k}\``).join(", ")}. Values never travel in a bundle — set them on the agent's Vault tab in the Web App, or with \`penguin config vault set --agent-id ${agentId} --key <NAME> --value <value>\`. MCP \`env\` / \`headers\` entries whose names look like credentials were blanked in \`penguin-agent.json\` and need filling in too.`
-      : "The agent declares no vault keys. MCP `env` / `headers` entries whose names look like credentials were blanked in `penguin-agent.json` and need filling in.";
+      ? `The agent expects these environment variables from its vault: ${vaultKeys.map((k) => `\`${k}\``).join(", ")}. Values never travel in a bundle — set them on the agent's Vault tab in the Web App, or with \`penguin config vault set --agent-id ${agentId} --key <NAME> --value <value>\`. ${mcpNote}`
+      : `The agent declares no vault keys. ${mcpNote}`;
 
   return `# ${definition.name} — integration guide
 
@@ -69,7 +76,7 @@ This bundle was exported from PenguinHarness (Project \`${projectId}\`, Agent \`
 | \`api/ENDPOINTS.md\` | The four server API calls that run this agent, with request and response shapes |
 | \`examples/curl.sh\`, \`examples/client.py\`, \`examples/client.ts\` | Runnable clients: create a Session, send a task, print the final answer |
 
-Not included: vault values (secrets never travel), memory, Traces, scheduled tasks and Agent State snapshots. To move all of those, use the snapshot export on the agent's settings page instead — a snapshot restores state, this bundle ports an agent.
+Not included: vault values, memory, Traces, scheduled tasks and Agent State snapshots. To move all of those, use the snapshot export on the agent's settings page instead — a snapshot restores state, this bundle ports an agent.
 
 ## The agent
 

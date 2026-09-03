@@ -7,7 +7,7 @@
 
 [中文版](2026-09-02-agent-porting.zh.md)
 
-An Agent can now be exported as a portable bundle and imported from one — or from a setup written for another coding agent. The bundle carries the Agent's definition, its installed skills and hook packages, and an integration guide written for a coding agent; it never carries vault values, memory, Traces, schedules or snapshots. This is a second path beside the Agent State snapshot: a snapshot backs up and restores one existing Agent's state, a bundle ports an Agent's identity and capabilities.
+An Agent can now be exported as a portable bundle and imported from one — or from a setup written for another coding agent. The bundle carries the Agent's definition, its installed skills and hook packages, and an integration guide written for a coding agent; it never carries vault values, memory, Traces, schedules or snapshots. Redaction stops there, though: credential-looking MCP `env` / `headers` values are blanked, but a secret placed elsewhere in an MCP config — a token in a `url` query string, a key in stdio `args` — travels with the bundle. This is a second path beside the Agent State snapshot: a snapshot backs up and restores one existing Agent's state, a bundle ports an Agent's identity and capabilities.
 
 ## Details
 

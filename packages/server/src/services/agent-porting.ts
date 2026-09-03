@@ -6,9 +6,11 @@
  *
  * Distinct from Agent State snapshots (snapshot-service.ts): a snapshot backs up and restores
  * the whole state directory of an existing Agent, a bundle moves an Agent's identity and
- * capabilities into another install or another tool's hands — and never carries secrets:
- * vault values stay behind (only the key names travel), and MCP `env` / `headers` values
- * whose names look like credentials are blanked on the way out.
+ * capabilities into another install or another tool's hands. Vault values stay behind (only
+ * the key names travel) and MCP `env` / `headers` values whose names look like credentials
+ * are blanked on the way out — and that is the whole of the redaction: a secret placed
+ * elsewhere in an MCP config (a token in a `url` query string, a key in stdio `args`) is not
+ * detected and travels with the bundle.
  */
 import fs from "node:fs/promises";
 import path from "node:path";

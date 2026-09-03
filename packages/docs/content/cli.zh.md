@@ -168,7 +168,7 @@ penguin agent import ./exports/helper-export.zip --agent-id helper_2
 | `--plugins <a,b>` | 逗号分隔的插件库插件名，预装进新 Agent（各自的 Skill 与钩子包）；未知名称在创建任何东西之前即被拒绝 |
 | `--project-id <id>` / `--json` / `--server <url>` | 同各处约定 |
 
-`agent export <agent-id>` 下载该 Agent 的可移植包 `<agent-id>-export.zip`：`penguin-agent.json`（名称、指令、技能、钩子、工具、凭据值已置空的 MCP 条目、模型偏好、Vault 键名）、已安装的 `skills/` 与 `hooks/` 目录，以及一份接入文档——运行该 Agent 的四步 API 调用，外加可直接运行的 `curl` / Python / TypeScript 客户端。`agent import <file>` 从这样的包或单独的 `penguin-agent.json` 创建 Agent，安装包内的技能与钩子，并打印未能应用的项与需要设置的 Vault 键名。二者都不是 Agent State 快照（对某个既有 Agent 的备份）：Vault 值、记忆、Trace 与定时任务不随包携带。
+`agent export <agent-id>` 下载该 Agent 的可移植包 `<agent-id>-export.zip`：`penguin-agent.json`（名称、指令、技能、钩子、工具（`env` / `headers` 中形似凭据的值已置空的 MCP 条目）、模型偏好、Vault 键名）、已安装的 `skills/` 与 `hooks/` 目录，以及一份接入文档——运行该 Agent 的四步 API 调用，外加可直接运行的 `curl` / Python / TypeScript 客户端。`agent import <file>` 从这样的包或单独的 `penguin-agent.json` 创建 Agent，安装包内的技能与钩子，并打印未能应用的项与需要设置的 Vault 键名。二者都不是 Agent State 快照（对某个既有 Agent 的备份）：Vault 值、记忆、Trace 与定时任务不随包携带。
 
 | 选项 | 说明 |
 | --- | --- |

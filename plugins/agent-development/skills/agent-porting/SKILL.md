@@ -5,7 +5,7 @@ description: Import an agent into PenguinHarness from a Claude Code, Codex or Pi
 
 # Agent Porting
 
-An agent moves between tools as a **portable definition** — `penguin-agent.json` — with its skills beside it. PenguinHarness writes one on export and reads one on import; for Claude Code, Codex or Pi you write it from what their files say. Import creates a *new* agent in the current Project; export packages an existing one. Neither carries secrets.
+An agent moves between tools as a **portable definition** — `penguin-agent.json` — with its skills beside it. PenguinHarness writes one on export and reads one on import; for Claude Code, Codex or Pi you write it from what their files say. Import creates a *new* agent in the current Project; export packages an existing one. Neither carries vault values.
 
 This is not the Agent State snapshot (the `.tar.gz` backup of one agent's whole state directory on its settings page): a snapshot backs up or restores, porting moves an agent between tools or hands it to someone.
 
@@ -85,7 +85,7 @@ Tell the user: the new agent's id and Project; what was mapped (instructions, N 
 penguin agent export <id> [--out <dir-or-file>] [--project-id <project>]   # writes <id>-export.zip
 ```
 
-The bundle carries `penguin-agent.json`, `skills/`, `hooks/`, `README.md` (an integration guide written for a coding agent: what the agent is, the four server API calls that run it with the Project and agent ids filled in, the CLI commands, its skills and tools, its limits), `api/ENDPOINTS.md`, and `examples/curl.sh` / `client.py` / `client.ts` — runnable clients that create a Session, send a task and print the final answer, reading `PENGUIN_SERVER` and `PENGUIN_API_TOKEN` from the environment. Vault values, memory, Traces, schedules and snapshots are not in it; the README lists the vault key names to set.
+The bundle carries `penguin-agent.json`, `skills/`, `hooks/`, `README.md` (an integration guide written for a coding agent: what the agent is, the four server API calls that run it with the Project and agent ids filled in, the CLI commands, its skills and tools, its limits), `api/ENDPOINTS.md`, and `examples/curl.sh` / `client.py` / `client.ts` — runnable clients that create a Session, send a task and print the final answer, reading `PENGUIN_SERVER` and `PENGUIN_API_TOKEN` from the environment. Vault values, memory, Traces, schedules and snapshots are not in it; the README lists the vault key names to set. Credential-looking MCP `env` / `headers` values are blanked and nothing else is, so read `mcpServers` for a token in a `url` query string or in stdio `args` before you hand the bundle to anyone.
 
 Three ways to use it:
 
