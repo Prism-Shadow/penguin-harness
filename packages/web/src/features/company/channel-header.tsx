@@ -6,9 +6,10 @@
  * overflow menu with rename, purpose, archive and unarchive.
  *
  * Who may do what is the server's rule, not this file's: everything here is shown to a
- * person, who is a Project member and therefore may invite, join, archive and unarchive.
- * The all-hands channel is the one exception the UI itself enforces — it cannot be left,
- * archived, or have its membership edited, so those controls are simply absent.
+ * person, who is a Project member and therefore may join, archive and unarchive — and may
+ * invite once it is in the channel itself. The all-hands channel is the one exception the UI
+ * itself enforces — it cannot be left, archived, or have its membership edited, so those
+ * controls are simply absent.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -414,7 +415,11 @@ export function ChannelHeader({
             onOpenDesk={(principal) => void openDesk(principal)}
             openingDesk={openingDesk}
           />
-          {!detail.archived && (
+          {/* Inviting is a member's action, and never edits the all-hands channel — which
+              already holds everyone, so its candidate list is empty by construction. Both
+              refusals are the server's rule (`all_hands_immutable`, `not_a_member`); the
+              button is absent rather than dead. */}
+          {!allHands && detail.isMember && !detail.archived && (
             <InvitePicker
               candidates={candidates}
               query={query}
