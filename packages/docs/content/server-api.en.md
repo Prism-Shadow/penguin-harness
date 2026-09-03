@@ -209,7 +209,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/api/plugins` (global) | The plugin library by category — every plugin with its skills' metadata and hook points (any logged-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | Everything one library plugin ships as text keyed by path — each skill's installable SKILL.md and reference files under `skills/<name>/`, the hook scripts under `hooks/` — for the plugin detail view's file browser (any logged-in user) |
 | DELETE | /agents/:agentId/hooks/:name | Uninstall a hook package |
-| GET | /agents/:agentId/benchmarks | Benchmark scoring data |
+| GET | /agents/:agentId/benchmarks | Benchmark scoring data — only directories holding a `benchmark_config.toml`; one without it (what a Benchmark deleted mid-evaluation leaves behind) is skipped |
 | POST | /agents/:agentId/benchmarks | Create a Benchmark by hand (owner only): `{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`. The server writes `benchmark_config.toml`, a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (the title as its heading) and `rubric/README.md`; ids follow the agent-id alphabet, case ids start with `CASE-`; 409 `benchmark_exists` when the directory is already there |
 | DELETE | /agents/:agentId/benchmarks/:benchmarkId | Remove a Benchmark directory whole — cases, config and scoreboard (owner only; 204, 404 when absent) |
 

@@ -1,6 +1,6 @@
 /**
  * Benchmark API integration tests: benchmark_config.toml title/description and runs
- * pass-through (falls back to directory name if missing), scoreboard.yaml v2's
+ * pass-through (and a directory without one is not listed), scoreboard.yaml v2's
  * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
  * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
  * unconfigured, permissions (members can read, outsiders get 404), and the owner-only
@@ -329,24 +329,52 @@ describe("benchmarks api", () => {
       ].join("\n"),
       "utf8",
     );
-    // A benchmark with no config file: title falls back to the directory name, config runs field is absent by default.
-    await fs.mkdir(path.join(benchmarksDir(t.root, projectId, AGENT), "empty-bench"), {
-      recursive: true,
-    });
-
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
-    expect(res.benchmarks.map((b) => b.id)).toEqual(["empty-bench", "swe-bench-v1"]);
-    const bench = res.benchmarks[1]!;
+    expect(res.benchmarks.map((b) => b.id)).toEqual(["swe-bench-v1"]);
+    const bench = res.benchmarks[0]!;
     expect(bench).toMatchObject({ title: "SWE Bench v1", caseCount: 1 });
     expect("runs" in bench).toBe(false);
     expect(bench.evaluations).toEqual([]);
-    expect(res.benchmarks[0]).toMatchObject({
-      title: "empty-bench",
-      caseCount: 0,
-      evaluations: [],
-    });
 
     expect((await outsider.get(base)).status).toBe(404);
+  });
+
+  it("lists a Benchmark that has never run, but not a directory without a config", async () => {
+    const dir = benchmarksDir(t.root, projectId, AGENT);
+    // Deleted mid-evaluation: the run kept writing, so the directory is back with a case and
+    // a scoreboard but no config. Not a Benchmark — it must not reach the Evaluation Center.
+    await fs.mkdir(path.join(dir, "half-deleted", "CASE-001-excel-task", "statement"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(dir, "half-deleted", "CASE-001-excel-task", "statement", "README.md"),
+      "# Case 001: Excel cleanup\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "half-deleted", "scoreboard.yaml"),
+      "evaluations: []\n",
+      "utf8",
+    );
+    // Created and never evaluated: a config, cases, and no scoreboard at all. Still a
+    // Benchmark — having no scores yet is not the same as being incomplete.
+    await fs.mkdir(path.join(dir, "never-run", "CASE-001-report", "statement"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(dir, "never-run", "benchmark_config.toml"),
+      'title = "Report writing"\nruns = 2\n',
+      "utf8",
+    );
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(res.benchmarks.map((b) => b.id)).toEqual(["never-run"]);
+    expect(res.benchmarks[0]).toMatchObject({
+      title: "Report writing",
+      runs: 2,
+      caseCount: 1,
+      evaluations: [],
+    });
   });
 
   /** A well-formed create request; the tests below vary one field at a time. */

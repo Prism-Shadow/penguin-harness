@@ -5,8 +5,9 @@
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
  * directory whole (`remove`), and never touches a scoreboard.
- * Missing or corrupt files always degrade gracefully (title falls back to the
- * directory name, scores come back empty) rather than throwing.
+ * `benchmark_config.toml` is what makes a directory a Benchmark: `list` skips one without it.
+ * Files that are there but corrupt degrade gracefully (title falls back to the directory
+ * name, scores come back empty) rather than throwing.
  *
  * Case and Evaluation averages are authoritative file values. The server validates
  * the current shape but never recomputes aggregates and does not migrate or backfill
@@ -221,7 +222,20 @@ export class BenchmarkService {
     }
     const benchmarks: BenchmarkSummary[] = [];
     for (const item of items.filter((i) => i.isDir).sort((a, b) => a.name.localeCompare(b.name))) {
-      benchmarks.push(await this.readBenchmark(path.join(dir, item.name), item.name));
+      const benchDir = path.join(dir, item.name);
+      // Only `benchmark_config.toml` makes a directory a Benchmark — it is the file the
+      // evaluation Skills require, and without it there is no title and no run count. A
+      // Benchmark deleted while an evaluation is still running comes back as the paths that
+      // run keeps writing, config not among them; that debris is not a Benchmark and is not
+      // listed. Absence of results is not absence of a Benchmark: one that has never run has
+      // its config and lists as usual.
+      try {
+        await fs.access(path.join(benchDir, "benchmark_config.toml"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        continue;
+      }
+      benchmarks.push(await this.readBenchmark(benchDir, item.name));
     }
     return { benchmarks };
   }
