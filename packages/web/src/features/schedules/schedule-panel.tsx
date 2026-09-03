@@ -306,7 +306,10 @@ export function SchedulePanel({ session, active, aiRequest, onSendToSession }: S
                     <div className="flex items-center gap-1.5">
                       <span
                         className="truncate text-sm text-gray-800 dark:text-gray-100"
-                        title={item.prompt}
+                        // The name leads the tooltip, not just the prompt: a task name is a
+                        // file name and truncates in a dock this narrow, and the panel would
+                        // otherwise be the one surface that cannot show it in full.
+                        title={`${item.name}\n${item.prompt}`}
                       >
                         {item.name}
                       </span>

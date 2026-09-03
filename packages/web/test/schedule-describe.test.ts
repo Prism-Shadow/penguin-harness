@@ -66,6 +66,23 @@ describe("describeSchedule", () => {
     expect(describeSchedule({ ...daily, period: "24h" }, "zh", NOW)).toBe("每天 08:00");
   });
 
+  it("takes the wall clock from the next trigger, so the line cannot contradict itself", () => {
+    // The server steps from start_at in fixed milliseconds, so a DST boundary moves a daily
+    // task's wall clock by an hour; the summary follows the trigger it prints beside it.
+    expect(
+      describeSchedule(
+        {
+          status: "active",
+          period: "1d",
+          startAt: local(2026, 3, 1, 8, 0),
+          nextFireAt: local(2026, 9, 3, 9, 0),
+        },
+        "zh",
+        NOW,
+      ),
+    ).toBe("每天 09:00 · 下次 明天 09:00");
+  });
+
   it("names the weekday of a 7d period and counts other multi-day periods", () => {
     expect(describeSchedule({ status: "active", period: "7d", startAt: MONDAY }, "zh", NOW)).toBe(
       "每周一 09:00",

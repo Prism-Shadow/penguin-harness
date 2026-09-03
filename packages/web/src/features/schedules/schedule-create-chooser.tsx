@@ -18,6 +18,7 @@ import {
 export function ScheduleCreateChooser({
   anchor,
   anchorOwner,
+  returnFocus,
   canManual,
   onClose,
   onAi,
@@ -27,6 +28,12 @@ export function ScheduleCreateChooser({
   anchor: AnchorRect | null;
   /** The scroller whose movement dismisses it (the row menu's anchorOwner). */
   anchorOwner: () => HTMLElement | null;
+  /**
+   * Where Escape puts focus (the row menu's returnFocus — the row's own button). This panel
+   * renders no trigger of its own, so without it the Dropdown finds nothing to focus and a
+   * keyboard user is dropped onto <body>, having lost their place in the list.
+   */
+  returnFocus: () => HTMLElement | null;
   /** Whether the manual form is offered: writes are owner-only, the AI path is open to every member. */
   canManual: boolean;
   onClose: () => void;
@@ -47,6 +54,7 @@ export function ScheduleCreateChooser({
       portal={{ direction: "down", align: "left" }}
       anchorRect={anchor}
       anchorOwner={anchorOwner}
+      returnFocus={returnFocus}
       className="contents"
       menuClass="w-40"
       button={null}

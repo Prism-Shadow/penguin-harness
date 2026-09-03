@@ -75,13 +75,17 @@ export function describeInstant(iso: string, locale: Locale, now: Date): string 
 }
 
 /**
- * The period in everyday words, anchored on the start time's wall clock (and, for a weekly
- * task, its weekday). A period the grammar does not cover is shown as written.
+ * The period in everyday words, anchored on one trigger's wall clock (and, for a weekly task,
+ * its weekday). The anchor is the NEXT trigger where the server named one, not `start_at`:
+ * the server steps from `start_at` in fixed milliseconds, so a daily task fires an hour off
+ * its original wall clock once a DST boundary passes, and a line anchored on `start_at` would
+ * then contradict the next trigger printed beside it ("Every day at 08:00 · Next: tomorrow
+ * 09:00"). A period the grammar does not cover is shown as written.
  */
-function describePeriod(period: string, startAt: string, locale: Locale): string {
+function describePeriod(period: string, anchor: string, locale: Locale): string {
   const h = S.schedule.human;
   const minutes = periodMinutes(period);
-  const start = new Date(startAt);
+  const start = new Date(anchor);
   if (minutes === null || Number.isNaN(start.getTime())) return period;
   const time = clockTime(start);
   if (minutes === WEEK) return h.everyWeek(weekdayName(start, locale), time);
@@ -105,7 +109,7 @@ export function describeSchedule(
   if (item.status === "invalid") return names[item.status] ?? item.status;
   const summary =
     item.period !== undefined
-      ? describePeriod(item.period, item.startAt, locale)
+      ? describePeriod(item.period, item.nextFireAt ?? item.startAt, locale)
       : S.schedule.human.once(describeInstant(item.startAt, locale, now));
   if (item.status === "done" || item.status === "expired" || item.status === "missed")
     return `${names[item.status] ?? item.status} · ${summary}`;

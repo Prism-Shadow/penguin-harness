@@ -2751,6 +2751,7 @@ function SessionRow({
         <ScheduleCreateChooser
           anchor={scheduleChooser}
           anchorOwner={ctx.anchorOwner}
+          returnFocus={ctx.returnFocus}
           canManual={canManualSchedule}
           onClose={() => setScheduleChooser(null)}
           onAi={() => onScheduleAi(s)}

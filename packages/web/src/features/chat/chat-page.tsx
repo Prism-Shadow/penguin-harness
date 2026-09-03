@@ -389,17 +389,19 @@ export function ChatPage() {
   }, [draft, selected?.workspace]);
 
   // The Session row menu's "Schedule a task → Create with AI" arrives as route state: the
-  // schedules tab opens in the right dock and its AI dialog comes up. Consumed by replacing
-  // the history entry's state, so a reload or a return through history shows the
-  // conversation as it is rather than the dialog again. Waits for the Session to resolve —
-  // the tab body is keyed by Session and reads the request on mount — by which time
-  // AppLayout has pointed the dock scope at this conversation (a layout effect, so it runs
-  // before this one).
+  // schedules tab comes to the front and its AI dialog comes up. The dock it opens in is
+  // the one the tab already lives in (the right dock when it has no home yet), like every
+  // other jump command — naming a dock here would drag a tab the user had moved to the
+  // bottom back to the edge. Consumed by replacing the history entry's state, so a reload
+  // or a return through history shows the conversation as it is rather than the dialog
+  // again. Waits for the Session to resolve — the tab body is keyed by Session and reads
+  // the request on mount — by which time AppLayout has pointed the dock scope at this
+  // conversation (a layout effect, so it runs before this one).
   const scheduleAiWanted = wantsScheduleAi(location.state);
   const sessionResolved = selected !== null;
   useEffect(() => {
     if (!scheduleAiWanted || !sessionResolved) return;
-    openPanel("schedules", "right");
+    openPanel("schedules");
     setScheduleAiRequest({ key: location.key });
     navigate(location.pathname, { replace: true });
   }, [scheduleAiWanted, sessionResolved, location.key, location.pathname, navigate]);
