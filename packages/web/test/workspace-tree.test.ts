@@ -109,6 +109,16 @@ describe("flattenTree", () => {
     expect(flattenTree(LISTINGS, new Set()).map((r) => r.path)).toEqual(["a", "x.txt"]);
   });
 
+  it("numbers each row within its own directory, so a flat tree can state its set", () => {
+    const rows = flattenTree(LISTINGS, new Set(["a"]));
+    expect(rows.map((r) => [r.path, r.posInSet, r.setSize])).toEqual([
+      ["a", 1, 2],
+      ["a/b", 1, 2],
+      ["a/y.md", 2, 2],
+      ["x.txt", 2, 2],
+    ]);
+  });
+
   it("marks an open directory that is still loading, and an open one that is empty", () => {
     const loading = flattenTree(new Map([["", [dir("a")]]]), new Set(["a"]));
     expect(loading).toHaveLength(1);

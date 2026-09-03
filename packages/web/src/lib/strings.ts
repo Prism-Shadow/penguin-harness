@@ -2214,6 +2214,8 @@ Benchmark：
     /** Oversize picks are named and skipped before anything is read. */
     uploadTooLarge: (names: string, mb: number): string =>
       `超过 ${mb}MB 上传上限，已跳过：${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `不支持上传文件夹，已跳过：${names}`,
     /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "覆盖同名文件",
     overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,

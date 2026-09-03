@@ -12,7 +12,7 @@
  * highlighted; the rows carry `data-tree-path` / `data-tree-kind` so the panel's drop
  * handling can resolve the row under the pointer.
  */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
@@ -125,11 +125,15 @@ export function WorkspaceTreeView({
               ? `${row.path} · ${formatBytes(row.sizeBytes)} · ${formatDateTime(row.mtime)}`
               : row.path;
           return (
-            <div key={row.path}>
+            // A fragment, not a wrapper element: `role="tree"` owns `treeitem` children
+            // directly, and a generic box between the two hides them from that ownership.
+            <Fragment key={row.path}>
               <div
                 role="treeitem"
                 tabIndex={row.path === tabStop ? 0 : -1}
                 aria-level={row.depth + 1}
+                aria-posinset={row.posInSet}
+                aria-setsize={row.setSize}
                 aria-selected={selected}
                 {...(row.kind === "dir" ? { "aria-expanded": row.expanded } : {})}
                 aria-busy={loading || undefined}
@@ -175,7 +179,7 @@ export function WorkspaceTreeView({
                   {S.files.empty}
                 </p>
               )}
-            </div>
+            </Fragment>
           );
         })
       )}

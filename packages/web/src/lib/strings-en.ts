@@ -2266,6 +2266,8 @@ Scenarios:
     /** Oversize picks are named and skipped before anything is read. */
     uploadTooLarge: (names: string, mb: number): string =>
       `Over the ${mb}MB upload limit, skipped: ${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `Folders cannot be uploaded, skipped: ${names}`,
     /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "Overwrite existing files",
     overwriteConfirm: (n: number): string =>

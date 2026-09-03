@@ -149,7 +149,9 @@ const draftKey = (sessionId: string, path: string): string => `${sessionId}\n${p
  * Reads a file as text, bounded to TEXT_PREVIEW_LIMIT bytes: the body is read as a stream
  * and cancelled past the cap, so a large log never downloads whole for a preview. With
  * `sniff`, the first chunk decides whether the file is text at all — null means it is not,
- * and nothing more of it is read.
+ * and nothing more of it is read. A response with no stream is thrown on rather than read
+ * whole: `arrayBuffer()` would pull the entire file into memory, which is the one thing the
+ * cap exists to prevent.
  */
 async function fetchTextPreview(
   url: string,
@@ -157,31 +159,23 @@ async function fetchTextPreview(
 ): Promise<{ content: string; truncated: boolean } | null> {
   const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) throw new Error(String(res.status));
+  if (res.body === null) throw new Error("no response body");
+  const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  const reader = res.body?.getReader();
-  if (reader === undefined) {
-    const whole = new Uint8Array(await res.arrayBuffer());
-    chunks.push(whole);
-    total = whole.length;
-  } else {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (chunks.length === 0 && sniff && !looksLikeText(value.subarray(0, SNIFF_BYTES))) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-      total += value.length;
-      if (total > TEXT_PREVIEW_LIMIT) {
-        await reader.cancel();
-        break;
-      }
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (chunks.length === 0 && sniff && !looksLikeText(value.subarray(0, SNIFF_BYTES))) {
+      await reader.cancel();
+      return null;
     }
-  }
-  if (sniff && chunks.length > 0 && !looksLikeText(chunks[0]!.subarray(0, SNIFF_BYTES))) {
-    return null;
+    chunks.push(value);
+    total += value.length;
+    if (total > TEXT_PREVIEW_LIMIT) {
+      await reader.cancel();
+      break;
+    }
   }
   const bytes = new Uint8Array(total);
   let offset = 0;
@@ -215,6 +209,28 @@ function hitRow(target: EventTarget | null): { kind: "dir" | "file"; path: strin
   const kind = row.dataset.treeKind;
   const path = row.dataset.treePath;
   return (kind === "dir" || kind === "file") && path !== undefined ? { kind, path } : null;
+}
+
+/**
+ * A drop's files, with dropped folders held out: the browser puts a directory into
+ * `dataTransfer.files` as an unreadable pseudo-file, so uploading one gets as far as the
+ * overwrite confirmation and then dies on a read error with nothing to say. Reading the
+ * entries is the only way to tell the two apart; a browser that hands over no items at all
+ * falls back to the plain file list.
+ */
+function pickDroppedFiles(data: DataTransfer): { files: File[]; dirs: string[] } {
+  const files: File[] = [];
+  const dirs: string[] = [];
+  for (let i = 0; i < data.items.length; i += 1) {
+    const item = data.items[i]!;
+    const file = item.getAsFile();
+    if (item.webkitGetAsEntry()?.isDirectory === true) {
+      if (file !== null) dirs.push(file.name);
+    } else if (file !== null) {
+      files.push(file);
+    }
+  }
+  return files.length + dirs.length > 0 ? { files, dirs } : { files: [...data.files], dirs };
 }
 
 const ghostActionClass =
@@ -336,6 +352,14 @@ export function WorkspaceBrowser({
     setEditor(null);
     setSaveConfirm(false);
     setDiscardPrompt(null);
+    // The upload and save flows finish against the Session they captured and skip their own
+    // state updates once it is no longer the one on screen — so the chrome they left behind
+    // has to be cleared here, or an "Uploading 2/5…" label and its disabled picker outlive
+    // the Session forever. A staged overwrite confirmation is dropped for the same reason:
+    // answering it after the switch would upload the old Session's files into this one.
+    setUploading(null);
+    setPendingUpload(null);
+    setSaving(false);
     previewSeq++;
   }
 
@@ -921,7 +945,8 @@ export function WorkspaceBrowser({
   const onDrop = (e: ReactDragEvent<HTMLDivElement>): void => {
     const { accept, targetDir } = applyDrag("drop", e, true);
     if (!accept) return;
-    const files = Array.from(e.dataTransfer.files);
+    const { files, dirs } = pickDroppedFiles(e.dataTransfer);
+    if (dirs.length > 0) toastError(S.files.folderDropSkipped(dirs.join(", ")));
     if (files.length > 0) void stageUpload(files, targetDir);
   };
 
@@ -971,6 +996,7 @@ export function WorkspaceBrowser({
         <button
           key={key}
           type="button"
+          aria-pressed={richView === key}
           onClick={() => setRichView(key)}
           className={`rounded px-2 py-0.5 text-xs transition-colors duration-150 ${
             richView === key
@@ -1282,11 +1308,14 @@ export function WorkspaceBrowser({
       {/* Toolbar: tree toggle + breadcrumbs of the current directory + actions */}
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
         {!narrow && (
+          // Static accessible name, state on aria-pressed alone: a name that swaps Show/Hide
+          // beside it reads as "Hide file tree, pressed", saying the state twice and
+          // disagreeing with itself. The tooltip may still swap — it is presentation only.
           <button
             type="button"
             aria-pressed={treeVisible}
             title={treeVisible ? S.files.hideTree : S.files.showTree}
-            aria-label={treeVisible ? S.files.hideTree : S.files.showTree}
+            aria-label={S.files.showTree}
             onClick={() => setTree(!treeVisible)}
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150 ${
               treeVisible

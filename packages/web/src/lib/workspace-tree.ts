@@ -115,6 +115,10 @@ export interface TreeRow {
   kind: "dir" | "file";
   /** Nesting depth; a root-level entry is 0. */
   depth: number;
+  /** 1-based position among its own directory's entries, and how many there are: the tree is
+   *  rendered flat (no per-level `role="group"`), so each row has to state its own set. */
+  posInSet: number;
+  setSize: number;
   /** Directory rows: whether it is open. */
   expanded: boolean;
   /** Directory rows: whether its listing has arrived (an open, unloaded directory is being fetched). */
@@ -133,7 +137,8 @@ export interface TreeRow {
 export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): TreeRow[] {
   const rows: TreeRow[] = [];
   const walk = (dir: string, depth: number): void => {
-    for (const entry of listings.get(dir) ?? []) {
+    const entries = listings.get(dir) ?? [];
+    for (const [index, entry] of entries.entries()) {
       const path = joinWorkspacePath(dir, entry.name);
       const isDir = entry.kind === "dir";
       const open = isDir && expanded.has(path);
@@ -143,6 +148,8 @@ export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): 
         name: entry.name,
         kind: entry.kind,
         depth,
+        posInSet: index + 1,
+        setSize: entries.length,
         expanded: open,
         loaded: !isDir || children !== undefined,
         empty: isDir && children !== undefined && children.length === 0,
