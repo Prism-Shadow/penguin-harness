@@ -190,7 +190,7 @@ export function UsagePage() {
    * memo below reads its primitives one by one so it holds its identity across a reload that
    * changes nothing (the panel's fetch effect depends on that identity).
    */
-  const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset: "7d", from, to }));
+  const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset, from, to }));
   const [error, setError] = useState<string | null>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.

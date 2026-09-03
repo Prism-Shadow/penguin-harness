@@ -34,8 +34,8 @@ const ERROR_KINDS: readonly UsageErrorKind[] = ["unexpected", "expected"];
 
 /**
  * Parse an optional ISO-8601 timestamp parameter, normalized to the UTC ISO
- * form the usage rows record — string comparison against `usage_records.ts`
- * only works with both sides in that one spelling.
+ * form the rows record — string comparison against `usage_records.ts` and
+ * `error_records.ts` only works with both sides in that one spelling.
  */
 function optionalTsParam(value: string | undefined, label: string): string | undefined {
   if (value === undefined || value === "") return undefined;
