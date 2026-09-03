@@ -4,8 +4,8 @@
  * — the built-in Scheduled Tasks guidance binds a task created from inside a conversation to
  * that conversation by default, so the agent that already holds the context is the one asked.
  * Delivery is the chat page's (a task when idle, a steering message while a Task runs — its
- * approval and queue rules apply unchanged); the dialog only composes the prompt, and offers
- * the same text for copying elsewhere. Mounted fresh on every open, like AiCreateModal.
+ * approval and queue rules apply unchanged); the dialog only composes the prompt (the
+ * panel's own fold is where it is copied from). Mounted fresh on every open, like AiCreateModal.
  */
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -15,7 +15,6 @@ import { Button } from "../../components/ui/button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { toastSuccess } from "../../components/ui/toast";
 import { AiCreatePanel, composeAiPrompt } from "../ai-create";
 import { scheduleExamples } from "./schedule-suggestions";
@@ -76,15 +75,8 @@ function ScheduleAiDialog({
       footer={
         <>
           <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button
-            disabled={!filled}
-            onClick={() => {
-              writeClipboard(prompt);
-              toastSuccess(S.common.copied);
-            }}
-          >
-            {S.aiCreate.copyPrompt}
-          </Button>
+          {/* Copying lives on the prompt fold's own CopyButton (AiCreatePanel), which flips
+              its glyph in place; a second copy control here would answer with a toast instead. */}
           <Button variant="primary" disabled={!filled || sending} onClick={() => void send()}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
             {S.schedule.sendToSession}

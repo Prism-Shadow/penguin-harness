@@ -1135,8 +1135,6 @@ export const zh = {
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
     /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
     createAction: "创建定时任务",
-    /** Label of the settings tab's split create button. */
-    newButton: "新建",
     /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -1183,9 +1181,16 @@ export const zh = {
     /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
     aiCreateInSessionTail:
       "请把上面的请求创建为绑定到本对话的定时任务：在 agent_state/schedule/ 下写一个 TOML 文件，`session_id` 取本对话的 Session ID（见 Environment 段），文件名取有意义的英文名，设置 `start_at`；需要重复执行时写 `period`，请求有自然终点时写 `end_at`。创建后用一行确认你设定的时间安排。",
-    /** Instruction tail of the settings tab's dialog: the task is created for one agent, in a new Session unless the user names one. */
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
     aiCreateTail: (agentId: string): string =>
-      `请为 Agent「${agentId}」创建这个定时任务：用 \`penguin schedule add\` 命令，或直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件——文件名取有意义的英文名，设置 \`start_at\`；需要重复执行时写 \`period\`，请求有自然终点时写 \`end_at\`。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "建议",
     suggestions: {

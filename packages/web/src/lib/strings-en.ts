@@ -1161,8 +1161,6 @@ export const en: Strings = {
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
     /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
     createAction: "Schedule a task",
-    /** Label of the settings tab's split create button. */
-    newButton: "New",
     /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -1212,9 +1210,16 @@ export const en: Strings = {
     /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
     aiCreateInSessionTail:
       "Create the request above as a scheduled task bound to this Session: write a TOML file under agent_state/schedule/ with `session_id` set to this Session's id (see the Environment section), a semantic file name and `start_at`; add `period` when it repeats and `end_at` when the request has a natural end. Then confirm the schedule you set in one line.",
-    /** Instruction tail of the settings tab's dialog: the task is created for one agent, in a new Session unless the user names one. */
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
     aiCreateTail: (agentId: string): string =>
-      `Create this scheduled task for agent \`${agentId}\`: use \`penguin schedule add …\`, or write the TOML file under that agent's agent_state/schedule/ — a semantic file name, \`start_at\`, \`period\` when it repeats and \`end_at\` when the request has a natural end. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "Suggestions",
     suggestions: {

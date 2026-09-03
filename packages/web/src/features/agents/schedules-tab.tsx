@@ -165,7 +165,6 @@ export function SchedulesTab({
         {isOwner ? (
           <CreateMenuButton
             size="sm"
-            label={S.schedule.newButton}
             onAi={() => openAi("")}
             onManual={() => setForm({ editing: null })}
           />
