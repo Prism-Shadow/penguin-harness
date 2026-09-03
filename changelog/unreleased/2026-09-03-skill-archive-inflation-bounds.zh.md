@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#601](https://github.com/Prism-Shadow/penguin-harness/pull/601)
 
 [English](2026-09-03-skill-archive-inflation-bounds.md)
 
