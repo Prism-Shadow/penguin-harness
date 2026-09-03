@@ -1,6 +1,6 @@
 /**
  * One writer per organization at a time. The scheduler's pass and a route's write both
- * read files, decide, and write files and caches; interleaving them could deliver a chat
+ * read files, decide, and write files and caches; interleaving them could deliver a channel
  * mention twice or lose a ledger update. A promise chain per key serializes them.
  */
 export class KeyedLocks {

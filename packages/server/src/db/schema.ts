@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   meta_read  INTEGER NOT NULL DEFAULT 0      -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session
 );
 CREATE INDEX IF NOT EXISTS idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
-CREATE TABLE IF NOT EXISTS org_sessions (      -- DERIVED CACHE (company mode): desk sessions, rebuilt from each organization's desks.toml (current + previous); trigger_hop is chat-chain accounting and reads 0 after a rebuild
+CREATE TABLE IF NOT EXISTS org_sessions (      -- DERIVED CACHE (company mode): desk sessions, rebuilt from each organization's desks.toml (current + previous); trigger_hop is mention-chain accounting and reads 0 after a rebuild
   session_id  TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL,
   org_id      TEXT NOT NULL,
@@ -210,19 +210,21 @@ CREATE TABLE IF NOT EXISTS org_ticket_state (   -- DERIVED CACHE (company mode):
   blocked_by  TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (project_id, org_id, ticket_id)
 );
-CREATE TABLE IF NOT EXISTS org_chat_state (     -- DERIVED CACHE (company mode): tail-scan byte cursor per chat day file
+CREATE TABLE IF NOT EXISTS org_channel_state ( -- DERIVED CACHE (company mode): tail-scan byte cursor per channel and day file
   project_id   TEXT NOT NULL,
   org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
   date         TEXT NOT NULL,
   offset_bytes INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (project_id, org_id, date)
+  PRIMARY KEY (project_id, org_id, channel_id, date)
 );
-CREATE TABLE IF NOT EXISTS org_chat_reads (     -- user data (company mode): each user's read cursor in an organization's chat
+CREATE TABLE IF NOT EXISTS org_channel_reads ( -- user data (company mode): each user's read cursor in one channel
   project_id   TEXT NOT NULL,
   org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
   user_id      TEXT NOT NULL,
   last_read_id TEXT NOT NULL,
-  PRIMARY KEY (project_id, org_id, user_id)
+  PRIMARY KEY (project_id, org_id, channel_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS org_budget_state (   -- DERIVED CACHE (company mode): warn / pause marks per employee and period, recomputed from usage and the chart's budgets
   project_id TEXT NOT NULL,

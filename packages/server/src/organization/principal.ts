@@ -1,7 +1,7 @@
 /**
  * Principal notation — how organization files name a person or an employee:
  * `agent:<agent_id>` / `user:<user_id>`, plus `all` (every employee) and `system` (the
- * scheduler as a chat sender). Agent ids and user ids are separate namespaces, which is
+ * scheduler as a message sender). Agent ids and user ids are separate namespaces, which is
  * exactly why the prefix exists: the same id could name both.
  */
 

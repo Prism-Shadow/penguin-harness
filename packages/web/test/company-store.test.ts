@@ -5,11 +5,11 @@
  * every subscriber, and a work run refreshes the session list of the Project it belongs to.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { CompanyServerEvent, OrgChatMessage } from "@prismshadow/penguin-server/api";
+import type { CompanyServerEvent, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import { createCompanyStore, isCompanyEvent, subscribeCompanyEvents } from "../src/state/company";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 
-const message = (over: Partial<OrgChatMessage> = {}): OrgChatMessage => ({
+const message = (over: Partial<OrgChannelMessage> = {}): OrgChannelMessage => ({
   id: "m-1",
   time: "2026-09-02T00:00:00Z",
   sender: "agent:ceo",
@@ -19,10 +19,11 @@ const message = (over: Partial<OrgChatMessage> = {}): OrgChatMessage => ({
   ...over,
 });
 
-const chat = (over: Partial<OrgChatMessage> = {}): CompanyServerEvent => ({
-  type: "org_chat",
+const chat = (over: Partial<OrgChannelMessage> = {}): CompanyServerEvent => ({
+  type: "org_channel",
   projectId: "p1",
   orgId: "acme",
+  channelId: "all",
   message: message(over),
 });
 
@@ -138,7 +139,7 @@ describe("applyUserEvent forwarding", () => {
       applyUserEvent(sessions, run, () => undefined);
       applyUserEvent(sessions, { ...run, projectId: "p2" }, () => undefined);
       applyUserEvent(sessions, chat(), () => undefined);
-      expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_chat"]);
+      expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
       // Only the run of the current Project refreshes; a chat message changes no session row.
       expect(reload).toHaveBeenCalledTimes(1);
     } finally {

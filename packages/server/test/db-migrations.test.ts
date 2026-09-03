@@ -1,6 +1,7 @@
 /**
- * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, and
- * the 0.2.9 → 0.2.10 drop that is its first restart-only one.
+ * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, the
+ * 0.2.9 → 0.2.10 drop that is its first restart-only one, and the channels migration that is
+ * its first table recreation.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -55,8 +56,8 @@ function dropCompanyModeTables(db: DatabaseSync): void {
     "org_ticket_sessions",
     "org_calendar_state",
     "org_ticket_state",
-    "org_chat_state",
-    "org_chat_reads",
+    "org_channel_state",
+    "org_channel_reads",
     "org_budget_state",
   ]) {
     db.exec(`DROP TABLE IF EXISTS ${table}`);
@@ -71,6 +72,39 @@ function open024(): DatabaseSync {
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
   db.exec(GOAL_STATE_DDL);
+  return db;
+}
+
+/**
+ * The two chat tables as migration 4 declared them (frozen: company mode's chat became
+ * channels in migration 5 — renamed tables, `channel_id` in the primary keys — and the
+ * migration that recreates them must not learn a new shape).
+ */
+const PRE_CHANNEL_CHAT_DDL = `
+  DROP TABLE IF EXISTS org_channel_state;
+  DROP TABLE IF EXISTS org_channel_reads;
+  CREATE TABLE org_chat_state (
+    project_id   TEXT NOT NULL,
+    org_id       TEXT NOT NULL,
+    date         TEXT NOT NULL,
+    offset_bytes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (project_id, org_id, date)
+  );
+  CREATE TABLE org_chat_reads (
+    project_id   TEXT NOT NULL,
+    org_id       TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    last_read_id TEXT NOT NULL,
+    PRIMARY KEY (project_id, org_id, user_id)
+  );
+`;
+
+/** A database stamped at migration 4: company mode's caches, before chat became channels. */
+function open4(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec(PRE_CHANNEL_CHAT_DDL);
+  db.exec("PRAGMA user_version = 4");
   return db;
 }
 
@@ -277,6 +311,59 @@ describe("0.2.9 → current: drop-goal-state", () => {
       expect(db.prepare("SELECT COUNT(*) AS n FROM goal_state").get()).toEqual({ n: 0 });
     } finally {
       db.close();
+    }
+  });
+});
+
+describe("migration 4 → current: company-mode-channels", () => {
+  it("renames both chat tables and puts channel_id in their primary keys, recreating them empty", () => {
+    const db = open4();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      db.exec(
+        "INSERT INTO org_chat_reads (project_id, org_id, user_id, last_read_id)" +
+          " VALUES ('p1', 'acme', 'alice', 'msg-2026-09-01-00-00-00-00000000')",
+      );
+      expect(shape(db)).not.toBe(shape(fresh));
+
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 4).map((m) => m.name),
+      );
+      expect(shape(db)).toBe(shape(fresh));
+      // Renamed and recreated, not altered: the old tables are gone, nothing is carried
+      // over, and a row now names its channel.
+      expect(
+        db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'org_chat_reads'")
+          .get(),
+      ).toBeUndefined();
+      expect(db.prepare("SELECT COUNT(*) AS n FROM org_channel_reads").get()).toEqual({ n: 0 });
+      db.exec(
+        "INSERT INTO org_channel_reads (project_id, org_id, channel_id, user_id, last_read_id)" +
+          " VALUES ('p1', 'acme', 'default_channel', 'alice', 'msg-2026-09-01-00-00-00-00000000')",
+      );
+      expect(db.prepare("SELECT channel_id FROM org_channel_reads").all()).toEqual([
+        { channel_id: "default_channel" },
+      ]);
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down puts the old tables and the single-chat shape back, empty", () => {
+    const db = open4();
+    const at4 = open4();
+    try {
+      migrate(db);
+      rollbackTo(db, 4);
+      expect(schemaVersion(db)).toBe(4);
+      expect(shape(db)).toBe(shape(at4));
+      expect(db.prepare("SELECT COUNT(*) AS n FROM org_chat_state").get()).toEqual({ n: 0 });
+    } finally {
+      db.close();
+      at4.close();
     }
   });
 });

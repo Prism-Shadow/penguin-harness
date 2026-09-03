@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage } from "@prismshadow/penguin-core";
+import { DEFAULT_CHANNEL_ID } from "../src/organization/paths.js";
 import { makeOrgHarness } from "./org-harness.js";
 import type { OrgHarness } from "./org-harness.js";
 
@@ -57,16 +58,24 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(handbook).toContain("Plugin Marketplace");
     expect(handbook).toContain(MISSION);
 
-    // 2. The CEO (from its desk) confirms the mission with the board in chat …
-    const m1 = await service.sendChat(P, ORG, "alice", {
+    // 2. The CEO (from its desk) confirms the mission with the board in the all-hands channel …
+    const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
       text: "@alice I read the mission as: marketplace site first, then SEO and social, revenue from featured slots. Correct?",
       sessionId: ceoDesk,
     });
     expect(m1.sender).toBe(`agent:${CEO}`);
     expect(m1.mentions).toEqual(["user:alice"]);
-    const board = await service.chat(P, ORG, "alice", {});
+    const board = await service.channelMessages(
+      P,
+      ORG,
+      { userId: "alice" },
+      DEFAULT_CHANNEL_ID,
+      {},
+    );
     expect(board.mentionsMe).toBe(1);
-    await service.sendChat(P, ORG, "alice", { text: `@${CEO} Correct. Go.` });
+    await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+      text: `@${CEO} Correct. Go.`,
+    });
     expect(
       triggers().filter((t) => t.origin?.origin.kind === "mention" && t.sessionId === ceoDesk),
     ).toHaveLength(1);
@@ -121,7 +130,7 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
         "daily-sweep",
         {
           prompt:
-            "Sweep the board: start your tickets, check running sessions, write back, report in chat.",
+            "Sweep the board: start your tickets, check running sessions, write back, report in your channels.",
           enabled: true,
           startAt: new Date(T0 + 60_000).toISOString(),
           period: "1d",
@@ -222,6 +231,59 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       "Nothing to index until the site is live",
     );
 
+    // 5b. The site stream gets its own channel: the CEO opens it and invites the developer,
+    // so the thread lives beside the all-hands channel instead of drowning it.
+    const siteChannel = await service.createChannel(
+      P,
+      ORG,
+      { channelId: "site", name: "Site launch", purpose: "Everything about shipping the site" },
+      ceoActor,
+    );
+    expect(siteChannel).toMatchObject({
+      createdBy: `agent:${CEO}`,
+      memberCount: 1,
+      everyone: false,
+    });
+    const withDev = await service.addChannelMember(P, ORG, "site", `agent:${DEV}`, ceoActor);
+    expect(withDev.members.map((m) => m.principal)).toEqual([`agent:${CEO}`, `agent:${DEV}`]);
+    // Marketing is not in it: a message naming it is refused before anything is written.
+    await expect(
+      service.sendChannelMessage(P, ORG, "alice", "site", {
+        text: `@${MKT} can you look at the copy?`,
+        sessionId: ceoDesk,
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "mention_not_member" });
+    h.started.length = 0;
+    const kickoff = await service.sendChannelMessage(P, ORG, "alice", "site", {
+      text: `@${DEV} the site ticket is yours; talk to me here.`,
+      sessionId: ceoDesk,
+    });
+    const inChannel = triggers().filter((t) => t.origin?.origin.kind === "mention");
+    expect(inChannel).toHaveLength(1);
+    expect(inChannel[0]!.sessionId).toBe(devDesk);
+    expect(inChannel[0]!.origin?.origin).toMatchObject({
+      channel: "site",
+      message: `${kickoff.id} from agent:${CEO}`,
+    });
+    // The CEO says so once in the all-hands channel, where the board reads.
+    await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+      text: "Opened the #site channel for the site stream; @alice you can follow it there.",
+      sessionId: ceoDesk,
+    });
+    const channels = await service.channels(P, ORG, { userId: "alice" });
+    expect(channels.channels.map((c) => c.channelId)).toEqual([DEFAULT_CHANNEL_ID, "site"]);
+    // The developer sees both; marketing only the all-hands channel.
+    expect(
+      (await service.channels(P, ORG, { userId: "alice", sessionId: devDesk })).channels.map(
+        (c) => c.channelId,
+      ),
+    ).toEqual([DEFAULT_CHANNEL_ID, "site"]);
+    expect(
+      (await service.channels(P, ORG, { userId: "alice", sessionId: mktDesk })).channels.map(
+        (c) => c.channelId,
+      ),
+    ).toEqual([DEFAULT_CHANNEL_ID]);
+
     // 6. The calendar fires the next day: every desk gets its sweep with a budget line.
     h.started.length = 0;
     h.clock.nowMs = T0 + DAY + 120_000;
@@ -320,7 +382,7 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       { userId: "alice", sessionId: slotWork.sessionId },
     );
     await service.moveTicket(P, ORG, slots.ticketId, "done", undefined, ceoActor);
-    await service.sendChat(P, ORG, "alice", {
+    await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
       text: "@alice The site is live, SEO and social are running, and the first paid featured slot sold.",
       sessionId: ceoDesk,
     });
@@ -329,7 +391,7 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(overview.employeeCount).toBe(5);
     expect(overview.spend).toMatchObject({ cost: 72, budget: 300 });
     expect(overview.pending.mentions).toBeGreaterThanOrEqual(1);
-    expect(overview.recentChat.at(-1)?.text).toContain("first paid featured slot sold");
+    expect(overview.recentMessages.at(-1)?.text).toContain("first paid featured slot sold");
 
     // Every automatic message went through the marker the frontend folds, never a bare prompt.
     for (const s of h.started) expect(parseOrgTriggerMessage(s.text)).not.toBeNull();

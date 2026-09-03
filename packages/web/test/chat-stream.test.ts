@@ -3,7 +3,7 @@
  * cursor, day arithmetic for the separators and paging, and the immutable live append.
  */
 import { describe, expect, it } from "vitest";
-import type { OrgChatMessage } from "@prismshadow/penguin-server/api";
+import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
   appendMessage,
   buildStream,
@@ -15,7 +15,7 @@ import {
 } from "../src/features/company/chat-stream";
 
 let seq = 0;
-const msg = (sender: string, time: string, hop = 0): OrgChatMessage => ({
+const msg = (sender: string, time: string, hop = 0): OrgChannelMessage => ({
   id: `msg-${time.slice(0, 19).replace(/[T:]/g, "-")}-${String(++seq).padStart(8, "0")}`,
   time,
   sender,

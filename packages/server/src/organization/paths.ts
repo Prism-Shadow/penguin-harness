@@ -99,12 +99,36 @@ export function ticketMonth(ticketId: string): string {
   return ticketId.slice(0, 7);
 }
 
-export function chatDir(dir: string): string {
-  return path.join(dir, "chat");
+/**
+ * Channel ids follow the semantic-id rule organization and Agent ids use, because the id is
+ * the directory name under `channels/`. `default_channel` is reserved for the all-hands
+ * channel every employee and every Project member belongs to implicitly.
+ */
+export const CHANNEL_ID_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+
+export const DEFAULT_CHANNEL_ID = "default_channel";
+
+export function isChannelId(value: string): boolean {
+  return CHANNEL_ID_PATTERN.test(value);
 }
 
-export function chatFilePath(dir: string, date: string): string {
-  return path.join(chatDir(dir), `${date}.jsonl`);
+/** `channels/`: one directory per channel. */
+export function channelsDir(dir: string): string {
+  return path.join(dir, "channels");
+}
+
+export function channelDir(dir: string, channelId: string): string {
+  return path.join(channelsDir(dir), channelId);
+}
+
+/** `channels/<channel_id>/channel.toml`: the channel's name, purpose and membership. */
+export function channelConfigPath(dir: string, channelId: string): string {
+  return path.join(channelDir(dir, channelId), "channel.toml");
+}
+
+/** `channels/<channel_id>/<yyyy-mm-dd>.jsonl`: one day's messages, one JSON line each. */
+export function channelDayPath(dir: string, channelId: string, date: string): string {
+  return path.join(channelDir(dir, channelId), `${date}.jsonl`);
 }
 
 export function workspaceDir(dir: string): string {

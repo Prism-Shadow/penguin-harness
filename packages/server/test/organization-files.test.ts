@@ -1,14 +1,15 @@
 /**
  * Organization file formats (src/organization): every intent and fact file round-trips
  * through its serializer and parser, hand-edit tolerance is the same set of rules the API
- * writes under, and the timezone arithmetic behind budget periods and chat days is exact.
+ * writes under, and the timezone arithmetic behind budget periods and message days is exact.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   extractMentionTokens,
   parseCalendarEvent,
-  parseChatLine,
+  parseChannelConfig,
+  parseChannelMessageLine,
   parseDesks,
   parseOrgChart,
   parseOrgConfig,
@@ -16,7 +17,8 @@ import {
   parseTicket,
   progressLine,
   serializeCalendarEvent,
-  serializeChatLine,
+  serializeChannelConfig,
+  serializeChannelMessageLine,
   serializeDesks,
   serializeOrgChart,
   serializeOrgConfig,
@@ -25,13 +27,20 @@ import {
   subordinatesOf,
   ancestorsOf,
 } from "../src/organization/files.js";
-import type { OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
+import type { ChannelConfig, OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
 import {
   formatPrincipal,
   parsePrincipal,
   splitPrincipalList,
 } from "../src/organization/principal.js";
-import { ticketMonth, ticketPath } from "../src/organization/paths.js";
+import {
+  DEFAULT_CHANNEL_ID,
+  channelConfigPath,
+  channelDayPath,
+  isChannelId,
+  ticketMonth,
+  ticketPath,
+} from "../src/organization/paths.js";
 import {
   zonedDate,
   zonedMonthRange,
@@ -260,7 +269,110 @@ describe("tickets", () => {
   });
 });
 
-describe("chat lines", () => {
+describe("channel files", () => {
+  const site: ChannelConfig = {
+    name: "Site launch",
+    purpose: "Everything about shipping the marketplace site",
+    createdBy: "user:alice",
+    createdAt: "2026-09-03T01:00:00.000Z",
+    archived: false,
+    members: ["user:alice", "agent:acme_dev"],
+  };
+
+  it("round-trips a member channel and the all-hands channel", () => {
+    const raw = serializeChannelConfig(site);
+    expect(raw).toContain('members = [ "user:alice", "agent:acme_dev" ]');
+    expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: site });
+
+    const all: ChannelConfig = {
+      name: "All hands",
+      purpose: "",
+      createdBy: "system",
+      createdAt: "2026-09-03T01:00:00.000Z",
+      archived: false,
+      everyone: true,
+    };
+    const allRaw = serializeChannelConfig(all);
+    expect(allRaw).toContain("everyone = true");
+    expect(allRaw).not.toContain("members =");
+    expect(parseChannelConfig(DEFAULT_CHANNEL_ID, allRaw)).toEqual({ ok: true, value: all });
+  });
+
+  it("tolerates a hand edit: a bare datetime, a missing purpose, archived", () => {
+    const raw = [
+      'name = "Marketing"',
+      'created_by = "agent:acme_ceo"',
+      "created_at = 2026-09-03T01:00:00Z",
+      "archived = true",
+      'members = ["agent:acme_marketing"]',
+    ].join("\n");
+    expect(parseChannelConfig("marketing", raw)).toEqual({
+      ok: true,
+      value: {
+        name: "Marketing",
+        purpose: "",
+        createdBy: "agent:acme_ceo",
+        createdAt: "2026-09-03T01:00:00.000Z",
+        archived: true,
+        members: ["agent:acme_marketing"],
+      },
+    });
+  });
+
+  it("rejects what the API would never write", () => {
+    const errorOf = (channelId: string, lines: string[]): string => {
+      const r = parseChannelConfig(channelId, lines.join("\n"));
+      expect(r.ok).toBe(false);
+      return r.ok ? "" : r.error;
+    };
+    const base = [
+      'name = "Site"',
+      'created_by = "user:alice"',
+      'created_at = "2026-09-03T01:00:00Z"',
+    ];
+    expect(errorOf("site", ['name = ""', ...base.slice(1), "members = []"])).toContain("name");
+    expect(errorOf("site", [...base, "members = []", "created_by = 1"])).toContain("created_by");
+    expect(
+      errorOf("site", ['name = "Site"', 'created_by = "all"', base[2]!, "members = []"]),
+    ).toContain("created_by");
+    expect(
+      errorOf("site", [
+        'name = "Site"',
+        'created_by = "user:alice"',
+        'created_at = "soon"',
+        "members = []",
+      ]),
+    ).toContain("created_at");
+    // Membership: a bad principal, a duplicate, and no list at all.
+    expect(errorOf("site", [...base, 'members = ["acme_dev"]'])).toContain("not a principal");
+    expect(errorOf("site", [...base, 'members = ["agent:acme_dev", "agent:acme_dev"]'])).toContain(
+      "duplicate member",
+    );
+    expect(errorOf("site", base)).toContain("members must be a list");
+    // `everyone` belongs to the all-hands channel and to no other, and it keeps no list.
+    expect(errorOf("site", [...base, "everyone = true"])).toContain("all-hands channel");
+    expect(errorOf(DEFAULT_CHANNEL_ID, [...base, "members = []"])).toContain("everyone = true");
+    expect(
+      errorOf(DEFAULT_CHANNEL_ID, [...base, "everyone = true", 'members = ["user:alice"]']),
+    ).toContain("keeps no members list");
+  });
+
+  it("names a channel's directory, config and day file", () => {
+    expect(isChannelId("site")).toBe(true);
+    expect(isChannelId(DEFAULT_CHANNEL_ID)).toBe(true);
+    expect(isChannelId("Site")).toBe(false);
+    expect(isChannelId("a")).toBe(false);
+    expect(isChannelId("site-launch")).toBe(false);
+    expect(channelConfigPath("/org", "site")).toBe(
+      path.join("/org", "channels", "site", "channel.toml"),
+    );
+    expect(channelDayPath("/org", DEFAULT_CHANNEL_ID, "2026-09-03")).toBe(
+      path.join("/org", "channels", "default_channel", "2026-09-03.jsonl"),
+    );
+  });
+});
+
+describe("channel message lines", () => {
   it("round-trips a message with refs and rejects malformed lines", () => {
     const msg = {
       id: "msg-2026-09-01-09-05-12-a1b2c3d4",
@@ -271,12 +383,12 @@ describe("chat lines", () => {
       mentions: ["agent:acme_ceo"],
       refs: { ticket: "2026-09-01-site", replyTo: "msg-2026-09-01-09-00-00-00000000" },
     };
-    const line = serializeChatLine(msg);
+    const line = serializeChannelMessageLine(msg);
     expect(line).toContain('"reply_to"');
-    expect(parseChatLine(line)).toEqual({ ok: true, value: msg });
-    expect(parseChatLine("{").ok).toBe(false);
-    expect(parseChatLine(JSON.stringify({ ...msg, hop: -1 })).ok).toBe(false);
-    expect(parseChatLine(JSON.stringify({ ...msg, sender: "nobody" })).ok).toBe(false);
+    expect(parseChannelMessageLine(line)).toEqual({ ok: true, value: msg });
+    expect(parseChannelMessageLine("{").ok).toBe(false);
+    expect(parseChannelMessageLine(JSON.stringify({ ...msg, hop: -1 })).ok).toBe(false);
+    expect(parseChannelMessageLine(JSON.stringify({ ...msg, sender: "nobody" })).ok).toBe(false);
   });
 
   it("extracts mention tokens in short and prefixed forms", () => {

@@ -688,11 +688,11 @@ export function OverviewPage() {
                 </Button>
               }
             >
-              {detail.recentChat.length === 0 ? (
+              {detail.recentMessages.length === 0 ? (
                 <OrgEmptyLine>{S.company.overview.recentChatEmpty}</OrgEmptyLine>
               ) : (
                 <ul className="space-y-0.5">
-                  {chatTail(detail.recentChat, CHAT_ROWS).map((m) => {
+                  {chatTail(detail.recentMessages, CHAT_ROWS).map((m) => {
                     const addressed = m.mentions.includes(me) || m.mentions.includes("all");
                     return (
                       <li key={m.id}>

@@ -239,6 +239,8 @@ export interface OrgTriggerOrigin {
   firedAt?: string;
   /** kind=mention: `<message id> from <principal>`. */
   message?: string;
+  /** kind=mention: the channel the message was posted in, and the one to answer in. */
+  channel?: string;
   /** kind=ticket_notice / ticket_work: the ticket id. */
   ticket?: string;
   /** kind=ticket_notice: assigned | blocked | blocker_closed | done | rejected. */
@@ -254,6 +256,7 @@ const ORG_TRIGGER_KEYS = [
   "event",
   "fired_at",
   "message",
+  "channel",
   "ticket",
   "change",
   "budget",
@@ -275,6 +278,7 @@ export function buildOrgTriggerMessage(origin: OrgTriggerOrigin, body: string): 
   if (origin.event !== undefined) lines.push(`event: ${origin.event}`);
   if (origin.firedAt !== undefined) lines.push(`fired_at: ${origin.firedAt}`);
   if (origin.message !== undefined) lines.push(`message: ${origin.message}`);
+  if (origin.channel !== undefined) lines.push(`channel: ${origin.channel}`);
   if (origin.ticket !== undefined) lines.push(`ticket: ${origin.ticket}`);
   if (origin.change !== undefined) lines.push(`change: ${origin.change}`);
   if (origin.budget !== undefined) lines.push(`budget: ${origin.budget}`);
@@ -306,6 +310,8 @@ export function parseOrgTriggerMessage(
   if (firedAt !== undefined) origin.firedAt = firedAt;
   const message = fields.get("message");
   if (message !== undefined) origin.message = message;
+  const channel = fields.get("channel");
+  if (channel !== undefined) origin.channel = channel;
   const ticket = fields.get("ticket");
   if (ticket !== undefined) origin.ticket = ticket;
   const change = fields.get("change");

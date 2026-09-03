@@ -48,7 +48,7 @@ import { useProject } from "./project";
 export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
   return (
     ev.type === "org_run" ||
-    ev.type === "org_chat" ||
+    ev.type === "org_channel" ||
     ev.type === "org_ticket" ||
     ev.type === "org_budget"
   );

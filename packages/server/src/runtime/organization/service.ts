@@ -10,10 +10,16 @@ import type {
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMember,
+  OrgChannelPatchRequest,
+  OrgChannelsResponse,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
   OrgChartResponse,
-  OrgChatMessage,
-  OrgChatResponse,
-  OrgChatSendRequest,
   OrgDeskResponse,
   OrgEmployeeItem,
   OrgEmployeePatchRequest,
@@ -38,7 +44,7 @@ import type {
 } from "../../api/types.js";
 import { HttpError } from "../../http/errors.js";
 import { badRequest } from "../../http/validate.js";
-import type { OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
+import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
 import {
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
@@ -53,8 +59,10 @@ import {
 } from "../../organization/files.js";
 import { renderHandbook } from "../../organization/handbook.js";
 import {
+  DEFAULT_CHANNEL_ID,
   ORG_TICKET_COLUMNS,
   ceoAgentId,
+  isChannelId,
   isHandbookFilePath,
   isTicketColumn,
 } from "../../organization/paths.js";
@@ -73,7 +81,7 @@ import type { OrgSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
-import { appendChatMessage, listTickets, syncCaches } from "./reconcile.js";
+import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
 import type { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
@@ -91,6 +99,26 @@ const notFound = (orgId: string): HttpError =>
 
 const ticketNotFound = (ticketId: string): HttpError =>
   new HttpError(404, "ticket_not_found", `Ticket does not exist: ${ticketId}`);
+
+const channelNotFound = (channelId: string): HttpError =>
+  new HttpError(404, "channel_not_found", `Channel does not exist: ${channelId}`);
+
+const channelArchived = (channelId: string): HttpError =>
+  new HttpError(
+    409,
+    "channel_archived",
+    `Channel ${channelId} is archived: unarchive it before writing to it.`,
+  );
+
+const notAMember = (channelId: string, principal: string, why?: string): HttpError =>
+  new HttpError(
+    403,
+    "not_a_member",
+    why ?? `${principal} is not a member of the channel ${channelId}.`,
+  );
+
+const allHandsImmutable = (message: string): HttpError =>
+  new HttpError(400, "all_hands_immutable", message);
 
 export class OrganizationService {
   constructor(
@@ -245,7 +273,14 @@ export class OrganizationService {
       };
       return inDay(e.nextFireAt) || inDay(e.lastFiredAt);
     });
-    const chat = await this.chat(projectId, orgId, userId, {});
+    // The overview opens even when the all-hands channel's file is missing or unreadable (a
+    // hand edit): it then reports no recent messages instead of refusing the page.
+    const allHands = await this.deps.store.readChannel(org.dir, DEFAULT_CHANNEL_ID);
+    const recent =
+      allHands?.parsed.ok === true
+        ? await this.channelMessages(projectId, orgId, { userId }, DEFAULT_CHANNEL_ID, {})
+        : null;
+    const mentions = await this.pendingMentions(org, userId);
     const me = userPrincipal(userId);
     const items = this.ticketItems(tickets, spend);
     const ceoDesk = org.desks[ceoAgentId(orgId)];
@@ -255,14 +290,26 @@ export class OrganizationService {
       board,
       today,
       pending: {
-        mentions: chat.mentionsMe,
+        mentions,
         reviewTickets: items.filter((t) => t.status === "review"),
         blockedByMe: items.filter((t) => t.blockedBy === me),
       },
-      recentChat: chat.messages.slice(-20),
+      recentMessages: recent?.messages.slice(-20) ?? [],
       alerts: this.alerts(org, spend.period),
       ...(ceoDesk !== undefined ? { ceoDeskSessionId: ceoDesk.sessionId } : {}),
     };
+  }
+
+  /** Mentions waiting for a person, summed over every channel they belong to. */
+  private async pendingMentions(org: LoadedOrg, userId: string): Promise<number> {
+    const me = userPrincipal(userId);
+    let mentions = 0;
+    for (const file of await this.deps.store.listChannels(org.dir)) {
+      if (!file.parsed.ok) continue;
+      if (!this.channelMemberPrincipals(org, file.parsed.value).includes(me)) continue;
+      mentions += (await this.channelActivity(org, file.channelId, userId)).mentionsMe;
+    }
+    return mentions;
   }
 
   private alerts(org: LoadedOrg, period: string): OrganizationDetail["alerts"] {
@@ -325,7 +372,7 @@ export class OrganizationService {
       ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
-    await this.deps.store.createLayout(dir);
+    await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
     try {
       await this.deps.store.writeConfig(dir, config);
       await this.deps.store.writeChart(dir, {
@@ -562,7 +609,7 @@ export class OrganizationService {
         ...(req.model !== undefined ? { model: req.model } : {}),
       };
       await this.writeChart(org, [...org.chart.employees, employee]);
-      await appendChatMessage(this.deps, org, {
+      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
         sender: "system",
         hop: 0,
         text: `${agentPrincipal(agentId)} joined as ${title}, reporting to ${agentPrincipal(req.reportsTo)}.`,
@@ -640,7 +687,18 @@ export class OrganizationService {
         if (f.agentId === agentId)
           await this.deps.store.deleteCalendarEvent(org.dir, agentId, f.name);
       }
-      await appendChatMessage(this.deps, org, {
+      // A departed employee is nobody's channel member any more: the files say who is in a
+      // channel, and a principal that is no longer an employee would be counted and listed.
+      for (const file of await this.deps.store.listChannels(org.dir)) {
+        if (!file.parsed.ok || file.parsed.value.everyone === true) continue;
+        const members = file.parsed.value.members ?? [];
+        if (!members.includes(agentPrincipal(agentId))) continue;
+        await this.deps.store.writeChannel(org.dir, file.channelId, {
+          ...file.parsed.value,
+          members: members.filter((m) => m !== agentPrincipal(agentId)),
+        });
+      }
+      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
         sender: "system",
         hop: 0,
         text: `${agentPrincipal(agentId)} left the organization; reports now go to ${agentPrincipal(manager)}.`,
@@ -1284,33 +1342,427 @@ export class OrganizationService {
   }
 
   // ---------------------------------------------------------------------------
-  // Chat
+  // Channels
   // ---------------------------------------------------------------------------
 
-  async chat(
-    projectId: string,
-    orgId: string,
-    userId: string,
-    opts: { date?: string },
-  ): Promise<OrgChatResponse> {
-    const org = await this.requireOrg(projectId, orgId);
-    const days = await this.deps.store.listChatDays(org.dir);
-    const today = zonedDate(org.config.timezone, this.now());
-    const date = opts.date ?? today;
-    const messages = (await this.deps.store.readChatDay(org.dir, date)).messages;
-    const lastReadId = this.deps.cache.readCursor(projectId, orgId, userId);
+  /** Who is asking: an employee when the call came from one of its sessions, else the signed-in person. */
+  private caller(
+    org: LoadedOrg,
+    actor: Actor,
+  ): { principal: string; agentId: string | null; userId: string | null } {
+    const principal = this.actorPrincipal(org, actor);
+    const agentId = principalAgentId(principal);
+    return { principal, agentId, userId: agentId === null ? actor.userId : null };
+  }
+
+  /** The Project's people: its owner and its members, the `user:` half of the all-hands channel. */
+  private projectUserIds(org: LoadedOrg): string[] {
+    const project = this.deps.projects.findById(org.projectId);
+    const out: string[] = [];
+    for (const id of [
+      ...(project ? [project.ownerUserId] : []),
+      ...this.deps.members.list(org.projectId).map((m) => m.userId),
+    ]) {
+      if (!out.includes(id)) out.push(id);
+    }
+    return out;
+  }
+
+  /** A channel's membership as principals: the all-hands channel resolves to everyone, the rest to their list. */
+  private channelMemberPrincipals(org: LoadedOrg, cfg: ChannelConfig): string[] {
+    if (cfg.everyone !== true) return cfg.members ?? [];
+    return [
+      ...org.chart.employees.map((e) => agentPrincipal(e.agentId)),
+      ...this.projectUserIds(org).map(userPrincipal),
+    ];
+  }
+
+  /**
+   * The channel's config, or 404. An unparsable `channel.toml` is skipped everywhere else,
+   * so it is not there to be read or written either; the reason travels in the message
+   * rather than in a second error code.
+   */
+  private async requireChannel(org: LoadedOrg, channelId: string): Promise<ChannelConfig> {
+    if (!isChannelId(channelId)) throw channelNotFound(channelId);
+    const file = await this.deps.store.readChannel(org.dir, channelId);
+    if (file === null) throw channelNotFound(channelId);
+    if (!file.parsed.ok) {
+      throw new HttpError(
+        404,
+        "channel_not_found",
+        `Channel ${channelId} has an invalid channel.toml: ${file.parsed.error}`,
+      );
+    }
+    return file.parsed.value;
+  }
+
+  /** The last message's time, plus the caller's unread counts when the caller is a person. */
+  private async channelActivity(
+    org: LoadedOrg,
+    channelId: string,
+    userId: string | null,
+  ): Promise<{ unread: number; mentionsMe: number; lastMessageAt: string | null }> {
+    const days = await this.deps.store.listMessageDays(org.dir, channelId);
+    let lastMessageAt: string | null = null;
+    for (const d of days) {
+      const list = (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
+      if (list.length > 0) {
+        lastMessageAt = list.at(-1)!.time;
+        break;
+      }
+    }
+    // Read cursors belong to people; an employee reads its channel through its trigger.
+    if (userId === null) return { unread: 0, mentionsMe: 0, lastMessageAt };
+    const lastReadId = this.deps.cache.readCursor(org.projectId, org.orgId, channelId, userId);
     const me = userPrincipal(userId);
     let unread = 0;
     let mentionsMe = 0;
     for (const d of days.slice(0, 7)) {
-      const list = d === date ? messages : (await this.deps.store.readChatDay(org.dir, d)).messages;
-      for (const m of list) {
+      for (const m of (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages) {
         if (lastReadId !== null && m.id <= lastReadId) continue;
         unread++;
         if (m.mentions.includes(me)) mentionsMe++;
       }
     }
+    return { unread, mentionsMe, lastMessageAt };
+  }
+
+  private async channelItem(
+    org: LoadedOrg,
+    channelId: string,
+    cfg: ChannelConfig,
+    caller: { principal: string; userId: string | null },
+  ): Promise<OrgChannelItem> {
+    const members = this.channelMemberPrincipals(org, cfg);
     return {
+      channelId,
+      name: cfg.name,
+      purpose: cfg.purpose,
+      everyone: cfg.everyone === true,
+      archived: cfg.archived,
+      createdBy: cfg.createdBy,
+      createdAt: cfg.createdAt,
+      memberCount: members.length,
+      isMember: members.includes(caller.principal),
+      ...(await this.channelActivity(org, channelId, caller.userId)),
+    };
+  }
+
+  private async channelMembers(org: LoadedOrg, cfg: ChannelConfig): Promise<OrgChannelMember[]> {
+    const out: OrgChannelMember[] = [];
+    for (const principal of this.channelMemberPrincipals(org, cfg)) {
+      const parsed = parsePrincipal(principal);
+      if (parsed?.kind === "agent") {
+        const name = (await this.deps.agents.exists(org.projectId, parsed.id))
+          ? await this.deps.agents.displayName(org.projectId, parsed.id)
+          : parsed.id;
+        out.push({ principal, name, kind: "agent" });
+      } else if (parsed?.kind === "user") {
+        out.push({ principal, name: parsed.id, kind: "user" });
+      }
+    }
+    return out;
+  }
+
+  private async channelDetail(
+    org: LoadedOrg,
+    channelId: string,
+    cfg: ChannelConfig,
+    caller: { principal: string; userId: string | null },
+  ): Promise<OrgChannelDetail> {
+    return {
+      ...(await this.channelItem(org, channelId, cfg, caller)),
+      members: await this.channelMembers(org, cfg),
+    };
+  }
+
+  /** People are the board and see every channel; an employee sees the channels it belongs to. */
+  async channels(projectId: string, orgId: string, actor: Actor): Promise<OrgChannelsResponse> {
+    const org = await this.requireOrg(projectId, orgId);
+    const caller = this.caller(org, actor);
+    const channels: OrgChannelItem[] = [];
+    for (const file of await this.deps.store.listChannels(org.dir)) {
+      if (!file.parsed.ok) continue;
+      const item = await this.channelItem(org, file.channelId, file.parsed.value, caller);
+      if (caller.agentId !== null && !item.isMember) continue;
+      channels.push(item);
+    }
+    channels.sort((a, b) =>
+      a.channelId === DEFAULT_CHANNEL_ID
+        ? -1
+        : b.channelId === DEFAULT_CHANNEL_ID
+          ? 1
+          : a.name.localeCompare(b.name) || a.channelId.localeCompare(b.channelId),
+    );
+    return { channels };
+  }
+
+  /** A new channel holds exactly its creator; everyone else arrives by invitation (people may also join). */
+  async createChannel(
+    projectId: string,
+    orgId: string,
+    req: OrgChannelCreateRequest,
+    actor: Actor,
+  ): Promise<OrgChannelItem> {
+    const channelId = req.channelId;
+    const item = await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      if (!isChannelId(channelId)) {
+        throw badRequest(
+          "Channel id must be 2–64 characters: a lowercase letter, then lowercase letters, digits or underscores.",
+        );
+      }
+      if ((await this.deps.store.readChannel(org.dir, channelId)) !== null) {
+        throw new HttpError(409, "channel_exists", `Channel id is already taken: ${channelId}`);
+      }
+      const caller = this.caller(org, actor);
+      const cfg: ChannelConfig = {
+        name: req.name?.trim() || channelId,
+        purpose: req.purpose?.trim() ?? "",
+        createdBy: caller.principal,
+        createdAt: new Date(this.now()).toISOString(),
+        archived: false,
+        members: [caller.principal],
+      };
+      await this.deps.store.writeChannel(org.dir, channelId, cfg);
+      await appendChannelMessage(this.deps, org, channelId, {
+        sender: "system",
+        hop: 0,
+        text: `${caller.principal} created the channel.`,
+        mentions: [],
+      });
+      return this.channelItem(org, channelId, cfg, caller);
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return item;
+  }
+
+  async channel(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    actor: Actor,
+  ): Promise<OrgChannelDetail> {
+    const org = await this.requireOrg(projectId, orgId);
+    const cfg = await this.requireChannel(org, channelId);
+    const caller = this.caller(org, actor);
+    this.requireReadAccess(org, channelId, cfg, caller);
+    return this.channelDetail(org, channelId, cfg, caller);
+  }
+
+  /** People read every channel; an employee only the ones it belongs to. */
+  private requireReadAccess(
+    org: LoadedOrg,
+    channelId: string,
+    cfg: ChannelConfig,
+    caller: { principal: string; agentId: string | null },
+  ): void {
+    if (caller.agentId === null) return;
+    if (this.channelMemberPrincipals(org, cfg).includes(caller.principal)) return;
+    throw notAMember(channelId, caller.principal);
+  }
+
+  async patchChannel(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    req: OrgChannelPatchRequest,
+    actor: Actor,
+  ): Promise<OrgChannelItem> {
+    const item = await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      const cfg = await this.requireChannel(org, channelId);
+      const caller = this.caller(org, actor);
+      const members = this.channelMemberPrincipals(org, cfg);
+      if (req.archived !== undefined) {
+        if (channelId === DEFAULT_CHANNEL_ID) {
+          throw allHandsImmutable("The all-hands channel cannot be archived.");
+        }
+        if (caller.agentId !== null) {
+          throw notAMember(channelId, caller.principal, "Only people archive a channel.");
+        }
+      }
+      // Everything but lifting the archive itself is refused while the channel is archived.
+      if (cfg.archived && req.archived !== false) throw channelArchived(channelId);
+      const renaming = req.name !== undefined || req.purpose !== undefined;
+      if (renaming && !members.includes(caller.principal)) {
+        throw notAMember(channelId, caller.principal);
+      }
+      const next: ChannelConfig = { ...cfg };
+      if (req.name !== undefined) {
+        if (req.name.trim() === "") throw badRequest("name must not be empty.");
+        next.name = req.name.trim();
+      }
+      if (req.purpose !== undefined) next.purpose = req.purpose.trim();
+      const archiveChanged = req.archived !== undefined && req.archived !== cfg.archived;
+      // The notice is written before the flag: an archived channel is skipped by the scan,
+      // so a line written after it would wait for the unarchive to reach the event stream.
+      if (archiveChanged) {
+        await appendChannelMessage(this.deps, org, channelId, {
+          sender: "system",
+          hop: 0,
+          text: `${caller.principal} ${req.archived === true ? "archived" : "unarchived"} the channel.`,
+          mentions: [],
+        });
+        next.archived = req.archived === true;
+      }
+      await this.deps.store.writeChannel(org.dir, channelId, next);
+      return this.channelItem(org, channelId, next, caller);
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return item;
+  }
+
+  /** `agent:<id>` must be an employee and `user:<id>` a Project member — nobody else can be in a channel. */
+  private requireChannelPrincipal(org: LoadedOrg, raw: string): string {
+    const parsed = parsePrincipal(raw);
+    if (parsed?.kind === "agent" && org.byId.has(parsed.id)) return agentPrincipal(parsed.id);
+    if (parsed?.kind === "user" && this.projectUserIds(org).includes(parsed.id)) {
+      return userPrincipal(parsed.id);
+    }
+    throw new HttpError(
+      400,
+      "invalid_principal",
+      `Not an employee of ${org.orgId} or a member of this Project: ${raw}`,
+    );
+  }
+
+  /** Any member invites; a person may also join by itself, an employee may not. */
+  async addChannelMember(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    rawPrincipal: string,
+    actor: Actor,
+  ): Promise<OrgChannelDetail> {
+    const detail = await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      const cfg = await this.requireChannel(org, channelId);
+      if (channelId === DEFAULT_CHANNEL_ID) {
+        throw allHandsImmutable("Everyone is in the all-hands channel already.");
+      }
+      if (cfg.archived) throw channelArchived(channelId);
+      const principal = this.requireChannelPrincipal(org, rawPrincipal);
+      const caller = this.caller(org, actor);
+      const members = cfg.members ?? [];
+      if (principal === caller.principal) {
+        if (caller.agentId !== null) {
+          throw notAMember(
+            channelId,
+            caller.principal,
+            "An employee joins a channel only when a member invites it.",
+          );
+        }
+      } else if (!members.includes(caller.principal)) {
+        throw notAMember(channelId, caller.principal);
+      }
+      if (members.includes(principal)) return this.channelDetail(org, channelId, cfg, caller);
+      const next: ChannelConfig = { ...cfg, members: [...members, principal] };
+      await this.deps.store.writeChannel(org.dir, channelId, next);
+      await appendChannelMessage(this.deps, org, channelId, {
+        sender: "system",
+        hop: 0,
+        text:
+          principal === caller.principal
+            ? `${principal} joined the channel.`
+            : `${caller.principal} invited ${principal} to the channel.`,
+        mentions: [],
+      });
+      return this.channelDetail(org, channelId, next, caller);
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return detail;
+  }
+
+  /** A member removes itself; a person may remove anyone. Removing a non-member changes nothing. */
+  async removeChannelMember(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    rawPrincipal: string,
+    actor: Actor,
+  ): Promise<void> {
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      const cfg = await this.requireChannel(org, channelId);
+      if (channelId === DEFAULT_CHANNEL_ID) {
+        throw allHandsImmutable("Nobody leaves the all-hands channel.");
+      }
+      if (cfg.archived) throw channelArchived(channelId);
+      const parsed = parsePrincipal(rawPrincipal);
+      if (parsed?.kind !== "agent" && parsed?.kind !== "user") {
+        throw new HttpError(400, "invalid_principal", `Not a principal: ${rawPrincipal}`);
+      }
+      const principal =
+        parsed.kind === "agent" ? agentPrincipal(parsed.id) : userPrincipal(parsed.id);
+      const caller = this.caller(org, actor);
+      if (caller.agentId !== null && principal !== caller.principal) {
+        throw notAMember(
+          channelId,
+          caller.principal,
+          "An employee removes only itself from a channel.",
+        );
+      }
+      const members = cfg.members ?? [];
+      if (!members.includes(principal)) return;
+      await this.deps.store.writeChannel(org.dir, channelId, {
+        ...cfg,
+        members: members.filter((m) => m !== principal),
+      });
+      await appendChannelMessage(this.deps, org, channelId, {
+        sender: "system",
+        hop: 0,
+        text:
+          principal === caller.principal
+            ? `${principal} left the channel.`
+            : `${caller.principal} removed ${principal} from the channel.`,
+        mentions: [],
+      });
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Channel messages
+  // ---------------------------------------------------------------------------
+
+  async channelMessages(
+    projectId: string,
+    orgId: string,
+    actor: Actor,
+    channelId: string,
+    opts: { date?: string },
+  ): Promise<OrgChannelMessagesResponse> {
+    const org = await this.requireOrg(projectId, orgId);
+    const cfg = await this.requireChannel(org, channelId);
+    const caller = this.caller(org, actor);
+    this.requireReadAccess(org, channelId, cfg, caller);
+    const days = await this.deps.store.listMessageDays(org.dir, channelId);
+    const today = zonedDate(org.config.timezone, this.now());
+    const date = opts.date ?? today;
+    const messages = (await this.deps.store.readMessageDay(org.dir, channelId, date)).messages;
+    const lastReadId =
+      caller.userId === null
+        ? null
+        : this.deps.cache.readCursor(projectId, orgId, channelId, caller.userId);
+    const me = caller.userId === null ? null : userPrincipal(caller.userId);
+    let unread = 0;
+    let mentionsMe = 0;
+    if (me !== null) {
+      for (const d of days.slice(0, 7)) {
+        const list =
+          d === date
+            ? messages
+            : (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
+        for (const m of list) {
+          if (lastReadId !== null && m.id <= lastReadId) continue;
+          unread++;
+          if (m.mentions.includes(me)) mentionsMe++;
+        }
+      }
+    }
+    return {
+      channelId,
       date,
       days,
       messages,
@@ -1322,11 +1774,7 @@ export class OrganizationService {
 
   /** Resolves `@` tokens: employees first, then Project members; the writer disambiguates with a prefix. */
   private resolveMentions(org: LoadedOrg, text: string): string[] {
-    const project = this.deps.projects.findById(org.projectId);
-    const users = new Set<string>([
-      ...(project ? [project.ownerUserId] : []),
-      ...this.deps.members.list(org.projectId).map((m) => m.userId),
-    ]);
+    const users = new Set(this.projectUserIds(org));
     const out: string[] = [];
     const add = (p: string): void => {
       if (!out.includes(p)) out.push(p);
@@ -1349,16 +1797,19 @@ export class OrganizationService {
     return out;
   }
 
-  async sendChat(
+  async sendChannelMessage(
     projectId: string,
     orgId: string,
     userId: string,
-    req: OrgChatSendRequest,
-  ): Promise<OrgChatMessage> {
+    channelId: string,
+    req: OrgChannelMessageSendRequest,
+  ): Promise<OrgChannelMessage> {
     const msg = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
       const text = req.text.trim();
       if (text === "") throw badRequest("text must not be empty.");
+      const cfg = await this.requireChannel(org, channelId);
+      if (cfg.archived) throw channelArchived(channelId);
       let sender = userPrincipal(userId);
       let hop = 0;
       if (req.sessionId !== undefined) {
@@ -1374,12 +1825,24 @@ export class OrganizationService {
           }
         }
       }
+      const members = this.channelMemberPrincipals(org, cfg);
+      if (!members.includes(sender)) throw notAMember(channelId, sender);
+      const mentions = this.resolveMentions(org, text);
+      // `@all` is the channel's own membership, so only named principals can be outsiders.
+      const outsiders = mentions.filter((m) => m !== "all" && !members.includes(m));
+      if (outsiders.length > 0) {
+        throw new HttpError(
+          400,
+          "mention_not_member",
+          `Not a member of ${channelId}: ${outsiders.join(", ")}. Invite them first, or write in a channel they are in.`,
+        );
+      }
       const refs = req.refs;
-      return appendChatMessage(this.deps, org, {
+      return appendChannelMessage(this.deps, org, channelId, {
         sender,
         hop,
         text,
-        mentions: this.resolveMentions(org, text),
+        mentions,
         ...(refs !== undefined && Object.keys(refs).length > 0 ? { refs } : {}),
       });
     });
@@ -1387,11 +1850,18 @@ export class OrganizationService {
     return msg;
   }
 
-  async markRead(projectId: string, orgId: string, userId: string, upTo: string): Promise<void> {
-    await this.requireOrg(projectId, orgId);
-    const current = this.deps.cache.readCursor(projectId, orgId, userId);
+  async markRead(
+    projectId: string,
+    orgId: string,
+    userId: string,
+    channelId: string,
+    upTo: string,
+  ): Promise<void> {
+    const org = await this.requireOrg(projectId, orgId);
+    await this.requireChannel(org, channelId);
+    const current = this.deps.cache.readCursor(projectId, orgId, channelId, userId);
     if (current === null || upTo > current)
-      this.deps.cache.setReadCursor(projectId, orgId, userId, upTo);
+      this.deps.cache.setReadCursor(projectId, orgId, channelId, userId, upTo);
   }
 
   // ---------------------------------------------------------------------------
@@ -1533,13 +2003,14 @@ function initBody(org: LoadedOrg): string {
     `Mission: ${org.config.mission}`,
     "",
     "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
-    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the group chat — \`penguin org chat send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
+    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
     "2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — `penguin org hire --new-agent " +
       `${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
     "3. Partition the shared workspace as confirmed: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
     "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream.",
-    `6. Report to the board in the group chat, mentioning @${board}, and name the next decision you need, if any.`,
+    "6. Open one channel per stream (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
+    `7. Report to the board in the all-hands channel, mentioning @${board}, and name the next decision you need, if any.`,
   ].join("\n");
 }
 
