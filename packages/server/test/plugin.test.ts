@@ -5,8 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
-import { parseManifest } from "@prismshadow/penguin-core/kernel";
-import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
+import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PluginHost, PLUGINS_RESOURCE_ID, pluginHostFrom } from "../src/plugin/host.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
