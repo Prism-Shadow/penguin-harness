@@ -70,13 +70,12 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
-import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
+import type { Instance, Json, AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
 import type { PlatformApi } from "../hmr/platform.js";
 import { packagedPlatform } from "../hmr/platform.js";
-import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the

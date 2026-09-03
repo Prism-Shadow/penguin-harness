@@ -33,8 +33,7 @@
  * need for a separate synchronous hard-kill path (its command sessions are reaped by their own
  * exit fallback); `killHard` is equivalent to `kill`.
  */
-import type { OmniMessage } from "../../../omnimessage/index.js";
-import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
+import type { OmniMessage, ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
 import type {
   ApproveFn,
   RunCutoff,

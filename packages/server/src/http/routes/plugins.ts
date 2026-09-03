@@ -18,8 +18,9 @@ import {
   listInstalledHooks,
   listInstalledSkills,
   removeHook,
+  libraryPlugin,
+  loadPluginGroups,
 } from "@prismshadow/penguin-core";
-import { libraryPlugin, loadPluginGroups } from "@prismshadow/penguin-core";
 import type {
   AgentHooksResponse,
   AgentPluginsInstallResponse,
