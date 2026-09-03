@@ -1,13 +1,12 @@
 /**
- * One door per machine: nothing outside machines/transport/ may open ssh or reach around
- * the directory's index. The rule is worth pinning rather than agreeing to, because the
- * failure it prevents is quiet — a call site that opens its own channel goes on to judge
- * the machine by that channel, and "my ssh worked" is not the same fact as "that machine
- * is healthy".
+ * One mouth per machine: nothing outside machines/transport/ may open ssh or reach around
+ * the MachineConnection seam (transport/connection.ts). The incident behind the rule
+ * (#561) grew exactly where a call site opened its own channel and judged the machine's
+ * liveness from that channel's state.
  *
- * A source scan rather than a lint rule: it runs with the suite everywhere, and its failure
- * message names the offending file. Tests are exempt — a unit test of a private module
- * imports it by nature.
+ * A source scan rather than a lint rule: it runs with the suite everywhere, and its
+ * failure message names the offending file. Tests are exempt — a unit test of a private
+ * module imports it by nature.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -49,7 +48,12 @@ describe("the transport boundary", () => {
     // Each relative specifier is resolved against the importing file rather than matched by
     // shape, so a caller anywhere under src/ reaching for `../machines/exec.js` is caught,
     // not only a sibling writing `./exec.js`.
-    const gone = new Set(["machines/exec.js", "machines/targets.js"]);
+    const gone = new Set([
+      "machines/exec.js",
+      "machines/targets.js",
+      "machines/ssh-session.js",
+      "machines/forward.js",
+    ]);
     const specifiers = /from\s+["'](\.{1,2}\/[^"']+)["']/g;
     const stragglers = outside
       .filter((f) => {
