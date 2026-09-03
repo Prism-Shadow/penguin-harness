@@ -162,9 +162,12 @@ export class OrgStore {
     ]) {
       await fs.mkdir(sub, { recursive: true });
     }
+    // The purpose is left empty on purpose: seeded English prose would show verbatim in
+    // every locale. The channel view renders its own localized line for the all-hands
+    // channel when the purpose is unset, and a person may still write one.
     await this.writeChannel(dir, DEFAULT_CHANNEL_ID, {
       name: "All hands",
-      purpose: "Everyone in the organization; the board reads here.",
+      purpose: "",
       createdBy: "system",
       createdAt,
       archived: false,

@@ -265,6 +265,11 @@ export function AppLayout() {
   // browser session, so a dot can be there on a fresh load instead of waiting for someone to
   // open the sidebar menu. Every other anchor reads the same caches passively.
   const badges = useUpdateBadges(true);
+  // The drawer holds the sidebar, so the hamburger is named after what the sidebar lists:
+  // conversations in development mode, channels in company mode.
+  const company = useCompany();
+  const drawerName =
+    company.workMode === "company" ? S.company.channels.drawerLabel : S.chat.sessionList;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
@@ -330,9 +335,7 @@ export function AppLayout() {
               row's update entry). */}
           <button
             type="button"
-            aria-label={
-              badges.note !== null ? `${S.chat.sessionList} · ${badges.note}` : S.chat.sessionList
-            }
+            aria-label={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
             {...(badges.note !== null ? { title: badges.note } : {})}
             onClick={() => setDrawerOpen(true)}
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"

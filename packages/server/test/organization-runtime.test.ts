@@ -241,7 +241,14 @@ describe("organization runtime", () => {
     );
     expect(allChannel).toMatchObject({
       ok: true,
-      value: { name: "All hands", createdBy: "system", everyone: true, archived: false },
+      // The purpose is empty: the UI writes the all-hands line itself, in the reader's language.
+      value: {
+        name: "All hands",
+        purpose: "",
+        createdBy: "system",
+        everyone: true,
+        archived: false,
+      },
     });
     expect(agentsCreated).toEqual([
       { agentId: CEO, plugins: ["agent-company", "agent-development"] },

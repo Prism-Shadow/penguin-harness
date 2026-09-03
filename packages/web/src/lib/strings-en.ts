@@ -2927,6 +2927,7 @@ Scenarios:
     },
     channels: {
       listTitle: "Channels",
+      drawerLabel: "Channel list",
       allHands: "All hands",
       mine: "My channels",
       others: "Other channels",
@@ -2943,6 +2944,7 @@ Scenarios:
       streamLabel: (name: string): string => `Messages in ${name}`,
       purpose: "Purpose",
       purposeEmpty: "No purpose written yet",
+      allHandsPurpose: "Everyone in the organization is here; the board reads here.",
       memberCount: (n: number): string => `${n} member${n === 1 ? "" : "s"}`,
       memberList: "Channel members",
       invite: "Invite",

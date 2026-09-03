@@ -303,6 +303,14 @@ export function ChannelHeader({
 
   const allHands = isAllHands(detail.channelId);
   const label = channelLabel(detail, S.company.channels.allHands);
+  // The subtitle: the stored purpose, or — for the all-hands channel, whose purpose the
+  // server seeds empty rather than in one language — the localized line that says what it is.
+  const purpose =
+    detail.purpose !== ""
+      ? detail.purpose
+      : allHands
+        ? S.company.channels.allHandsPurpose
+        : S.company.channels.purposeEmpty;
   const candidates = inviteCandidates(employees, projectMembers, detail.members, query);
 
   const openDesk = async (principal: string) => {
@@ -394,10 +402,10 @@ export function ChannelHeader({
           </h1>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
           <span
-            title={detail.purpose}
+            title={purpose}
             className="hidden min-w-0 flex-1 truncate text-xs text-gray-500 sm:block dark:text-gray-400"
           >
-            {detail.purpose !== "" ? detail.purpose : S.company.channels.purposeEmpty}
+            {purpose}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">

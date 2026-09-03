@@ -2842,6 +2842,8 @@ Benchmark：
     channels: {
       /** The sidebar's list, its groups and the dialog above it. */
       listTitle: "频道",
+      /** The phone drawer's hamburger, which opens the channel list (development mode names it S.chat.sessionList). */
+      drawerLabel: "频道列表",
       allHands: "全员频道",
       mine: "我的频道",
       others: "其他频道",
@@ -2860,6 +2862,8 @@ Benchmark：
       streamLabel: (name: string): string => `「${name}」的消息`,
       purpose: "主题",
       purposeEmpty: "还没有写主题",
+      /** The all-hands channel is seeded with no purpose; this line stands in for one. */
+      allHandsPurpose: "组织里的每个人都在这里；董事会也在这里看。",
       memberCount: (n: number): string => `${n} 人`,
       memberList: "频道成员",
       invite: "邀请",
