@@ -428,40 +428,52 @@ export class OrgCacheRepo {
 
   // ---- chat cursors ----
 
-  chatOffset(projectId: string, orgId: string, date: string): number {
+  chatOffset(projectId: string, orgId: string, channelId: string, date: string): number {
     const r = this.db
       .prepare(
-        "SELECT offset_bytes FROM org_chat_state WHERE project_id = ? AND org_id = ? AND date = ?",
+        "SELECT offset_bytes FROM org_chat_state WHERE project_id = ? AND org_id = ? AND channel_id = ? AND date = ?",
       )
-      .get(projectId, orgId, date) as { offset_bytes: number } | undefined;
+      .get(projectId, orgId, channelId, date) as { offset_bytes: number } | undefined;
     return r ? Number(r.offset_bytes) : 0;
   }
 
-  setChatOffset(projectId: string, orgId: string, date: string, offset: number): void {
+  setChatOffset(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    date: string,
+    offset: number,
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO org_chat_state (project_id, org_id, date, offset_bytes) VALUES (?, ?, ?, ?)
-         ON CONFLICT(project_id, org_id, date) DO UPDATE SET offset_bytes = excluded.offset_bytes`,
+        `INSERT INTO org_chat_state (project_id, org_id, channel_id, date, offset_bytes) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, org_id, channel_id, date) DO UPDATE SET offset_bytes = excluded.offset_bytes`,
       )
-      .run(projectId, orgId, date, offset);
+      .run(projectId, orgId, channelId, date, offset);
   }
 
-  readCursor(projectId: string, orgId: string, userId: string): string | null {
+  readCursor(projectId: string, orgId: string, channelId: string, userId: string): string | null {
     const r = this.db
       .prepare(
-        "SELECT last_read_id FROM org_chat_reads WHERE project_id = ? AND org_id = ? AND user_id = ?",
+        "SELECT last_read_id FROM org_chat_reads WHERE project_id = ? AND org_id = ? AND channel_id = ? AND user_id = ?",
       )
-      .get(projectId, orgId, userId) as { last_read_id: string } | undefined;
+      .get(projectId, orgId, channelId, userId) as { last_read_id: string } | undefined;
     return r ? r.last_read_id : null;
   }
 
-  setReadCursor(projectId: string, orgId: string, userId: string, lastReadId: string): void {
+  setReadCursor(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    userId: string,
+    lastReadId: string,
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO org_chat_reads (project_id, org_id, user_id, last_read_id) VALUES (?, ?, ?, ?)
-         ON CONFLICT(project_id, org_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
+        `INSERT INTO org_chat_reads (project_id, org_id, channel_id, user_id, last_read_id) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, org_id, channel_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
       )
-      .run(projectId, orgId, userId, lastReadId);
+      .run(projectId, orgId, channelId, userId, lastReadId);
   }
 
   // ---- budget marks ----

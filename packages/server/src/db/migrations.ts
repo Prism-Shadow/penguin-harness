@@ -275,6 +275,63 @@ export const MIGRATIONS: readonly Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    name: "company-mode-channels",
+    // The organization's single group chat became channels: a chat message lives in
+    // `chat/<channel_id>/<date>.jsonl`, so the tail-scan cursor and each user's read cursor
+    // are per channel. Both tables are recreated rather than altered — the column belongs in
+    // the primary key, which SQLite cannot add in place. Nothing is carried over: company
+    // mode is unreleased, every row here is either rebuildable from the files (the scan
+    // cursor) or one pass of "everything looks unread" (the read cursor). A predecessor build
+    // reads neither table's shape, only its own writes, so this is swap-safe.
+    swapSafe: true,
+    up(db) {
+      db.exec(`
+        DROP TABLE IF EXISTS org_chat_state;
+        DROP TABLE IF EXISTS org_chat_reads;
+        CREATE TABLE org_chat_state (     -- DERIVED CACHE (company mode): tail-scan byte cursor per chat day file, per channel
+          project_id   TEXT NOT NULL,
+          org_id       TEXT NOT NULL,
+          channel_id   TEXT NOT NULL,
+          date         TEXT NOT NULL,
+          offset_bytes INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (project_id, org_id, channel_id, date)
+        );
+        CREATE TABLE org_chat_reads (     -- user data (company mode): each user's read cursor in one channel of an organization's chat
+          project_id   TEXT NOT NULL,
+          org_id       TEXT NOT NULL,
+          channel_id   TEXT NOT NULL,
+          user_id      TEXT NOT NULL,
+          last_read_id TEXT NOT NULL,
+          PRIMARY KEY (project_id, org_id, channel_id, user_id)
+        );
+      `);
+    },
+    // Recreates the two tables exactly as migration 4 declared them — EMPTY. LOSES every
+    // scan cursor (re-derived by the next pass, which republishes the messages it re-reads)
+    // and every read cursor (users see the recent days as unread once).
+    down(db) {
+      db.exec(`
+        DROP TABLE IF EXISTS org_chat_state;
+        DROP TABLE IF EXISTS org_chat_reads;
+        CREATE TABLE org_chat_state (     -- DERIVED CACHE (company mode): tail-scan byte cursor per chat day file
+          project_id   TEXT NOT NULL,
+          org_id       TEXT NOT NULL,
+          date         TEXT NOT NULL,
+          offset_bytes INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (project_id, org_id, date)
+        );
+        CREATE TABLE org_chat_reads (     -- user data (company mode): each user's read cursor in an organization's chat
+          project_id   TEXT NOT NULL,
+          org_id       TEXT NOT NULL,
+          user_id      TEXT NOT NULL,
+          last_read_id TEXT NOT NULL,
+          PRIMARY KEY (project_id, org_id, user_id)
+        );
+      `);
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

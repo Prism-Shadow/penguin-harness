@@ -8,7 +8,7 @@
  */
 import { createHash } from "node:crypto";
 import type { OrgCalendarOutcome, OrgChatMessage, OrgTicketChange } from "../../api/types.js";
-import type { TicketDoc } from "../../organization/files.js";
+import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChatLine, serializeChatLine } from "../../organization/files.js";
 import {
   agentPrincipal,
@@ -16,6 +16,7 @@ import {
   principalAgentId,
   userPrincipal,
 } from "../../organization/principal.js";
+import { ALL_CHANNEL_ID } from "../../organization/paths.js";
 import { zonedDate } from "../../organization/zoned.js";
 import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
@@ -257,6 +258,7 @@ async function notifyTicket(
     await appendSystemMessage(
       deps,
       org,
+      ALL_CHANNEL_ID,
       `Ticket ${t.ticketId} (${t.doc.title}) is now ${change === "blocked" ? "blocked" : t.doc.status}: ${users
         .map(userPrincipal)
         .map((u) => `@${u}`)
@@ -399,10 +401,11 @@ export function newMessageId(nowMs: number): string {
   return `msg-${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}-${pad(d.getUTCHours())}-${pad(d.getUTCMinutes())}-${pad(d.getUTCSeconds())}-${suffix}`;
 }
 
-/** Appends a message to today's chat file (organization timezone) and returns it; delivery happens in the scan. */
+/** Appends a message to a channel's file for today (organization timezone) and returns it; delivery happens in the scan. */
 export async function appendChatMessage(
   deps: OrgDeps,
   org: LoadedOrg,
+  channelId: string,
   msg: Omit<OrgChatMessage, "id" | "time">,
 ): Promise<OrgChatMessage> {
   const nowMs = nowOf(deps);
@@ -413,20 +416,27 @@ export async function appendChatMessage(
   };
   await deps.store.appendChatLine(
     org.dir,
+    channelId,
     zonedDate(org.config.timezone, nowMs),
     serializeChatLine(full),
   );
   return full;
 }
 
+/**
+ * A `system` line. Organization-wide notices (budgets, ticket notices addressed to people,
+ * hires and departures) go to the all-hands channel; a membership notice goes to the
+ * channel it concerns.
+ */
 export async function appendSystemMessage(
   deps: OrgDeps,
   org: LoadedOrg,
+  channelId: string,
   text: string,
   mentions: string[],
   refs?: OrgChatMessage["refs"],
 ): Promise<OrgChatMessage> {
-  return appendChatMessage(deps, org, {
+  return appendChatMessage(deps, org, channelId, {
     sender: "system",
     hop: 0,
     text,
@@ -435,7 +445,7 @@ export async function appendSystemMessage(
   });
 }
 
-/** The body of a mention trigger: the message, then up to 20 earlier messages of the day as context. */
+/** The body of a mention trigger: the message, then up to 20 earlier messages of that channel's day as context. */
 function mentionBody(all: readonly OrgChatMessage[], msg: OrgChatMessage): string {
   const idx = all.findIndex((m) => m.id === msg.id);
   const earlier = (idx > 0 ? all.slice(Math.max(0, idx - 20), idx) : []).map(
@@ -445,64 +455,108 @@ function mentionBody(all: readonly OrgChatMessage[], msg: OrgChatMessage): strin
   return earlier.length === 0 ? head : `${head}\n\nEarlier today:\n${earlier.join("\n")}`;
 }
 
-/** Tail-scans the recent day files, publishes every new message and delivers its mentions. */
+/**
+ * The employees a channel delivers to: every employee for the all-hands channel, the
+ * `agent:` members for any other. An `agent:` member who has since left the organization is
+ * not one — the chart decides who exists.
+ */
+function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
+  if (channel.everyone === true) return new Set(org.chart.employees.map((e) => e.agentId));
+  const out = new Set<string>();
+  for (const m of channel.members ?? []) {
+    const id = principalAgentId(m);
+    if (id !== null && org.byId.has(id)) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Tail-scans each channel's recent day files, publishes every new message and delivers its
+ * mentions inside that channel's membership. Archived channels take no posts, so there is
+ * nothing new to find in them; an invalid `channel.toml` is reported and the channel skipped.
+ */
 export async function scanChat(
   deps: OrgDeps,
   org: LoadedOrg,
   spend: OrgSpend,
   triggers: boolean,
 ): Promise<void> {
-  const days = (await deps.store.listChatDays(org.dir)).slice(0, 3);
-  for (const date of days.reverse()) {
-    const offset = deps.cache.chatOffset(org.projectId, org.orgId, date);
-    const { lines, nextOffset } = await deps.store.readChatFrom(org.dir, date, offset);
-    if (lines.length === 0) {
-      if (nextOffset !== offset)
-        deps.cache.setChatOffset(org.projectId, org.orgId, date, nextOffset);
+  for (const file of await deps.store.listChannels(org.dir)) {
+    if (!file.parsed.ok) {
+      recordError(
+        deps,
+        org,
+        "org_channel_invalid",
+        `Invalid channel ${file.channelId}/channel.toml: ${file.parsed.error}`,
+      );
       continue;
     }
-    const all = (await deps.store.readChatDay(org.dir, date)).messages;
-    for (const line of lines) {
-      const parsed = parseChatLine(line);
-      if (!parsed.ok) {
-        recordError(
-          deps,
-          org,
-          "org_chat_invalid",
-          `Invalid chat line in ${date}.jsonl: ${parsed.error}`,
-        );
+    const channel = file.parsed.value;
+    if (channel.archived) continue;
+    const members = channelAgents(org, channel);
+    const channelId = file.channelId;
+    const days = (await deps.store.listChatDays(org.dir, channelId)).slice(0, 3);
+    for (const date of days.reverse()) {
+      const offset = deps.cache.chatOffset(org.projectId, org.orgId, channelId, date);
+      const { lines, nextOffset } = await deps.store.readChatFrom(org.dir, channelId, date, offset);
+      if (lines.length === 0) {
+        if (nextOffset !== offset)
+          deps.cache.setChatOffset(org.projectId, org.orgId, channelId, date, nextOffset);
         continue;
       }
-      const msg = parsed.value;
-      deps.notifyProject(org.projectId, {
-        type: "org_chat",
-        projectId: org.projectId,
-        orgId: org.orgId,
-        message: msg,
-      });
-      if (!triggers || org.config.status === "paused" || msg.sender === "system") continue;
-      if (msg.hop >= org.config.mentionChainLimit) continue;
-      const senderAgent = principalAgentId(msg.sender);
-      const targets = new Set<string>();
-      for (const m of msg.mentions) {
-        const p = parsePrincipal(m);
-        if (p?.kind === "agent") targets.add(p.id);
-        else if (p?.kind === "all") for (const e of org.chart.employees) targets.add(e.agentId);
+      const all = (await deps.store.readChatDay(org.dir, channelId, date)).messages;
+      for (const line of lines) {
+        const parsed = parseChatLine(line);
+        if (!parsed.ok) {
+          recordError(
+            deps,
+            org,
+            "org_chat_invalid",
+            `Invalid chat line in ${channelId}/${date}.jsonl: ${parsed.error}`,
+          );
+          continue;
+        }
+        const msg = parsed.value;
+        deps.notifyProject(org.projectId, {
+          type: "org_chat",
+          projectId: org.projectId,
+          orgId: org.orgId,
+          channelId,
+          message: msg,
+        });
+        if (!triggers || org.config.status === "paused" || msg.sender === "system") continue;
+        if (msg.hop >= org.config.mentionChainLimit) continue;
+        const senderAgent = principalAgentId(msg.sender);
+        const targets = new Set<string>();
+        for (const m of msg.mentions) {
+          const p = parsePrincipal(m);
+          // A mention only reaches a member: the send path refuses the rest, and a
+          // hand-written line naming an outsider must not deliver either.
+          if (p?.kind === "agent") {
+            if (members.has(p.id)) targets.add(p.id);
+          } else if (p?.kind === "all") {
+            for (const id of members) targets.add(id);
+          }
+        }
+        if (senderAgent !== null) targets.delete(senderAgent);
+        for (const agentId of targets) {
+          if (!org.byId.has(agentId)) continue;
+          await dispatchToDesk(
+            deps,
+            org,
+            agentId,
+            {
+              kind: "mention",
+              message: `${msg.id} from ${msg.sender}`,
+              channel: channelId,
+            },
+            mentionBody(all, msg),
+            { hop: msg.hop, budget: budgetLine(org, spend, agentId) },
+          );
+        }
       }
-      if (senderAgent !== null) targets.delete(senderAgent);
-      for (const agentId of targets) {
-        if (!org.byId.has(agentId)) continue;
-        await dispatchToDesk(
-          deps,
-          org,
-          agentId,
-          { kind: "mention", message: `${msg.id} from ${msg.sender}` },
-          mentionBody(all, msg),
-          { hop: msg.hop, budget: budgetLine(org, spend, agentId) },
-        );
-      }
+      deps.cache.setChatOffset(org.projectId, org.orgId, channelId, date, nextOffset);
     }
-    deps.cache.setChatOffset(org.projectId, org.orgId, date, nextOffset);
   }
 }
 
@@ -535,6 +589,7 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
         await appendSystemMessage(
           deps,
           org,
+          ALL_CHANNEL_ID,
           `Budget pause: ${agentPrincipal(e.agentId)} reached ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
           [],
         );
@@ -554,6 +609,7 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
       await appendSystemMessage(
         deps,
         org,
+        ALL_CHANNEL_ID,
         `Budget warning: ${agentPrincipal(e.agentId)} has used ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD).`,
         [],
       );

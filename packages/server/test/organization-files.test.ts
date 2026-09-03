@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractMentionTokens,
   parseCalendarEvent,
+  parseChannelConfig,
   parseChatLine,
   parseDesks,
   parseOrgChart,
@@ -16,6 +17,7 @@ import {
   parseTicket,
   progressLine,
   serializeCalendarEvent,
+  serializeChannelConfig,
   serializeChatLine,
   serializeDesks,
   serializeOrgChart,
@@ -25,13 +27,20 @@ import {
   subordinatesOf,
   ancestorsOf,
 } from "../src/organization/files.js";
-import type { OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
+import type { ChannelConfig, OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
 import {
   formatPrincipal,
   parsePrincipal,
   splitPrincipalList,
 } from "../src/organization/principal.js";
-import { ticketMonth, ticketPath } from "../src/organization/paths.js";
+import {
+  ALL_CHANNEL_ID,
+  chatFilePath,
+  channelConfigPath,
+  isChannelId,
+  ticketMonth,
+  ticketPath,
+} from "../src/organization/paths.js";
 import {
   zonedDate,
   zonedMonthRange,
@@ -256,6 +265,109 @@ describe("tickets", () => {
     // Joined the way the store joins it, so the assertion holds on Windows too.
     expect(ticketPath("/org", "2026-09-02-site", "review")).toBe(
       path.join("/org", "tickets", "2026-09", "review", "2026-09-02-site.md"),
+    );
+  });
+});
+
+describe("channel files", () => {
+  const site: ChannelConfig = {
+    name: "Site launch",
+    purpose: "Everything about shipping the marketplace site",
+    createdBy: "user:alice",
+    createdAt: "2026-09-03T01:00:00.000Z",
+    archived: false,
+    members: ["user:alice", "agent:acme_dev"],
+  };
+
+  it("round-trips a member channel and the all-hands channel", () => {
+    const raw = serializeChannelConfig(site);
+    expect(raw).toContain('members = [ "user:alice", "agent:acme_dev" ]');
+    expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: site });
+
+    const all: ChannelConfig = {
+      name: "All hands",
+      purpose: "",
+      createdBy: "system",
+      createdAt: "2026-09-03T01:00:00.000Z",
+      archived: false,
+      everyone: true,
+    };
+    const allRaw = serializeChannelConfig(all);
+    expect(allRaw).toContain("everyone = true");
+    expect(allRaw).not.toContain("members =");
+    expect(parseChannelConfig(ALL_CHANNEL_ID, allRaw)).toEqual({ ok: true, value: all });
+  });
+
+  it("tolerates a hand edit: a bare datetime, a missing purpose, archived", () => {
+    const raw = [
+      'name = "Marketing"',
+      'created_by = "agent:acme_ceo"',
+      "created_at = 2026-09-03T01:00:00Z",
+      "archived = true",
+      'members = ["agent:acme_marketing"]',
+    ].join("\n");
+    expect(parseChannelConfig("marketing", raw)).toEqual({
+      ok: true,
+      value: {
+        name: "Marketing",
+        purpose: "",
+        createdBy: "agent:acme_ceo",
+        createdAt: "2026-09-03T01:00:00.000Z",
+        archived: true,
+        members: ["agent:acme_marketing"],
+      },
+    });
+  });
+
+  it("rejects what the API would never write", () => {
+    const errorOf = (channelId: string, lines: string[]): string => {
+      const r = parseChannelConfig(channelId, lines.join("\n"));
+      expect(r.ok).toBe(false);
+      return r.ok ? "" : r.error;
+    };
+    const base = [
+      'name = "Site"',
+      'created_by = "user:alice"',
+      'created_at = "2026-09-03T01:00:00Z"',
+    ];
+    expect(errorOf("site", ['name = ""', ...base.slice(1), "members = []"])).toContain("name");
+    expect(errorOf("site", [...base, "members = []", "created_by = 1"])).toContain("created_by");
+    expect(
+      errorOf("site", ['name = "Site"', 'created_by = "all"', base[2]!, "members = []"]),
+    ).toContain("created_by");
+    expect(
+      errorOf("site", [
+        'name = "Site"',
+        'created_by = "user:alice"',
+        'created_at = "soon"',
+        "members = []",
+      ]),
+    ).toContain("created_at");
+    // Membership: a bad principal, a duplicate, and no list at all.
+    expect(errorOf("site", [...base, 'members = ["acme_dev"]'])).toContain("not a principal");
+    expect(errorOf("site", [...base, 'members = ["agent:acme_dev", "agent:acme_dev"]'])).toContain(
+      "duplicate member",
+    );
+    expect(errorOf("site", base)).toContain("members must be a list");
+    // `everyone` belongs to the all-hands channel and to no other, and it keeps no list.
+    expect(errorOf("site", [...base, "everyone = true"])).toContain("all-hands channel");
+    expect(errorOf(ALL_CHANNEL_ID, [...base, "members = []"])).toContain("everyone = true");
+    expect(
+      errorOf(ALL_CHANNEL_ID, [...base, "everyone = true", 'members = ["user:alice"]']),
+    ).toContain("keeps no members list");
+  });
+
+  it("names a channel's directory, config and day file", () => {
+    expect(isChannelId("site")).toBe(true);
+    expect(isChannelId(ALL_CHANNEL_ID)).toBe(true);
+    expect(isChannelId("Site")).toBe(false);
+    expect(isChannelId("a")).toBe(false);
+    expect(isChannelId("site-launch")).toBe(false);
+    expect(channelConfigPath("/org", "site")).toBe(
+      path.join("/org", "chat", "site", "channel.toml"),
+    );
+    expect(chatFilePath("/org", ALL_CHANNEL_ID, "2026-09-03")).toBe(
+      path.join("/org", "chat", "all", "2026-09-03.jsonl"),
     );
   });
 });

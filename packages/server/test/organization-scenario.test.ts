@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage } from "@prismshadow/penguin-core";
+import { ALL_CHANNEL_ID } from "../src/organization/paths.js";
 import { makeOrgHarness } from "./org-harness.js";
 import type { OrgHarness } from "./org-harness.js";
 
@@ -64,7 +65,7 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     });
     expect(m1.sender).toBe(`agent:${CEO}`);
     expect(m1.mentions).toEqual(["user:alice"]);
-    const board = await service.chat(P, ORG, "alice", {});
+    const board = await service.chat(P, ORG, { userId: "alice" }, {});
     expect(board.mentionsMe).toBe(1);
     await service.sendChat(P, ORG, "alice", { text: `@${CEO} Correct. Go.` });
     expect(
@@ -221,6 +222,61 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(board2.columns.in_progress.find((t) => t.ticketId === seo.ticketId)?.blocked).toBe(
       "Nothing to index until the site is live",
     );
+
+    // 5b. The site stream gets its own channel: the CEO opens it and invites the developer,
+    // so the thread lives beside the all-hands channel instead of drowning it.
+    const siteChannel = await service.createChannel(
+      P,
+      ORG,
+      { channelId: "site", name: "Site launch", purpose: "Everything about shipping the site" },
+      ceoActor,
+    );
+    expect(siteChannel).toMatchObject({
+      createdBy: `agent:${CEO}`,
+      memberCount: 1,
+      everyone: false,
+    });
+    const withDev = await service.addChannelMember(P, ORG, "site", `agent:${DEV}`, ceoActor);
+    expect(withDev.members.map((m) => m.principal)).toEqual([`agent:${CEO}`, `agent:${DEV}`]);
+    // Marketing is not in it: a message naming it is refused before anything is written.
+    await expect(
+      service.sendChat(P, ORG, "alice", {
+        channel: "site",
+        text: `@${MKT} can you look at the copy?`,
+        sessionId: ceoDesk,
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "mention_not_member" });
+    h.started.length = 0;
+    const kickoff = await service.sendChat(P, ORG, "alice", {
+      channel: "site",
+      text: `@${DEV} the site ticket is yours; talk to me here.`,
+      sessionId: ceoDesk,
+    });
+    const inChannel = triggers().filter((t) => t.origin?.origin.kind === "mention");
+    expect(inChannel).toHaveLength(1);
+    expect(inChannel[0]!.sessionId).toBe(devDesk);
+    expect(inChannel[0]!.origin?.origin).toMatchObject({
+      channel: "site",
+      message: `${kickoff.id} from agent:${CEO}`,
+    });
+    // The CEO says so once in the all-hands channel, where the board reads.
+    await service.sendChat(P, ORG, "alice", {
+      text: "Opened the #site channel for the site stream; @alice you can follow it there.",
+      sessionId: ceoDesk,
+    });
+    const channels = await service.channels(P, ORG, { userId: "alice" });
+    expect(channels.channels.map((c) => c.channelId)).toEqual([ALL_CHANNEL_ID, "site"]);
+    // The developer sees both; marketing only the all-hands channel.
+    expect(
+      (await service.channels(P, ORG, { userId: "alice", sessionId: devDesk })).channels.map(
+        (c) => c.channelId,
+      ),
+    ).toEqual([ALL_CHANNEL_ID, "site"]);
+    expect(
+      (await service.channels(P, ORG, { userId: "alice", sessionId: mktDesk })).channels.map(
+        (c) => c.channelId,
+      ),
+    ).toEqual([ALL_CHANNEL_ID]);
 
     // 6. The calendar fires the next day: every desk gets its sweep with a budget line.
     h.started.length = 0;

@@ -3570,13 +3570,79 @@ export interface OrgChatMessage {
   refs?: { ticket?: string; session?: string; replyTo?: string };
 }
 
+/**
+ * One chat channel as the API reports it. The all-hands channel (`all`, `everyone: true`)
+ * exists for as long as the organization does and every employee and Project member is in
+ * it; every other channel carries the membership its members edit.
+ */
+export interface OrgChannelItem {
+  channelId: string;
+  /** As stored; the UI renders the all-hands channel's label itself. */
+  name: string;
+  /** "" when unset. */
+  purpose: string;
+  /** True only for the all-hands channel: membership is implicit. */
+  everyone: boolean;
+  /** An archived channel is read-only and folded away. */
+  archived: boolean;
+  /** `user:<id>` / `agent:<id>` / `system`. */
+  createdBy: string;
+  /** ISO 8601 UTC. */
+  createdAt: string;
+  /** Implicit membership counted for the all-hands channel. */
+  memberCount: number;
+  /** Whether the caller (person or employee) is a member. */
+  isMember: boolean;
+  /** People only; 0 for an employee caller. */
+  unread: number;
+  /** People only; 0 for an employee caller. */
+  mentionsMe: number;
+  lastMessageAt: string | null;
+}
+
+export interface OrgChannelMember {
+  /** `agent:<id>` or `user:<id>`. */
+  principal: string;
+  name: string;
+  kind: "agent" | "user";
+}
+
+export interface OrgChannelDetail extends OrgChannelItem {
+  /** The all-hands channel resolves to every employee plus every Project member. */
+  members: OrgChannelMember[];
+}
+
+export interface OrgChannelsResponse {
+  /** The all-hands channel first, then by name. */
+  channels: OrgChannelItem[];
+}
+
+export interface OrgChannelCreateRequest {
+  channelId: string;
+  name?: string;
+  purpose?: string;
+}
+
+export interface OrgChannelPatchRequest {
+  name?: string;
+  purpose?: string;
+  archived?: boolean;
+}
+
+export interface OrgChannelMemberRequest {
+  /** `agent:<id>` (an employee) or `user:<id>` (a Project member). */
+  principal: string;
+}
+
 export interface OrgChatResponse {
+  /** The channel served (`all` unless the request named another). */
+  channelId: string;
   /** The day file served (`yyyy-mm-dd` in the organization's timezone). */
   date: string;
   /** The days that have a chat file, newest first, for paging back. */
   days: string[];
   messages: OrgChatMessage[];
-  /** Messages after the caller's read cursor across the recent days. */
+  /** Messages of this channel after the caller's read cursor in it, across the recent days. */
   unread: number;
   /** Of those, the ones that mention the caller (or all). */
   mentionsMe: number;
@@ -3801,6 +3867,8 @@ export interface OrgTicketAttachRequest {
 }
 
 export interface OrgChatSendRequest {
+  /** The channel to post in; defaults to the all-hands channel. */
+  channel?: string;
   text: string;
   refs?: { ticket?: string; session?: string; replyTo?: string };
   /**
@@ -3812,6 +3880,8 @@ export interface OrgChatSendRequest {
 }
 
 export interface OrgChatReadRequest {
+  /** The channel whose cursor moves; defaults to the all-hands channel. */
+  channel?: string;
   /** Mark everything up to this message id as read. */
   upTo: string;
 }
@@ -3854,7 +3924,13 @@ export type CompanyServerEvent =
       kind: OrgTriggerKind;
     }
   /** A new chat message (mentions included, so the client can tell whether it is addressed). */
-  | { type: "org_chat"; projectId: string; orgId: string; message: OrgChatMessage }
+  | {
+      type: "org_chat";
+      projectId: string;
+      orgId: string;
+      channelId: string;
+      message: OrgChatMessage;
+    }
   /** A ticket's status, owner, blocked state or contributing sessions changed. */
   | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
   /** Budget warning, pause or resume for an employee. */

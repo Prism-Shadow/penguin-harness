@@ -23,6 +23,7 @@ const chat = (over: Partial<OrgChatMessage> = {}): CompanyServerEvent => ({
   type: "org_chat",
   projectId: "p1",
   orgId: "acme",
+  channelId: "all",
   message: message(over),
 });
 

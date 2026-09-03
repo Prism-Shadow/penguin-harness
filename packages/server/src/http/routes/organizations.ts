@@ -12,6 +12,9 @@
  *   GET|POST      …/:orgId/calendar ; GET|PUT|DELETE …/:orgId/calendar/:agentId/:name
  *   GET|POST      …/:orgId/tickets ; GET|PUT …/:orgId/tickets/:ticketId
  *   POST          …/:orgId/tickets/:ticketId/(move|block|unblock|progress|start|attach)
+ *   GET|POST      …/:orgId/chat/channels ; GET|PATCH …/:orgId/chat/channels/:channelId
+ *   POST          …/:orgId/chat/channels/:channelId/members
+ *   DELETE        …/:orgId/chat/channels/:channelId/members/:principal
  *   GET|POST      …/:orgId/chat ; POST …/:orgId/chat/read
  *   GET           …/:orgId/finance ; GET …/:orgId/sessions
  *
@@ -23,6 +26,7 @@
  * why only the control environment may make that claim.
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type {
   OrgApprovalMode,
@@ -35,11 +39,18 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
 import type { AppDeps } from "../../app.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
-import { ORG_TICKET_COLUMNS, isCalendarEventName } from "../../organization/paths.js";
+import {
+  ALL_CHANNEL_ID,
+  ORG_TICKET_COLUMNS,
+  isCalendarEventName,
+  isChannelId,
+} from "../../organization/paths.js";
+import { parsePrincipal } from "../../organization/principal.js";
 import type { Actor } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
+  optionalBoolean,
   optionalEnum,
   optionalNumber,
   optionalString,
@@ -104,6 +115,38 @@ function actorOf(
 ): Actor {
   const sessionId = callerSessionId(c, body);
   return { userId: c.var.user.userId, ...(sessionId !== undefined ? { sessionId } : {}) };
+}
+
+/**
+ * The same identity claim on a read, where there is no body to carry it: `?sessionId=` is
+ * how a desk or ticket session asks "which channels am I in". It is backed by exactly the
+ * credential {@link callerSessionId} requires — the boot's local API token — so a cookie
+ * request's query parameter is dropped and the read is answered as that person.
+ */
+function actorOfQuery(c: Context<AppEnv>): Actor {
+  const sessionId = c.req.query("sessionId");
+  return {
+    userId: c.var.user.userId,
+    ...(c.var.sessionVia === "token" && sessionId !== undefined && sessionId !== ""
+      ? { sessionId }
+      : {}),
+  };
+}
+
+/** A channel id in the path: an id no channel could carry names no channel. */
+function requireChannelParam(c: Context<AppEnv>): string {
+  const raw = c.req.param("channelId");
+  if (raw === undefined || !isChannelId(raw)) {
+    throw new HttpError(404, "channel_not_found", "Channel does not exist.");
+  }
+  return raw;
+}
+
+/** `channel` in a body or a query, defaulting to the all-hands channel. */
+function channelOr(raw: string | undefined): string {
+  if (raw === undefined || raw === "") return ALL_CHANNEL_ID;
+  if (!isChannelId(raw)) throw badRequest("Invalid channel id.");
+  return raw;
 }
 
 export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -622,6 +665,106 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     );
   });
 
+  // ---- chat channels ----
+
+  app.get("/:orgId/chat/channels", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    return c.json(await deps.orgService.channels(projectId, orgId, actorOfQuery(c)));
+  });
+
+  app.post("/:orgId/chat/channels", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    member(c, projectId);
+    const body = await readJson(c);
+    const channelId = requireString(body, "channelId", { minLen: 2, maxLen: 64 });
+    if (!isChannelId(channelId)) throw badRequest("Invalid channel id.");
+    const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
+    const purpose = optionalString(body, "purpose", { maxLen: 2000 });
+    const item = await deps.orgService.createChannel(
+      projectId,
+      orgId,
+      {
+        channelId,
+        ...(name !== undefined ? { name } : {}),
+        ...(purpose !== undefined ? { purpose } : {}),
+      },
+      actorOf(c, body),
+    );
+    return c.json(item, 201);
+  });
+
+  app.get("/:orgId/chat/channels/:channelId", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const channelId = requireChannelParam(c);
+    member(c, projectId);
+    return c.json(await deps.orgService.channel(projectId, orgId, channelId, actorOfQuery(c)));
+  });
+
+  app.patch("/:orgId/chat/channels/:channelId", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const channelId = requireChannelParam(c);
+    member(c, projectId);
+    const body = await readJson(c);
+    const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
+    const purpose = optionalString(body, "purpose", { maxLen: 2000 });
+    const archived = optionalBoolean(body, "archived");
+    return c.json(
+      await deps.orgService.patchChannel(
+        projectId,
+        orgId,
+        channelId,
+        {
+          ...(name !== undefined ? { name } : {}),
+          ...(purpose !== undefined ? { purpose } : {}),
+          ...(archived !== undefined ? { archived } : {}),
+        },
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.post("/:orgId/chat/channels/:channelId/members", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const channelId = requireChannelParam(c);
+    member(c, projectId);
+    const body = await readJson(c);
+    const principal = requirePrincipal(
+      requireString(body, "principal", { minLen: 1, maxLen: 100 }),
+    );
+    return c.json(
+      await deps.orgService.addChannelMember(
+        projectId,
+        orgId,
+        channelId,
+        principal,
+        actorOf(c, body),
+      ),
+      201,
+    );
+  });
+
+  app.delete("/:orgId/chat/channels/:channelId/members/:principal", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const channelId = requireChannelParam(c);
+    member(c, projectId);
+    const principal = requirePrincipal(c.req.param("principal"));
+    await deps.orgService.removeChannelMember(
+      projectId,
+      orgId,
+      channelId,
+      principal,
+      actorOfQuery(c),
+    );
+    return c.body(null, 204);
+  });
+
   // ---- chat ----
 
   app.get("/:orgId/chat", async (c) => {
@@ -632,7 +775,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date))
       throw badRequest("date must be yyyy-mm-dd.");
     return c.json(
-      await deps.orgService.chat(projectId, orgId, c.var.user.userId, {
+      await deps.orgService.chat(projectId, orgId, actorOfQuery(c), {
+        channel: channelOr(c.req.query("channel")),
         ...(date !== undefined ? { date } : {}),
       }),
     );
@@ -667,6 +811,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       };
     }
     const msg = await deps.orgService.sendChat(projectId, orgId, c.var.user.userId, {
+      channel: channelOr(optionalString(body, "channel", { minLen: 1, maxLen: 64 })),
       text,
       ...(sessionId !== undefined ? { sessionId } : {}),
       ...(refs !== undefined ? { refs } : {}),
@@ -680,7 +825,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const upTo = requireString(body, "upTo", { minLen: 1, maxLen: 100 });
-    await deps.orgService.markRead(projectId, orgId, c.var.user.userId, upTo);
+    const channel = channelOr(optionalString(body, "channel", { minLen: 1, maxLen: 64 }));
+    await deps.orgService.markRead(projectId, orgId, c.var.user.userId, channel, upTo);
     return c.body(null, 204);
   });
 
@@ -704,6 +850,15 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/** `agent:<id>` or `user:<id>`; the service decides whether that principal exists here. */
+function requirePrincipal(raw: string | undefined): string {
+  const parsed = raw === undefined ? null : parsePrincipal(raw);
+  if (parsed === null || (parsed.kind !== "agent" && parsed.kind !== "user")) {
+    throw new HttpError(400, "invalid_principal", "principal must be agent:<id> or user:<id>.");
+  }
+  return raw!;
 }
 
 /** `model: { provider, modelId }` or `model: null` (clear); undefined when absent. */

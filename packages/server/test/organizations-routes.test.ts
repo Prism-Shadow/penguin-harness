@@ -3,8 +3,8 @@
  * is reported by /api/me and /api/admin/settings; Project authorization gates reads and
  * writes (an outsider gets 404, a member may write, only the owner may delete); bodies are
  * validated before the service is asked; and the calling session rides write bodies as
- * `sessionId`, but only from the control environment's API token — a signed-in member's
- * claim is dropped. The service itself is a recording fake here — its semantics have their
+ * `sessionId` (a read's query string), but only from the control environment's API token —
+ * a signed-in member's claim is dropped. The service itself is a recording fake here — its semantics have their
  * own suites — so no Agent is created and no session runs.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,7 +33,21 @@ function fakeService(calls: Call[]): OrganizationService {
               invalidFiles: [],
             };
           case "chat":
-            return { date: "2026-09-01", days: [], messages: [], unread: 0, mentionsMe: 0 };
+            return {
+              channelId: (args[3] as { channel?: string }).channel,
+              date: "2026-09-01",
+              days: [],
+              messages: [],
+              unread: 0,
+              mentionsMe: 0,
+            };
+          case "channels":
+            return { channels: [] };
+          case "channel":
+          case "createChannel":
+          case "patchChannel":
+          case "addChannelMember":
+            return { channelId: "site", name: "Site", members: [] };
           case "startTicket":
             return { sessionId: "session-x" };
           case "handbook":
@@ -127,7 +141,7 @@ describe("organization routes", () => {
     expect(send.status).toBe(201);
     expect(calls.at(-1)).toMatchObject({
       method: "sendChat",
-      args: [ownerProject, "acme", "mia", { text: "hi @all" }],
+      args: [ownerProject, "acme", "mia", { channel: "all", text: "hi @all" }],
     });
     expect(
       (await memberApi.delete(`/api/projects/${ownerProject}/organizations/acme`)).status,
@@ -205,6 +219,130 @@ describe("organization routes", () => {
     });
   });
 
+  it("routes the channel family and validates its bodies", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme/chat/channels`;
+    expect((await owner.get(base)).status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "channels",
+      args: [ownerProject, "acme", { userId: "olivia" }],
+    });
+
+    const create = await owner.post(base, { channelId: "site", name: "Site", purpose: "Ship it" });
+    expect(create.status).toBe(201);
+    expect(calls.at(-1)).toEqual({
+      method: "createChannel",
+      args: [
+        ownerProject,
+        "acme",
+        { channelId: "site", name: "Site", purpose: "Ship it" },
+        { userId: "olivia" },
+      ],
+    });
+
+    expect((await owner.get(`${base}/site`)).status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "channel",
+      args: [ownerProject, "acme", "site", { userId: "olivia" }],
+    });
+
+    const patch = await owner.patch(`${base}/site`, { name: "Site launch", archived: true });
+    expect(patch.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "patchChannel",
+      args: [
+        ownerProject,
+        "acme",
+        "site",
+        { name: "Site launch", archived: true },
+        { userId: "olivia" },
+      ],
+    });
+
+    const add = await owner.post(`${base}/site/members`, { principal: "agent:acme_dev" });
+    expect(add.status).toBe(201);
+    expect(calls.at(-1)).toEqual({
+      method: "addChannelMember",
+      args: [ownerProject, "acme", "site", "agent:acme_dev", { userId: "olivia" }],
+    });
+
+    const remove = await owner.delete(`${base}/site/members/agent:acme_dev`);
+    expect(remove.status).toBe(204);
+    expect(calls.at(-1)).toEqual({
+      method: "removeChannelMember",
+      args: [ownerProject, "acme", "site", "agent:acme_dev", { userId: "olivia" }],
+    });
+
+    // A path id no channel could carry names no channel, and neither reaches the service.
+    calls.length = 0;
+    expect((await owner.get(`${base}/Site`)).status).toBe(404);
+    expect((await owner.post(base, { channelId: "Site" })).status).toBe(400);
+    expect((await owner.post(base, { name: "no id" })).status).toBe(400);
+    expect((await owner.patch(`${base}/site`, { archived: "yes" })).status).toBe(400);
+    expect((await owner.post(`${base}/site/members`, { principal: "acme_dev" })).status).toBe(400);
+    expect((await owner.delete(`${base}/site/members/all`)).status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("carries the channel through the chat routes, defaulting to the all-hands channel", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme/chat`;
+    const all = await owner.get(base);
+    expect(all.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "chat",
+      args: [ownerProject, "acme", { userId: "olivia" }, { channel: "all" }],
+    });
+    expect(
+      (await (await owner.get(`${base}?channel=site&date=2026-09-01`)).json()) as unknown,
+    ).toMatchObject({ channelId: "site" });
+    expect(calls.at(-1)).toEqual({
+      method: "chat",
+      args: [ownerProject, "acme", { userId: "olivia" }, { channel: "site", date: "2026-09-01" }],
+    });
+
+    expect((await owner.post(base, { channel: "site", text: "hi" })).status).toBe(201);
+    expect(calls.at(-1)).toMatchObject({
+      method: "sendChat",
+      args: [ownerProject, "acme", "olivia", { channel: "site", text: "hi" }],
+    });
+
+    expect((await owner.post(`${base}/read`, { upTo: "msg-1" })).status).toBe(204);
+    expect(calls.at(-1)).toEqual({
+      method: "markRead",
+      args: [ownerProject, "acme", "olivia", "all", "msg-1"],
+    });
+    expect((await owner.post(`${base}/read`, { channel: "site", upTo: "msg-1" })).status).toBe(204);
+    expect(calls.at(-1)).toEqual({
+      method: "markRead",
+      args: [ownerProject, "acme", "olivia", "site", "msg-1"],
+    });
+
+    calls.length = 0;
+    expect((await owner.get(`${base}?channel=Site`)).status).toBe(400);
+    expect((await owner.post(base, { channel: "Site", text: "hi" })).status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("honours a read's sessionId only from the control environment", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme/chat/channels`;
+    expect([200, 201]).toContain(
+      (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" })).status,
+    );
+    const res = await t.app.request(`${base}?sessionId=session-desk`, {
+      headers: { authorization: `Bearer ${t.deps.authService.localApiToken()}` },
+    });
+    expect(res.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "channels",
+      args: [ownerProject, "acme", { userId: "admin", sessionId: "session-desk" }],
+    });
+    // The same claim over a cookie is dropped: a cookie proves a person, not a session.
+    expect((await owner.get(`${base}?sessionId=session-desk`)).status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "channels",
+      args: [ownerProject, "acme", { userId: "olivia" }],
+    });
+  });
+
   it("passes the calling session through write bodies so the file records the employee", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/tickets/2026-09-01-site`;
     // The control environment's credential: the admin joins the Project the CLI writes to.
@@ -260,7 +398,12 @@ describe("organization routes", () => {
       sessionId: "session-ceo-desk",
     });
     expect(chat.status).toBe(201);
-    expect(calls.at(-1)?.args).toEqual([ownerProject, "acme", "mallory", { text: "ship it" }]);
+    expect(calls.at(-1)?.args).toEqual([
+      ownerProject,
+      "acme",
+      "mallory",
+      { channel: "all", text: "ship it" },
+    ]);
 
     const progress = await memberApi.post(`${base}/tickets/2026-09-01-site/progress`, {
       text: "done",

@@ -209,6 +209,23 @@ describe("[org_trigger] (company-mode work runs and ticket sessions)", () => {
     expect(parseOrgTriggerMessage(text)).toEqual({ origin, rest: "Sweep the board." });
   });
 
+  it("carries the channel a mention was posted in, and the one to answer in", () => {
+    const origin = {
+      org: "acme",
+      employee: "acme_dev (Developer, reports to acme_ceo)",
+      kind: "mention" as const,
+      message: "msg-2026-09-03-01-00-00-00000000 from user:alice",
+      channel: "site",
+    };
+    const text = buildOrgTriggerMessage(origin, "> the message");
+    expect(text).toContain("\nchannel: site\n");
+    expect(parseOrgTriggerMessage(text)).toEqual({ origin, rest: "> the message" });
+    // Absent on the kinds that have no channel, and absent from what they parse back to.
+    const init = buildOrgTriggerMessage({ org: "acme", employee: "acme_ceo", kind: "init" }, "");
+    expect(init).not.toContain("channel:");
+    expect(parseOrgTriggerMessage(init)?.origin.channel).toBeUndefined();
+  });
+
   it("returns null for an unknown kind, a missing employee, or plain text", () => {
     const text = buildOrgTriggerMessage({ org: "acme", employee: "acme_ceo", kind: "init" }, "");
     expect(text.endsWith("[/org_trigger]")).toBe(true);

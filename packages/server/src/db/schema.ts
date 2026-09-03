@@ -210,19 +210,21 @@ CREATE TABLE IF NOT EXISTS org_ticket_state (   -- DERIVED CACHE (company mode):
   blocked_by  TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (project_id, org_id, ticket_id)
 );
-CREATE TABLE IF NOT EXISTS org_chat_state (     -- DERIVED CACHE (company mode): tail-scan byte cursor per chat day file
+CREATE TABLE IF NOT EXISTS org_chat_state (     -- DERIVED CACHE (company mode): tail-scan byte cursor per chat day file, per channel
   project_id   TEXT NOT NULL,
   org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
   date         TEXT NOT NULL,
   offset_bytes INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (project_id, org_id, date)
+  PRIMARY KEY (project_id, org_id, channel_id, date)
 );
-CREATE TABLE IF NOT EXISTS org_chat_reads (     -- user data (company mode): each user's read cursor in an organization's chat
+CREATE TABLE IF NOT EXISTS org_chat_reads (     -- user data (company mode): each user's read cursor in one channel of an organization's chat
   project_id   TEXT NOT NULL,
   org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
   user_id      TEXT NOT NULL,
   last_read_id TEXT NOT NULL,
-  PRIMARY KEY (project_id, org_id, user_id)
+  PRIMARY KEY (project_id, org_id, channel_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS org_budget_state (   -- DERIVED CACHE (company mode): warn / pause marks per employee and period, recomputed from usage and the chart's budgets
   project_id TEXT NOT NULL,
