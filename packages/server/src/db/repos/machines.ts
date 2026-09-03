@@ -1,12 +1,9 @@
 /**
  * What this server remembers about machines: its own identity, one row per machine it has
- * installed on, and which machines each Project uses. In web.db, so a hot swap or a restart reads back exactly
+ * installed on or reached (what is installed there, the session held to it), and which
+ * machines each Project uses. All in web.db, so a hot swap or a restart reads back exactly
  * what the last generation wrote — the JSON file this replaces could not survive a schema
  * change, and nothing else this server remembers lives outside the database.
- *
- * `MachineRow` mirrors the table rather than the columns written today: the DDL lands in one
- * migration, and the fields nothing reads yet (a machine's own id, the session held to it)
- * are the table's, not this store's opinion of what matters.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
@@ -60,6 +57,11 @@ export class MachinesRepo {
 
   get(address: string): MachineRow | null {
     const row = this.db.prepare("SELECT * FROM machines WHERE address = ?").get(address);
+    return row === undefined ? null : toRow(row);
+  }
+
+  byMachineId(machineId: string): MachineRow | null {
+    const row = this.db.prepare("SELECT * FROM machines WHERE machine_id = ?").get(machineId);
     return row === undefined ? null : toRow(row);
   }
 

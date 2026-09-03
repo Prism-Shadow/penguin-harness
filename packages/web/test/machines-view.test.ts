@@ -9,11 +9,7 @@
  * stop looking installed as soon as anything else was installed.
  */
 import { describe, expect, it } from "vitest";
-import type {
-  MachineInfo,
-  MachineInstallJob,
-  MachinesResponse,
-} from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
   installButtonState,
   installedMachines,
@@ -29,6 +25,8 @@ const remote = (alias: string, installed: MachineInfo["installed"]): MachineInfo
   machineId: null,
   installed,
   local: false,
+  connection: null,
+  api: null,
   status: null,
 });
 
@@ -36,7 +34,7 @@ const fresh = (alias: string): MachineInfo => remote(alias, null);
 const carrying = (alias: string): MachineInfo => remote(alias, INSTALLED);
 
 function response(
-  job: MachineInstallJob | null,
+  job: MachineJob | null,
   opts: { imageVersion?: string | null; machines?: MachineInfo[] } = {},
 ): MachinesResponse {
   return {
@@ -46,8 +44,9 @@ function response(
   };
 }
 
-function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
+function job(over: Partial<MachineJob> = {}): MachineJob {
   return {
+    kind: "install",
     machineId: "ssh:nas",
     alias: "nas",
     running: true,
@@ -57,7 +56,10 @@ function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
   };
 }
 
-const done = job({ running: false, result: { ok: true, kind: "installed", version: "9.9.9" } });
+const done = job({
+  running: false,
+  result: { ok: true, installed: "installed", version: "9.9.9" },
+});
 
 describe("verdictOf", () => {
   it("is null while the job runs", () => {
@@ -68,7 +70,10 @@ describe("verdictOf", () => {
     expect(verdictOf(done)).toEqual({ kind: "installed", version: "9.9.9" });
     expect(
       verdictOf(
-        job({ running: false, result: { ok: true, kind: "already-installed", version: "9.9.9" } }),
+        job({
+          running: false,
+          result: { ok: true, installed: "already-installed", version: "9.9.9" },
+        }),
       ),
     ).toEqual({ kind: "already-installed", version: "9.9.9" });
   });
@@ -137,7 +142,7 @@ describe("installButtonState", () => {
       machineId: "ssh:build-box",
       alias: "build-box",
       running: false,
-      result: { ok: true, kind: "installed", version: "9.9.9" },
+      result: { ok: true, installed: "installed", version: "9.9.9" },
     });
     expect(installButtonState(carrying("nas"), response(elsewhere), false)).toEqual({
       action: "reinstall",
@@ -218,6 +223,8 @@ describe("this machine in the list", () => {
     machineId: "LNrJdHAZJ91G58i0",
     installed: INSTALLED,
     local: true,
+    connection: null,
+    api: null,
     status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
   });
 

@@ -1,6 +1,6 @@
 /**
  * The pure half of the machines capability (platform code — see ../src/hmr/README.md):
- * reading ~/.ssh/config and `ssh -G`, reading what the identity probe answered, choosing
+ * reading ~/.ssh/config for its aliases, reading what the identity probe answered, choosing
  * the Node runtime to send, the container the image travels in, finding the running
  * server's own pushable image, and the exact ssh/scp commands all of that turns into.
  * No network, no ssh binary.
@@ -23,9 +23,9 @@ import {
   runInstallScriptCommand,
   unpackStoreCommand,
   scpArgs,
-  sessionArgs,
   shQuote,
   sshArgs,
+  sessionArgs,
 } from "../src/machines/commands.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
 
@@ -78,8 +78,6 @@ describe("parseHostAliases", () => {
 
 describe("machineIdentity", () => {
   it("is <user>@<alias>: the Linux account is part of the machine, the alias is the name", () => {
-    // Two accounts on one host are two machines — each has its own ~/.penguin, hence its
-    // own server and its own user table.
     expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
     expect(machineIdentity("build-box", "root")).toBe("root@build-box");
     expect(machineIdentity("build-box", "")).toBe("build-box");
@@ -88,8 +86,6 @@ describe("machineIdentity", () => {
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
-    // POSIX: `;` chains, $VAR expands, `cat` reads. Windows cmd: `&` chains, %VAR% expands,
-    // `type` reads. One command cannot do both, which is why there are two.
     expect(POSIX_PROBE).toContain("uname -s -m");
     expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
     expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
@@ -164,6 +160,11 @@ describe("ssh / scp invocations", () => {
     expect(scpArgs(target, ["/tmp/a"], "/tmp/dir")).toContain("BatchMode=yes");
   });
 
+  it("selects the account on the command line, never by writing the ssh config", () => {
+    expect(sshArgs(target, "true")).toContain("User=deploy");
+    expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
+  });
+
   it("holds ONE session per machine: no tty, a SOCKS listener on loopback, keepalives, sh", () => {
     const args = sessionArgs(target, 49152).join(" ");
     expect(args).toContain("-T");
@@ -171,6 +172,7 @@ describe("ssh / scp invocations", () => {
     expect(args).toContain("ExitOnForwardFailure=yes");
     expect(args).toContain("ServerAliveInterval=15");
     expect(args).toContain("BatchMode=yes");
+    expect(args).toContain("User=deploy");
     expect(args.endsWith("build-box sh")).toBe(true);
     // Nothing is forwarded by name: any port on the machine is a channel through -D.
     expect(args).not.toContain("-L ");
@@ -181,11 +183,6 @@ describe("ssh / scp invocations", () => {
     expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
   });
 
-  it("selects the account on the command line, never by writing the ssh config", () => {
-    expect(sshArgs(target, "true")).toContain("User=deploy");
-    expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
-  });
-
   it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {
     const args = scpArgs(target, ["/local/image.pack"], "/tmp/penguin-abc123");
     expect(args.at(-1)).toBe("build-box:/tmp/penguin-abc123");
@@ -194,13 +191,10 @@ describe("ssh / scp invocations", () => {
   it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
     expect(shQuote("/tmp/it's here")).toBe(`'/tmp/it'\\''s here'`);
     expect(cmdQuote("C:\\Users\\First Last\\tmp")).toBe('"C:\\Users\\First Last\\tmp"');
-    // cmd.exe has no escape for a quote inside a quoted string: refuse rather than mangle.
     expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
-    // No path anywhere in it: nothing was copied, so nothing has to be placed or cleaned up.
-    // scriptOnStdin is the other half — the command alone would run an empty `sh -s`.
     expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
       command: "PENGUIN_VERSION='v0.2.4' sh -s",
       scriptOnStdin: true,
@@ -208,9 +202,6 @@ describe("ssh / scp invocations", () => {
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
-    // PowerShell cannot take a param()-carrying script on stdin, so the file is real there —
-    // but the delete rides the same connection rather than costing another handshake, and the
-    // path is required to build the command at all rather than defaulting to an empty one.
     expect(
       runInstallScriptCommand("v0.2.4", {
         platform: "win32",
@@ -224,10 +215,11 @@ describe("ssh / scp invocations", () => {
     });
   });
 
-  it("unpacks the streamed store into the hmr directory it was tarred from", () => {
-    // The members are named relative to the sending side's own hmr directory, so the two
-    // `-C` arguments have to name the same layer: one level too high writes a harness.json
-    // and a store/ nothing reads, and the machine goes on answering with what it held.
+  it("unpacks the streamed store into the hmr directory, the layer it was tarred from", () => {
+    // install-server.ts tars `-C <root>/hmr harness.json store`, so the members are named
+    // from THERE. Extracting into the data root instead lands them one directory above where
+    // hmr/host.ts reads them: the machine keeps answering with whatever it already had, and
+    // the replication reports success while achieving nothing.
     expect(unpackStoreCommand("linux")).toBe(
       'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
@@ -287,7 +279,6 @@ describe("resolvePushPlan", () => {
   it("packaged desktop app: its own manifest names the release it shipped under", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
-      // What the app forks: <resources>/app/dist/server.js, one bundled file, asar off.
       const appDir = path.join(work, "resources", "app");
       fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
       fs.writeFileSync(

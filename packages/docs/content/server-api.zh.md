@@ -112,20 +112,31 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/machines | 本机，加上**服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、每台最近一次探测到的状态、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, status}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
+| GET | /api/projects/:projectId/machines | 本机，加上**服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、每台最近一次探测到的状态、本服务端会安装的版本，以及正在运行或最近一次的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
 | POST | /api/projects/:projectId/machines/probe | 询问本 Project 已安装的机器各自的状态（每台一次 ssh 往返，并发 5）并返回带有最新状态的列表 |
 | POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
+| POST | /api/projects/:projectId/machines/:machineId/connect | 把该机器的服务端拉起来，并对它保持那唯一的一条连接——一个 `ssh -T -D` 会话；返回 `202` 与同样的响应体，此时连接任务已在运行 |
+| POST | /api/projects/:projectId/machines/:machineId/disconnect | 断开连接。远端服务端**保持运行**——那是那台机器自己的服务端，别人可能正在上面 |
+| GET | /api/projects/:projectId/machines/:machineId/dirs?path= | 该机器上 `path` 的子目录，经由共享 shell 读取——工作区选择器浏览的就是它。与代理一样，按机器**自身的 id** 寻址 |
 | POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 
-无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写——只读其中声明的别名，因此哪怕配置声明了几百台主机，列表也只是一次文件读取。别名到底指向什么，每次都由 ssh 自己按同一份文件解析，因此这里不存在与人手改过的配置对不上的陈旧信息。
+无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，也从不解析：列表就是配置的文本（无论声明了几百台主机都只是一次文件读取），而别名原样交给 ssh——它的含义由 ssh 自己按自己的配置、每次都重新决定。
 
 `imageVersion` 是将被推送的版本；为 `null` 表示本服务端根本没有安装镜像（只有从未被热推过的源码检出会是这种形态），此时任何安装都会以 `409` `no_install_image` 拒绝。该版本取自当前运行的安装自身：热推过的服务端推送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则推送自己的程序树，因此两端的一致是构造性的。
 
 `installed` 是**本服务端**最近一次在该机器上完成的安装——`{version, at}`，从未安装过则为 `null`。它持久化在数据根目录下，因此能跨重启、跨热推、跨「在别的机器上安装」而保留；它记录的是本端做过什么，而非对远端的实地探查，所以被手工清空的远端仍显示为已安装，直到下一次安装将其修正。安装失败不写入任何记录。
 
-安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。运行期间 `job.result` 为 `null`，结束后为 `{ok: true, kind: "installed" | "already-installed", version}` 或 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
+`machineId` 是该机器**自身**的 id——由运行在那里的服务端铸造的 16 位 base64url 字符（其 `machine` 表），跨改名、改别名与重装都保持不变，是所有存储引用应当指向的东西。该机器上的服务端尚未启动过时为 `null`，因为还没有任何东西铸造过它；它与 `status` 在同一次往返中获取，并记录在安装记录旁。同一主机的两个别名会报告相同的 `machineId`。
 
-在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端自己所在的那台机器，它不会把这份构建盖到自己正在运行的程序目录上。`self_install` 不只覆盖本机那一行：指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
+`local` 标记服务端自身所在的机器。它始终出现在列表中、始终是已安装、始终在运行——它就是正在应答的那一个——并且永远不是安装目标：对它 `POST …/install` 返回 `409` `self_install`。
+
+`status` 为 `{state, checkedAt, port?, detail?}`，`state` 取 `running` / `stopped` / `unreachable` 之一；该机器尚未被探测时为 `null`。没有单独的 ssh 状态：ssh 是传输方式，因此连不上的机器就是 `unreachable`，并在 `detail` 中保留 OpenSSH 自己的原话。`GET` 从不发起探测——它只报告最近一次的答案——因为一次探测是每台机器一次 ssh 往返，而列表本身只是配置文件的文本。真正花费这些往返的是 `POST /api/machines/probe`，且只针对安装过的机器。
+
+已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由本服务端持有的那一条 ssh 会话拨达——是该会话内部的一个 channel（走它的 SOCKS 端口），从不是第二条连接。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。**仅限管理员**，且只有一个身份：请求在对端以那台机器的管理员身份发出，会话由本服务端通过自己的 ssh 权限铸造（在机器上执行 `penguin auth token`）——浏览器的 cookie 不会过去，机器的 cookie 也不会回来。只有 `/api` 会被转发——前端始终是本地的。
+
+安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）是同一形状的任务，以 `job.kind` 区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接为 `{ok: true, connected: true}`，失败为 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
+
+在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端不会把这份构建盖到自己正在运行的程序目录上。除 `local` 那一行之外，指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
 
 ### 版本与在线更新
 

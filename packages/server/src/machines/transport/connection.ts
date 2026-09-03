@@ -24,9 +24,12 @@
  * address, so holding a MachineConnection costs nothing and dropping one leaks nothing. The
  * address is always `ssh:<alias>` — the one spelling every registry in machines/ uses.
  */
+import http from "node:http";
+import type net from "node:net";
 import { run, runWithInput } from "./exec.js";
 import { closeShell, openShell, runOnShell, sessionOf } from "./ssh-session.js";
 import type { ShellSession } from "./ssh-session.js";
+import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
 import { scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
@@ -88,6 +91,29 @@ export class MachineConnection implements MachineChannel {
     return sessionOf(this.address);
   }
 
+  /** A TCP connection to `127.0.0.1:<remotePort>` as seen from the machine — a channel in the session. */
+  async dial(remotePort: number): Promise<net.Socket> {
+    const opened = await this.open();
+    if (!opened.ok) throw new Error(opened.detail);
+    return dialThroughSocks(opened.session.socksPort, "127.0.0.1", remotePort);
+  }
+
+  /** An http.Agent whose every socket is a dial through the session — for node:http callers. */
+  agent(remotePort: number): http.Agent {
+    const agent = new http.Agent({ keepAlive: false });
+    // createConnection is documented on Agent (and overridable); the typings omit it.
+    (agent as unknown as { createConnection: unknown }).createConnection = (
+      _options: unknown,
+      callback: (err: Error | null, socket?: net.Socket) => void,
+    ) => {
+      this.dial(remotePort).then(
+        (socket) => callback(null, socket),
+        (err: unknown) => callback(err instanceof Error ? err : new Error(String(err))),
+      );
+    };
+    return agent;
+  }
+
   /**
    * WINDOWS REMOTES ONLY (see the module doc): a command on its own ssh connection, with an
    * optional stdin payload. Serialised per machine.
@@ -118,8 +144,18 @@ export function connectionTo(target: RemoteTarget): MachineConnection {
 /**
  * Lets go of the connection to a machine. By address rather than on the handle: a disconnect
  * can outlive the resolvability of its target (an alias removed from the ssh config still
- * has a session to close).
+ * has a session to close). `pid` collects a session a previous platform generation opened
+ * and recorded, which this generation's registry does not know (ssh-session.ts).
  */
-export function closeConnectionTo(address: string): void {
+export function closeConnectionTo(address: string, pid?: number | null): void {
+  const own = sessionOf(address)?.pid;
   closeShell(address);
+  // Never our own current session, and never this process: the recorded pid can be anything.
+  if (pid != null && pid !== process.pid && pid !== own) {
+    try {
+      process.kill(pid);
+    } catch {
+      // Already gone.
+    }
+  }
 }

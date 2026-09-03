@@ -13,8 +13,8 @@
  * everything rides the ONE connection ssh-session.ts holds per machine: commands, the
  * installer and the store on its stdin, every TCP connection through its SOCKS port. A POSIX
  * install is therefore the installer going in on that stdin, the same shape as the documented
- * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup disappear
- * entirely.
+ * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup
+ * disappear entirely.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -39,9 +39,6 @@ export function cmdQuote(value: string): string {
   if (value.includes('"')) throw new Error(`cannot quote for cmd.exe: ${value}`);
   return `"${value}"`;
 }
-
-export const quoteFor = (platform: RemotePlatform, value: string): string =>
-  platform === "win32" ? cmdQuote(value) : shQuote(value);
 
 export interface RemoteTarget {
   /** Alias as written in ~/.ssh/config — what the user picked. */
@@ -177,6 +174,20 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
 
+/**
+ * Starts the installed server in the background and returns at once; readiness is the
+ * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
+ * and the log is the far side's own words when it comes up and dies.
+ */
+export function startServerCommand(port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
+  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --port ${port} >> ${log} 2>&1 < /dev/null &`;
+}
+
+/** The last lines of that log, for a start that did not answer. */
+export const SERVER_LOG_TAIL = `tail -n 20 "${REMOTE_PROGRAM_DIR}/data/server.log" 2>/dev/null`;
+
 // --- tunnelling to that server ---------------------------------------------------------------
 
 /**
@@ -206,4 +217,29 @@ export function sessionArgs(target: RemoteTarget, socksPort: number): string[] {
     target.alias,
     "sh",
   ];
+}
+
+/** Marker separating the resolved path from the entries in a directory listing. */
+export const DIR_LIST_MARK = "---penguin-dirs---";
+
+/**
+ * Lists the subdirectories of `dir` on the far side, plus the path it actually resolved to.
+ *
+ * An empty `dir` means that machine's home, which is the picker's starting point. The path
+ * is resolved over THERE (`cd` + `pwd -P`) because only that machine can say what `~` or a
+ * symlink means on it — resolving here would be this machine answering a question about
+ * another one's filesystem.
+ *
+ * Hidden directories are dropped, matching what the local browser shows, and everything is
+ * quoted for the remote shell by the caller's quoting rules.
+ */
+export function listDirsCommand(dir: string): string {
+  const target = dir === "" ? '"$HOME"' : shQuote(dir);
+  return [
+    `cd ${target} 2>/dev/null || exit 3`,
+    `pwd -P`,
+    `echo ${DIR_LIST_MARK}`,
+    // -1 one per line, trailing slash marks directories, then keep only those.
+    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+  ].join("; ");
 }

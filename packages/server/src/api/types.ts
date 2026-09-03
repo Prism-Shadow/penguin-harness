@@ -3349,6 +3349,25 @@ export interface MachineInfo {
   /** The host this server itself runs on. Always present, always installed, never a target. */
   local: boolean;
   /**
+   * The connection this server holds to it — the one ssh session everything to the machine
+   * rides (machines/transport/ssh-session.ts): a fact about a process on THIS side, which
+   * outlives the far server. Present means `/server/<id>/api/…` has somewhere to go; whether
+   * a server ANSWERS over there is `status`'s word, from the last probe — and the two must not
+   * be read for each other: taking the connection for the machine's liveness is the mistake
+   * behind the connect loop (#561). Always null for `local`, which needs no connection.
+   */
+  connection: { pid: number } | null;
+  /**
+   * The machine's API as last seen by this server's proxy — stamped by traffic passing
+   * through, never by a probe of its own. `answeredAt` when the last forwarded request got
+   * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
+   * the transport's own words when the connection had nowhere to deliver. Null until a first
+   * request flows, and only as fresh as the last one — no traffic, no measurement, which is
+   * honest: nothing burns ssh for a page nobody is looking at. Always null for `local`;
+   * this server answering the request that fetched this list is that measurement.
+   */
+  api: { answeredAt: string } | { failedAt: string; detail: string } | null;
+  /**
    * What the last probe found over there, or null when none has been taken. Never filled in
    * at list time: a probe costs an ssh round trip per machine, so the list reports the last
    * answer and the page asks for a fresh one when it wants one.
@@ -3357,9 +3376,9 @@ export interface MachineInfo {
 }
 
 /**
- * A machine's server as of one probe. There is deliberately no separate "ssh" state — ssh is
- * the transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
- * diagnostic in `detail` rather than as two states a reader has to combine.
+ * One machine's server state. There is deliberately no separate "ssh" status: ssh is the
+ * transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
+ * diagnostic in `detail` rather than as two statuses a reader has to combine.
  */
 export interface MachineServerStatus {
   state: "running" | "stopped" | "unreachable";
@@ -3372,18 +3391,21 @@ export interface MachineServerStatus {
 }
 
 /**
- * The running or last install, polled by GET /api/machines while one runs. `log` carries the
- * far side's own words where there are any: ssh's diagnostics and the remote installer's
- * output say more about a refused key or an unusable Node than a paraphrase would.
+ * The running or last job on a machine — an install, or a connect — polled by GET
+ * /api/machines while one runs. One at a time. `log` carries the far side's own words where
+ * there are any: ssh's diagnostics and the remote installer's output say more about a
+ * refused key or an unusable Node than a paraphrase would.
  */
-export interface MachineInstallJob {
+export interface MachineJob {
+  kind: "install" | "connect";
   machineId: string;
   alias: string;
   running: boolean;
   log: string[];
   result:
     | null
-    | { ok: true; kind: "installed" | "already-installed"; version: string | null }
+    | { ok: true; installed: "installed" | "already-installed"; version: string | null }
+    | { ok: true; connected: true }
     | { ok: false; step: string; message: string };
 }
 
@@ -3396,5 +3418,5 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
-  job: MachineInstallJob | null;
+  job: MachineJob | null;
 }
