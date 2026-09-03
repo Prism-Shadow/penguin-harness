@@ -33,8 +33,12 @@ import type { Messages } from "../i18n.js";
  * Where `--out` puts the bundle: absent, the server's filename in the current directory; an
  * existing directory (or a path written with a trailing separator), that directory; anything
  * else, a file path whose parent is created.
+ *
+ * `fileName` comes from the server's Content-Disposition, so only its basename is used: a
+ * server answering `filename="../../.ssh/authorized_keys"` must not write outside `--out`.
  */
-export async function resolveOutPath(out: string | undefined, fileName: string): Promise<string> {
+export async function resolveOutPath(out: string | undefined, name: string): Promise<string> {
+  const fileName = path.basename(name);
   if (out === undefined || out === "") return path.resolve(fileName);
   const target = path.resolve(out);
   const isDir =

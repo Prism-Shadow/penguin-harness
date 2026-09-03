@@ -125,7 +125,7 @@ export async function portableDefinition(
   const [skills, hooks, vault] = await Promise.all([
     listInstalledSkills(deps.root, projectId, agentId),
     listInstalledHooks(deps.root, projectId, agentId),
-    loadAgentVault(deps.root, projectId, agentId).catch(() => ({}) as Record<string, string>),
+    loadAgentVault(deps.root, projectId, agentId),
   ]);
   const cfg = view.config;
   const model = {
@@ -402,9 +402,23 @@ export function parseAgentBundle(archive: Buffer): ParsedBundle {
     return { definition, hasPrompt, skills: new Map(), hooks: new Map() };
   }
   let entries: Record<string, Uint8Array>;
+  // The caps are enforced from the central directory, before a byte is inflated: unzipSync
+  // allocates each entry's declared uncompressed size, so 14MB of compressed zeros would
+  // otherwise become gigabytes of heap (the per-directory caps below only see what already
+  // materialized). A lying header cannot get past this — the allocation is that same declared
+  // size, and fflate refuses to grow it.
+  let declared = 0;
   try {
-    entries = unzipSync(new Uint8Array(archive));
-  } catch {
+    entries = unzipSync(new Uint8Array(archive), {
+      filter: ({ name, originalSize }) => {
+        if (originalSize > MAX_FILE_BYTES) throw bundleTooLarge(name);
+        declared += originalSize;
+        if (declared > MAX_TOTAL_BYTES) throw bundleTooLarge("The archive");
+        return true;
+      },
+    });
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
     throw badRequest("dataBase64 is not a valid zip archive.");
   }
   const files = Object.entries(entries).filter(([name]) => !name.endsWith("/"));

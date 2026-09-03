@@ -132,6 +132,8 @@ export function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   /** The "Import agent" dialog (agent-import-modal.tsx) is open. */
   const [importOpen, setImportOpen] = useState(false);
+  /** The Agent whose bundle is being fetched, or null: packing a large one takes a moment, and the card's button has no other way to say so. */
+  const [exportingId, setExportingId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -353,10 +355,13 @@ export function AgentsPage() {
   /** A card's "Export agent": the portable bundle, fetched first so a failure is a toast rather than a saved error file. */
   const exportBundle = async (agentId: string) => {
     if (!projectId) return;
+    setExportingId(agentId);
     try {
       await downloadAgentBundle(projectId, agentId);
     } catch (e) {
       toastError(apiErrorText(e));
+    } finally {
+      setExportingId(null);
     }
   };
 
@@ -653,6 +658,7 @@ export function AgentsPage() {
                       size="icon"
                       title={S.agent.exportAgent}
                       aria-label={S.agent.exportAgent}
+                      disabled={exportingId !== null}
                       onClick={() => void exportBundle(a.agentId)}
                     >
                       <GlyphIcon

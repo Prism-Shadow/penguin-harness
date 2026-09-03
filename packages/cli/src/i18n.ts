@@ -174,7 +174,6 @@ export interface Messages {
     exported(file: string): string;
     /** `agent import <file>`: a bundle zip or a bare penguin-agent.json. */
     importDesc: string;
-    importFile: string;
     importAgentId: string;
     imported(agentId: string, projectId: string): string;
     importInstalled(skills: number, hooks: number): string;
@@ -719,7 +718,6 @@ const en: Messages = {
     exported: (file) => `Bundle written to ${file}`,
     importDesc:
       "Create an agent from an exported bundle (.zip) or a bare penguin-agent.json; vault values are never carried",
-    importFile: "The bundle zip or penguin-agent.json to import",
     importAgentId: "Id for the new agent (defaults to the id inside the file)",
     imported: (agentId, projectId) => `Agent ${agentId} imported into project ${projectId}.`,
     importInstalled: (skills, hooks) =>
@@ -1243,7 +1241,6 @@ const zh: Messages = {
     exportOut: "写入的文件或目录（缺省为当前目录）",
     exported: (file) => `已写入 ${file}`,
     importDesc: "从导出的包（.zip）或单独的 penguin-agent.json 创建 Agent；密钥值不会随包携带",
-    importFile: "要导入的包（zip）或 penguin-agent.json",
     importAgentId: "新 Agent 的 id（缺省取文件内的 id）",
     imported: (agentId, projectId) => `已把 Agent ${agentId} 导入 Project ${projectId}。`,
     importInstalled: (skills, hooks) => `已安装 ${skills} 个技能与 ${hooks} 个钩子包。`,

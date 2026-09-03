@@ -164,7 +164,7 @@ function AgentImportDialog({
         {mode === "file" ? (
           <div className="space-y-3">
             <div>
-              <FieldLabel>{S.agent.importFilePick}</FieldLabel>
+              <FieldLabel>{S.agent.importFileLabel}</FieldLabel>
               {file === null ? (
                 <label
                   className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}

@@ -250,4 +250,22 @@ describe("agent porting", () => {
     expect(list.agents.map((a) => a.agentId)).not.toContain("broken");
     expect(list.agents.map((a) => a.agentId)).toContain("my_agent");
   });
+
+  it("refuses a zip bomb from its headers, without inflating it", async () => {
+    // 30MB of zeros deflates to a few KB, so this passes the request's 14MB cap; the entry sits
+    // outside skills/ and hooks/, where the per-directory budgets never look, so the only thing
+    // between it and 30MB of heap is the declared-size check on the way in.
+    const bomb = zipSync({
+      "penguin-agent.json": strToU8(JSON.stringify({ format: "penguin-agent/1", id: "bomb" })),
+      "payload.bin": new Uint8Array(30 * 1024 * 1024),
+    });
+    expect(bomb.byteLength).toBeLessThan(1024 * 1024);
+    const res = await owner.post(`${base}/import`, {
+      dataBase64: Buffer.from(bomb).toString("base64"),
+    });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("bundle_too_large");
+    const list = (await (await owner.get(base)).json()) as AgentsResponse;
+    expect(list.agents.map((a) => a.agentId)).not.toContain("bomb");
+  });
 });

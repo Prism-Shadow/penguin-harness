@@ -537,6 +537,7 @@ export const en: Strings = {
       "Turn a Claude Code, Codex or Pi agent setup, or an agent bundle exported from PenguinHarness, into a new agent of this Project. Not the snapshot import: a snapshot backs up and restores, this ports and integrates.",
     importModeFile: "From a file",
     importModeAi: "Let AI import",
+    importFileLabel: "Bundle file",
     importFilePick: "Choose a file",
     importFileHint: "An <id>-export.zip exported from PenguinHarness, or a bare penguin-agent.json",
     importFileClear: "Remove the selected file",

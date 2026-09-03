@@ -78,6 +78,9 @@ describe("penguin agent export", () => {
       path.join(fresh, "a-export.zip"),
     );
     expect(fs.statSync(fresh).isDirectory()).toBe(true);
+    // The name comes from the server's Content-Disposition: only its basename is used, so a
+    // crafted header cannot write outside --out.
+    expect(await resolveOutPath(scratch, "../../evil.zip")).toBe(path.join(scratch, "evil.zip"));
   });
 });
 

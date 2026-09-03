@@ -533,6 +533,7 @@ export const zh = {
       "把 Claude Code、Codex、Pi 的智能体设置，或 PenguinHarness 导出的智能体包，导入为本 Project 的一个新智能体。与「导入快照」不同：快照是备份与还原，这里是移植与接入。",
     importModeFile: "从文件导入",
     importModeAi: "让 AI 导入",
+    importFileLabel: "包文件",
     importFilePick: "选择文件",
     importFileHint: "PenguinHarness 导出的 <id>-export.zip，或单独的 penguin-agent.json",
     importFileClear: "移除已选文件",
