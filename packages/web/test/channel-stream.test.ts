@@ -1,5 +1,5 @@
 /**
- * chat-stream.ts unit tests: day separators and sender runs, the unread divider at the read
+ * channel-stream.ts unit tests: day separators and sender runs, the unread divider at the read
  * cursor, day arithmetic for the separators and paging, and the immutable live append.
  */
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import {
   lastMessageId,
   messageCount,
   shiftDate,
-} from "../src/features/company/chat-stream";
+} from "../src/features/company/channel-stream";
 
 let seq = 0;
 const msg = (sender: string, time: string, hop = 0): OrgChannelMessage => ({

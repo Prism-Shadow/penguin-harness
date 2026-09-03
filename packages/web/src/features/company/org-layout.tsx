@@ -2,14 +2,14 @@
  * The route shell of company mode. `/org` alone resolves to an organization (the one last
  * opened, else the first of the current Project, else the first anywhere) or, with none, to
  * an empty landing that offers creating one; `/org/:projectId/:orgId/<page>` renders the
- * page inside an organization context. Both fall back to the chat page while company mode
+ * page inside an organization context. Both fall back to a Session's own page while company mode
  * is unavailable — the admin master switch off, or the user's own switch off — so a stale
  * bookmark never shows an empty shell.
  *
  * Entering an organization's routes has three side effects the shell relies on: the work
  * mode flips to company (a deep link is a mode choice), the current Project follows the
  * route (the session list and the Agent set belong to the Project), and the organization
- * becomes the shell's current one (its chat counters, the switcher's label).
+ * becomes the shell's current one (its channels and their badges, the switcher's label).
  *
  * The page primitives live here too — `OrgPage`, `OrgSection`, `OrgEmptyLine` and the
  * skeleton — so every organization page shares one frame, one header row and one section
@@ -29,7 +29,8 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { COMPANY_MODE_ICON } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
-import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
+import { orgChannelPath, orgKey, resolveOrgLanding } from "./company-nav";
+import { DEFAULT_CHANNEL_ID } from "./channel-list";
 import { CreateOrganizationDialog } from "./org-dialogs";
 import { FIRST_STEPS } from "./overview-summary";
 import type { FirstStep } from "./overview-summary";
@@ -78,7 +79,10 @@ export function OrgIndexRedirect() {
     currentProject?.projectId ?? null,
   );
   if (target === null) return <OrgEmptyLanding />;
-  return <Navigate to={orgPagePath(target.projectId, target.orgId, "overview")} replace />;
+  // An organization opens on its all-hands channel: channels are where company mode works.
+  return (
+    <Navigate to={orgChannelPath(target.projectId, target.orgId, DEFAULT_CHANNEL_ID)} replace />
+  );
 }
 
 /** The three first steps as the landing tells them: what happens once the organization exists. */
@@ -152,7 +156,7 @@ function OrgEmptyLanding() {
           navigate(
             detail.ceoDeskSessionId !== undefined
               ? `/chat/${detail.ceoDeskSessionId}`
-              : orgPagePath(detail.projectId, detail.orgId, "overview"),
+              : orgChannelPath(detail.projectId, detail.orgId, DEFAULT_CHANNEL_ID),
           );
         }}
       />

@@ -20,6 +20,7 @@ import { UpdateDot } from "../ui/update-dot";
 import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { ChannelRailRows, NewChannelButton } from "../../features/company/channel-sidebar";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -71,7 +72,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const badges = useUpdateBadges();
   const company = useCompany();
   const location = useLocation();
-  /** Company mode: the six organization entries replace the development pages, and "new chat" goes away. */
+  /** Company mode: the organization's pages replace the development ones, and its channels follow them as rows. */
   const inCompany = company.workMode === "company";
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
   /** Same two moves as the pinned sidebar's switch: company mode enters at /org; development mode only leaves an organization page. */
@@ -81,12 +82,6 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     if (next === "company") navigate("/org");
     else if (isOrgRoute(location.pathname)) navigate("/chat");
   };
-  const chatNote =
-    company.chatMentions > 0
-      ? S.company.chat.badgeMentions(company.chatMentions)
-      : company.chatUnread > 0
-        ? S.company.chat.badgeUnread(company.chatUnread)
-        : null;
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
@@ -120,7 +115,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
             label: S.nav.org[key],
             icon: COMPANY_NAV_ICONS[key],
-            note: key === "chat" ? chatNote : null,
+            note: null,
           }))
       : [
           { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
@@ -182,8 +177,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           <GlyphIcon d={HISTORY_ICON} size={18} />
         </button>
         {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar
-            convention). Absent in company mode, where an employee is reached through its desk. */}
-        {!inCompany && (
+            convention). Company mode makes a channel in this slot instead — the same swap the
+            pinned sidebar's own button makes. */}
+        {inCompany ? (
+          navOrg !== null && (
+            <NewChannelButton rail projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          )
+        ) : (
           <button
             type="button"
             title={S.chat.newSessionMenu}
@@ -214,6 +214,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </NavLink>
           );
         })}
+        {/* The organization's channels, under the pages the way they sit under the nav in the
+            pinned sidebar. A hairline says where the pages end; each row carries its own
+            unread count, since a rail with no labels must still say how much is waiting. */}
+        {inCompany && navOrg !== null && (
+          <>
+            <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+            <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          </>
+        )}
       </nav>
       <button
         type="button"

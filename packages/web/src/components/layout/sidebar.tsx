@@ -21,6 +21,11 @@
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
  * -> bottom user config (theme / language / System settings / logout).
+ * In company mode the shape holds but the objects change: the organization switcher stands
+ * where the Project switcher stands, "New channel" where "New chat" is, the organization's
+ * six pages in the nav group, and the channel list where the conversation list is — its desk
+ * and ticket sessions live in the "Sessions" menu in that list's header
+ * (features/company/channel-sidebar.tsx).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -168,7 +173,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { OrgSwitcher } from "../../features/company/org-switcher";
-import { OrgSessionList } from "../../features/company/org-session-list";
+import { ChannelSidebar, NewChannelButton } from "../../features/company/channel-sidebar";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import {
   COMPANY_NAV_KEYS,
@@ -1120,12 +1125,6 @@ export function Sidebar({
     go(`/chat/${s.sessionId}`);
   };
 
-  /** A desk or ticket Session from the company list: the ordinary chat page, the current Agent following the row's employee. */
-  const openOrgSession = (sessionId: string, agentId: string) => {
-    setCurrentAgentId(agentId);
-    go(`/chat/${sessionId}`);
-  };
-
   /**
    * The mode switch: company mode enters at `/org` (the organization last opened, else the
    * first); development mode keeps whatever conversation is open and only leaves an
@@ -1514,19 +1513,11 @@ export function Sidebar({
           ),
         );
 
-  /** What the company chat entry's badge says: mentions first (they are addressed to the user), else plain unread. */
-  const chatNote =
-    company.chatMentions > 0
-      ? S.company.chat.badgeMentions(company.chatMentions)
-      : company.chatUnread > 0
-        ? S.company.chat.badgeUnread(company.chatUnread)
-        : null;
-
   /**
    * Page entries of the collapsible nav group. Development mode: 智能体 → 评估中心, driven by
    * the NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach. Company
-   * mode: the organization's seven pages (COMPANY_NAV_KEYS), the chat entry carrying the
-   * unread / @me badge. Always mounted — the collapse animates their height to zero and
+   * mode: the organization's six pages (COMPANY_NAV_KEYS) — channels are not among them,
+   * they are the list below. Always mounted — the collapse animates their height to zero and
    * turns them inert.
    */
   const navItems: Array<{ to: string; label: string; icon: string; note: string | null }> =
@@ -1537,7 +1528,7 @@ export function Sidebar({
             to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
             label: S.nav.org[key],
             icon: COMPANY_NAV_ICONS[key],
-            note: key === "chat" ? chatNote : null,
+            note: null,
           }))
       : navKeysFor(user?.isAdmin === true).map((key) => ({
           to: `/${key}`,
@@ -1653,8 +1644,19 @@ export function Sidebar({
           it, so a scrolled nav entry ended up flush against this pinned button, the two
           labels touching. Outside the scroller the 8px stays put at every scroll offset —
           the same text-to-text rhythm two adjacent nav rows have. */}
-      {/* Hidden in company mode: talking to an employee means opening its desk session. */}
-      {!inCompany && (
+      {/* Company mode puts "New channel" in this slot: a channel is what a person makes
+          there, the way a conversation is what they make in development mode. */}
+      {inCompany ? (
+        navOrg !== null && (
+          <div className="shrink-0 px-2 pb-2 pt-2">
+            <NewChannelButton
+              projectId={navOrg.projectId}
+              orgId={navOrg.orgId}
+              {...(onNavigate ? { onNavigate } : {})}
+            />
+          </div>
+        )
+      ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">
           <button
             type="button"
@@ -1776,17 +1778,17 @@ export function Sidebar({
         </nav>
 
         {inCompany ? (
-          <>
-            {/* Company mode: the list is grouped by organization (desks and ticket sessions),
-                with none of the development list's grouping, sorting or creation controls —
-                the organization decides the shape. */}
-            <div className="mt-3 px-1 pt-2">
-              <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                {S.chat.sessionList}
-              </span>
-            </div>
-            <OrgSessionList activeSessionId={activeSessionId} onOpen={openOrgSession} />
-          </>
+          navOrg !== null && (
+            /* Company mode: the organization's channels, where development mode lists
+               conversations. Its desk and ticket sessions are one menu away, in the list's
+               own header — they are not a second list. */
+            <ChannelSidebar
+              projectId={navOrg.projectId}
+              orgId={navOrg.orgId}
+              activeSessionId={activeSessionId}
+              {...(onNavigate ? { onNavigate } : {})}
+            />
+          )
         ) : (
           <>
             {/* Section header: list label + right-aligned controls (icon + tooltip family):

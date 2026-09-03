@@ -1,29 +1,31 @@
 /**
- * The organization's chat: the stream of the loaded days — a separator per day (paging back
+ * One channel: its header, the stream of the loaded days — a separator per day (paging back
  * through earlier day files), consecutive messages by one sender under one avatar and name
  * with each line's time on hover, `system` messages as centred banners, @-mentions as chips
- * (stronger when they address the reader), ticket and session references as chips that
- * open them, an unread divider at the read cursor — and the composer beneath it. The view
- * follows the stream while it is at the bottom; scrolled up, new messages collect behind a
- * pill that returns to the latest. Sitting at the bottom of today marks everything read,
- * which is what clears the nav entry's badge. Nothing here delivers to an employee unless
- * it is @-mentioned; the composer's hint and the empty state say so.
+ * (stronger when they address the reader), ticket and session references as chips that open
+ * them, an unread divider at the read cursor — and the composer beneath it. The view follows
+ * the stream while it is at the bottom; scrolled up, new messages collect behind a pill that
+ * returns to the latest. Sitting at the bottom of today marks this channel read, which is
+ * what clears its badge in the sidebar and the rail. Nothing here delivers to an employee
+ * unless it is @-mentioned, and only inside this channel's membership; the composer's hint
+ * and the empty state say so.
  *
- * Only the chat file is essential: the chart (names, mention candidates) and the member
- * list are best effort, so a hiccup there degrades names to ids rather than blocking the
- * page. The skeleton stands only until the first response; a failed first fetch is an
- * error with a retry inside the stream area, with the composer still there.
+ * A channel the reader has not joined offers Join instead of the composer — people may read
+ * every channel but post only in the ones they are in — and an archived channel says it is
+ * read-only. Only the messages are essential: the chart and the Project's member list feed
+ * names and the invite picker, so a hiccup there degrades names to ids rather than blocking
+ * the page.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
-import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
+import { useNavigate, useParams } from "react-router";
+import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -32,19 +34,22 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
-import { toastError } from "../../components/ui/toast";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
-import { OrgPage, useOrg } from "./org-layout";
+import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey, orgPagePath } from "./company-nav";
-import { ChatComposer } from "./chat-composer";
+import { ChannelComposer } from "./channel-composer";
+import { ChannelHeader } from "./channel-header";
+import { DEFAULT_CHANNEL_ID, channelLabel } from "./channel-list";
 import {
+  channelMentionCandidates,
   mentionCandidates,
   mentionIsMe,
   mentionLabel,
   mentionRuns,
   mentionsUser,
-} from "./chat-mentions";
+} from "./channel-mentions";
 import {
   appendMessage,
   buildStream,
@@ -53,14 +58,14 @@ import {
   earlierDay,
   lastMessageId,
   messageCount,
-} from "./chat-stream";
-import type { ChatDay, StreamItem } from "./chat-stream";
+} from "./channel-stream";
+import type { ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
 
-/** What the first response fixes for the page's lifetime: today, the day list, and the read cursor the divider is drawn at. */
+/** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
   today: string;
-  /** Every day with a chat file, newest first. */
+  /** Every day of this channel with a file, newest first. */
   days: string[];
   unreadAfterId: string | null;
 }
@@ -68,13 +73,16 @@ interface StreamMeta {
 /** Downward arrow on the return-to-latest pill (lucide arrow-down). */
 const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
 
-export function OrgChatPage() {
+export function ChannelView() {
   const { projectId, orgId, org } = useOrg();
+  const params = useParams<{ channelId: string }>();
+  const channelId = params.channelId ?? DEFAULT_CHANNEL_ID;
   const navigate = useNavigate();
   const company = useCompany();
   const { user } = useAuth();
-  useDocumentTitle(org ? `${org.name} · ${S.nav.org.chat}` : S.nav.org.chat);
-  const [days, setDays] = useState<ChatDay[] | null>(null);
+  const [detail, setDetail] = useState<OrgChannelDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [days, setDays] = useState<ChannelDay[] | null>(null);
   const [meta, setMeta] = useState<StreamMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<
@@ -82,6 +90,7 @@ export function OrgChatPage() {
   >([]);
   const [members, setMembers] = useState<string[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [joining, setJoining] = useState(false);
   /** Messages that arrived while the view was scrolled up; shown on the pill. */
   const [pendingNew, setPendingNew] = useState(0);
   const [showJump, setShowJump] = useState(false);
@@ -94,10 +103,37 @@ export function OrgChatPage() {
   const heightRef = useRef(0);
   const firstDayRef = useRef<string | null>(null);
   const me = user?.userId ?? "";
+  const myPrincipal = `user:${me}`;
   const myKey = orgKey(projectId, orgId);
+  const label = detail === null ? channelId : channelLabel(detail, S.company.channels.allHands);
+  useDocumentTitle(org ? `${org.name} · ${label}` : label);
+
+  // Another channel's stream must not linger while this one loads: everything the stream
+  // holds is keyed on the channel, the read marker included.
+  useEffect(() => {
+    setDays(null);
+    setMeta(null);
+    setError(null);
+    setDetail(null);
+    setDetailError(null);
+    setPendingNew(0);
+    markedRef.current = null;
+    firstDayRef.current = null;
+    follow.resume();
+  }, [projectId, orgId, channelId, follow]);
+
+  const loadDetail = useCallback(async () => {
+    try {
+      const res = await api.getOrgChannel(projectId, orgId, channelId);
+      setDetail(res);
+      setDetailError(null);
+    } catch (e) {
+      setDetailError(apiErrorText(e));
+    }
+  }, [projectId, orgId, channelId]);
 
   const load = useCallback(async () => {
-    // Names and candidates are best effort: the stream must not wait on them.
+    // Names and invite candidates are best effort: the stream must not wait on them.
     void api
       .getOrgChart(projectId, orgId)
       .then((ch) =>
@@ -110,8 +146,9 @@ export function OrgChatPage() {
       .listMembers(projectId)
       .then((res) => setMembers(res.members.map((m) => m.userId)))
       .catch(() => undefined);
+    void loadDetail();
     try {
-      const res = await api.getOrgChannelMessages(projectId, orgId, api.DEFAULT_CHANNEL_ID);
+      const res = await api.getOrgChannelMessages(projectId, orgId, channelId);
       setDays([{ date: res.date, messages: res.messages }]);
       setMeta((prev) => ({
         today: res.date,
@@ -124,7 +161,7 @@ export function OrgChatPage() {
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, orgId]);
+  }, [projectId, orgId, channelId, loadDetail]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -135,7 +172,7 @@ export function OrgChatPage() {
     if (target === null) return;
     setLoadingEarlier(true);
     try {
-      const res = await api.getOrgChannelMessages(projectId, orgId, api.DEFAULT_CHANNEL_ID, target);
+      const res = await api.getOrgChannelMessages(projectId, orgId, channelId, target);
       setDays((prev) =>
         prev === null || prev.some((d) => d.date === target)
           ? prev
@@ -148,16 +185,18 @@ export function OrgChatPage() {
     }
   };
 
-  // A new message on this organization lands in the stream without a refetch. While the
-  // view is at the bottom it simply appears; scrolled up, it counts towards the pill.
-  // The append is decided here, not inside a setDays updater: bumping the pill is a side
-  // effect and an updater must stay pure. It reads the latest list through a ref rather
-  // than this render's `days`, so two messages arriving before React re-renders both land
-  // instead of the second overwriting the first.
+  // A new message in THIS channel lands in the stream without a refetch. While the view is
+  // at the bottom it simply appears; scrolled up, it counts towards the pill. Another
+  // channel's message only moves its own badge, which the store owns. The append is decided
+  // here, not inside a setDays updater: bumping the pill is a side effect and an updater must
+  // stay pure. It reads the latest list through a ref rather than this render's `days`, so
+  // two messages arriving before React re-renders both land instead of the second
+  // overwriting the first.
   const latestDays = useRef(days);
   latestDays.current = days;
   useCompanyEvents((ev) => {
     if (ev.type !== "org_channel" || orgKey(ev.projectId, ev.orgId) !== myKey) return;
+    if (ev.channelId !== channelId) return;
     const current = latestDays.current;
     if (meta === null || current === null) return;
     const next = appendMessage(current, meta.today, ev.message);
@@ -216,16 +255,19 @@ export function OrgChatPage() {
     return () => ro.disconnect();
   }, [follow, days === null]);
 
-  // Sitting at the bottom of the newest day marks its tail as read and clears the badge.
+  // Sitting at the bottom of the newest day marks this channel's tail as read and clears its
+  // badge; the store's copy is cleared first so the sidebar does not wait for the round trip.
   const lastId = days === null ? null : lastMessageId(days);
+  const { markChannelRead } = company;
   useEffect(() => {
     if (!atBottom || lastId === null || lastId === markedRef.current) return;
     markedRef.current = lastId;
-    company.setChatCounters(0, 0);
+    markChannelRead(channelId);
     void api
-      .readOrgChannel(projectId, orgId, api.DEFAULT_CHANNEL_ID, { upTo: lastId })
+      .readOrgChannel(projectId, orgId, channelId, { upTo: lastId })
+      .then(() => markChannelRead(channelId))
       .catch(() => undefined);
-  }, [atBottom, lastId, company, projectId, orgId]);
+  }, [atBottom, lastId, markChannelRead, projectId, orgId, channelId]);
 
   const jumpToLatest = () => {
     const el = listRef.current;
@@ -237,9 +279,7 @@ export function OrgChatPage() {
 
   const send = async (text: string): Promise<boolean> => {
     try {
-      const msg = await api.sendOrgChannelMessage(projectId, orgId, api.DEFAULT_CHANNEL_ID, {
-        text,
-      });
+      const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, { text });
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
@@ -251,11 +291,34 @@ export function OrgChatPage() {
     }
   };
 
+  const join = async () => {
+    if (joining) return;
+    setJoining(true);
+    try {
+      await api.addOrgChannelMember(projectId, orgId, channelId, { principal: myPrincipal });
+      toastSuccess(S.company.channels.joined);
+      await loadDetail();
+      void company.reloadChannels();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setJoining(false);
+    }
+  };
+
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
+  const memberPrincipals = useMemo(
+    () => (detail === null ? null : new Set(detail.members.map((m) => m.principal))),
+    [detail],
+  );
   const candidates = useMemo(
-    () => mentionCandidates(employees, members, S.company.chat.mentionAll),
-    [employees, members],
+    () =>
+      channelMentionCandidates(
+        mentionCandidates(employees, members, S.company.channels.mentionAll),
+        memberPrincipals,
+      ),
+    [employees, members, memberPrincipals],
   );
   const stream = useMemo(
     () => (days === null ? [] : buildStream(days, { unreadAfterId: meta?.unreadAfterId ?? null })),
@@ -291,16 +354,16 @@ export function OrgChatPage() {
       <span className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row}`}>
         {ticket !== undefined && (
           <RefChip onClick={() => openTicket(ticket)} icon={NAV_ICONS.orgTickets}>
-            {S.company.chat.ticketRef(ticket)}
+            {S.company.channels.ticketRef(ticket)}
           </RefChip>
         )}
         {session !== undefined && (
           <RefChip onClick={() => navigate(`/chat/${session}`)}>
-            {S.company.chat.sessionRef}
+            {S.company.channels.sessionRef}
           </RefChip>
         )}
         {replyTo !== undefined && (
-          <RefChip onClick={() => scrollToMessage(replyTo)}>{S.company.chat.replyTo}</RefChip>
+          <RefChip onClick={() => scrollToMessage(replyTo)}>{S.company.channels.replyTo}</RefChip>
         )}
       </span>
     );
@@ -309,17 +372,17 @@ export function OrgChatPage() {
   const renderItem = (item: StreamItem, i: number) => {
     if (item.kind === "day") {
       const kind = meta === null ? "other" : dayKind(item.date, meta.today);
-      const label =
+      const dayLabel =
         kind === "today"
-          ? S.company.chat.today
+          ? S.company.channels.today
           : kind === "yesterday"
-            ? S.company.chat.yesterday
+            ? S.company.channels.yesterday
             : null;
       return (
         <div key={`day-${item.date}`} className={`flex items-center ${ICON_GAP.menu} py-3`}>
           <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
           <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
-            {label !== null ? `${label} · ${item.date}` : item.date}
+            {dayLabel !== null ? `${dayLabel} · ${item.date}` : item.date}
           </span>
           <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
         </div>
@@ -331,11 +394,11 @@ export function OrgChatPage() {
           key={`unread-${i}`}
           className={`flex items-center ${ICON_GAP.menu} py-2`}
           role="separator"
-          aria-label={S.company.chat.unreadDivider}
+          aria-label={S.company.channels.unreadDivider}
         >
           <span className={`h-px flex-1 ${toneDot.attention}`} />
           <span className={`text-[11px] font-medium ${toneInk.attention}`}>
-            {S.company.chat.unreadDivider}
+            {S.company.channels.unreadDivider}
           </span>
           <span className={`h-px flex-1 ${toneDot.attention}`} />
         </div>
@@ -349,7 +412,7 @@ export function OrgChatPage() {
             title={formatDateTime(m.time)}
             className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs leading-relaxed text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
           >
-            <span className="sr-only">{S.company.chat.systemMessage} </span>
+            <span className="sr-only">{S.company.channels.systemMessage} </span>
             {renderText(m)}
             <span className="ml-2 text-gray-400 dark:text-gray-500">{clockTime(m.time)}</span>
             {renderRefs(m)}
@@ -359,25 +422,30 @@ export function OrgChatPage() {
     }
     const first = item.messages[0]!;
     const p = parsePrincipal(item.sender);
-    const label = principalLabel(item.sender, names);
+    const senderLabel = principalLabel(item.sender, names);
     const mine = p.kind === "user" && p.id === me;
     return (
       <div key={first.id} className={`flex ${ICON_GAP.card} py-1.5`}>
         {p.kind === "agent" ? (
-          <AgentAvatar id={p.id} name={label} size={28} className="mt-0.5 shrink-0 rounded-md" />
+          <AgentAvatar
+            id={p.id}
+            name={senderLabel}
+            size={28}
+            className="mt-0.5 shrink-0 rounded-md"
+          />
         ) : (
           <span
             aria-hidden
             className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
           >
-            {label.slice(0, 1).toUpperCase()}
+            {senderLabel.slice(0, 1).toUpperCase()}
           </span>
         )}
         <div className="min-w-0 flex-1">
           <div className={`flex flex-wrap items-baseline ${ICON_GAP.menu} text-xs`}>
-            <span className="font-semibold text-gray-900 dark:text-gray-100">{label}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{senderLabel}</span>
             {mine && (
-              <span className="text-gray-400 dark:text-gray-500">({S.company.chat.you})</span>
+              <span className="text-gray-400 dark:text-gray-500">({S.company.channels.you})</span>
             )}
             <span
               className="text-[11px] text-gray-400 dark:text-gray-500"
@@ -387,7 +455,7 @@ export function OrgChatPage() {
             </span>
             {item.hop > 0 && (
               <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                {S.company.chat.hop(item.hop)}
+                {S.company.channels.hop(item.hop)}
               </span>
             )}
           </div>
@@ -410,7 +478,7 @@ export function OrgChatPage() {
                 <span
                   className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
                   title={formatDateTime(m.time)}
-                  aria-label={S.company.chat.sentAt(formatDateTime(m.time))}
+                  aria-label={S.company.channels.sentAt(formatDateTime(m.time))}
                 >
                   {clockTime(m.time)}
                 </span>
@@ -422,17 +490,33 @@ export function OrgChatPage() {
     );
   };
 
+  const canPost = detail !== null && detail.isMember && !detail.archived;
+
   return (
-    <OrgPage title={S.nav.org.chat} info={S.company.chat.info}>
-      {/* The stream and the composer fill the page frame beneath its title: the frame is a
-          scroll container (a containing block), so the column is pinned to its edges and the
-          stream alone scrolls, whatever the viewport or a notice banner above the shell does. */}
-      <div className="absolute inset-x-4 bottom-4 top-[3.75rem] flex flex-col md:inset-x-6 md:bottom-6 md:top-[4.25rem]">
+    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+      <ChannelHeader
+        projectId={projectId}
+        orgId={orgId}
+        me={myPrincipal}
+        detail={detail}
+        employees={employees}
+        projectMembers={members}
+        onChanged={() => {
+          void loadDetail();
+          void company.reloadChannels();
+        }}
+      />
+      {detailError !== null && detail === null && (
+        <p role="alert" className={`border-b px-4 py-1.5 text-xs ${toneStrip.danger}`}>
+          {S.company.channels.channelLoadFailed} · {detailError}
+        </p>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
         <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
           <div
             ref={listRef}
             role="log"
-            aria-label={S.company.chat.title}
+            aria-label={S.company.channels.streamLabel(label)}
             onScroll={onScroll}
             onWheel={(e) => follow.wheel(e.deltaY)}
             onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
@@ -457,20 +541,20 @@ export function OrgChatPage() {
                         disabled={loadingEarlier}
                         onClick={() => void loadEarlier()}
                       >
-                        {loadingEarlier ? S.common.loading : S.company.chat.earlierDays}
+                        {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
                       </Button>
                     </div>
                   ) : (
                     messageCount(days) > 0 && (
                       <p className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
-                        {S.company.chat.noEarlier}
+                        {S.company.channels.noEarlier}
                       </p>
                     )
                   )}
                   {messageCount(days) === 0 ? (
                     <EmptyState
-                      title={S.company.chat.empty}
-                      description={S.company.chat.emptyHint}
+                      title={S.company.channels.empty}
+                      description={S.company.channels.emptyHint}
                     />
                   ) : (
                     stream.map(renderItem)
@@ -487,16 +571,34 @@ export function OrgChatPage() {
               onClick={jumpToLatest}
               className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
             >
-              {pendingNew > 0 ? S.company.chat.newMessages(pendingNew) : S.chat.jumpToLatest}
+              {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
               <GlyphIcon d={ARROW_DOWN_ICON} size={ICON_SIZE.inlineGlyph} />
             </button>
           )}
         </div>
         <div className="mx-auto w-full max-w-5xl">
-          <ChatComposer candidates={candidates} names={names} onSend={send} />
+          {canPost ? (
+            <ChannelComposer candidates={candidates} names={names} onSend={send} />
+          ) : detail !== null && detail.archived ? (
+            <p
+              className={`mt-3 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+              role="status"
+            >
+              {S.company.channels.archivedNotice}
+            </p>
+          ) : detail !== null ? (
+            <div
+              className={`mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
+            >
+              <span>{S.company.channels.notMemberNotice}</span>
+              <Button size="sm" variant="primary" disabled={joining} onClick={() => void join()}>
+                {joining ? S.company.channels.joining : S.company.channels.join}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
-    </OrgPage>
+    </div>
   );
 }
 
@@ -512,7 +614,7 @@ function MentionChip({ raw, label, me }: { raw: string; label: string; me: boole
       }`}
     >
       @{label}
-      {me && <span className="sr-only"> ({S.company.chat.mentionsYou})</span>}
+      {me && <span className="sr-only"> ({S.company.channels.mentionsYou})</span>}
     </span>
   );
 }

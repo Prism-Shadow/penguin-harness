@@ -35,7 +35,6 @@ export const en: Strings = {
       calendar: "Calendar",
       tickets: "Tickets",
       finance: "Finance",
-      chat: "Chat",
       handbook: "Handbook",
     },
   },
@@ -1824,7 +1823,7 @@ Scenarios:
     orgTriggerKinds: {
       init: "Initialization",
       event: "Calendar event",
-      mention: "Chat mention",
+      mention: "Channel mention",
       ticket_notice: "Ticket notice",
       ticket_work: "Ticket work",
     } as Record<string, string>,
@@ -2446,7 +2445,7 @@ Scenarios:
     /** The empty landing of `/org` when the user has no organization anywhere. */
     landingTitle: "Company mode",
     landingBody:
-      "An organization is a group of employee Agents working along a reporting line: a CEO, the employees it hires, a shared board and chat, and the calendar that drives them. Create one and start by talking to the CEO about its mission.",
+      "An organization is a group of employee Agents working along a reporting line: a CEO, the employees it hires, a shared board and its channels, and the calendar that drives them. Create one and start by talking to the CEO about its mission.",
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
@@ -2482,7 +2481,7 @@ Scenarios:
     settingsTitle: "Organization settings",
     timezone: "Timezone",
     timezoneHint:
-      "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and chat day files follow it",
+      "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and channel day files follow it",
     approvalMode: "Approval mode",
     approvalModeInfo:
       "How tool calls in desk and ticket sessions are approved. Unattended runs never stop to ask a person, so there is no always-ask here.",
@@ -2500,7 +2499,7 @@ Scenarios:
       "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly.",
     deleteOrg: "Delete organization",
     deleteOrgConfirm: (name: string): string =>
-      `Delete organization "${name}"? Employee Agents and every session are kept; only the organization directory goes — the chart, calendar, tickets and chat log.`,
+      `Delete organization "${name}"? Employee Agents and every session are kept; only the organization directory goes — the chart, calendar, tickets and channel logs.`,
     deleted: "Organization deleted",
     settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
@@ -2519,17 +2518,15 @@ Scenarios:
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
-    /** The company sidebar's session list: one group per organization, two folders inside. */
+    /** The channel list's "Sessions" menu: desk sessions per employee, ticket sessions per ticket. */
     sessionList: {
-      desks: (n: number): string => `Desks (${n})`,
-      tickets: (n: number): string => `Tickets (${n})`,
+      menu: "Sessions",
+      menuLabel: "Organization sessions",
+      desks: (n: number): string => `Desk sessions (${n})`,
+      ticketSessions: (n: number): string => `Ticket sessions (${n})`,
       empty: "No sessions in this organization yet",
       untitledSession: "Untitled session",
-      loading: "Loading…",
       loadFailed: "The session list could not be loaded",
-      viewInChart: "Show on the org chart",
-      viewTicket: "Open the ticket",
-      rowMenu: (name: string): string => `${name}: more actions`,
     },
     overview: {
       title: "Overview",
@@ -2545,16 +2542,16 @@ Scenarios:
       spend: "This period's spend",
       pending: "For me",
       pendingInfo:
-        "Unread chat messages that mention you, tickets waiting for your review, and blocked tickets waiting on you — everything in the organization that needs a person to decide.",
+        "Unread channel messages that mention you, tickets waiting for your review, and blocked tickets waiting on you — everything in the organization that needs a person to decide.",
       mentions: (n: number): string => `${n} message${n === 1 ? "" : "s"} mentioning me`,
       reviewTickets: "Tickets in review",
       blockedByMe: "Tickets blocked on me",
       pendingEmpty: "Nothing needs you right now",
-      recentChat: "Latest in chat",
-      recentChatEmpty: "No chat messages yet",
+      recentMessages: "Latest in all hands",
+      recentMessagesEmpty: "No messages in the all-hands channel yet",
       alerts: "Alerts",
       alertsEmpty: "No budget alerts this period",
-      openChat: "Open chat",
+      openAllHands: "Open all hands",
       /** A fresh organization: point the user at the CEO. */
       firstStep:
         "The organization is brand new: open the CEO's desk session to confirm the mission, hire employees and set up the calendar.",
@@ -2589,7 +2586,7 @@ Scenarios:
       goToChart: "Open the org chart",
       goToCalendar: "Open the calendar",
       /** "For me" rows. */
-      openMentions: "Read them in chat",
+      openMentions: "Read them in the channels",
       reviewHint: "Drag to Done once it passes review, otherwise reject with a reason",
       blockedHint: "Unblock it from the ticket's details",
       /** Today's timeline. */
@@ -2730,7 +2727,7 @@ Scenarios:
       weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as readonly string[],
       allDay: "All day",
       promptHint:
-        "What the employee should sweep at this moment, e.g. check the board, push its tickets, report in chat",
+        "What the employee should sweep at this moment, e.g. check the board, push its tickets, report in a channel",
       monthTitle: (year: number, month: number): string =>
         `${
           [
@@ -2928,40 +2925,88 @@ Scenarios:
       /** A refetch failed while the last good data is still on screen. */
       refreshFailed: "Refresh failed; showing the last loaded data",
     },
-    chat: {
-      title: "Chat",
-      info: "The organization's public channel. Only an @ reaches an employee: @employee delivers the message to its desk session, @all to every employee; a message without one is a note employees read at their next check.",
+    channels: {
+      listTitle: "Channels",
+      allHands: "All hands",
+      mine: "My channels",
+      others: "Other channels",
+      archivedGroup: "Archived",
+      newChannel: "New channel",
+      noChannels: "No channels yet",
+      loadFailed: "Could not load the channels",
+      join: "Join",
+      joining: "Joining…",
+      joined: "Joined the channel",
+      mentionChip: "@me",
+      badgeUnread: (n: number): string => `${n} unread`,
+      badgeMentions: (n: number): string => `${n} mentioning me`,
+      streamLabel: (name: string): string => `Messages in ${name}`,
+      purpose: "Purpose",
+      purposeEmpty: "No purpose written yet",
+      memberCount: (n: number): string => `${n} member${n === 1 ? "" : "s"}`,
+      memberList: "Channel members",
+      invite: "Invite",
+      inviteTitle: "Invite to the channel",
+      inviteSearch: "Search employees and members",
+      inviteEmpty: "Nobody left to invite",
+      invited: (name: string): string => `Invited ${name}`,
+      leave: "Leave",
+      leaveTitle: "Leave the channel",
+      leaveConfirm: (name: string): string =>
+        `Leave "${name}"? You can still read it, but no @ will reach you and you cannot post until you join again.`,
+      left: "Left the channel",
+      channelMenu: "Channel actions",
+      rename: "Rename",
+      renameTitle: "Rename the channel",
+      editPurpose: "Edit purpose",
+      purposeTitle: "Edit the channel's purpose",
+      archive: "Archive",
+      unarchive: "Unarchive",
+      archiveTitle: "Archive the channel",
+      archiveConfirm: (name: string): string =>
+        `Archive "${name}"? It becomes read-only and folds away under Archived; you can unarchive it at any time.`,
+      archived: "Channel archived",
+      unarchived: "Channel unarchived",
+      archivedNotice: "This channel is archived and read-only. Unarchive it to post again.",
+      notMemberNotice: "You are not in this channel yet. Join it to post.",
+      channelLoadFailed: "Could not load the channel",
+      allHandsInfo:
+        "The all-hands channel is created with the organization: every employee and every Project member is in it, nobody can leave it and it cannot be archived. System notices — budget alerts and the like — are posted here.",
+      channelInfo:
+        "An invitation-only channel: an employee joins only when a member invites it, and an @ delivers within the channel's membership. People may join any channel themselves, and can read every channel.",
+      createTitle: "New channel",
+      creating: "Creating…",
+      created: "Channel created",
+      idField: "Channel id",
+      idHint: "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores",
+      idReserved: "default_channel belongs to the all-hands channel",
+      idTaken: "That id is already taken",
+      nameField: "Display name",
+      nameHint: "Defaults to the id",
+      purposeHint: "One line on what this channel is for",
       empty: "No messages yet",
       emptyHint:
-        "Only an @ reaches an employee: @employee delivers to its desk session, @all to everyone; a message without one is just a note.",
-      placeholder: "Write something… type @ to mention an employee or member, Enter to send",
+        "Only an @ reaches an employee: @employee delivers to its desk session, @all to every member of the channel; a message without one is just a note.",
+      placeholder: "Write something… type @ to mention a member, Enter to send",
       send: "Send",
-      system: "System",
       you: "You",
       mentionAll: "Everyone",
-      mentionAllDesc: "Every employee",
+      mentionAllDesc: "Every member of the channel",
       employees: "Employees",
       members: "Members",
-      noMentionMatch: "No match",
       earlierDays: "Earlier days",
       ticketRef: (id: string): string => `Ticket ${id}`,
       sessionRef: "View session",
       replyTo: "Reply to",
       hop: (n: number): string => `hop ${n}`,
-      /** The nav entry's badge: what is waiting behind it. */
-      badgeUnread: (n: number): string => `${n} unread`,
-      badgeMentions: (n: number): string => `${n} mentioning me`,
-      /** Day separators, paging and the read cursor in the stream. */
       today: "Today",
       yesterday: "Yesterday",
       noEarlier: "No earlier messages",
       unreadDivider: "Unread",
       newMessages: (n: number): string => `${n} new message${n === 1 ? "" : "s"}`,
-      /** The composer and its @ autocomplete. */
       composerHint: "Only an @ reaches an employee · Enter to send, Shift+Enter for a new line",
       mentionPanel: "Mention",
       mentionsYou: "Mentions you",
-      /** Accessible name of a system banner and of a message's per-line time. */
       systemMessage: "System message",
       sentAt: (time: string): string => `Sent at ${time}`,
     },

@@ -1,5 +1,5 @@
 /**
- * The organization chat's stream shaping (pure, unit tested): the loaded day files in
+ * A channel's stream shaping (pure, unit tested): the loaded day files in
  * order become one list of items — a separator per day, the unread divider at the read
  * cursor, `system` messages on their own, and consecutive messages by one sender folded
  * into a run under a single header — plus the day arithmetic the separators and the
@@ -9,7 +9,7 @@ import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import { parsePrincipal } from "./principals";
 
 /** One day file as loaded: the organization-timezone date and its messages in file order. */
-export interface ChatDay {
+export interface ChannelDay {
   date: string;
   messages: OrgChannelMessage[];
 }
@@ -31,7 +31,7 @@ export const RUN_GAP_MS = 5 * 60_000;
  * and a divider above the whole history would say nothing, so none is drawn.
  */
 export function buildStream(
-  days: readonly ChatDay[],
+  days: readonly ChannelDay[],
   opts: { unreadAfterId?: string | null; gapMs?: number } = {},
 ): StreamItem[] {
   const gap = opts.gapMs ?? RUN_GAP_MS;
@@ -98,10 +98,10 @@ export function earlierDay(days: readonly string[], earliest: string): string | 
  * repeats a message the send already added changes nothing.
  */
 export function appendMessage(
-  days: ChatDay[],
+  days: ChannelDay[],
   date: string,
   message: OrgChannelMessage,
-): ChatDay[] {
+): ChannelDay[] {
   if (days.some((d) => d.messages.some((m) => m.id === message.id))) return days;
   const idx = days.findIndex((d) => d.date === date);
   if (idx === -1) return [...days, { date, messages: [message] }];
@@ -109,7 +109,7 @@ export function appendMessage(
 }
 
 /** The id of the newest loaded message, or null when nothing is loaded. */
-export function lastMessageId(days: readonly ChatDay[]): string | null {
+export function lastMessageId(days: readonly ChannelDay[]): string | null {
   for (let i = days.length - 1; i >= 0; i--) {
     const list = days[i]!.messages;
     if (list.length > 0) return list[list.length - 1]!.id;
@@ -118,7 +118,7 @@ export function lastMessageId(days: readonly ChatDay[]): string | null {
 }
 
 /** How many messages are loaded across every day. */
-export function messageCount(days: readonly ChatDay[]): number {
+export function messageCount(days: readonly ChannelDay[]): number {
   return days.reduce((n, d) => n + d.messages.length, 0);
 }
 

@@ -148,10 +148,16 @@ import type {
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
   OrgChartResponse,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMemberRequest,
   OrgChannelMessage,
   OrgChannelMessageSendRequest,
   OrgChannelMessagesResponse,
+  OrgChannelPatchRequest,
   OrgChannelReadRequest,
+  OrgChannelsResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
   OrgEmployeePatchRequest,
@@ -1449,11 +1455,48 @@ export const attachOrgTicket = (
   body: OrgTicketAttachRequest,
 ) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "attach", body);
 
-/** The all-hands channel, the one every employee and Project member belongs to. */
-export const DEFAULT_CHANNEL_ID = "default_channel";
-
 const channelBase = (projectId: string, orgId: string, channelId: string) =>
   `${orgBase(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;
+
+/** The organization's channels: the all-hands one first, then by name. */
+export const listOrgChannels = (projectId: string, orgId: string) =>
+  apiFetch<OrgChannelsResponse>(`${orgBase(projectId, orgId)}/channels`);
+
+export const createOrgChannel = (projectId: string, orgId: string, body: OrgChannelCreateRequest) =>
+  apiFetch<OrgChannelItem>(`${orgBase(projectId, orgId)}/channels`, { method: "POST", body });
+
+export const getOrgChannel = (projectId: string, orgId: string, channelId: string) =>
+  apiFetch<OrgChannelDetail>(channelBase(projectId, orgId, channelId));
+
+export const patchOrgChannel = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelPatchRequest,
+) => apiFetch<OrgChannelItem>(channelBase(projectId, orgId, channelId), { method: "PATCH", body });
+
+export const addOrgChannelMember = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelMemberRequest,
+) =>
+  apiFetch<OrgChannelDetail>(`${channelBase(projectId, orgId, channelId)}/members`, {
+    method: "POST",
+    body,
+  });
+
+/** Removes a member; `principal` is the literal `agent:<id>` / `user:<id>`, encoded into the path. */
+export const removeOrgChannelMember = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  principal: string,
+) =>
+  apiFetch<void>(
+    `${channelBase(projectId, orgId, channelId)}/members/${encodeURIComponent(principal)}`,
+    { method: "DELETE" },
+  );
 
 /** One day of a channel (today in the organization's timezone when `date` is omitted). */
 export const getOrgChannelMessages = (

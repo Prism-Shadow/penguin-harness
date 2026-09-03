@@ -1,12 +1,16 @@
 /**
- * The organization chat's @-mentions (pure, unit tested): the candidates the composer offers
- * (employees, Project members, `all`) and how they rank against what was typed, the token
+ * A channel's @-mentions (pure, unit tested): the candidates the composer offers — the
+ * channel's own members, plus `all` — and how they rank against what was typed, the token
  * being typed at the caret, what a pick types and how it is spliced into the draft, how a
  * stored message is split into plain runs and mention runs for highlighting, and what a
  * mention run displays and whether it addresses the reader. The token grammar mirrors the
  * server's extractMentionTokens — `@id`, `@agent:id`, `@user:id`, `@all` — and its
  * resolution order (an employee before a member of the same id), so what the composer
  * highlights is what the server delivers.
+ *
+ * Membership is the source, not the org chart: a mention delivers only inside the channel it
+ * was written in, and the server rejects a message naming an outsider (`mention_not_member`).
+ * The composer therefore offers the channel's members and nobody else.
  */
 
 export type MentionKind = "employee" | "member" | "all";
@@ -23,7 +27,7 @@ export interface MentionCandidate {
   detail?: string;
 }
 
-/** Employees first, then members, then `all` — the order the panel lists them in. */
+/** Employees first, then Project members, then `all` — the order the panel lists them in. */
 export function mentionCandidates(
   employees: ReadonlyArray<{ agentId: string; name: string; title?: string }>,
   members: readonly string[],
@@ -167,4 +171,19 @@ export function mentionRuns(text: string): TextRun[] {
 /** Whether a message addresses the given user (their `user:` principal) or everyone. */
 export function mentionsUser(mentions: readonly string[], userId: string): boolean {
   return mentions.includes(`user:${userId}`) || mentions.includes("all");
+}
+
+/**
+ * The candidates a channel's composer offers: everyone above who is a member of it, `all`
+ * always kept (it means that channel's membership). A null membership — the channel detail
+ * has not arrived, or its request failed — offers the whole list rather than an empty panel:
+ * the server still refuses a mention that leaves the channel, so this degrades to a slower
+ * error rather than to a composer that can name nobody.
+ */
+export function channelMentionCandidates(
+  candidates: readonly MentionCandidate[],
+  memberPrincipals: ReadonlySet<string> | null,
+): MentionCandidate[] {
+  if (memberPrincipals === null) return [...candidates];
+  return candidates.filter((c) => c.kind === "all" || memberPrincipals.has(c.principal));
 }

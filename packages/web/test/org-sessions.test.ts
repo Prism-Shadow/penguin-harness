@@ -1,5 +1,5 @@
 /**
- * The company sidebar's session shaping (features/company/org-sessions.ts) and the
+ * The "Sessions" menu's shaping (features/company/org-sessions.ts) and the
  * development sidebar's organization folder split (session-grouping's partitionOrgSessions):
  * desk rows titled by employee name in name order, ticket folders only for tickets that hold
  * a session, the running mark, the glyph a row draws, and the split of a group's active

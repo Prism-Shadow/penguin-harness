@@ -1,12 +1,12 @@
 /**
  * Company-mode shell state: whether the mode is available at all, which mode the shell is
- * in, which organization is open, the organizations this user can reach, and the live
- * counters the chat entry's badges show.
+ * in, which organization is open, the organizations this user can reach, the open
+ * organization's channels, and the live counters their badges show.
  *
  * Availability is two switches ANDed: the server's master switch (`MeResponse.companyMode`,
  * read through the auth context) and the user's own (`UiPrefs.companyMode`, default on). Off
- * on either side, the shell renders no mode switch and every `/org` route falls back to the
- * chat page; organizations keep running regardless — the personal switch only hides the
+ * on either side, the shell renders no mode switch and every `/org` route falls back to a
+ * Session's own page; organizations keep running regardless — the personal switch only hides the
  * user's own view of them.
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
@@ -15,8 +15,8 @@
  *
  * Company events ride the same user-level event stream the session list consumes
  * (state/sessions.tsx forwards them through `publishCompanyEvent`): the store keeps the
- * chat counters of the open organization in step and bumps a version per event family, which
- * the pages watch to refetch — the query routes carry the durable state, the events only say
+ * channel counters of the open organization in step and bumps a version per event family,
+ * which the pages watch to refetch — the query routes carry the durable state, the events only say
  * that it moved.
  *
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
@@ -26,6 +26,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from "react";
 import type {
   CompanyServerEvent,
+  OrgChannelItem,
   OrgSessionsResponse,
   OrganizationSummary,
   ServerEvent,
@@ -33,6 +34,8 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
+import { apiErrorText } from "../lib/api-error";
+import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";
 import {
@@ -84,7 +87,8 @@ export function useCompanyEvents(handler: CompanyEventListener): void {
 export interface CompanyVersions {
   /** The organization list (an org's summary counts changed: a budget pause, a run). */
   orgs: number;
-  chat: number;
+  /** A new message landed in one of the organization's channels. */
+  messages: number;
   tickets: number;
   /** A desk or ticket Session was opened by the scheduler. */
   runs: number;
@@ -105,9 +109,19 @@ interface CompanyStoreState {
   organizations: OrganizationSummary[];
   orgsLoading: boolean;
   orgsLoaded: boolean;
-  /** Unread chat messages of the open organization, and how many of those mention the user (or all). */
-  chatUnread: number;
-  chatMentions: number;
+  /**
+   * The open organization's channels, as `GET /channels` last answered them — the sidebar's
+   * list, the rail's rows and the channel view all read this one copy. Null before the first
+   * listing of the organization now open.
+   */
+  channels: OrgChannelItem[] | null;
+  /** The last listing attempt's failure, kept beside whatever the list still holds. */
+  channelsError: string | null;
+  /** When each channel was last marked read here, so a listing that left earlier cannot resurrect its badge. */
+  channelReadAt: ReadonlyMap<string, number>;
+  /** Unread messages waiting in the open organization's channels, and how many of those name the user. */
+  channelUnread: number;
+  channelMentions: number;
   /** Desk and ticket Sessions per organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
   versions: CompanyVersions;
@@ -115,10 +129,20 @@ interface CompanyStoreState {
   setWorkMode: (mode: WorkMode) => void;
   setPersonalEnabled: (enabled: boolean) => void;
   setCurrentOrg: (key: string | null) => void;
-  setChatCounters: (unread: number, mentions: number) => void;
+  reloadChannels: (projectId: string, orgId: string) => Promise<void>;
+  markChannelRead: (channelId: string) => void;
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
   reloadOrgSessions: (projectId: string) => Promise<void>;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
+}
+
+/** The two badge numbers of a channel listing (channel-list.ts), in the shape the store stores them. */
+function counters(channels: readonly OrgChannelItem[]): {
+  channelUnread: number;
+  channelMentions: number;
+} {
+  const { unread, mentions } = channelBadgeCounts(channels);
+  return { channelUnread: unread, channelMentions: mentions };
 }
 
 /**
@@ -135,10 +159,13 @@ export function createCompanyStore() {
     organizations: [],
     orgsLoading: false,
     orgsLoaded: false,
-    chatUnread: 0,
-    chatMentions: 0,
+    channels: null,
+    channelsError: null,
+    channelReadAt: new Map(),
+    channelUnread: 0,
+    channelMentions: 0,
     orgSessions: new Map(),
-    versions: { orgs: 0, chat: 0, tickets: 0, runs: 0, budget: 0 },
+    versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0 },
 
     setWorkMode: (mode) => {
       if (mode === get().workMode) return;
@@ -156,18 +183,62 @@ export function createCompanyStore() {
     setCurrentOrg: (key) => {
       const prev = get();
       if (key === prev.currentOrgKey) return;
-      // Leaving one organization for another drops the old one's counters: they belong to
-      // the organization they were counted for.
-      set({ currentOrgKey: key, chatUnread: 0, chatMentions: 0 });
+      // Leaving one organization for another drops its channels and their counters: both
+      // belong to the organization they were read for.
+      set({
+        currentOrgKey: key,
+        channels: null,
+        channelsError: null,
+        channelReadAt: new Map(),
+        channelUnread: 0,
+        channelMentions: 0,
+      });
       if (key === null || key === prev.lastOrgKey) return;
       storeLastOrgKey(key);
       set({ lastOrgKey: key });
       void api.putPrefs({ lastOrgKey: key }).catch(() => undefined);
     },
 
-    setChatCounters: (unread, mentions) => {
-      if (unread === get().chatUnread && mentions === get().chatMentions) return;
-      set({ chatUnread: unread, chatMentions: mentions });
+    /**
+     * Re-reads the open organization's channels. A response for an organization the shell has
+     * since left is dropped, and a channel marked read after the request went out keeps its
+     * local zero: the server's read cursor may not have been written yet when the listing was
+     * computed, and a badge that comes back from the dead reads as a bug.
+     */
+    reloadChannels: async (projectId, orgId) => {
+      const key = orgKey(projectId, orgId);
+      const startedAt = Date.now();
+      try {
+        const res = await api.listOrgChannels(projectId, orgId);
+        const state = get();
+        if (state.currentOrgKey !== key) return;
+        const channels = res.channels.map((c) =>
+          (state.channelReadAt.get(c.channelId) ?? 0) >= startedAt
+            ? { ...c, unread: 0, mentionsMe: 0 }
+            : c,
+        );
+        set({ channels, channelsError: null, ...counters(channels) });
+      } catch (e) {
+        if (get().currentOrgKey === key) set({ channelsError: apiErrorText(e) });
+      }
+    },
+
+    /** The reader reached the end of a channel: its badge clears here before the server confirms. */
+    markChannelRead: (channelId) => {
+      const state = get();
+      const readAt = new Map(state.channelReadAt);
+      readAt.set(channelId, Date.now());
+      const channels =
+        state.channels === null
+          ? null
+          : state.channels.map((c) =>
+              c.channelId === channelId ? { ...c, unread: 0, mentionsMe: 0 } : c,
+            );
+      set({
+        channelReadAt: readAt,
+        channels,
+        ...(channels === null ? {} : counters(channels)),
+      });
     },
 
     reloadOrganizations: async (projectIds) => {
@@ -221,16 +292,30 @@ export function createCompanyStore() {
         versions.budget += 1;
         versions.orgs += 1;
       } else {
-        versions.chat += 1;
-        // The open organization's counters move with its stream; a message the user sent
-        // themselves is read by definition.
-        if (key === state.currentOrgKey && ev.message.sender !== `user:${userId ?? ""}`) {
-          const me = `user:${userId ?? ""}`;
-          const addressed = ev.message.mentions.includes(me) || ev.message.mentions.includes("all");
-          set({
-            chatUnread: state.chatUnread + 1,
-            chatMentions: state.chatMentions + (addressed ? 1 : 0),
-          });
+        versions.messages += 1;
+        // The open organization's counters move with the channel the message landed in; a
+        // message the user sent themselves is read by definition, and a channel the user is
+        // not in is waiting for nobody. `mentionsMe` counts the user's own principal only —
+        // the same rule the server's listing applies, so the optimistic bump and the refresh
+        // that follows it agree.
+        const channels = state.channels;
+        if (
+          key === state.currentOrgKey &&
+          channels !== null &&
+          ev.message.sender !== `user:${userId ?? ""}`
+        ) {
+          const addressed = ev.message.mentions.includes(`user:${userId ?? ""}`);
+          const next = channels.map((c) =>
+            c.channelId === ev.channelId && c.isMember
+              ? {
+                  ...c,
+                  unread: c.unread + 1,
+                  mentionsMe: c.mentionsMe + (addressed ? 1 : 0),
+                  lastMessageAt: ev.message.time,
+                }
+              : c,
+          );
+          set({ channels: next, ...counters(next) });
         }
       }
       set({ versions });
@@ -259,9 +344,14 @@ interface CompanyContextValue {
   currentOrg: OrganizationSummary | null;
   lastOrgKey: string | null;
   setCurrentOrg: (key: string | null) => void;
-  chatUnread: number;
-  chatMentions: number;
-  setChatCounters: (unread: number, mentions: number) => void;
+  /** The open organization's channels; null until the first listing arrives. */
+  channels: OrgChannelItem[] | null;
+  channelsError: string | null;
+  /** Unread and @me summed over the channels the user belongs to — the sidebar's and the rail's badges. */
+  channelUnread: number;
+  channelMentions: number;
+  reloadChannels: () => Promise<void>;
+  markChannelRead: (channelId: string) => void;
   /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
   /** Every Session id those hold — the development sidebar's "organization" folder membership test. */
@@ -335,6 +425,17 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     void store.getState().reloadOrgSessions(currentProjectId);
   }, [store, serverEnabled, currentProjectId, orgsLoaded, orgListKey, runsVersion, ticketsVersion]);
 
+  // The open organization's channels: the sidebar's list and every badge on it. Re-read when
+  // the organization changes and whenever a message event says one of its counters moved —
+  // the listing carries the server's read cursors, which no client-side bump can know.
+  const { currentOrgKey, versions } = state;
+  const messageVersion = versions.messages;
+  useEffect(() => {
+    const open = parseOrgKey(currentOrgKey);
+    if (!serverEnabled || open === null) return;
+    void store.getState().reloadChannels(open.projectId, open.orgId);
+  }, [store, serverEnabled, currentOrgKey, messageVersion]);
+
   useEffect(
     () => subscribeCompanyEvents((ev) => store.getState().applyCompanyEvent(ev, userId)),
     [store, userId],
@@ -369,9 +470,15 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       currentOrg,
       lastOrgKey: state.lastOrgKey,
       setCurrentOrg: state.setCurrentOrg,
-      chatUnread: state.chatUnread,
-      chatMentions: state.chatMentions,
-      setChatCounters: state.setChatCounters,
+      channels: state.channels,
+      channelsError: state.channelsError,
+      channelUnread: state.channelUnread,
+      channelMentions: state.channelMentions,
+      reloadChannels: () => {
+        const open = parseOrgKey(state.currentOrgKey);
+        return open === null ? Promise.resolve() : state.reloadChannels(open.projectId, open.orgId);
+      },
+      markChannelRead: state.markChannelRead,
       orgSessions: state.orgSessions,
       orgSessionIds,
       versions: state.versions,

@@ -39,7 +39,6 @@ export const zh = {
       calendar: "日历",
       tickets: "工单",
       finance: "财务",
-      chat: "群聊",
       handbook: "手册",
     },
   },
@@ -1790,7 +1789,7 @@ Benchmark：
     orgTriggerKinds: {
       init: "初始化",
       event: "日程",
-      mention: "群聊 @",
+      mention: "频道 @",
       ticket_notice: "工单通知",
       ticket_work: "工单任务",
     } as Record<string, string>,
@@ -2397,7 +2396,7 @@ Benchmark：
     /** The empty landing of `/org` when the user has no organization anywhere. */
     landingTitle: "公司模式",
     landingBody:
-      "组织是一群员工 Agent 按汇报线协作：一位 CEO、它招募的员工、共享的看板与群聊，以及驱动它们的日程。新建一个组织，先和 CEO 谈谈使命。",
+      "组织是一群员工 Agent 按汇报线协作：一位 CEO、它招募的员工、共享的看板与频道，以及驱动它们的日程。新建一个组织，先和 CEO 谈谈使命。",
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
@@ -2427,7 +2426,7 @@ Benchmark：
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
     timezone: "时区",
-    timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与群聊日志按它划分",
+    timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与频道日志按它划分",
     approvalMode: "审批模式",
     approvalModeInfo:
       "工位会话与工单会话的工具审批口径。无人值守的运行不会停下来等人拍板，所以这里没有「总是询问」。",
@@ -2445,7 +2444,7 @@ Benchmark：
       "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。",
     deleteOrg: "删除组织",
     deleteOrgConfirm: (name: string): string =>
-      `确认删除组织「${name}」？员工 Agent 与所有会话都会保留，删除的只是组织目录：组织图、日程、工单与群聊记录。`,
+      `确认删除组织「${name}」？员工 Agent 与所有会话都会保留，删除的只是组织目录：组织图、日程、工单与频道记录。`,
     deleted: "组织已删除",
     settingsLoadFailed: "组织设置读取失败",
     /** Employee state dot, and the CEO mark. */
@@ -2466,15 +2465,13 @@ Benchmark：
     noBudget: "不限",
     /** The company sidebar's session list: one group per organization, two folders inside. */
     sessionList: {
-      desks: (n: number): string => `工位（${n}）`,
-      tickets: (n: number): string => `工单（${n}）`,
+      menu: "会话",
+      menuLabel: "组织会话",
+      desks: (n: number): string => `工位会话（${n}）`,
+      ticketSessions: (n: number): string => `工单会话（${n}）`,
       empty: "这个组织还没有会话",
       untitledSession: "未命名会话",
-      loading: "加载中…",
       loadFailed: "会话列表加载失败",
-      viewInChart: "在组织图中查看",
-      viewTicket: "查看工单",
-      rowMenu: (name: string): string => `${name}：更多操作`,
     },
     overview: {
       title: "概览",
@@ -2490,16 +2487,16 @@ Benchmark：
       spend: "本周期支出",
       pending: "待我处理",
       pendingInfo:
-        "群聊里 @我 的未读消息、等你审核的工单，以及等你解开的被阻塞工单——组织里需要人来拍板的事都在这里。",
+        "频道里 @我 的未读消息、等你审核的工单，以及等你解开的被阻塞工单——组织里需要人来拍板的事都在这里。",
       mentions: (n: number): string => `${n} 条 @我 的消息`,
       reviewTickets: "审核中的工单",
       blockedByMe: "等我解开的工单",
       pendingEmpty: "暂时没有需要你处理的事",
-      recentChat: "群聊最新",
-      recentChatEmpty: "群聊里还没有消息",
+      recentMessages: "全员频道最新",
+      recentMessagesEmpty: "全员频道里还没有消息",
       alerts: "告警",
       alertsEmpty: "本周期没有预算告警",
-      openChat: "打开群聊",
+      openAllHands: "打开全员频道",
       /** A fresh organization: point the user at the CEO. */
       firstStep: "组织刚建立：先打开 CEO 的工位会话，确认使命、招募员工并安排日程。",
       /** The hero: who made it, how big it is, which period the spend counts. */
@@ -2530,7 +2527,7 @@ Benchmark：
       goToChart: "去组织图",
       goToCalendar: "去日历",
       /** "For me" rows. */
-      openMentions: "去群聊查看",
+      openMentions: "去频道查看",
       reviewHint: "审核通过拖到「已完成」，否则拒绝并写明理由",
       blockedHint: "在工单详情里解除阻塞",
       /** Today's timeline. */
@@ -2665,7 +2662,7 @@ Benchmark：
       moreEvents: (n: number): string => `还有 ${n} 项`,
       weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as readonly string[],
       allDay: "全天",
-      promptHint: "写下你希望员工在这一刻做的巡检，例如：检查看板、推进自己的工单、在群聊汇报",
+      promptHint: "写下你希望员工在这一刻做的巡检，例如：检查看板、推进自己的工单、在频道汇报",
       monthTitle: (year: number, month: number): string => `${year} 年 ${month} 月`,
       /** How an event recurs, for the legend: the period read as a cadence with the time of day. */
       cadence: {
@@ -2836,29 +2833,92 @@ Benchmark：
       /** A refetch failed while the last good data is still on screen. */
       refreshFailed: "刷新失败，显示的是上次加载的数据",
     },
-    chat: {
-      title: "群聊",
-      info: "组织的公共频道。只有 @ 才会打扰员工：@某位员工 会把消息送进它的工位会话，@all 送给所有员工；不带 @ 的消息只是留言，员工巡检时会读到。",
+    /**
+     * Channels — company mode's home surface. The sidebar lists them where development mode
+     * lists conversations; the channel view holds the header, the message stream and the
+     * composer. The all-hands channel's stored name is never shown: `allHands` is its label
+     * everywhere.
+     */
+    channels: {
+      /** The sidebar's list, its groups and the dialog above it. */
+      listTitle: "频道",
+      allHands: "全员频道",
+      mine: "我的频道",
+      others: "其他频道",
+      archivedGroup: "已归档",
+      newChannel: "新建频道",
+      noChannels: "还没有频道",
+      loadFailed: "频道列表加载失败",
+      join: "加入",
+      joining: "加入中…",
+      joined: "已加入频道",
+      /** A row's badges, and the sentence they lend to its accessible name. */
+      mentionChip: "@我",
+      badgeUnread: (n: number): string => `${n} 条未读`,
+      badgeMentions: (n: number): string => `${n} 条 @我`,
+      /** The channel header and what its controls do. */
+      streamLabel: (name: string): string => `「${name}」的消息`,
+      purpose: "主题",
+      purposeEmpty: "还没有写主题",
+      memberCount: (n: number): string => `${n} 人`,
+      memberList: "频道成员",
+      invite: "邀请",
+      inviteTitle: "邀请到频道",
+      inviteSearch: "搜索员工或成员",
+      inviteEmpty: "没有可邀请的人了",
+      invited: (name: string): string => `已邀请 ${name}`,
+      leave: "离开",
+      leaveTitle: "离开频道",
+      leaveConfirm: (name: string): string =>
+        `确认离开「${name}」？你仍然可以阅读，但不会再收到 @，也不能发言，直到重新加入。`,
+      left: "已离开频道",
+      channelMenu: "频道操作",
+      rename: "重命名",
+      renameTitle: "重命名频道",
+      editPurpose: "改主题",
+      purposeTitle: "修改频道主题",
+      archive: "归档",
+      unarchive: "取消归档",
+      archiveTitle: "归档频道",
+      archiveConfirm: (name: string): string =>
+        `确认归档「${name}」？归档后频道只读，并折叠进「已归档」，随时可以取消归档。`,
+      archived: "频道已归档",
+      unarchived: "已取消归档",
+      archivedNotice: "这个频道已归档，只读。取消归档后才能继续发言。",
+      notMemberNotice: "你还不是这个频道的成员。加入后才能发言。",
+      channelLoadFailed: "频道加载失败",
+      /** The "?" beside the channel name, in its two kinds. */
+      allHandsInfo:
+        "全员频道随组织一起创建：每位员工和每位 Project 成员都在其中，谁也不能退出，也不能归档；预算告警等系统通知都发在这里。",
+      channelInfo:
+        "受邀频道：员工只能由成员邀请进来，@ 也只在频道成员之间送达；人可以自行加入，并且可以阅读任何频道。",
+      /** The new-channel dialog. */
+      createTitle: "新建频道",
+      creating: "创建中…",
+      created: "频道已创建",
+      idField: "频道 id",
+      idHint: "2–64 个字符：小写字母开头，仅小写字母、数字和下划线",
+      idReserved: "default_channel 留给全员频道",
+      idTaken: "这个 id 已经被占用",
+      nameField: "显示名",
+      nameHint: "留空则用 id",
+      purposeHint: "一句话说明这个频道是做什么的",
+      /** The message stream. */
       empty: "还没有消息",
       emptyHint:
-        "只有 @ 才会打扰员工：@某位员工 送进它的工位会话，@all 送给所有人；不带 @ 的消息只是留言。",
-      placeholder: "写点什么… 输入 @ 提及员工或成员，Enter 发送",
+        "只有 @ 才会打扰员工：@某位员工 送进它的工位会话，@all 送给频道里所有成员；不带 @ 的消息只是留言。",
+      placeholder: "写点什么… 输入 @ 提及频道成员，Enter 发送",
       send: "发送",
-      system: "系统",
       you: "你",
       mentionAll: "所有人",
-      mentionAllDesc: "全部员工",
+      mentionAllDesc: "频道全部成员",
       employees: "员工",
       members: "成员",
-      noMentionMatch: "无匹配",
       earlierDays: "更早的记录",
       ticketRef: (id: string): string => `工单 ${id}`,
       sessionRef: "查看会话",
       replyTo: "回复",
       hop: (n: number): string => `第 ${n} 跳`,
-      /** The nav entry's badge: what is waiting behind it. */
-      badgeUnread: (n: number): string => `${n} 条未读`,
-      badgeMentions: (n: number): string => `${n} 条 @我`,
       /** Day separators, paging and the read cursor in the stream. */
       today: "今天",
       yesterday: "昨天",

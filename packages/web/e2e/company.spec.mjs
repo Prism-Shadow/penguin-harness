@@ -1,8 +1,10 @@
 /**
  * Company mode, end to end through the browser with the mock LLM: switch modes, create the
  * marketplace organization from the switcher, land on the CEO's desk conversation (its
- * initialization run is answered by the mock), find the CEO on the org chart, a ticket on the
- * board, and see a chat mention reach the CEO's desk as an `[org_trigger]` work run.
+ * initialization run is answered by the mock), find the CEO on the org chart and a ticket on
+ * the board, then work in the channels — post in the all-hands channel and see the mention
+ * reach the CEO's desk as an `[org_trigger]` work run, create a channel, invite the CEO into
+ * it, and post a mention there.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -108,8 +110,17 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.goto(`/org/${projectId}/${ORG}/tickets`);
   await expect(page.getByText("Build the marketplace site").first()).toBeVisible();
 
-  // A chat mention typed in the browser lands on the CEO's desk as a mention work run.
-  await page.goto(`/org/${projectId}/${ORG}/chat`);
+  // Channels are company mode's home surface: the sidebar lists them where development mode
+  // lists conversations, and the all-hands channel is pinned at its top.
+  await page.goto(`/org/${projectId}/${ORG}`);
+  await expect(page).toHaveURL(/channels\/default_channel/);
+  await page
+    .getByRole("link", { name: /^全员频道/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: /全员频道/ })).toBeVisible();
+
+  // A mention typed in the all-hands channel lands on the CEO's desk as a mention work run.
   const input = page.getByRole("textbox", { name: /写点什么/ });
   await expect(input).toBeVisible();
   await input.fill(`@${ORG}_ceo 先把站点搭起来，验收标准写在工单里。`);
@@ -126,6 +137,36 @@ test("company mode: create the organization, meet the CEO, see the board and the
       { timeout: 30_000 },
     )
     .toBe(true);
+
+  // A new channel: the dialog validates the id here, the sidebar gains a row, and the view
+  // opens on it.
+  await page.getByRole("button", { name: "新建频道", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "新建频道" })).toBeVisible();
+  await page.getByRole("textbox", { name: /^频道 id/ }).fill("site");
+  await page.getByRole("textbox", { name: /^显示名/ }).fill("Site launch");
+  await page.getByRole("textbox", { name: /^主题/ }).fill("站点从零到上线的一切");
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page).toHaveURL(/channels\/site/);
+  await expect(page.getByRole("heading", { name: /Site launch/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Site launch/ })).toBeVisible();
+
+  // Inviting the CEO: only then does an @ in this channel reach it (the server refuses a
+  // mention that leaves the channel's membership).
+  await page.getByRole("button", { name: "邀请", exact: true }).click();
+  await page.getByRole("textbox", { name: "搜索员工或成员" }).fill("ceo");
+  await page.getByRole("button", { name: /Plugin Marketplace CEO/ }).click();
+  await expect(page.getByText("已邀请").first()).toBeVisible();
+
+  // …and the mention posts, appears in this channel's stream, and reaches the desk.
+  const siteInput = page.getByRole("textbox", { name: /写点什么/ });
+  await siteInput.fill(`@${ORG}_ceo 站点频道成立，先出一版信息架构。`);
+  await siteInput.press("Enter");
+  await expect(page.getByText("站点频道成立").first()).toBeVisible();
+  const siteDay = await (
+    await page.request.get(api(`/organizations/${ORG}/channels/site/messages`))
+  ).json();
+  expect(siteDay.messages.some((m) => m.text.includes("站点频道成立"))).toBe(true);
+  expect(siteDay.messages.some((m) => m.mentions.includes(`agent:${ORG}_ceo`))).toBe(true);
 
   // The overview reflects it all: one employee, one proposed ticket, the mission on screen.
   await page.goto(`/org/${projectId}/${ORG}/overview`);
