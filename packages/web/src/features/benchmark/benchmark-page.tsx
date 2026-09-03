@@ -1,496 +1,239 @@
 /**
- * Benchmark page (read-only display):
- * the left directory lists Benchmarks grouped by Agent (the scoreboard is only fetched once
- * expanded); the right side shows the selected Benchmark's title info, a Score-only chart grouped
- * into series by each Evaluation's model ID and thinking level, and an evaluation detail table
- * with separate model ID and thinking-level columns. Rows expand to show the evaluation summary
- * and per-case scores, and Case rows further expand to show the raw results of each Run with a
- * Session link.
- * With a ?agentId= deep link, only the target Agent is expanded by default.
+ * Evaluation Center: every Benchmark of the Project grouped by the Agent it tests, with the
+ * loop a novice needs spelled out — create one (an AI prompt or a form), read its scores, hand
+ * it to an optimizer. A row carries the newest Score with its change, a sparkline of the
+ * scoreboard, when it was last evaluated, and inline actions; the detail (chart, evaluation
+ * table, case browser) opens in a right pane on wide layouts and takes the list's place on
+ * narrow ones. `?agentId=` expands only that Agent; `?benchmark=<agent>/<id>` opens one
+ * directly, and a selection writes that parameter back so the view can be shared.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type {
-  BenchmarkCaseScore,
-  BenchmarkCaseSummary,
-  BenchmarkEvaluation,
+  AgentSummary,
   BenchmarkSummary,
+  ModelsResponse,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
+import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
+import { STAT_ICONS } from "../../lib/stat-icons";
+import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { useLocale } from "../../state/locale";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Chevron } from "../../components/ui/chevron";
-import { Truncated } from "../../components/ui/truncated";
+import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { writeClipboard } from "../../components/ui/copy-button";
+import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
-import { Modal } from "../../components/ui/modal";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { GroupHeader } from "../../components/ui/group-list";
+import { HelpFold } from "../../components/ui/help-fold";
+import { CloseButton, MAGIC_WAND_ICON } from "../../components/ui/icons";
+import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
+import {
+  ELLIPSIS_ICON,
+  TRASH_ICON,
+  overflowMenuDangerClass,
+  overflowMenuGlyph,
+  overflowMenuRowClass,
+} from "../../components/ui/session-row-menu";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
-import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
-import { ChartFrame, useChartWidth } from "../usage/chart-svg";
-import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
-import type { EvaluationSeries } from "./benchmark-metrics";
-import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import { toastError, toastSuccess } from "../../components/ui/toast";
+import { AiCreateButton, AiCreateModal, CreateMenuButton, pickDefaultAgent } from "../ai-create";
+import { latestScore, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
+import { benchmarkCreateExamples, benchmarkCreateTail, benchmarkPath } from "./benchmark-prompts";
+import { BenchmarkDetail } from "./benchmark-detail";
+import { CreateBenchmarkModal } from "./create-benchmark-modal";
+import { OptimizeModal } from "./optimize-modal";
+import { ScoreSparkline } from "./score-sparkline";
 
-interface Selection {
+/** Where a Benchmark lives: the Agent it tests and its directory name. */
+interface BenchmarkRef {
   agentId: string;
-  benchmark: BenchmarkSummary;
+  benchmarkId: string;
 }
 
-/** Expandable tree node for a single Agent (benchmarks are only fetched once expanded; same shape as the AgentNode on the trace observability page). */
-function AgentNode({
-  projectId,
-  agentId,
-  name,
-  defaultOpen,
-  selection,
-  onSelect,
+/** One Agent's fetched list: null benchmarks with a null error means the fetch is in flight. */
+interface GroupState {
+  benchmarks: BenchmarkSummary[] | null;
+  error: string | null;
+}
+
+/** Left-pointing chevron of the narrow layout's back-to-list button. */
+const BACK_ICON = "m15 18-6-6 6-6";
+
+function deltaTone(delta: number | null): string {
+  if (delta === null || delta === 0) return toneInk.muted;
+  return delta > 0 ? toneInk.success : toneInk.danger;
+}
+
+/** The row's overflow menu: copy the directory path, and — for the owner — delete. */
+function RowMenu({
+  canDelete,
+  onCopyPath,
+  onDelete,
 }: {
-  projectId: string;
-  agentId: string;
-  name: string;
-  /** Whether initially expanded: all expanded when there's no deep link; only the target Agent expanded with a ?agentId= deep link. */
-  defaultOpen: boolean;
-  selection: Selection | null;
-  onSelect: (sel: Selection) => void;
+  canDelete: boolean;
+  onCopyPath: () => void;
+  onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open || benchmarks) return;
-    api
-      .listBenchmarks(projectId, agentId)
-      .then((data) => setBenchmarks(data.benchmarks))
-      .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId]);
-
-  return (
-    <li className="pt-2.5">
-      <div className="flex items-center px-1 pb-0.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
-        >
-          <AgentAvatar id={agentId} name={name} size={18} className="shrink-0 rounded" />
-          <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            {name}
-          </span>
-          <Chevron open={open} size={12} className="text-gray-400" />
-          <span className="min-w-0 flex-1" />
-        </button>
-      </div>
-      {open && (
-        <div className="anim-fade">
-          {error && <p className="px-2.5 py-1 text-xs text-red-500">{error}</p>}
-          {!benchmarks && !error && (
-            <p className="px-2.5 py-1 text-xs text-gray-400">{S.common.loading}</p>
-          )}
-          {benchmarks && benchmarks.length === 0 && (
-            <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
-              {S.benchmark.emptyAgent}
-            </p>
-          )}
-          <ul className="space-y-0.5">
-            {benchmarks?.map((b) => {
-              const active = selection?.agentId === agentId && selection.benchmark.id === b.id;
-              return (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect({ agentId, benchmark: b })}
-                    className={`flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
-                      active
-                        ? "bg-gray-200/70 dark:bg-gray-800"
-                        : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
-                    }`}
-                  >
-                    <Truncated
-                      text={b.title}
-                      className={`min-w-0 flex-1 text-sm ${
-                        active
-                          ? "font-medium text-gray-900 dark:text-gray-100"
-                          : "text-gray-700 dark:text-gray-300"
-                      }`}
-                    />
-                    <span className="shrink-0 font-mono text-[11px] text-gray-400">
-                      {b.caseCount}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </li>
-  );
-}
-
-/**
- * Score-over-time line chart. Scores remain valid on 0..100, while the visible y-axis is padded
- * around the observed range and clamped to those limits. Evaluations remain grouped by model ID
- * and thinking level so a runtime change stays visible without adding other metric modes.
- */
-function ScoreTrendChart({
-  evaluations,
-  series,
-}: {
-  evaluations: BenchmarkEvaluation[];
-  series: EvaluationSeries[];
-}) {
-  const [hover, setHover] = useState<number | null>(null);
-  const [ref, width] = useChartWidth();
-
-  const values = scoreValues(evaluations);
-  const scale = scoreScale(values);
-  const geom = makeRangeGeom(evaluations.length, scale.min, scale.max, width);
-  const dates = evaluations.map((e) => formatDateTime(e.time));
-
-  return (
-    <div ref={ref}>
-      {width > 0 && (
-        <ChartFrame
-          geom={geom}
-          fmtY={formatScore}
-          dates={dates}
-          hover={hover}
-          onHover={setHover}
-          yTicks={scale.ticks}
-          bubble={(i) => {
-            const e = evaluations[i]!;
-            const v = values[i] ?? null;
-            return (
-              <>
-                <p className="text-gray-400">{formatDateTime(e.time)}</p>
-                <p className="font-mono">
-                  {v === null ? "—" : formatScore(v)}
-                  {e.version !== undefined && (
-                    <span className="ml-1.5 text-gray-400">v{e.version}</span>
-                  )}
-                </p>
-                <p className="font-mono text-gray-400">
-                  {e.modelId} · {e.thinkingLevel}
-                </p>
-              </>
-            );
-          }}
-        >
-          {series.map((s, si) => {
-            const segments = lineSegments(seriesValues(evaluations, s));
-            return (
-              <g
-                key={s.key === "" ? "unlabeled" : s.key}
-                className={(s.modelId ? seriesColor(si) : NEUTRAL_SERIES).text}
-              >
-                {segments.map((seg, k) => {
-                  return (
-                    <g key={k}>
-                      {seg.length > 1 && (
-                        <path
-                          d={segmentPath(geom, seg)}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          opacity={hover !== null ? 0.35 : 1}
-                        />
-                      )}
-                      {seg.map((p) => (
-                        <circle
-                          key={p.index}
-                          cx={geom.x(p.index)}
-                          cy={geom.y(p.value)}
-                          r={hover === p.index ? 4 : 2.5}
-                          className="fill-current"
-                          opacity={hover !== null && hover !== p.index ? 0.25 : 1}
-                        />
-                      ))}
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
-        </ChartFrame>
-      )}
-    </div>
-  );
-}
-
-/**
- * Score chart + runtime legend. Provider is deliberately not part of chart identity.
- */
-function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
-  const series = modelSeries(evaluations);
-  const labelOf = (s: EvaluationSeries): string => {
-    if (!s.modelId) return S.benchmark.legendUnlabeled;
-    return s.thinkingLevel ? `${s.modelId} · ${s.thinkingLevel}` : s.modelId;
+  const [open, setOpen] = useState(false);
+  const run = (action: () => void) => {
+    setOpen(false);
+    action();
   };
   return (
-    <div>
-      <p className="mb-1 text-xs font-semibold text-gray-500">
-        {S.benchmark.trendTitle(S.benchmark.colScore)}
-      </p>
-      {series.length >= 2 && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {series.map((s, i) => (
-            <span
-              key={s.key === "" ? "unlabeled" : s.key}
-              className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
-            >
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.modelId ? seriesColor(i) : NEUTRAL_SERIES).swatch}`}
-              />
-              <span className="font-mono">{labelOf(s)}</span>
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      className="inline-block"
+      portal={{ direction: "down", align: "right" }}
+      menuClass="w-48"
+      button={
+        <Button
+          size="icon"
+          variant="ghost"
+          title={S.benchmark.moreActions}
+          aria-label={S.benchmark.moreActions}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.iconButton} filled />
+        </Button>
+      }
+    >
+      <div role="menu" className="py-1">
+        <button
+          type="button"
+          role="menuitem"
+          className={overflowMenuRowClass}
+          onClick={() => run(onCopyPath)}
+        >
+          {overflowMenuGlyph(STAT_ICONS.copy)}
+          {S.benchmark.copyPath}
+        </button>
+        {canDelete && (
+          <button
+            type="button"
+            role="menuitem"
+            className={overflowMenuDangerClass}
+            onClick={() => run(onDelete)}
+          >
+            <span className="shrink-0">
+              <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.inlineGlyph} />
             </span>
-          ))}
+            {S.benchmark.deleteBenchmark}
+          </button>
+        )}
+      </div>
+    </Dropdown>
+  );
+}
+
+/**
+ * One Benchmark in its Agent's group. The title block is the row's main button (it opens the
+ * detail); the number column shows the newest Score and its change from the previous one; the
+ * sparkline gives way at narrow container widths, where the action group wraps onto its own
+ * line under the title instead of squeezing it.
+ */
+function BenchmarkRow({
+  benchmark,
+  active,
+  locale,
+  canDelete,
+  onSelect,
+  onOptimize,
+  onCopyPath,
+  onDelete,
+}: {
+  benchmark: BenchmarkSummary;
+  active: boolean;
+  locale: "zh" | "en";
+  canDelete: boolean;
+  onSelect: () => void;
+  onOptimize: () => void;
+  onCopyPath: () => void;
+  onDelete: () => void;
+}) {
+  const latest = latestScore(benchmark.evaluations);
+  const series = sparklineSeries(benchmark.evaluations);
+  const meta = [
+    S.benchmark.caseCount(benchmark.caseCount),
+    S.benchmark.runsPerCase(benchmark.runs ?? 1),
+    ...(latest ? [S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))] : []),
+  ].join(" · ");
+  return (
+    <div
+      className={`@container flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 dark:border-gray-800/70 ${
+        active ? "bg-gray-100/80 dark:bg-gray-800/60" : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={active ? "true" : undefined}
+        className="min-w-0 flex-1 basis-40 text-left"
+      >
+        <span
+          className={`block truncate text-sm text-gray-800 dark:text-gray-100 ${active ? "font-semibold" : "font-medium"}`}
+        >
+          {benchmark.title}
+        </span>
+        {benchmark.description && (
+          <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+            {benchmark.description}
+          </span>
+        )}
+        <span className="mt-0.5 block truncate text-[11px] text-gray-400 dark:text-gray-500">
+          {meta}
+        </span>
+      </button>
+      {series.length > 0 && (
+        <div className="hidden shrink-0 @md:block">
+          <ScoreSparkline values={series} label={S.benchmark.sparklineLabel(series.length)} />
         </div>
       )}
-      <ScoreTrendChart evaluations={evaluations} series={series} />
-    </div>
-  );
-}
-
-const CELL = "px-3 py-2";
-
-/** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
-function EvaluationRow({
-  evaluation,
-  caseTitles,
-  onOpenCase,
-  currency,
-}: {
-  evaluation: BenchmarkEvaluation;
-  caseTitles: ReadonlyMap<string, string>;
-  onOpenCase: (caseId: string) => void;
-  currency: Currency;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-      >
-        <td className={CELL}>
-          <span className="flex items-center gap-1.5 text-xs">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            {formatDateTime(evaluation.time)}
-          </span>
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
-        </td>
-        <td
-          className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-          title={evaluation.provider}
-        >
-          {evaluation.modelId}
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.thinkingLevel}
-        </td>
-        <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
-          {formatScore(evaluation.score)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {formatMoney(evaluation.cost, currency)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
-        </td>
-      </tr>
-      {open && (
-        <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={7} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
-            {/* Evaluation summary title and body are displayed separately when present. */}
-            {(evaluation.summaryTitle || evaluation.summary) && (
-              <div className="mb-2">
-                {evaluation.summaryTitle ? (
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                    {evaluation.summaryTitle}
-                  </p>
-                ) : (
-                  <p className="text-xs font-semibold text-gray-500">{S.benchmark.summaryLabel}</p>
-                )}
-                {evaluation.summary && (
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-300">
-                    {evaluation.summary}
-                  </p>
-                )}
-              </div>
-            )}
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-500">
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colCase}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colScore}</th>
-                  <th className="px-2 py-1 font-medium">{S.common.cost}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colDuration}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colSession}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {evaluation.cases.map((c) => (
-                  <CaseRow
-                    key={c.case}
-                    caseScore={c}
-                    title={caseTitles.get(c.case)}
-                    onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
-                    currency={currency}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/**
- * Session id, for correlating a Run with what the side panel shows. It used to deep-link into the
- * Traces page; reading a Trace is now the side panel's job alone, so this is identification only.
- */
-function SessionCell({ sessionId }: { sessionId?: string }) {
-  if (!sessionId) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
-      {sessionId}
-    </span>
-  );
-}
-
-/**
- * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
- * results; the UI never recomputes averages.
- */
-function CaseRow({
-  caseScore: c,
-  title,
-  onOpenCase,
-  currency,
-}: {
-  caseScore: BenchmarkCaseScore;
-  title?: string;
-  onOpenCase?: (caseId: string) => void;
-  currency: Currency;
-}) {
-  const [open, setOpen] = useState(false);
-  const runs = c.runs;
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
-      >
-        <td className="px-2 py-1">
-          <span className="flex items-start gap-1.5">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            <span className="min-w-0">
-              {onOpenCase ? (
-                <button
-                  type="button"
-                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenCase(c.case);
-                  }}
-                >
-                  {title ?? c.case}
-                </button>
-              ) : (
-                <span className="block font-medium text-gray-800 dark:text-gray-200">
-                  {title ?? c.case}
-                </span>
-              )}
-              {title && title !== c.case && (
-                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
-              )}
-            </span>
-          </span>
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {formatMoney(c.cost, currency)}
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
-        </td>
-        <td className="px-2 py-1">
-          <span className="text-gray-400">—</span>
-        </td>
-      </tr>
-      {open &&
-        runs.map((run, i) => (
-          <tr key={i} className="text-xs text-gray-500 dark:text-gray-400">
-            {/* Indented run index row: #1, #2, ... (case-level metrics are their average) */}
-            <td className="py-1 pl-7 pr-2 font-mono">
-              {S.benchmark.colRun} #{i + 1}
-            </td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">
-              {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
-            </td>
-            <td className="px-2 py-1">
-              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
-            </td>
-          </tr>
-        ))}
-    </>
-  );
-}
-
-function CasesSection({
-  cases,
-  error,
-  onOpenCase,
-}: {
-  cases: BenchmarkCaseSummary[] | null;
-  error: string | null;
-  onOpenCase: (caseId: string) => void;
-}) {
-  return (
-    <div>
-      <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
-        {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
-        {cases?.map((item) => {
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onOpenCase(item.id)}
-              className="flex w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/70 dark:hover:bg-gray-800/50"
+      <div className="w-16 shrink-0 text-right">
+        {latest ? (
+          <>
+            <span
+              className="block font-mono text-sm font-semibold tabular-nums"
+              title={S.benchmark.latestScoreLabel}
             >
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {item.title}
-                </span>
-                <span className="block truncate font-mono text-[11px] text-gray-400">
-                  {item.id}
-                </span>
-              </span>
-              {/* Styled as the quiet gray action the Workspace download link is, not as a
-                  link: the row itself is the button, so an accent-colored label here read as
-                  a second, separately clickable target. Hover feedback comes from the row. */}
-              <span className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300">
-                {S.benchmark.viewCase}
-              </span>
-            </button>
-          );
-        })}
+              {formatScore(latest.score)}
+            </span>
+            <span className={`block truncate text-[11px] tabular-nums ${deltaTone(latest.delta)}`}>
+              {latest.delta === null
+                ? S.benchmark.firstEvaluation
+                : latest.delta === 0
+                  ? "0"
+                  : signedDelta(formatScore(latest.delta))}
+            </span>
+          </>
+        ) : (
+          <span className="block text-xs text-gray-400 dark:text-gray-500">
+            {S.benchmark.notEvaluated}
+          </span>
+        )}
+      </div>
+      <div
+        className={`flex shrink-0 items-center ${ICON_GAP.tight} @max-md:basis-full @max-md:justify-end`}
+      >
+        <Button size="sm" variant="primary" onClick={onOptimize}>
+          <GlyphIcon d={MAGIC_WAND_ICON} />
+          {S.benchmark.optimize}
+        </Button>
+        <Button size="sm" onClick={onSelect}>
+          {S.benchmark.view}
+        </Button>
+        <RowMenu canDelete={canDelete} onCopyPath={onCopyPath} onDelete={onDelete} />
       </div>
     </div>
   );
@@ -498,152 +241,446 @@ function CasesSection({
 
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
-  const { currentProject, agents, agentsLoading } = useProject();
-  const { currency } = useTheme();
+  const { currentProject, currentAgent, agents, agentsLoading } = useProject();
+  const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
-  // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
-  const [searchParams] = useSearchParams();
+  const isOwner = currentProject?.role === "owner";
+  const [searchParams, setSearchParams] = useSearchParams();
+  // ?agentId= (entered from an Agent's settings): only that Agent's group starts expanded.
   const focusAgentId = searchParams.get("agentId");
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
-  const [caseError, setCaseError] = useState<string | null>(null);
-  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  const deepLink = searchParams.get("benchmark");
 
-  // Clear the selection when the Project changes.
+  const [groups, setGroups] = useState<Record<string, GroupState>>({});
+  // Agents whose group is in the opposite state from its default (all open, or only the focused one).
+  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
+  const [query, setQuery] = useState("");
+  const [selection, setSelection] = useState<BenchmarkRef | null>(null);
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiTarget, setAiTarget] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualAgent, setManualAgent] = useState<string | null>(null);
+  const [optimizing, setOptimizing] = useState<BenchmarkRef | null>(null);
+  const [deleting, setDeleting] = useState<BenchmarkRef | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const appliedDeepLink = useRef<string | null>(null);
+
+  const defaultOpen = useCallback(
+    (agentId: string) => focusAgentId === null || focusAgentId === agentId,
+    [focusAgentId],
+  );
+  const isOpen = (agentId: string) => defaultOpen(agentId) !== toggled.has(agentId);
+  const toggle = (agentId: string) =>
+    setToggled((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+
+  // A Project change starts everything over.
   useEffect(() => {
+    setGroups({});
     setSelection(null);
+    setToggled(new Set());
+    setModels(null);
   }, [projectId]);
 
+  // Every Agent's list is fetched up front: the search box, the counts and the deep link
+  // need them all. The join keeps the effect keyed on the set of ids, not the array identity
+  // the provider hands out on every reload.
+  const agentIds = agents.map((a) => a.agentId).join(" ");
   useEffect(() => {
-    setCaseStatements(null);
-    setCaseError(null);
-    setOpenCaseId(null);
-    if (!projectId || !selection) return;
+    if (!projectId || agentIds === "") return;
     let cancelled = false;
-    api
-      .listBenchmarkCases(projectId, selection.agentId, selection.benchmark.id)
-      .then((data) => {
-        if (!cancelled) setCaseStatements(data.cases);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setCaseError(apiErrorText(error));
-      });
+    for (const agentId of agentIds.split(" ")) {
+      api
+        .listBenchmarks(projectId, agentId)
+        .then((data) => {
+          if (!cancelled) {
+            setGroups((g) => ({ ...g, [agentId]: { benchmarks: data.benchmarks, error: null } }));
+          }
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) {
+            setGroups((g) => ({ ...g, [agentId]: { benchmarks: null, error: apiErrorText(e) } }));
+          }
+        });
+    }
     return () => {
       cancelled = true;
     };
-  }, [projectId, selection]);
+  }, [projectId, agentIds]);
+
+  // The Project's models, for the Optimize dialog's session-model picker; a failure just
+  // leaves the picker at the Project default.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    api
+      .getModels(projectId)
+      .then((res) => {
+        if (!cancelled) setModels(res);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const select = useCallback(
+    (ref: BenchmarkRef | null) => {
+      setSelection(ref);
+      const value = ref ? `${ref.agentId}/${ref.benchmarkId}` : null;
+      appliedDeepLink.current = value;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value === null) next.delete("benchmark");
+          else next.set("benchmark", value);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // ?benchmark=<agent>/<id>: applied once its Agent's list has arrived, expanding the group
+  // when the focus mode left it collapsed.
+  useEffect(() => {
+    if (deepLink === null || appliedDeepLink.current === deepLink) return;
+    const slash = deepLink.indexOf("/");
+    if (slash <= 0) return;
+    const agentId = deepLink.slice(0, slash);
+    const benchmarkId = deepLink.slice(slash + 1);
+    const group = groups[agentId];
+    if (!group || group.benchmarks === null) return;
+    appliedDeepLink.current = deepLink;
+    if (!group.benchmarks.some((b) => b.id === benchmarkId)) return;
+    setSelection({ agentId, benchmarkId });
+    if (!defaultOpen(agentId)) {
+      setToggled((prev) => (prev.has(agentId) ? prev : new Set(prev).add(agentId)));
+    }
+  }, [deepLink, groups, defaultOpen]);
 
   if (!projectId) return null;
 
-  const bm = selection?.benchmark ?? null;
-  // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
-  // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
-  const evaluations = bm ? [...bm.evaluations] : [];
-  const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
-  const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
+  const fallbackAgent = currentAgent?.agentId ?? pickDefaultAgent(agents)?.agentId ?? "";
+  const openAi = (agentId: string | null) => {
+    setAiTarget(agentId ?? fallbackAgent);
+    setAiOpen(true);
+  };
+  const openManual = (agentId: string | null) => {
+    setManualAgent(agentId ?? (fallbackAgent === "" ? null : fallbackAgent));
+    setManualOpen(true);
+  };
+
+  const benchmarkOf = (ref: BenchmarkRef | null): BenchmarkSummary | null =>
+    ref ? (groups[ref.agentId]?.benchmarks?.find((b) => b.id === ref.benchmarkId) ?? null) : null;
+  const agentOf = (ref: BenchmarkRef | null): AgentSummary | null =>
+    ref ? (agents.find((a) => a.agentId === ref.agentId) ?? null) : null;
+  const selected = benchmarkOf(selection);
+  const selectedAgent = agentOf(selection);
+  const optimizingBenchmark = benchmarkOf(optimizing);
+  const deletingBenchmark = benchmarkOf(deleting);
+
+  const copyPath = (ref: BenchmarkRef) => {
+    writeClipboard(benchmarkPath(ref.agentId, ref.benchmarkId));
+    toastSuccess(S.benchmark.pathCopied);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    const ref = deleting;
+    setDeleteBusy(true);
+    try {
+      await api.deleteBenchmark(projectId, ref.agentId, ref.benchmarkId);
+      toastSuccess(S.benchmark.deleted);
+      setGroups((g) => ({
+        ...g,
+        [ref.agentId]: {
+          benchmarks: (g[ref.agentId]?.benchmarks ?? []).filter((b) => b.id !== ref.benchmarkId),
+          error: null,
+        },
+      }));
+      if (selection?.agentId === ref.agentId && selection.benchmarkId === ref.benchmarkId) {
+        select(null);
+      }
+      setDeleting(null);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const onCreated = (agentId: string, benchmark: BenchmarkSummary) => {
+    setGroups((g) => ({
+      ...g,
+      [agentId]: {
+        benchmarks: [...(g[agentId]?.benchmarks ?? []), benchmark].sort((a, b) =>
+          a.id.localeCompare(b.id),
+        ),
+        error: null,
+      },
+    }));
+    if (!isOpen(agentId)) toggle(agentId);
+    select({ agentId, benchmarkId: benchmark.id });
+  };
+
+  const searching = query.trim() !== "";
+  const settled = agents.every((a) => {
+    const g = groups[a.agentId];
+    return g !== undefined && (g.benchmarks !== null || g.error !== null);
+  });
+  const total = agents.reduce((n, a) => n + (groups[a.agentId]?.benchmarks?.length ?? 0), 0);
+  const anyError = agents.some((a) => (groups[a.agentId]?.error ?? null) !== null);
+  const visible = agents
+    .map((agent) => ({
+      agent,
+      group: groups[agent.agentId],
+      rows: (groups[agent.agentId]?.benchmarks ?? []).filter((b) =>
+        matchesBenchmarkQuery(b, agent, query),
+      ),
+    }))
+    .filter(({ rows }) => !searching || rows.length > 0);
+
+  let body;
+  if (agentsLoading) {
+    body = <SkeletonList rows={4} />;
+  } else if (agents.length === 0) {
+    body = <EmptyState title={S.aiCreate.noAgent} />;
+  } else if (settled && total === 0 && !anyError) {
+    body = (
+      <EmptyState
+        title={S.benchmark.emptyTitle}
+        description={S.benchmark.emptyDescription}
+        action={<AiCreateButton variant="primary" onClick={() => openAi(null)} />}
+      />
+    );
+  } else if (searching && visible.length === 0) {
+    body = <EmptyState title={S.benchmark.noMatches} />;
+  } else {
+    body = (
+      <ul className="space-y-4">
+        {visible.map(({ agent, group, rows }) => {
+          const open = isOpen(agent.agentId);
+          const name = agentDisplayName(agent);
+          return (
+            <li key={agent.agentId}>
+              <GroupHeader
+                open={open}
+                onToggle={() => toggle(agent.agentId)}
+                icon={
+                  <AgentAvatar
+                    id={agent.agentId}
+                    name={name}
+                    size={ICON_SIZE.groupHeaderAvatar}
+                    className="shrink-0 rounded"
+                  />
+                }
+                label={name}
+                uppercase
+                {...(group?.benchmarks ? { count: group.benchmarks.length } : {})}
+                actions={
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title={S.benchmark.createForAgent}
+                    aria-label={S.benchmark.createForAgent}
+                    onClick={() => openAi(agent.agentId)}
+                  >
+                    <GlyphIcon d={MAGIC_WAND_ICON} size={ICON_SIZE.groupHeaderAction} />
+                  </Button>
+                }
+              />
+              {open && (
+                <div className="mt-1 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  {group === undefined || (group.benchmarks === null && group.error === null) ? (
+                    <SkeletonList rows={2} />
+                  ) : group.error !== null ? (
+                    <p className={`px-3 py-2 text-xs ${toneInk.danger}`}>{group.error}</p>
+                  ) : rows.length === 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
+                      <span>{S.benchmark.emptyAgent}</span>
+                      <Button size="sm" variant="ghost" onClick={() => openAi(agent.agentId)}>
+                        <GlyphIcon d={MAGIC_WAND_ICON} />
+                        {S.benchmark.createForAgent}
+                      </Button>
+                    </div>
+                  ) : (
+                    rows.map((b) => {
+                      const ref = { agentId: agent.agentId, benchmarkId: b.id };
+                      return (
+                        <BenchmarkRow
+                          key={b.id}
+                          benchmark={b}
+                          active={
+                            selection?.agentId === agent.agentId && selection.benchmarkId === b.id
+                          }
+                          locale={locale}
+                          canDelete={isOwner}
+                          onSelect={() => select(ref)}
+                          onOptimize={() => setOptimizing(ref)}
+                          onCopyPath={() => copyPath(ref)}
+                          onDelete={() => setDeleting(ref)}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  const detailOpen = selection !== null && selected !== null && selectedAgent !== null;
 
   return (
-    <div className="flex h-full flex-col md:flex-row">
-      {/* Directory tree: Agent -> Benchmark (left column on >=md; collapsible top area on <md) */}
-      <aside className="max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
-        <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
-          {S.benchmark.title}
-        </p>
-        {agentsLoading ? (
-          <SkeletonList rows={4} />
-        ) : (
-          <ul>
-            {agents.map((a) => (
-              <AgentNode
-                key={a.agentId}
-                projectId={projectId}
-                agentId={a.agentId}
-                name={agentDisplayName(a)}
-                defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
-                selection={selection}
-                onSelect={setSelection}
-              />
-            ))}
-          </ul>
-        )}
-      </aside>
-
-      <section className="min-w-0 flex-1 overflow-y-auto p-3 md:p-4">
-        {selection && bm ? (
-          // Changing the key on Benchmark switch resets expand state (a detail row's open doesn't linger across Benchmarks).
-          <div key={`${selection.agentId}/${bm.id}`} className="mx-auto max-w-4xl space-y-4">
-            {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
-            <div>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
-                <span className="text-xs text-gray-500">{S.benchmark.caseCount(bm.caseCount)}</span>
-              </div>
-              {bm.description && (
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
-              )}
-            </div>
-
-            <CasesSection cases={caseStatements} error={caseError} onOpenCase={setOpenCaseId} />
-
-            {evaluations.length === 0 ? (
-              <EmptyState title={S.benchmark.noEvaluations} />
-            ) : (
-              <>
-                <TrendSection evaluations={evaluations} />
-
-                <div>
-                  <p className="mb-1 text-xs font-semibold text-gray-500">
-                    {S.benchmark.evaluations}
-                  </p>
-                  <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <table className="w-full min-w-[720px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                          <th className="px-3 py-2.5">{S.common.time}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
-                          <th className="px-3 py-2.5">{S.common.cost}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...evaluations].reverse().map((ev, i) => (
-                          <EvaluationRow
-                            key={i}
-                            evaluation={ev}
-                            caseTitles={caseTitles}
-                            onOpenCase={setOpenCaseId}
-                            currency={currency}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-            {openCase && (
-              <Modal
-                open
-                title={openCase.title}
-                widthClass="sm:max-w-6xl"
-                onClose={() => setOpenCaseId(null)}
-              >
-                <BenchmarkCaseBrowser
-                  projectId={projectId}
-                  agentId={selection.agentId}
-                  benchmarkId={bm.id}
-                  caseSummary={openCase}
-                />
-              </Modal>
-            )}
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b border-gray-200 px-4 py-3 md:px-6 dark:border-gray-800">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold">{S.benchmark.title}</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{S.benchmark.subtitle}</p>
           </div>
-        ) : (
-          <EmptyState title={S.benchmark.selectBenchmark} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              size="sm"
+              aria-label={S.benchmark.searchPlaceholder}
+              placeholder={S.benchmark.searchPlaceholder}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-56"
+            />
+            <CreateMenuButton
+              size="sm"
+              label={S.benchmark.newBenchmark}
+              onAi={() => openAi(null)}
+              onManual={() => openManual(null)}
+            />
+          </div>
+        </div>
+        <HelpFold title={S.benchmark.guideTitle} className="mt-2">
+          <ol className="list-decimal space-y-1 pl-4">
+            {S.benchmark.guideSteps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          <p className="mt-1.5">{S.benchmark.guideNote}</p>
+        </HelpFold>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <section
+          aria-label={S.benchmark.title}
+          className={`@container min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-4 ${
+            detailOpen
+              ? "hidden lg:block lg:w-[44%] lg:min-w-[26rem] lg:max-w-xl lg:flex-none lg:border-r lg:border-gray-200 lg:dark:border-gray-800"
+              : ""
+          }`}
+        >
+          {body}
+        </section>
+        {selection !== null && selected !== null && selectedAgent !== null && (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
+              <Button size="sm" variant="ghost" className="lg:hidden" onClick={() => select(null)}>
+                <GlyphIcon d={BACK_ICON} />
+                {S.benchmark.backToList}
+              </Button>
+              <AgentAvatar
+                id={selectedAgent.agentId}
+                name={agentDisplayName(selectedAgent)}
+                size={ICON_SIZE.rowLead}
+                className="shrink-0 rounded"
+              />
+              <span className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+                {agentDisplayName(selectedAgent)}
+              </span>
+              <span className="min-w-0 flex-1" />
+              <Button size="sm" variant="primary" onClick={() => setOptimizing(selection)}>
+                <GlyphIcon d={MAGIC_WAND_ICON} />
+                {S.benchmark.optimize}
+              </Button>
+              <CloseButton
+                onClose={() => select(null)}
+                title={S.benchmark.closeDetail}
+                className="hidden lg:block"
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
+              <BenchmarkDetail
+                key={`${selection.agentId}/${selected.id}`}
+                projectId={projectId}
+                agentId={selection.agentId}
+                benchmark={selected}
+              />
+            </div>
+          </section>
         )}
-      </section>
+      </div>
+
+      <AiCreateModal
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        title={S.benchmark.aiCreateTitle}
+        description={S.benchmark.aiCreateDescription}
+        agents={agents}
+        examples={benchmarkCreateExamples()}
+        {...(aiTarget !== "" ? { tail: benchmarkCreateTail(aiTarget) } : {})}
+        intro={
+          <Select
+            size="sm"
+            label={S.benchmark.targetAgent}
+            hint={S.benchmark.targetAgentHint}
+            value={aiTarget}
+            onChange={(e) => setAiTarget(e.target.value)}
+          >
+            {agents.map((a) => (
+              <option key={a.agentId} value={a.agentId}>
+                {agentDisplayName(a)}
+              </option>
+            ))}
+          </Select>
+        }
+      />
+      <CreateBenchmarkModal
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        projectId={projectId}
+        agents={agents}
+        initialAgentId={manualAgent}
+        onCreated={onCreated}
+      />
+      {optimizing && optimizingBenchmark && (
+        <OptimizeModal
+          key={`${optimizing.agentId}/${optimizing.benchmarkId}`}
+          open
+          onClose={() => setOptimizing(null)}
+          projectId={projectId}
+          agentId={optimizing.agentId}
+          benchmark={optimizingBenchmark}
+          agents={agents}
+          models={models}
+        />
+      )}
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.benchmark.deleteBenchmark}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => void confirmDelete()}
+        confirmLabel={S.common.delete}
+        busy={deleteBusy}
+      >
+        <p className="text-sm text-gray-700 dark:text-gray-200">
+          {S.benchmark.deleteConfirm(deletingBenchmark?.title ?? deleting?.benchmarkId ?? "")}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

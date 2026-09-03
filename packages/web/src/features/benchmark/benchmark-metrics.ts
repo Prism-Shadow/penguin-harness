@@ -102,3 +102,61 @@ export function seriesValues(
   const own = new Set(series.indices);
   return scoreValues(evaluations).map((v, i) => (own.has(i) ? v : null));
 }
+
+/** Minimal evaluation shape for the list rows: the stored Score and when it was recorded. */
+export interface TrendSourceLike extends MetricSourceLike {
+  time: string;
+}
+
+/** Finite Scores in scoreboard order — the row sparkline's series (a malformed value is skipped, never drawn as zero). */
+export function sparklineSeries(evaluations: readonly MetricSourceLike[]): number[] {
+  return scoreValues(evaluations).filter((v): v is number => v !== null);
+}
+
+export interface LatestScore {
+  score: number;
+  /** Change from the previous finite Score; null on the first scored evaluation. */
+  delta: number | null;
+  /** When the newest scored evaluation was recorded. */
+  time: string;
+}
+
+/** The newest finite Score with its change from the one before and its time; null while nothing is scored. */
+export function latestScore(evaluations: readonly TrendSourceLike[]): LatestScore | null {
+  const scored = evaluations.filter((e) => typeof e.score === "number" && Number.isFinite(e.score));
+  const last = scored[scored.length - 1];
+  if (!last) return null;
+  const previous = scored[scored.length - 2];
+  return {
+    score: last.score,
+    delta: previous ? last.score - previous.score : null,
+    time: last.time,
+  };
+}
+
+/**
+ * Default optimization target: ten points above the baseline as a whole number, capped at the
+ * 100-point scale; 80 when nothing is scored yet (the optimizer then still needs a baseline,
+ * which the dialog says out loud).
+ */
+export function defaultTargetScore(baseline: number | null): number {
+  if (baseline === null) return 80;
+  return Math.min(100, Math.ceil(baseline) + 10);
+}
+
+/** Whether a row survives the search box: a case-insensitive substring of its title, description or id, or of the owning agent's name or id. */
+export function matchesBenchmarkQuery(
+  benchmark: { id: string; title: string; description?: string },
+  agent: { agentId: string; name?: string },
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  return [
+    benchmark.title,
+    benchmark.description ?? "",
+    benchmark.id,
+    agent.name ?? "",
+    agent.agentId,
+  ].some((s) => s.toLowerCase().includes(q));
+}

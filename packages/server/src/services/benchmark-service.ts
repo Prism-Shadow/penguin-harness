@@ -1,11 +1,13 @@
 /**
- * Benchmark score reading (read-only display): walks `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title, description, per-case run count `runs`) and
- * `scoreboard.yaml` (evaluations[], each case carries its model-written averages
- * and a runs array).
- * Content is created and refined by benchmark_builder; the server only reads it.
- * Missing or corrupt files always degrade gracefully (title falls back to the
- * directory name, scores come back empty) rather than throwing.
+ * Benchmark score reading: walks `benchmarks/<id>/`, reads `benchmark_config.toml` (title,
+ * description, per-case run count `runs`) and `scoreboard.yaml` (evaluations[], each case
+ * carries its model-written averages and a runs array).
+ * Content is normally created and refined by the benchmark-design Skill; the server also
+ * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
+ * directory whole (`remove`), and never touches a scoreboard.
+ * `benchmark_config.toml` is what makes a directory a Benchmark: `list` skips one without it.
+ * Files that are there but corrupt degrade gracefully (title falls back to the directory
+ * name, scores come back empty) rather than throwing.
  *
  * Case and Evaluation averages are authoritative file values. The server validates
  * the current shape but never recomputes aggregates and does not migrate or backfill
@@ -14,8 +16,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as parseToml } from "smol-toml";
-import { parse as parseYaml } from "yaml";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCaseScore,
@@ -36,6 +38,22 @@ import type {
 import { HttpError } from "../http/errors.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
+
+/** One case of a hand-made Benchmark; ids are validated by the route before they reach the filesystem. */
+export interface BenchmarkCaseInput {
+  id: string;
+  title: string;
+  statement: string;
+  rubric: string;
+}
+
+export interface BenchmarkCreateInput {
+  id: string;
+  title: string;
+  description?: string;
+  runs: number;
+  cases: BenchmarkCaseInput[];
+}
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -204,9 +222,107 @@ export class BenchmarkService {
     }
     const benchmarks: BenchmarkSummary[] = [];
     for (const item of items.filter((i) => i.isDir).sort((a, b) => a.name.localeCompare(b.name))) {
-      benchmarks.push(await this.readBenchmark(path.join(dir, item.name), item.name));
+      const benchDir = path.join(dir, item.name);
+      // Only `benchmark_config.toml` makes a directory a Benchmark — it is the file the
+      // evaluation Skills require, and without it there is no title and no run count. A
+      // Benchmark deleted while an evaluation is still running comes back as the paths that
+      // run keeps writing, config not among them; that debris is not a Benchmark and is not
+      // listed. Absence of results is not absence of a Benchmark: one that has never run has
+      // its config and lists as usual.
+      try {
+        await fs.access(path.join(benchDir, "benchmark_config.toml"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        continue;
+      }
+      benchmarks.push(await this.readBenchmark(benchDir, item.name));
     }
     return { benchmarks };
+  }
+
+  /**
+   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
+   * (title, description, runs), `scoreboard.yaml` with an empty evaluations list, and per case
+   * `statement/README.md` (`# <title>`, then the statement) and `rubric/README.md` (the rubric
+   * verbatim). An existing directory is a 409, never merged into: a Benchmark's scores stay
+   * comparable only while its cases are rewritten by nothing but the Skills. A half-written
+   * directory is removed again when a later write fails.
+   */
+  async create(
+    projectId: string,
+    agentId: string,
+    input: BenchmarkCreateInput,
+  ): Promise<BenchmarkSummary> {
+    const dir = benchmarksDir(this.root, projectId, agentId);
+    const benchDir = path.join(dir, input.id);
+    await fs.mkdir(dir, { recursive: true });
+    try {
+      // A non-recursive mkdir is the existence check: it fails atomically on a directory
+      // that is already there, so two creates of one id cannot both proceed.
+      await fs.mkdir(benchDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new HttpError(409, "benchmark_exists", `Benchmark already exists: ${input.id}`);
+      }
+      throw error;
+    }
+    try {
+      const config = {
+        title: input.title,
+        ...(input.description !== undefined && input.description !== ""
+          ? { description: input.description }
+          : {}),
+        runs: input.runs,
+      };
+      await fs.writeFile(
+        path.join(benchDir, "benchmark_config.toml"),
+        `${stringifyToml(config)}\n`,
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(benchDir, "scoreboard.yaml"),
+        stringifyYaml({ evaluations: [] }),
+        "utf8",
+      );
+      for (const item of input.cases) {
+        const caseDir = path.join(benchDir, item.id);
+        await fs.mkdir(path.join(caseDir, "statement"), { recursive: true });
+        await fs.mkdir(path.join(caseDir, "rubric"), { recursive: true });
+        await fs.writeFile(
+          path.join(caseDir, "statement", "README.md"),
+          `# ${item.title.trim()}\n\n${item.statement.trim()}\n`,
+          "utf8",
+        );
+        await fs.writeFile(
+          path.join(caseDir, "rubric", "README.md"),
+          `${item.rubric.trim()}\n`,
+          "utf8",
+        );
+      }
+    } catch (error) {
+      await fs.rm(benchDir, { recursive: true, force: true });
+      throw error;
+    }
+    return this.readBenchmark(benchDir, input.id);
+  }
+
+  /**
+   * Removes `benchmarks/<id>/` whole — cases, config and scoreboard. Only a real directory
+   * counts as existing: a symlink there is not followed, so nothing outside the Agent's own
+   * benchmarks directory can be deleted through this route.
+   */
+  async remove(projectId: string, agentId: string, benchmarkId: string): Promise<void> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
+    let isDirectory = false;
+    try {
+      isDirectory = (await fs.lstat(benchDir)).isDirectory();
+    } catch {
+      // Missing: reported below as not found.
+    }
+    if (!isDirectory) {
+      throw new HttpError(404, "not_found", `Benchmark does not exist: ${benchmarkId}`);
+    }
+    await fs.rm(benchDir, { recursive: true, force: true });
   }
 
   async listCases(

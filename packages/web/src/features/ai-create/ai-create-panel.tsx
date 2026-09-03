@@ -46,6 +46,26 @@ export interface AiCreatePanelProps {
 /** Minimum height of the prompt box, in rows; it grows with its content beyond that. */
 const MIN_ROWS = 6;
 
+/**
+ * The folded preview of what is actually sent, with a copy button. Shown wherever a surface
+ * appends a fixed tail to the draft — this panel, and the dialogs that collect the tail's
+ * parameters in a form of their own instead.
+ */
+export function PromptFold({ text }: { text: string }) {
+  return (
+    <HelpFold title={S.aiCreate.fullPrompt}>
+      <div className="relative">
+        <pre className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 pr-8 font-sans text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+          {text}
+        </pre>
+        <div className="absolute top-1.5 right-1.5">
+          <CopyButton text={text} label={S.aiCreate.copyPrompt} />
+        </div>
+      </div>
+    </HelpFold>
+  );
+}
+
 const exampleClass =
   "min-w-0 rounded-md border px-2.5 py-1.5 text-left transition-colors duration-150 " +
   "disabled:cursor-not-allowed disabled:opacity-60";
@@ -155,18 +175,7 @@ export function AiCreatePanel({
         </div>
       )}
 
-      {fullPrompt !== null && (
-        <HelpFold title={S.aiCreate.fullPrompt}>
-          <div className="relative">
-            <pre className="max-h-48 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-2 pr-8 font-sans text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-              {fullPrompt}
-            </pre>
-            <div className="absolute top-1.5 right-1.5">
-              <CopyButton text={fullPrompt} label={S.aiCreate.copyPrompt} />
-            </div>
-          </div>
-        </HelpFold>
-      )}
+      {fullPrompt !== null && <PromptFold text={fullPrompt} />}
     </div>
   );
 }
