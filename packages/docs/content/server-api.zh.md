@@ -232,7 +232,9 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?` |
 | PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
 | GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
-| GET / PUT | /:orgId/handbook | 组织手册（`README.md`） |
+| GET / PUT | /:orgId/handbook | 组织手册索引（`handbook/README.md`） |
+| GET | /:orgId/handbook/files | 知识库文件清单，索引在前 |
+| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
 | GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
 | GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项 |
 | GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |

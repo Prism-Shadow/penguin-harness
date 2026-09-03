@@ -232,7 +232,9 @@ All paths below are under `/api/projects/:projectId/organizations`. Every route 
 | POST | /:orgId/employees | Hire: `{agentId}` for an existing Agent or `{newAgent: {agentId, name?, description?, plugins?}}`, plus `title`, `reportsTo`, `workspace?`, `budget?`, `duties?`, `model?` |
 | PATCH / DELETE | /:orgId/employees/:agentId | Change title, manager, workspace, budget (`null` clears), duties, model / leave (subordinates move up to the manager; the CEO cannot leave) |
 | GET / POST | /:orgId/employees/:agentId/desk | The desk session (opened when missing) / a renewed desk session |
-| GET / PUT | /:orgId/handbook | The organization handbook (`README.md`) |
+| GET / PUT | /:orgId/handbook | The handbook index (`handbook/README.md`) |
+| GET | /:orgId/handbook/files | The knowledge-base files, the index first |
+| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | One document by relative path; the index cannot be deleted |
 | GET / POST | /:orgId/calendar | Every employee's events with their run state / create: `{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
 | GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | One event |
 | GET / POST | /:orgId/tickets | The board by column (plus unparsable files) / create: `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |

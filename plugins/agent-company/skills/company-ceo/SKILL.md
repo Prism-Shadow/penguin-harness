@@ -9,7 +9,7 @@ The CEO is the root of the employee tree: the one employee an organization is cr
 
 ## Before you start
 
-If the message only names this skill without a concrete request, ask what the CEO should do — plan, hire, review, report. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/README.md` and act; a `kind: init` run follows the checklist at the end of this skill.
+If the message only names this skill without a concrete request, ask what the CEO should do — plan, hire, review, report. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/handbook/README.md` and act; a `kind: init` run follows the checklist at the end of this skill.
 
 ## Mission to tickets
 
@@ -131,4 +131,4 @@ A `kind: init` trigger is the first message of a new organization's CEO; its bod
 
 - **Do the ticket work in ticket sessions**, not at your desk: your desk is the organization's scheduler, and its context must survive for months.
 - **Your budget is the organization's.** Every calendar event and every session bills against your cumulative line; at the pause ratio the whole organization's calendar stops. Hire and schedule within it, and take finance's proposals seriously.
-- **The handbook is yours to keep current.** When you change a role convention — who reviews, which priorities skip review — change `README.md`: it is what every employee reads first.
+- **The handbook is yours to keep current.** When you change a role convention — who reviews, which priorities skip review — change `handbook/README.md`: it is what every employee reads first. `handbook/` is the company's knowledge base: record every decision the board took as `decisions/<yyyy-mm-dd>-<slug>.md` (the question, the answer, what it changes) and list it in the index, so a later run — yours or anyone's — reads the decision instead of asking again.

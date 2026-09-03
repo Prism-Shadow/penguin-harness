@@ -9,7 +9,7 @@
 
 Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent 组成一个**组织**：以 CEO 为根的汇报树，每位员工一个常设的**工位会话**，作为唯一周期性驱动的**日程**，承载工作的五列**工单看板**，只有 `@` 才会打扰到人的**群聊**，以及按员工设定、80% 告警、100% 暂停该员工日程的月度**预算**。创建组织只需一句话使命，且只生成 CEO；CEO 在工位上的初始化会话里招募人事、财务与其余角色，划分公共工作区，为大家安排日程，开出首批工单。
 
-组织的每一部分都是 `<project>/organizations/<org_id>/` 下的文件：`org_config.toml`、`org_chart.yaml`（员工树，含各员工的预算、工作区与 Model）、`desks.toml`（服务端写入的工位台账）、`calendar/<agent_id>/<event>.toml`（去掉目标字段的定时任务格式）、`tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md`（取法 Agent Notes 的头部——Status、Initiator、Owner、Parent、Notify、Priority、Due、Blocked、Blocked-by、Sessions——以及 Goal、Acceptance criteria、Progress、Result 四节）、`chat/<yyyy-mm-dd>.jsonl` 与组织手册 `README.md`。SQLite 只保存每轮对账都从这些文件重建的缓存（工位与工单会话的归属、日程运行状态、上次已通知的工单状态、群聊扫描游标、预算标记）以及每个用户的群聊已读游标。
+组织的每一部分都是 `<project>/organizations/<org_id>/` 下的文件：`org_config.toml`、`org_chart.yaml`（员工树，含各员工的预算、工作区与 Model）、`desks.toml`（服务端写入的工位台账）、`calendar/<agent_id>/<event>.toml`（去掉目标字段的定时任务格式）、`tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md`（取法 Agent Notes 的头部——Status、Initiator、Owner、Parent、Notify、Priority、Due、Blocked、Blocked-by、Sessions——以及 Goal、Acceptance criteria、Progress、Result 四节）、`chat/<yyyy-mm-dd>.jsonl` 与组织手册目录 `handbook/`（公司知识库，根部 `README.md` 是每轮触发先读的索引，其余文档在索引中列出、按需读取）。SQLite 只保存每轮对账都从这些文件重建的缓存（工位与工单会话的归属、日程运行状态、上次已通知的工单状态、群聊扫描游标、预算标记）以及每个用户的群聊已读游标。
 
 ## 细节
 
@@ -22,6 +22,7 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 - Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、六个页面（概览、组织图、日历、工单、财务、群聊）、按组织分组并带工位 / 工单子夹的会话列表、开发模式下的「组织」自动子夹、对话中的 `[org_trigger]` 横幅，以及设置页上的两个开关。
 - 创建选项：新建组织时可指定 **Model**（已配置的成对引用，员工条目未指定时工位与工单会话都用它）与**公司工作区**（一个已存在的绝对目录，替代组织目录内的 `workspace/` 作为公共工作区）；二者都是 `org_config.toml` 的字段，可在组织设置里修改，也可经 `penguin org create --workspace … --model-id … --provider …` 指定。
 - 决策关口：CEO 只提案、董事会拍板——初始化会话先发一份完整提案（使命理解、首批工单、招募角色及预算与 Model、工作区划分）并结束本轮；招募、预算、拒绝他人的工单、跳过审核关闭 P0/P1 工单、任何触及组织之外的动作以及结构变更都要等创建者在群聊里确认。员工把这类事项上报给 CEO。写进 `company-ceo` / `company-employee` Skill、初始化会话与组织手册。
+- 组织手册是一个目录 `handbook/`，也是公司知识库：根部 `README.md` 是每次触发都指向的索引（目录布局、协议、职责约定，以及一份文档清单——每份一行，写明何时需要读）；董事会决策、约定与操作指南以 Markdown 文档放在旁边、按需读取。API 可列出、读写与删除文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事，Web App 的「手册」页可浏览、编辑与新建；索引不可删除。
 - 排班规则：CEO / 人事 Skill、初始化会话与组织手册把日程当作排班表——按角色定节奏（CEO 每日、人事每三天、财务每周）、每位员工各占一个时刻、每人只有一条常设日程项、绝不 `--start-at now`。
 - 插件：新增独立分类（Agent Company / Agent 公司）下的 `agent-company` 插件（`preinstall: false`），携带 `company-employee`、`company-ceo`、`company-hr`、`company-finance` 四个 Skill；CEO 与每位招募的 Agent 都会连同 `agent-development` 一起安装它。
 - 文档：新增「公司模式」指南（含 Marketplace 案例走读）、`penguin org` 参考，以及服务端 API 参考里的组织路由。

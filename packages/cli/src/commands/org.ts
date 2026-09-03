@@ -20,6 +20,7 @@
  *                    | assign <id> --owner <p> | block <id> --reason <s> [--by] | unblock <id>
  *                    | progress <id> -m <text> | start <id> [-m] [--workspace] | attach <id> [--session]
  *   penguin org chat tail [--date <d>] [-n <count>] | send -m <text> [--ref-ticket] [--ref-session]
+ *   penguin org handbook list | show [path] | write <path> (-m <text> | --file <f>) | rm <path>
  *   penguin org finance [--period <yyyy-mm>]
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
@@ -43,6 +44,8 @@ import type {
   OrgChartResponse,
   OrgChatMessage,
   OrgChatResponse,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
   OrgFinanceResponse,
@@ -1092,6 +1095,83 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     });
     if (opts.json === true) printJson(msg);
     else printLine(t.org.chatSent(msg.id));
+  });
+
+  // ---- handbook ----
+
+  const handbook = org.command("handbook").description(t.org.handbookDesc);
+  /** A handbook path keeps its `/` separators; each segment is encoded on its own. */
+  const encPath = (rel: string): string => rel.split("/").map(enc).join("/");
+
+  scoped(handbook.command("list").description(t.org.handbookListDesc), t).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const res = await scope.client.request<OrgHandbookFilesResponse>(
+      "GET",
+      `${scope.base}/handbook/files`,
+    );
+    if (opts.json === true) {
+      printJson(res);
+      return;
+    }
+    process.stdout.write(
+      `${res.files.map((f) => `${f.path}\t${f.size}\t${f.updatedAt}`).join("\n")}\n`,
+    );
+  });
+
+  scoped(
+    handbook
+      .command("show")
+      .description(t.org.handbookShowDesc)
+      .argument("[path]", t.org.handbookPath),
+    t,
+  ).action(async (relArg: string | undefined, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const rel = relArg ?? "README.md";
+    const res = await scope.client.request<OrgHandbookFileResponse>(
+      "GET",
+      `${scope.base}/handbook/files/${encPath(rel)}`,
+    );
+    if (opts.json === true) printJson(res);
+    else process.stdout.write(res.content.endsWith("\n") ? res.content : `${res.content}\n`);
+  });
+
+  scoped(
+    handbook
+      .command("write")
+      .description(t.org.handbookWriteDesc)
+      .argument("<path>", t.org.handbookPath)
+      .option("-m, --message <text>", t.org.handbookText)
+      .option("--file <file>", t.org.handbookFile),
+    t,
+  ).action(async (rel: string, opts) => {
+    if ((opts.message === undefined) === (opts.file === undefined)) {
+      fail(t, t.org.handbookOneSource);
+      return;
+    }
+    const content =
+      opts.file !== undefined ? fs.readFileSync(String(opts.file), "utf8") : String(opts.message);
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const res = await scope.client.request<OrgHandbookFileResponse>(
+      "PUT",
+      `${scope.base}/handbook/files/${encPath(rel)}`,
+      { content },
+    );
+    if (opts.json === true) printJson(res);
+    else printLine(t.org.handbookWritten(res.path));
+  });
+
+  scoped(
+    handbook.command("rm").description(t.org.handbookRmDesc).argument("<path>", t.org.handbookPath),
+    t,
+  ).action(async (rel: string, opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    await scope.client.request("DELETE", `${scope.base}/handbook/files/${encPath(rel)}`);
+    if (opts.json === true) printJson({ ok: true, path: rel });
+    else printLine(t.org.handbookRemoved(rel));
   });
 
   // ---- finance ----

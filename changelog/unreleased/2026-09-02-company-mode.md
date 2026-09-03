@@ -22,8 +22,9 @@ employee's budget, workspace and model), `desks.toml` (the server's ledger of de
 `calendar/<agent_id>/<event>.toml` (the scheduled-task format without target fields),
 `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` (an Agent-Notes-style header — Status,
 Initiator, Owner, Parent, Notify, Priority, Due, Blocked, Blocked-by, Sessions — over Goal,
-Acceptance criteria, Progress and Result sections), `chat/<yyyy-mm-dd>.jsonl` and the handbook
-`README.md`. SQLite holds only caches rebuilt from those files on every pass (desk and ticket
+Acceptance criteria, Progress and Result sections), `chat/<yyyy-mm-dd>.jsonl` and the handbook directory `handbook/` (the company's knowledge base, whose
+`README.md` is the index every trigger makes the employee read first; the other documents are
+listed there and read on demand). SQLite holds only caches rebuilt from those files on every pass (desk and ticket
 session ownership, calendar run state, the last noticed ticket state, chat scan cursors,
 budget marks) and each user's chat read cursor.
 
@@ -73,6 +74,12 @@ budget marks) and each user's chat read cursor.
   review, anything outside the organization and structural changes wait for the creator's
   confirmation in chat. Employees escalate such matters to the CEO. Encoded in the
   `company-ceo` / `company-employee` skills, the init run and the handbook.
+- The handbook is a directory, `handbook/`, and the company's knowledge base: its `README.md` is
+  the index every trigger points at (layout, protocols, role conventions, and a list of documents
+  with one line each saying when it matters); board decisions, conventions and how-tos live next
+  to it as Markdown files, read on demand. The API lists, reads, writes and deletes documents,
+  `penguin org handbook list | show | write | rm` does the same from a session, the Web App's
+  Handbook page browses, edits and creates them, and the index cannot be deleted.
 - Scheduling guidance: the CEO/HR skills, the initialization run and the handbook schedule
   the calendar as a rota — role cadences (CEO daily, HR every three days, finance weekly),
   a distinct hour per employee, one recurring event per employee, never `--start-at now`.

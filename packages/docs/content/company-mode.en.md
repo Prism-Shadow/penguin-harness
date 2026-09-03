@@ -22,7 +22,9 @@ Switch modes with the 「开发 | 公司」 control at the top-left of the sideb
 | Tickets | one Markdown file each, in a column directory that is the status | `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` |
 | Group chat | one JSON line per message, split by day | `chat/<yyyy-mm-dd>.jsonl` |
 | Shared workspace | the company's working directory; the CEO assigns sub-directories to desks | `workspace/` |
-| Handbook | the index every work run reads first | `README.md` |
+| Handbook | the company's knowledge base; its `README.md` is the index every work run reads first, the other documents are listed there and read on demand | `handbook/` |
+
+The handbook is progressive loading in practice: every trigger points at `handbook/README.md`, the index names the layout, the protocols, the role conventions and every document with one line saying when it matters, and a run reads a document only when that line says so. Board decisions go in `handbook/decisions/<yyyy-mm-dd>-<slug>.md`, conventions and how-tos next to them; the Handbook page of the Web App browses, edits and creates them, and `penguin org handbook list | show | write | rm` does the same from a session. The index cannot be deleted.
 
 People and employees are named the same way everywhere: `user:<user_id>` and `agent:<agent_id>`; `all` is every employee, `system` is the scheduler.
 

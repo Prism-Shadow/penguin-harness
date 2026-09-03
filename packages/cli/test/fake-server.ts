@@ -66,6 +66,8 @@ export interface FakeOrgState {
   tickets: Map<string, Json>;
   ticketInvalidFiles: Json[];
   chat: Json[];
+  /** Handbook files keyed by path relative to `handbook/` (the index is seeded). */
+  handbook: Map<string, string>;
   /** Desk sessions keyed by employee. */
   desks: Map<string, Json>;
   /** The `unpriced` flag of the finance response. */
@@ -335,6 +337,7 @@ export class FakeServer {
       tickets: new Map(),
       ticketInvalidFiles: [],
       chat: [],
+      handbook: new Map([["README.md", `# ${overrides.name ?? "Org"} — organization handbook\n`]]),
       desks: new Map(),
       unpriced: false,
       ...overrides,
@@ -774,6 +777,54 @@ export class FakeServer {
         return this.json(this.ticketDetail(org, rec));
       }
       if (c !== undefined && method === "POST") return this.ticketAction(org, rec, c, body);
+    }
+
+    if (a === "handbook" && b === "files") {
+      const rel = segments.slice(3).join("/");
+      if (rel === "") {
+        if (method !== "GET") return this.error(404, "not_found", "No such route.");
+        const files = [...org.handbook.entries()]
+          .map(([path, content]) => ({
+            path,
+            size: Buffer.byteLength(content),
+            updatedAt: "2026-09-02T10:00:00.000Z",
+          }))
+          .sort((x, y) =>
+            x.path === "README.md" ? -1 : y.path === "README.md" ? 1 : x.path.localeCompare(y.path),
+          );
+        return this.json({ files });
+      }
+      if (
+        !/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/){0,7}[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(rel)
+      ) {
+        return this.badRequest(`${rel} is not a handbook path.`);
+      }
+      if (method === "GET") {
+        const content = org.handbook.get(rel);
+        if (content === undefined) {
+          return this.error(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+        }
+        return this.json({ path: rel, content });
+      }
+      if (method === "PUT") {
+        if (typeof body?.content !== "string") return this.badRequest("content is required.");
+        org.handbook.set(rel, body.content);
+        return this.json({ path: rel, content: body.content });
+      }
+      if (method === "DELETE") {
+        if (rel === "README.md") {
+          return this.error(
+            400,
+            "handbook_index_required",
+            "The handbook index (README.md) cannot be deleted.",
+          );
+        }
+        if (!org.handbook.has(rel)) {
+          return this.error(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+        }
+        org.handbook.delete(rel);
+        return new Response(null, { status: 204 });
+      }
     }
 
     if (a === "chat" && b === undefined) {

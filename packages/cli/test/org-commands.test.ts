@@ -714,6 +714,59 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   });
 });
 
+describe("penguin org handbook", () => {
+  it("list prints the files with the index first; show prints the index or a document", async () => {
+    org().handbook.set("decisions/2026-09-02-hire-plan.md", "# Hire plan\n");
+    expect(await cli(["org", "handbook", "list"])).toBe(0);
+    const lines = out().trimEnd().split("\n");
+    expect(lines[0]).toMatch(/^README\.md\t/);
+    expect(lines[1]).toMatch(/^decisions\/2026-09-02-hire-plan\.md\t/);
+
+    stdout.length = 0;
+    expect(await cli(["org", "handbook", "show"])).toBe(0);
+    expect(out()).toBe("# Acme — organization handbook\n");
+
+    stdout.length = 0;
+    expect(await cli(["org", "handbook", "show", "decisions/2026-09-02-hire-plan.md"])).toBe(0);
+    expect(out()).toBe("# Hire plan\n");
+    expect(lastRequest("GET", "/handbook/files/decisions/2026-09-02-hire-plan.md")).toBeTruthy();
+
+    stdout.length = 0;
+    expect(await cli(["org", "handbook", "show", "missing.md"])).toBe(1);
+    expect(err()).toContain("missing.md is not in the handbook.");
+  });
+
+  it("write takes exactly one of -m or --file; rm deletes a document and refuses the index", async () => {
+    expect(await cli(["org", "handbook", "write", "conventions.md"])).toBe(1);
+    expect(err()).toContain(t.org.handbookOneSource);
+
+    expect(await cli(["org", "handbook", "write", "conventions.md", "-m", "# Conventions"])).toBe(
+      0,
+    );
+    expect(org().handbook.get("conventions.md")).toBe("# Conventions");
+    expect(out()).toBe(`${t.org.handbookWritten("conventions.md")}\n`);
+    expect(lastRequest("PUT", "/handbook/files/conventions.md")?.body).toEqual({
+      content: "# Conventions",
+    });
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handbook-"));
+    const file = path.join(dir, "guide.md");
+    fs.writeFileSync(file, "# Guide\n");
+    stdout.length = 0;
+    expect(await cli(["org", "handbook", "write", "roles/dev.md", "--file", file])).toBe(0);
+    expect(org().handbook.get("roles/dev.md")).toBe("# Guide\n");
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    stdout.length = 0;
+    expect(await cli(["org", "handbook", "rm", "conventions.md"])).toBe(0);
+    expect(org().handbook.has("conventions.md")).toBe(false);
+    expect(out()).toBe(`${t.org.handbookRemoved("conventions.md")}\n`);
+
+    expect(await cli(["org", "handbook", "rm", "README.md"])).toBe(1);
+    expect(err()).toContain("cannot be deleted");
+  });
+});
+
 describe("penguin org chat", () => {
   it("tail prints the day's last messages as `time  sender  text`; -n limits, --date picks the day, --json carries it", async () => {
     for (let i = 1; i <= 3; i++) {

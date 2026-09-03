@@ -22,7 +22,9 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 | 工单 | 一个工单一个 Markdown 文件，所在列目录即状态 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
 | 群聊 | 一行一条消息的 JSON Lines，按天分文件 | `chat/<yyyy-mm-dd>.jsonl` |
 | 公共工作区 | 公司的工作目录；CEO 划分子目录指定给各工位 | `workspace/` |
-| 组织手册 | 每个工作轮先读的索引 | `README.md` |
+| 组织手册 | 公司知识库；根部 `README.md` 是每个工作轮先读的索引，其余文档在索引中列出、按需读取 | `handbook/` |
+
+手册就是渐进加载的落地：每次触发都指向 `handbook/README.md`，索引写明目录布局、协议、职责约定，以及每份文档一行「何时需要读」，工作轮只在那一行说相关时才读对应文档。董事会的决策记在 `handbook/decisions/<yyyy-mm-dd>-<slug>.md`，约定与操作指南放在旁边；Web App 的「手册」页可以浏览、编辑与新建文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事。索引不可删除。
 
 人和员工在所有结构化字段里都用同一种记号：`user:<user_id>` 与 `agent:<agent_id>`；`all` 表示全体员工，`system` 是调度器。
 

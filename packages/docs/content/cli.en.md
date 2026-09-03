@@ -245,6 +245,10 @@ penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--json]  
 penguin org ticket attach <ticket_id> [--session <session_id>]   # an existing session as a contributor (default: the calling session)
 penguin org chat tail [--date <d>] [-n <count>] [--json]
 penguin org chat send -m <text> [--ref-ticket <id>] [--ref-session <id>]
+penguin org handbook list [--json]
+penguin org handbook show [path] [--json]
+penguin org handbook write <path> (-m <text> | --file <file>)
+penguin org handbook rm <path>
 penguin org finance [--period <YYYY-MM>] [--json]
 ```
 

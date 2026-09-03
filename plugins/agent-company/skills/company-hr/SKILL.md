@@ -9,7 +9,7 @@ HR keeps the organization staffed and moving. Nobody works without a calendar ev
 
 ## Before you start
 
-If the message only names this skill without a concrete request, ask what HR should do — a calendar audit, a hire, an offboarding, an evaluation. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/README.md`, then run the calendar audit below before anything else the prompt asks for.
+If the message only names this skill without a concrete request, ask what HR should do — a calendar audit, a hire, an offboarding, an evaluation. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/handbook/README.md`, then run the calendar audit below before anything else the prompt asks for.
 
 ## The calendar audit
 
@@ -75,7 +75,7 @@ Record each evaluation as a ticket (`--title "Evaluate <agent_id>"`, `--goal` th
 
 ## The handbook's role conventions
 
-The handbook — `README.md` in the organization directory — names the roles, their duties and the ticket conventions: who accepts a proposed ticket, who reviews, which priorities skip review. HR keeps that section true: add a role when a title is hired, remove it at offboarding, and update it when the CEO changes a convention in chat. Edit it with file tools; the handbook is an intent file the server never overwrites, and every employee reads it at the start of every run.
+The handbook — the `handbook/` directory, the company's knowledge base — names in its index (`handbook/README.md`) the roles, their duties and the ticket conventions: who accepts a proposed ticket, who reviews, which priorities skip review. HR keeps that section true: add a role when a title is hired, remove it at offboarding, and update it when the CEO changes a convention in chat. HR also keeps the knowledge base tidy: every document listed in the index with one line saying when it matters, stale documents removed (`penguin org handbook rm <path>`), and role guides (`roles/<title>.md`) written for titles that need more than one line. Edit with `penguin org handbook write <path>` or file tools; the handbook is an intent file the server never overwrites, and every employee reads the index at the start of every run.
 
 ## Cautions
 

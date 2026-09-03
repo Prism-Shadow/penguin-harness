@@ -181,13 +181,49 @@ describe("organization runtime", () => {
 
   const orgDir = (): string => store.dir(P, ORG);
 
+  it("keeps the knowledge base under handbook/: the index first, documents by path, the index undeletable", async () => {
+    await createOrg();
+    const index = await service.handbook(P, ORG);
+    expect(index).toContain("## Knowledge base");
+    expect(index).toContain("## Documents");
+
+    await service.writeHandbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md", "# Hire plan\n");
+    await service.writeHandbookFile(P, ORG, "conventions.md", "# Conventions\n");
+    const listed = (await service.handbookFiles(P, ORG)).files.map((f) => f.path);
+    expect(listed).toEqual(["README.md", "conventions.md", "decisions/2026-09-02-hire-plan.md"]);
+    expect(await service.handbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md")).toEqual({
+      path: "decisions/2026-09-02-hire-plan.md",
+      content: "# Hire plan\n",
+    });
+
+    await expect(service.handbookFile(P, ORG, "../org_config.toml")).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(service.writeHandbookFile(P, ORG, ".hidden.md", "x")).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(service.deleteHandbookFile(P, ORG, "README.md")).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(service.deleteHandbookFile(P, ORG, "missing.md")).rejects.toMatchObject({
+      status: 404,
+    });
+
+    await service.deleteHandbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md");
+    await expect(fs.stat(path.join(orgDir(), "handbook", "decisions"))).rejects.toBeTruthy();
+    expect((await service.handbookFiles(P, ORG)).files.map((f) => f.path)).toEqual([
+      "README.md",
+      "conventions.md",
+    ]);
+  });
+
   it("creation writes the files, the CEO with its plugins and brief, and opens the desk with an init run", async () => {
     await createOrg();
     const dir = orgDir();
     for (const f of [
       "org_config.toml",
       "org_chart.yaml",
-      "README.md",
+      "handbook/README.md",
       "desks.toml",
       "calendar",
       "tickets",

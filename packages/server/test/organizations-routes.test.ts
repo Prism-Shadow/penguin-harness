@@ -37,6 +37,13 @@ function fakeService(calls: Call[]): OrganizationService {
             return { sessionId: "session-x" };
           case "handbook":
             return "# Handbook";
+          case "handbookFiles":
+            return {
+              files: [{ path: "README.md", size: 12, updatedAt: "2026-09-01T00:00:00.000Z" }],
+            };
+          case "handbookFile":
+          case "writeHandbookFile":
+            return { path: args[2], content: "# Doc" };
           default:
             return { ok: true, method };
         }
@@ -152,6 +159,30 @@ describe("organization routes", () => {
         { orgId: "acme", mission: "Build a marketplace", name: "Acme" },
         "olivia",
       ],
+    });
+  });
+
+  it("routes handbook documents by their relative path and keeps the index", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme/handbook`;
+    expect((await owner.get(`${base}/files`)).status).toBe(200);
+    expect(calls.at(-1)).toEqual({ method: "handbookFiles", args: [ownerProject, "acme"] });
+
+    const doc = "decisions/2026-09-02-hire-plan.md";
+    expect((await owner.get(`${base}/files/${doc}`)).status).toBe(200);
+    expect(calls.at(-1)).toEqual({ method: "handbookFile", args: [ownerProject, "acme", doc] });
+
+    const put = await owner.put(`${base}/files/${doc}`, { content: "# Hire plan" });
+    expect(put.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "writeHandbookFile",
+      args: [ownerProject, "acme", doc, "# Hire plan"],
+    });
+    expect((await owner.put(`${base}/files/${doc}`, {})).status).toBe(400); // content missing
+
+    expect((await owner.delete(`${base}/files/${doc}`)).status).toBe(204);
+    expect(calls.at(-1)).toEqual({
+      method: "deleteHandbookFile",
+      args: [ownerProject, "acme", doc],
     });
   });
 

@@ -9,7 +9,7 @@ Finance keeps the organization inside its money. Budgets are set per employee an
 
 ## Before you start
 
-If the message only names this skill without a concrete request, ask what finance should do — an audit, a budget change, an alert to explain. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/README.md`, then run the audit below.
+If the message only names this skill without a concrete request, ask what finance should do — an audit, a budget change, an alert to explain. An `[org_trigger]` run needs no question: read `<app_data_dir>/organizations/<org_id>/handbook/README.md`, then run the audit below.
 
 ## How budgets work
 

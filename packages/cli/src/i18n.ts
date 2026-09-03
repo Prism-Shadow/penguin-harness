@@ -276,6 +276,11 @@ export interface Messages {
     chatDesc: string;
     chatTailDesc: string;
     chatSendDesc: string;
+    handbookDesc: string;
+    handbookListDesc: string;
+    handbookShowDesc: string;
+    handbookWriteDesc: string;
+    handbookRmDesc: string;
     financeDesc: string;
     /** --org-id: the organization (defaults to PENGUIN_ORG_ID, the control environment of desk and ticket sessions). */
     orgId: string;
@@ -333,6 +338,10 @@ export interface Messages {
     chatDate: string;
     chatCount: string;
     chatText: string;
+    handbookPath: string;
+    handbookText: string;
+    handbookFile: string;
+    handbookOneSource: string;
     refTicket: string;
     refSession: string;
     /** finance's --period: yyyy-mm (default: the current month). */
@@ -384,6 +393,8 @@ export interface Messages {
     progressRecorded(ticketId: string): string;
     ticketAttached(ticketId: string, sessionId: string): string;
     chatSent(id: string): string;
+    handbookWritten(path: string): string;
+    handbookRemoved(path: string): string;
     /** Empty states. */
     empty(projectId: string): string;
     calendarEmpty(): string;
@@ -988,6 +999,12 @@ const en: Messages = {
     chatDesc: "The organization's group chat",
     chatTailDesc: "Print the last messages of a day (20 unless -n is given)",
     chatSendDesc: "Send a message (@agent:<id> / @all mentions trigger the mentioned desks)",
+    handbookDesc:
+      "The organization handbook: the knowledge base under handbook/, whose README.md is the index every run reads first",
+    handbookListDesc: "List the handbook files (path, size, updated), the index first",
+    handbookShowDesc: "Print a handbook document (the index when no path is given)",
+    handbookWriteDesc: "Create or replace a handbook document from -m or --file",
+    handbookRmDesc: "Delete a handbook document (the index cannot be deleted)",
     financeDesc: "Spend per employee (along the reporting line) and per ticket, against budgets",
     orgId:
       "Organization id (defaults to PENGUIN_ORG_ID, set inside desk and ticket sessions; no other default)",
@@ -1035,6 +1052,11 @@ const en: Messages = {
     chatDate: "Day to read (yyyy-mm-dd in the organization's timezone; defaults to today)",
     chatCount: "Number of messages to print (default 20)",
     chatText: "Message text (@agent:<id> or @all to mention)",
+    handbookPath:
+      "Path relative to handbook/ (plain segments, e.g. decisions/2026-09-02-hire-plan.md)",
+    handbookText: "Document text",
+    handbookFile: "Read the document text from a local file",
+    handbookOneSource: "Give exactly one of -m <text> or --file <file>.",
     refTicket: "Ticket the message refers to",
     refSession: "Session the message refers to",
     period: "Month to report (yyyy-mm; defaults to the current month)",
@@ -1075,6 +1097,8 @@ const en: Messages = {
     progressRecorded: (ticketId) => `Progress recorded on ticket ${ticketId}.`,
     ticketAttached: (ticketId, sessionId) => `Session ${sessionId} attached to ticket ${ticketId}.`,
     chatSent: (id) => `Message ${id} sent.`,
+    handbookWritten: (path) => `Handbook document ${path} written.`,
+    handbookRemoved: (path) => `Handbook document ${path} removed.`,
     empty: (projectId) => `No organizations in project ${projectId}.`,
     calendarEmpty: () => "No calendar events.",
     ticketsEmpty: () => "No tickets match.",
@@ -1656,6 +1680,11 @@ const zh: Messages = {
     chatDesc: "组织群聊",
     chatTailDesc: "打印某一天的最后若干条消息（未给 -n 时 20 条）",
     chatSendDesc: "发送消息（@agent:<id> / @all 会触发被提及员工的工位）",
+    handbookDesc: "组织手册：handbook/ 下的知识库，其 README.md 是每轮先读的索引",
+    handbookListDesc: "列出手册文件（路径、大小、更新时间），索引在前",
+    handbookShowDesc: "打印一份手册文档（不给路径时打印索引）",
+    handbookWriteDesc: "用 -m 或 --file 的内容创建或替换一份手册文档",
+    handbookRmDesc: "删除一份手册文档（索引不可删）",
     financeDesc: "支出：按员工（沿汇报线累计）与按工单，对照预算",
     orgId: "组织 id（缺省取 PENGUIN_ORG_ID，工位会话与工单会话内自带；此外没有缺省值）",
     newOrgId: "要创建的组织 id（字母、数字、下划线；同时是目录名）",
@@ -1696,6 +1725,10 @@ const zh: Messages = {
     chatDate: "要读的日期（组织时区的 yyyy-mm-dd；缺省今天）",
     chatCount: "打印的消息条数（缺省 20）",
     chatText: "消息内容（@agent:<id> 或 @all 表示提及）",
+    handbookPath: "相对 handbook/ 的路径（普通片段，如 decisions/2026-09-02-hire-plan.md）",
+    handbookText: "文档内容",
+    handbookFile: "从本地文件读取文档内容",
+    handbookOneSource: "-m <text> 与 --file <file> 只能给一个。",
     refTicket: "消息关联的工单",
     refSession: "消息关联的会话",
     period: "统计月份（yyyy-mm；缺省当月）",
@@ -1735,6 +1768,8 @@ const zh: Messages = {
     progressRecorded: (ticketId) => `已在工单 ${ticketId} 记录进展。`,
     ticketAttached: (ticketId, sessionId) => `会话 ${sessionId} 已挂接到工单 ${ticketId}。`,
     chatSent: (id) => `消息 ${id} 已发送。`,
+    handbookWritten: (path) => `手册文档 ${path} 已写入。`,
+    handbookRemoved: (path) => `手册文档 ${path} 已删除。`,
     empty: (projectId) => `Project ${projectId} 没有组织。`,
     calendarEmpty: () => "没有日程项。",
     ticketsEmpty: () => "没有匹配的工单。",
