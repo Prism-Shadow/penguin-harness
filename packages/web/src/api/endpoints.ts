@@ -145,6 +145,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
+import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
+import { apiUrl } from "../lib/server-context";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -418,8 +420,15 @@ export const importMemoryScope = (
 
 // Agent & its configuration ----------------------------------------------------------------
 
-export const listAgents = (projectId: string) =>
-  apiFetch<AgentsResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`);
+/**
+ * A project's Agents. With a machine, THAT machine's — Agents are per-server, so a Session
+ * created on one can only name an Agent that exists there.
+ */
+export const listAgents = (projectId: string, machineId?: string | null) =>
+  apiFetch<AgentsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const createAgent = (projectId: string, body: AgentCreateRequest) =>
   apiFetch<AgentCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
@@ -482,6 +491,12 @@ export const listSessions = (
     workspaceGroup?: string;
     withCounts?: boolean;
   },
+  /**
+   * Which machine to ask. This path is NOT session-scoped, so nothing about it can be routed
+   * from an id — it asks a server which Sessions IT has, and only the caller knows which
+   * servers are worth asking. Omitted (or null) means this one.
+   */
+  machineId?: string | null,
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
@@ -491,6 +506,7 @@ export const listSessions = (
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
+    { server: machineId ?? null },
   );
 };
 
@@ -518,11 +534,31 @@ export const listDirectorySkills = (projectId: string, path: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
   );
 
-export const createSession = (projectId: string, agentId: string, body: SessionCreateRequest) =>
-  apiFetch<SessionCreateResponse>(
+/**
+ * Creates a Session on the machine that owns its workspace.
+ *
+ * The Session is created THERE because that is where its workspace is: that server runs the
+ * agent, holds the messages, writes the trace. The id it hands back is recorded against that
+ * machine, so every later call about the Session routes itself without any call site knowing
+ * (see lib/session-machines.ts).
+ *
+ * `machineId` is the workspace's, not a preference — a path names a different directory on
+ * every machine, so creating a Session for `/srv/app` on the wrong one is not a degraded
+ * result, it is a different request.
+ */
+export const createSession = async (
+  projectId: string,
+  agentId: string,
+  body: SessionCreateRequest,
+  machineId?: string | null,
+) => {
+  const created = await apiFetch<SessionCreateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId ?? null },
   );
+  rememberSessionMachine(created.session.sessionId, machineId ?? null);
+  return created;
+};
 
 export const forkSession = (sessionId: string, body: SessionForkRequest) =>
   apiFetch<SessionForkResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
@@ -844,10 +880,15 @@ export const getAgentTraceEvents = (
   offset: number,
   limit: number,
 ) =>
+  // These name a Session without SAYING so in a way the routing rule can read: the rule is
+  // over the path, and only `/api/sessions/<id>/…` declares its Session. So each of the three
+  // Trace calls passes the owner explicitly — sent to this server instead, they asked about a
+  // Session that lives on a machine, which truthfully has no such Trace file here, and the
+  // panel reported the Trace as gone while it sat on the machine intact.
   apiFetch<TraceEventsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}`,
-    { query: { offset, limit } },
+    { query: { offset, limit }, server: machineForSession(sessionId) },
   );
 
 export const getAgentTraceAnalysis = (
@@ -859,6 +900,7 @@ export const getAgentTraceAnalysis = (
   apiFetch<TraceAnalysisResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}/analysis`,
+    { server: machineForSession(sessionId) },
   );
 
 /** Trace file download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
@@ -868,8 +910,13 @@ export const agentTraceDownloadUrl = (
   sessionId: string,
   index: number,
 ): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-  `/traces/${encodeURIComponent(sessionId)}/${index}/download`;
+  // A browser-followed URL, so the proxy prefix has to be IN it — there is no request here
+  // for the routing rule to act on.
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/traces/${encodeURIComponent(sessionId)}/${index}/download`,
+    machineForSession(sessionId),
+  );
 
 /** Imports a Trace JSONL file (owner only); the response says where the file landed (sessionId / index / date). */
 export const importAgentTrace = (projectId: string, agentId: string, body: TraceImportRequest) =>
@@ -974,8 +1021,22 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
   apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, { query: { path } });
 
 /** File content URL (inline preview / download=1 triggers download; usable directly in <a>/<img>/fetch). */
+/**
+ * File content URL (inline preview / download=1 triggers download; usable directly in
+ * <a>/<img>/<iframe>/fetch).
+ *
+ * Routed like every other Session call, by hand: this is a URL, not a call, so it never
+ * passes through the fetch wrapper that applies the rule (lib/session-machines.ts). Left
+ * bare, every preview, image, PDF and download of a Session that lives on a machine asked
+ * THIS server for a Session it does not have — and the workspace browser reports the
+ * resulting failure as "preview not supported for this type", since a file it cannot read
+ * is indistinguishable from one it cannot render.
+ */
 export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
-  `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+  apiUrl(
+    `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`,
+    machineForSession(sessionId),
+  );
 
 /**
  * "Open in a new tab" for a Workspace html file: an App-origin link that mints a signed
