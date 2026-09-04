@@ -10,7 +10,7 @@ import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
-import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
+import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import type { HmrHost } from "../src/hmr/host.js";
 import type { ChannelHub } from "../src/runtime/channel.js";
@@ -37,9 +37,9 @@ import type { SchedulesRepo } from "../src/db/repos/schedules.js";
 import type { ErrorsRepo } from "../src/db/repos/errors.js";
 import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
-import type { QQScanService } from "../src/runtime/messaging/qq-scan.js";
+import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";
-import type { SessionManager } from "../src/runtime/session-manager.js";
+import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
 import { openDatabase } from "../src/db/database.js";
@@ -53,13 +53,11 @@ import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { PluginHost } from "../src/plugin/host.js";
 import type { Replacements } from "../src/hmr/capabilities.js";
 import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
-import type { SessionLoader } from "../src/runtime/session-manager.js";
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
@@ -74,9 +72,9 @@ import { WeChatTransportProvider } from "../src/runtime/messaging/wechat-connect
 import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
 import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
 import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
-import type { QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
-import { MachinesModule } from "../src/machines/service.js";
+import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
+import type { Access } from "../src/mechanisms/projects.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -266,6 +264,14 @@ export interface TestAppOptions {
 }
 
 /** The node each option stands in for. */
+/** A stand-in Project gate for a replaced machines node: every test that supplies one is an admin's. */
+function accessDouble(): Access {
+  return {
+    requireProjectAccess: () => ({}) as never,
+    requireProjectOwner: () => ({}) as never,
+  } as unknown as Access;
+}
+
 export function replacementsFor(o: TestAppOptions): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
@@ -309,7 +315,14 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (Object.keys(tuning).length > 0) out.push([DefaultMessagingTuning, tuning]);
   if (o.machines) {
     const machines = o.machines;
-    out.push([MachinesModule, { machines, routes: machinesRoutes({ machines }) }]);
+    out.push([
+      MachinesModule,
+      {
+        machines,
+        routes: machinesRoutes({ machines, access: accessDouble() }),
+        serverProxyRoutes: machinesServerProxyRoutes(machines),
+      },
+    ]);
   }
   return out;
 }
