@@ -87,7 +87,9 @@ Web App 里凡是通过表单创建的对象——Agent、模型分组、Benchma
 
 ## Agent 管理（/agents）
 
-列表页支持创建与删除 Agent——创建弹窗可选从导出的 Agent State 快照包直接初始化（名称与描述留空沿用包内值；此时技能选择不可用，包自带技能）。页头的**导入智能体**按钮把 Claude Code、Codex、Pi 的设置或导出的智能体包变成一个新 Agent：**从文件导入**上传 `<id>-export.zip` 或单独的 `penguin-agent.json`（Agent id 按文件名预填、可改；id 已占用时就地提示，换一个 id 即可重试），**让 AI 导入**经[让 AI 创建](#让-ai-创建)的提示词框把来源交给 Project 的默认 Agent，由它用 `agent-porting` 技能完成。每张卡片的**导出智能体**打开与导入对称的弹窗，分三段：**导出 API 调用示例**下载可移植包（`penguin-agent.json`、技能与钩子、接入文档与可运行的客户端示例），**导出 Docker 文件**下载一个容器——起来即导入该 Agent 并对外提供同一套 API，**让 AI 导出**则把前两者覆盖不到的形态（SDK、Kubernetes 清单、交接文档）描述出来交给 Agent 生成。三者都不含 Vault 值。二者都与 Agent State 快照分开：快照是对某个既有 Agent 的备份与还原。点击卡片进入 `/agents/:agentId` 设置页，按标签页组织：
+列表页支持创建与删除 Agent——创建弹窗可选从导出的 Agent State 快照包直接初始化（名称与描述留空沿用包内值；此时技能选择不可用，包自带技能）。页头的**导入智能体**按钮把 Claude Code、Codex、Pi 的设置或导出的智能体包变成一个新 Agent：**从文件导入**上传 `<id>-export.zip` 或单独的 `penguin-agent.json`（Agent id 按文件名预填、可改；id 已占用时就地提示，换一个 id 即可重试），**让 AI 导入**经[让 AI 创建](#让-ai-创建)的提示词框把来源交给 Project 的默认 Agent，由它用 `agent-porting` 技能完成。每张卡片的**导出智能体**打开与导入对称的弹窗，分三段：**导出 API 调用示例**下载可移植包（`penguin-agent.json`、技能与钩子、接入文档与可运行的客户端示例），**导出 Docker 文件**下载一个容器——起来即导入该 Agent 并对外提供同一套 API，其中的**把容器固定到该智能体**勾选项打包固定变体：容器内的服务端只提供该 Agent，并拒绝新建、导入、删除或改写 Agent，**让 AI 导出**则把前两者覆盖不到的形态（SDK、Kubernetes 清单、交接文档）描述出来交给 Agent 生成。三者都不含 Vault 值。二者都与 Agent State 快照分开：快照是对某个既有 Agent 的备份与还原。点击卡片进入 `/agents/:agentId` 设置页，按标签页组织：
+
+在**固定 Agent** 的服务端上（`PENGUIN_PINNED_AGENT`，即固定形态 Docker 包所启动的形态），页面只展示服务端仍会应答的操作：页头的**导入智能体**与**创建**消失，卡片的删除按钮、侧栏的新建 Project 入口，以及设置页上的全部写入控件——保存、更新内核、还原默认、快照导入、MCP 增改删、技能与钩子的安装/卸载、定时任务的新建/编辑/删除，以及记忆页两个写配置的控件——同样不再出现。Agent 名称下方有一行说明原因。Vault、记忆文件、会话与一切读取照旧。
 
 | 标签页 | 内容 |
 | --- | --- |

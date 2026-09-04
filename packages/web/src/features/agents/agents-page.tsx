@@ -122,7 +122,9 @@ export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
   const { locale } = useLocale();
-  const { user } = useAuth();
+  const { user, pinnedAgent } = useAuth();
+  // A pinned server refuses to create, import or delete an agent, so the page stops offering it.
+  const pinned = pinnedAgent !== null;
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
@@ -418,14 +420,16 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <div className="flex items-center gap-2">
-              {/* Import (a bundle or another tool's setup) sits beside Create: it makes a new
-                  Agent too, unlike the snapshot import on the settings page. */}
-              <Button onClick={() => setImportOpen(true)}>{S.agent.importAgent}</Button>
-              <Button variant="primary" onClick={openCreate}>
-                {S.agent.create}
-              </Button>
-            </div>
+            {!pinned && (
+              <div className="flex items-center gap-2">
+                {/* Import (a bundle or another tool's setup) sits beside Create: it makes a new
+                    Agent too, unlike the snapshot import on the settings page. */}
+                <Button onClick={() => setImportOpen(true)}>{S.agent.importAgent}</Button>
+                <Button variant="primary" onClick={openCreate}>
+                  {S.agent.create}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -501,6 +505,7 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
+                      {pinned && <Badge tone="brand">{S.agent.pinnedBadge}</Badge>}
                       {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                           names the state in words rather than as another bare dot — a capsule in
                           the version badge's own geometry, tinted the same pale red the dots on
@@ -656,8 +661,9 @@ export function AgentsPage() {
                     {/* Built-in Agents can't be deleted: shown as a non-button light gray
                         placeholder (no border/background, no hover response, disabled cursor,
                         explained via tooltip); the transparent border keeps the same box size as
-                        an icon button so column widths stay consistent across cards */}
-                    {builtin ? (
+                        an icon button so column widths stay consistent across cards. A pinned
+                        server refuses deletion outright, so it shows neither. */}
+                    {pinned ? null : builtin ? (
                       <span
                         role="img"
                         title={S.agent.builtinUndeletable}

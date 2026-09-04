@@ -43,6 +43,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
       user: toUserInfo(c.var.user),
       previewIsolated: target !== null,
       desktopMode: deps.desktop !== null,
+      pinnedAgent: deps.config.pinnedAgent,
       sessionVia: c.var.sessionVia,
       uploadLimits: {
         ...deps.serverSettingsRepo.getAttachmentLimitsMb(),

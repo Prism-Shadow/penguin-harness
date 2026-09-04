@@ -19,6 +19,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
@@ -44,12 +45,15 @@ export function VaultTab({
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const readOnly = useDefinitionReadOnly();
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
     feature: "vault",
     strings: S.vault.injection,
-    canEdit: isOwner,
+    // The placeholder insert and the section toggle write system_config.yaml, which a pinned
+    // server refuses; vault values themselves stay editable.
+    canEdit: isOwner && !readOnly,
     onConfigChanged,
   });
 

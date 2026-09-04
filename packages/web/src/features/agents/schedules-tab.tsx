@@ -33,6 +33,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
@@ -221,12 +222,16 @@ export function SchedulesTab({
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  // A pinned server refuses every schedule write, so the tab reads exactly as it does for a
+  // non-owner. The owner-only hint below stays keyed to the role, since that is not the reason
+  // here — the page header says what is.
+  const canEdit = isOwner && !useDefinitionReadOnly();
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
     feature: "schedules",
     strings: S.schedule.injection,
-    canEdit: isOwner,
+    canEdit,
     onConfigChanged,
   });
 
@@ -276,7 +281,7 @@ export function SchedulesTab({
   }, [load]);
 
   useEffect(() => {
-    if (!projectId || !isOwner) return;
+    if (!projectId || !canEdit) return;
     api
       .getModels(projectId)
       .then((res) => {
@@ -287,7 +292,7 @@ export function SchedulesTab({
         setModels([]);
         setDefaultModel(null);
       });
-  }, [projectId, isOwner]);
+  }, [projectId, canEdit]);
 
   const set = (patch: Partial<FormState>) => {
     setFieldErrors((p) => (p.name || p.prompt || p.startAt || p.sessionId ? {} : p));
@@ -458,7 +463,7 @@ export function SchedulesTab({
                 <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colTarget}</th>
                 <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colFireTimes}</th>
                 <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colQueued}</th>
-                {isOwner && <th className="px-3 py-2.5" />}
+                {canEdit && <th className="px-3 py-2.5" />}
               </tr>
             </thead>
             <tbody>
@@ -509,7 +514,7 @@ export function SchedulesTab({
                   <td className="whitespace-nowrap px-3 py-2">
                     {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
                   </td>
-                  {isOwner && (
+                  {canEdit && (
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <Button
                         size="sm"
@@ -558,7 +563,7 @@ export function SchedulesTab({
       )}
 
       {/* Create entry point (owner): the form lives in a modal; the inline "Edit" button reuses the same modal. */}
-      {isOwner && data !== null && (
+      {canEdit && data !== null && (
         <Button
           size="sm"
           variant="primary"

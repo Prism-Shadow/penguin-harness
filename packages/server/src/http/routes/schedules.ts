@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
 import {
@@ -154,6 +155,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const name = requireScheduleName(requireString(body, "name", { minLen: 1, maxLen: 100 }));
@@ -171,6 +173,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,
@@ -192,6 +195,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const name = requireScheduleName(c.req.param("name"));
     if (!(await readScheduleFile(deps.config.root, projectId, agentId, name))) {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
@@ -205,6 +209,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const name = requireScheduleName(c.req.param("name"));
     const removed = await deleteScheduleFile(deps.config.root, projectId, agentId, name);
     if (!removed)

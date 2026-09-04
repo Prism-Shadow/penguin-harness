@@ -25,6 +25,7 @@ import {
 import { parseSkillFrontmatter, PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
@@ -191,6 +192,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,
@@ -206,6 +208,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
@@ -274,6 +277,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const name = requireValidId(c, "name");
     // Installed-check uses the same criterion as listInstalledSkills: skills/<name>/SKILL.md exists.
     const file = path.join(skillsDir(deps.config.root, projectId, agentId), name, "SKILL.md");

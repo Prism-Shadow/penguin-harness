@@ -23,6 +23,7 @@ import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
@@ -111,6 +112,8 @@ export function McpServersSection({
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // MCP entries live in system_config.yaml, which a pinned server refuses to write.
+  const readOnly = useDefinitionReadOnly();
 
   const [servers, setServers] = useState<MCPServerConfig[]>(initial);
   const [busy, setBusy] = useState(false);
@@ -348,22 +351,26 @@ export function McpServersSection({
                     </td>
                   )}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => openEdit(index)}
-                    >
-                      {S.common.edit}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => setDeleting(index)}
-                    >
-                      {S.agent.mcpRemove}
-                    </Button>
+                    {!readOnly && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => openEdit(index)}
+                        >
+                          {S.common.edit}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => setDeleting(index)}
+                        >
+                          {S.agent.mcpRemove}
+                        </Button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -372,9 +379,11 @@ export function McpServersSection({
         </div>
       )}
 
-      <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>
-        {S.agent.mcpAdd}
-      </Button>
+      {!readOnly && (
+        <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>
+          {S.agent.mcpAdd}
+        </Button>
+      )}
 
       <Modal
         open={form !== null}

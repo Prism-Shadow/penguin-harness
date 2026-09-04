@@ -204,6 +204,74 @@ describe("agent porting", () => {
     }
   });
 
+  it("?kind=docker&pin=1 locks the container to this agent and drops its privileges", async () => {
+    await seedSource();
+    const res = await member.get(`${base}/researcher/bundle?kind=docker&pin=1`);
+    expect(res.status).toBe(200);
+    // The zip keeps its name: what is inside says it is pinned (D9).
+    expect(res.headers.get("content-disposition")).toContain("researcher-docker.zip");
+    const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    const entrypoint = strFromU8(entries["entrypoint.sh"]!);
+    // Phase 1 imports through a loopback-only server that is deliberately still unpinned…
+    expect(entrypoint).toContain("penguin agent import penguin-agent.json");
+    expect(entrypoint).toContain("--host 127.0.0.1");
+    // …addressed as localhost, because a loopback bind serves previews (not the API) on
+    // 127.0.0.1 and answers 401 there…
+    expect(entrypoint).toContain('--server "http://localhost:$PORT"');
+    expect(entrypoint).not.toContain("http://127.0.0.1:");
+    // …and the setup server is backgrounded as a plain command, so $! is the process the
+    // stop step signals rather than a subshell wrapping it.
+    expect(entrypoint).not.toContain("as_node env ");
+    // …phase 2 locks the definition files and leaves memory and the vault alone…
+    expect(entrypoint).toContain("chown -R root:root");
+    expect(entrypoint).toContain("chmod 1775");
+    expect(entrypoint).toContain("AGENTS.md system_config.yaml skills hooks tools schedule");
+    // …and only the final exec pins, as an unprivileged user.
+    expect(entrypoint).toContain("exec setpriv --reuid=node --regid=node --init-groups");
+    expect(entrypoint).toContain('PENGUIN_PINNED_AGENT="$PROJECT_ID/$AGENT_ID"');
+    expect(entrypoint).not.toContain("undefined");
+
+    const readme = strFromU8(entries["README.md"]!);
+    expect(readme).toContain("403 agent_pinned");
+    expect(strFromU8(entries[".env.example"]!)).toContain("PENGUIN_USERS=");
+  });
+
+  it("the unpinned docker bundle never mentions pinning", async () => {
+    await seedSource();
+    const entries = unzipSync(
+      new Uint8Array(
+        await (await member.get(`${base}/researcher/bundle?kind=docker`)).arrayBuffer(),
+      ),
+    );
+    expect(strFromU8(entries["entrypoint.sh"]!)).not.toContain("PENGUIN_PINNED_AGENT");
+    expect(strFromU8(entries[".env.example"]!)).not.toContain("PENGUIN_USERS");
+    expect(strFromU8(entries["README.md"]!)).not.toContain("agent_pinned");
+  });
+
+  it("both docker variants build the CLI in a stage that has a compiler", async () => {
+    // node-pty publishes no Linux prebuild, so `npm install -g` compiles it with node-gyp: a
+    // single-stage slim image has no python3/make/g++ and the build dies there.
+    await seedSource();
+    for (const query of ["kind=docker", "kind=docker&pin=1"]) {
+      const entries = unzipSync(
+        new Uint8Array(
+          await (await member.get(`${base}/researcher/bundle?${query}`)).arrayBuffer(),
+        ),
+      );
+      const dockerfile = strFromU8(entries["Dockerfile"]!);
+      expect(dockerfile, query).toContain("FROM node:24-slim AS builder");
+      expect(dockerfile, query).toContain("python3 make g++");
+      expect(dockerfile, query).toContain("COPY --from=builder /opt/penguin /opt/penguin");
+    }
+  });
+
+  it("pin is refused on any kind but docker, and on a value that is not a boolean", async () => {
+    await seedSource();
+    expect((await member.get(`${base}/researcher/bundle?kind=api&pin=1`)).status).toBe(400);
+    expect((await member.get(`${base}/researcher/bundle?pin=1`)).status).toBe(400);
+    expect((await member.get(`${base}/researcher/bundle?kind=docker&pin=yes`)).status).toBe(400);
+  });
+
   it("an unknown export kind is refused rather than silently packing the default", async () => {
     await seedSource();
     const res = await member.get(`${base}/researcher/bundle?kind=zip`);

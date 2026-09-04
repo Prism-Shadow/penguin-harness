@@ -34,7 +34,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
 import { toneStrip } from "../../lib/tone";
-import { useAuth } from "../../state/auth";
+import { useAuth, useDefinitionReadOnly } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
@@ -145,6 +145,9 @@ export function MemoryTab({
   // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;
   // the server enforces it either way, this only keeps the control out of a member's reach.
   const isOwner = currentProject?.role === "owner";
+  // Memory files stay writable on a pinned server; the two controls that write
+  // system_config.yaml (the enable switch and the placeholder insert) do not.
+  const readOnly = useDefinitionReadOnly();
 
   const [enabled, setEnabled] = useState(true);
   const [templateHasMemory, setTemplateHasMemory] = useState(true);
@@ -565,17 +568,25 @@ export function MemoryTab({
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
-        <Switch checked={enabled} onChange={(v) => void toggleEnabled(v)} disabled={switchBusy} />
+        <Switch
+          checked={enabled}
+          onChange={(v) => void toggleEnabled(v)}
+          disabled={switchBusy || readOnly}
+        />
       </div>
 
+      {/* The insert writes system_config.yaml, which a pinned server refuses — the strip still
+          states the template is missing, without an action that would 403. */}
       {!templateHasMemory && (
         <div
           className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
         >
           <p className="text-xs">{S.memory.templateMissing}</p>
-          <Button size="sm" onClick={() => void insertPlaceholder()}>
-            {S.memory.insertPlaceholder}
-          </Button>
+          {!readOnly && (
+            <Button size="sm" onClick={() => void insertPlaceholder()}>
+              {S.memory.insertPlaceholder}
+            </Button>
+          )}
         </div>
       )}
 

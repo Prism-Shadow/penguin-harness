@@ -2,6 +2,7 @@
  * Agent porting routes — the portable definition and its integration bundle, apart from the
  * Agent State snapshot routes (agent-transfer.ts), which back up and restore an existing Agent:
  *   GET  /api/projects/:p/agents/:agentId/bundle   (any member; downloads <agentId>-export.zip)
+ *                                                  ?kind=docker&pin=1 packs the locked variant
  *   POST /api/projects/:p/agents/import            (any member; creates an Agent from a bundle or a bare penguin-agent.json)
  */
 import { Hono } from "hono";
@@ -11,6 +12,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { exportAgentBundle, importAgentBundle } from "../../services/agent-porting.js";
 import type { PortingDeps } from "../../services/agent-porting.js";
+import { assertNotPinned } from "../pinned.js";
 import { optionalString, readJson, requireValidId } from "../validate.js";
 import { readArchiveBase64 } from "./agent-transfer.js";
 import { ACTIVITY_DAYS } from "./agents.js";
@@ -34,7 +36,18 @@ export function agentPortingRoutes(deps: AppDeps): Hono<AppEnv> {
       throw new HttpError(400, "bad_request", 'kind must be "api" or "docker".');
     }
     const kind: AgentBundleKind = kindParam === "docker" ? "docker" : "api";
-    const { fileName, bytes } = await exportAgentBundle(porting, projectId, agentId, kind);
+    // ?pin=1 locks the Docker bundle to this one agent. It has no meaning anywhere else, so it
+    // is a bad request rather than a silently ignored parameter — an api bundle that quietly
+    // came back unpinned would be discovered only after deploying it.
+    const pinParam = c.req.query("pin");
+    const pin = pinParam === "1" || pinParam === "true";
+    if (pinParam !== undefined && !pin) {
+      throw new HttpError(400, "bad_request", 'pin must be "1" or "true".');
+    }
+    if (pin && kind !== "docker") {
+      throw new HttpError(400, "bad_request", "pin applies to kind=docker only.");
+    }
+    const { fileName, bytes } = await exportAgentBundle(porting, projectId, agentId, kind, pin);
     return new Response(bytes, {
       headers: {
         "Content-Type": "application/zip",
@@ -48,6 +61,7 @@ export function agentPortingRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const body = await readJson(c);
     const archive = readArchiveBase64(body);
     const agentId = optionalString(body, "agentId", { minLen: 1, maxLen: 64, label: "agentId" });

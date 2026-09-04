@@ -15,6 +15,7 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 
 export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -26,6 +27,7 @@ export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.post("/", async (c) => {
+    assertNotPinned(deps);
     const body = await readJson(c);
     const projectId = requireString(body, "projectId", { label: "projectId" });
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100, label: "name" });
@@ -47,6 +49,7 @@ export function projectsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.delete("/:projectId", async (c) => {
+    assertNotPinned(deps);
     // Defensive id validation: deleteProject constructs the project directory path and recursively deletes it.
     await deps.projectService.deleteProject(c.var.user.userId, requireValidId(c, "projectId"));
     return c.body(null, 204);

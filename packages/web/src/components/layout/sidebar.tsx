@@ -314,7 +314,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode, sessionVia } = useAuth();
+  const { user, logout, desktopMode, pinnedAgent, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
     projects,
@@ -1485,16 +1485,20 @@ export function Sidebar({
             </button>
           ))}
           <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setProjectOpen(false);
-                setCreateProjectOpen(true);
-              }}
-            >
-              + {S.project.create}
-            </button>
+            {/* A pinned server refuses to create a Project (a new one would carry a second
+                agent), so the entry is not offered. */}
+            {pinnedAgent === null && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setProjectOpen(false);
+                  setCreateProjectOpen(true);
+                }}
+              >
+                + {S.project.create}
+              </button>
+            )}
             {currentProject && (
               <button
                 type="button"

@@ -27,6 +27,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Button } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -76,13 +77,16 @@ export function SkillsTab({
   const { locale } = useLocale();
   const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // A pinned server refuses every skill and config write on this tab, so nothing that would
+  // answer 403 is offered.
+  const readOnly = useDefinitionReadOnly();
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
     feature: "skills",
     strings: S.skills.injection,
-    canEdit: true,
+    canEdit: !readOnly,
     onConfigChanged,
   });
 
@@ -283,11 +287,13 @@ export function SkillsTab({
           page puts its create action in the same slot above its table. It renders in every list
           state (loading, empty, populated) so the action never shifts and the dashed empty block
           keeps a header instead of standing alone; the modal carries both install paths. */}
-      <div className="flex justify-end">
-        <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
-          {S.skills.importSkill}
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
+            {S.skills.importSkill}
+          </Button>
+        </div>
+      )}
 
       {skills === null ? (
         <SkeletonList rows={4} />
@@ -336,16 +342,18 @@ export function SkillsTab({
               >
                 <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
               </Button>
-              <Button
-                size="icon"
-                variant="danger"
-                title={S.skills.uninstall}
-                aria-label={`${S.skills.uninstall} ${skill.name}`}
-                disabled={busy}
-                onClick={() => setRemoving(skill.name)}
-              >
-                <GlyphIcon d={TRASH_ICON} size={14} />
-              </Button>
+              {!readOnly && (
+                <Button
+                  size="icon"
+                  variant="danger"
+                  title={S.skills.uninstall}
+                  aria-label={`${S.skills.uninstall} ${skill.name}`}
+                  disabled={busy}
+                  onClick={() => setRemoving(skill.name)}
+                >
+                  <GlyphIcon d={TRASH_ICON} size={14} />
+                </Button>
+              )}
             </div>
           ))}
         </div>

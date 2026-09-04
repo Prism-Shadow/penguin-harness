@@ -19,6 +19,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
 | `PENGUIN_TRUST_PROXY` | 设为 `1` 信任 `x-forwarded-proto` 请求头——在终结 TLS 的反向代理（且由代理自行设置/清除该头）之后设置，使会话 Cookie 带 `Secure` 标记、热更新网络门禁识别 HTTPS | 未设置，忽略该请求头 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成一个密码，哈希后即丢弃、无人见过；账号通过首次登录链接认领 |
+| `PENGUIN_PINNED_AGENT` | `<projectId>/<agentId>`：只提供该 Agent，并拒绝一切新建、导入、删除或改写 Agent 的路由（`403 agent_pinned`，管理员亦然），详见 [Server API](/server-api)。由固定形态的 Docker 导出在 entrypoint 中设置；已有数据根中的其他 Project 与 Agent 会保留在磁盘上，只是不再被列出或提供服务 | 未设置，即普通的多 Agent 服务端 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |

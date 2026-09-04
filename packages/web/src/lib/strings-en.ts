@@ -548,6 +548,9 @@ export const en: Strings = {
     importAgentDone: (id: string): string => `Agent ${id} imported`,
     importAgentSkipped: (notes: string): string => `Not mapped: ${notes}`,
     importAgentVaultKeys: (keys: string): string => `Vault keys to set: ${keys}`,
+    pinnedBadge: "Pinned",
+    pinnedReadOnlyHint:
+      "This server is pinned to this agent, so its definition — prompt, config, tools, skills, hooks and schedules — is read-only. Memory, the vault and its Sessions are unaffected.",
     exportAgent: "Export agent",
     exportAgentDesc:
       "Pick a shape. None of them carry vault values, memory, Traces or snapshots; the first two both carry the definition, skills and hooks, so either re-imports.",
@@ -557,6 +560,9 @@ export const en: Strings = {
     exportModeDocker: "Docker files",
     exportModeDockerDesc:
       "Dockerfile, compose file, entrypoint and .env.example: the container imports this agent on first boot and serves the same API",
+    exportDockerPin: "Pin the container to this agent",
+    exportDockerPinDesc:
+      "Its server then serves only this agent and refuses to create, import, delete or redefine one — for everyone, admin included. The entrypoint also makes the definition files read-only, so the agent cannot rewrite itself.",
     exportModeAi: "Let AI export it",
     exportModeAiDesc:
       "Describe the shape you want and an agent writes it — for what the two above do not cover",

@@ -432,32 +432,59 @@ export function renderBundleDocs(definition: PortableAgentDefinition): Record<st
  * declares is listed too, so the operator sees everything that has to be filled in in one file
  * rather than discovering it from a failing run.
  */
-function dockerEnvNames(definition: PortableAgentDefinition): string[] {
+function dockerEnvNames(definition: PortableAgentDefinition, pin: boolean): string[] {
   return [
     "PENGUIN_MODEL_PROVIDER",
     "PENGUIN_MODEL_ID",
     "PENGUIN_MODEL_API_KEY",
     "PENGUIN_MODEL_BASE_URL",
     "PENGUIN_ADMIN_PASSWORD",
+    // A pinned container is a deployment, so it is the one that seeds the people who will use it.
+    ...(pin ? ["PENGUIN_USERS"] : []),
     ...(definition.vaultKeys ?? []),
   ];
 }
 
-function renderDockerfile(): string {
-  // `latest` rather than a pinned version: the bundle cannot know which release the reader
-  // wants to run, and a stale pin ages worse than a documented ARG they can set.
+/**
+ * The image, in two stages.
+ *
+ * The build stage is not an optimization: `node-pty` publishes prebuilt bindings for macOS and
+ * Windows only, so on Linux its install script falls through to `node-gyp rebuild`, which needs
+ * python3, make and a C++ compiler. Installing the CLI on a bare slim image therefore fails.
+ * Compiling in a builder stage and copying the finished npm prefix keeps that toolchain out of
+ * the image the agent's own tools run in; both stages share a base, so the native binding built
+ * there loads here.
+ *
+ * `latest` rather than a pinned version: the bundle cannot know which release the reader wants
+ * to run, and a stale pin ages worse than a documented ARG they can set.
+ *
+ * Once an official PenguinHarness image exists this collapses to a FROM line plus the bundle
+ * COPY, and the base image, the toolchain and the unprivileged user live in one place instead
+ * of in every exported bundle.
+ */
+function renderDockerfile(pin: boolean): string {
   return `# syntax=docker/dockerfile:1
 # PenguinHarness agent container. Build:  docker build --build-arg PENGUIN_VERSION=<version> -t <name> .
 ARG PENGUIN_VERSION=latest
+
+# node-pty ships no Linux prebuild, so installing the CLI compiles it with node-gyp. Build it
+# once here; the runtime image below carries the result, not the compiler.
+FROM node:24-slim AS builder
+RUN apt-get update \\
+  && apt-get install -y --no-install-recommends ca-certificates python3 make g++ \\
+  && rm -rf /var/lib/apt/lists/*
+ARG PENGUIN_VERSION
+RUN npm install -g --prefix /opt/penguin @prismshadow/penguin-cli@\${PENGUIN_VERSION}
+
 FROM node:24-slim
 
 # git and ca-certificates: agents routinely clone and reach HTTPS endpoints from their tools.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git curl \
+RUN apt-get update \\
+  && apt-get install -y --no-install-recommends ca-certificates git curl \\
   && rm -rf /var/lib/apt/lists/*
 
-ARG PENGUIN_VERSION
-RUN npm install -g @prismshadow/penguin-cli@\${PENGUIN_VERSION}
+COPY --from=builder /opt/penguin /opt/penguin
+ENV PATH="/opt/penguin/bin:\${PATH}"
 
 # The data root holds the Project config, the agent and every Trace: mount it to keep them.
 ENV PENGUIN_HOME=/data
@@ -473,7 +500,13 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 7364
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+${
+  pin
+    ? `# No USER here on purpose: the entrypoint starts as root to lock the agent's definition
+# files, then drops to \`node\` for the server itself. See entrypoint.sh.
+`
+    : ""
+}ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 `;
 }
 
@@ -485,7 +518,8 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
  * attempt would answer 409 anyway, but a container that logs an error on every restart reads
  * as broken.
  */
-function renderEntrypoint(definition: PortableAgentDefinition): string {
+function renderEntrypoint(definition: PortableAgentDefinition, pin: boolean): string {
+  if (pin) return renderPinnedEntrypoint(definition);
   return `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -541,6 +575,152 @@ wait "\$SERVER_PID"
 `;
 }
 
+/**
+ * The pinned variant, in three phases.
+ *
+ * The ordering problem it solves: importing the agent is a write through the running server,
+ * and that is precisely the route a pinned server refuses. So first boot runs its own
+ * short-lived server bound to loopback — unreachable from outside the container — and only the
+ * final exec carries PENGUIN_PINNED_AGENT. Nothing in the server special-cases the import.
+ *
+ * The lock in phase 2 is the half the route guards cannot cover: the model is told where its
+ * Agent State lives and is invited to edit it, so a definition that is only protected by HTTP
+ * is not protected at all. Root owns the definition files and the server does not run as root.
+ */
+function renderPinnedEntrypoint(definition: PortableAgentDefinition): string {
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+: "\${PENGUIN_HOME:=/data}"
+: "\${PORT:=7364}"
+: "\${HOST:=0.0.0.0}"
+AGENT_ID="\${PENGUIN_AGENT_ID:-${definition.id}}"
+PROJECT_ID="\${PENGUIN_PROJECT_ID:-default_project}"
+SENTINEL="\$PENGUIN_HOME/.agent-imported"
+STATE="\$PENGUIN_HOME/\$PROJECT_ID/agents/\$AGENT_ID/agent_state"
+
+# This script starts as root so it can lock the agent's definition below; the server never does,
+# because root walks straight through the file permissions that are the whole of that lock.
+if ! command -v setpriv >/dev/null 2>&1; then
+  echo "setpriv (util-linux) is missing; refusing to run the pinned server as root." >&2
+  exit 1
+fi
+as_node() { setpriv --reuid=node --regid=node --init-groups "\$@"; }
+
+if [ -z "\${PENGUIN_MODEL_API_KEY:-}" ]; then
+  echo "PENGUIN_MODEL_API_KEY is unset — the agent will start but cannot call a model." >&2
+fi
+
+# The admin password is pinned so the API is reachable without the first-login link; without
+# one the server seeds a random password and prints a claim link instead.
+if [ -n "\${PENGUIN_ADMIN_PASSWORD:-}" ]; then
+  export PENGUIN_SEED_ADMIN_PASSWORD="\$PENGUIN_ADMIN_PASSWORD"
+fi
+
+# A first-boot server, on loopback only: setup has to talk to a running server, and nothing
+# outside the container may reach one that is still accepting writes to the definition.
+#
+# Addressed as localhost, not 127.0.0.1: a loopback bind canonicalizes the App onto localhost
+# and serves Workspace previews from 127.0.0.1, so the API answers 401 there. The listener is
+# still 127.0.0.1 (plus its ::1 companion) — only the Host header differs.
+start_local_server() {
+  # Spelled out rather than routed through as_node: backgrounding a shell function makes \$!
+  # the subshell's pid, and the TERM below would then never reach the server it wraps.
+  setpriv --reuid=node --regid=node --init-groups \\
+    env PENGUIN_PINNED_AGENT="\$1" penguin server --host 127.0.0.1 --port "\$PORT" &
+  SERVER_PID=\$!
+  trap 'kill -TERM "\$SERVER_PID" 2>/dev/null || true' TERM INT
+  for _ in \$(seq 1 60); do
+    # A server that died leaves the port to whatever else holds it, and the poll would then
+    # succeed against the wrong process; fail here instead of quietly setting up elsewhere.
+    kill -0 "\$SERVER_PID" 2>/dev/null || { echo "The setup server exited at start-up." >&2; return 1; }
+    curl -sf "http://localhost:\$PORT/api/install" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  echo "The server did not answer on localhost:\$PORT within 60s." >&2
+  return 1
+}
+
+stop_local_server() {
+  kill -TERM "\$SERVER_PID" 2>/dev/null || true
+  wait "\$SERVER_PID" 2>/dev/null || true
+  trap - TERM INT
+}
+
+# ---- Phase 1: first boot ----------------------------------------------------------------
+if [ ! -f "\$SENTINEL" ]; then
+  # Everything the server writes belongs to node; only the definition files are root's, and
+  # phase 2 below takes those back after they exist.
+  mkdir -p "\$PENGUIN_HOME"
+  chown -R node:node "\$PENGUIN_HOME"
+
+  if [ -n "\${PENGUIN_MODEL_API_KEY:-}" ]; then
+    # Model config is written straight to the data root, so it is in place before the server
+    # (and therefore the agent) ever starts.
+    as_node penguin config model add \\
+      --provider "\${PENGUIN_MODEL_PROVIDER:-custom}" \\
+      --model-id "\${PENGUIN_MODEL_ID:?PENGUIN_MODEL_ID is required}" \\
+      --api-key "\$PENGUIN_MODEL_API_KEY" \\
+      \${PENGUIN_MODEL_BASE_URL:+--base-url "\$PENGUIN_MODEL_BASE_URL"} \\
+      --root "\$PENGUIN_HOME" \\
+      --set-default
+  fi
+
+  # Unpinned, deliberately: this is the one window in which the import route answers.
+  echo "Importing agent ${definition.id} …"
+  start_local_server ""
+  cd /bundle
+  as_node penguin agent import penguin-agent.json \\
+    --agent-id "\$AGENT_ID" \\
+    --project-id "\$PROJECT_ID" \\
+    --server "http://localhost:\$PORT"
+  stop_local_server
+
+  # Extra accounts, pinned this time: an unpinned server hands a new user a project of their
+  # own, which would come with a second agent. Best-effort — a name already taken or a password
+  # under 8 characters is reported and skipped rather than failing the boot.
+  if [ -n "\${PENGUIN_USERS:-}" ]; then
+    start_local_server "\$PROJECT_ID/\$AGENT_ID"
+    API_TOKEN="\$(cat "\$PENGUIN_HOME/api-token")"
+    printf '%s\\n' "\$PENGUIN_USERS" | tr ',' '\\n' | while IFS=':' read -r name password; do
+      [ -n "\$name" ] || continue
+      echo "Creating user \$name …"
+      # node builds the body so a password containing a quote or a backslash stays intact.
+      body="\$(node -e 'process.stdout.write(JSON.stringify({userId:process.argv[1],password:process.argv[2]}))' "\$name" "\$password")"
+      curl -sSf -X POST "http://localhost:\$PORT/api/admin/users" \\
+        -H "Authorization: Bearer \$API_TOKEN" \\
+        -H "Content-Type: application/json" \\
+        --data "\$body" -o /dev/null \\
+        || echo "Could not create user \$name; add it under Settings → Users." >&2
+    done
+    stop_local_server
+  fi
+
+  as_node touch "\$SENTINEL"
+fi
+
+# ---- Phase 2: lock the definition (every boot, idempotent) ------------------------------
+# The route guards stop people reaching the definition through the API; this stops the agent's
+# own shell. Definition files become root-owned and unwritable, and the state directory keeps
+# the sticky bit with group write, so node can still create memory scopes under it but can
+# neither unlink nor rename what root owns. memory/ and .vault.toml stay node's: they are
+# runtime data, not definition.
+mkdir -p "\$STATE/schedule"
+for entry in AGENTS.md system_config.yaml skills hooks tools schedule; do
+  [ -e "\$STATE/\$entry" ] || continue
+  chown -R root:root "\$STATE/\$entry"
+  chmod -R a-w "\$STATE/\$entry"
+done
+chown root:node "\$STATE"
+chmod 1775 "\$STATE"
+
+# ---- Phase 3: the pinned server ---------------------------------------------------------
+exec setpriv --reuid=node --regid=node --init-groups \\
+  env PENGUIN_PINNED_AGENT="\$PROJECT_ID/\$AGENT_ID" \\
+  penguin server --host "\$HOST" --port "\$PORT"
+`;
+}
+
 function renderCompose(definition: PortableAgentDefinition): string {
   // No per-key env here: `env_file` already loads .env, and listing the vault keys twice
   // would let the two drift.
@@ -564,7 +744,7 @@ volumes:
 `;
 }
 
-function renderEnvExample(definition: PortableAgentDefinition): string {
+function renderEnvExample(definition: PortableAgentDefinition, pin: boolean): string {
   const vault = (definition.vaultKeys ?? []).map(
     (k) => `# ${k} — read by the agent's tools from its vault.\n${k}=`,
   );
@@ -577,20 +757,36 @@ PENGUIN_MODEL_BASE_URL=
 
 # Pins the built-in admin's password so the API is reachable without the first-login link.
 PENGUIN_ADMIN_PASSWORD=
-
+${
+  pin
+    ? `
+# Accounts created on first boot, \`name:password\` separated by commas (passwords are at least
+# 8 characters and must contain no comma or colon). They become members of the pinned agent's
+# Project; the admin can add more later under Settings → Users.
+PENGUIN_USERS=
+`
+    : ""
+}
 # Host port the container is published on.
 PORT=7364
 ${vault.length > 0 ? `\n${vault.join("\n")}\n` : ""}`;
 }
 
-function renderDockerReadme(definition: PortableAgentDefinition): string {
+function renderDockerReadme(definition: PortableAgentDefinition, pin: boolean): string {
   const vaultKeys = definition.vaultKeys ?? [];
   return `# ${definition.name} — running in a container
 
 This bundle runs the agent as a self-contained PenguinHarness install: the container brings up
 the server, imports \`${definition.id}\` on first boot, and serves the same HTTP API a local
 install does. Exported ${definition.exportedAt}.
-
+${
+  pin
+    ? `
+This is a **pinned** bundle: the server it starts serves \`${definition.id}\` and nothing else,
+and refuses to create, import, delete or redefine any agent. See "What pinned means" below.
+`
+    : ""
+}
 ## Run it
 
 \`\`\`bash
@@ -604,14 +800,59 @@ drive it; the endpoints are identical here.
 
 ## What the first boot does
 
-1. Writes the model configuration into the data root from the environment.
+${
+  pin
+    ? `1. Writes the model configuration into the data root from the environment.
+2. Starts a server on loopback only, imports \`penguin-agent.json\` with the bundled \`skills/\`
+   and \`hooks/\`, and stops it again. This window is unpinned on purpose — importing an agent
+   is exactly what a pinned server refuses — and it is never reachable from outside the
+   container.
+3. Creates the accounts listed in \`PENGUIN_USERS\`, if any, against a pinned server, so each
+   one becomes a member of this agent's Project rather than being given a project of their own.
+4. Makes the agent's definition files root-owned and read-only (see below).
+5. Drops a sentinel in the data root so restarts skip all of the above.
+6. Starts the real server as the unprivileged \`node\` user with
+   \`PENGUIN_PINNED_AGENT=default_project/${definition.id}\`.`
+    : `1. Writes the model configuration into the data root from the environment.
 2. Starts the server.
 3. Imports \`penguin-agent.json\` together with the bundled \`skills/\` and \`hooks/\`.
-4. Drops a sentinel in the data root so restarts skip the import.
+4. Drops a sentinel in the data root so restarts skip the import.`
+}
 
 The data root is the \`penguin-data\` volume. Removing it resets the install, and the next
 start imports the agent again.
+${
+  pin
+    ? `
+## What pinned means
 
+The server refuses, for everyone including \`admin\`, with \`403 agent_pinned\`: creating,
+importing or deleting an agent; writing its config, updating its kernel or resetting it;
+inserting a prompt-template placeholder; installing or removing a skill, plugin or hook;
+importing an Agent State snapshot; creating, editing or deleting a schedule; and creating or
+deleting a Project. \`GET /api/me\` reports \`pinnedAgent\`, and the Web App hides what the
+server would refuse. Everything else is unchanged: chatting, approvals, files, Traces, memory,
+the vault, Project members and user management all work as they do on any install.
+
+Two layers do this, and they cover different things:
+
+- **The route guards above** stop people reaching the definition through the API or the Web App.
+  They cannot stop the agent itself: the model is told where its Agent State lives and is
+  invited to edit it with its own file tools.
+- **The filesystem lock** is what stops that. On every boot the entrypoint makes
+  \`AGENTS.md\`, \`system_config.yaml\`, \`skills/\`, \`hooks/\`, \`tools/\` and \`schedule/\`
+  root-owned and unwritable, and the server runs as \`node\`. \`memory/\` and \`.vault.toml\`
+  stay writable — the agent's memory is runtime data, and secrets are deployment
+  configuration.
+
+The lock lives in this container. Setting \`PENGUIN_PINNED_AGENT\` on an ordinary install gets
+you the route guards and nothing else.
+
+A data root that already holds other Projects or agents keeps them when it is started pinned —
+they are simply never listed and never served. There is no migration either way.
+`
+    : ""
+}
 ## What you have to fill in
 
 ${
@@ -634,19 +875,25 @@ ${
 /**
  * The Docker export's files. The portable definition, skills and hooks travel with them
  * (assembled by the caller), so the same zip both runs the agent and re-imports it.
+ *
+ * `pin` produces the locked variant: same image and the same compose file, a first boot that
+ * imports and then locks, and a server that serves this agent alone.
  */
-export function renderDockerDocs(definition: PortableAgentDefinition): Record<string, string> {
+export function renderDockerDocs(
+  definition: PortableAgentDefinition,
+  pin: boolean,
+): Record<string, string> {
   return {
-    Dockerfile: renderDockerfile(),
+    Dockerfile: renderDockerfile(pin),
     "docker-compose.yml": renderCompose(definition),
-    ".env.example": renderEnvExample(definition),
-    "entrypoint.sh": renderEntrypoint(definition),
-    "README.md": renderDockerReadme(definition),
+    ".env.example": renderEnvExample(definition, pin),
+    "entrypoint.sh": renderEntrypoint(definition, pin),
+    "README.md": renderDockerReadme(definition, pin),
     "api/ENDPOINTS.md": renderEndpoints(definition),
   };
 }
 
 /** Names of the environment variables the Docker export's container reads (documented in .env.example). */
-export function dockerEnvironmentNames(definition: PortableAgentDefinition): string[] {
-  return dockerEnvNames(definition);
+export function dockerEnvironmentNames(definition: PortableAgentDefinition, pin = false): string[] {
+  return dockerEnvNames(definition, pin);
 }

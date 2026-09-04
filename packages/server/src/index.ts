@@ -19,7 +19,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
+import { SERVER_RESTART_EXIT_CODE, systemConfigPath } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -287,6 +287,19 @@ class PenguinServer {
       );
     }
     if (this.config.desktopToken !== null) console.log("Desktop mode: enabled");
+    const pinned = this.config.pinnedAgent;
+    if (pinned !== null) {
+      console.log(`Pinned agent: ${pinned.projectId}/${pinned.agentId}`);
+      // The pinned Docker bundle imports the agent before it ever sets this variable, so a
+      // missing config here means a hand-set PENGUIN_PINNED_AGENT naming an agent that does not
+      // exist — a server that answers 404 to every agent route, with nothing else to say why.
+      if (!fs.existsSync(systemConfigPath(this.config.root, pinned.projectId, pinned.agentId))) {
+        console.warn(
+          `[server] The pinned agent has no system_config.yaml under the data root; every ` +
+            `agent route answers 404 until it is imported.`,
+        );
+      }
+    }
     // PORT=0 asked for an ephemeral port: record the real one so everything derived from
     // the server's own port is correct — Workspace preview URLs above all, which are built
     // from the bind port on purpose (see resolvePreviewTarget) and would otherwise point at

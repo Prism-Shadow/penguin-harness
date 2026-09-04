@@ -18,6 +18,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import { readArchiveBase64 } from "./agent-transfer.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -30,7 +31,14 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Defensive id validation: don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    const items = await deps.agentService.listAgents(projectId);
+    const pinned = deps.config.pinnedAgent;
+    // A pinned server serves exactly one Agent: the seeded default_agent (and anything a
+    // pre-existing data root brought with it) stays on disk but is never listed, here or in
+    // any other Project.
+    const items = (await deps.agentService.listAgents(projectId)).filter(
+      (item) =>
+        pinned === null || (projectId === pinned.projectId && item.agentId === pinned.agentId),
+    );
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
         const stats = await deps.sessionService.sessionStats(
@@ -52,6 +60,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const body = await readJson(c);
     const agentId = requireString(body, "agentId", { label: "agentId" });
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100, label: "name" });
@@ -106,6 +115,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     // Deletion is a Project-level management operation: owner only.
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.requireExists(projectId, agentId);
     // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
     // this window gets 409, preventing the race where a new task recreates the directory

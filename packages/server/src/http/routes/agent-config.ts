@@ -20,6 +20,7 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 
 /** Ceiling on a single mcp-test probe's connect budget (an entry may configure minutes). */
@@ -44,6 +45,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const body = await readJson(c);
     const req: AgentConfigUpdateRequest = {};
     const agentsMd = optionalString(body, "agentsMd", { label: "agentsMd" });
@@ -137,6 +139,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const result = await deps.agentConfigService.kernelUpdate(projectId, agentId);
     return c.json(result satisfies AgentKernelUpdateResponse);
   });
@@ -148,6 +151,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.resetConfig(projectId, agentId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({

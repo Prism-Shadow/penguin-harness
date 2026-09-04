@@ -70,3 +70,25 @@ describe("resolveServerConfig: PENGUIN_SEED_ADMIN_PASSWORD parsing", () => {
     ).toBe("penguin-9999");
   });
 });
+
+describe("resolveServerConfig: PENGUIN_PINNED_AGENT", () => {
+  it("parses <projectId>/<agentId>; unset or empty is an ordinary multi-agent server", () => {
+    expect(resolveServerConfig({ ...base }).pinnedAgent).toBeNull();
+    expect(resolveServerConfig({ ...base, PENGUIN_PINNED_AGENT: "  " }).pinnedAgent).toBeNull();
+    expect(
+      resolveServerConfig({ ...base, PENGUIN_PINNED_AGENT: "default_project/researcher" })
+        .pinnedAgent,
+    ).toEqual({ projectId: "default_project", agentId: "researcher" });
+  });
+
+  it("throws on anything that is not exactly two ids, rather than starting unpinned", () => {
+    // Both halves are spliced into filesystem paths, so a traversal attempt is a hard failure —
+    // and so is a value with the wrong shape: silently serving every agent is the opposite of
+    // what the operator asked for.
+    for (const bad of ["bad", "a/b/c", "../x/y", "a/", "/b", "a b/c"]) {
+      expect(() => resolveServerConfig({ ...base, PENGUIN_PINNED_AGENT: bad }), bad).toThrow(
+        /Invalid PENGUIN_PINNED_AGENT/,
+      );
+    }
+  });
+});

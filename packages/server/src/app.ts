@@ -953,6 +953,7 @@ export function buildAppDeps(
     projectConfig: projectConfigService,
     manager,
     traceIndex,
+    pinnedAgent: config.pinnedAgent,
   });
   const adminService = new AdminService({
     users: usersRepo,

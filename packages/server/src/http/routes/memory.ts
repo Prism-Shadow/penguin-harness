@@ -24,6 +24,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import type { MemoryImportMode } from "../../api/types.js";
 import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } from "../validate.js";
@@ -56,6 +57,7 @@ export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
   // The explicit adoption path for a template that predates Memory (idempotent config write).
   app.post("/template-placeholder", async (c) => {
     const { projectId, agentId } = scope(c);
+    assertNotPinned(deps);
     return c.json(await deps.memoryService.insertTemplatePlaceholder(projectId, agentId));
   });
 
