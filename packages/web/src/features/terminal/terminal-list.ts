@@ -13,6 +13,13 @@
  */
 import type { TerminalInfo } from "./terminal-view";
 import { pruneTerminalTabs } from "../dock/dock-state";
+import { apiUrl } from "../../lib/server-context";
+import {
+  rememberTerminalMachine,
+  terminalMachinesPublished,
+  terminalSources,
+  terminalUrl,
+} from "../../lib/terminal-machines";
 
 /**
  * Shell titles usually open with a `user@host` marker (bash and zsh default title
@@ -91,24 +98,60 @@ export function refreshTerminals(): Promise<void> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const res = await fetch("/api/terminals", { credentials: "same-origin" });
+      // Every source, this server first: a terminal is a pty on ONE machine's kernel, so
+      // the list is not one server's answer. A machine that does not answer contributes
+      // nothing and its terminals are simply not listed this round — which is right, since
+      // a pane whose bytes cannot arrive is not a pane anyone can use.
+      const answers = await Promise.all(
+        terminalSources().map(async (source) => {
+          const res = await fetch(apiUrl("/api/terminals", source), {
+            credentials: "same-origin",
+          }).catch(() => null);
+          return { source, res };
+        }),
+      );
+      const here = answers.find((a) => a.source === null)?.res ?? null;
       // 404 means the route does not exist at all: the running runtime predates the
       // terminal API. Under hot update the Web App and the runtime can be different
       // versions by design, so the UI has to notice rather than offer a dead control.
-      if (res.status === 404 && !unsupported) {
+      // Asked of THIS server only — a machine on an older build says nothing about the
+      // control this page offers.
+      if (here?.status === 404 && !unsupported) {
         unsupported = true;
         for (const listener of [...listeners]) listener();
         return;
       }
-      if (!res.ok) return; // signed out or server unreachable: keep the last known list
+      if (here === null || !here.ok) return; // signed out or unreachable: keep the last list
       unsupported = false;
-      const data = (await res.json()) as { terminals: TerminalInfo[] };
-      const listed = new Set(data.terminals.map((t) => t.id));
+      const terminals: TerminalInfo[] = [];
+      for (const { source, res } of answers) {
+        if (res === null || !res.ok) continue;
+        const part = (await res.json()) as { terminals: TerminalInfo[] };
+        for (const terminal of part.terminals) {
+          terminals.push(terminal);
+          // Where it lives, so the two calls about it — attach and kill — reach that
+          // machine. Rebuilt by the very list that displays them.
+          rememberTerminalMachine(terminal.id, source);
+        }
+      }
+      const listed = new Set(terminals.map((t) => t.id));
       for (const id of pendingKills.keys()) {
         if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
-      const live = data.terminals.filter((t) => t.alive && !isPendingKill(t.id));
-      pruneTerminalTabs(new Set(live.map((t) => t.id)));
+      const live = terminals.filter((t) => t.alive && !isPendingKill(t.id));
+      // Pruning is the one thing here that DESTROYS something: it drops terminal tabs out
+      // of every conversation's stored arrangement. So it may only act on a complete
+      // picture — every source answered, and the machine set already published. Neither
+      // holds on a fresh page: the machines are published once the machine list has been
+      // read, and a connection the server is still re-holding after a restart answers
+      // nothing yet, so an early refresh sees this server alone. Pruning on that would
+      // delete the tabs of terminals that are alive on a machine, and storage does not get
+      // them back. Displaying the short list meanwhile is fine — a pane whose bytes cannot
+      // arrive is not usable yet, but it is not gone either, and the next complete refresh
+      // restores it.
+      if (terminalMachinesPublished() && answers.every((a) => a.res !== null && a.res.ok)) {
+        pruneTerminalTabs(new Set(live.map((t) => t.id)));
+      }
       commit(live);
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.
@@ -157,7 +200,7 @@ export async function killTerminal(id: string): Promise<void> {
   pendingKills.set(id, Date.now() + 10_000);
   commit(raw.filter((t) => t.id !== id));
   try {
-    await fetch(`/api/terminals/${encodeURIComponent(id)}`, {
+    await fetch(terminalUrl(`/api/terminals/${encodeURIComponent(id)}`), {
       method: "DELETE",
       credentials: "same-origin",
     });
