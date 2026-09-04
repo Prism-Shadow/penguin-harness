@@ -173,9 +173,25 @@ const fieldsOf = (cls: ModuleClass): ClassFields => {
  * parks its state.
  */
 export function Module(meta: ModuleMeta = {}) {
-  return (target: ModuleClass, _context: ClassDecoratorContext): void => {
-    metas.set(target, { ...meta, name: target.name, kind: "module" });
+  return (target: ModuleClass, context: ClassDecoratorContext): void => {
+    metas.set(target, { ...meta, name: nodeName(context), kind: "module" });
   };
+}
+
+/**
+ * A node's name is the class's DECLARED name — the one the generator read off the source
+ * into the table — and it arrives here as the decorator context's `name`, which both
+ * lowerings emit as a string literal. `target.name` would be the same word until a
+ * minifier renamed the binding; a string literal it cannot touch. So the name the table
+ * carries and the name the class boots under cannot disagree, whatever the bundle went
+ * through.
+ */
+function nodeName(context: ClassDecoratorContext): string {
+  const name = context.name;
+  if (typeof name !== "string" || name === "") {
+    throw new ModuleBootError("a @Module / @Component class must be a named class declaration");
+  }
+  return name;
 }
 
 /**
@@ -187,8 +203,8 @@ export function Module(meta: ModuleMeta = {}) {
  * by a @Module instead, which is what "exports others" means.
  */
 export function Component(meta: ComponentMeta = {}) {
-  return (target: ModuleClass, _context: ClassDecoratorContext): void => {
-    metas.set(target, { ...meta, name: target.name, kind: "component" });
+  return (target: ModuleClass, context: ClassDecoratorContext): void => {
+    metas.set(target, { ...meta, name: nodeName(context), kind: "component" });
   };
 }
 
@@ -298,9 +314,9 @@ export function moduleDefOf(
   for (const field of Object.keys(manifest.requires)) {
     if (!f.use.has(field)) throw stale(`requirement '${field}' in the table has no @Use field`);
   }
-  const selfAlias = meta.kind === "component" ? cls.name : null;
+  const selfAlias = meta.kind === "component" ? meta.name : null;
   if (selfAlias !== null && manifest.provides[selfAlias] === undefined)
-    throw stale(`component '${cls.name}' does not provide itself in the table`);
+    throw stale(`component '${meta.name}' does not provide itself in the table`);
   for (const field of f.provide) {
     if (manifest.provides[field] === undefined)
       throw stale(`@Provide field '${field}' is not a provision in the table`);
