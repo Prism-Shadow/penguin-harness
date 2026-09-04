@@ -219,6 +219,9 @@ describe("agent porting", () => {
     // 127.0.0.1 and answers 401 there…
     expect(entrypoint).toContain('--server "http://localhost:$PORT"');
     expect(entrypoint).not.toContain("http://127.0.0.1:");
+    // …and the setup server is backgrounded as a plain command, so $! is the process the
+    // stop step signals rather than a subshell wrapping it.
+    expect(entrypoint).not.toContain("as_node env ");
     // …phase 2 locks the definition files and leaves memory and the vault alone…
     expect(entrypoint).toContain("chown -R root:root");
     expect(entrypoint).toContain("chmod 1775");
