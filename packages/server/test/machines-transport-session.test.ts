@@ -89,6 +89,21 @@ exit 1
     expect(sessionOf("ssh:refused")).toBeNull();
   });
 
+  it("answers a command that outlasts its timeout with the timeout, and hands the next one a live session", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    // The timeout is this command's own answer. Dropping the session also answers whatever is
+    // pending — with the connection's last words — so the two race for the one resolution a
+    // promise has, and the precise diagnosis has to win.
+    const timedOut = await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
+    expect(timedOut).toMatchObject({ code: 255, stdout: "the machine did not answer in time" });
+
+    // The killed session's close event lands while its replacement is already coming up. It
+    // belongs to a child nobody holds any more, and must not take the replacement — or the
+    // command riding it — down with it.
+    expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
+    expect(spawns()).toHaveLength(2);
+  });
+
   it("closing lets go of the session; the next ask opens a new one", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     await conn.exec("true");

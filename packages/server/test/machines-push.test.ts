@@ -120,7 +120,7 @@ describe("installOnRemote", () => {
   it("probes, installs and replicates over the ONE session, then asks what the machine now has", async () => {
     const channel = scripted({
       probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
-      afterInstall: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+      afterInstall: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`,
     });
     const progress: string[] = [];
     const outcome = await installOnRemote({
@@ -165,10 +165,26 @@ describe("installOnRemote", () => {
     expect((outcome as { detail: string }).detail).toContain("still has no install");
   });
 
+  it("calls a base that took without the pushed state a failure", async () => {
+    // The store's unpack exited 0 and the base is exactly right, so every step answered for
+    // itself; only the second probe can tell that the pushed half never landed. Blessing this
+    // would record the machine at plan.version — the base plus that state's sha — and
+    // syncOutOfDate filters on that record, so the machine would be left out of the very
+    // sweep that would have pushed again.
+    const channel = scripted({
+      probe: "Linux x86_64\\n---penguin---\\n---penguin---\\n",
+      afterInstall: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+    });
+    const outcome = await installOnRemote({ target, plan: plan(), assets, channel });
+
+    expect(outcome).toMatchObject({ kind: "failed", step: "verify the install" });
+    expect((outcome as { detail: string }).detail).toContain("no pushed state");
+  });
+
   it("a Windows host has no session to hold: the probe, a copied script and the store each get their own connection", async () => {
     const channel = scripted({
       probe: "Windows_NT AMD64\\n---penguin---\\n---penguin---\\n",
-      afterInstall: 'Windows_NT AMD64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+      afterInstall: `Windows_NT AMD64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`,
       windows: true,
     });
     const outcome = await installOnRemote({ target, plan: plan(), assets, channel });

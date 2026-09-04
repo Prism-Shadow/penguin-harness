@@ -347,6 +347,23 @@ export async function installOnRemote(opts: {
           `${after.identity.installedVersion ?? "no install"} where ${plan.baseVersion} was expected.`,
       };
     }
+    // The base is only half of what gets recorded. A plan carrying a pushed state is recorded
+    // at `plan.version`, which is the base plus that state's content sha — so a store whose
+    // unpack exited 0 without landing (a partial tarball, a data root somewhere else, a
+    // harness.json the far side could not replace) would seal the machine in at a version it
+    // is not running. This is the comparison the entry gate above already makes; the machine
+    // has to still make it true afterwards. Scoped to a plan that HAD a pushed state: a
+    // base-only install neither carries nor removes one, and must not be failed for a remote
+    // hmr directory it was never asked to touch.
+    if (plan.hmrDir !== null && after.identity.harness !== plan.harness) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail:
+          "the install reported success, but the pushed version is not what the machine ended " +
+          `up with: it reports ${after.identity.harness === null ? "no pushed state" : "a different one"}.`,
+      };
+    }
 
     return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {

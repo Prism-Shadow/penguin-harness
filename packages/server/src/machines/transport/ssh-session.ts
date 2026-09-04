@@ -18,11 +18,12 @@
  * MERGED — separating them over one pipe needs temp files — and that is in the type: the
  * result is `output`, not `stdout`/`stderr`. With an input, the command reads it from stdin:
  *
- *     ( base64 -d | ( <command> ) ) <<'EOF_<mark>' 2>&1 ; printf …
+ *     ( <decode> | ( <command> ) ) <<'EOF_<mark>' 2>&1 ; printf …
  *     <base64 of the input>
  *     EOF_<mark>
  *
  * base64 because a heredoc carries text, and the terminator cannot occur in its alphabet.
+ * <decode> is DECODE below, which settles the flag on the far side rather than here.
  *
  * UNSUPERVISED: a session that dies is dropped and the next command opens a new one.
  */
@@ -66,6 +67,15 @@ const COMMAND_TIMEOUT_MS = 60_000;
 
 /** Opening is a handshake to a host that may be far away or loaded. */
 const OPEN_TIMEOUT_MS = 30_000;
+
+/**
+ * Decoding the heredoc, on either base64 there is. GNU coreutils spells decode `-d` and
+ * rejects `-D`; the BSD base64 macOS ships spells it `-D`, and releases before Ventura reject
+ * `-d`. There is no flag both accept, so the far side picks: the candidate is tried on an
+ * empty input of its own — a pipe from printf — which leaves the heredoc on stdin untouched
+ * for whichever invocation wins. No round trip, and nothing here has to know the platform.
+ */
+const DECODE = "if printf '' | base64 -d >/dev/null 2>&1; then base64 -d; else base64 -D; fi";
 
 /** A local port nothing is on: the kernel's answer, bound and released rather than guessed. */
 function freeLocalPort(): Promise<number | null> {
@@ -151,7 +161,11 @@ class MachineShell {
     if (port === null) throw new Error("no free local port for the session's SOCKS listener");
     this.#mark = `--penguin-${randomBytes(9).toString("hex")}--`;
     const child = spawn("ssh", sessionArgs(this.target, port), { stdio: ["pipe", "pipe", "pipe"] });
-    child.stdout.on("data", (chunk: Buffer) => this.#onData(String(chunk)));
+    // setEncoding, not String(chunk): a multibyte character whose bytes land in two `data`
+    // events would otherwise decode to two replacement characters. The stream's decoder holds
+    // an incomplete sequence back until the rest of it arrives.
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => this.#onData(chunk));
     // A write to a session that already died raises EPIPE on this stream ASYNCHRONOUSLY,
     // after the write returned — with no listener that is an unhandled error event, which
     // takes the process down. The command it belonged to is answered by #drop() on exit.
@@ -162,8 +176,17 @@ class MachineShell {
       this.#stderr = (this.#stderr + String(chunk)).slice(-4096);
     });
     // "close", not "exit": stderr's last words arrive before close, and they are the diagnosis.
-    child.on("close", () => this.#drop());
-    child.on("error", () => this.#drop());
+    //
+    // Guarded by identity, because a dead child's close event can arrive after its successor is
+    // already up: close() kills and drops synchronously, the queue then opens a new session, and
+    // the kill's own close lands afterwards. Unguarded, that stale event would drop the
+    // replacement and answer ITS command as a connection that ended.
+    child.on("close", () => {
+      if (this.#child === child) this.#drop();
+    });
+    child.on("error", () => {
+      if (this.#child === child) this.#drop();
+    });
     this.#child = child;
     this.#socksPort = port;
     return child;
@@ -215,6 +238,12 @@ class MachineShell {
       const timer = setTimeout(() => {
         // A session that stopped answering is not one to keep: drop it so the next command
         // opens a fresh connection rather than queueing behind a corpse.
+        //
+        // The pending command is detached FIRST. close() answers whatever is pending with the
+        // connection's last words, and a promise settles once — so leaving it attached would
+        // spend this command's one answer on "the connection ended", losing the more precise
+        // fact that the machine simply never replied.
+        this.#pending = null;
         this.close();
         resolve({ code: 255, output: "the machine did not answer in time" });
       }, opts.timeoutMs ?? COMMAND_TIMEOUT_MS);
@@ -227,7 +256,7 @@ class MachineShell {
       const end = `EOF_${this.#mark.replaceAll("-", "")}`;
       const body = opts.input.toString("base64").replace(/.{76}/g, "$&\n");
       child.stdin.write(
-        `( base64 -d | ( ${command} ) ) <<'${end}' 2>&1 ; ${mark}\n${body}\n${end}\n`,
+        `( ${DECODE} | ( ${command} ) ) <<'${end}' 2>&1 ; ${mark}\n${body}\n${end}\n`,
       );
     }).finally(() => {
       this.#idle = setTimeout(() => this.close(), IDLE_MS);

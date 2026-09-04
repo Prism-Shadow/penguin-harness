@@ -15,6 +15,8 @@ Behind the door the previous change put in front of `machines/` there is now **o
 
 An install is therefore: one command to ask what the machine is, the installer on stdin, the store on stdin, one command to ask what it ended up with — four exchanges on one connection, where before each was its own ssh with its own handshake, plus an `scp`.
 
+That last exchange is the one that decides. An install counts only if the machine reports back **both halves of what would be recorded** — the base release, and the pushed state streamed after it. A step exiting 0 says the step ran, not that the thing on disk over there changed; and a success recorded for a version the machine is not running would leave it out of the very sweep that would have pushed again.
+
 This is **structure, not a budget**: nothing can open a second connection to a machine, however many callers ask and however often, because there is nothing that could; a second ask queues behind the first. Win32 OpenSSH has no ControlMaster, so one connection cannot be had by sharing a socket between ssh processes — it is had by never starting a second one.
 
 **The exception is a Windows remote.** Its sshd hands commands to cmd.exe, and there is no `sh` to hold a session on, so its PowerShell installer keeps a connection of its own (`oneShot`/`copyTo`, serialised per machine). That is stated where the code is, not left to be discovered.

@@ -12,18 +12,33 @@ function socksServer(): Promise<{ port: number; close: () => void; requests: num
   const requests: number[] = [];
   const server = net.createServer((client) => {
     let stage = 0;
+    // Each stage waits for its whole frame before reading it. A `data` event is a piece of a
+    // byte stream, not a message: taking one as a complete greeting or CONNECT would read the
+    // port from bytes that had not arrived, and reading past the end throws inside this
+    // handler — an uncaught exception, which takes the worker down rather than failing a test.
+    let buffer = Buffer.alloc(0);
     client.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      // The greeting: version, one method count, that many methods.
       if (stage === 0) {
+        if (buffer.length < 2) return;
+        const greeting = 2 + buffer[1]!;
+        if (buffer.length < greeting) return;
+        buffer = buffer.subarray(greeting);
         stage = 1;
         client.write(Buffer.from([5, 0]));
-        return;
       }
+      // CONNECT to an IPv4 address: 4 header bytes, 4 of address, 2 of port.
       if (stage === 1) {
+        if (buffer.length < 10) return;
         stage = 2;
-        const port = chunk.readUInt16BE(8);
+        const port = buffer.readUInt16BE(8);
+        buffer = buffer.subarray(10);
         requests.push(port);
         const upstream = net.connect({ host: "127.0.0.1", port }, () => {
           client.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
+          // Anything already read past the request belongs to the tunnel, not to us.
+          if (buffer.length > 0) upstream.write(buffer);
           client.pipe(upstream).pipe(client);
         });
         upstream.on("error", () => {
