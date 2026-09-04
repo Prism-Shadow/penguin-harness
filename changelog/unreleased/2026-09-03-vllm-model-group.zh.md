@@ -33,10 +33,11 @@
 `deepseek-ai/DeepSeek-V4-*` 含有 `deepseek-v4`，否则会走到 DeepSeek 的一方客户端上——却指着一台
 vLLM 服务。
 
-## 需要携带该客户端的 AgentHub 版本
+## AgentHub 依赖升至 0.4.10
 
-`openai-chat-vllm-adapter` 不在 `@prismshadow/agenthub` 0.4.9 中——本仓库依赖的正是它，也是当前最新的已发布
-版本；该客户端位于 AgentHub 尚未发布的分支上（agenthub
+`openai-chat-vllm-adapter` 首次随 `@prismshadow/agenthub` 0.4.10 发布（agenthub
 [#197](https://github.com/Prism-Shadow/agenthub/pull/197)、
-[#198](https://github.com/Prism-Shadow/agenthub/pull/198)）。在依赖升到包含它的版本（0.4.10 或更高）
-之前，该分组下的模型会在发起请求时以 AgentHub 的 `"openai-chat-vllm-adapter is not supported"` 失败。
+[#198](https://github.com/Prism-Shadow/agenthub/pull/198)），因此 `packages/core` 与
+`packages/cli` 的依赖从 `^0.4.9` 升到 `^0.4.10`。在 0.4.9 上，该客户端类型并不存在，本分组下的模型
+会在发起请求时以 AgentHub 的 `"openai-chat-vllm-adapter is not supported"` 失败。
+`pnpm-workspace.yaml` 中的 `minimumReleaseAgeExclude` 条目按其注释的约定移到新版本。

@@ -37,4 +37,4 @@ allowBuilds:
 # Every bump lands inside the age gate, so the entry names the pinned version and moves
 # with each bump rather than being removed.
 minimumReleaseAgeExclude:
-  - "@prismshadow/agenthub@0.4.9"
+  - "@prismshadow/agenthub@0.4.10"

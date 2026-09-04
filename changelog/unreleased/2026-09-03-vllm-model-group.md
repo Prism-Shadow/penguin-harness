@@ -39,11 +39,12 @@ The pin is load-bearing on the preset rows too: `Qwen/*` matches none of AgentHu
 rules and would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains `deepseek-v4`
 and would otherwise reach DeepSeek's first-party client, pointed at a vLLM server.
 
-## Requires an AgentHub release that carries the client
+## The AgentHub dependency moves to 0.4.10
 
-`openai-chat-vllm-adapter` does not exist in `@prismshadow/agenthub` 0.4.9, the version this
-repo depends on and the newest published release; it is on AgentHub's unreleased branch
-(agenthub [#197](https://github.com/Prism-Shadow/agenthub/pull/197),
-[#198](https://github.com/Prism-Shadow/agenthub/pull/198)). Until the dependency is bumped to
-the release that contains it — 0.4.10 or later — a model in this group fails at request time
-with AgentHub's `"openai-chat-vllm-adapter is not supported"`.
+`openai-chat-vllm-adapter` first ships in `@prismshadow/agenthub` 0.4.10 (agenthub
+[#197](https://github.com/Prism-Shadow/agenthub/pull/197),
+[#198](https://github.com/Prism-Shadow/agenthub/pull/198)), so `packages/core` and
+`packages/cli` move from `^0.4.9` to `^0.4.10`. On 0.4.9 a model in this group would have
+failed at request time with AgentHub's `"openai-chat-vllm-adapter is not supported"`, because
+the client type did not exist there. The `minimumReleaseAgeExclude` entry in
+`pnpm-workspace.yaml` moves to the new version, as its comment prescribes.
