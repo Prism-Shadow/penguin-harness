@@ -442,7 +442,7 @@ export type ServerEvent =
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string };
 ```
@@ -456,7 +456,7 @@ export type ServerEvent =
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
-| session_created | 新 Session 注册（如子 Agent 会话） |
+| session_created | 一个 Session 现在存在了——由 Web App、CLI、定时任务或 Agent 派生子 Session 创建。每次创建都在用户通道上发给 Project 的所有者与成员；子 Agent 会话还会同时发到父 Session 的通道。用户创建的 Session 没有 `source`，与行上一致。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告 |
 | schedule_fired | 定时任务已触发并发送 |
 | schedule_queued | 目标 Session 正在运行，本次触发已排队 |
 
