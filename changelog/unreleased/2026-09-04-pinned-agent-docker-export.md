@@ -3,6 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** feature
 - **Scope:** `server`, `cli`, `web`, `docs`
+- **PR:** [#610](https://github.com/Prism-Shadow/penguin-harness/pull/610)
 
 [中文版](2026-09-04-pinned-agent-docker-export.zh.md)
 
