@@ -60,9 +60,9 @@ import type { MachineRow } from "../db/repos/machines.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config } from "../config.js";
-import { Hmr } from "../hmr/host.js";
-import { Overrides } from "../app.js";
+import type { Config } from "../config.js";
+import type { Hmr } from "../hmr/host.js";
+import type { Overrides } from "../app.js";
 import { RuntimeModule } from "../hmr/capabilities.js";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
@@ -71,7 +71,7 @@ import type { ProjectAccess } from "../services/project-access.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import { Db } from "../hmr/capabilities.js";
+import type { Db } from "../db/database.js";
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
@@ -1147,7 +1147,7 @@ export abstract class Machines extends Interface<
     "HttpModule.routes": [
       {
         id: "MachinesModule.routes",
-        prefix: "/api/machines",
+        prefix: "/api/projects/:projectId/machines",
         auth: "user",
         order: 50,
       },

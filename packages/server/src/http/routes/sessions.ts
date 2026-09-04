@@ -118,9 +118,7 @@ import {
 } from "../../runtime/session-manager.js";
 import { Messaging, MessagingModule } from "../../runtime/messaging/bridge.js";
 import { RuntimeModule } from "../../hmr/capabilities.js";
-import { SessionsModule } from "../../runtime/session-manager.js";
-import { Machines, MachinesModule } from "../../machines/service.js";
-import { MessagingModule } from "../../runtime/messaging/bridge.js";
+import type { Machines } from "../../machines/service.js";
 import { WorkspaceModule, PreviewTokens } from "./preview.js";
 import { agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
@@ -1536,7 +1534,7 @@ export class SessionApiRoutes {
   @Use(RuntimeModule) private readonly config!: Config;
   @Use(RuntimeModule) private readonly channels!: Channels;
   @Use(SessionsModule) private readonly manager!: ManagerIface;
-  @Use(MachinesModule) private readonly machines!: Machines;
+  @Use() private readonly machines!: Machines;
   @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
   @Use() private readonly agentConfig!: AgentConfigService;
   @Use() private readonly agents!: AgentService;

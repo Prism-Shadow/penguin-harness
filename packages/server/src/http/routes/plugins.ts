@@ -28,8 +28,7 @@ import type {
   PluginLibraryResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { ServerConfig } from "../../config.js";
-import type { Config } from "../../config.js";
+import type { Config, ServerConfig } from "../../config.js";
 import type { AgentConfigService } from "../../services/agent-config-service.js";
 import type { ProjectAccess } from "../../services/project-access.js";
 import { Sessions as ManagerIface, SessionsModule } from "../../runtime/session-manager.js";
