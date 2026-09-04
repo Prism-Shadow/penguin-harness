@@ -559,11 +559,12 @@ describe("upgrade assets by manifest: only the blobs the store lacks travel, and
     expect(
       await fs.readFile(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node")),
     ).toEqual(BIN);
-    // The exec bit survives a materialization that read from the blob store.
+    // The exec bit survives a materialization that read from the blob store — a POSIX
+    // contract, guarded like the inline-push case above: Windows has no such bit to restore.
     const mode = (
       await fs.stat(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node"))
     ).mode;
-    expect(mode & 0o111).not.toBe(0);
+    if (process.platform !== "win32") expect(mode & 0o111).not.toBe(0);
   });
 
   it("refuses a manifest naming a blob the store does not hold, rather than materializing a hole", async () => {
