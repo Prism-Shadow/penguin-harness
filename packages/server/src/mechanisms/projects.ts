@@ -22,6 +22,7 @@ import type {
   ModelsUpdateRequest,
   ProjectRole,
   ProjectSummary,
+  ServerEvent,
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { RawTable } from "../services/project-config-service.js";
@@ -155,4 +156,14 @@ export abstract class ModelOAuth extends Interface<{
     projectId: string;
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }>;
+}>() {}
+
+/**
+ * ProjectEvents: the mechanism ProjectNotifier implements — a user-level event to everyone
+ * who can see a Project, its owner and its members with GET /api/events open. The runtime
+ * publishes a Session's state flips and its generated title this way, and a route
+ * publishes a change the list could not otherwise learn of (a rename, a new Session).
+ */
+export abstract class ProjectEvents extends Interface<{
+  notifyProjectUsers(projectId: string, event: ServerEvent): void;
 }>() {}

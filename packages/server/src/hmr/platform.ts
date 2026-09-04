@@ -44,6 +44,7 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
+import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import type { SessionManager } from "../runtime/session-manager.js";
@@ -304,6 +305,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
     const identity = identityFrom(auth);
     const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
+    // A pty on a machine, served through this server's own stream (machines/terminal-relay.ts).
+    // A bare kernel reaches no machines and serves only its own ptys.
+    const remote = business?.api<RemoteTerminals>("TerminalRelay", "TerminalRelay") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a
     // claimed capability — overwrite-only across swaps, so a dead generation's hook is
     // replaced and never removed: "is this session busy" for the channel sweep.
@@ -393,7 +397,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       }),
       http,
       terminals: () => terminals,
-      attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
+      attachStream: (ws, session, url, log) => {
+        // The runtime handed the socket over exactly as for a local pty; the relay takes it
+        // when the session is a reference to a machine's pty, and declines a local one.
+        if (remote?.attach(ws, session, url, log) === true) return;
+        bindTerminalStream(ws, session, url, log);
+      },
       business: () => business,
       // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.
