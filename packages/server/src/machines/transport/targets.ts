@@ -11,8 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { run } from "./exec.js";
-import { machineIdentity, parseHostAliases, parseSshSettings } from "./ssh-config.js";
-import type { SshSettings } from "./ssh-config.js";
+import { machineIdentity, parseHostAliases, parseSshSettings } from "../ssh-config.js";
+import type { SshSettings } from "../ssh-config.js";
 
 const SSH_DIR = () => path.join(os.homedir(), ".ssh");
 

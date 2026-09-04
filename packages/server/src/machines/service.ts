@@ -26,7 +26,7 @@
  * 30 MB transfer to reach the same place.
  */
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
-import { listHostAliases, resolveTarget } from "./targets.js";
+import { listHostAliases, resolveTarget } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import type { MachinesRepo } from "../db/repos/machines.js";
 

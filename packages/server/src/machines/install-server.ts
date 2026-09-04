@@ -26,7 +26,7 @@ import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from ".
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
+import { looksLikeAuthFailure, run, runPiped, runWithInput } from "./transport/index.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
