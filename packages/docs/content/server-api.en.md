@@ -463,7 +463,7 @@ export type ServerEvent =
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string };
 ```
@@ -477,7 +477,7 @@ export type ServerEvent =
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`, or a completed key-minting flow): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |
-| session_created | A new Session was registered (e.g. a subagent session) |
+| session_created | A Session now exists — created by the Web App, the CLI, a schedule, or an agent spawning a child. On the user channel for every creation, to the Project's owner and members; on the parent Session's channel as well for a subagent. `source` is absent for a user-created Session, as it is on the row. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way |
 | schedule_fired | A scheduled task fired and was delivered |
 | schedule_queued | The target Session is running; this firing was queued |
 
