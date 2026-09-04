@@ -58,10 +58,13 @@ import type {
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
-import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
+import {
+  TELEGRAM_MAX_DOWNLOAD_BYTES,
+  TelegramApiError,
+  createTelegramTransport,
+} from "./telegram-api.js";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
-import { createTelegramTransport } from "./telegram-api.js";
 import type { MessagingTuning } from "./bridge.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */

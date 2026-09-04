@@ -40,14 +40,14 @@
         }
       },
       {
-        "id": "web.skills",
-        "key": "skills",
-        "path": "/skills",
+        "id": "web.plugins",
+        "key": "plugins",
+        "path": "/plugins",
         "nav": "main",
         "admin": false,
         "released": true,
         "renderer": {
-          "builtin": "SkillsPage"
+          "builtin": "PluginsPage"
         }
       },
       {

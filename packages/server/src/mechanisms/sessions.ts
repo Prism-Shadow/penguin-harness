@@ -3,9 +3,8 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { SessionSource } from "../api/types.js";
+import type { SessionSource, ApprovalMode } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
-import type { ApprovalMode } from "../api/types.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "../runtime/schedule-store.js";

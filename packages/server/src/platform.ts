@@ -15,17 +15,47 @@ import {
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
+  AuthState,
+  Channels,
+  Clock,
+  Config,
+  Db,
+  Desktop,
+  Lifecycle,
+  Hmr,
+  Log,
+  Paths,
+  Proxy,
+  ResourceGroups,
 } from "./hmr/capabilities.js";
-import { ScryptHasher } from "./auth/password.js";
-import { DefaultMessagingTuning } from "./runtime/messaging/bridge.js";
+import { ScryptHasher, PasswordHasher } from "./auth/password.js";
+import {
+  DefaultMessagingTuning,
+  Messaging,
+  MessagingTaskRunner,
+  MessagingModule,
+  QQScan,
+} from "./runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
 import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
 import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
 import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
-import { CoreSessionLoaders, DefaultTitleGenerators } from "./runtime/session-manager.js";
-import { GlobalFetch, UpdateCheckService } from "./services/update-check-service.js";
+import {
+  CoreSessionLoaders,
+  DefaultTitleGenerators,
+  SessionsModule,
+  SessionEnv,
+  Sessions,
+  SessionServiceIface,
+} from "./runtime/session-manager.js";
+import {
+  GlobalFetch,
+  UpdateCheckService,
+  VersionRoutes,
+  UpdateCheck,
+} from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsersRepo } from "./db/repos/users.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
@@ -50,10 +80,10 @@ import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { ProjectAccess } from "./services/project-access.js";
-import { ProjectService } from "./services/project-service.js";
-import { AuthService } from "./auth/service.js";
+import { ProjectService, ProjectRuns } from "./services/project-service.js";
+import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
-import { Scheduler } from "./runtime/scheduler.js";
+import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -62,35 +92,17 @@ import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { HostAssembly } from "./services/host-assembly.js";
-import { SessionsModule } from "./runtime/session-manager.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
-import { VersionRoutes } from "./services/update-check-service.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
-import {
-  AuthState,
-  Channels,
-  Clock,
-  Config,
-  Db,
-  Desktop,
-  Lifecycle,
-  Hmr,
-  Log,
-  Paths,
-  Proxy,
-  ResourceGroups,
-} from "./hmr/capabilities.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
-import { PasswordHasher } from "./auth/password.js";
-import { InitialProjectProvisioner } from "./auth/service.js";
 import {
   Access,
   AgentIndex,
@@ -100,15 +112,7 @@ import {
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
-import { ProjectRuns } from "./services/project-service.js";
-import {
-  Schedules,
-  Scheduling,
-  SessionIndex,
-  SessionOrigins,
-} from "./mechanisms/sessions.js";
-import { ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
-import { SessionEnv, Sessions, SessionServiceIface } from "./runtime/session-manager.js";
+import { Schedules, Scheduling, SessionIndex, SessionOrigins } from "./mechanisms/sessions.js";
 import {
   ErrorLog,
   Errors,
@@ -129,11 +133,8 @@ import { WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
-import { Messaging, MessagingTaskRunner, MessagingModule } from "./runtime/messaging/bridge.js";
-import { QQScan } from "./runtime/messaging/bridge.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { UpdateCheck } from "./services/update-check-service.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.

@@ -45,8 +45,8 @@ import {
   RuntimeCapabilities,
   ConsoleLog,
   type Log,
+  type ProxyControl,
 } from "./hmr/capabilities.js";
-import type { ProxyControl } from "./hmr/capabilities.js";
 import { ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
