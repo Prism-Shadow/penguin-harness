@@ -29,6 +29,31 @@ describe("dataExtends", () => {
     expect(dataExtends({ "[string]": "number" }, { a: "number" })).toBe(true);
   });
 
+  it("an intersection on the left is one shape — its halves fit together, not alone", () => {
+    expect(dataExtends([{ a: "string" }, "&", { b: "string" }], { a: "string", b: "string" })).toBe(
+      true,
+    );
+    expect(dataExtends([{ a: "string" }, "&", { b: "string" }], { a: "string", c: "string" })).toBe(
+      false,
+    );
+    // A key both halves carry keeps both constraints.
+    expect(dataExtends([{ a: "string" }, "&", { a: "'x'" }], { a: "'x'" })).toBe(true);
+    // Through references too.
+    const types: TypeTable = { "m#Role": { role: "'admin'|'member'" } };
+    expect(
+      dataExtends(
+        [{ id: "string" }, "&", { $ref: "m#Role" }],
+        { id: "string", role: "string" },
+        types,
+      ),
+    ).toBe(true);
+    // On the right, both halves must hold.
+    expect(dataExtends({ a: "string", b: "string" }, [{ a: "string" }, "&", { b: "string" }])).toBe(
+      true,
+    );
+    expect(dataExtends({ a: "string" }, [{ a: "string" }, "&", { b: "string" }])).toBe(false);
+  });
+
   it("arrays and tuples, in both spellings", () => {
     expect(dataExtends("string[]", "unknown[]")).toBe(true);
     expect(dataExtends([{ a: "'x'" }, "[]"], [{ a: "string" }, "[]"])).toBe(true);

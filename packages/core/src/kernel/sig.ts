@@ -191,8 +191,10 @@ export function extendsExpr(
     const offered = tableOf(table).ifaces[a.iface];
     const required = tableOf(table).ifaces[b.iface];
     if (offered === undefined || required === undefined) return false;
-    seen.add(key);
-    return satisfies(offered, required, table, seen).length === 0;
+    // The assumption lives only inside this comparison (a copy, as data.ts does): a pair
+    // that turns out not to hold must not be taken as holding by a later branch — another
+    // union member, another parameter — that meets it again.
+    return satisfies(offered, required, table, new Set(seen).add(key)).length === 0;
   }
   if ("maybe" in b) return extendsExpr("maybe" in a ? a.maybe : a, b.maybe, table, seen);
   if ("maybe" in a) return false;

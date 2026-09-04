@@ -344,6 +344,33 @@ for (const project of projects) {
   const hasUndefined = (type) =>
     type.isUnion() && type.types.some((t) => t.getFlags() & ts.TypeFlags.Undefined);
 
+  const hasNull = (type) =>
+    type.isUnion()
+      ? type.types.some((t) => (t.getFlags() & ts.TypeFlags.Null) !== 0)
+      : (type.getFlags() & ts.TypeFlags.Null) !== 0;
+  /**
+   * What an optional member or parameter adds is `undefined`; that is what comes off.
+   * `null` is a value the contract has to keep — `x?: string | null` and `x?: string` are
+   * different promises, and a provider handing back null where the consumer allows only
+   * undefined must not pass. The checker can only strip both at once, so null is noted
+   * here and put back on the projected definition by `orNull` / `exprOrNull`.
+   */
+  const sansUndefined = (type) => ({
+    type: checker.getNonNullableType(type),
+    nullable: type.isUnion() && hasNull(type),
+  });
+  const orNull = (def) =>
+    typeof def === "string"
+      ? def
+          .split("|")
+          .map((s) => s.trim())
+          .includes("null")
+        ? def
+        : `${def}|null`
+      : [def, "|", "null"];
+  const exprOrNull = (expr) =>
+    "data" in expr ? { ...expr, data: orNull(expr.data) } : { oneOf: [expr, { data: "null" }] };
+
   /**
    * A type declared by the platform (TypeScript's lib, @types/node, a dependency's .d.ts)
    * rather than by this package: compared by NAME, as `Opaque<>` would spell it — the host
@@ -540,11 +567,15 @@ for (const project of projects) {
         // `x?: T` reads as `T | undefined` under strictNullChecks; an instantiated property
         // may carry the union without the Optional flag, so the union is the test.
         const optional = (prop.flags & ts.SymbolFlags.Optional) !== 0 || hasUndefined(propType);
-        let v = dataOf(optional ? checker.getNonNullableType(propType) : propType, atNode, next);
+        const { type: kept, nullable } = optional
+          ? sansUndefined(propType)
+          : { type: propType, nullable: false };
+        let v = dataOf(kept, atNode, next);
         if (v === null) {
           notData = `${name ?? "object"}.${prop.getName()}: ${notData || `'${checker.typeToString(propType)}' flags=${propType.getFlags()} sym=${propType.getSymbol()?.getName()}`}`;
           return null;
         }
+        if (nullable) v = orNull(v);
         out[optional ? `${prop.getName()}?` : prop.getName()] = v;
       }
       return out;
@@ -587,16 +618,17 @@ for (const project of projects) {
     const data = dataOf(type, atNode, stack);
     if (data !== null) return { data };
     if (type.isUnion()) {
-      // T | null | undefined around a non-data T.
+      // T | null | undefined around a non-data T: `undefined` is absence (`maybe`), `null`
+      // is a value and stays a member.
       const rest = type.types.filter(
         (t) => !(t.getFlags() & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)),
       );
-      if (rest.length === 1 && rest.length < type.types.length) {
-        return { maybe: exprOf(rest[0], atNode, stack) };
-      }
-      if (rest.length > 1) {
-        const inner = { oneOf: rest.map((t) => exprOf(t, atNode, stack)) };
-        return rest.length < type.types.length ? { maybe: inner } : inner;
+      const absent = type.types.some((t) => (t.getFlags() & ts.TypeFlags.Undefined) !== 0);
+      if (rest.length > 0) {
+        const members = rest.map((t) => exprOf(t, atNode, stack));
+        if (hasNull(type)) members.push({ data: "null" });
+        const inner = members.length === 1 ? members[0] : { oneOf: members };
+        return absent ? { maybe: inner } : inner;
       }
       return fail(
         atNode,
@@ -631,11 +663,9 @@ for (const project of projects) {
           const t = checker.getTypeOfSymbolAtLocation(prop, atNode);
           const opt = (prop.flags & ts.SymbolFlags.Optional) !== 0 || hasUndefined(t);
           if (opt) optional.push(prop.getName());
-          members[prop.getName()] = exprOf(
-            opt ? checker.getNonNullableType(t) : t,
-            prop.valueDeclaration ?? atNode,
-            [...stack, type],
-          );
+          const { type: kept, nullable } = opt ? sansUndefined(t) : { type: t, nullable: false };
+          const e = exprOf(kept, prop.valueDeclaration ?? atNode, [...stack, type]);
+          members[prop.getName()] = nullable ? exprOrNull(e) : e;
         }
         return optional.length > 0 ? { object: members, optional } : { object: members };
       }
@@ -673,7 +703,9 @@ for (const project of projects) {
         decl &&
         ts.isParameter(decl) &&
         (decl.questionToken !== undefined || decl.initializer !== undefined);
-      const expr = exprOf(optional ? checker.getNonNullableType(t) : t, decl ?? atNode, stack);
+      const { type: kept, nullable } = optional ? sansUndefined(t) : { type: t, nullable: false };
+      let expr = exprOf(kept, decl ?? atNode, stack);
+      if (nullable) expr = exprOrNull(expr);
       if (optional) {
         if (!("data" in expr)) return { maybe: expr };
         expr.data =
@@ -723,11 +755,9 @@ for (const project of projects) {
       if (!isMethodLike(prop, decl)) {
         const t = checker.getTypeOfSymbolAtLocation(prop, decl);
         const optional = (prop.flags & ts.SymbolFlags.Optional) !== 0 || hasUndefined(t);
-        const expr = tolerant(prop, () =>
-          exprOf(optional ? checker.getNonNullableType(t) : t, prop.valueDeclaration ?? decl, [
-            type,
-          ]),
-        );
+        const { type: kept, nullable } = optional ? sansUndefined(t) : { type: t, nullable: false };
+        const projected = tolerant(prop, () => exprOf(kept, prop.valueDeclaration ?? decl, [type]));
+        const expr = nullable ? exprOrNull(projected) : projected;
         // An optional field may be absent on the instance; the consumer sees a `maybe`.
         fields[prop.getName()] = optional && !("maybe" in expr) ? { maybe: expr } : expr;
         continue;
