@@ -10,6 +10,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "lint": "oxlint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
@@ -30,6 +31,7 @@
     "@types/node": "^24.0.0",
     "concurrently": "^10.0.4",
     "esbuild": "^0.28.1",
+    "oxlint": "^1.81.0",
     "prettier": "^3.9.4",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",

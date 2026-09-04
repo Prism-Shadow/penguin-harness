@@ -32,6 +32,9 @@ import type {
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
+  ApproveFn,
+  EnvironmentInterface,
+  ToolPermission,
 } from "../src/interfaces/index.js";
 import type {
   OmniMessage,
@@ -45,7 +48,6 @@ import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js
 
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
-import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces/index.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
 const PNG_DATA_URL =
