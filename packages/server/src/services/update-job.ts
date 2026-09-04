@@ -155,9 +155,7 @@ export const spawnUpdateRunner: UpdateRunner = (cliEntry, onOutput) =>
   });
 
 /** The self-update run as a node, so a test stands in a scripted runner for the real spawn. */
-export abstract class UpdateJob extends Interface<
-  Pick<UpdateJobService, "status" | "start">
->() {}
+export abstract class UpdateJob extends Interface<Pick<UpdateJobService, "status" | "start">>() {}
 
 @Component()
 export class UpdateJobService implements UpdateJob {
