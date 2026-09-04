@@ -34,13 +34,18 @@ export interface LocalModels {
 }
 
 /** What a sync did, in the words the connect log shows. */
-type ModelSyncOutcome =
+export type ModelSyncOutcome =
   | {
       kind: "synced";
       /** Projects whose model table was written on that machine (empty = nothing needed it). */
       projects: string[];
       /** Of those, the ones this sync had to create over there first. */
       created: string[];
+      /**
+       * Projects the machine would not take, each with its own reason — a refusal is an
+       * answer about ONE Project's boundary, and the Projects after it still get theirs.
+       */
+      refused: { projectId: string; detail: string }[];
     }
   | { kind: "failed"; detail: string };
 
@@ -162,7 +167,9 @@ function projectIdsIn(text: string): string[] {
  *
  * A creation that is REFUSED is reported and that Project is skipped: the machine saying no
  * (an id already taken by someone else's Project, a shape it will not accept) is an answer
- * about a boundary, and writing models around it is not this function's call to make.
+ * about a boundary, and writing models around it is not this function's call to make. Skipped
+ * means exactly that — the Projects after it are still written. Only the machine being
+ * unreachable, or refusing to say what Projects it has, fails the sync as a whole.
  */
 export async function syncModelsToMachine(opts: {
   api: MachineApi;
@@ -184,6 +191,7 @@ export async function syncModelsToMachine(opts: {
 
   const synced: string[] = [];
   const created: string[] = [];
+  const refused: { projectId: string; detail: string }[] = [];
   for (const projectId of opts.projects) {
     const local = await opts.loadLocal(projectId);
     // Nothing configured here is not a reason to touch their table: a replace built from an
@@ -198,32 +206,36 @@ export async function syncModelsToMachine(opts: {
           ...(local.name !== undefined && local.name !== "" ? { name: local.name } : {}),
         });
         if (made.status < 200 || made.status >= 300) {
-          return {
-            kind: "failed",
+          refused.push({
+            projectId,
             detail: `it refused to create ${projectId}: ${made.status} ${made.text.slice(0, 200)}`,
-          };
+          });
+          continue;
         }
         created.push(projectId);
       }
       const current = await opts.api.request("GET", path);
       if (current.status !== 200) {
-        return {
-          kind: "failed",
+        refused.push({
+          projectId,
           detail: `it answered ${current.status} when asked the models of ${projectId}`,
-        };
+        });
+        continue;
       }
       const plan = planModelSync(local, JSON.parse(current.text) as ModelsResponse);
       const wrote = await opts.api.request("PUT", path, plan);
       if (wrote.status < 200 || wrote.status >= 300) {
-        return {
-          kind: "failed",
+        refused.push({
+          projectId,
           detail: `it refused the models of ${projectId}: ${wrote.status} ${wrote.text.slice(0, 200)}`,
-        };
+        });
+        continue;
       }
       synced.push(projectId);
     } catch (err) {
+      // Not a refusal: the channel itself gave out. Nothing after it would fare better.
       return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
     }
   }
-  return { kind: "synced", projects: synced, created };
+  return { kind: "synced", projects: synced, created, refused };
 }

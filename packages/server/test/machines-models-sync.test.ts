@@ -190,13 +190,81 @@ function fakeMachine(answers: Record<string, { status: number; body: unknown }>)
           puts.push({ path, body: body as ModelsUpdateRequest });
           return { status: 200, text: "{}" };
         }
-        const answer = answers[path];
+        // A method-qualified key wins, so a POST can be scripted apart from the GET of one path.
+        const answer = answers[`${method} ${path}`] ?? answers[path];
         if (answer === undefined) return { status: 404, text: "{}" };
         return { status: answer.status, text: JSON.stringify(answer.body) };
       },
     },
   };
 }
+
+describe("syncModelsToMachine, against a scripted machine", () => {
+  it("a Project the machine refuses is reported and skipped; the ones after it are still written", async () => {
+    const machine = fakeMachine({
+      "/api/projects": { status: 200, body: { projects: [{ projectId: "default_project" }] } },
+      "/api/projects/default_project/models": { status: 200, body: remoteTable() },
+      "/api/projects/alice-lab/models": { status: 200, body: remoteTable() },
+      // The machine's own rule: an admin-created id may not carry the namespace hyphen.
+      "POST /api/projects": { status: 400, body: { error: { code: "invalid_project_id" } } },
+    });
+    const outcome = await syncModelsToMachine({
+      api: machine.api,
+      projects: ["alice-lab", "default_project"],
+      loadLocal: async () => ({ models: [local()] }),
+    });
+    expect(outcome).toEqual({
+      kind: "synced",
+      projects: ["default_project"],
+      created: [],
+      refused: [
+        { projectId: "alice-lab", detail: expect.stringContaining("refused to create alice-lab") },
+      ],
+    });
+    expect(machine.puts.map((p) => p.path)).toEqual(["/api/projects/default_project/models"]);
+  });
+
+  it("the channel giving out fails the sync as a whole — nothing after it would fare better", async () => {
+    const api: MachineApi = {
+      postBytes: async () => ({ status: 500, text: "" }),
+      request: async (method, path) => {
+        if (path === "/api/projects") {
+          return { status: 200, text: JSON.stringify({ projects: [{ projectId: "a" }] }) };
+        }
+        if (method === "GET") throw new Error("the machine's server closed mid-answer");
+        return { status: 200, text: "{}" };
+      },
+    };
+    const outcome = await syncModelsToMachine({
+      api,
+      projects: ["a", "b"],
+      loadLocal: async () => ({ models: [local()] }),
+    });
+    expect(outcome).toEqual({ kind: "failed", detail: "the machine's server closed mid-answer" });
+  });
+});
+
+describe("machineApi", () => {
+  it("rejects, rather than hangs, when the machine closes the answer before its body", async () => {
+    // Headers, part of a body, then the socket closes: `end` never fires, `close` does.
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
+      res.write('{"partial":');
+      setTimeout(() => res.socket?.destroy(), 20);
+    });
+    const port = await new Promise<number>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+    );
+    try {
+      const api = machineApi(new http.Agent(), port, "penguin_session=x");
+      await expect(api.request("GET", "/api/projects")).rejects.toThrow(
+        /closed mid-answer|socket hang up|aborted/,
+      );
+    } finally {
+      server.close();
+    }
+  });
+});
 
 describe("syncModelsToMachine, against a running server", () => {
   it("lands our key on it and leaves its own entry intact", async () => {
@@ -224,7 +292,12 @@ describe("syncModelsToMachine, against a running server", () => {
             ? { models: [local({ api_key: "sk-ours-0123456789" })] }
             : null,
       });
-      expect(outcome).toEqual({ kind: "synced", projects: ["default_project"], created: [] });
+      expect(outcome).toEqual({
+        kind: "synced",
+        projects: ["default_project"],
+        created: [],
+        refused: [],
+      });
 
       const config = await machine.deps.projectConfigService.loadConfig("default_project");
       const ours = config.models.find((m) => m.model_id === "deepseek-v4-flash");
@@ -260,6 +333,7 @@ describe("syncModelsToMachine, against a running server", () => {
         kind: "synced",
         projects: ["field_work"],
         created: ["field_work"],
+        refused: [],
       });
 
       const listed = await machine.deps.projectService.listProjects("admin");

@@ -38,6 +38,26 @@ export function publishCredentialsUpdated(deps: AppDeps, projectId: string): voi
   }
 }
 
+/**
+ * EVERYTHING that follows a change to a Project's model config, in one place, so that no
+ * path that writes it can forget one of the three: the whole-table PUT, the default switch,
+ * and the key-minting flows all end here.
+ *
+ * - Effective-value semantics (mirrors the vault route): no hot swap into a Task already in
+ *   flight, but every cached runtime in this Project is invalidated — the next Task on any
+ *   of its Sessions re-resumes and reads the new api_key / base_url. Without this, a key
+ *   edit would not reach a loaded Session until the 30-minute idle sweep or a restart.
+ * - Live unlock: open tabs clear their auth-dead composer immediately (no reload needed).
+ * - The machines run their own Agents against their own config, so a change here has to
+ *   reach them or their Sessions keep failing on the old one — or start on the wrong default.
+ *   Not awaited: the person editing is not the one who should wait for a set of ssh tunnels.
+ */
+export function modelConfigChanged(deps: AppDeps, projectId: string): void {
+  deps.manager.invalidateProjectRuntimes(projectId);
+  publishCredentialsUpdated(deps, projectId);
+  void deps.machines.syncModelsEverywhere(projectId);
+}
+
 /** Validate a paired reference object ({ provider, modelId }); shape mismatch throws 400. */
 function parseRef(value: unknown, label: string): ModelRefDto {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -173,17 +193,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const req = parseModelsUpdate(await readJson(c));
     const res = await deps.projectConfigService.updateModels(projectId, req);
-    // Effective-value semantics (mirrors the vault route): no hot swap into a Task already
-    // in flight, but every cached runtime in this Project is invalidated — the next Task on
-    // any of its Sessions re-resumes and reads the new api_key / base_url. Without this, a
-    // key edit would not reach a loaded Session until the 30-minute idle sweep or a restart.
-    deps.manager.invalidateProjectRuntimes(projectId);
-    // Live unlock: open tabs clear their auth-dead composer immediately (no reload needed).
-    publishCredentialsUpdated(deps, projectId);
-    // The machines run their own Agents against their own config, so a credential edited
-    // here has to reach them or their Sessions keep failing on the old one. Not awaited:
-    // the person editing a key is not the one who should wait for a set of ssh tunnels.
-    void deps.machines.syncModelsEverywhere(projectId);
+    modelConfigChanged(deps, projectId);
     return c.json(res);
   });
 
@@ -191,8 +201,10 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // whole-table PUT above maintains, without resending the table — project settings can
   // change the default without carrying credentials. The pair must name a configured
   // entry (400 otherwise, same rule as the whole-table route's defaultModel). No runtime
-  // invalidation and no credentials_updated: existing Sessions pin their model at
-  // creation, and no credential changes here.
+  // invalidation and no credentials_updated here: existing Sessions pin their model at
+  // creation, and no credential changes. The machines DO hear of it — a Session started
+  // over there without an explicit model runs on that machine's default, and the default
+  // is part of what the sync carries.
   app.put("/default", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
@@ -202,6 +214,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       modelId: requireString(body, "modelId", { minLen: 1, maxLen: 200 }),
     };
     const defaultModel = await deps.projectConfigService.setDefaultModelRef(projectId, ref);
+    void deps.machines.syncModelsEverywhere(projectId);
     return c.json({ defaultModel } satisfies DefaultModelResponse);
   });
 

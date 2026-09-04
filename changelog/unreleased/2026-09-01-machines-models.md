@@ -13,7 +13,7 @@ An Agent running on a machine calls the model endpoint **from over there**, agai
 
 Only the Projects on this server that actually list that machine. A machine is shared — one host, one program, adopted by whichever Projects want it — but a credential is not: it belongs to the Project that holds it. That asymmetry is the reason the machines routes sit under a Project at all.
 
-Editing a Model here syncs it outward too, to every machine that should have it. Not awaited: the person editing a key is not the one who should wait on a set of ssh tunnels.
+Editing a Model here syncs it outward too, to every machine that should have it — the whole-table save, the default switch in Project settings, and a key minted through a provider's sign-in all end in the same follow-up, so a machine hears of a change whichever way it was made. Not awaited: the person editing a key is not the one who should wait on a set of ssh tunnels. An edit that lands while a sync is running is not dropped: one trailing sync runs when it ends, reading the config as it is then.
 
 ## Merged, not replaced
 
@@ -25,4 +25,4 @@ Only entries worth carrying are sent: an entry with an inline key or its own bas
 
 The key travels inside the forward, to the machine's own authenticated `PUT /models`, which writes `.project_config.toml` at mode 0600 — whoever can do this already has ssh to that machine and can read that file. An ordinary API call rather than a far-side script, because the endpoint is what validates, invalidates cached runtimes and tells open tabs.
 
-A failed sync is **reported, never fatal**: the connect log says what the machine said, and the machine stays connected. What is on it did not become wrong because a later step did not happen.
+A Project the machine refuses — an id its own rules will not take, a table it will not accept — is reported and skipped, and the Projects after it are still written; only the machine being unreachable fails the sync as a whole. A failed sync is **reported, never fatal**: the connect log says what the machine said, and the machine stays connected. What is on it did not become wrong because a later step did not happen.

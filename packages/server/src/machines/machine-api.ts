@@ -66,6 +66,15 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
               text: Buffer.concat(chunks).toString("utf8"),
             }),
           );
+          // `end` is the only settling event on the happy path. A machine that closes the
+          // channel after the headers and before the body — its server restarting under a
+          // hot update, the session dropping mid-answer — ends the response without `end`,
+          // and the request itself need not error once headers were received. Left alone,
+          // the promise would hang the job that made it.
+          res.on("error", reject);
+          res.on("close", () => {
+            if (!res.complete) reject(new Error("the machine's server closed mid-answer"));
+          });
         },
       );
       req.on("timeout", () => {

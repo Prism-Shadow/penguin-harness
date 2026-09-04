@@ -116,6 +116,13 @@ export class MachinesService {
   /** Sessions minted on machines, by address, reused until near their TTL. */
   readonly #sessions = new Map<string, { cookie: string; at: number }>();
   /**
+   * Machines with a model sync in flight, and whether another was asked for meanwhile. An
+   * edit that arrives while a sync is running is not dropped and not queued behind it one
+   * by one: ONE trailing sync runs when the current one ends, reading the config as it is
+   * then — which is what every edit in between wanted written.
+   */
+  readonly #syncing = new Map<string, { again: boolean }>();
+  /**
    * What the proxy's traffic last learned of each machine's API, by address. In memory
    * like #statuses: a sighting is only true for the moment it was taken.
    */
@@ -738,7 +745,39 @@ export class MachinesService {
     }
     if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
     if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+    for (const { projectId, detail } of outcome.refused) {
+      say(`Models of ${projectId} not synced — ${detail}`);
+    }
     void address;
+  }
+
+  /**
+   * A sync of the given Projects to a machine, coalesced: while one runs, a second ask marks
+   * it to run once more when it ends. The trailing run reads the config fresh, so however
+   * many edits arrived during the first, the machine ends on the last of them. Nothing is
+   * dropped, and a burst of edits costs two round trips rather than one per edit.
+   */
+  async #syncCoalesced(
+    address: string,
+    target: RemoteTarget,
+    port: number,
+    projects: () => string[],
+  ): Promise<void> {
+    const running = this.#syncing.get(address);
+    if (running !== undefined) {
+      running.again = true;
+      return;
+    }
+    const slot = { again: false };
+    this.#syncing.set(address, slot);
+    try {
+      do {
+        slot.again = false;
+        await this.#syncModels(address, target, port, () => {}, projects());
+      } while (slot.again);
+    } finally {
+      this.#syncing.delete(address);
+    }
   }
 
   /**
@@ -815,34 +854,31 @@ export class MachinesService {
   }
 
   /** Brings every connected machine up to date with this server's Model config. */
-  async syncConnectedModels(): Promise<void> {
-    const connected = this.#allMachines().filter((m) => !m.local && m.connection !== null);
-    await this.#sweep(
-      connected.map((m) => m.id),
-      async (address, target) => {
-        // The server's port over there is on the record from the connect; nothing to sync
-        // to without a connection to dial through.
-        const port =
-          this.#liveSession(address) === null ? null : (this.repo.get(address)?.remotePort ?? null);
-        if (port !== null) {
-          await this.#syncModels(address, target, port, () => {}, this.#projectsUsing(address));
-        }
-      },
-    );
-  }
-
-  /** Pushes a Project's models to every connected machine it uses — a key rotated here reaches them at once. */
+  /**
+   * Pushes a Project's models to every connected machine it uses — a key rotated here, a
+   * default switched here, reaches them at once. Not through #sweep: that returns null for a
+   * machine that is busy and would silently drop the edit; a sync in flight is instead told
+   * to run once more (#syncCoalesced), and an install in flight on the machine is not a
+   * reason to lose a credential either — the two do not contend for the shell.
+   */
   async syncModelsEverywhere(projectId: string): Promise<void> {
     const connected = this.list(projectId).filter(
       (m) => !m.local && m.installed !== null && m.connection !== null,
     );
-    await this.#sweep(
-      connected.map((m) => m.id),
-      async (address, target) => {
+    await Promise.all(
+      connected.map(async (machine) => {
+        const address = machine.id;
         const port =
           this.#liveSession(address) === null ? null : (this.repo.get(address)?.remotePort ?? null);
-        if (port !== null) await this.#syncModels(address, target, port, () => {}, [projectId]);
-      },
+        if (port === null) return;
+        try {
+          await this.#syncCoalesced(address, this.#targetOf(machine.alias), port, () => [
+            projectId,
+          ]);
+        } catch {
+          // Best effort: the connect log is where a sync's own words go; this one has none.
+        }
+      }),
     );
   }
 }

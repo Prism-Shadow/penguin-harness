@@ -10,6 +10,7 @@
  */
 import fs from "node:fs";
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MachinesResponse } from "../src/api/types.js";
@@ -725,6 +726,63 @@ describe("machines API", () => {
       heldNow.length = 0;
       await t.deps.machines.start();
       expect(heldNow).toEqual([]);
+    });
+  });
+
+  describe("syncing models outward", () => {
+    /** A machine's server: counts what it is asked, and can be made slow. */
+    const machineServer = async (opts: { delayMs: number }) => {
+      const asked: string[] = [];
+      const server = http.createServer((req, res) => {
+        asked.push(`${req.method} ${req.url}`);
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            req.url === "/api/projects"
+              ? JSON.stringify({ projects: [{ projectId: PROJECT }] })
+              : JSON.stringify({ models: [] }),
+          );
+        }, opts.delayMs);
+      });
+      const port = await new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+      return { asked, port, close: () => server.close() };
+    };
+
+    it("an edit that lands while a sync is in flight is written afterwards, once — not dropped", async () => {
+      const remote = await machineServer({ delayMs: 60 });
+      try {
+        await boot({
+          loadConfig: async () =>
+            ({
+              models: [{ provider: "deepseek", model_id: "deepseek-v4-flash", api_key: "sk-x" }],
+            }) as never,
+        });
+        machinesRepo.patch("ssh:nas", {
+          version: "9.9.9",
+          installedAt: "2026-08-01T00:00:00.000Z",
+          remotePort: remote.port,
+        });
+        machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+        connected.add("ssh:nas");
+
+        // Three edits in a burst: the first starts a sync, the next two land during it.
+        const first = t.deps.machines.syncModelsEverywhere(PROJECT);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const second = t.deps.machines.syncModelsEverywhere(PROJECT);
+        const third = t.deps.machines.syncModelsEverywhere(PROJECT);
+        await Promise.all([first, second, third]);
+        // Give the trailing run its own round trips.
+        await waitFor(() => remote.asked.filter((a) => a.startsWith("PUT")).length >= 2);
+
+        const puts = remote.asked.filter((a) => a.startsWith("PUT"));
+        // Exactly two writes: the one in flight, and ONE trailing run for everything that
+        // arrived during it — the config is read fresh then, so the last edit is what lands.
+        expect(puts).toHaveLength(2);
+      } finally {
+        remote.close();
+      }
     });
   });
 
