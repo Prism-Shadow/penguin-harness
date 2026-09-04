@@ -123,9 +123,11 @@ exit 1
     const second = sessionOf("ssh:nas");
     expect(second).not.toBeNull();
     expect(second!.pid).not.toBe(first);
-    expect(spawns()).toHaveLength(2);
-    // And it is a working session, still held.
+    // And it is a working session, still held. The spawn count is read only after a command
+    // has completed over it: the stub logs its own invocation from inside the child, after
+    // spawn() has already returned a pid, so a session can exist before its line is there.
     expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
+    expect(spawns()).toHaveLength(2);
     expect(conn.held()).toBe(true);
 
     // An explicit close lets go for good: nothing reopens it.

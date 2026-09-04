@@ -25,7 +25,13 @@
  */
 import fs from "node:fs";
 import os from "node:os";
-import { DEFAULT_SERVER_PORT, VERSION } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_PROJECT_ID,
+  DEFAULT_SERVER_PORT,
+  VERSION,
+  loadProjectConfig,
+} from "@prismshadow/penguin-core";
+import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type { MachineInfo, MachineJob, MachineServerStatus } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
@@ -45,6 +51,9 @@ import type { ExecResult } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { mintTokenOnRemote } from "./remote-token.js";
+import { syncModelsToMachine } from "./models-sync.js";
+import type { LocalModels } from "./models-sync.js";
+import { machineApi } from "./machine-api.js";
 import { startRemoteServer } from "./server-control.js";
 import type { MachineRow, MachinesRepo } from "../db/repos/machines.js";
 
@@ -74,6 +83,8 @@ export interface MachinesEffects {
   session: (address: string) => ShellSession | null;
   /** An http.Agent that dials that machine's server through its session. */
   agent: (target: RemoteTarget, remotePort: number) => http.Agent;
+  /** This server's own Project config, credentials in plaintext — the source of a model sync. */
+  loadConfig: (projectId: string) => Promise<ProjectConfig>;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
@@ -105,6 +116,13 @@ export class MachinesService {
   /** Sessions minted on machines, by address, reused until near their TTL. */
   readonly #sessions = new Map<string, { cookie: string; at: number }>();
   /**
+   * Machines with a model sync in flight, and whether another was asked for meanwhile. An
+   * edit that arrives while a sync is running is not dropped and not queued behind it one
+   * by one: ONE trailing sync runs when the current one ends, reading the config as it is
+   * then — which is what every edit in between wanted written.
+   */
+  readonly #syncing = new Map<string, { again: boolean }>();
+  /**
    * What the proxy's traffic last learned of each machine's API, by address. In memory
    * like #statuses: a sighting is only true for the moment it was taken.
    */
@@ -135,6 +153,7 @@ export class MachinesService {
       hold: (target) => connectionTo(target).hold(),
       session: (address) => sessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
+      loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       now: () => new Date(),
       ...effects,
     };
@@ -287,6 +306,23 @@ export class MachinesService {
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */
   release(projectId: string, address: string): void {
     this.#setMember(projectId, address, false);
+  }
+
+  /** Every Project on this server that uses a given machine — who its credentials belong to. */
+  #projectsUsing(address: string): string[] {
+    let dirs: string[] = [];
+    try {
+      dirs = fs
+        .readdirSync(this.dataRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch {
+      dirs = [];
+    }
+    // The default Project is always a candidate: every server seeds it, so it may be using
+    // a machine before its directory has been created on this root.
+    const candidates = dirs.includes(DEFAULT_PROJECT_ID) ? dirs : [...dirs, DEFAULT_PROJECT_ID];
+    return candidates.filter((projectId) => this.#members(projectId).includes(address));
   }
 
   /**
@@ -595,7 +631,7 @@ export class MachinesService {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
 
-    // Asked even when a forward is already up: the forward is an ssh process on THIS side,
+    // Asked even when the connection is already up: it is an ssh process on THIS side,
     // and it outlives the far server. Taking it as the answer reported "connected" over a
     // dead server — and every caller that then found the machine silent asked for another
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
@@ -639,6 +675,9 @@ export class MachinesService {
     if (!connection.ok) return { ok: false, step: "connect", message: connection.detail };
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
+    // An Agent started over there resolves its model against THAT machine's config, so a
+    // machine without our credentials is connected and unusable.
+    await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
     return { ok: true, connected: true };
   }
 
@@ -675,6 +714,96 @@ export class MachinesService {
   stop(): void {
     closeAllConnections();
   }
+
+  // --- work on a machine ---------------------------------------------------------------------
+
+  /** Hands a machine the Model credentials an Agent over there needs. Failure is reported, never fatal. */
+  async #syncModels(
+    address: string,
+    target: RemoteTarget,
+    port: number,
+    say: (line: string) => void,
+    projects: string[],
+  ): Promise<void> {
+    if (projects.length === 0) {
+      say("No models synced — no Project on this server uses that machine.");
+      return;
+    }
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) {
+      say(`Models not synced — ${session.detail}`);
+      return;
+    }
+    const outcome = await syncModelsToMachine({
+      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
+      loadLocal: (projectId) => this.#localModels(projectId),
+      projects,
+    });
+    if (outcome.kind === "failed") {
+      say(`Models not synced — ${outcome.detail}`);
+      return;
+    }
+    if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
+    if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
+    for (const { projectId, detail } of outcome.refused) {
+      say(`Models of ${projectId} not synced — ${detail}`);
+    }
+    void address;
+  }
+
+  /**
+   * A sync of the given Projects to a machine, coalesced: while one runs, a second ask marks
+   * it to run once more when it ends. The trailing run reads the config fresh, so however
+   * many edits arrived during the first, the machine ends on the last of them. Nothing is
+   * dropped, and a burst of edits costs two round trips rather than one per edit.
+   */
+  async #syncCoalesced(
+    address: string,
+    target: RemoteTarget,
+    port: number,
+    projects: () => string[],
+  ): Promise<void> {
+    const running = this.#syncing.get(address);
+    if (running !== undefined) {
+      running.again = true;
+      return;
+    }
+    const slot = { again: false };
+    this.#syncing.set(address, slot);
+    try {
+      do {
+        slot.again = false;
+        await this.#syncModels(address, target, port, () => {}, projects());
+      } while (slot.again);
+    } finally {
+      this.#syncing.delete(address);
+    }
+  }
+
+  /**
+   * This side's model table for a Project, narrowed to the entries worth carrying: an entry
+   * with an inline key or its own base URL is something the machine cannot already have.
+   * Bare catalog entries are skipped — every server seeds the same presets.
+   */
+  async #localModels(projectId: string): Promise<LocalModels | null> {
+    let config: ProjectConfig;
+    try {
+      config = await this.#effects.loadConfig(projectId);
+    } catch {
+      return null;
+    }
+    const models = config.models.filter(
+      (entry) => (entry.api_key ?? "") !== "" || (entry.base_url ?? "") !== "",
+    );
+    return {
+      models,
+      ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
+      ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+      ...(config.name !== undefined ? { name: config.name } : {}),
+    };
+  }
+
+  // --- the automatic sweeps, run when an App boots ----------------------------------------------
 
   /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
   async #withMachine<T>(address: string, work: () => Promise<T>): Promise<T | null> {
@@ -721,6 +850,35 @@ export class MachinesService {
         const machine = unconnected.find((m) => m.id === address)!;
         await this.#connect(machine, () => {});
       },
+    );
+  }
+
+  /** Brings every connected machine up to date with this server's Model config. */
+  /**
+   * Pushes a Project's models to every connected machine it uses — a key rotated here, a
+   * default switched here, reaches them at once. Not through #sweep: that returns null for a
+   * machine that is busy and would silently drop the edit; a sync in flight is instead told
+   * to run once more (#syncCoalesced), and an install in flight on the machine is not a
+   * reason to lose a credential either — the two do not contend for the shell.
+   */
+  async syncModelsEverywhere(projectId: string): Promise<void> {
+    const connected = this.list(projectId).filter(
+      (m) => !m.local && m.installed !== null && m.connection !== null,
+    );
+    await Promise.all(
+      connected.map(async (machine) => {
+        const address = machine.id;
+        const port =
+          this.#liveSession(address) === null ? null : (this.repo.get(address)?.remotePort ?? null);
+        if (port === null) return;
+        try {
+          await this.#syncCoalesced(address, this.#targetOf(machine.alias), port, () => [
+            projectId,
+          ]);
+        } catch {
+          // Best effort: the connect log is where a sync's own words go; this one has none.
+        }
+      }),
     );
   }
 }
