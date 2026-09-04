@@ -7,7 +7,7 @@
  * `schedule` has — API errors surface verbatim, so an agent gets synchronous validation.
  *
  *   penguin org ls [--project-id <id>] [--json] [--server <url>]
- *   penguin org create --org-id <id> --mission <s> [--name <s>]
+ *   penguin org create --org-id <id> --mission <s> [--name <s>] [--ceo-budget <usd>]
  *   penguin org show | chart
  *   penguin org hire (--agent-id <id> | --new-agent <id> [--name] [--description] [--skills <a,b>])
  *                    --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
@@ -96,6 +96,11 @@ const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 const DEFAULT_MESSAGE_COUNT = 20;
 /** The all-hands channel: what `--channel` means when it is not given (the server's own default). */
 const DEFAULT_CHANNEL_ID = "default_channel";
+/**
+ * `create --ceo-budget` when it is not given (the server's own default), in USD per month.
+ * Budgets accumulate along the reporting line, so the CEO's is the whole company's.
+ */
+const DEFAULT_CEO_BUDGET = 100;
 
 // ---------------------------------------------------------------------------
 // Scope: the organization, its Project and the connection
@@ -231,11 +236,11 @@ function commaList(raw: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-/** `--budget <usd>`: a non-negative number. Null after the error. */
-function parseBudget(raw: string, t: Messages): number | null {
+/** A budget flag (`--budget`, `--ceo-budget`): a non-negative number. Null after the error, which names the flag. */
+function parseBudget(flag: string, raw: string, t: Messages): number | null {
   const value = Number(raw);
   if (raw.trim() === "" || !Number.isFinite(value) || value < 0) {
-    fail(t, t.org.budgetInvalid(raw));
+    fail(t, t.org.budgetInvalid(flag, raw));
     return null;
   }
   return value;
@@ -524,6 +529,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     .requiredOption("--mission <text>", t.org.mission)
     .option("--name <name>", t.org.orgName)
     .option("--workspace <path>", t.common.workspace)
+    .option("--ceo-budget <usd>", t.org.ceoBudget, String(DEFAULT_CEO_BUDGET))
     .option("--model-id <id>", t.common.modelId)
     .option("--provider <name>", t.common.provider)
     .option("--project-id <id>", t.common.projectId)
@@ -535,6 +541,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
         fail(t, t.modelRefIncomplete());
         return;
       }
+      const ceoBudget = parseBudget("--ceo-budget", String(opts.ceoBudget), t);
+      if (ceoBudget === null) return;
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const detail = await client.request<OrganizationDetail>(
@@ -545,6 +553,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
           mission: String(opts.mission),
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
           ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
+          ceoBudget,
           ...(opts.modelId !== undefined
             ? { model: { provider: String(opts.provider), modelId: String(opts.modelId) } }
             : {}),
@@ -600,7 +609,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       fail(t, t.org.newAgentFieldsOnly());
       return;
     }
-    const budget = opts.budget !== undefined ? parseBudget(String(opts.budget), t) : undefined;
+    const budget =
+      opts.budget !== undefined ? parseBudget("--budget", String(opts.budget), t) : undefined;
     if (budget === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
@@ -647,7 +657,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       fail(t, t.modelRefIncomplete());
       return;
     }
-    const budget = opts.budget !== undefined ? parseBudget(String(opts.budget), t) : undefined;
+    const budget =
+      opts.budget !== undefined ? parseBudget("--budget", String(opts.budget), t) : undefined;
     if (budget === null) return;
     const body = {
       ...(opts.title !== undefined ? { title: String(opts.title) } : {}),

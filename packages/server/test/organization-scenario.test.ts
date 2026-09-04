@@ -52,6 +52,9 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(h.agentsCreated.map((a) => a.agentId)).toEqual([CEO]);
     const init = triggers()[0]!;
     expect(init.origin?.origin.kind).toBe("init");
+    // The CEO starts with the default budget, which is the whole company's: the trigger
+    // block names it, so the proposal can be sized to it.
+    expect(init.origin?.origin.budget).toBe("0.00 / 100.00 USD (0%)");
     expect(init.origin?.rest).toContain(MISSION);
     const ceoDesk = init.sessionId;
     const handbook = await service.handbook(P, ORG);

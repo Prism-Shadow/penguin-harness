@@ -1055,6 +1055,13 @@ export function buildAppDeps(
         ? enabled.channel
         : null;
     },
+    // Company mode: which organization owns a Session, so development mode's list can hide
+    // organization sessions and the company sidebar can group its own. The caches are a
+    // projection of the organization's files, rebuilt every reconcile pass, so a row that
+    // has not been projected yet reads as an ordinary Session for one pass — never as the
+    // wrong organization.
+    orgIdOfSession: (sessionId) => orgCacheRepo.ownerOfSession(sessionId)?.orgId,
+    orgIdsOfProject: (projectId) => orgCacheRepo.orgIdsOfProject(projectId),
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.

@@ -256,10 +256,14 @@ describe("organization runtime", () => {
     expect(briefs.get(CEO)).toContain(`<app_data_dir>/organizations/${ORG}/`);
     expect(created).toHaveLength(1);
     expect(created[0]!.workspace).toBe(path.join(dir, "workspace"));
+    // The CEO is created with a budget, not unbounded: budgets accumulate along the
+    // reporting line, so this one number caps the whole company from the first minute.
+    expect((await service.chart(P, ORG)).employees).toMatchObject([{ agentId: CEO, budget: 100 }]);
     expect(started).toHaveLength(1);
     const parsed = parseOrgTriggerMessage(started[0]!.text);
     expect(parsed?.origin.kind).toBe("init");
     expect(parsed?.origin.org).toBe(ORG);
+    expect(parsed?.origin.budget).toBe("0.00 / 100.00 USD (0%)");
     expect(parsed?.rest).toContain("Mission: Build a plugin marketplace");
     // The board decides: the init run proposes and stops before hiring anything.
     expect(parsed?.rest).toContain("END THIS RUN");
@@ -274,6 +278,14 @@ describe("organization runtime", () => {
     const detail = await service.detail(P, ORG, "alice");
     expect(detail.employeeCount).toBe(1);
     expect(detail.ceoDeskSessionId).toBe(started[0]!.sessionId);
+  });
+
+  it("writes the CEO budget creation asked for, zero included", async () => {
+    await service.create(P, { orgId: ORG, mission: "Build it", ceoBudget: 25 }, "alice");
+    expect((await service.chart(P, ORG)).employees[0]).toMatchObject({ agentId: CEO, budget: 25 });
+    // Zero is a real budget (everything is already over it), not a request to be unbounded.
+    await service.create(P, { orgId: "zero", mission: "Build it", ceoBudget: 0 }, "alice");
+    expect((await service.chart(P, "zero")).employees[0]).toMatchObject({ budget: 0 });
   });
 
   it("uses the chosen shared workspace and model for desks and ticket sessions", async () => {
@@ -1138,6 +1150,25 @@ describe("organization runtime", () => {
       expect(cache.ownerOfSession(desk.sessionId)).toMatchObject({ kind: "desk", agentId: CEO });
       expect(cache.ownerOfSession(sessionId)).toMatchObject({ kind: "ticket", agentId: CEO });
       expect(service.orgIdOfSession(sessionId)).toBe(ORG);
+    });
+
+    it("maps a Project's organization sessions in one lookup, desks and ticket sessions alike", async () => {
+      await createOrg();
+      const desk = await service.desk(P, ORG, CEO, {});
+      const ticket = await service.createTicket(
+        P,
+        ORG,
+        { title: "Map me", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const { sessionId: work } = await service.startTicket(P, ORG, ticket.ticketId, {});
+      // What the session list stamps as SessionInfo.orgId: one map for the whole Project
+      // instead of a query per row.
+      const ids = cache.orgIdsOfProject(P);
+      expect(ids.get(desk.sessionId)).toBe(ORG);
+      expect(ids.get(work)).toBe(ORG);
+      expect(ids.has("session-2026-09-01-00-00-00-0000ffff")).toBe(false);
+      expect(cache.orgIdsOfProject("other_project").size).toBe(0);
     });
 
     it("removing the organization keeps the Agents and sessions", async () => {

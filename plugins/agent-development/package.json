@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/agent-development",
   "version": "0.2.9",
-  "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
+  "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, orchestrate agents, sessions, costs and schedules, and set up a company-mode organization together with the user.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

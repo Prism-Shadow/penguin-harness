@@ -226,7 +226,7 @@ All paths below are under `/api/projects/:projectId/organizations`. Every route 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET / POST | / | List organizations / create one: `{orgId, mission, name?, timezone?, workspace?, model?}` → 201 with the organization detail (creation makes the CEO Agent and opens its desk with an initialization run; 409 when the id or the CEO's Agent id is taken) |
+| GET / POST | / | List organizations / create one: `{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?}` → 201 with the organization detail (creation makes the CEO Agent and opens its desk with an initialization run; 409 when the id or the CEO's Agent id is taken). `ceoBudget` is the CEO's monthly USD budget, written as the `budget` of its `org_chart.yaml` entry — non-negative, omitted = 100; compared on the cumulative line, it is the whole company's cap |
 | GET / PATCH / DELETE | /:orgId | Overview (settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, alerts) / change name, mission, `status` (`active` / `paused`), `approvalMode`, `timezone`, thresholds / delete (the employee Agents and their sessions stay) |
 | GET | /:orgId/chart | The employee tree with live state, desk and period spend per employee |
 | POST | /:orgId/employees | Hire: `{agentId}` for an existing Agent or `{newAgent: {agentId, name?, description?, plugins?}}`, plus `title`, `reportsTo`, `workspace?`, `budget?`, `duties?`, `model?` |
@@ -289,7 +289,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
+| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it). `orgId` marks a Session the company-mode caches own — a desk session, or a session contributing to one of that organization's tickets — and is absent on every ordinary Session; the list route stamps it too |
 | PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |

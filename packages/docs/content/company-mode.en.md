@@ -11,6 +11,16 @@ Everything the company is lives in **files** under the Project directory. SQLite
 
 Switch modes with the Development | Company control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, default on) and you have not hidden it yourself (System settings › Personal › Company mode).
 
+## Creating one
+
+Three entry points, one server call behind all of them:
+
+- **the Web App** — 新建组织 in the organization switcher;
+- **the CLI** — `penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`;
+- **the general agent** — ask any Agent carrying the `agent-development` plugin to set a company up and its `company-setup` skill takes over: one question at a time (id, name, mission, shared workspace, model, CEO budget), a summary to confirm, then that same command. It stops there — hiring, scheduling and tickets are the CEO's, after the board answers.
+
+Creation writes the organization's directory, its all-hands channel and its handbook, and exactly one employee: the **CEO**, with a monthly budget of **100 USD** unless creation named another (`ceoBudget` in the API, `--ceo-budget` on the CLI, the CEO budget field in the dialog). Budgets are compared on the cumulative line, so that one number is the whole company's cap; it lives in `org_chart.yaml` and is raised, lowered or cleared from the org chart at any time. Then the CEO's desk opens with an initialization run, which posts one proposal in the all-hands channel and stops until the board answers it.
+
 ## The pieces
 
 | Piece | What it is | Where it lives |

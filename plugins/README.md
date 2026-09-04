@@ -17,7 +17,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 
-`agent-company` is the employee toolkit of company mode: `company-employee` is the protocol every desk and ticket session follows, and `company-ceo`, `company-hr` and `company-finance` are the playbooks of those titles.
+`agent-company` is the employee toolkit of company mode: `company-employee` is the protocol every desk and ticket session follows, and `company-ceo`, `company-hr` and `company-finance` are the playbooks of those titles. Company mode's other entry point is on the other side of the fence: `company-setup` ships with `agent-development`, which `default_agent` does carry, so the general agent can create an organization with a user who has never seen the company-mode UI — it asks one question at a time and ends at `penguin org create`, leaving hiring and tickets to the CEO.
 
 ## Documentation
 
