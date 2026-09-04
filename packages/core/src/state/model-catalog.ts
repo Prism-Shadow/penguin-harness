@@ -46,8 +46,9 @@
  *   canonicalClientType);
  * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
  *   OpenAI Responses server (see the OpenRouter block comment for why only those rows);
- * - `vllm-openai-chat` for the vLLM group, which is Chat Completions on the wire but maps
- *   the thinking level onto the served model's own chat template (VLLM_CLIENT_TYPE).
+ * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
+ *   but maps the thinking level onto the served model's own chat template
+ *   (VLLM_CLIENT_TYPE).
  * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
  * endpoint.
  *
@@ -165,7 +166,7 @@ export interface ModelCatalogEntry {
  * family, and AgentHub matches this name by exact equality (before its `openai` substring
  * branches) so `openai-chat` would silently lose that mapping.
  */
-const VLLM_CLIENT_TYPE = "vllm-openai-chat";
+const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
 
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -1705,15 +1706,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.7, 4, 21),
     supportsVision: true,
   },
-  // -- vLLM (self-hosted: the models AgentHub's vllm-openai-chat client carries a per-model
-  // thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
+  // -- vLLM (self-hosted: the models AgentHub's openai-chat-vllm-adapter client carries a
+  // per-model thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
   //
   // Three things every row here omits, all for the same reason — the user runs the server:
   // - **no pricing**. There is no seller and no rate. An unpriced row is not a free one: three
   //   zero buckets are a genuine $0 tier (the "free" badge, and costs that compute to 0), so
   //   the field stays absent rather than zeroed.
   // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
-  // - **no auto-routing**. Each row pins vllm-openai-chat explicitly, and the pin is
+  // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
   //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
   //   would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains "deepseek-v4"
   //   and would reach DeepSeek's first-party Responses client — pointed at a vLLM server.
@@ -1883,9 +1884,10 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   if (t.includes("ant-messages")) return env("ANTHROPIC");
   // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
   // bare "openai" as a deprecated alias), openai-responses, openai-embedding, and
-  // vllm-openai-chat (an openai_chat subclass, so it reads the same pair) — all read the
-  // OPENAI_* pair. AutoLLMClient matches vllm-openai-chat by exact equality one branch
-  // earlier; the substring lands on the same answer, so the order costs nothing here.
+  // openai-chat-vllm-adapter (an openai_chat subclass, so it reads the same pair) — all
+  // read the OPENAI_* pair. AutoLLMClient matches openai-chat-vllm-adapter by exact
+  // equality one branch earlier; the substring lands on the same answer, so the order costs
+  // nothing here.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }
@@ -1960,9 +1962,10 @@ export function fastModeProtocol(
   if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
   if (t.includes("deepseek-v4")) return undefined;
   if (t.includes("ant-messages")) return "anthropic";
-  // vllm-openai-chat is not carved out: it subclasses openai_chat without touching fast
-  // mode, so it maps the parameter exactly as the substring branch below reports. What a
-  // self-hosted server then does with `service_tier` is the third-party residue named above.
+  // openai-chat-vllm-adapter is not carved out: it subclasses openai_chat without touching
+  // fast mode, so it maps the parameter exactly as the substring branch below reports. What
+  // a self-hosted server then does with `service_tier` is the third-party residue named
+  // above.
   if (t.includes("openai-responses")) return "openai";
   if (t.includes("openai") && t.includes("embedding")) return undefined;
   if (t.includes("openai")) return "openai";

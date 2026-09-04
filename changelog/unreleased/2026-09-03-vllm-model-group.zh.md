@@ -6,7 +6,7 @@
 
 [English](2026-09-03-vllm-model-group.md)
 
-模型目录新增 **vLLM** 分组，位置紧挨在 Custom 之前，收录 AgentHub `vllm-openai-chat` 客户端为其
+模型目录新增 **vLLM** 分组，位置紧挨在 Custom 之前，收录 AgentHub `openai-chat-vllm-adapter` 客户端为其
 逐模型映射思考开关的八个模型：`Qwen/Qwen3.8-Flash-Next`、`Qwen/Qwen3.8-27B`、
 `Qwen/Qwen3.6-35B-A3B`、`Qwen/Qwen3.5-0.8B`、`Qwen/Qwen3.5-9B`、`deepseek-ai/DeepSeek-V4-Pro`、
 `deepseek-ai/DeepSeek-V4-Flash` 与 `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`。
@@ -22,7 +22,7 @@
 `ModelProviderInfo` 新增 `clientType` 字段：该分组下每个条目所用的协议，用户自行新增的模型同样适用。
 目前只有 vLLM 声明它，读取一律经 `providerClientType`，使各处对「这个模型该落哪个协议」给出同一个答案：
 
-- 在该分组新增模型预选 `vllm-openai-chat` 而非通用的 `openai-chat`，弹窗直接点名协议，不再给出选择器；
+- 在该分组新增模型预选 `openai-chat-vllm-adapter` 而非通用的 `openai-chat`，弹窗直接点名协议，不再给出选择器；
 - 把既有条目移入该分组即改写为这一协议；
 - 不做探测的那几条保存路径（设为默认、设为视觉代理、删除）的兜底协议就是它，协议检测整个跳过——分组已经知道答案；
 - API key 的环境变量提示按它解析，因此该分组下的 `deepseek-ai/DeepSeek-V4-Pro` 报 `OPENAI_API_KEY`，
@@ -35,8 +35,8 @@ vLLM 服务。
 
 ## 需要携带该客户端的 AgentHub 版本
 
-`vllm-openai-chat` 不在 `@prismshadow/agenthub` 0.4.9 中——本仓库依赖的正是它，也是当前最新的已发布
+`openai-chat-vllm-adapter` 不在 `@prismshadow/agenthub` 0.4.9 中——本仓库依赖的正是它，也是当前最新的已发布
 版本；该客户端位于 AgentHub 尚未发布的分支上（agenthub
 [#197](https://github.com/Prism-Shadow/agenthub/pull/197)、
 [#198](https://github.com/Prism-Shadow/agenthub/pull/198)）。在依赖升到包含它的版本（0.4.10 或更高）
-之前，该分组下的模型会在发起请求时以 AgentHub 的 `"vllm-openai-chat is not supported"` 失败。
+之前，该分组下的模型会在发起请求时以 AgentHub 的 `"openai-chat-vllm-adapter is not supported"` 失败。

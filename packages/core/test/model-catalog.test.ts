@@ -143,7 +143,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("vLLM (self-hosted): the group pins vllm-openai-chat, and presets carry no price and no endpoint", () => {
+  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, and presets carry no price and no endpoint", () => {
     const vllm = MODEL_CATALOG.filter((m) => m.provider === "vllm");
     // Dictionary order by upstream id, case-insensitive (as in siliconflow): deepseek-ai/
     // before Qwen/, and the flash revision before the vision revision it prefixes.
@@ -161,7 +161,7 @@ describe("model-catalog", () => {
       // The pin is load-bearing on every row: Qwen/* matches none of AutoLLMClient's rules
       // and would be rejected, and deepseek-ai/DeepSeek-V4-* contains "deepseek-v4", which
       // would reach DeepSeek's first-party Responses client pointed at a vLLM server.
-      expect(m.clientType, m.modelId).toBe("vllm-openai-chat");
+      expect(m.clientType, m.modelId).toBe("openai-chat-vllm-adapter");
       // No seller and no shared endpoint: the user runs the server and supplies its URL.
       expect(m.pricing, m.modelId).toBeUndefined();
       expect(m.baseUrl, m.modelId).toBeUndefined();
@@ -178,7 +178,7 @@ describe("model-catalog", () => {
       "openai-chat",
     );
     // The group pin, read the one way every call site reads it.
-    expect(providerClientType("vllm")).toBe("vllm-openai-chat");
+    expect(providerClientType("vllm")).toBe("openai-chat-vllm-adapter");
     expect(providerInfo("vllm")!.gatewayBaseUrl).toBeUndefined();
     // No group but vLLM declares one: the gateways derive openai-chat from their preset
     // endpoint, and custom / user-defined groups leave the protocol to detection.
@@ -191,7 +191,7 @@ describe("model-catalog", () => {
     const preset = presetModelEntries().filter((e) => e.provider === "vllm");
     expect(preset).toHaveLength(8);
     for (const e of preset) {
-      expect(e.client_type, e.model_id).toBe("vllm-openai-chat");
+      expect(e.client_type, e.model_id).toBe("openai-chat-vllm-adapter");
       expect(e.pricing, e.model_id).toBeUndefined();
       expect(e.base_url, e.model_id).toBeUndefined();
     }
@@ -202,7 +202,7 @@ describe("model-catalog", () => {
     );
     expect(modelHomepageUrl("vllm", "my-own-finetune")).toBe("https://recipes.vllm.ai/");
     // Fast mode rides on the client, and the vLLM client inherits openai_chat's mapping.
-    expect(fastModeProtocol("Qwen/Qwen3.8-27B", "vllm-openai-chat")).toBe("openai");
+    expect(fastModeProtocol("Qwen/Qwen3.8-27B", "openai-chat-vllm-adapter")).toBe("openai");
   });
 
   it("providerInfo matches by id; unknown ids return undefined", () => {

@@ -103,12 +103,12 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
   it("rewrites to the group's own protocol when one is pinned, whatever the entry carried", () => {
     // The pin is the group's semantics, not a fallback: an entry dragged into vLLM speaks
     // what the rest of the group speaks, including one that had already picked a protocol.
-    expect(clientTypeAfterProviderChange("vllm", "")).toBe("vllm-openai-chat");
-    expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("vllm-openai-chat");
-    expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("vllm-openai-chat");
-    expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("vllm-openai-chat");
+    expect(clientTypeAfterProviderChange("vllm", "")).toBe("openai-chat-vllm-adapter");
+    expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("openai-chat-vllm-adapter");
+    expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("openai-chat-vllm-adapter");
+    expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("openai-chat-vllm-adapter");
     // And moving back out of it does not carry the pin along.
-    expect(clientTypeAfterProviderChange("custom", "vllm-openai-chat")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "openai-chat-vllm-adapter")).toBe("openai-chat");
   });
 });
 
@@ -165,7 +165,7 @@ describe("envHintClientType (custom groups never infer a client from the model i
   it("resolves a pinned group against its pin rather than the model id", () => {
     // deepseek-ai/DeepSeek-V4-Pro would otherwise route by id to DEEPSEEK_API_KEY, which is
     // not what an entry saved on the vLLM client reads.
-    expect(envHintClientType("vllm", "")).toBe("vllm-openai-chat");
+    expect(envHintClientType("vllm", "")).toBe("openai-chat-vllm-adapter");
     expect(envFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "")).toBe("OPENAI_API_KEY");
   });
 
@@ -191,8 +191,8 @@ describe("protocolForPersist (an empty protocol must never reach the config)", (
   });
 
   it("writes a pinned group's protocol rather than leaving it to inference", () => {
-    expect(protocolForPersist("vllm", "")).toBe("vllm-openai-chat");
-    expect(protocolForPersist("vllm", "   ")).toBe("vllm-openai-chat");
+    expect(protocolForPersist("vllm", "")).toBe("openai-chat-vllm-adapter");
+    expect(protocolForPersist("vllm", "   ")).toBe("openai-chat-vllm-adapter");
     // An explicit value still wins — this is the last-resort net, not an override.
     expect(protocolForPersist("vllm", "openai-chat")).toBe("openai-chat");
   });

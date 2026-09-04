@@ -55,12 +55,12 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "")).toBe("/chat/completions");
   });
 
-  it("vllm-openai-chat is chat completions, whatever the model id looks like", () => {
+  it("openai-chat-vllm-adapter is chat completions, whatever the model id looks like", () => {
     // It contains "openai" and reaches the same branch, which is the right answer: the vLLM
     // client subclasses openai-chat and POSTs the same path. The DeepSeek id is the one that
     // would go wrong if the group implied the path — the vendor's own client uses /responses.
-    expect(protocolPathForModel("vllm", "vllm-openai-chat")).toBe("/chat/completions");
-    expect(protocolPathForModel("custom", "vllm-openai-chat")).toBe("/chat/completions");
+    expect(protocolPathForModel("vllm", "openai-chat-vllm-adapter")).toBe("/chat/completions");
+    expect(protocolPathForModel("custom", "openai-chat-vllm-adapter")).toBe("/chat/completions");
   });
 
   it("an explicit openai-chat client type wins over vendor-group membership", () => {
