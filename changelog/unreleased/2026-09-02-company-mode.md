@@ -72,7 +72,8 @@ cursors, budget marks) and each user's read cursor per channel.
   the two switches on the settings page. Below the channels the sidebar lists the organization
   itself: 工位 / Desks, one row per employee in chart order, expanded, opening that employee's
   desk and creating it when none exists; and 工单会话 / Ticket sessions, collapsed, the
-  sessions attached to tickets newest first under the ticket that names them. The collapsed
+  sessions attached to tickets, newest first, each with the title of the ticket it
+  contributes to as the row's subtitle. The collapsed
   rail carries the desks as avatars with their running dots. A desk or ticket conversation is
   the ORDINARY conversation — the same message list, tool cards, approvals and composer as
   development mode — with the company sidebar around it and its row marked; company mode has
