@@ -624,10 +624,16 @@ fi
 # and serves Workspace previews from 127.0.0.1, so the API answers 401 there. The listener is
 # still 127.0.0.1 (plus its ::1 companion) — only the Host header differs.
 start_local_server() {
-  as_node env PENGUIN_PINNED_AGENT="\$1" penguin server --host 127.0.0.1 --port "\$PORT" &
+  # Spelled out rather than routed through as_node: backgrounding a shell function makes \$!
+  # the subshell's pid, and the TERM below would then never reach the server it wraps.
+  setpriv --reuid=node --regid=node --init-groups \\
+    env PENGUIN_PINNED_AGENT="\$1" penguin server --host 127.0.0.1 --port "\$PORT" &
   SERVER_PID=\$!
   trap 'kill -TERM "\$SERVER_PID" 2>/dev/null || true' TERM INT
   for _ in \$(seq 1 60); do
+    # A server that died leaves the port to whatever else holds it, and the poll would then
+    # succeed against the wrong process; fail here instead of quietly setting up elsewhere.
+    kill -0 "\$SERVER_PID" 2>/dev/null || { echo "The setup server exited at start-up." >&2; return 1; }
     curl -sf "http://localhost:\$PORT/api/install" >/dev/null 2>&1 && return 0
     sleep 1
   done
