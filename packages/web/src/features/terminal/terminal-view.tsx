@@ -18,6 +18,8 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { useTheme } from "../../state/theme";
+import { useAuth } from "../../state/auth";
+import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -114,8 +116,17 @@ export function terminalTheme(dark: boolean): ITheme {
   return dark ? DARK_THEME : LIGHT_THEME;
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
+/**
+ * Every terminal round-trip goes through here, and so is addressed to the machine that holds
+ * the terminal it names (lib/terminal-machines.ts). `server` is for the one call with no id
+ * to route by: creating a terminal names its machine before the terminal exists.
+ */
+async function request(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<Response> {
+  return fetch(terminalUrl(path, server), {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -150,23 +161,39 @@ function httpError(
 }
 
 /** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await request(path, init);
+export async function fetchJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T> {
+  const res = await request(path, init, server);
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
 /** Existence probe: 404 means "not there" and answers null; every other failure throws. */
-export async function probeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await request(path, init);
+export async function probeJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T | null> {
+  const res = await request(path, init, server);
   if (res.status === 404) return null;
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
-function streamUrl(id: string, cols: number, rows: number): string {
+/**
+ * Always THIS server's stream. A pty on a machine is named in the id instead of the path —
+ * `<terminalId>@<machineId>@<userId>` — and this server's platform relays the socket through
+ * the connection it holds (server: machines/terminal-relay.ts). The user id is what the
+ * runtime's owner check reads; naming anyone else is refused there.
+ */
+function streamUrl(id: string, cols: number, rows: number, userId: string): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/terminals/${id}/stream?cols=${cols}&rows=${rows}`;
+  const machine = machineForTerminal(id);
+  const ref = machine === null ? id : `${id}@${machine}@${userId}`;
+  return `${scheme}//${location.host}/api/terminals/${ref}/stream?cols=${cols}&rows=${rows}`;
 }
 
 export interface TerminalViewProps {
@@ -190,6 +217,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
   // (the view pool exists to keep exactly those alive). The ref is what lets the
   // once-per-mount effect below read the current appearance without depending on it.
   const { terminalDark } = useTheme();
+  const userId = useAuth().user?.userId ?? "";
   const darkRef = useRef(terminalDark);
   darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
@@ -432,7 +460,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
           if (disposed) return;
           callbacks.current.onInfo?.(terminal);
 
-          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows));
+          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows, userId));
           socket.binaryType = "arraybuffer";
 
           socket.onopen = () => report("ready");

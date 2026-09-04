@@ -18,6 +18,12 @@ export interface DraftCache {
   text?: string;
   agentId?: string;
   workspace?: string;
+  /**
+   * The machine that workspace is on; absent means this one. A path alone is not enough to
+   * act on — `/srv/app` names a different directory on every machine — so the pair travels
+   * together from the picker all the way to Session creation.
+   */
+  machineId?: string;
   approvalMode?: ApprovalMode;
   /**
    * The model selected in the draft (a paired reference; (provider, modelId) is the unique key):
@@ -89,6 +95,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   if (typeof o.text === "string") out.text = o.text;
   if (typeof o.agentId === "string") out.agentId = o.agentId;
   if (typeof o.workspace === "string") out.workspace = o.workspace;
+  if (typeof o.machineId === "string" && o.machineId !== "") out.machineId = o.machineId;
   const modelRef = parseModelRef(o.modelRef);
   if (modelRef) out.modelRef = modelRef;
   if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
