@@ -304,7 +304,7 @@ describe("error-recorder", () => {
     // close, classified by messagingErrorKind, persisted under `messaging_connect_failed`.
     // Both rows land — the log keeps everything — but only the one a person has to act on
     // reaches the unexpected count the cost center highlights.
-    const rec = wire(ErrorRecorder, { errors: repo, now: now });
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     const closed = (message: string, code: number, recovers: boolean) =>
       new MessagingConnectionClosedError(message, code, recovers);
     for (const err of [

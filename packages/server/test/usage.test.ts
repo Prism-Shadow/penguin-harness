@@ -176,7 +176,7 @@ describe("usage-service (cost computed on the fly)", () => {
         usage: repo,
         errors: wire(ErrorsRepo, { db: db }),
         lookupPricing: tiered,
-        now: () => new Date(at),
+        clock: { now: () => new Date(at) },
       });
       const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
       expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
@@ -355,7 +355,11 @@ describe("usage-service model totals (unfiltered, for the models page)", () => {
   beforeEach(() => {
     db = openDatabase(":memory:");
     repo = wire(UsageRepo, { db: db });
-    service = wire(UsageService, { usage: repo, errors: wire(ErrorsRepo, { db: db }), lookupPricing: lookup });
+    service = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: lookup,
+    });
   });
   afterEach(() => db.close());
 

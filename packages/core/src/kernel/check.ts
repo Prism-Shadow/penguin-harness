@@ -198,10 +198,7 @@ export function checkTree(
     }
     for (const [slotKey, entries] of Object.entries(mf.contributes)) {
       const split = splitSlotKey(slotKey);
-      const reachable =
-        split !== null &&
-        (split.module === mf.name || m.visible.has(split.module) || split.module in published);
-      const target = reachable ? provides[split.module] : undefined;
+      const target = split === null ? undefined : provides[split.module];
       const slot =
         split === null || target === undefined
           ? undefined

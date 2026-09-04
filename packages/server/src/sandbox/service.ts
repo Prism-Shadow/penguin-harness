@@ -20,10 +20,8 @@ import type {
   SandboxSettings,
 } from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Slot } from "@prismshadow/penguin-core/kernel";
-import { Module, Provide } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { Slot, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 
 interface MountedProvider {
   name: string;

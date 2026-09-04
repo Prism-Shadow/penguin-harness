@@ -43,8 +43,8 @@ import {
   type Replacements,
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
+  type ProxyControl,
 } from "./hmr/capabilities.js";
-import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";

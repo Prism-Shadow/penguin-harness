@@ -30,10 +30,12 @@ import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MachinesService } from "../../machines/service.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {
   machines: MachinesService;
+  access: Access;
 }
 
 export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
@@ -46,7 +48,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     if (!c.var.user.isAdmin) {
       throw new HttpError(403, "admin_required", "Only an admin can install on a machine.");
     }
-    deps.projectService.requireProjectAccess(c.var.user.userId, requireValidId(c, "projectId"));
+    deps.access.requireProjectAccess(c.var.user.userId, requireValidId(c, "projectId"));
     await next();
   });
 

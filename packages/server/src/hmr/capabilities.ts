@@ -21,20 +21,16 @@
  * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
+import type { Resources, Opaque, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
 import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
-import type { ChannelHub } from "../runtime/channel.js";
+import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { HmrHost } from "./host.js";
 import type { DesktopService } from "../services/desktop-service.js";
 import type { LifecycleService } from "../services/lifecycle-service.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { Channel } from "../runtime/channel.js";
-import { Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
+import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per

@@ -602,7 +602,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // No clock is passed and none is wanted: which tier a given request ran in is decided from
     // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
     // is to say what the two tiers are. The number on disk is the peak one either way.
-    const svc = wire(ProjectConfigService, { config: { root: t.root } });
+    const svc = wire(ProjectConfigService, { paths: { root: t.root } });
     const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
     const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect(rates!.peak.output).toBe(catalogPeak.output);
@@ -630,7 +630,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         : {}),
     }));
     await api.put(url(), { models: entries });
-    const svc = wire(ProjectConfigService, { config: { root: t.root } });
+    const svc = wire(ProjectConfigService, { paths: { root: t.root } });
     // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
     // two tiers collapse to the typed number and the split costs a row and changes nothing.
     const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };
