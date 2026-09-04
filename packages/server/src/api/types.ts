@@ -3335,6 +3335,40 @@ export interface MachineInfo {
    * someone to spend a 30 MB transfer re-doing what is already done.
    */
   elsewhere?: { version: string; at: string };
+  /**
+   * The machine's OWN id — 16 base64url characters minted by the server that runs there,
+   * stable across renames, re-aliasing and reinstalls. Null until a server has started on
+   * that machine, since nothing has minted one yet.
+   *
+   * This is what anything stored should point at; `id` above is an ADDRESS (`ssh:<alias>`),
+   * and `alias` is what people read. Two aliases for one host share a `machineId`, and an
+   * alias repointed at a different host answers a different one — an id never changes for a
+   * machine, so a change of id is a change of machine.
+   */
+  machineId: string | null;
+  /** The host this server itself runs on. Always present, always installed, never a target. */
+  local: boolean;
+  /**
+   * What the last probe found over there, or null when none has been taken. Never filled in
+   * at list time: a probe costs an ssh round trip per machine, so the list reports the last
+   * answer and the page asks for a fresh one when it wants one.
+   */
+  status: MachineServerStatus | null;
+}
+
+/**
+ * A machine's server as of one probe. There is deliberately no separate "ssh" state — ssh is
+ * the transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
+ * diagnostic in `detail` rather than as two states a reader has to combine.
+ */
+export interface MachineServerStatus {
+  state: "running" | "stopped" | "unreachable";
+  /** ISO timestamp of the probe this answer came from. */
+  checkedAt: string;
+  /** The port it is serving on (`running`). */
+  port?: number;
+  /** Why the machine could not be reached (`unreachable`) — ssh's own words. */
+  detail?: string;
 }
 
 /**

@@ -199,7 +199,8 @@ export const MIGRATIONS: readonly Migration[] = [
           version      TEXT,
           installed_at TEXT,
           session_pid  INTEGER,
-          remote_port  INTEGER
+          remote_port  INTEGER,
+          platform     TEXT
         );
         CREATE TABLE IF NOT EXISTS machine_project (
           project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,

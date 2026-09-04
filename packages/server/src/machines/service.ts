@@ -25,13 +25,25 @@
  * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
  * 30 MB transfer to reach the same place.
  */
-import type { MachineInfo, MachineInstallJob } from "../api/types.js";
-import { listHostAliases } from "./transport/index.js";
+import os from "node:os";
+import { VERSION } from "@prismshadow/penguin-core";
+import type { MachineInfo, MachineInstallJob, MachineServerStatus } from "../api/types.js";
+import { readServerLock } from "../lock.js";
+import { connectionTo, listHostAliases } from "./transport/index.js";
+import type { ExecResult } from "./transport/index.js";
+import type { RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
+import { probeServerState } from "./server-state.js";
 import type { MachinesRepo } from "../db/repos/machines.js";
 
+/** The id of the entry standing for the machine this server runs on. */
+const LOCAL_MACHINE_ID = "local";
+
+/** How many machines the probe works on at once. */
+const CONCURRENCY = 5;
+
 /** Why a start was refused before any ssh ran. */
-export type InstallRefusal = "busy" | "unknown-machine" | "no-image";
+export type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 
 /**
  * The three things this service does to the world, injectable as a set. Production passes
@@ -44,13 +56,28 @@ export interface MachinesEffects {
   listAliases: typeof listHostAliases;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
+  probe: typeof probeServerState;
+  /** One command on a machine, over its own ssh. */
+  runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
 }
 
 export class MachinesService {
   #job: MachineInstallJob | null = null;
+  /**
+   * The last probe per address. In memory on purpose: a status is only true for the moment
+   * it was taken, so one that outlived its App would be a claim nobody measured.
+   */
+  readonly #statuses = new Map<string, MachineServerStatus>();
+  /**
+   * The probe round in flight per Project. Concurrent askers — every open tab schedules its
+   * own — share the round rather than each starting five workers: the answer is the same,
+   * and five was meant as a bound, not as a unit of multiplication.
+   */
+  readonly #probing = new Map<string, Promise<void>>();
   readonly #effects: MachinesEffects;
+  readonly #machineId: string;
 
   /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
   readonly #assets: () => string | null;
@@ -58,17 +85,54 @@ export class MachinesService {
   /** `dataRoot` is the server's own data root: it holds the hmr state a push replicates. */
   constructor(
     private readonly dataRoot: string,
+    machineId: string,
     private readonly repo: MachinesRepo,
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
   ) {
     this.#assets = assets;
+    this.#machineId = machineId;
     this.#effects = {
       listAliases: listHostAliases,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
+      probe: probeServerState,
+      // 30s: a probe is one short command, and a machine that cannot answer it in that time
+      // is one the list should call unreachable rather than wait on.
+      // One at a time per machine (transport/lane.ts): however many askers, a machine sees
+      // one of these commands at once, and the rest wait their turn on it.
+      runOn: (target, command) => connectionTo(target).exec(command),
       now: () => new Date(),
       ...effects,
+    };
+  }
+
+  /**
+   * A machine's ssh target is its alias and nothing else — what the alias means is ssh's to
+   * resolve, from its own config, every time it is handed one.
+   */
+  #targetOf(alias: string): RemoteTarget {
+    return { alias, user: "" };
+  }
+
+  /**
+   * This machine: always installed, always up, never a target. Read directly rather than
+   * probed — both facts are right here — and absent from the install picker, because a
+   * server does not push this build over the program directory it is running from.
+   */
+  #localMachine(): MachineInfo {
+    const lock = readServerLock(this.dataRoot);
+    return {
+      id: LOCAL_MACHINE_ID,
+      alias: os.hostname(),
+      machineId: this.#machineId,
+      installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
+      local: true,
+      status: {
+        state: "running",
+        checkedAt: this.#effects.now().toISOString(),
+        ...(lock === null ? {} : { port: lock.port }),
+      },
     };
   }
 
@@ -101,7 +165,7 @@ export class MachinesService {
    */
   list(projectId: string): MachineInfo[] {
     const members = new Set(this.#members(projectId));
-    return this.#effects.listAliases().map((alias): MachineInfo => {
+    const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
       const row = this.repo.get(id);
       const installed =
@@ -110,9 +174,82 @@ export class MachinesService {
       return {
         id,
         alias,
+        machineId: row?.machineId ?? null,
         installed: mine ? installed : null,
         ...(!mine && installed !== null ? { elsewhere: installed } : {}),
+        local: false,
+        status: this.#statuses.get(id) ?? null,
       };
+    });
+    return [this.#localMachine(), ...remotes];
+  }
+
+  /**
+   * Asks this Project's installed machines what they are doing, five at a time, and keeps
+   * each answer. Never at list time: a probe is an ssh round trip per machine, and a page
+   * load is not a reason to open one to every host in a config.
+   */
+  async probeInstalled(projectId: string): Promise<void> {
+    const inFlight = this.#probing.get(projectId);
+    if (inFlight !== undefined) return inFlight;
+    const round = this.#probeRound(projectId).finally(() => this.#probing.delete(projectId));
+    this.#probing.set(projectId, round);
+    return round;
+  }
+
+  async #probeRound(projectId: string): Promise<void> {
+    const queue = this.list(projectId).filter((m) => !m.local && m.installed !== null);
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
+        const checkedAt = this.#effects.now().toISOString();
+        const target = this.#targetOf(machine.alias);
+        const probe = await this.#effects.probe(
+          target,
+          this.#effects.runOn,
+          this.repo.get(machine.id)?.platform ?? null,
+        );
+        const state = probe.state;
+        this.#statuses.set(machine.id, {
+          state: state.kind,
+          checkedAt,
+          ...(state.kind === "running" ? { port: state.port } : {}),
+          ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
+        });
+        this.#rememberMachineId(machine.id, probe.machineId);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  /**
+   * Records an id a probe just heard. An id NEVER changes for a machine, so a probe that
+   * answers a different one means the alias was repointed — the newer answer is the true one.
+   *
+   * And a different machine is not covered by what this row remembers. Everything the row
+   * holds about the far side — what this server installed there and when, what platform the
+   * install found, the port its server was last bound to — was learned from the machine that
+   * is no longer at this address. Kept, it would report the newcomer as already provisioned
+   * at a build it has never run, and the install that would have corrected that is exactly
+   * what an "already installed" record suppresses. The first id a machine ever gives keeps
+   * the record: null to minted is one machine finally saying who it is, not a substitution.
+   *
+   * `sessionPid` deliberately survives: it names the ssh child THIS server holds, which is
+   * the one that just answered, and forgetting it would leave a process nothing can close.
+   */
+  #rememberMachineId(address: string, machineId: string | null): void {
+    if (machineId === null) return;
+    const known = this.repo.get(address)?.machineId ?? null;
+    if (known === machineId) return;
+    if (known === null) {
+      this.repo.patch(address, { machineId });
+      return;
+    }
+    this.repo.patch(address, {
+      machineId,
+      version: null,
+      installedAt: null,
+      remotePort: null,
+      platform: null,
     });
   }
 
@@ -151,8 +288,15 @@ export class MachinesService {
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
+    // Never this machine: a server does not push this build over its own program directory
+    // while running from it. The synthetic row is the obvious case. An alias that points
+    // back home — `Host localhost`, a second name for this host — is the same machine at
+    // another address, and the id a probe once heard from it says so without any ssh; an
+    // alias never probed is asked inside the job, before anything is written.
+    if (machineId === LOCAL_MACHINE_ID) return { ok: false, why: "self" };
     const alias = this.#effects.listAliases().find((entry) => `ssh:${entry}` === machineId);
     if (alias === undefined) return { ok: false, why: "unknown-machine" };
+    if (this.repo.get(machineId)?.machineId === this.#machineId) return { ok: false, why: "self" };
 
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
@@ -174,13 +318,28 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
+        // The alias IS the target: what it means — user, host, port, key, jump host — is
+        // ssh's to resolve, from its own config, every time it is handed the alias.
+        const target = { alias, user: "" };
         say(`Installing ${plan.version} on ${alias}…`);
+        // Asked before anything is written: only the machine can say whether this alias is
+        // this host under another name. Unreachable is not a refusal — a host with nothing
+        // installed yet answers exactly that — this server's own id is.
+        const heard = await this.#effects.probe(target, this.#effects.runOn, null);
+        this.#rememberMachineId(machineId, heard.machineId);
+        if (heard.machineId !== null && heard.machineId === this.#machineId) {
+          job.result = {
+            ok: false,
+            step: "connect",
+            message:
+              "That alias reaches this very machine — it answered with this server's own id. A server does not push this build over the program directory it is running from.",
+          };
+          return;
+        }
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
-          // The alias IS the target: what it means — user, host, port, key, jump host — is
-          // ssh's to resolve, from its own config, every time it is handed the alias.
-          target: { alias, user: "" },
+          target,
           plan,
           onProgress: say,
           assets: this.#assets,
@@ -193,7 +352,11 @@ export class MachinesService {
         // Remembered BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
-        this.repo.patch(machineId, { version, installedAt: this.#effects.now().toISOString() });
+        this.repo.patch(machineId, {
+          version,
+          installedAt: this.#effects.now().toISOString(),
+          platform: outcome.identity.platform,
+        });
         this.#setMember(projectId, machineId, true);
         job.result = { ok: true, kind: outcome.kind, version };
       } catch (err) {

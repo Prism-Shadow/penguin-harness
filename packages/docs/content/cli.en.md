@@ -309,6 +309,19 @@ Port / host priority: command-line option > the `PORT` / `HOST` env vars (includ
 
 Both run the service as a child process and stay behind as its supervisor: the terminal's Ctrl+C reaches the service, the command exits with the service's exit code, and when the service asks to be restarted — the Web App's **Restart and update** after `penguin update` has replaced the install — the supervisor relaunches it on the new release, printing a line as it does. A dev run through `tsx` cannot be relaunched by plain node and runs the service in-process instead; the Web App then tells the admin to restart by hand.
 
+### penguin server status
+
+Prints this data root's server state and the machine's own id, as one line of JSON. It answers whether or not a server is running — the data root is the source, not a live process:
+
+```bash
+penguin server status
+# {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
+```
+
+`running` requires both that the recorded pid is alive and that its port accepts a connection, so a recycled pid does not read as a live server. `machineId` is `null` until a server has started here at least once — the id is minted on first boot and never changes afterwards. The data root is selected by `PENGUIN_HOME` as usual.
+
+This is what the Machines page runs over ssh to ask a machine what it is doing, which is why the output is JSON rather than prose.
+
 ### penguin server reset-admin-password
 
 Offline rescue when the Web admin password is forgotten. Run it with the server stopped — it refuses while one is running on the data root:

@@ -12,6 +12,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
+import {
+  parseProbe,
+  probeServerState,
+  readServerStateCommand,
+} from "../src/machines/server-state.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   cmdQuote,
@@ -330,5 +335,113 @@ describe("shipping the installers", () => {
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
     const source = path.resolve(__dirname, "..", "..", "..", name);
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
+  });
+});
+
+describe("asking `penguin server status` in the machine's own dialect", () => {
+  const target = { alias: "nas", user: "deploy" };
+  const answered = {
+    code: 0,
+    stdout: `${JSON.stringify({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })}\n`,
+    stderr: "",
+    timedOut: false,
+  };
+  // What cmd.exe says to `"$HOME/.penguin/node/bin/node"`: not "no such command", a path
+  // with four literal characters in it.
+  const cmdSaid = {
+    code: 1,
+    stdout: "The system cannot find the path specified.\r\n",
+    stderr: "",
+    timedOut: false,
+  };
+
+  it("speaks cmd.exe to a Windows machine: no $HOME, node.exe, backslashes", () => {
+    const command = readServerStateCommand("win32");
+    expect(command).toContain("%USERPROFILE%\\.penguin\\node\\node.exe");
+    expect(command).toContain("lib\\dist\\penguin-hmr.js");
+    expect(command).not.toContain("$HOME");
+    expect(readServerStateCommand("linux")).toContain("$HOME/.penguin/node/bin/node");
+  });
+
+  it("a machine whose platform is on record is asked once, in that dialect", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return answered;
+      },
+      "win32",
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("%USERPROFILE%");
+    expect(probe.state).toMatchObject({ kind: "running", port: 7364 });
+  });
+
+  it("a machine whose platform is unknown is asked the POSIX way, then the Windows way", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return command.includes("%USERPROFILE%") ? answered : cmdSaid;
+      },
+      null,
+    );
+    expect(asked).toHaveLength(2);
+    expect(probe).toMatchObject({ state: { kind: "running" }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("when neither dialect answers, what the POSIX attempt heard is what is reported", async () => {
+    const refused = {
+      code: 255,
+      stdout: "",
+      stderr: "ssh: connect to host nas port 22: Connection refused",
+      timedOut: false,
+    };
+    const probe = await probeServerState(target, async () => refused, null);
+    expect(probe.state).toMatchObject({
+      kind: "unreachable",
+      detail: expect.stringContaining("Connection refused"),
+    });
+  });
+});
+
+describe("reading what `penguin server status` answered", () => {
+  const answer = (o: Record<string, unknown>) => JSON.stringify(o);
+
+  it("takes the state and the id out of the machine's own JSON", () => {
+    expect(
+      parseProbe(answer({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })),
+    ).toEqual({ state: { kind: "running", port: 7364, pid: 42 }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("reads a machine with nothing serving, and one that has no id yet", () => {
+    expect(parseProbe(answer({ running: false, port: null, pid: null, machineId: null }))).toEqual({
+      state: { kind: "stopped" },
+      machineId: null,
+    });
+  });
+
+  it("finds the answer under a login shell's own banner", () => {
+    const said = `Welcome to build-box!\n{ not json }\n${answer({ running: false })}\n`;
+    expect(parseProbe(said).state).toEqual({ kind: "stopped" });
+  });
+
+  it("says it cannot tell rather than inventing a state out of a shape it does not know", () => {
+    // Neither of these is a state any machine reported; both would be made up on this side.
+    // A truthy string reads as up, and a claim of running carrying no port reads as down —
+    // the two directions this side could least afford to be wrong in.
+    const stringly = answer({ running: "false", port: 1, pid: 2 });
+    expect(parseProbe(stringly).state).toEqual({ kind: "unreachable", detail: stringly });
+    const portless = answer({ running: true, machineId: "LNrJdHAZJ91G58i0" });
+    expect(parseProbe(portless).state).toEqual({ kind: "unreachable", detail: portless });
+  });
+
+  it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
+    // A build too old for the subcommand prints an error. Reading that as a well-formed "no"
+    // would turn every such machine into a silently wrong one.
+    const said = "error: unknown command 'status'";
+    expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
   });
 });

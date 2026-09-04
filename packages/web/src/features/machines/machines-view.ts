@@ -82,9 +82,11 @@ export function installButtonState(
  * server can no longer resolve, let alone install to.
  */
 export function installedMachines(state: MachinesResponse): MachineInfo[] {
+  // This machine is always installed and never a target: it is not a remote, so it is not
+  // in the list of remotes this server has put the program on.
   return state.machines
     .map((machine, index) => ({ machine, index }))
-    .filter((entry) => entry.machine.installed != null)
+    .filter((entry) => !entry.machine.local && entry.machine.installed != null)
     .sort((a, b) => {
       const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
       return at !== 0 ? at : a.index - b.index;

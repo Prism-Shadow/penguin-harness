@@ -782,6 +782,16 @@ export function buildAppDeps(
   // back, so a restart-only migration is refused here instead of being left behind.
   migrate(db, { swapPath: true });
 
+  /**
+   * This machine's own id is minted on the first boot of this data root and stable ever
+   * after — every stored reference to this machine, here and on the machines it reaches,
+   * points at it. Behind a function so a test that passes its own service never mints one.
+   */
+  const buildMachines = (): MachinesService => {
+    const repo = new MachinesRepo(db);
+    return new MachinesService(config.root, repo.ownId(), repo, {}, () => hmr.assetsDir());
+  };
+
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);
   const membersRepo = new MembersRepo(db);
@@ -1095,9 +1105,7 @@ export function buildAppDeps(
     lifecycle: caps.lifecycle,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
-    machines:
-      overrides.machines ??
-      new MachinesService(config.root, new MachinesRepo(db), {}, () => hmr.assetsDir()),
+    machines: overrides.machines ?? buildMachines(),
     hmr,
     proxyControl: caps.proxyControl,
     log,
