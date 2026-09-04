@@ -117,7 +117,7 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 | POST | /api/projects/:projectId/machines/:machineId/install | Start installing this build on that host and give it to this Project; `202` with the same body, the job now running |
 | POST | /api/projects/:projectId/machines/:machineId/release | Drop that machine from this Project; the install on it stays |
 
-Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config — it is read, and `ssh -G` resolves an alias only at install time, so a config declaring hundreds of hosts costs one file read.
+Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config — it is read for the aliases it declares, so a config naming hundreds of hosts costs one file read. What an alias means is ssh's own to resolve from that same file, every time it is used, so nothing here can go stale against a config a person edits.
 
 `imageVersion` is what would be pushed, or `null` when this server has no image at all (a development checkout that has never been hot-pushed to is the one such shape) — every install then refuses with `409` `no_install_image`. The version is the running install's own: a hot-pushed server sends the bundle it runs (`0.0.0-hmr.<cli>.<web>`), a tarball or packaged one sends its own tree, so the two ends match by construction.
 
@@ -125,7 +125,7 @@ Admin only on a personal server as much as a multi-user one: the install spawns 
 
 An install is a job, not a request: it probes the far side, may fetch and verify a Node runtime, and copies an image over scp — minutes in the bad case. `POST` starts it and returns at once; the client polls `GET` for `job.log`, which carries the far side's own words (ssh's diagnostics, the remote installer's output). `job.result` is `null` while running, then `{ok: true, kind: "installed" | "already-installed", version}` or `{ok: false, step, message}`. One job at a time; the job lives in memory and does not survive a hot push or a restart, and re-running is the recovery — every step is idempotent.
 
-Refusals decided before any ssh runs have their own codes: `409` `install_running`, `404` `unknown_machine`, `409` `no_install_image`, `502` `unresolvable_host`.
+Refusals decided before any ssh runs have their own codes: `409` `install_running`, `404` `unknown_machine`, `409` `no_install_image`, and `409` `self_install` — the machine this server runs on, which it will not push this build over the program directory it is running from. `self_install` covers an alias pointing back home (`Host localhost`, a second name for this host) as well as the local row, once a probe has heard this server's own id from it.
 
 ### Version and Self-Update
 

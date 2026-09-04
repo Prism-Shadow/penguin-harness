@@ -53,22 +53,27 @@ export interface MachineProbe {
  * the far side actually said.
  */
 export function parseProbe(stdout: string): MachineProbe {
+  const said = stdout.trim();
+  const cannotTell = (detail: string): MachineProbe => ({
+    state: { kind: "unreachable", detail },
+    machineId: null,
+  });
   const status = jsonAnswer<MachineStatus>(stdout, "running");
-  if (status === null) {
-    const said = stdout.trim();
-    return {
-      state: { kind: "unreachable", detail: said === "" ? "the machine said nothing." : said },
-      machineId: null,
-    };
-  }
+  if (status === null) return cannotTell(said === "" ? "the machine said nothing." : said);
+
+  // The declared type is what a healthy far side sends; this is untrusted text off a wire,
+  // so the shape is checked rather than assumed. For the same reason output holding no
+  // answer is not "stopped": an answer whose shape is wrong is not an answer either, and
+  // coercing one MANUFACTURES a state. `"running": "false"` is a truthy string and would
+  // read as up; `"running": true` carrying no port would read as down. Both are worse than
+  // saying the machine could not be read.
+  const { running, port, pid } = status;
   const id = status.machineId;
-  return {
-    state:
-      status.running && typeof status.port === "number" && typeof status.pid === "number"
-        ? { kind: "running", port: status.port, pid: status.pid }
-        : { kind: "stopped" },
-    machineId: typeof id === "string" && id !== "" ? id : null,
-  };
+  const machineId = typeof id === "string" && id !== "" ? id : null;
+  if (typeof running !== "boolean") return cannotTell(said);
+  if (!running) return { state: { kind: "stopped" }, machineId };
+  if (typeof port !== "number" || typeof pid !== "number") return cannotTell(said);
+  return { state: { kind: "running", port, pid }, machineId };
 }
 
 /**

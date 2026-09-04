@@ -465,10 +465,25 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.job()?.running === false);
       await admin.post(`/api/projects/${PROJECT}/machines/probe`);
       expect(machinesRepo.get("ssh:nas")?.machineId).toBe("first00000000000");
+      expect(machinesRepo.get("ssh:nas")?.version).not.toBeNull();
 
       answers = "second0000000000";
       await admin.post(`/api/projects/${PROJECT}/machines/probe`);
-      expect(machinesRepo.get("ssh:nas")?.machineId).toBe("second0000000000");
+      const row = machinesRepo.get("ssh:nas");
+      expect(row?.machineId).toBe("second0000000000");
+      // What the row knew was learned from the machine that is no longer at this address.
+      // Kept, the newcomer would read as already installed at a build it has never run —
+      // and an "already installed" record is exactly what suppresses the install that would
+      // have corrected it.
+      expect(row?.version).toBeNull();
+      expect(row?.installedAt).toBeNull();
+      expect(row?.platform).toBeNull();
+      expect(row?.remotePort).toBeNull();
+
+      const body = (await (
+        await admin.get(`/api/projects/${PROJECT}/machines`)
+      ).json()) as MachinesResponse;
+      expect(body.machines.find((m) => m.id === "ssh:nas")?.installed).toBeNull();
     });
 
     it("two probe requests at once share one round: each machine is asked once", async () => {

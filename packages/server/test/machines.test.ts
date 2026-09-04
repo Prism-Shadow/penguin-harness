@@ -428,6 +428,16 @@ describe("reading what `penguin server status` answered", () => {
     expect(parseProbe(said).state).toEqual({ kind: "stopped" });
   });
 
+  it("says it cannot tell rather than inventing a state out of a shape it does not know", () => {
+    // Neither of these is a state any machine reported; both would be made up on this side.
+    // A truthy string reads as up, and a claim of running carrying no port reads as down —
+    // the two directions this side could least afford to be wrong in.
+    const stringly = answer({ running: "false", port: 1, pid: 2 });
+    expect(parseProbe(stringly).state).toEqual({ kind: "unreachable", detail: stringly });
+    const portless = answer({ running: true, machineId: "LNrJdHAZJ91G58i0" });
+    expect(parseProbe(portless).state).toEqual({ kind: "unreachable", detail: portless });
+  });
+
   it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
     // A build too old for the subcommand prints an error. Reading that as a well-formed "no"
     // would turn every such machine into a silently wrong one.

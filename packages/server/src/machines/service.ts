@@ -224,11 +224,33 @@ export class MachinesService {
   /**
    * Records an id a probe just heard. An id NEVER changes for a machine, so a probe that
    * answers a different one means the alias was repointed — the newer answer is the true one.
+   *
+   * And a different machine is not covered by what this row remembers. Everything the row
+   * holds about the far side — what this server installed there and when, what platform the
+   * install found, the port its server was last bound to — was learned from the machine that
+   * is no longer at this address. Kept, it would report the newcomer as already provisioned
+   * at a build it has never run, and the install that would have corrected that is exactly
+   * what an "already installed" record suppresses. The first id a machine ever gives keeps
+   * the record: null to minted is one machine finally saying who it is, not a substitution.
+   *
+   * `sessionPid` deliberately survives: it names the ssh child THIS server holds, which is
+   * the one that just answered, and forgetting it would leave a process nothing can close.
    */
   #rememberMachineId(address: string, machineId: string | null): void {
-    if (machineId !== null && this.repo.get(address)?.machineId !== machineId) {
+    if (machineId === null) return;
+    const known = this.repo.get(address)?.machineId ?? null;
+    if (known === machineId) return;
+    if (known === null) {
       this.repo.patch(address, { machineId });
+      return;
     }
+    this.repo.patch(address, {
+      machineId,
+      version: null,
+      installedAt: null,
+      remotePort: null,
+      platform: null,
+    });
   }
 
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */

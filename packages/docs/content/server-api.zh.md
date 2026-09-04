@@ -117,7 +117,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
 | POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 
-无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，`ssh -G` 仅在真正安装时才解析别名，因此哪怕配置声明了几百台主机，列表也只是一次文件读取。
+无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写——只读其中声明的别名，因此哪怕配置声明了几百台主机，列表也只是一次文件读取。别名到底指向什么，每次都由 ssh 自己按同一份文件解析，因此这里不存在与人手改过的配置对不上的陈旧信息。
 
 `imageVersion` 是将被推送的版本；为 `null` 表示本服务端根本没有安装镜像（只有从未被热推过的源码检出会是这种形态），此时任何安装都会以 `409` `no_install_image` 拒绝。该版本取自当前运行的安装自身：热推过的服务端推送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则推送自己的程序树，因此两端的一致是构造性的。
 
@@ -125,7 +125,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。运行期间 `job.result` 为 `null`，结束后为 `{ok: true, kind: "installed" | "already-installed", version}` 或 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 
-在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`、`502` `unresolvable_host`。
+在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端自己所在的那台机器，它不会把这份构建盖到自己正在运行的程序目录上。`self_install` 不只覆盖本机那一行：指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
 
 ### 版本与在线更新
 
