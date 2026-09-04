@@ -3,7 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** refactor
 - **Scope:** `server`
-- **PR:** [#578](https://github.com/Prism-Shadow/penguin-harness/pull/597)
+- **PR:** [#597](https://github.com/Prism-Shadow/penguin-harness/pull/597)
 
 [中文版](2026-09-01-machines-connection.zh.md)
 
