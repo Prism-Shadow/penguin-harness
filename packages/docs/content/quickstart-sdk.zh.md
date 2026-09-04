@@ -15,7 +15,7 @@ npm install @prismshadow/penguin-core
 
 ## 配置模型
 
-SDK 与其他两条路线读同一个数据目录 `~/.penguin/data`，所以在[桌面端应用](/quickstart-desktop)或 [CLI](/quickstart-cli) 里配好的模型，SDK 直接可用，无需重复配置。
+SDK 与桌面端应用、CLI 读同一个数据目录 `~/.penguin/data`，所以在[桌面端应用](/quickstart-desktop)或 [CLI](/quickstart-cli) 里配好的模型，SDK 直接可用，无需重复配置。
 
 如果这台机器还没配过模型，最省事的方式是装上 CLI 配一次：
 
