@@ -207,6 +207,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual([
+      "company-setup",
       "penguin-config",
       "penguin-orchestration",
       "penguin-sdk",
@@ -300,12 +301,13 @@ describe("skills api", () => {
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(6);
+    expect(summary.agent.skillCount).toBe(7);
 
     // The installed list is the same shape a library install produces (name-sorted):
     // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
     expect(listed.skills.map((s) => s.name)).toEqual([
+      "company-setup",
       "penguin-config",
       "penguin-orchestration",
       "penguin-sdk",
@@ -589,7 +591,7 @@ describe("skills api", () => {
       ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(4);
+      expect(fresh.skillCount).toBe(5);
       expect(fresh.pluginUpdates).toEqual([]);
 
       // Age one installed copy: the library now carries a higher version than the disk does.

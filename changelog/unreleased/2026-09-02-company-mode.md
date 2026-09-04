@@ -110,5 +110,22 @@ cursors, budget marks) and each user's read cursor per channel.
   cursor are per channel — migration 5 recreates the two tables as `org_channel_state` and
   `org_channel_reads`. `penguin org channel` is the CLI family, and channels are the Web
   App's primary list in company mode, with desk and ticket sessions moved into a 「会话」 menu.
+- CEO budget: creation writes the CEO's monthly budget into `org_chart.yaml` — 100 USD
+  unless it names another (`ceoBudget` in the create request, `--ceo-budget` on
+  `penguin org create`, a CEO budget field in the create dialog). Budgets are compared on
+  the cumulative line, so that one number caps the whole company from the first minute
+  instead of leaving it unbounded; the initialization run's trigger block names it, and the
+  CEO sizes its hiring proposal to it. The org chart raises, lowers or clears it afterwards.
+- Guided creation: `company-setup`, a skill of `agent-development` — the plugin
+  `default_agent` already carries — so an organization can be created by asking the general
+  agent for one. It collects the id, name, mission, shared workspace, model and CEO budget
+  one question at a time in the user's language, shows a one-screen summary, waits for a
+  yes, runs `penguin org create` and hands the user over to company mode. It never hires,
+  schedules or files tickets: that is the CEO's work after the board answers its proposal.
+- Organization sessions stay out of development mode: the session DTO gained `orgId` — the
+  owning organization of a desk session or of a session contributing to one of its tickets,
+  taken from the organization caches (one query per list, never one per row) and served by
+  both the session list and `GET /api/sessions/:sessionId`. Development mode's session list,
+  its time buckets and its Organization folder hide every row that carries it.
 - Docs: a Company Mode guide with the marketplace walkthrough, the `penguin org` reference,
   and the organization routes in the server API reference.

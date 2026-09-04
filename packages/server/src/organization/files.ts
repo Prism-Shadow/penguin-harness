@@ -58,6 +58,14 @@ export const ORG_CONFIG_DEFAULTS = {
   budgetPauseRatio: 1.0,
 };
 
+/**
+ * The CEO's monthly budget in USD when organization creation names none. Budgets are
+ * compared on the cumulative line — the employee plus every subordinate — so the CEO's
+ * budget is the whole company's: a new organization is capped rather than unbounded, and
+ * the number is raised (or cleared) once the board knows what the mission costs.
+ */
+export const DEFAULT_CEO_BUDGET = 100;
+
 function tomlTable(raw: string): ParseResult<Record<string, unknown>> {
   let parsed: unknown;
   try {

@@ -178,18 +178,39 @@ describe("penguin org create", () => {
         "Beta Inc",
       ]),
     ).toBe(0);
+    // --ceo-budget defaults to 100: the CEO's chart entry is the whole company's budget,
+    // so a new organization is capped rather than unbounded.
     expect(lastRequest("POST", "/organizations")?.body).toEqual({
       orgId: "beta",
       mission: "Make widgets",
       name: "Beta Inc",
+      ceoBudget: 100,
     });
     const beta = server.orgs.get("beta")!;
+    expect(beta.employees.find((e) => e.agentId === "ceo")?.budget).toBe(100);
     expect(beta.ceoDeskSessionId).toBeDefined();
     expect(out()).toBe(`${t.org.created("beta", beta.ceoDeskSessionId)}\n`);
 
     stdout.length = 0;
     expect(await cli(["org", "create", "--org-id", "gamma", "--mission", "m", "--json"])).toBe(0);
     expect(JSON.parse(out())).toMatchObject({ orgId: "gamma", mission: "m", employeeCount: 1 });
+  });
+
+  it("--ceo-budget sets the CEO's budget; a negative amount is refused before any request", async () => {
+    expect(
+      await cli(["org", "create", "--org-id", "beta", "--mission", "m", "--ceo-budget", "250.5"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/organizations")?.body).toMatchObject({ ceoBudget: 250.5 });
+    expect(server.orgs.get("beta")!.employees.find((e) => e.agentId === "ceo")?.budget).toBe(250.5);
+
+    stdout.length = 0;
+    for (const bad of ["-1", "many"]) {
+      expect(
+        await cli(["org", "create", "--org-id", "delta", "--mission", "m", "--ceo-budget", bad]),
+      ).toBe(1);
+      expect(server.orgs.has("delta")).toBe(false);
+    }
+    expect(err()).toContain(t.org.budgetInvalid("--ceo-budget", "many"));
   });
 
   it("create's --org-id names the organization to create; PENGUIN_ORG_ID never fills it in", async () => {

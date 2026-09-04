@@ -46,6 +46,7 @@ import { HttpError } from "../../http/errors.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
 import {
+  DEFAULT_CEO_BUDGET,
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
   extractMentionTokens,
@@ -384,6 +385,8 @@ export class OrganizationService {
             duties:
               "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
             workspace: ".",
+            // Compared on the cumulative line, so this one number is the whole company's cap.
+            budget: req.ceoBudget ?? DEFAULT_CEO_BUDGET,
           },
         ],
       });
