@@ -6,6 +6,7 @@
  *   /terminal?id=<id>         attach exactly that terminal (the detach handoff)
  *   /terminal?cwd=/some/dir   create the terminal in that directory
  *   /terminal?name=<name>     display/session name for a newly created terminal
+ *   /terminal?machine=<id>    the machine the pty is on (absent = this server)
  *
  * Once a terminal is attached, its id is written back into the URL (replaceState, no
  * navigation), so a reload — or copying the address to another window — reattaches to the
@@ -26,6 +27,7 @@ import {
   type TerminalInfo,
   type TerminalStatus,
 } from "./terminal-view";
+import { rememberTerminalMachine } from "../../lib/terminal-machines";
 
 const STORAGE_KEY = "penguin.terminal.page.id";
 
@@ -33,6 +35,13 @@ export interface TerminalPageParams {
   id: string | null;
   cwd: string;
   name: string | null;
+  /**
+   * The machine the terminal is (or should be) on. In the URL because this page is opened
+   * in a NEW window: nothing in it has seen a terminal list yet, so the in-memory map that
+   * addresses every other terminal call is empty here and the URL is the only thing that
+   * can say where the pty lives.
+   */
+  machine: string | null;
 }
 
 /** Parses the /terminal search string into attach parameters (exported for tests). */
@@ -41,10 +50,12 @@ export function parseTerminalParams(search: string): TerminalPageParams {
   const id = params.get("id");
   const cwd = params.get("cwd");
   const name = params.get("name");
+  const machine = params.get("machine");
   return {
     id: id && id.trim() ? id.trim() : null,
     cwd: cwd && cwd.trim() ? cwd.trim() : "~",
     name: name && name.trim() ? name.trim() : null,
+    machine: machine && machine.trim() ? machine.trim() : null,
   };
 }
 
@@ -63,27 +74,36 @@ async function attachOrCreate(
   // 1. An explicit id wins — this is the detach handoff. A dead-but-not-yet-reaped
   //    terminal is still returned so the user sees its final screen and exit status.
   if (params.id) {
+    // Seeded before the probe, so this and every later call about it — attach, resize,
+    // kill — address the machine that holds it.
+    rememberTerminalMachine(params.id, params.machine);
     const existing = await probeJson<TerminalInfo>(`/api/terminals/${params.id}`).catch(() => null);
     if (existing) return existing;
   } else {
     // 2. Bare visit: reattach to this page's previous terminal when it is still alive.
     const storedId = localStorage.getItem(STORAGE_KEY);
     if (storedId) {
+      rememberTerminalMachine(storedId, params.machine);
       const stored = await probeJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(() => null);
       if (stored?.alive) return stored;
     }
   }
 
-  // 3. Create afresh from the URL's cwd/name.
-  const created = await fetchJson<TerminalInfo>("/api/terminals", {
-    method: "POST",
-    body: JSON.stringify({
-      cwd: params.cwd,
-      cols,
-      rows,
-      ...(params.name !== null ? { name: params.name } : {}),
-    }),
-  });
+  // 3. Create afresh from the URL's cwd/name — on the machine the cwd is a path ON.
+  const created = await fetchJson<TerminalInfo>(
+    "/api/terminals",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        cwd: params.cwd,
+        cols,
+        rows,
+        ...(params.name !== null ? { name: params.name } : {}),
+      }),
+    },
+    params.machine,
+  );
+  rememberTerminalMachine(created.id, params.machine);
   return created;
 }
 

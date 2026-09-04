@@ -73,6 +73,7 @@ export const zh = {
     disconnect: "断开",
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "可访问",
+    agentsUnreachable: "那台机器尚未连接——请在「机器」页面连接它",
     /** Manual re-probe, for when you already know something changed. */
     refresh: "刷新",
     checking: "检查中…",
