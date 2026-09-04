@@ -1709,10 +1709,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- vLLM (self-hosted: the models AgentHub's openai-chat-vllm-adapter client carries a
   // per-model thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
   //
-  // Three things every row here omits, all for the same reason — the user runs the server:
-  // - **no pricing**. There is no seller and no rate. An unpriced row is not a free one: three
-  //   zero buckets are a genuine $0 tier (the "free" badge, and costs that compute to 0), so
-  //   the field stays absent rather than zeroed.
+  // Every row prices at zero, and omits two other things, all because the user runs the server:
+  // - **zero pricing**. There is no seller charging per token: what the deployment costs is
+  //   the operator's own hardware, which no catalog rate could express. Three zero buckets are
+  //   the same genuine $0 tier the `:free` gateway rows carry, so these models show the free
+  //   badge and contribute 0 to the cost center rather than the "unpriced" mark — which is the
+  //   truthful reading of a self-hosted endpoint that bills nobody.
   // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
   // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
   //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
@@ -1731,6 +1733,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash",
     provider: "vllm",
     contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1743,6 +1746,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "vllm",
     contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1751,6 +1755,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "vllm",
     contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1759,6 +1764,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Qwen 3.5 0.8B",
     provider: "vllm",
     contextWindow: 262144,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1767,6 +1773,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Qwen 3.5 9B",
     provider: "vllm",
     contextWindow: 262144,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1775,6 +1782,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Qwen 3.6 35B A3B",
     provider: "vllm",
     contextWindow: 262144,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1783,6 +1791,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Qwen 3.8 27B",
     provider: "vllm",
     contextWindow: 262144,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },
@@ -1791,6 +1800,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Qwen 3.8 Flash Next",
     provider: "vllm",
     contextWindow: 262144,
+    pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
   },

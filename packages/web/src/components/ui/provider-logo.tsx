@@ -7,9 +7,9 @@
  * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); vLLM, whose own mark is a gradient
- * wordmark this monochrome set cannot carry, gets a plain geometric V that makes
- * no claim to be it; custom models use a generic cube. All are pure paths, no
+ * exact reproduction of the trademark); vLLM uses its official mark from the
+ * project's media kit, its two brand colours flattened to currentColor like
+ * Qwen's gradient; custom models use a generic cube. All are pure paths, no
  * external image assets.
  *
  * Vendor ids outside the preset table are user-defined groups: instead of all
@@ -142,10 +142,16 @@ const GLYPHS: Record<string, Glyph> = {
     ),
   },
   vllm: {
-    stroke: true,
+    // The official mark (vllm-project/media-kit, vLLM-Logo.svg): the solid wedge and the
+    // swoosh beside it, coordinates rounded to 2dp and the viewBox tightened to their bounding
+    // box. Its two brand colours (amber wedge, blue swoosh) collapse into currentColor the way
+    // Qwen's gradient does above — this set is monochrome so a row of provider glyphs reads as
+    // one family. The drop-shadow layer the source draws underneath is dropped with them.
+    viewBox: "13.39 12.21 68.04 70.39",
     path: (
       <>
-        <path d="M4.2 5.2h3.4L12 16.1l4.4-10.9h3.4L13.5 20h-3L4.2 5.2Z" />
+        <path d="m41.05 27.29l0 55.31l-27.66 -55.31z" />
+        <path d="m41.05 82.6l21.73 0l18.65 -70.39l-25.57 13.46z" />
       </>
     ),
   },

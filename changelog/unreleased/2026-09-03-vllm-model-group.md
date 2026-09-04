@@ -12,13 +12,18 @@ models AgentHub's `openai-chat-vllm-adapter` client carries a per-model thinking
 `Qwen/Qwen3.5-9B`, `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` and
 `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`.
 
-These are self-hosted, which is what the group's shape follows from. The rows carry **no
-pricing** — the user runs the server, so there is no seller and no rate, and the field stays
-absent rather than zeroed, since three zero buckets are a genuine free tier. They carry **no
-base URL** either: every deployment has its own, so the user supplies it as in the Custom
+These are self-hosted, which is what the group's shape follows from. The rows price at
+**zero** — nobody bills per token for a server the user runs, and what it does cost is that
+operator's own hardware, which no catalog rate expresses. Zero here is a real rate, not a
+missing one: the rows show the free badge and contribute 0 to the cost center, the same
+treatment the `:free` gateway rows already get. They carry **no base URL**: every deployment has its own, so the user supplies it as in the Custom
 group. Context windows are each model's native length as documented at `recipes.vllm.ai`
 (262,144 for the Qwen rows, 1,000,000 for the DeepSeek V4 rows); a deployment started with a
 smaller `--max-model-len` serves less, and the entry's context window is editable.
+
+The group's glyph is vLLM's official mark, taken from the project's media kit and flattened
+from its two brand colours to `currentColor` the way Qwen's gradient wordmark already is —
+the provider glyphs are one monochrome family, so a row of them reads as one.
 
 ## The protocol is a property of the group
 

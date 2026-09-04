@@ -119,14 +119,11 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "vllm") {
-        // Self-hosted: no seller, so no rate to record. Deliberately ABSENT rather than
-        // zeroed — three zero buckets are a genuine $0 tier (the free badge below), and a
-        // model the user pays their own GPUs for is not that.
-        expect(m.pricing, m.modelId).toBeUndefined();
-      } else if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
-        // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
-        // $0 price (not "unknown"), so costs compute to 0.
+      if (m.provider === "vllm" || m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+        // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
+        // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
+        // per token for either — a vLLM deployment costs its operator hardware, which no
+        // catalog rate expresses.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -143,7 +140,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, and presets carry no price and no endpoint", () => {
+  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and carries no endpoint", () => {
     const vllm = MODEL_CATALOG.filter((m) => m.provider === "vllm");
     // Dictionary order by upstream id, case-insensitive (as in siliconflow): deepseek-ai/
     // before Qwen/, and the flash revision before the vision revision it prefixes.
@@ -162,8 +159,12 @@ describe("model-catalog", () => {
       // and would be rejected, and deepseek-ai/DeepSeek-V4-* contains "deepseek-v4", which
       // would reach DeepSeek's first-party Responses client pointed at a vLLM server.
       expect(m.clientType, m.modelId).toBe("openai-chat-vllm-adapter");
-      // No seller and no shared endpoint: the user runs the server and supplies its URL.
-      expect(m.pricing, m.modelId).toBeUndefined();
+      // Nobody bills per token and there is no shared endpoint: the user runs the server and
+      // supplies its URL. Zero is a real rate here, not a missing one — see the pricing test.
+      expect([m.pricing?.cache_read, m.pricing?.cache_write, m.pricing?.output], m.modelId).toEqual(
+        [0, 0, 0],
+      );
+      expect(m.pricing!.unit, m.modelId).toBe("usd_per_mtok");
       expect(m.baseUrl, m.modelId).toBeUndefined();
       // Chat Completions on the wire, so the credential fallback is the OPENAI_* pair.
       expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
@@ -187,12 +188,17 @@ describe("model-catalog", () => {
     ]);
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerClientType("my-own-group")).toBeUndefined();
-    // Presets reach a Project with the pin and without a price or an endpoint.
+    // Presets reach a Project with the pin and the zero rate, and without an endpoint: what a
+    // self-hosted deployment bills per token is nothing, and the Project stores that as a rate
+    // rather than as a gap (see the pricing test).
     const preset = presetModelEntries().filter((e) => e.provider === "vllm");
     expect(preset).toHaveLength(8);
     for (const e of preset) {
       expect(e.client_type, e.model_id).toBe("openai-chat-vllm-adapter");
-      expect(e.pricing, e.model_id).toBeUndefined();
+      expect(
+        [e.pricing?.cache_read, e.pricing?.cache_write, e.pricing?.output],
+        e.model_id,
+      ).toEqual([0, 0, 0]);
       expect(e.base_url, e.model_id).toBeUndefined();
     }
     // Each preset id has a recipe page; an id the user serves themselves has none, so it

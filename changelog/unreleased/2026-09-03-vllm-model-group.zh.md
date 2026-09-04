@@ -11,11 +11,15 @@
 `Qwen/Qwen3.6-35B-A3B`、`Qwen/Qwen3.5-0.8B`、`Qwen/Qwen3.5-9B`、`deepseek-ai/DeepSeek-V4-Pro`、
 `deepseek-ai/DeepSeek-V4-Flash` 与 `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp`。
 
-它们都是自托管模型，分组的形态由此而来。各行**不带定价**——服务由用户自己跑，既无卖家也无牌价，
-因此该字段是缺省而非写 0：三桶全 0 是真正的免费档。也**不预置 base URL**：每个部署各有各的地址，
+它们都是自托管模型，分组的形态由此而来。各行**价格全为 0**——服务由用户自己跑，没有谁按 token 收费，
+真正的开销是运维者自己的硬件，那不是任何牌价能表达的。这里的 0 是真实费率而非缺失：这些行会显示免费
+徽标，并在成本中心计为 0，与既有的 `:free` 网关行同一口径。也**不预置 base URL**：每个部署各有各的地址，
 与 Custom 分组一样由用户填写。上下文窗口取 `recipes.vllm.ai` 记载的各模型原生长度（Qwen 各行
 262,144，DeepSeek V4 各行 1,000,000）；以更小的 `--max-model-len` 启动的部署实际供给更少，条目的
 上下文窗口可改。
+
+分组图标取 vLLM 官方标识（来自项目的 media kit），并像既有的 Qwen 渐变字标一样，把它的两种品牌色
+压成 `currentColor`——各家 provider 图标是同一族单色标，一行看过去才是一套。
 
 ## 协议是分组的属性
 
