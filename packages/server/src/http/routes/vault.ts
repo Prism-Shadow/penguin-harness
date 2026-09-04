@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 
 /** Validate the PUT request body and shape it into a VaultUpdateRequest (semantic checks like key-name rules live in the service layer). */
@@ -63,6 +64,7 @@ export function vaultRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,

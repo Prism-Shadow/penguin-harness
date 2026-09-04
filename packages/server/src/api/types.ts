@@ -81,6 +81,12 @@ export interface InstallResponse {
   installId: string | null;
 }
 
+/** The single Agent a pinned server serves: `PENGUIN_PINNED_AGENT=<projectId>/<agentId>`. */
+export interface PinnedAgentRef {
+  projectId: string;
+  agentId: string;
+}
+
 export interface MeResponse {
   user: UserInfo;
   /**
@@ -99,6 +105,12 @@ export interface MeResponse {
    * initial-password banner and the self-update entry.
    */
   desktopMode: boolean;
+  /**
+   * The one Agent this server is pinned to (PENGUIN_PINNED_AGENT), or null on an ordinary
+   * install. Non-null means the server refuses every route that would create, import, delete
+   * or redefine an Agent, so the web app stops offering what it would answer 403 to.
+   */
+  pinnedAgent: PinnedAgentRef | null;
   /**
    * How THIS session was established — distinct from desktopMode, which describes the
    * server: a browser signed into a desktop-mode server holds a "password" session.

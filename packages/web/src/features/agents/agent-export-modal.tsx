@@ -43,6 +43,7 @@ export function AgentExportModal(props: AgentExportModalProps) {
 
 function AgentExportDialog({ open, onClose, projectId, agentId, agents }: AgentExportModalProps) {
   const [mode, setMode] = useState<ExportMode>("api");
+  const [pin, setPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
   const [pickedAgent, setPickedAgent] = useState<string | null>(null);
@@ -58,7 +59,9 @@ function AgentExportDialog({ open, onClose, projectId, agentId, agents }: AgentE
   const runDownload = async (kind: AgentBundleKind) => {
     setBusy(true);
     try {
-      await downloadAgentBundle(projectId, agentId, kind);
+      // pin rides only with the Docker kind — the server answers 400 on any other, and the
+      // checkbox that sets it is only on that segment.
+      await downloadAgentBundle(projectId, agentId, kind, kind === "docker" && pin);
       onClose();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -130,9 +133,24 @@ function AgentExportDialog({ open, onClose, projectId, agentId, agents }: AgentE
         ) : (
           // The two packed kinds need no form — what each one contains is the whole choice,
           // so the segment's description is the body rather than a field nobody would fill in.
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            {mode === "docker" ? S.agent.exportModeDockerDesc : S.agent.exportModeApiDesc}
-          </p>
+          // The Docker segment's one option is the exception: it changes what the container
+          // refuses, so its consequence stays on screen rather than behind a disclosure.
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {mode === "docker" ? S.agent.exportModeDockerDesc : S.agent.exportModeApiDesc}
+            </p>
+            {mode === "docker" && (
+              <div className="space-y-1">
+                <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-200">
+                  <input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} />
+                  {S.agent.exportDockerPin}
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {S.agent.exportDockerPinDesc}
+                </p>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </Modal>

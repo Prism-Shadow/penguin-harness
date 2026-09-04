@@ -544,6 +544,9 @@ export const zh = {
     importAgentDone: (id: string): string => `已导入智能体 ${id}`,
     importAgentSkipped: (notes: string): string => `未映射：${notes}`,
     importAgentVaultKeys: (keys: string): string => `需要设置的密钥：${keys}`,
+    pinnedBadge: "已固定",
+    pinnedReadOnlyHint:
+      "该服务端已固定到此智能体，其定义——提示词、配置、工具、技能、钩子与定时任务——为只读。记忆、密钥与会话不受影响。",
     exportAgent: "导出智能体",
     exportAgentDesc:
       "选择导出形态。三种都不含密钥值、记忆、Trace 与快照；前两种都带定义、技能与钩子，因此都能再导入回来。",
@@ -553,6 +556,9 @@ export const zh = {
     exportModeDocker: "导出 Docker 文件",
     exportModeDockerDesc:
       "Dockerfile、compose 文件、entrypoint 与 .env.example：容器起来即导入该智能体并对外提供同一套 API",
+    exportDockerPin: "把容器固定到该智能体",
+    exportDockerPinDesc:
+      "容器内的服务端将只提供该智能体，并对所有人（含管理员）拒绝新建、导入、删除或改写智能体；entrypoint 还会把定义文件置为只读，使智能体无法改写自身。",
     exportModeAi: "让 AI 导出",
     exportModeAiDesc: "描述你要的形态，交给智能体生成——上面两种覆盖不到时用它",
     exportAction: "下载",

@@ -1173,13 +1173,18 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
 
 // Agent porting: the portable definition and its integration bundle ---------------------
 
-/** Bundle (zip) download URL: the server sets Content-Disposition attachment, so it serves a bare <a download> or a fetch-and-save. */
+/**
+ * Bundle (zip) download URL: the server sets Content-Disposition attachment, so it serves a bare
+ * <a download> or a fetch-and-save. `pin` locks the Docker bundle to this one agent; the server
+ * answers 400 if it is sent with any other kind.
+ */
 export const agentBundleUrl = (
   projectId: string,
   agentId: string,
   kind: AgentBundleKind = "api",
+  pin = false,
 ): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}`;
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}${pin ? "&pin=1" : ""}`;
 
 /** Creates an Agent from a bundle zip or a bare penguin-agent.json (base64 either way); 409 agent_exists when the id is taken. */
 export const importAgentBundle = (projectId: string, body: AgentBundleImportRequest) =>

@@ -71,6 +71,35 @@ describe("penguin agent export", () => {
     expect(req?.query).toBe("?kind=docker");
   });
 
+  it("--pin rides with the docker kind as a query flag", async () => {
+    server.bundle = new TextEncoder().encode("PKpinned");
+    const code = await cli([
+      "agent",
+      "export",
+      "researcher",
+      "--kind",
+      "docker",
+      "--pin",
+      "--out",
+      scratch,
+    ]);
+    expect(code).toBe(0);
+    // The zip keeps the plain docker name; what is inside says it is pinned.
+    expect(fs.readFileSync(path.join(scratch, "researcher-docker.zip"), "utf8")).toBe("PKpinned");
+    const req = server.requests.find(
+      (r) =>
+        r.method === "GET" && r.path === "/api/projects/default_project/agents/researcher/bundle",
+    );
+    expect(req?.query).toBe("?kind=docker&pin=1");
+  });
+
+  it("--pin without --kind docker is refused before a request goes out", async () => {
+    const before = server.requests.length;
+    const code = await cli(["agent", "export", "researcher", "--pin", "--out", scratch]);
+    expect(code).toBe(1);
+    expect(server.requests.length).toBe(before);
+  });
+
   it("an unknown --kind is refused before a request goes out", async () => {
     const before = server.requests.length;
     const code = await cli([

@@ -168,11 +168,13 @@ penguin agent import ./exports/helper-export.zip --agent-id helper_2
 | `--plugins <a,b>` | 逗号分隔的插件库插件名，预装进新 Agent（各自的 Skill 与钩子包）；未知名称在创建任何东西之前即被拒绝 |
 | `--project-id <id>` / `--json` / `--server <url>` | 同各处约定 |
 
-`agent export <agent-id>` 下载该 Agent 的可移植包。`--kind api`（缺省）写出 `<agent-id>-export.zip`；`--kind docker` 写出 `<agent-id>-docker.zip`——一个装好 CLI、首次启动即导入该 Agent 并对外提供同一套 API 的容器（填好其 `.env` 后 `docker compose up --build`）。两者都带定义、技能与钩子，因此都能再导入。API 形态的 `<agent-id>-export.zip` 含：`penguin-agent.json`（名称、指令、技能、钩子、工具（`env` / `headers` 中形似凭据的值已置空的 MCP 条目）、模型偏好、Vault 键名）、已安装的 `skills/` 与 `hooks/` 目录，以及一份接入文档——运行该 Agent 的四步 API 调用，外加可直接运行的 `curl` / Python / TypeScript 客户端。`agent import <file>` 从这样的包或单独的 `penguin-agent.json` 创建 Agent，安装包内的技能与钩子，并打印未能应用的项与需要设置的 Vault 键名。二者都不是 Agent State 快照（对某个既有 Agent 的备份）：Vault 值、记忆、Trace 与定时任务不随包携带。
+`agent export <agent-id>` 下载该 Agent 的可移植包。`--kind api`（缺省）写出 `<agent-id>-export.zip`；`--kind docker` 写出 `<agent-id>-docker.zip`——一个装好 CLI、首次启动即导入该 Agent 并对外提供同一套 API 的容器（填好其 `.env` 后 `docker compose up --build`）。`--kind docker --pin` 写出的 zip 内是一个**固定（pinned）**容器：其服务端只提供该 Agent，并拒绝一切新建、导入、删除或改写 Agent 的路由（`403 agent_pinned`，管理员亦然）；entrypoint 会先把定义文件置为只读、再以非特权用户启动服务端，因此 Agent 也无法改写自身。`--pin` 用于其他 kind 时报错。两种形态都带定义、技能与钩子，因此都能再导入。API 形态的 `<agent-id>-export.zip` 含：`penguin-agent.json`（名称、指令、技能、钩子、工具（`env` / `headers` 中形似凭据的值已置空的 MCP 条目）、模型偏好、Vault 键名）、已安装的 `skills/` 与 `hooks/` 目录，以及一份接入文档——运行该 Agent 的四步 API 调用，外加可直接运行的 `curl` / Python / TypeScript 客户端。`agent import <file>` 从这样的包或单独的 `penguin-agent.json` 创建 Agent，安装包内的技能与钩子，并打印未能应用的项与需要设置的 Vault 键名。二者都不是 Agent State 快照（对某个既有 Agent 的备份）：Vault 值、记忆、Trace 与定时任务不随包携带。
 
 | 选项 | 说明 |
 | --- | --- |
 | `export --out <file\|dir>` | 包的写入位置（缺省为当前目录，文件名由服务端给出） |
+| `export --kind api\|docker` | 在定义之外打包什么（缺省 `api`） |
+| `export --pin` | 配合 `--kind docker`：把容器固定到这一个 Agent |
 | `import --agent-id <id>` | 新 Agent 的 id（缺省取文件内的 id）；id 已占用时返回 409 `agent_exists` |
 | `--project-id <id>` / `--json` / `--server <url>` | 同各处约定 |
 

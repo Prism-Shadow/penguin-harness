@@ -6,7 +6,12 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MeResponse,
+  PinnedAgentRef,
+  UploadLimits,
+  UserInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 
@@ -42,6 +47,12 @@ interface AuthContextValue {
    */
   desktopMode: boolean;
   /**
+   * The one agent this server is pinned to, or null on an ordinary install. Non-null means the
+   * server refuses every route that would create, import, delete or redefine an agent, so the
+   * UI stops offering what it would answer 403 to.
+   */
+  pinnedAgent: PinnedAgentRef | null;
+  /**
    * How THIS session was established — a browser signed into a desktop-mode server holds a
    * "password" session. "desktop" and "setup" may change the password without the old one
    * (see omitsOldPassword in lib/account-menu). ("token" marks Bearer-authenticated API
@@ -69,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // flashing it during initialization would be noise.
   const [previewIsolated, setPreviewIsolated] = useState(true);
   const [desktopMode, setDesktopMode] = useState(false);
+  const [pinnedAgent, setPinnedAgent] = useState<PinnedAgentRef | null>(null);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
 
@@ -90,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(res.user);
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
+        setPinnedAgent(res.pinnedAgent);
         setSessionVia(res.sessionVia);
         setUploadLimits(res.uploadLimits);
       })
@@ -118,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me.user);
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
+      setPinnedAgent(me.pinnedAgent);
       setSessionVia(me.sessionVia);
       setUploadLimits(me.uploadLimits);
     } catch {
@@ -138,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);
+    setPinnedAgent(res.pinnedAgent);
     setSessionVia(res.sessionVia);
     setUploadLimits(res.uploadLimits);
   }, []);
@@ -148,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         previewIsolated,
         desktopMode,
+        pinnedAgent,
         sessionVia,
         uploadLimits,
         login,
@@ -158,6 +174,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+/**
+ * Whether this server refuses every write to an agent's definition — prompt, config, skills,
+ * hooks, schedules. True only on a pinned server, where those routes answer 403, so the controls
+ * that would hit them are not rendered at all.
+ */
+export function useDefinitionReadOnly(): boolean {
+  return useAuth().pinnedAgent !== null;
 }
 
 export function useAuth(): AuthContextValue {

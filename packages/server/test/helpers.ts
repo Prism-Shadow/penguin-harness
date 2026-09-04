@@ -55,6 +55,7 @@ export function testConfig(root: string): ServerConfig {
     authSessionTtlMs: 30 * DAY_MS,
     authSessionRenewMs: 29 * DAY_MS,
     desktopToken: null,
+    pinnedAgent: null,
     portFile: null,
     trustProxy: false,
     supervised: false,

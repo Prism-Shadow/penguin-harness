@@ -70,7 +70,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/auth/logout | Log out, returns 204 |
 | GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
-| GET | /api/me | Current user info |
+| GET | /api/me | Current user info, plus `previewIsolated`, `desktopMode`, `pinnedAgent` and the upload limits in force |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
@@ -202,7 +202,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | POST | /agents/:agentId/memory/scopes/:key/import | Write such a document back (owner only): `{payload, mode?, confirm?}`. `mode` is `skip` (the default — adds only names the scope lacks), `overwrite` (replaces same-named files) or `replace` (also deletes what the document omits); anything that would overwrite or delete needs `confirm`, else 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | Export the Agent State snapshot (tar.gz download) |
 | POST | /agents/:agentId/import | Import a snapshot: `{dataBase64, confirm?}`; 409 on version conflict without confirm |
-| GET | /agents/:agentId/bundle | Export the Agent's portable bundle (zip download): `penguin-agent.json`, the installed `skills/` and `hooks/` directories, an integration guide and runnable clients — never vault values |
+| GET | /agents/:agentId/bundle | Export the Agent's portable bundle (zip download): `penguin-agent.json`, the installed `skills/` and `hooks/` directories, an integration guide and runnable clients — never vault values. `?kind=docker` packs a container instead of the guide; `&pin=1` on that kind packs the pinned variant (see below), and on any other kind is a 400 |
 | POST | /agents/import | Create an Agent from a bundle zip or a bare `penguin-agent.json`: `{dataBase64, agentId?}` → 201 `{agent, installed, skipped, vaultKeys}`; 409 `agent_exists` when the id is taken |
 | GET | /agents/:agentId/skills | Installed Skills (library installs go through `/plugins`) |
 | DELETE | /agents/:agentId/skills/:name | Uninstall a Skill |
@@ -212,6 +212,15 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/api/plugins/:plugin/files` (global) | Everything one library plugin ships as text keyed by path — each skill's installable SKILL.md and reference files under `skills/<name>/`, the hook scripts under `hooks/` — for the plugin detail view's file browser (any logged-in user) |
 | DELETE | /agents/:agentId/hooks/:name | Uninstall a hook package |
 | GET | /agents/:agentId/benchmarks | Benchmark scoring data (read-only) |
+
+
+### A pinned server
+
+Started with `PENGUIN_PINNED_AGENT=<projectId>/<agentId>`, the server serves that one Agent and nothing else. `GET /api/me` reports it as `pinnedAgent`, so a client can stop offering what the server would refuse; `GET …/agents` lists only that Agent, in that Project alone; a Session on any other Agent is `404`; and a Session whose `workspace` resolves inside the pinned Agent's `agent_state/` is `403`. A new user is provisioned as a **member of the pinned Project** rather than being given `<username>-default_project`, which would carry a second Agent.
+
+These answer `403 agent_pinned`, to every caller including the admin: `POST …/agents`, `POST …/agents/import`, `DELETE …/agents/:agentId`; `PUT …/config`, `POST …/config/kernel-update`, `POST …/config/reset`; the four `…/template-placeholder` routes; `POST …/skills/archive`, `DELETE …/skills/:name`, `POST …/plugins`, `DELETE …/hooks/:name`; `POST …/agents/:agentId/import` (the Agent State snapshot); `POST|PUT|DELETE …/schedules…`; `POST /api/projects` and `DELETE /api/projects/:projectId`. Everything else is unchanged — reads, Sessions, Traces, `PUT …/vault`, Memory, Project rename, members and user administration.
+
+The guards stop callers, not the agent: the model is told where its Agent State lives and may edit it with its own file tools. Only the pinned Docker bundle closes that half, by making the definition files read-only and running the server as an unprivileged user. Setting this variable on an ordinary install gets the route guards alone.
 
 ### Schedules
 

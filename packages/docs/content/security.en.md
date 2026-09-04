@@ -90,6 +90,17 @@ The Machines page manages other machines over ssh, and the identity everything r
 
 The scenario the design is built around is the worst one — **a full data-root backup leaks**. The response is a credential rotation for the model API keys it contains, and nothing more: passwords in a backup are scrypt hashes, and the session table holds only the sha256 of each token, never a token. Nothing copied out of a backup can be presented to the live server as a session.
 
+## 6. A pinned server
+
+A container from `penguin agent export <id> --kind docker --pin` serves one agent and refuses to create, import, delete or redefine any agent — to everyone, the built-in admin included (`403 agent_pinned`). Two different things enforce that, and they cover different attackers:
+
+- **The route guards** stop people: the HTTP API and the Web App both go through them, so no signed-in user can rewrite the agent's prompt, config, skills, hooks or schedules.
+- **The filesystem lock** stops the agent. The route guards cannot: the model is told where its Agent State lives and is invited to edit it with its own file tools, so an agent that can run a shell can rewrite itself past any HTTP rule. The container's entrypoint makes `AGENTS.md`, `system_config.yaml`, `skills/`, `hooks/`, `tools/` and `schedule/` root-owned and unwritable, then runs the server as an unprivileged user.
+
+What stays writable is deliberate: `memory/` (the agent's memory is runtime data its Sessions must write) and `.vault.toml` (secrets are deployment configuration, rotated without rebuilding the image).
+
+Setting `PENGUIN_PINNED_AGENT` on an ordinary install gets you the first layer only. That is a real restriction on people, and no restriction at all on the agent.
+
 ## The mechanics underneath
 
 **Sessions.** The cookie carries a 32-byte random token; the `auth_sessions` row keyed by its sha256 is the session, and holds the account, the provenance (`via`) and the expiry. Because the row is the session, deleting it revokes immediately and a restart signs nobody out. Browser sessions run 30 days and renew **in place** as expiry nears — the row's expiry moves, the cookie value does not — so one in regular use never expires and there is never a second copy to chase. Only a session whose own term reaches the renewal window slides, so an hour-long minted token expires at its hour. Cookies are HttpOnly and SameSite=Lax, plus Secure when the request is really https or a **trusted** proxy says so (`PENGUIN_TRUST_PROXY=1`); the header is ignored by default.

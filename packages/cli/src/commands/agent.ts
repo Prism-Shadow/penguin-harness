@@ -4,7 +4,8 @@
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
  *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
- *   penguin agent export <agent-id> [--out <file|dir>] [--project-id <id>] [--json] [--server <url>]
+ *   penguin agent export <agent-id> [--out <file|dir>] [--kind api|docker] [--pin]
+ *                        [--project-id <id>] [--json] [--server <url>]
  *   penguin agent import <file.zip|penguin-agent.json> [--agent-id <id>] [--project-id <id>] [--json] [--server <url>]
  *
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
@@ -128,6 +129,7 @@ export function registerAgentCommand(program: Command, t: Messages): void {
     .description(t.agent.exportDesc)
     .option("--out <path>", t.agent.exportOut)
     .option("--kind <kind>", t.agent.exportKind)
+    .option("--pin", t.agent.exportPin)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
@@ -141,10 +143,16 @@ export function registerAgentCommand(program: Command, t: Messages): void {
         process.exitCode = 1;
         return;
       }
+      const pin = opts.pin === true;
+      if (pin && kind !== "docker") {
+        process.stderr.write(`${t.error(t.agent.exportPinNeedsDocker())}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const { bytes, fileName } = await client.download(
-        `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}`,
+        `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}${pin ? "&pin=1" : ""}`,
       );
       const file = await resolveOutPath(
         typeof opts.out === "string" ? opts.out : undefined,

@@ -70,7 +70,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/auth/logout | 退出登录，返回 204 |
 | GET | /api/auth/claim?token=… | 兑换登录链接（首次登录链接，或桌面 shell 的一次性 token）：种下 Cookie 并跳转到 `/` |
 | GET | /api/install | 公开：`{installId}`——标识当前所服务数据根的不透明 id（`<root>/install-id`），在该根首次被使用时铸造。Web App 将其与自己存下的值比较，不一致时清除浏览器侧那些引用服务端实体的 UI 状态，因此更换数据根后不会再留下旧的 Workspace、草稿与置顶。`null` 表示服务端无法确定该 id，此时客户端不应改动任何内容。 |
-| GET | /api/me | 当前用户信息 |
+| GET | /api/me | 当前用户信息，另含 `previewIsolated`、`desktopMode`、`pinnedAgent` 与当前生效的上传限额 |
 | PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}`；桌面会话与首次登录会话可省略 `oldPassword`——其当前密码是随机生成且从未展示过的 |
 | GET | /api/me/prefs | 读取 UI 偏好 |
 | PUT | /api/me/prefs | 写入 UI 偏好（浅合并） |
@@ -202,7 +202,7 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | POST | /agents/:agentId/memory/scopes/:key/import | 把这样一份文档写回（仅 owner）：`{payload, mode?, confirm?}`。`mode` 为 `skip`（缺省，只添加作用域尚未有的名字）、`overwrite`（覆盖同名文件）或 `replace`（并删除文档中没有的文件）；任何会覆盖或删除的操作都需要 `confirm`，否则返回 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
 | POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
-| GET | /agents/:agentId/bundle | 导出 Agent 的可移植包（zip 下载）：`penguin-agent.json`、已安装的 `skills/` 与 `hooks/` 目录、接入文档与可运行的客户端示例——绝不含 Vault 值 |
+| GET | /agents/:agentId/bundle | 导出 Agent 的可移植包（zip 下载）：`penguin-agent.json`、已安装的 `skills/` 与 `hooks/` 目录、接入文档与可运行的客户端示例——绝不含 Vault 值。`?kind=docker` 改为打包一个容器；该形态下追加 `&pin=1` 打包固定变体（见下文），用于其他 kind 时返回 400 |
 | POST | /agents/import | 从可移植包 zip 或单独的 `penguin-agent.json` 创建 Agent：`{dataBase64, agentId?}` → 201 `{agent, installed, skipped, vaultKeys}`；id 已占用时 409 `agent_exists` |
 | GET | /agents/:agentId/skills | 已安装 Skill 列表（从库安装走 `/plugins`） |
 | DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
@@ -212,6 +212,14 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
 | DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
 | GET | /agents/:agentId/benchmarks | Benchmark 评分数据（只读） |
+
+### 固定 Agent 的服务端
+
+以 `PENGUIN_PINNED_AGENT=<projectId>/<agentId>` 启动时，服务端只提供该 Agent。`GET /api/me` 以 `pinnedAgent` 字段报出，供客户端不再展示服务端会拒绝的操作；`GET …/agents` 仅列出该 Agent，且仅在该 Project 内；在其他 Agent 上创建会话返回 `404`；`workspace` 落在该 Agent `agent_state/` 内的会话返回 `403`。新建用户被置为**该 Project 的 member**，而不再获得 `<用户名>-default_project`——后者会带来第二个 Agent。
+
+以下路由对所有调用者（含管理员）返回 `403 agent_pinned`：`POST …/agents`、`POST …/agents/import`、`DELETE …/agents/:agentId`；`PUT …/config`、`POST …/config/kernel-update`、`POST …/config/reset`；四条 `…/template-placeholder`；`POST …/skills/archive`、`DELETE …/skills/:name`、`POST …/plugins`、`DELETE …/hooks/:name`；`POST …/agents/:agentId/import`（Agent State 快照）；`POST|PUT|DELETE …/schedules…`；`POST /api/projects` 与 `DELETE /api/projects/:projectId`。其余一切照旧——读取、会话、Trace、`PUT …/vault`、记忆、Project 改名、成员与用户管理。
+
+这些守卫拦的是调用者，不是 Agent 自身：模型知道自己的 Agent State 路径，并可用文件工具修改它。只有固定形态的 Docker 包补上这一半——把定义文件置为只读，并以非特权用户运行服务端。在普通安装上设置该变量，只会得到路由守卫这一层。
 
 ### Schedule
 

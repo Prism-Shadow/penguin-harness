@@ -17,6 +17,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -34,6 +35,8 @@ export function HooksTab({ agentId }: { agentId: string }) {
   const { locale } = useLocale();
   const { currentProject, agents, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // A pinned server refuses to uninstall a hook package, so the row action is not offered.
+  const readOnly = useDefinitionReadOnly();
 
   const [hooks, setHooks] = useState<HookItem[] | null>(null);
   // Tab-level error is only the initial list load failure; row actions report via toast.
@@ -137,16 +140,18 @@ export function HooksTab({ agentId }: { agentId: string }) {
                   </span>
                 )}
                 {/* Icon-only row action (same affordance as the Skills tab's delete: danger variant with red text/hover); the tooltip + aria-label carry the wording. */}
-                <Button
-                  size="icon"
-                  variant="danger"
-                  title={S.skills.uninstall}
-                  aria-label={`${S.skills.uninstall} ${hook.name}`}
-                  disabled={busy}
-                  onClick={() => setRemoving(hook.name)}
-                >
-                  <GlyphIcon d={TRASH_ICON} size={14} />
-                </Button>
+                {!readOnly && (
+                  <Button
+                    size="icon"
+                    variant="danger"
+                    title={S.skills.uninstall}
+                    aria-label={`${S.skills.uninstall} ${hook.name}`}
+                    disabled={busy}
+                    onClick={() => setRemoving(hook.name)}
+                  >
+                    <GlyphIcon d={TRASH_ICON} size={14} />
+                  </Button>
+                )}
               </div>
             );
           })}

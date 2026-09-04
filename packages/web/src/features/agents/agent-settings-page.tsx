@@ -28,6 +28,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
+import { useDefinitionReadOnly } from "../../state/auth";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -122,6 +123,7 @@ export function AgentSettingsPage() {
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
   ] as const;
+  const readOnly = useDefinitionReadOnly();
   const navigate = useNavigate();
   const params = useParams<{ agentId: string }>();
   const agentId = params.agentId ?? "";
@@ -257,6 +259,14 @@ export function AgentSettingsPage() {
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
         <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
+        {/* Said once for the whole page rather than per tab: every tab below drops its write
+            controls for the same reason, and repeating it would read as a different rule each
+            time. */}
+        {readOnly && (
+          <p className="mb-4 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+            {S.agent.pinnedReadOnlyHint}
+          </p>
+        )}
         {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
             from the Agents list has to cross the tab strip to reach it. */}
         <Tabs
@@ -325,6 +335,7 @@ function OverviewTab({
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const readOnly = useDefinitionReadOnly();
   const [name, setName] = useState(data.config.name ?? "");
   const [description, setDescription] = useState(data.config.description ?? "");
   const [importing, setImporting] = useState(false);
@@ -431,9 +442,11 @@ function OverviewTab({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
+      {!readOnly && (
+        <Button size="sm" variant="primary" onClick={submit}>
+          {S.common.save}
+        </Button>
+      )}
       {saveConfirm}
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
@@ -470,7 +483,7 @@ function OverviewTab({
                 {S.agent.exportSnapshot}
               </a>
             )}
-            {isOwner && (
+            {isOwner && !readOnly && (
               <label
                 className={`${SNAPSHOT_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
               >
@@ -533,33 +546,35 @@ function OverviewTab({
               waiting into the button's accessible name, in the same wording the trail carried
               all the way down. */}
           <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              size="sm"
-              className="relative"
-              disabled={kernelUpdating || !data.config.kernelOutdated}
-              onClick={() => setKernelOpen(true)}
-            >
-              {S.agent.kernelUpdateAction}
-              {data.config.kernelOutdated && (
-                <>
-                  <UpdateDot
-                    size="inline"
-                    position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                  />
-                  <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
-                </>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={resetting}
-              onClick={() => setResetOpen(true)}
-            >
-              {S.agent.resetConfigAction}
-            </Button>
-          </div>
+          {!readOnly && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="sm"
+                className="relative"
+                disabled={kernelUpdating || !data.config.kernelOutdated}
+                onClick={() => setKernelOpen(true)}
+              >
+                {S.agent.kernelUpdateAction}
+                {data.config.kernelOutdated && (
+                  <>
+                    <UpdateDot
+                      size="inline"
+                      position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
+                    />
+                    <span className="sr-only"> · {S.agent.kernelOutdatedHint}</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={resetting}
+                onClick={() => setResetOpen(true)}
+              >
+                {S.agent.resetConfigAction}
+              </Button>
+            </div>
+          )}
         </div>
         <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm">
           {data.config.kernelOutdated ? (
@@ -648,6 +663,7 @@ function OverviewTab({
 }
 
 function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+  const readOnly = useDefinitionReadOnly();
   const [agentsMd, setAgentsMd] = useState(data.agentsMd);
   const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -727,15 +743,18 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
           ))}
         </ul>
       </div>
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
+      {!readOnly && (
+        <Button size="sm" variant="primary" onClick={submit}>
+          {S.common.save}
+        </Button>
+      )}
       {saveConfirm}
     </div>
   );
 }
 
 function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+  const readOnly = useDefinitionReadOnly();
   const cfg = data.config;
   const [maxTurns, setMaxTurns] = useState(numToStr(cfg.maxTurns));
   const [maxTokens, setMaxTokens] = useState(numToStr(cfg.model?.maxTokens));
@@ -919,9 +938,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
         </div>
       </div>
 
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
+      {!readOnly && (
+        <Button size="sm" variant="primary" onClick={submit}>
+          {S.common.save}
+        </Button>
+      )}
       {saveConfirm}
     </div>
   );
@@ -935,6 +956,7 @@ interface ToolRowState {
 }
 
 function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+  const readOnly = useDefinitionReadOnly();
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
   const permissionOptions: ReadonlyArray<OptionMenuChoice<ToolPermission>> = [
     {
@@ -1111,9 +1133,11 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         </table>
       </div>
 
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
+      {!readOnly && (
+        <Button size="sm" variant="primary" onClick={submit}>
+          {S.common.save}
+        </Button>
+      )}
       {saveConfirm}
     </div>
   );

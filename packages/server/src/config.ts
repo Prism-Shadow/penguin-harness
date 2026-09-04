@@ -12,7 +12,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT, isValidId, resolveRoot } from "@prismshadow/penguin-core";
+import type { PinnedAgentRef } from "./api/types.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -61,6 +62,14 @@ export interface ServerConfig {
    * URL, which must never leave the machine.
    */
   desktopToken: string | null;
+  /**
+   * Pinned-agent mode (PENGUIN_PINNED_AGENT=`<projectId>/<agentId>`): the server then serves
+   * exactly that one Agent and refuses every route that would create, import, delete or
+   * redefine an Agent — for everyone, the admin included. Null is the norm (a general install).
+   * Set by the pinned Docker export's entrypoint on its final exec, never as an image ENV: the
+   * bundle's first boot imports the Agent through the very route this mode refuses.
+   */
+  pinnedAgent: PinnedAgentRef | null;
   /**
    * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
    * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
@@ -121,7 +130,23 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY). */
+/**
+ * Parses PENGUIN_PINNED_AGENT into the pair it names, or throws. Both halves are id-validated
+ * because they are spliced into filesystem paths, and an unparseable value is a hard failure
+ * rather than a fallback: falling back would silently start an ordinary multi-agent server
+ * where the operator asked for a locked one.
+ */
+function normalizePinnedAgent(raw: string | undefined): PinnedAgentRef | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  const parts = value.split("/");
+  if (parts.length !== 2 || !isValidId(parts[0]!) || !isValidId(parts[1]!)) {
+    throw new Error(`Invalid PENGUIN_PINNED_AGENT=${raw} (expected <projectId>/<agentId>)`);
+  }
+  return { projectId: parts[0]!, agentId: parts[1]! };
+}
+
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PINNED_AGENT / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -149,6 +174,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     authSessionTtlMs: 30 * DAY_MS,
     authSessionRenewMs: 29 * DAY_MS,
     desktopToken,
+    pinnedAgent: normalizePinnedAgent(env.PENGUIN_PINNED_AGENT),
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
     supervised: env.PENGUIN_SUPERVISED === "1",

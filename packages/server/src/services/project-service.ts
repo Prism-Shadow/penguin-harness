@@ -12,7 +12,7 @@
  */
 import fs from "node:fs/promises";
 import { DEFAULT_PROJECT_ID, projectDir, provisionProjectAgents } from "@prismshadow/penguin-core";
-import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
+import type { MemberInfo, PinnedAgentRef, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import type { ErrorsRepo } from "../db/repos/errors.js";
@@ -58,6 +58,8 @@ export interface ProjectServiceDeps {
   manager: SessionManager;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
   traceIndex: TraceIndexService;
+  /** Pinned-agent mode (ServerConfig.pinnedAgent), which changes what a new user is provisioned. */
+  pinnedAgent: PinnedAgentRef | null;
 }
 
 export class ProjectService {
@@ -224,9 +226,22 @@ export class ProjectService {
    * it's adopted directly without overwriting existing config — shared with the
    * CLI); other users get `<username>-default_project` created, with display name
    * defaulting to the username.
+   *
+   * A pinned server provisions a non-admin as a **member of the pinned Project** and creates
+   * nothing: their own Project would come with its own `default_agent`, which is the one thing
+   * pinned mode exists to prevent. They own no Project, so user deletion has nothing to cascade.
    */
   async provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void> {
     if (!isAdmin) {
+      const pinned = this.deps.pinnedAgent;
+      if (pinned !== null) {
+        this.deps.members.insert({
+          projectId: pinned.projectId,
+          userId: user.userId,
+          createdAt: new Date().toISOString(),
+        });
+        return;
+      }
       await this.createProject(user, `${user.userId}-${DEFAULT_PROJECT_ID}`, user.userId);
       return;
     }

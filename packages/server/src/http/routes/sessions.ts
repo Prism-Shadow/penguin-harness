@@ -62,6 +62,7 @@ import {
   requireEnum,
   requireValidId,
 } from "../validate.js";
+import { assertWorkspaceOutsidePinnedState, requirePinnedTarget } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
@@ -467,6 +468,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    requirePinnedTarget(deps, projectId, agentId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const modelId = optionalString(body, "modelId", { minLen: 1, label: "modelId" });
@@ -488,6 +490,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
       workspace = await assertWorkspaceAllowed({ workspace });
+      assertWorkspaceOutsidePinnedState(deps, workspace);
     }
     const session = await deps.sessionService.createSession({
       projectId,

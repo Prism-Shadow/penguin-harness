@@ -27,6 +27,7 @@ import type {
   PluginLibraryResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
 import { badRequest, optionalStringArray, readJson, requireValidId } from "../validate.js";
@@ -75,6 +76,7 @@ export function agentPluginsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const names = optionalStringArray(await readJson(c), "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
@@ -121,6 +123,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     const name = requireValidId(c, "name");
     // Installed-check uses the same criterion as listInstalledHooks: hooks/<name>/hooks.json exists.
     try {

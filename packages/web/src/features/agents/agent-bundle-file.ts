@@ -30,8 +30,9 @@ export async function downloadAgentBundle(
   projectId: string,
   agentId: string,
   kind: AgentBundleKind = "api",
+  pin = false,
 ): Promise<void> {
-  const res = await fetch(api.agentBundleUrl(projectId, agentId, kind));
+  const res = await fetch(api.agentBundleUrl(projectId, agentId, kind, pin));
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
       error?: { code?: string; message?: string };

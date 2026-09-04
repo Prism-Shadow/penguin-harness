@@ -198,12 +198,17 @@ async function collectDirectory(dir: string, prefix: string): Promise<Record<str
   return out;
 }
 
-/** The bundle zip: the definition, its documents and examples, and every installed skill and hook package directory. */
+/**
+ * The bundle zip: the definition, its documents and examples, and every installed skill and hook
+ * package directory. `pin` only means anything to the Docker kind, where it swaps the entrypoint
+ * and README for the locked variant; the caller rejects it on any other kind.
+ */
 export async function exportAgentBundle(
   deps: PortingDeps,
   projectId: string,
   agentId: string,
   kind: AgentBundleKind = "api",
+  pin = false,
 ): Promise<ExportedBundle> {
   const definition = await portableDefinition(deps, projectId, agentId);
   const files: Record<string, Uint8Array> = {
@@ -211,7 +216,7 @@ export async function exportAgentBundle(
   };
   // Both kinds carry the definition and the directories below, so either zip re-imports;
   // only the documents around that core differ.
-  const docs = kind === "docker" ? renderDockerDocs(definition) : renderBundleDocs(definition);
+  const docs = kind === "docker" ? renderDockerDocs(definition, pin) : renderBundleDocs(definition);
   for (const [rel, text] of Object.entries(docs)) {
     files[rel] = strToU8(text);
   }

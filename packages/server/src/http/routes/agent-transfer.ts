@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import { Hono } from "hono";
 import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { assertNotPinned } from "../pinned.js";
 import type { AppDeps } from "../../app.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 
@@ -52,6 +53,7 @@ export function agentTransferRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    assertNotPinned(deps);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const archive = readArchiveBase64(body);

@@ -173,6 +173,8 @@ export interface Messages {
     exportOut: string;
     exportKind: string;
     exportKindInvalid: () => string;
+    exportPin: string;
+    exportPinNeedsDocker: () => string;
     exported(file: string): string;
     /** `agent import <file>`: a bundle zip or a bare penguin-agent.json. */
     importDesc: string;
@@ -720,6 +722,9 @@ const en: Messages = {
     exportKind:
       "What to pack around the definition: api (integration guide and call examples, the default) or docker (a container that serves the agent)",
     exportKindInvalid: () => 'kind must be "api" or "docker"',
+    exportPin:
+      "With --kind docker: pin the container to this one agent — its server serves only this agent and refuses to create, import, delete or redefine any agent",
+    exportPinNeedsDocker: () => "--pin applies to --kind docker only",
     exported: (file) => `Bundle written to ${file}`,
     importDesc:
       "Create an agent from an exported bundle (.zip) or a bare penguin-agent.json; vault values are never carried",
@@ -1247,6 +1252,9 @@ const zh: Messages = {
     exportKind:
       "在定义之外打包什么：api（接入文档与调用示例，缺省）或 docker（能直接跑起来的容器）",
     exportKindInvalid: () => 'kind 只能是 "api" 或 "docker"',
+    exportPin:
+      "配合 --kind docker：把容器固定到这一个 Agent——其服务端只提供这个 Agent，并拒绝新建、导入、删除或改写任何 Agent",
+    exportPinNeedsDocker: () => "--pin 仅适用于 --kind docker",
     exported: (file) => `已写入 ${file}`,
     importDesc: "从导出的包（.zip）或单独的 penguin-agent.json 创建 Agent；密钥值不会随包携带",
     importAgentId: "新 Agent 的 id（缺省取文件内的 id）",
