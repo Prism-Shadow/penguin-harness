@@ -3,6 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** feature
 - **Scope:** `ci`, `tooling`, `docs`
+- **PR:** [#609](https://github.com/Prism-Shadow/penguin-harness/pull/609)
 
 [中文版](2026-09-04-official-docker-image.zh.md)
 
