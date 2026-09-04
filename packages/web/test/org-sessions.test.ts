@@ -1,14 +1,24 @@
 /**
  * The company sidebar's two session groups (features/company/org-sessions.ts) and the
- * development list's organization filter (session-grouping's partitionOrgSessions): a desk
- * row per employee in chart order whether or not a desk exists, the live status winning over
- * the chart's, ticket sessions newest first under the ticket that names them, the glyph a row
- * draws, and the split of a loaded list into the user's own rows and the organizations'.
+ * development list's organization filter (session-grouping): a desk row per employee in chart
+ * order whether or not a desk exists, the live status winning over the chart's, ticket
+ * sessions newest first under the ticket that names them, the glyph a row draws, the split of
+ * a loaded list into the user's own rows and the organizations', and the totals corrected by
+ * what that split hid.
  */
 import { describe, expect, it } from "vitest";
-import type { OrgChartResponse, OrgSessionsResponse } from "@prismshadow/penguin-server/api";
+import type {
+  OrgChartResponse,
+  OrgSessionsResponse,
+  SessionCategoryCounts,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 import { deskRows, orgRowActivity, ticketSessionRows } from "../src/features/company/org-sessions";
-import { partitionOrgSessions, withoutOrgSessions } from "../src/lib/session-grouping";
+import {
+  countsWithoutOrgSessions,
+  splitDevelopmentList,
+  withoutOrgSessions,
+} from "../src/lib/session-grouping";
 
 const employee = (
   agentId: string,
@@ -130,7 +140,7 @@ describe("orgRowActivity", () => {
   });
 });
 
-describe("partitionOrgSessions", () => {
+describe("splitDevelopmentList", () => {
   const rows = [
     { sessionId: "a" },
     { sessionId: "s-ceo", orgId: "acme" },
@@ -139,7 +149,7 @@ describe("partitionOrgSessions", () => {
   ];
 
   it("moves the organizations' rows into their own list, keeping order on both sides", () => {
-    expect(partitionOrgSessions(rows)).toEqual({
+    expect(splitDevelopmentList(rows, true)).toEqual({
       own: [{ sessionId: "a" }, { sessionId: "b" }],
       organization: [
         { sessionId: "s-ceo", orgId: "acme" },
@@ -158,12 +168,71 @@ describe("partitionOrgSessions", () => {
   it("hides the organizations' rows only while company mode can list them itself", () => {
     expect(withoutOrgSessions(rows, true).map((s) => s.sessionId)).toEqual(["a", "b"]);
     // Company mode off (the admin's switch or the user's own): nothing else lists these
-    // Sessions, so hiding them here would put them out of reach entirely.
+    // Sessions, so hiding them here would put them out of reach entirely — and nothing is
+    // then subtracted from the counts either.
     expect(withoutOrgSessions(rows, false).map((s) => s.sessionId)).toEqual([
       "a",
       "s-ceo",
       "b",
       "s-t1",
     ]);
+    expect(splitDevelopmentList(rows, false).organization).toEqual([]);
+  });
+});
+
+describe("countsWithoutOrgSessions", () => {
+  const row = (over: Partial<SessionInfo>): SessionInfo =>
+    ({
+      sessionId: "s",
+      projectId: "p",
+      agentId: "ceo",
+      provider: "custom",
+      modelId: "m",
+      workspace: "/org",
+      approvalMode: "allow-all",
+      createdAt: "2026-09-02T00:00:00Z",
+      lastActiveAt: "2026-09-02T00:00:00Z",
+      status: "idle",
+      pendingApprovalCount: 0,
+      pendingFollowUpCount: 0,
+      hasTrace: true,
+      archived: false,
+      ...over,
+    }) as SessionInfo;
+  const counts = new Map<string, SessionCategoryCounts>([
+    ["ceo", { active: 3, subagent: 0, schedule: 0, archived: 1 }],
+    ["other", { active: 2, subagent: 0, schedule: 0, archived: 0 }],
+  ]);
+  const workspaceCounts = new Map<string, Readonly<Record<string, SessionCategoryCounts>>>([
+    ["ceo", { "/org": { active: 3, subagent: 0, schedule: 0, archived: 1 } }],
+    ["other", { "/w": { active: 2, subagent: 0, schedule: 0, archived: 0 } }],
+  ]);
+
+  it("subtracts each hidden row from its Agent's totals and from its Workspace's share", () => {
+    const out = countsWithoutOrgSessions(counts, workspaceCounts, [
+      row({ sessionId: "s-desk", orgId: "acme" }),
+      row({ sessionId: "s-old", orgId: "acme", archived: true }),
+    ]);
+    expect(out.byAgent.get("ceo")).toEqual({ active: 2, subagent: 0, schedule: 0, archived: 0 });
+    expect(out.byWorkspace.get("ceo")?.["/org"]).toEqual({
+      active: 2,
+      subagent: 0,
+      schedule: 0,
+      archived: 0,
+    });
+    // Another Agent's totals are untouched, and the store's own maps are never written into.
+    expect(out.byAgent.get("other")).toEqual({ active: 2, subagent: 0, schedule: 0, archived: 0 });
+    expect(counts.get("ceo")).toEqual({ active: 3, subagent: 0, schedule: 0, archived: 1 });
+  });
+
+  it("gives the maps straight back when nothing is hidden, and never counts below zero", () => {
+    expect(countsWithoutOrgSessions(counts, workspaceCounts, []).byAgent).toBe(counts);
+    const out = countsWithoutOrgSessions(counts, workspaceCounts, [
+      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
+      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
+      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
+    ]);
+    expect(out.byAgent.get("other")?.active).toBe(0);
+    expect(out.byWorkspace.get("other")?.["/w"]?.active).toBe(0);
   });
 });

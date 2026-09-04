@@ -59,6 +59,7 @@ import {
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
   clampGroupPage,
+  countsWithoutOrgSessions,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
@@ -68,6 +69,7 @@ import {
   matchesSessionQuery,
   partitionSessions,
   sessionCategory,
+  splitDevelopmentList,
   totalCategoryCounts,
   withoutOrgSessions,
   workspaceGroupKey,
@@ -350,8 +352,8 @@ export function Sidebar({
   const {
     sessions: allSessions,
     byAgent: allByAgent,
-    countsByAgent,
-    workspaceCountsByAgent,
+    countsByAgent: serverCountsByAgent,
+    workspaceCountsByAgent: serverWorkspaceCounts,
     isLoadedFor,
     hasMoreFor,
     loadMoreFor,
@@ -361,6 +363,7 @@ export function Sidebar({
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
+
   const [projectOpen, setProjectOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -383,16 +386,24 @@ export function Sidebar({
    * them to, and they stay (see withoutOrgSessions).
    */
   const companyAvailable = company.available;
-  const sessions = useMemo(
-    () => withoutOrgSessions(allSessions, companyAvailable),
+  const devList = useMemo(
+    () => splitDevelopmentList(allSessions, companyAvailable),
     [allSessions, companyAvailable],
   );
+  const sessions = devList.own;
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     for (const [agentId, rows] of allByAgent)
       map.set(agentId, withoutOrgSessions(rows, companyAvailable));
     return map;
   }, [allByAgent, companyAvailable]);
+  // …and the server totals those rows are counted in, corrected the same way, so a group
+  // header never promises rows this list will not draw.
+  const { byAgent: countsByAgent, byWorkspace: workspaceCountsByAgent } = useMemo(
+    () =>
+      countsWithoutOrgSessions(serverCountsByAgent, serverWorkspaceCounts, devList.organization),
+    [serverCountsByAgent, serverWorkspaceCounts, devList],
+  );
 
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */

@@ -183,12 +183,18 @@ export function createCompanyStore() {
       if (mode === get().workMode) return;
       storeWorkMode(mode);
       set({ workMode: mode });
+      // Leaving company mode is what drops the open organization — not leaving its routes.
+      // A desk or ticket conversation renders at `/chat/:sessionId` with the company sidebar
+      // around it, and that sidebar lists this organization's channels and desks.
+      if (mode !== "company") get().setCurrentOrg(null);
       // Server-side copy is best-effort: a lost write only costs the choice on another browser.
       void api.putPrefs({ workMode: mode }).catch(() => undefined);
     },
 
     setPersonalEnabled: (enabled) => {
       set({ personalEnabled: enabled });
+      // Hiding company mode hides its shell with it (see setWorkMode).
+      if (!enabled) get().setCurrentOrg(null);
       void api.putPrefs({ companyMode: enabled }).catch(() => undefined);
     },
 
@@ -476,6 +482,18 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     if (!serverEnabled || open === null) return;
     void store.getState().reloadOrgChart(open.projectId, open.orgId);
   }, [store, serverEnabled, currentOrgKey, orgsVersion]);
+
+  // In company mode the shell always has a current organization: the one its sidebar names.
+  // The organization routes announce it, but a desk or ticket conversation lives at
+  // `/chat/:sessionId` — reload there and no route ever would, which used to leave the
+  // channel list on a skeleton and the 工位 group without its roster. The organization last
+  // opened is exactly what the sidebar is already showing, so the shell adopts it.
+  const { workMode, personalEnabled, lastOrgKey } = state;
+  useEffect(() => {
+    if (!serverEnabled || !personalEnabled || workMode !== "company") return;
+    if (currentOrgKey !== null || lastOrgKey === null) return;
+    store.getState().setCurrentOrg(lastOrgKey);
+  }, [store, serverEnabled, personalEnabled, workMode, currentOrgKey, lastOrgKey]);
 
   useEffect(
     () => subscribeCompanyEvents((ev) => store.getState().applyCompanyEvent(ev, userId)),

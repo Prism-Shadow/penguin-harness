@@ -117,6 +117,12 @@ export function OrgChartPage() {
   const openDesk = async (employee: OrgEmployeeItem) => {
     try {
       const desk = await api.getOrgDesk(projectId, orgId, employee.agentId);
+      // The call may have CREATED the desk: the sidebar's 工位 group has to learn its
+      // Session id, or it cannot mark the row the shell is about to be on.
+      if (desk.created) {
+        void company.reloadOrgChart();
+        void company.reloadOrgSessions();
+      }
       navigate(`/chat/${desk.sessionId}`);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -131,6 +137,8 @@ export function OrgChartPage() {
         const desk = await api.renewOrgDesk(projectId, orgId, confirm.employee.agentId);
         toastSuccess(S.company.chart.renewed);
         setConfirm(null);
+        void company.reloadOrgChart();
+        void company.reloadOrgSessions();
         navigate(`/chat/${desk.sessionId}`);
         return;
       }

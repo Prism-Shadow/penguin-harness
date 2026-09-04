@@ -484,6 +484,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
+          "company-setup",
         ],
       },
       {

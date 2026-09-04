@@ -299,9 +299,8 @@ export function CreateOrganizationDialog({
     setBusy(true);
     setFormError(null);
     try {
-      // `ceoBudget` is written out as its own request type until the field lands in
-      // OrganizationCreateRequest; an omitted budget is the server's own default.
-      const body: OrganizationCreateRequest & { ceoBudget?: number } = {
+      // An omitted budget is the server's own default (100 USD a month).
+      const body: OrganizationCreateRequest = {
         orgId: id,
         mission: mission.trim(),
         ...(name.trim() ? { name: name.trim() } : {}),

@@ -68,9 +68,24 @@ cursors, budget marks) and each user's read cursor per channel.
   finance, handbook — the knowledge base as a file list beside the rendered document, with
   editing in place, new documents and deletion) plus the channel view, 频道 / Channels as the
   sidebar's own list where development mode lists conversations (all-hands pinned, 我的频道,
-  others with a 加入 action, archived folded), desk and ticket sessions reached from a 「会话」
-  menu instead of a sidebar list, an Organization folder in development mode, the
-  `[org_trigger]` banner in conversations, and the two switches on the settings page.
+  others with a 加入 action, archived folded), the `[org_trigger]` banner in conversations, and
+  the two switches on the settings page. Below the channels the sidebar lists the organization
+  itself: 工位 / Desks, one row per employee in chart order, expanded, opening that employee's
+  desk and creating it when none exists; and 工单会话 / Ticket sessions, collapsed, the
+  sessions attached to tickets newest first under the ticket that names them. The collapsed
+  rail carries the desks as avatars with their running dots. A desk or ticket conversation is
+  the ORDINARY conversation — the same message list, tool cards, approvals and composer as
+  development mode — with the company sidebar around it and its row marked; company mode has
+  no chat view of its own. The organization the sidebar shows stays the shell's current one
+  while such a conversation is open, so its channels and desks do not blank out at
+  `/chat/:sessionId`. The create-organization dialog keeps what was typed as a draft in
+  `localStorage`, per user and Project: restored when the dialog reopens after an accidental
+  close, a reload or a mode switch, dropped on a successful create or through 清空草稿 / Clear
+  draft, and it carries the CEO budget field. In a channel, a message that names the reader is
+  marked by its mention chip alone (the tinted row is gone), the hop chip appears only from the
+  second hop (hop 1 is an employee answering a trigger and says nothing), and the composer's
+  box and its 发送 button are one row of the same height, bottom-aligned, the button staying
+  anchored as the box grows.
 - Creation options: an organization may be created with a **model** (a configured pair, used
   by every desk and ticket session whose employee names none) and a **company workspace** (an
   existing absolute directory used as the shared workspace instead of the organization's own
@@ -109,7 +124,7 @@ cursors, budget marks) and each user's read cursor per channel.
   archived, left, or have its membership edited. The scan cursor and each person's read
   cursor are per channel — migration 5 recreates the two tables as `org_channel_state` and
   `org_channel_reads`. `penguin org channel` is the CLI family, and channels are the Web
-  App's primary list in company mode, with desk and ticket sessions moved into a 「会话」 menu.
+  App's primary list in company mode, with desk and ticket sessions in their own groups below it.
 - CEO budget: creation writes the CEO's monthly budget into `org_chart.yaml` — 100 USD
   unless it names another (`ceoBudget` in the create request, `--ceo-budget` on
   `penguin org create`, a CEO budget field in the create dialog). Budgets are compared on
@@ -125,7 +140,12 @@ cursors, budget marks) and each user's read cursor per channel.
 - Organization sessions stay out of development mode: the session DTO gained `orgId` — the
   owning organization of a desk session or of a session contributing to one of its tickets,
   taken from the organization caches (one query per list, never one per row) and served by
-  both the session list and `GET /api/sessions/:sessionId`. Development mode's session list,
-  its time buckets and its Organization folder hide every row that carries it.
+  both the session list and `GET /api/sessions/:sessionId`. Development mode's session list
+  and its time buckets hide every row that carries it, and the Organization folder that used to
+  hold them is gone — company mode's 工位 / 工单会话 groups are where they are listed. The
+  hiding is conditional on company mode being available to that user (the admin's master switch
+  and the user's own): `orgId` is stamped either way, and with company mode off nothing else
+  would list those sessions. The group headers and the "show the rest" row subtract what was
+  hidden, so a group never promises rows it will not draw.
 - Docs: a Company Mode guide with the marketplace walkthrough, the `penguin org` reference,
   and the organization routes in the server API reference.

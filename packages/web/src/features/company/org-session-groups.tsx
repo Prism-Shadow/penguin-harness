@@ -68,6 +68,8 @@ function useOpenSession(projectId: string, orgId: string, onNavigate?: () => voi
     setOpening(agentId);
     try {
       const desk = await api.getOrgDesk(projectId, orgId, agentId);
+      // Freshly created: the row has to learn its Session id to mark itself as the open one.
+      void company.reloadOrgChart();
       void company.reloadOrgSessions();
       openSession(desk.sessionId, agentId);
     } catch (e) {

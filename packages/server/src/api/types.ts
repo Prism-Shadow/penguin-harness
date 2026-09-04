@@ -1258,9 +1258,10 @@ export interface SessionInfo {
   /**
    * Company mode: the organization that owns this Session — a desk session of one of its
    * employees, or a session contributing to one of its tickets — read from the organization
-   * caches. Absent for every ordinary Session. Development mode's list, its time buckets and
-   * its "Organization" folder hide every row that carries it, and the company sidebar groups
-   * its own organization's rows by it.
+   * caches. Absent for every ordinary Session. Development mode's list and its time buckets
+   * hide every row that carries it (only while company mode is available to that user: it is
+   * stamped either way, and company mode is what lists these Sessions instead), and the
+   * company sidebar's 工位 / 工单会话 groups are where they are listed.
    */
   orgId?: string;
 }
