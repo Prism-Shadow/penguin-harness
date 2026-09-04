@@ -50,13 +50,13 @@ docker compose logs penguin        # or: docker logs penguin
 ```
 
 ```
-+--------------------------------------------------------------------+
-|   This server has no admin password yet. Open this link to claim:   |
-|                                                                     |
-|     http://localhost:7364/api/auth/claim?token=...                  |
-|                                                                     |
-|   The link works until a password is set, and changes on restart.   |
-+--------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------+
+|   This server has no admin password yet. Open this link to claim it:                         |
+|                                                                                              |
+|     http://localhost:7364/api/auth/claim?token=GSiEDYM8MbsrqtMj7ofq7klUyXcfQNwt3oUriUHiBI8   |
+|                                                                                              |
+|   The link lasts 30 days or until a password is set; restarting prints a fresh one.          |
++----------------------------------------------------------------------------------------------+
 ```
 
 The `localhost` in that URL is the server's own view of itself; replace it with the host you actually reach the container on, keep the whole `?token=...`, and open it. You land signed in as `admin` and set a password. The link is re-minted on every start, so a restart invalidates the one you were looking at and prints a fresh one.
@@ -136,7 +136,7 @@ Pull a newer tag and recreate the container. The data root is on the volume and 
 docker compose pull && docker compose up -d
 ```
 
-Do **not** use the Web App's update button or `penguin update` inside a container. They install a new package into the running container's filesystem, which is thrown away on the next recreate — and the runtime image has no compiler, so the install fails before it gets that far. A new image tag is the upgrade path.
+In-container self-update is **not** the path. The Web App's update button reports the release as unsupported here — the server has no re-runnable CLI entry to hand an update to — and the restart control reports that nothing supervises it. `penguin update` run inside the container would install into a filesystem the next recreate throws away, and it fails anyway: the runtime image carries no compiler, and `node-pty` has no Linux prebuild to fall back on.
 
 Stopping is graceful: `SIGTERM` interrupts running Tasks, waits for them to wrap up, then closes the database. An idle server stops in well under a second; a busy one can take several, which is why the compose example raises Docker's 10-second grace period.
 

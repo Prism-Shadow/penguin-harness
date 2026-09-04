@@ -48,6 +48,9 @@ ARG TARGETARCH
 # checksum file travels the same TLS connection as the tarball, so this catches a
 # truncated or corrupted download rather than a compromised nodejs.org; verifying the
 # signature on SHASUMS256.txt would mean carrying and rotating the release keys.
+#
+# The tarball's C++ headers (65 MB of /usr/local/include/node) go: nothing here compiles
+# against them — node-gyp downloads its own copy for the version it is building for.
 RUN set -eux; \
     case "$TARGETARCH" in \
       amd64) node_arch=x64 ;; \
@@ -63,6 +66,7 @@ RUN set -eux; \
     sha256sum -c node.sha256; \
     tar -xJf "$archive" -C /usr/local --strip-components=1 --no-same-owner; \
     rm -f "$archive" SHASUMS256.txt node.sha256; \
+    rm -rf /usr/local/include/node; \
     node --version; \
     npm --version
 
@@ -84,13 +88,19 @@ RUN set -eux; \
 
 ARG PENGUIN_VERSION
 
+# The last two lines drop node-pty's ~58 MB of prebuilt macOS and Windows bindings, which a
+# Linux image can never load. That is conditional on the Linux binding this stage just
+# compiled: a future release that DOES publish a linux prebuild would skip the compile, and
+# deleting the directory would then leave nothing to load.
 RUN set -eux; \
     if [ -z "${PENGUIN_VERSION:-}" ]; then \
       echo "PENGUIN_VERSION is required, e.g. --build-arg PENGUIN_VERSION=0.2.9" >&2; \
       exit 1; \
     fi; \
     npm install -g "@prismshadow/penguin-cli@${PENGUIN_VERSION}"; \
-    npm cache clean --force
+    npm cache clean --force; \
+    pty="/usr/local/lib/node_modules/@prismshadow/penguin-cli/node_modules/node-pty"; \
+    if [ -f "$pty/build/Release/pty.node" ]; then rm -rf "$pty/prebuilds"; fi
 
 # --- runtime ---
 FROM base

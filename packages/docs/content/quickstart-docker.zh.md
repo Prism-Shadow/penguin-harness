@@ -50,13 +50,13 @@ docker compose logs penguin        # 或：docker logs penguin
 ```
 
 ```
-+--------------------------------------------------------------------+
-|   This server has no admin password yet. Open this link to claim:   |
-|                                                                     |
-|     http://localhost:7364/api/auth/claim?token=...                  |
-|                                                                     |
-|   The link works until a password is set, and changes on restart.   |
-+--------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------+
+|   This server has no admin password yet. Open this link to claim it:                         |
+|                                                                                              |
+|     http://localhost:7364/api/auth/claim?token=GSiEDYM8MbsrqtMj7ofq7klUyXcfQNwt3oUriUHiBI8   |
+|                                                                                              |
+|   The link lasts 30 days or until a password is set; restarting prints a fresh one.          |
++----------------------------------------------------------------------------------------------+
 ```
 
 那条 URL 里的 `localhost` 是服务端对自己的称呼；把它换成你实际访问容器所用的主机名或 IP，保留整段 `?token=...` 再打开即可。落地即已登录为 `admin`，随即设置密码。链接在每次启动时重新铸造，所以一次重启就会作废你正看着的那条，并打印一条新的。
@@ -136,7 +136,7 @@ Task 产出的 HTML，在有独立来源时会从另一个来源提供。非回�
 docker compose pull && docker compose up -d
 ```
 
-**不要**在容器里用 Web 应用的升级按钮或 `penguin update`。它们把新包装进正在运行的容器文件系统，下次重建即丢失——而且运行镜像没有编译器，安装在此之前就会失败。容器的升级路径就是换一个镜像 tag。
+容器内的自更新**不是**升级路径。Web 应用的升级按钮在这里会报「不支持」——服务端没有可再次运行的 CLI 入口，无从把升级交出去——重启入口也会报没有托管进程。在容器里执行 `penguin update` 则会把新包装进下次重建即丢弃的文件系统，而且无论如何都会失败：运行镜像不含编译器，`node-pty` 也没有可回退的 Linux 预编译产物。
 
 停止是优雅的：`SIGTERM` 会打断运行中的 Task，等它们收尾，再关闭数据库。空闲的服务端远不到一秒就停住，繁忙的可能要几秒——compose 示例把 Docker 默认的 10 秒宽限期调高，正是为此。
 
