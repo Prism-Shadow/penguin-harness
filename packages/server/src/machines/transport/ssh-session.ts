@@ -25,7 +25,12 @@
  * base64 because a heredoc carries text, and the terminator cannot occur in its alphabet.
  * <decode> is DECODE below, which settles the flag on the far side rather than here.
  *
- * UNSUPERVISED: a session that dies is dropped and the next command opens a new one.
+ * TWO LIFETIMES. A session opened by a passing command — a probe, a listing — is TRANSIENT:
+ * it is let go after IDLE_MS without another command. A session someone asked to HOLD (a
+ * connect) is kept: it never idles out, and if it dies — a network blip, keepalives giving
+ * up on a dead link, a command that timed out — it is reopened on its own, with a backoff,
+ * until it is explicitly closed. The proxy's dials ride the held session and never touch a
+ * timer, so traffic alone is neither what keeps it nor what could lose it.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -68,6 +73,10 @@ const COMMAND_TIMEOUT_MS = 60_000;
 /** Opening is a handshake to a host that may be far away or loaded. */
 const OPEN_TIMEOUT_MS = 30_000;
 
+/** A held session that dropped is reopened after this long, doubling per failure up to the cap. */
+const RECONNECT_MIN_MS = 1_000;
+const RECONNECT_MAX_MS = 60_000;
+
 /**
  * Decoding the heredoc, on either base64 there is. GNU coreutils spells decode `-d` and
  * rejects `-D`; the BSD base64 macOS ships spells it `-D`, and releases before Ventura reject
@@ -107,8 +116,23 @@ class MachineShell {
   #pending: Pending | null = null;
   #queue: Promise<unknown> = Promise.resolve();
   #idle: NodeJS.Timeout | null = null;
+  /** Held: never idles out, reopened when it drops, until close(). */
+  #held = false;
+  #reopen: NodeJS.Timeout | null = null;
+  #backoffMs = RECONNECT_MIN_MS;
 
   constructor(private readonly target: RemoteTarget) {}
+
+  /** Keeps the session from here on: a session opened transiently is promoted in place. */
+  hold(): void {
+    this.#held = true;
+    if (this.#idle !== null) clearTimeout(this.#idle);
+    this.#idle = null;
+  }
+
+  held(): boolean {
+    return this.#held;
+  }
 
   /** Runs one command, opening the session if needed. Never throws; a dead session is a failure. */
   run(command: string, opts: ShellRunOptions = {}): Promise<ShellResult> {
@@ -126,11 +150,37 @@ class MachineShell {
       : null;
   }
 
+  /** Lets go for good: a held session stops being held, and nothing reopens it. */
   close(): void {
+    this.#held = false;
+    if (this.#reopen !== null) clearTimeout(this.#reopen);
+    this.#reopen = null;
+    this.#reset();
+  }
+
+  /** Ends the child and answers what was pending. A held session comes back on its own. */
+  #reset(): void {
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
     this.#child?.kill();
     this.#drop();
+  }
+
+  /**
+   * A held session that is gone is scheduled back. The wait doubles per consecutive failure
+   * and is reset by the first command that completes over a live child, so a machine that is
+   * down for an hour costs a spawn a minute, and one that blinked is back in a second.
+   */
+  #scheduleReopen(): void {
+    if (this.#reopen !== null) return;
+    const wait = this.#backoffMs;
+    this.#backoffMs = Math.min(this.#backoffMs * 2, RECONNECT_MAX_MS);
+    this.#reopen = setTimeout(() => {
+      this.#reopen = null;
+      if (!this.#held || this.#child !== null) return;
+      void this.run(":", { timeoutMs: OPEN_TIMEOUT_MS });
+    }, wait);
+    this.#reopen.unref?.();
   }
 
   #drop(): void {
@@ -153,6 +203,7 @@ class MachineShell {
       });
     }
     this.#stderr = "";
+    if (this.#held) this.#scheduleReopen();
   }
 
   async #open(): Promise<ChildProcessWithoutNullStreams> {
@@ -247,7 +298,7 @@ class MachineShell {
         // spend this command's one answer on "the connection ended", losing the more precise
         // fact that the machine simply never replied.
         this.#pending = null;
-        this.close();
+        this.#reset();
         resolve({ code: 255, output: "the machine did not answer in time" });
       }, opts.timeoutMs ?? COMMAND_TIMEOUT_MS);
       this.#pending = { resolve, timer, onLine: opts.onLine };
@@ -262,6 +313,10 @@ class MachineShell {
         `( ${DECODE} | ( ${command} ) ) <<'${end}' 2>&1 ; ${mark}\n${body}\n${end}\n`,
       );
     }).finally(() => {
+      // A command completed over a live child: whatever the last drop cost, the next starts
+      // from the shortest wait again.
+      if (this.#child !== null) this.#backoffMs = RECONNECT_MIN_MS;
+      if (this.#held) return;
       this.#idle = setTimeout(() => this.close(), IDLE_MS);
       this.#idle.unref?.();
     });
@@ -273,11 +328,13 @@ class MachineShell {
  * not reopen a connection it already has.
  *
  * A hot push DOES lose them: the platform bundle is re-imported cache-busted (hmr/host.ts),
- * so this map starts empty in the successor and the previous generation's ssh children have
- * nothing holding them. What collects them is the idle timer — a scheduled timeout belongs
- * to the process, not to the module that scheduled it, so it still fires and still closes the
- * child it was created for. The cost of a push is one reconnect per machine, within IDLE_MS,
- * and never a child nobody ever kills.
+ * so this map starts empty in the successor. The generation on its way out closes what it
+ * opened — closeAllShells, from the platform's dispose effect — because it is the one that
+ * holds the child handles; the successor then re-holds every connection the record says was
+ * held (machines/service.ts). A transient session that was never closed that way is collected
+ * by its idle timer, which belongs to the process rather than to the module that armed it.
+ * Nothing is ever killed by a pid read back from a file: a pid is reused by the OS, and the
+ * process at a remembered number may by then be anyone's.
  */
 const sessions = new Map<string, MachineShell>();
 
@@ -317,6 +374,32 @@ export async function openShell(
     return { ok: false, detail: result.output.trim() || "the session did not come up" };
   }
   return { ok: true, session };
+}
+
+/**
+ * Brings the session up AND keeps it: no idle timer, reopened on its own when it drops, until
+ * closeShell. Idempotent, and promotes a session a passing command already opened.
+ */
+export function holdShell(
+  machineAddress: string,
+  target: RemoteTarget,
+): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
+  shellFor(machineAddress, target).hold();
+  return openShell(machineAddress, target);
+}
+
+/** Whether a machine's session is a held one. */
+export function isHeld(machineAddress: string): boolean {
+  return sessions.get(machineAddress)?.held() ?? false;
+}
+
+/**
+ * Every session this module opened, closed — what a platform generation does on its way out,
+ * so that its successor starts with nothing of its to collect.
+ */
+export function closeAllShells(): void {
+  for (const shell of sessions.values()) shell.close();
+  sessions.clear();
 }
 
 /** The session held to a machine, while it is up. */

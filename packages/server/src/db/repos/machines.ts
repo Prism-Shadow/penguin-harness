@@ -1,12 +1,9 @@
 /**
  * What this server remembers about machines: its own identity, one row per machine it has
- * installed on, and which machines each Project uses. In web.db, so a hot swap or a restart reads back exactly
+ * installed on or reached (what is installed there, the session held to it), and which
+ * machines each Project uses. All in web.db, so a hot swap or a restart reads back exactly
  * what the last generation wrote — the JSON file this replaces could not survive a schema
  * change, and nothing else this server remembers lives outside the database.
- *
- * `MachineRow` mirrors the table rather than the columns written today: the DDL lands in one
- * migration, and the fields nothing reads yet (a machine's own id, the session held to it)
- * are the table's, not this store's opinion of what matters.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
@@ -19,7 +16,12 @@ export interface MachineRow {
   /** What this server last installed there; null when it never has. */
   version: string | null;
   installedAt: string | null;
-  /** The ssh session this server holds to it — recorded so a successor generation can close it. */
+  /**
+   * Non-null while a connection to it is HELD: the pid of the session as of the last connect.
+   * A record of intent, not a handle — a restart or a hot push re-holds every machine with one,
+   * and a disconnect clears it. It is never used to kill anything: a pid read back from a file
+   * may by then be anyone's.
+   */
   sessionPid: number | null;
   /** The port its server was bound to over there, as of the last connect. */
   remotePort: number | null;
@@ -61,6 +63,20 @@ export class MachinesRepo {
   get(address: string): MachineRow | null {
     const row = this.db.prepare("SELECT * FROM machines WHERE address = ?").get(address);
     return row === undefined ? null : toRow(row);
+  }
+
+  /**
+   * Every row answering to a machine's own id — two aliases for one host are two rows with
+   * one id. Newest install first, then by address, so the order is the same every time; which
+   * of them to speak through is the service's to decide (it knows which has a session).
+   */
+  byMachineId(machineId: string): MachineRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM machines WHERE machine_id = ? ORDER BY installed_at DESC, address ASC",
+      )
+      .all(machineId)
+      .map(toRow);
   }
 
   all(): MachineRow[] {

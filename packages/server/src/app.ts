@@ -168,6 +168,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
+import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
 
 export interface AppDeps {
   config: ServerConfig;
@@ -1195,6 +1196,25 @@ export function createApp(
   // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
   // platform must serve it, not decline it.
   app.route("/api/install", installRoutes(deps));
+  // `/server/<machineId>/api/…` — a connected machine's API, forwarded over the forward held
+  // to it and addressed by the machine's OWN id. Admins only: the request is made over there
+  // as that machine's admin, with a session this server minted over the ssh access that
+  // installed it, so this server's admin session is the one credential involved.
+  const serverProxy = machinesProxy(
+    (machineId) => deps.machines.proxyTarget(machineId),
+    (machineId, outcome) => deps.machines.noteApiSeen(machineId, outcome),
+  );
+  app.all(
+    `${SERVER_PROXY_PREFIX}*`,
+    authMiddleware(deps.authService, deps.config.trustProxy),
+    async (c) => {
+      if (!c.var.user.isAdmin) {
+        throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
+      }
+      const answer = await serverProxy(c.req.raw);
+      return answer ?? c.notFound();
+    },
+  );
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
