@@ -28,17 +28,18 @@ import type {
   PluginLibraryResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { Config, ServerConfig } from "../../config.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import { Sessions as ManagerIface, SessionsModule } from "../../runtime/session-manager.js";
+import type { ServerConfig } from "../../config.js";
+import type { Config } from "../../hmr/capabilities.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
+import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
   config: ServerConfig;
-  access: ProjectAccess;
-  agentConfigService: AgentConfigService;
+  access: Access;
+  agentConfigService: AgentConfig;
   manager: ManagerIface;
 }
 import { HttpError } from "../errors.js";
@@ -178,9 +179,9 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
 })
 export class PluginRoutes {
   @Use() private readonly config!: Config;
-  @Use() private readonly access!: ProjectAccess;
-  @Use() private readonly agentConfig!: AgentConfigService;
-  @Use(SessionsModule) private readonly manager!: ManagerIface;
+  @Use() private readonly access!: Access;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly manager!: ManagerIface;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;

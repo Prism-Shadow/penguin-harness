@@ -38,7 +38,6 @@ import {
   type,
   bootModules,
   moduleDefOf,
-  Interface,
 } from "@prismshadow/penguin-core/kernel";
 import type { PlatformBundle } from "./host.js";
 import { TerminalManager } from "../terminal/manager.js";
@@ -440,12 +439,3 @@ export const packagedPlatform: PlatformBundle = {
   context: { motd: "hello from the penguin hot platform" } satisfies PlatformCtx,
 };
 
-/**
- * Whether a registry resource group inherited from the previous App may be adopted — the
- * platform node decides from the resource-interfaces declaration above; a module that
- * parks handles asks before claiming them back.
- */
-@Interface()
-export abstract class ResourceGroups {
-  abstract adoptable(group: string): boolean;
-}

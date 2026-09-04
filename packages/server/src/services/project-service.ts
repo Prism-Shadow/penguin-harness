@@ -23,8 +23,7 @@ import {
   SEMANTIC_ID_PATTERN,
   SEMANTIC_ID_RULE,
 } from "./ids.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import { Interface } from "@prismshadow/penguin-core/kernel";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
   Access,

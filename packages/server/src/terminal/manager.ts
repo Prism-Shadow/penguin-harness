@@ -25,7 +25,6 @@ import {
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
-import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { Hmr, ResourceGroups } from "../hmr/capabilities.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";

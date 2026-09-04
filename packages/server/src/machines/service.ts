@@ -63,12 +63,11 @@ import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectAccess } from "../services/project-access.js";
+import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import { Db } from "../db/database.js";
-import type { Hmr, Paths } from "../hmr/capabilities.js";
+import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
@@ -1163,7 +1162,7 @@ export class MachinesModule {
   @Use() private readonly paths!: Paths;
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly access!: Access;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1177,7 +1176,7 @@ export class MachinesModule {
     );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });
-    this.serverProxyRoutes = serverProxyApp(machines);
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines);
     // Every ssh session THIS generation opened closes with it; the successor's setup
     // re-holds each one the install record says was held.
     effect(() => machines.stop());
@@ -1190,7 +1189,7 @@ export class MachinesModule {
  * that machine's admin, with a session this server minted over the ssh access that installed
  * it, so this server's admin session is the one credential involved.
  */
-function serverProxyApp(machines: MachinesService): Hono<AppEnv> {
+export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const proxy = machinesProxy(
     (machineId) => machines.proxyTarget(machineId),

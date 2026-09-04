@@ -65,7 +65,7 @@ import {
 import type { ServerConfig } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import type { SessionService } from "../../services/session-service.js";
 
@@ -122,6 +122,7 @@ import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/s
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 
