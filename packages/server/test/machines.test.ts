@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
+import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
 import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
@@ -182,6 +182,39 @@ describe("ssh / scp invocations", () => {
   it("refuses a SOCKS port that is not one", () => {
     expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
     expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
+  });
+
+  it("a 200 is not yet a yes: blocked is a refusal, and a swap not written down is not durable", () => {
+    // /api/hmr/upgrade answers 200 for `blocked` so clients keep one parsing path; the body
+    // names what would have been discarded. And `persisted: false` is the machine saying the
+    // swap is live and gone at its next restart.
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({
+          status: "blocked",
+          dropped: [],
+          missing: ["assets/spawn-helper"],
+          invalid: [],
+        }),
+      ),
+    ).toEqual({
+      kind: "refused",
+      detail: "it kept its current version — missing: assets/spawn-helper",
+    });
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({ status: "ok", persisted: false, web: { rev: "r" } }),
+      ),
+    ).toMatchObject({ kind: "upgraded", persisted: false });
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({ status: "ok", persisted: true, web: { rev: "r" } }),
+      ),
+    ).toMatchObject({ kind: "upgraded", persisted: true });
+    expect(classifyUpgradeAnswer(200, "<html>")).toMatchObject({ kind: "refused" });
   });
 
   it("repeats the machine's own words when it refuses a build", () => {

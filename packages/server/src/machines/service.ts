@@ -607,7 +607,13 @@ export class MachinesService {
       // What the machine is, before anything below asks it again: the hand-over and the
       // restart both probe, and they should already speak its dialect.
       this.repo.patch(address, { platform: outcome.identity.platform });
-      if (outcome.kind !== "installed") {
+      // A server that carries no pushed state of its own — a packaged install, a release
+      // from a tarball — has nothing to hand over: what is on that machine is what this
+      // server would have sent. The hand-over is for the machine whose PROCESS may be
+      // behind its files, and that can only be so when there is a pushed build to be behind.
+      if (outcome.kind !== "installed" && plan.harness === null) {
+        say("Nothing pushed here to hand over; the machine already carries this release.");
+      } else if (outcome.kind !== "installed") {
         // The PROGRAM over there is already this release — either with our pushed state
         // (`already-installed`) or without it (`state-only`). Either way what may still be
         // wrong is the PROCESS: a server runs the code it loaded at start, so a machine whose
@@ -637,6 +643,18 @@ export class MachinesService {
               ? { canReplaceProgram: true as const }
               : {}),
           };
+        } else if (!pushed.persisted) {
+          // Live over there, and gone at its next restart: the machine could not write the
+          // version to its disk. Not recorded as this version — the record would be true
+          // until the first restart and false ever after — and the same next step as a
+          // refusal, since installing anyway is what rewrites the store on its disk.
+          return {
+            ok: false,
+            step: "hand over the pushed build",
+            message:
+              "that machine is running this build but could not write it to its disk — it will revert at its next restart. Check its disk and permissions.",
+            ...(replaceProgram ? {} : { canReplaceProgram: true as const }),
+          };
         } else {
           say(pushed.detail === "" ? "Update accepted." : pushed.detail);
         }
@@ -644,10 +662,23 @@ export class MachinesService {
       const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
       // Installing replaced the program ON DISK; a server that was up is restarted onto it,
       // or it would report the new version and behave like the old one.
-      if (outcome.kind === "installed") await this.#restartAfterInstall(address, target, say);
+      const restarted =
+        outcome.kind === "installed"
+          ? await this.#restartAfterInstall(address, target, say)
+          : { ok: true as const };
+      // The files landed whatever the restart did: the record says what is on its disk, and
+      // membership says whose machine it is. A restart that failed is the job's outcome, not
+      // a footnote in its log — the page shows it, with Restart as the next step.
       this.repo.patch(address, { version, installedAt: this.#effects.now().toISOString() });
       // The Project that asked for the install is the Project that gets the machine.
       this.#setMember(projectId, address, true);
+      if (!restarted.ok) {
+        return {
+          ok: false,
+          step: "restart its server",
+          message: `installed, but ${restarted.detail} The old process is still serving; restart it.`,
+        };
+      }
       return {
         ok: true,
         installed: outcome.kind === "state-only" ? "installed" : outcome.kind,
@@ -883,8 +914,9 @@ export class MachinesService {
     // A hot swap replaces the code a RUNNING server is serving; with none there is nothing
     // to swap, and nothing wrong either — its disk already holds what it will next load.
     if (probed.state.kind !== "running") return { kind: "no-server" };
-    const connection = await this.#connection(address, target);
-    if (!connection.ok) return { kind: "failed", step: "reach", detail: connection.detail };
+    // A dial, not a hold: the agent below opens the session transiently if it is not up,
+    // and a machine that was merely installed on is not made a held one by being brought
+    // forward at boot — only a connect asks for that.
     const port = probed.state.port;
     this.repo.patch(address, { remotePort: port });
     const session = await this.#sessionOn(target);
@@ -969,7 +1001,7 @@ export class MachinesService {
     address: string,
     target: RemoteTarget,
     say: (line: string) => void,
-  ): Promise<void> {
+  ): Promise<{ ok: true } | { ok: false; detail: string }> {
     const before = await this.#effects.probe(
       target,
       this.#effects.runOn,
@@ -977,10 +1009,14 @@ export class MachinesService {
     );
     if (before.state.kind !== "running") {
       say("Its server was not running; the new build will be used when it next starts.");
-      return;
+      return { ok: true };
     }
     const done = await this.#restartServer(address, target, say);
-    say(done.ok ? `Restarted on port ${done.port}.` : `Installed, but ${done.detail}`);
+    if (done.ok) {
+      say(`Restarted on port ${done.port}.`);
+      return { ok: true };
+    }
+    return { ok: false, detail: done.detail };
   }
 
   // --- the automatic sweeps, run when an App boots ----------------------------------------------
@@ -1024,7 +1060,9 @@ export class MachinesService {
       .map((row) => row.address);
     await this.#sweep(behind, async (address, target) => {
       const outcome = await this.#handOverBuild(address, target, () => {});
-      if (outcome.kind === "upgraded") {
+      // Recorded only when the machine also wrote it down: a swap it could not persist is
+      // gone at its next restart, and a record of it would outlive the thing it records.
+      if (outcome.kind === "upgraded" && outcome.persisted) {
         this.repo.patch(address, {
           version: plan.version,
           installedAt: this.#effects.now().toISOString(),

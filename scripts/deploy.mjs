@@ -220,10 +220,10 @@ async function readNativeAssets() {
       exec.push(target);
     }
   }
-  // The scripts that run on the FAR side — the release installers a remote install feeds over,
-  // and the appliers a hot upgrade and a sign-in execute there. A pushed bundle resolves them
-  // from its own assets directory, so a push that omits one leaves a server that cannot do
-  // that operation at all. Same set the packaged build copies into dist/; see the module.
+  // The scripts that run on the FAR side — the release installers a remote install feeds
+  // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
+  // from its own assets directory, so a push that omits one leaves a server that cannot
+  // install a machine at all. Same set the packaged build copies into dist/; see the module.
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
   }

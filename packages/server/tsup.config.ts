@@ -42,8 +42,9 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
-  // a remote install feeds to the far side, and the appliers a hot upgrade and a sign-in run
-  // there. Each is resolved next to this module at runtime, so each has to exist in dist/ —
+  // a remote install feeds to the far side (the one thing that has to arrive before the CLI
+  // does; everything after is a `penguin` subcommand the machine already has). Each is
+  // resolved next to this module at runtime, so each has to exist in dist/ —
   // which `files: ["dist"]` is what npm ships. tsup only emits its entries, and these are
   // copied and never imported, so nothing in the module graph would pull them along. A
   // missing source throws here, failing the build rather than shipping a package whose

@@ -135,7 +135,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由本服务端持有的那一条 ssh 会话拨达——是该会话内部的一个 channel（走它的 SOCKS 端口），从不是第二条连接。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。**仅限管理员**，且只有一个身份：请求在对端以那台机器的管理员身份发出，会话由本服务端通过自己的 ssh 权限铸造（在机器上执行 `penguin auth token`）——浏览器的 cookie 不会过去，机器的 cookie 也不会回来。只有 `/api` 会被转发——前端始终是本地的。
 
-安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）是同一形状的任务，以 `job.kind` 区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接为 `{ok: true, origin}`，失败为 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
+安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）与重启（`POST …/restart`）是同一形状的任务，以 `job.kind`（`install` / `connect` / `restart`）区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接与重启为 `{ok: true, connected: true}`，失败为 `{ok: false, step, message, canReplaceProgram?}`——`canReplaceProgram` 标记一种下一步是「无论如何都安装程序」的失败（`POST …/install` 带 `{replaceProgram: true}`），只提供选项而不自动执行，因为它会重启一个别人可能正在用的服务端。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 
 在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端不会把这份构建盖到自己正在运行的程序目录上。除 `local` 那一行之外，指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
 

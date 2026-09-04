@@ -47,6 +47,18 @@ const IDENTITY: RemoteIdentity = {
 /** Addresses the fake transport holds a session to. */
 const connected = new Set<string>();
 
+/**
+ * A plan with pushed state of its own: what a hot-pushed controller carries, and the only
+ * shape under which an install can come back `state-only` — the release matches, the pushed
+ * state does not — and the hand-over has something to hand over.
+ */
+const PUSHED_PLAN = {
+  baseVersion: "9.9.9",
+  harness: '{"platform":{"bundle":"store/platform/cafe.mjs"}}',
+  hmrDir: "/nonexistent",
+  version: "9.9.9+hmr.cafe",
+};
+
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
@@ -55,7 +67,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     startServer: async () => ({ ok: true }),
     stopServer: async () => ({ ok: true as const }),
-    upgrade: async () => ({ kind: "upgraded", detail: "" }),
+    upgrade: async () => ({ kind: "upgraded", detail: "", persisted: true }),
     runOn: async () => ({
       code: 0,
       stdout: "---penguin-auth-token---\nremote-token\n",
@@ -319,6 +331,7 @@ describe("machines API", () => {
 
     it("a machine that refuses this build says so, instead of reporting an install", async () => {
       await boot({
+        resolvePlan: () => PUSHED_PLAN,
         install: async () => ({ kind: "state-only", identity: IDENTITY }),
         upgrade: async () => ({
           kind: "refused",
@@ -345,10 +358,11 @@ describe("machines API", () => {
       let asked = false;
       await boot({
         probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        resolvePlan: () => PUSHED_PLAN,
         install: async () => ({ kind: "state-only", identity: IDENTITY }),
         upgrade: async () => {
           asked = true;
-          return { kind: "upgraded", detail: "" };
+          return { kind: "upgraded", detail: "", persisted: true };
         },
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
@@ -365,10 +379,21 @@ describe("machines API", () => {
       // a version it is not running until the update channel makes the two agree.
       let asked = false;
       await boot({
-        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        // This server carries a pushed state of its own: there is something to hand over.
+        resolvePlan: () => ({
+          baseVersion: "9.9.9",
+          harness: '{"platform":{"bundle":"store/platform/cafe.mjs"}}',
+          hmrDir: "/nonexistent",
+          version: "9.9.9+hmr.cafe",
+        }),
+        install: async () => ({
+          kind: "already-installed",
+          version: "9.9.9+hmr.cafe",
+          identity: IDENTITY,
+        }),
         upgrade: async () => {
           asked = true;
-          return { kind: "upgraded", detail: "" };
+          return { kind: "upgraded", detail: "", persisted: true };
         },
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
@@ -379,6 +404,47 @@ describe("machines API", () => {
         ok: true,
         installed: "already-installed",
       });
+    });
+
+    it("a server with nothing pushed to it hands nothing over: a matching machine is simply done", async () => {
+      // A packaged install has no pushed state (plan.harness === null) and readPushedBuild
+      // would answer no-build. The former no-op must stay one, not become a failed job with
+      // an offer to reinstall a machine that already matches.
+      let asked = false;
+      await boot({
+        install: async () => ({ kind: "already-installed", version: "9.9.9", identity: IDENTITY }),
+        upgrade: async () => {
+          asked = true;
+          return { kind: "no-build" };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(asked).toBe(false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: true,
+        installed: "already-installed",
+      });
+      expect(t.deps.machines.job()?.log.join(" ")).toContain("Nothing pushed here");
+    });
+
+    it("a build the machine took but could not write down is not recorded as installed", async () => {
+      // `persisted: false` is the machine's own word that the swap is live and will revert at
+      // its next restart. Recording the version would be true until then and false after.
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => ({ kind: "upgraded", detail: "", persisted: false }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "hand over the pushed build",
+        canReplaceProgram: true,
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain("revert");
+      expect(machinesRepo.get("ssh:nas")?.version ?? null).toBeNull();
     });
 
     it("answering that offer runs the installer the version check would have skipped", async () => {
@@ -693,14 +759,25 @@ describe("machines API", () => {
       expect(calls).toEqual([]);
     });
 
-    it("says so when the server does not come back, instead of reporting a clean install", async () => {
+    it("a restart that fails is the job's outcome, not a line in its log", async () => {
+      // The files landed — the record says so — but the old process is still serving, and
+      // an API reporting a clean install over that is exactly the disagreement every guard on
+      // this path exists to prevent.
       await boot({
         probe: async () => ({ state: { kind: "running", port: 7364, pid: 99 }, machineId: null }),
         startServer: async () => ({ ok: false, detail: "port 7364 already in use" }),
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.log.join(" ")).toContain("did not come back up");
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "restart its server",
+      });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "did not come back up",
+      );
+      // On disk it IS this version; the record says what is there, the job says what runs.
+      expect(machinesRepo.get("ssh:nas")?.version).toBe("9.9.9");
     });
   });
 
