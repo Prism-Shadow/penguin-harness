@@ -43,11 +43,10 @@ import {
   listHostAliases,
   sessionOf,
 } from "./transport/index.js";
-import type { MachineConnection, ShellSession } from "./transport/index.js";
+import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
 import { machineIdentity } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import type { ExecResult } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
@@ -762,6 +761,11 @@ export class MachinesService {
    * slow to answer must not hold up the App that serves everything else.
    */
   async start(): Promise<void> {
+    // The build first, the connections second: a machine behind this build is brought
+    // forward over a transient session and its server restarted, and only then re-held —
+    // so the connection that stays is to the server that will keep running, and the Model
+    // config handed over as it connects lands on the build that will read it.
+    await this.syncOutOfDate();
     await this.autoConnect();
   }
 

@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { readPushedBuild } from "../src/machines/upgrade.js";
+import { readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
 import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
@@ -28,7 +28,6 @@ import {
   sshArgs,
   sessionArgs,
 } from "../src/machines/commands.js";
-import { refusalDetail } from "../src/machines/upgrade.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
 
 describe("parseHostAliases", () => {

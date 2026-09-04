@@ -226,9 +226,14 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
         errors.record({ source: "process", err, code: "trace_adoption_failed" });
       });
-      // Machines: re-hold every connection the record says was held, starting a remote
-      // server that is down on the way. Fire-and-forget for the same reason: a host that is
-      // slow to answer must not hold up the App that serves everything else.
+      // Machines, in one sweep (service.ts start()): a push here is a push everywhere, so
+      // this App booting hands the same build on to any machine still carrying a different
+      // one — cheap when there is nothing to do, since which machines are behind is read
+      // from the install records, not asked over the network — and then re-holds every
+      // connection the record says was held, starting a remote server that is down on the
+      // way and handing each its Model config as it connects. Fire-and-forget for the same
+      // reason as the adoption sweep: a host that is slow to answer must not hold up the
+      // App that serves everything else.
       void deps.machines.start().catch((err: unknown) => {
         errors.record({ source: "process", err, code: "machines_reconnect_failed" });
       });
@@ -237,24 +242,6 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
     // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
     const identity = identityFrom(deps?.authService ?? null);
-    // A push here is a push everywhere: this App booting IS what a hot update produces, so
-    // it hands the same build on to any machine still carrying a different one. Not awaited
-    // — boot must not wait on ssh — and cheap when there is nothing to do, since which
-    // machines are behind is read from the install records, not asked over the network.
-    if (deps !== null) {
-      void deps.machines.syncOutOfDate();
-      // ...and the machines a person installed are reachable without anyone clicking
-      // Connect first. A tunnel is plumbing; having to establish it by hand before a
-      // machine will answer is a chore, not a decision.
-      void deps.machines.autoConnect();
-      // ...and the ones ALREADY connected get this server's Model config, which connecting
-      // is otherwise the only thing that carries. A tunnel outlives a push on purpose, so
-      // autoConnect skips a machine that already has one — leaving a machine connected
-      // before a credential was added here holding a config it can never run anything with.
-      // Cheap when there is nothing to do: unchanged machines are skipped from local disk,
-      // before any ssh.
-      void deps.machines.syncConnectedModels();
-    }
 
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
