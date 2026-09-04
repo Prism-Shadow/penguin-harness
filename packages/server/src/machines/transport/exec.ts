@@ -86,8 +86,12 @@ export function runWithInput(
       timedOut = true;
       child.kill();
     }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    child.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
+    // Decoding is the stream's, not each chunk's: a multibyte character whose bytes land in
+    // two `data` events would otherwise become two replacement characters. This path carries
+    // the Windows installer's own output, which is where a localized far side puts non-ASCII.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (text: string) => {
       stdout += text;
       if (opts.onLine === undefined) return;
       pending += text;
@@ -98,7 +102,7 @@ export function runWithInput(
         if (trimmed !== "") opts.onLine(trimmed);
       }
     });
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+    child.stderr.on("data", (chunk: string) => (stderr += chunk));
     child.on("close", (code) => {
       clearTimeout(timer);
       // Whatever the last chunk left without a newline is still a line the far side wrote.

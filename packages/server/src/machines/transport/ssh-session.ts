@@ -171,9 +171,12 @@ class MachineShell {
     // takes the process down. The command it belonged to is answered by #drop() on exit.
     child.stdin.on("error", () => {});
     // ssh's own stderr is not a command's output (those carry theirs on stdout via 2>&1);
-    // it is kept for the moment the session dies, when it is the diagnosis.
-    child.stderr.on("data", (chunk: Buffer) => {
-      this.#stderr = (this.#stderr + String(chunk)).slice(-4096);
+    // it is kept for the moment the session dies, when it is the diagnosis. Decoded by the
+    // stream for the same reason stdout is: a banner or a remote MOTD is where non-ASCII
+    // reaches this channel, and this text is read by a person when the connection fails.
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      this.#stderr = (this.#stderr + chunk).slice(-4096);
     });
     // "close", not "exit": stderr's last words arrive before close, and they are the diagnosis.
     //
