@@ -65,7 +65,7 @@ import {
 import type { ServerConfig } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
-import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import type { SessionService } from "../../services/session-service.js";
 
@@ -101,7 +101,6 @@ import {
   toAttachmentLimits,
 } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
-import type { RecallStore } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config } from "../../hmr/capabilities.js";
@@ -122,6 +121,7 @@ import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/s
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 
@@ -1524,6 +1524,7 @@ export class SessionApiRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
   @Use() private readonly manager!: ManagerIface;
+  @Use() private readonly machines!: Machines;
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly agents!: AgentLifecycle;
@@ -1582,6 +1583,7 @@ export class SessionApiRoutes {
       modelOAuth: this.modelOAuth,
       access,
       channels,
+      machines: this.machines,
       projectConfigService,
       sessionsRepo,
     };
@@ -1589,6 +1591,7 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes({
       channels,
       manager,
+      machines: this.machines,
       projectConfigService,
       access,
       sessionsRepo,

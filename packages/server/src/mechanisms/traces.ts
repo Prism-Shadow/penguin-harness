@@ -2,7 +2,17 @@
  * The traces mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { SessionCategory } from "../api/types.js";
+import type {
+  SessionCategory,
+  AgentTracesResponse,
+  HistoryMessage,
+  SessionContextParts,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TracePosition,
+} from "../api/types.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import type {
   AbortPayload,
@@ -31,16 +41,6 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type {
-  AgentTracesResponse,
-  HistoryMessage,
-  SessionContextParts,
-  TraceAnalysisResponse,
-  TraceEventsResponse,
-  TraceFileInfo,
-  TraceImportResponse,
-  TracePosition,
-} from "../api/types.js";
 import type {
   ForkTraceResult,
   MessagesPageRequest,
