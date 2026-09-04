@@ -48,7 +48,7 @@ cursors, budget marks) and each user's read cursor per channel.
   desks, the handbook, the calendar, tickets (move, block, unblock, progress, start, attach),
   channels (their members, messages and read cursor), finance and the organization's
   sessions; user-level events `org_run`, `org_channel`, `org_ticket` and `org_budget`. Any
-  Project member reads and writes; only the owner deletes. Migration 4 adds the seven
+  Project member reads and writes; only the owner deletes. Migration 5 adds the seven
   organization tables.
 - Switches: an admin master switch (`companyMode` in server settings, default on; off stops
   the scheduler, 404s the routes and hides the mode switch, reported by `GET /api/me`), a
@@ -123,7 +123,7 @@ cursors, budget marks) and each user's read cursor per channel.
   `kind: mention` carries a `channel:` line, so an employee answers where it was addressed.
   Archiving (people only) makes a channel read-only; the all-hands channel cannot be
   archived, left, or have its membership edited. The scan cursor and each person's read
-  cursor are per channel — migration 5 recreates the two tables as `org_channel_state` and
+  cursor are per channel — migration 6 recreates the two tables as `org_channel_state` and
   `org_channel_reads`. `penguin org channel` is the CLI family, and channels are the Web
   App's primary list in company mode, with desk and ticket sessions in their own groups below it.
 - CEO budget: creation writes the CEO's monthly budget into `org_chart.yaml` — 100 USD
