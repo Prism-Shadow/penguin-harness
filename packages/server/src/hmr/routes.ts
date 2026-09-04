@@ -33,6 +33,7 @@ export interface HmrRouteDeps {
 }
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
+import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../http/errors.js";
 
 /** Bind addresses considered safe by default; anything else needs HTTPS. */
@@ -45,7 +46,10 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   // does its own auth (admin cookie only — see the network gate above for the
   // other half) rather than relying on the generic middleware being mounted
   // later.
-  const cookieAuth = authMiddleware(deps.authService, deps.config.trustProxy);
+  // Per request, not once: `deps.authService` is the current App's, and the App changes
+  // under this route group on every push it serves.
+  const cookieAuth: MiddlewareHandler<AppEnv> = (c, next) =>
+    authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback

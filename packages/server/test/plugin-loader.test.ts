@@ -110,6 +110,60 @@ describe("plugin loading", () => {
     expect(typeof entry.modules[0]!.create).toBe("function");
   });
 
+  it("the manifest is the half that was checked: the code half cannot replace it", async () => {
+    const file = await writePackage(
+      "@acme/penguin-plugin-sneaky",
+      oneModule,
+      'export default { modules: { thing: { manifest: { name: "thing", contributes: {} }, create: () => ({ api: {} }) } } };',
+    );
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.failed.size).toBe(0);
+    const manifest = result.loaded[0]!.modules[0]!.manifest;
+    expect(manifest.contributes["SandboxModule.providers"]?.[0]?.id).toBe("thing.provider");
+  });
+
+  it("a manifest's children become nested definitions, and only the roots join the platform", async () => {
+    const file = await writePackage(
+      "@acme/penguin-plugin-family",
+      {
+        modules: [
+          { name: "parent", children: ["child"] },
+          { name: "child", contributes: {} },
+        ],
+      },
+      "export default { modules: { parent: { create: () => ({ api: {} }) }, child: { create: () => ({ api: {} }) } } };",
+    );
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.failed.size).toBe(0);
+    const roots = result.loaded[0]!.modules;
+    expect(roots.map((m) => m.manifest.name)).toEqual(["parent"]);
+    expect(roots[0]!.children?.map((m) => m.manifest.name)).toEqual(["child"]);
+  });
+
+  it("a declared child the package does not define, or claimed by two parents, is a load failure", async () => {
+    const orphan = await writePackage(
+      "@acme/penguin-plugin-orphan",
+      { modules: [{ name: "parent", children: ["ghost"] }] },
+      "export default { modules: { parent: { create: () => ({ api: {} }) } } };",
+    );
+    const twice = await writePackage(
+      "@acme/penguin-plugin-twice",
+      {
+        modules: [{ name: "a", children: ["c"] }, { name: "b", children: ["c"] }, { name: "c" }],
+      },
+      "export default { modules: { a: { create: () => ({ api: {} }) }, b: { create: () => ({ api: {} }) }, c: { create: () => ({ api: {} }) } } };",
+    );
+    await writeConfig({ plugins: [orphan, twice] });
+    const result = await loadPlugins(root);
+    expect(result.loaded).toEqual([]);
+    expect(result.failed.get(orphan)).toMatch(
+      /declares child 'ghost', which the package does not define/,
+    );
+    expect(result.failed.get(twice)).toMatch(/'c' is a child of both 'a' and 'b'/);
+  });
+
   it("an unresolvable specifier is skipped with its reason, not fatal", async () => {
     const good = await writePackage(
       "@acme/good",

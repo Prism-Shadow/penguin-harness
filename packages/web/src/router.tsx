@@ -3,8 +3,10 @@
  * the RequireAuth guard (redirects to /login when not authenticated) and are wrapped in
  * ProjectProvider + AppLayout.
  */
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
+import { loadContributions, resetContributions, useContributions } from "./lib/contributions";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { AppLayout } from "./components/layout/app-layout";
@@ -18,7 +20,7 @@ import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
-import { PAGES } from "./lib/pages";
+import { PAGES, mergePages } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 
 /**
@@ -36,6 +38,19 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   BenchmarkPage,
 };
 
+const BUILTIN_RENDERERS: ReadonlySet<string> = new Set(Object.keys(BUILTIN_PAGES));
+
+/**
+ * The pages this build mounts: the local manifest plus what the server contributed
+ * (lib/contributions.ts), for the renderers the registry above carries.
+ */
+function usePages(): readonly PageEntry[] {
+  const contributed = useContributions();
+  return contributed.pages.length === 0
+    ? PAGES
+    : mergePages(PAGES, contributed.pages, BUILTIN_RENDERERS);
+}
+
 function renderPage(page: PageEntry): React.ReactNode {
   if ("iframe" in page.renderer) {
     return (
@@ -49,6 +64,12 @@ function renderPage(page: PageEntry): React.ReactNode {
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
   const { user } = useAuth();
+  // Contributions are per sign-in: an admin may see pages a member does not, and a push
+  // between two sign-ins may have added some.
+  useEffect(() => {
+    if (user) void loadContributions(user.userId);
+    else if (user === null) resetContributions();
+  }, [user]);
   if (user === undefined) return null; // GET /api/me is still initializing
   if (user === null) return <Navigate to="/login" replace />;
   return (
@@ -80,6 +101,7 @@ function LoginRoute() {
 }
 
 export function AppRouter() {
+  const pages = usePages();
   return (
     <BrowserRouter>
       <Routes>
@@ -94,10 +116,11 @@ export function AppRouter() {
         />
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
-          {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
+          {/* Every page is a module.json entry (lib/pages.ts), or one the server contributed
+              (lib/contributions.ts) for a renderer this build has. Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
-          {PAGES.map((page) => (
+          {pages.map((page) => (
             <Route key={page.id} path={page.path} element={renderPage(page)} />
           ))}
           {/* System settings and user management live in the settings dialog now (see

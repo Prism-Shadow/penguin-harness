@@ -2,7 +2,7 @@ import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kerne
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import { Log, RuntimeModule } from "../hmr/capabilities.js";
+import { RuntimeModule } from "../hmr/capabilities.js";
 import { Config } from "../config.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -45,7 +45,6 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 @Module()
 export class HttpModule {
   @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly log!: Log;
   @Use() private readonly auth!: AuthService;
   @Use() private readonly errors!: ErrorRecorder;
   @Use() private readonly settings!: ServerSettingsRepo;
@@ -65,13 +64,8 @@ export class HttpModule {
       return handleError(err, c);
     });
     app.notFound(() => declined());
-    app.use("*", async (c, next) => {
-      const start = performance.now();
-      await next();
-      this.log.line(
-        `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
-      );
-    });
+    // No request logger here: the runtime app logs every request, this surface's included,
+    // before it reaches the seam — a second line per platform-handled request is noise.
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());
@@ -103,7 +97,8 @@ export class HttpModule {
         app: c.code as Hono<AppEnv>,
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-    let gated = false;
+    // Protected routes: cookie -> auth_session -> user. Built once, mounted per group.
+    const gate = authMiddleware(this.auth, this.config.trustProxy);
     let declinedRuntime = false;
     for (const r of routes) {
       // The terminal group (order 0) sits before the runtime-prefix decline, so a matched
@@ -117,10 +112,14 @@ export class HttpModule {
         });
         declinedRuntime = true;
       }
-      if (!gated && r.auth === "user") {
-        // Protected routes: cookie -> auth_session -> user.
-        app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
-        gated = true;
+      // The gate sits on each group that asked for it, not once on `/api/*` at the first
+      // such group: a contributor picks its own prefix and order, and `auth` has to mean
+      // the same thing wherever the group lands — a public group after a protected one
+      // stays public, a protected group outside /api is still protected.
+      if (r.auth === "user") {
+        const base = r.prefix.replace(/\/$/, "");
+        app.use(base === "" ? "/" : base, gate);
+        app.use(`${base}/*`, gate);
       }
       app.route(r.prefix, r.app);
     }

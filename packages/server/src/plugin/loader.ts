@@ -161,7 +161,7 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
         );
         continue;
       }
-      const modules: ModuleDef[] = [];
+      const byName = new Map<string, ModuleDef>();
       for (const manifest of read.manifests) {
         const impl = plugin.modules[manifest.name];
         if (impl === undefined || typeof impl.create !== "function") {
@@ -169,16 +169,46 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
             `${read.where}#penguin names module '${manifest.name}', but the default export's modules has no create() for it`,
           );
         }
-        modules.push({ manifest, ...impl });
+        // The manifest is the statically checked half and comes last: code cannot replace it.
+        byName.set(manifest.name, { ...impl, manifest });
       }
-      const declared = new Set(read.manifests.map((m) => m.name));
       for (const name of Object.keys(plugin.modules)) {
-        if (!declared.has(name)) {
+        if (!byName.has(name)) {
           throw new Error(
             `the default export has a module '${name}' that ${read.where}#penguin does not declare`,
           );
         }
       }
+      // A manifest's `children` names other modules of the same package; the booter wants
+      // that hierarchy as nested definitions and checks each node's children against its
+      // manifest, so the tree is built here and only its roots join the platform.
+      const claimed = new Map<string, string>();
+      for (const def of byName.values()) {
+        const children: ModuleDef[] = [];
+        for (const ref of def.manifest.children) {
+          if (typeof ref !== "string") {
+            throw new Error(
+              `${read.where}#penguin: module '${def.manifest.name}' declares a keyed child, which a plugin cannot supply`,
+            );
+          }
+          const child = byName.get(ref);
+          if (child === undefined) {
+            throw new Error(
+              `${read.where}#penguin: module '${def.manifest.name}' declares child '${ref}', which the package does not define`,
+            );
+          }
+          const parent = claimed.get(ref);
+          if (parent !== undefined) {
+            throw new Error(
+              `${read.where}#penguin: module '${ref}' is a child of both '${parent}' and '${def.manifest.name}'`,
+            );
+          }
+          claimed.set(ref, def.manifest.name);
+          children.push(child);
+        }
+        if (children.length > 0) def.children = children;
+      }
+      const modules = [...byName.values()].filter((def) => !claimed.has(def.manifest.name));
       loaded.push({ specifier, modules });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));

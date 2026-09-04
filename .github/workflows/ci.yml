@@ -326,27 +326,42 @@ jobs:
   # ifaces.json the typecheck gate generates (its sha256 is the page's title). Published
   # to the `ifaces-pages` branch under the commit's sha and linked from the job summary
   # and, on a pull request, one comment kept up to date — so a reviewer opens the tree
-  # this exact commit builds. Forks get the summary only (their token cannot push).
+  # this exact commit builds. A fork's token cannot push: its run gets the summary, no page.
   ifaces-page:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+    # Every run pushes to the one ifaces-pages branch. Two runs that fetched the same tip
+    # race, and one loses to a non-fast-forward; queued, they never do.
+    concurrency:
+      group: ifaces-pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
+        with:
+          # On a pull request the default checkout is the synthetic merge commit; the page is
+          # published under the head sha and described as that commit, so build that commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/setup
         with:
           build: "@prismshadow/penguin-core..."
       - name: Render the interface page
         run: pnpm ifaces:page
+      - name: Hash the table
+        id: table
+        run: |
+          hash=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("dist-ifaces/ifaces.json","utf8")).hash)')
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
       - name: Publish to the ifaces-pages branch
         id: publish
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HASH: ${{ steps.table.outputs.hash }}
         run: |
           set -eu
-          hash=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("dist-ifaces/ifaces.json","utf8")).hash)')
+          hash="$HASH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Publishing switches this worktree to a branch that holds only published pages,
@@ -373,18 +388,30 @@ jobs:
           git checkout -q --force "$here"
           url="https://raw.githack.com/${{ github.repository }}/ifaces-pages/$SHA/index.html"
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+      # Written whether or not the page was published, so a fork's run still says which
+      # table it built; the link is there only when there is one.
+      - name: Job summary
+        if: always()
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HASH: ${{ steps.table.outputs.hash }}
+          URL: ${{ steps.publish.outputs.url }}
+        run: |
           {
             echo "### Module tree"
             echo
-            echo "[$SHA]($url) — interface table \`$hash\`"
+            if [ -n "$URL" ]; then
+              echo "[$SHA]($URL) — interface table \`$HASH\`"
+            else
+              echo "$SHA — interface table \`$HASH\` (page not published: a fork's token cannot push)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Link it from the pull request
         if: github.event_name == 'pull_request' && steps.publish.outcome == 'success'
         uses: actions/github-script@v7
         env:
           URL: ${{ steps.publish.outputs.url }}
-          HASH: ${{ steps.publish.outputs.hash }}
+          HASH: ${{ steps.table.outputs.hash }}
           SHA: ${{ github.event.pull_request.head.sha }}
         with:
           script: |

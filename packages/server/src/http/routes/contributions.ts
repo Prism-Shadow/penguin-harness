@@ -60,7 +60,9 @@ export class WebModule {
   setup({ contributions }: ClassCtx) {
     const collect = (slot: string): WebContribution[] =>
       (contributions[slot] ?? []).map(
-        (c) => ({ id: c.id, from: c.from, ...c.data }) as WebContribution,
+        // The contribution's own fields first: `id` and `from` are the server's attribution
+        // and a data field of the same name must not replace them.
+        (c) => ({ ...c.data, id: c.id, from: c.from }) as WebContribution,
       );
     const response: ContributionsResponse = {
       pages: collect("pages"),

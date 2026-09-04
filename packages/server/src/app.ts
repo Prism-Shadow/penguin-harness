@@ -185,7 +185,14 @@ export interface ServerBoot {
   desktop: DesktopService | null;
   /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
   lifecycle: LifecycleService;
-  tree: ModuleTree;
+  /**
+   * The CURRENT App's module tree — read it on every use, never hold what it returns
+   * across an await: a push replaces the App, disposes the old tree, and this resolves
+   * to the new one. During the swap itself (old disposed, new not yet booted) it is the
+   * last tree that was current, so a process handler that fires in that window still
+   * has something to record with.
+   */
+  readonly tree: ModuleTree;
 }
 
 export interface BuildDepsOverrides {
@@ -310,27 +317,87 @@ export async function bootAppDeps(
   if (tree === null) {
     throw new Error("the packaged platform built no business surface");
   }
-  // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
-  // members: the runtime singletons published above. The tree is THIS generation's and
-  // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, lifecycle, tree };
+  // Callers that outlive swaps (index.ts, the runtime app) hold the swap-stable members —
+  // the runtime singletons published above — and reach the business surface through
+  // `tree`, which resolves to whatever App is current at the moment of the read.
+  let last = tree;
+  const boot: ServerBoot = {
+    config,
+    db,
+    channels,
+    hmr,
+    desktop,
+    lifecycle,
+    get tree() {
+      // A pushed platform may carry no business surface (a bare kernel, a test's stand-in):
+      // then the last tree that was current stays the answer.
+      const api = hmr.currentApp()?.api as { business?: () => ModuleTree | null } | undefined;
+      const now = typeof api?.business === "function" ? api.business() : null;
+      if (now !== null && now !== undefined) last = now;
+      return last;
+    },
+  };
+  return boot;
 }
 
 /** Assembles the Hono app (does not listen on a port). */
+/** Per boot: the last instance of each business node the runtime reached, by `module#alias`. */
+const lastApis = new WeakMap<ServerBoot, Map<string, unknown>>();
+
+/**
+ * A business node as the runtime — which outlives every push — reaches it: the CURRENT
+ * App's, on every call. A pushed platform is free to carry a narrower tree; where the
+ * current App has no such node, the last one that did stays in force, so a push cannot
+ * take the runtime's own error recording or its login gate away by leaving them out.
+ * A disposed tree answers nothing, so "the last one" has to have been read while it
+ * was current: createRuntimeApp reads each node it relies on once, at construction.
+ */
+export function liveApi<T>(boot: ServerBoot, module: string, alias: string): T {
+  const key = `${module}#${alias}`;
+  let held = lastApis.get(boot);
+  if (held === undefined) lastApis.set(boot, (held = new Map()));
+  const tree = boot.tree;
+  if (tree.has(module)) {
+    const value = tree.api<T>(module, alias);
+    held.set(key, value);
+    return value;
+  }
+  const previous = held.get(key) as T | undefined;
+  if (previous === undefined) {
+    throw new Error(`the current App has no '${module}', and no App before it did either`);
+  }
+  return previous;
+}
+
 export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
-  const { tree } = boot;
-  const errors = tree.api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder");
-  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "log");
-  const settings = tree.api<ServerSettingsRepo>("ServerSettingsRepo", "ServerSettingsRepo");
-  const access = tree.api<ProjectAccess>("ProjectAccess", "ProjectAccess");
-  const authService = tree.api<AuthService>("AuthService", "AuthService");
+  // Nothing from the tree is captured: this app outlives every push, and each of these
+  // is the current App's on the request that reads it (see liveApi).
+  const errors = {
+    record: (entry: Parameters<ErrorRecorder["record"]>[0]) =>
+      liveApi<ErrorRecorder>(boot, "ErrorRecorder", "ErrorRecorder").record(entry),
+  };
+  const log = {
+    line: (text: string) =>
+      liveApi<{ line(text: string): void }>(boot, "RuntimeModule", "log").line(text),
+  };
+  const settings = () =>
+    liveApi<ServerSettingsRepo>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
+  const access = () => liveApi<ProjectAccess>(boot, "ProjectAccess", "ProjectAccess");
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
-    authService,
+    get authService() {
+      return liveApi<AuthService>(boot, "AuthService", "AuthService");
+    },
     hmr: boot.hmr,
     channels: boot.channels,
   };
+  // Read once now, while the packaged App is current: the floor a narrower push falls to.
+  liveApi(boot, "ErrorRecorder", "ErrorRecorder");
+  liveApi(boot, "RuntimeModule", "log");
+  settings();
+  access();
+  void deps.authService;
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
@@ -338,7 +405,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // exceptions are logged with a stack trace and collapsed to 500), and recording
   // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, { access });
+    const projectId = attributedProjectId(c, { access: access() });
     errors.record({
       source: "http",
       err,
@@ -399,7 +466,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // size so the steady state allocates nothing.
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings.getAttachmentLimitsMb());
+    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -433,8 +500,11 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
     // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
     // carries the auth middleware on its own subtree — the routes then gate on
     // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
+    // Resolved per request: `deps.authService` is the current App's (see ServerBoot.tree).
+    const updateGate: MiddlewareHandler<AppEnv> = (c, next) =>
+      authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
+    app.use("/api/desktop/update", updateGate);
+    app.use("/api/desktop/update/*", updateGate);
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware

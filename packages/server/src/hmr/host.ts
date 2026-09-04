@@ -228,6 +228,15 @@ export class HmrHost {
    * in-flight promise (see `initPromise`) rather than each racing their own
    * restore()/packaged-boot.
    */
+  /**
+   * The App of THIS moment, or null before the first boot and after dispose. For the
+   * callers that outlive swaps — the runtime app, the process handlers — which must not
+   * hold a generation's objects across a push (see ServerBoot.tree).
+   */
+  currentApp(): Instance<PlatformApi> | null {
+    return this.instance;
+  }
+
   ensure(): Promise<Instance<PlatformApi>> {
     if (this.instance !== null) return Promise.resolve(this.instance);
     this.initPromise ??= this.initialize();

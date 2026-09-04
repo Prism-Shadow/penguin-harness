@@ -15,15 +15,20 @@ export interface LoadedPlugin {
 export class PluginHost {
   private readonly plugins: LoadedPlugin[] = [];
 
-  /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
+  /**
+   * Registers a plugin; a module name already taken — by an earlier plugin, or twice within
+   * this one — is refused here, as this plugin's load failure, rather than surfacing later
+   * as a duplicate-module problem that fails the whole App's boot.
+   */
   use(plugin: LoadedPlugin): void {
     const taken = new Set(this.modules().map((m) => m.manifest.name));
     for (const m of plugin.modules) {
       if (taken.has(m.manifest.name)) {
         throw new Error(
-          `plugin '${plugin.specifier}': module '${m.manifest.name}' is already loaded by another plugin`,
+          `plugin '${plugin.specifier}': module '${m.manifest.name}' is already loaded by another plugin, or declared twice`,
         );
       }
+      taken.add(m.manifest.name);
     }
     this.plugins.push(plugin);
   }

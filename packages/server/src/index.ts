@@ -20,7 +20,7 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp } from "./app.js";
+import { bootAppDeps, createRuntimeApp, liveApi } from "./app.js";
 import type { ServerBoot } from "./app.js";
 import type { AuthService } from "./auth/service.js";
 import type { ServerSettingsRepo } from "./db/repos/server-settings.js";
@@ -84,9 +84,9 @@ class PenguinServer {
 
   private shuttingDown = false;
 
-  /** The current App's auth service — resolved per call, since a hot swap replaces the tree. */
+  /** The current App's auth service — resolved per call, since a hot swap replaces the App (see liveApi). */
   private auth(): AuthService {
-    return this.deps.tree.api<AuthService>("AuthService", "AuthService");
+    return liveApi<AuthService>(this.deps, "AuthService", "AuthService");
   }
 
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
@@ -173,7 +173,8 @@ class PenguinServer {
    * handlers).
    */
   applyPersistedProxy(): void {
-    const settings = this.deps.tree.api<ServerSettingsRepo>(
+    const settings = liveApi<ServerSettingsRepo>(
+      this.deps,
       "ServerSettingsRepo",
       "ServerSettingsRepo",
     );
@@ -263,9 +264,11 @@ class PenguinServer {
     // according to its nature.
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
-      this.deps.tree
-        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
-        .record({ source: "process", err, code: "uncaught_exception" });
+      liveApi<ErrorRecorder>(this.deps, "ErrorRecorder", "ErrorRecorder").record({
+        source: "process",
+        err,
+        code: "uncaught_exception",
+      });
       // From this point the process state can't be trusted (the error was never converged
       // by any catch): don't swallow it — wrap up per existing shutdown semantics and exit
       // with a nonzero code (equivalent to Node's default crash exit, just with an extra
@@ -277,9 +280,11 @@ class PenguinServer {
     process.on("unhandledRejection", (reason) => {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
-      this.deps.tree
-        .api<ErrorRecorder>("ErrorRecorder", "ErrorRecorder")
-        .record({ source: "process", err, code: "unhandled_rejection" });
+      liveApi<ErrorRecorder>(this.deps, "ErrorRecorder", "ErrorRecorder").record({
+        source: "process",
+        err,
+        code: "unhandled_rejection",
+      });
       // Unlike uncaughtException, this **doesn't** exit: a rejected promise is a localized
       // failure of some background task, and the process state isn't compromised; dragging
       // down the entire service for it (Node's default behavior) isn't worth it — persist +
