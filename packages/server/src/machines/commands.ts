@@ -182,7 +182,11 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
 export function startServerCommand(port: number): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
   const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
-  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --port ${port} >> ${log} 2>&1 < /dev/null &`;
+  // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
+  // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
+  // every interface. This side only ever reaches it as a channel inside the ssh session, at
+  // loopback on the far end, so binding wider is exposure with nothing asking for it.
+  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --host 127.0.0.1 --port ${port} >> ${log} 2>&1 < /dev/null &`;
 }
 
 /** The last lines of that log, for a start that did not answer. */

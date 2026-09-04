@@ -44,8 +44,22 @@ export function rewriteLocation(header: string, machineId: string): string {
     : header;
 }
 
-/** Hop-by-hop and identity headers that must not cross. */
-const DROP_REQUEST_HEADERS = new Set(["host", "cookie", "connection", "keep-alive", "upgrade"]);
+/**
+ * Hop-by-hop and identity headers that must not cross.
+ *
+ * `authorization` among them: the proxy speaks to the machine as ITS admin, with a session
+ * this server mints over ssh, and a caller's own bearer is a credential for THIS server. Sent
+ * on, it would both hand that credential to another machine and outrank the cookie just
+ * minted, since the remote's auth reads a bearer first.
+ */
+const DROP_REQUEST_HEADERS = new Set([
+  "host",
+  "cookie",
+  "authorization",
+  "connection",
+  "keep-alive",
+  "upgrade",
+]);
 const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "keep-alive"]);
 
 /**

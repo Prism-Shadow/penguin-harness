@@ -1230,7 +1230,6 @@ export function createApp(
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
   app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
-  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));

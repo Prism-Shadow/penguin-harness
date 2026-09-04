@@ -4,6 +4,7 @@
  * MACHINE'S own id rather than the ssh alias.
  */
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SERVER_PROXY_PREFIX,
@@ -74,6 +75,35 @@ describe("the report", () => {
 
   const request = (machineId: string) =>
     new Request(`http://app.local${SERVER_PROXY_PREFIX}${machineId}/api/me`);
+
+  it("hands the machine its own session and none of this server's credentials", async () => {
+    // The proxy speaks to the machine as ITS admin. A caller's bearer is a credential for
+    // THIS server: sent on, it would both reach another machine and outrank the cookie the
+    // proxy just minted, since the remote's auth reads a bearer before a session.
+    let got: http.IncomingHttpHeaders | null = null;
+    upstream = http.createServer((req, res) => {
+      got = req.headers;
+      res.statusCode = 200;
+      res.end("{}");
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
+    );
+    const proxy = machinesProxy(async () => ({
+      agent: new http.Agent(),
+      port,
+      cookie: "penguin_session=minted",
+    }));
+    await proxy(
+      new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, {
+        headers: { authorization: "Bearer this-server's-token", cookie: "penguin_session=local" },
+      }),
+    );
+
+    expect(got).not.toBeNull();
+    expect(got!.authorization).toBeUndefined();
+    expect(got!.cookie).toBe("penguin_session=minted");
+  });
 
   it("says the machine answered on any HTTP answer, refusals included", async () => {
     const port = await listen();
