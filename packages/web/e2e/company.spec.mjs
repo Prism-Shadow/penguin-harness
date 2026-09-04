@@ -2,9 +2,11 @@
  * Company mode, end to end through the browser with the mock LLM: switch modes, create the
  * marketplace organization from the switcher, land on the CEO's desk conversation (its
  * initialization run is answered by the mock), find the CEO on the org chart and a ticket on
- * the board, then work in the channels — post in the all-hands channel and see the mention
- * reach the CEO's desk as an `[org_trigger]` work run, create a channel, invite the CEO into
- * it, and post a mention there.
+ * the board, open a desk from the sidebar's 工位 group and another from the org chart, then
+ * work in the channels — post in the all-hands channel and see the mention reach the CEO's
+ * desk as an `[org_trigger]` work run, create a channel, invite the CEO into it, and post a
+ * mention there — and finally check that development mode lists none of the organization's
+ * own sessions.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -63,6 +65,8 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.getByRole("textbox", { name: /^组织 id/ }).fill(ORG);
   await page.getByRole("textbox", { name: /^显示名/ }).fill("Plugin Marketplace");
   await page.getByRole("textbox", { name: /^使命/ }).fill(MISSION);
+  // The CEO's budget is the whole company's, and the dialog offers the default it would send.
+  await expect(page.getByRole("spinbutton", { name: /^CEO 预算/ })).toHaveValue("100");
   await page.getByRole("button", { name: "创建", exact: true }).click();
 
   // Creation opens the CEO's desk conversation: an ordinary chat page that renders while the
@@ -94,6 +98,38 @@ test("company mode: create the organization, meet the CEO, see the board and the
   // The org chart shows the CEO by its display name.
   await page.goto(`/org/${projectId}/${ORG}/chart`);
   await expect(page.getByText("Plugin Marketplace CEO").first()).toBeVisible();
+
+  // The sidebar lists the organization itself under its channels: a 工位 row per employee.
+  // Opening one renders the ordinary conversation view with the company sidebar around it,
+  // and the sidebar marks the desk that is open.
+  const sidebar = page.getByRole("complementary");
+  const ceoDeskRow = sidebar.getByRole("button", { name: /Plugin Marketplace CEO 的工位/ });
+  await expect(sidebar.getByRole("button", { name: /^工位（/ })).toBeVisible();
+  await ceoDeskRow.click();
+  await expect(page).toHaveURL(new RegExp(`/chat/${detail.ceoDeskSessionId}$`));
+  await expect(page.getByText(/由组织「marketplace」触发/).first()).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: /^全员频道/ })).toBeVisible();
+  await expect(ceoDeskRow).toHaveAttribute("aria-current", "true");
+
+  // A desk opened from the org chart renders too: the routed Session is not in the
+  // development list at all, so the page has to resolve it by id (the batch-3 regression).
+  const hired = await page.request.post(api(`/organizations/${ORG}/employees`), {
+    data: {
+      newAgent: { agentId: `${ORG}_dev`, name: "Dana Dev" },
+      title: "站点工程师",
+      reportsTo: `${ORG}_ceo`,
+      duties: "把站点从零搭到上线",
+    },
+  });
+  expect(hired.ok(), "hire").toBeTruthy();
+  await page.goto(`/org/${projectId}/${ORG}/chart`);
+  await page.getByText("Dana Dev").first().click();
+  await expect(page).toHaveURL(/\/chat\/session-/);
+  await expect(page.getByText("Dana Dev 的工位").first()).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /Dana Dev 的工位/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
 
   // A ticket filed against the CEO shows on the board in the proposed column.
   const created = await page.request.post(api(`/organizations/${ORG}/tickets`), {
@@ -153,8 +189,10 @@ test("company mode: create the organization, meet the CEO, see the board and the
   // Inviting the CEO: only then does an @ in this channel reach it (the server refuses a
   // mention that leaves the channel's membership).
   await page.getByRole("button", { name: "邀请", exact: true }).click();
-  await page.getByRole("textbox", { name: "搜索员工或成员" }).fill("ceo");
-  await page.getByRole("button", { name: /Plugin Marketplace CEO/ }).click();
+  // Scoped to the picker: the sidebar's 工位 group carries the CEO's name too.
+  const invite = page.getByRole("dialog", { name: "邀请到频道" });
+  await invite.getByRole("textbox", { name: "搜索员工或成员" }).fill("ceo");
+  await invite.getByRole("button", { name: /Plugin Marketplace CEO/ }).click();
   await expect(page.getByText("已邀请").first()).toBeVisible();
 
   // …and the mention posts, appears in this channel's stream, and reaches the desk.
@@ -182,6 +220,10 @@ test("company mode: create the organization, meet the CEO, see the board and the
     timeout: 5_000,
   });
   await expect(page).not.toHaveURL(/\/org\//);
+  // …and it lists the user's own conversations only: the organization's desks are the
+  // company sidebar's rows, and the old 「组织」 folder is gone with them.
+  await expect(sidebar.getByText("Dana Dev 的工位")).toHaveCount(0);
+  await expect(sidebar.getByRole("button", { name: /^组织（/ })).toHaveCount(0);
   const overview = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(overview.board.proposed).toBe(1);
   expect(overview.openTickets).toBe(1);

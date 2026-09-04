@@ -9,7 +9,9 @@
  * Entering an organization's routes has three side effects the shell relies on: the work
  * mode flips to company (a deep link is a mode choice), the current Project follows the
  * route (the session list and the Agent set belong to the Project), and the organization
- * becomes the shell's current one (its channels and their badges, the switcher's label).
+ * becomes the shell's current one (its channels and their badges, its desks, the switcher's
+ * label) — and stays so after these routes unmount, since a desk conversation is one of the
+ * organization's own surfaces even though it lives at `/chat/:sessionId`.
  *
  * The page primitives live here too — `OrgPage`, `OrgSection`, `OrgEmptyLine` and the
  * skeleton — so every organization page shares one frame, one header row and one section
@@ -208,9 +210,12 @@ export function OrgLayout() {
     }
   }, [knownProject, currentProjectId, projectId, setCurrentProjectId]);
 
+  // The organization stays the shell's current one after these routes unmount: opening a
+  // desk or a ticket session leaves them for `/chat/:sessionId`, and company mode's sidebar
+  // has to keep listing that organization's channels and desks around the conversation.
+  // Leaving company mode is what drops it (CompanyProvider).
   useEffect(() => {
     setCurrentOrg(key);
-    return () => setCurrentOrg(null);
   }, [key, setCurrentOrg]);
 
   if (!available) return <Navigate to="/chat" replace />;

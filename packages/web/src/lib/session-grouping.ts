@@ -410,19 +410,86 @@ export function pinnedFirst<T>(
 }
 
 /**
- * Splits a group's active conversations into the ones an organization owns — desk and
- * ticket Sessions, by id — and the rest. Development mode files the organization's rows
- * into an automatic "organization" folder like the subagent / scheduled folders, so a
- * scheduler-driven desk does not sit among the user's own conversations; an empty id set
- * (company mode off, or nothing loaded yet) leaves every row where it was.
+ * The development list's own rows, and the ones an organization owns — its desk and ticket
+ * Sessions, which the sessions DTO marks with the owning `orgId`.
+ *
+ * Development mode lists only the first half: an organization's Sessions are driven by its
+ * scheduler, not by the user, and company mode's sidebar lists them as themselves (工位 /
+ * 工单会话). `companyModeAvailable` is the whole policy, and it is required rather than
+ * defaulted so every call site has to answer it: the server stamps `orgId` whichever way the
+ * company-mode switches stand, so with company mode unavailable — the admin's master switch
+ * off, or the user's own — nothing else lists these Sessions, and hiding them here would put
+ * them out of reach entirely. They then stay in the list as ordinary conversations.
+ *
+ * The second half is not waste: the server's totals count those rows, so the group headers
+ * and the "show the rest" arithmetic have to subtract them (countsWithoutOrgSessions).
  */
-export function partitionOrgSessions<T extends { sessionId: string }>(
-  active: readonly T[],
-  orgSessionIds: ReadonlySet<string>,
-): { active: T[]; organization: T[] } {
-  if (orgSessionIds.size === 0) return { active: [...active], organization: [] };
+export function splitDevelopmentList<T extends { sessionId: string; orgId?: string }>(
+  rows: readonly T[],
+  companyModeAvailable: boolean,
+): { own: T[]; organization: T[] } {
+  if (!companyModeAvailable) return { own: [...rows], organization: [] };
   const own: T[] = [];
   const organization: T[] = [];
-  for (const s of active) (orgSessionIds.has(s.sessionId) ? organization : own).push(s);
-  return { active: own, organization };
+  for (const s of rows) (s.orgId === undefined || s.orgId === "" ? own : organization).push(s);
+  return { own, organization };
+}
+
+/** Just the rows the development list shows — splitDevelopmentList's first half. */
+export function withoutOrgSessions<T extends { sessionId: string; orgId?: string }>(
+  rows: readonly T[],
+  companyModeAvailable: boolean,
+): T[] {
+  return splitDevelopmentList(rows, companyModeAvailable).own;
+}
+
+/** A per-category counter set, copied so the correction below never writes into the store's. */
+function copyCounts(counts: SessionCategoryCounts): SessionCategoryCounts {
+  return { ...counts };
+}
+
+/**
+ * The server's per-category totals with the organization rows the list does not show taken
+ * back out — the per-Agent totals and their per-Workspace breakdown together, in one pass, so
+ * the two can never disagree about the same group.
+ *
+ * The server counts every Session of an Agent, an organization's desks and ticket sessions
+ * included, while the development list draws the user's own. A group header promising five
+ * where three rows follow is the visible half of that gap; a "show the rest" row that reveals
+ * nothing is the other. Only rows already LOADED can be subtracted, so a group whose
+ * organization rows sit past the fetched pages still counts a little high — the direction
+ * this number has always erred in, and it settles as those pages arrive.
+ *
+ * The fetch logic reads the store's raw counts, not these: what is worth fetching does not
+ * change because a row will not be drawn.
+ */
+export function countsWithoutOrgSessions(
+  byAgent: ReadonlyMap<string, SessionCategoryCounts>,
+  byWorkspace: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
+  organizationRows: readonly SessionInfo[],
+): {
+  byAgent: ReadonlyMap<string, SessionCategoryCounts>;
+  byWorkspace: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+} {
+  if (organizationRows.length === 0) return { byAgent, byWorkspace };
+  const agents = new Map([...byAgent].map(([id, counts]) => [id, copyCounts(counts)]));
+  const workspaces = new Map(
+    [...byWorkspace].map(
+      ([id, perWorkspace]) =>
+        [
+          id,
+          Object.fromEntries(
+            Object.entries(perWorkspace).map(([path, counts]) => [path, copyCounts(counts)]),
+          ),
+        ] as const,
+    ),
+  );
+  for (const row of organizationRows) {
+    const category = sessionCategory(row);
+    const counts = agents.get(row.agentId);
+    if (counts) counts[category] = Math.max(counts[category] - 1, 0);
+    const perWorkspace = workspaces.get(row.agentId)?.[row.workspace];
+    if (perWorkspace) perWorkspace[category] = Math.max(perWorkspace[category] - 1, 0);
+  }
+  return { byAgent: agents, byWorkspace: workspaces };
 }

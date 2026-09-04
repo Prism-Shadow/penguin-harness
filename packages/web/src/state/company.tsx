@@ -27,6 +27,7 @@ import type { ReactNode } from "react";
 import type {
   CompanyServerEvent,
   OrgChannelItem,
+  OrgChartResponse,
   OrgSessionsResponse,
   OrganizationSummary,
   ServerEvent,
@@ -124,6 +125,14 @@ interface CompanyStoreState {
   channelMentions: number;
   /** Desk and ticket Sessions per organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
+  /**
+   * The open organization's chart — the sidebar's 工位 group is one row per EMPLOYEE, and
+   * this is the only listing that holds employees whose desk has never been opened. Null
+   * before the first read of the organization now open.
+   */
+  orgChart: OrgChartResponse | null;
+  /** The last chart read's failure, kept beside whatever the roster still holds. */
+  orgChartError: string | null;
   versions: CompanyVersions;
 
   setWorkMode: (mode: WorkMode) => void;
@@ -133,6 +142,7 @@ interface CompanyStoreState {
   markChannelRead: (channelId: string) => void;
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
   reloadOrgSessions: (projectId: string) => Promise<void>;
+  reloadOrgChart: (projectId: string, orgId: string) => Promise<void>;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
 }
 
@@ -165,18 +175,26 @@ export function createCompanyStore() {
     channelUnread: 0,
     channelMentions: 0,
     orgSessions: new Map(),
+    orgChart: null,
+    orgChartError: null,
     versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0 },
 
     setWorkMode: (mode) => {
       if (mode === get().workMode) return;
       storeWorkMode(mode);
       set({ workMode: mode });
+      // Leaving company mode is what drops the open organization — not leaving its routes.
+      // A desk or ticket conversation renders at `/chat/:sessionId` with the company sidebar
+      // around it, and that sidebar lists this organization's channels and desks.
+      if (mode !== "company") get().setCurrentOrg(null);
       // Server-side copy is best-effort: a lost write only costs the choice on another browser.
       void api.putPrefs({ workMode: mode }).catch(() => undefined);
     },
 
     setPersonalEnabled: (enabled) => {
       set({ personalEnabled: enabled });
+      // Hiding company mode hides its shell with it (see setWorkMode).
+      if (!enabled) get().setCurrentOrg(null);
       void api.putPrefs({ companyMode: enabled }).catch(() => undefined);
     },
 
@@ -192,6 +210,8 @@ export function createCompanyStore() {
         channelReadAt: new Map(),
         channelUnread: 0,
         channelMentions: 0,
+        orgChart: null,
+        orgChartError: null,
       });
       if (key === null || key === prev.lastOrgKey) return;
       storeLastOrgKey(key);
@@ -278,6 +298,22 @@ export function createCompanyStore() {
       set({ orgSessions: next });
     },
 
+    /**
+     * Re-reads the open organization's chart (the 工位 group's roster). A response for an
+     * organization the shell has since left is dropped, and a failure leaves whatever the
+     * group already shows: the roster changes only when someone hires or offboards, so a
+     * stale list is a better answer than an empty one.
+     */
+    reloadOrgChart: async (projectId, orgId) => {
+      const key = orgKey(projectId, orgId);
+      try {
+        const chart = await api.getOrgChart(projectId, orgId);
+        if (get().currentOrgKey === key) set({ orgChart: chart, orgChartError: null });
+      } catch (e) {
+        if (get().currentOrgKey === key) set({ orgChartError: apiErrorText(e) });
+      }
+    },
+
     applyCompanyEvent: (ev, userId) => {
       const state = get();
       const key = orgKey(ev.projectId, ev.orgId);
@@ -354,8 +390,10 @@ interface CompanyContextValue {
   markChannelRead: (channelId: string) => void;
   /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
-  /** Every Session id those hold — the development sidebar's "organization" folder membership test. */
-  orgSessionIds: ReadonlySet<string>;
+  /** The open organization's employees, in chart order; null until the first read. */
+  orgChart: OrgChartResponse | null;
+  orgChartError: string | null;
+  reloadOrgChart: () => Promise<void>;
   versions: CompanyVersions;
   reloadOrganizations: () => Promise<void>;
   reloadOrgSessions: () => Promise<void>;
@@ -436,6 +474,27 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     void store.getState().reloadChannels(open.projectId, open.orgId);
   }, [store, serverEnabled, currentOrgKey, messageVersion]);
 
+  // The open organization's roster: the sidebar's 工位 group has a row per employee, desk or
+  // no desk. Re-read when the organization changes and when a run or a personnel change
+  // (both bump `orgs`) says the chart moved.
+  useEffect(() => {
+    const open = parseOrgKey(currentOrgKey);
+    if (!serverEnabled || open === null) return;
+    void store.getState().reloadOrgChart(open.projectId, open.orgId);
+  }, [store, serverEnabled, currentOrgKey, orgsVersion]);
+
+  // In company mode the shell always has a current organization: the one its sidebar names.
+  // The organization routes announce it, but a desk or ticket conversation lives at
+  // `/chat/:sessionId` — reload there and no route ever would, which used to leave the
+  // channel list on a skeleton and the 工位 group without its roster. The organization last
+  // opened is exactly what the sidebar is already showing, so the shell adopts it.
+  const { workMode, personalEnabled, lastOrgKey } = state;
+  useEffect(() => {
+    if (!serverEnabled || !personalEnabled || workMode !== "company") return;
+    if (currentOrgKey !== null || lastOrgKey === null) return;
+    store.getState().setCurrentOrg(lastOrgKey);
+  }, [store, serverEnabled, personalEnabled, workMode, currentOrgKey, lastOrgKey]);
+
   useEffect(
     () => subscribeCompanyEvents((ev) => store.getState().applyCompanyEvent(ev, userId)),
     [store, userId],
@@ -451,11 +510,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         : (state.organizations.find(
             (o) => o.projectId === shown.projectId && o.orgId === shown.orgId,
           ) ?? null);
-    const orgSessionIds = new Set<string>();
-    for (const res of state.orgSessions.values()) {
-      for (const d of res.desks) orgSessionIds.add(d.sessionId);
-      for (const t of res.tickets) for (const s of t.sessions) orgSessionIds.add(s.sessionId);
-    }
     return {
       serverEnabled,
       personalEnabled: state.personalEnabled,
@@ -480,7 +534,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       },
       markChannelRead: state.markChannelRead,
       orgSessions: state.orgSessions,
-      orgSessionIds,
+      orgChart: state.orgChart,
+      orgChartError: state.orgChartError,
+      reloadOrgChart: () => {
+        const open = parseOrgKey(state.currentOrgKey);
+        return open === null ? Promise.resolve() : state.reloadOrgChart(open.projectId, open.orgId);
+      },
       versions: state.versions,
       reloadOrganizations: () =>
         state.reloadOrganizations(projectIdsKey === "" ? [] : projectIdsKey.split(",")),

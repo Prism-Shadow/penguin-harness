@@ -662,6 +662,43 @@ describe("session-index", () => {
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });
 
+  it("orgId marks organization sessions on the list and the single GET; ordinary rows carry none", async () => {
+    await configureModels();
+    const create = async () =>
+      ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session.sessionId;
+    const deskSession = await create();
+    const ticketSession = await create();
+    const plainSession = await create();
+    // The organization caches are the source: a desk row for the employee, a ticket row for
+    // a session contributing to one of the organization's tickets.
+    t.deps.orgCacheRepo.syncDeskSessions(projectId, "acme", [
+      { sessionId: deskSession, agentId: "acme_ceo", current: true },
+    ]);
+    t.deps.orgCacheRepo.addTicketSession(
+      projectId,
+      "acme",
+      "2026-09-02-site",
+      ticketSession,
+      "acme_dev",
+    );
+
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const orgIdOf = (sessionId: string) =>
+      list.sessions.find((s) => s.sessionId === sessionId)?.orgId;
+    expect(orgIdOf(deskSession)).toBe("acme");
+    expect(orgIdOf(ticketSession)).toBe("acme");
+    expect(orgIdOf(plainSession)).toBeUndefined();
+
+    for (const [sessionId, orgId] of [
+      [deskSession, "acme"],
+      [ticketSession, "acme"],
+      [plainSession, undefined],
+    ] as const) {
+      const got = (await (await api.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
+      expect(got.session.orgId).toBe(orgId);
+    }
+  });
+
   it("PATCH approval mode persists and reads back", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;

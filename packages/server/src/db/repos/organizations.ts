@@ -211,6 +211,23 @@ export class OrgCacheRepo {
     };
   }
 
+  /**
+   * Every organization-owned session of a Project, session id -> organization id, desk and
+   * ticket sessions together. Two queries for the whole Project, so a session list can stamp
+   * `SessionInfo.orgId` on its rows without a lookup per row; `ownerOfSession` stays the
+   * point query for the single-session GET. Desk rows win a collision, as they do there.
+   */
+  orgIdsOfProject(projectId: string): Map<string, string> {
+    const ids = new Map<string, string>();
+    for (const table of ["org_ticket_sessions", "org_sessions"]) {
+      const rows = this.db
+        .prepare(`SELECT session_id, org_id FROM ${table} WHERE project_id = ?`)
+        .all(projectId) as Array<{ session_id: string; org_id: string }>;
+      for (const r of rows) ids.set(r.session_id, r.org_id);
+    }
+    return ids;
+  }
+
   /** Records the hop of the trigger just delivered to a session (both tables, whichever holds it). */
   setTriggerHop(sessionId: string, hop: number): void {
     this.db

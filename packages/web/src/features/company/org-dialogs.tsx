@@ -2,10 +2,16 @@
  * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
  * landing): create an organization — id, display name, one-sentence mission, the Project it
  * belongs to when the user has several, the model its sessions run on (the Project default
- * unless chosen) and the company workspace (the organization's own directory unless one is
- * picked) — and an organization's settings: name, mission, model, workspace, timezone,
- * approval mode, pause / resume, and (Project owner only) deletion behind the shared
- * confirmation, whose copy says what stays: the employee Agents and every session.
+ * unless chosen), the company workspace (the organization's own directory unless one is
+ * picked) and the CEO's monthly budget, which is the whole company's — and an organization's
+ * settings: name, mission, model, workspace, timezone, approval mode, pause / resume, and
+ * (Project owner only) deletion behind the shared confirmation, whose copy says what stays:
+ * the employee Agents and every session.
+ *
+ * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
+ * accidental close, a reload or a switch back to development mode does not cost the mission
+ * someone spent minutes writing; it is restored on reopen and dropped on a successful create
+ * or an explicit "clear draft".
  *
  * Failures stay inside the dialog: a rejected id lands under the id field, anything else in
  * a strip above the footer, and a settings load that fails offers its retry in place — the
@@ -16,6 +22,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
   OrgApprovalMode,
+  OrganizationCreateRequest,
   OrganizationDetail,
   OrganizationPatchRequest,
   OrganizationSettings,
@@ -25,6 +32,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
+import { useAuth } from "../../state/auth";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
@@ -39,8 +47,23 @@ import { modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, OrgStatusPill } from "./shared";
+import {
+  EMPTY_ORG_DRAFT,
+  clearOrgDraft,
+  hasContent,
+  loadOrgDraft,
+  orgDraftKey,
+  saveOrgDraft,
+} from "./org-draft";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
+
+/**
+ * The CEO's monthly budget the dialog offers, in USD. It is the whole company's ceiling: the
+ * chart's budgets are cumulative over an employee and its subordinates, and everyone reports
+ * to the CEO. The server applies the same default when the field is left empty.
+ */
+const DEFAULT_CEO_BUDGET = "100";
 
 /** The error codes that are about the id the user typed; every other failure is the form's. */
 const ID_ERROR_CODES = new Set(["org_exists", "invalid_org_id"]);
@@ -179,39 +202,83 @@ export function CreateOrganizationDialog({
   onCreated: (detail: OrganizationDetail) => void;
 }) {
   const { projects, currentProject } = useProject();
+  const { user } = useAuth();
   const [projectId, setProjectId] = useState("");
   const [orgId, setOrgId] = useState("");
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
+  const [ceoBudget, setCeoBudget] = useState(DEFAULT_CEO_BUDGET);
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
+  const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
   const [formError, setFormError] = useState<string | null>(null);
+  /** A stored draft was put back into the fields: the notice above them says so and offers to drop it. */
+  const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState(false);
   const { models, error: modelsError } = useProjectModels(projectId, open);
 
-  // No draft is kept: the form starts empty every time it opens, in the current Project.
+  // The Project the organization is being created in: the current one on open, changeable
+  // below when the user has several.
   useEffect(() => {
     if (!open) return;
     setProjectId(currentProject?.projectId ?? projects[0]?.projectId ?? "");
-    setOrgId("");
-    setName("");
-    setMission("");
-    setModelRef(null);
-    setWorkspace("");
-    setIdError(undefined);
-    setMissionError(undefined);
-    setFormError(null);
   }, [open, currentProject, projects]);
 
-  // A model belongs to the Project it was picked in: switching Projects drops the pick.
+  /** The draft's key; null before the target Project is known (nothing to store against). */
+  const draftKey = projectId === "" ? null : orgDraftKey(user?.userId ?? null, projectId);
+
+  const resetForm = (draft = EMPTY_ORG_DRAFT) => {
+    setOrgId(draft.orgId);
+    setName(draft.name);
+    setMission(draft.mission);
+    setModelRef(draft.model);
+    setWorkspace(draft.workspace);
+    setCeoBudget(draft.ceoBudget === "" ? DEFAULT_CEO_BUDGET : draft.ceoBudget);
+    setIdError(undefined);
+    setMissionError(undefined);
+    setBudgetError(undefined);
+    setFormError(null);
+  };
+
+  // Restore on open, and again when the target Project changes: a draft belongs to the
+  // Project it was aimed at, since its Workspace and model are that Project's. This also
+  // subsumes the old "switching Projects drops the model pick" rule.
   useEffect(() => {
-    setModelRef(null);
-  }, [projectId]);
+    if (!open) return;
+    const draft = draftKey === null ? null : loadOrgDraft(draftKey);
+    resetForm(draft ?? EMPTY_ORG_DRAFT);
+    setRestored(draft !== null);
+    // resetForm is a plain setter bundle; re-running on its identity would reset on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, draftKey]);
+
+  // Every edit is written straight through: the draft exists for the close nobody meant.
+  useEffect(() => {
+    if (!open || draftKey === null) return;
+    saveOrgDraft(draftKey, { orgId, name, mission, workspace, model: modelRef, ceoBudget });
+  }, [open, draftKey, orgId, name, mission, workspace, modelRef, ceoBudget]);
+
+  /** Whether there is anything in the form a "clear draft" would remove. */
+  const draftContent = hasContent({
+    orgId,
+    name,
+    mission,
+    workspace,
+    model: modelRef,
+    ceoBudget,
+  });
+
+  const dropDraft = () => {
+    if (draftKey !== null) clearOrgDraft(draftKey);
+    setRestored(false);
+    resetForm();
+  };
 
   const submit = async () => {
     const id = orgId.trim();
+    const budget = ceoBudget.trim();
     let bad = false;
     if (!id) {
       setIdError(S.common.requiredField);
@@ -224,17 +291,27 @@ export function CreateOrganizationDialog({
       setMissionError(S.common.requiredField);
       bad = true;
     }
+    if (budget !== "" && !(Number(budget) >= 0)) {
+      setBudgetError(S.company.ceoBudgetHint);
+      bad = true;
+    }
     if (bad || !projectId) return;
     setBusy(true);
     setFormError(null);
     try {
-      const detail = await api.createOrganization(projectId, {
+      // An omitted budget is the server's own default (100 USD a month).
+      const body: OrganizationCreateRequest = {
         orgId: id,
         mission: mission.trim(),
         ...(name.trim() ? { name: name.trim() } : {}),
         ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
         ...(modelRef !== null ? { model: modelRef } : {}),
-      });
+        ...(budget !== "" ? { ceoBudget: Number(budget) } : {}),
+      };
+      const detail = await api.createOrganization(projectId, body);
+      // The draft did its job: what it held is now an organization.
+      if (draftKey !== null) clearOrgDraft(draftKey);
+      setRestored(false);
       toastSuccess(S.company.createdOpeningCeo);
       onCreated(detail);
     } catch (e) {
@@ -254,6 +331,13 @@ export function CreateOrganizationDialog({
       widthClass="sm:max-w-lg"
       footer={
         <>
+          {/* Dropping the draft is a form action, not a dialog verdict: it sits away from
+              Cancel / Create so a click on it can never be mistaken for either. */}
+          {draftContent && (
+            <Button onClick={dropDraft} disabled={busy} className="mr-auto">
+              {S.company.clearDraft}
+            </Button>
+          )}
           <Button onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
@@ -264,6 +348,11 @@ export function CreateOrganizationDialog({
       }
     >
       <div className="space-y-3">
+        {restored && (
+          <p className="rounded-md bg-gray-100 px-2.5 py-1.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            {S.company.draftRestored}
+          </p>
+        )}
         {projects.length > 1 && (
           <Select
             size="sm"
@@ -325,6 +414,22 @@ export function CreateOrganizationDialog({
           disabled={busy}
         />
         <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        <Input
+          label={S.company.ceoBudget}
+          size="sm"
+          type="number"
+          min={0}
+          step="any"
+          inputMode="decimal"
+          value={ceoBudget}
+          hint={S.company.ceoBudgetHint}
+          {...(budgetError !== undefined ? { error: budgetError } : {})}
+          disabled={busy}
+          onChange={(e) => {
+            setCeoBudget(e.target.value);
+            setBudgetError(undefined);
+          }}
+        />
         {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>
     </Modal>

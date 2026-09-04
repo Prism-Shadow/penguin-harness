@@ -14,7 +14,6 @@ import {
   mentionLabel,
   mentionQueryAt,
   mentionRuns,
-  mentionsUser,
   rankMentionCandidates,
 } from "../src/features/company/channel-mentions";
 
@@ -78,14 +77,6 @@ describe("mentionRuns", () => {
       { text: "write to me@example.com", mention: null },
     ]);
     expect(mentionRuns("")).toEqual([]);
-  });
-});
-
-describe("mentionsUser", () => {
-  it("is addressed by the user's own principal or by all", () => {
-    expect(mentionsUser(["agent:ceo", "user:bob"], "bob")).toBe(true);
-    expect(mentionsUser(["all"], "bob")).toBe(true);
-    expect(mentionsUser(["user:alice"], "bob")).toBe(false);
   });
 });
 

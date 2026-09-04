@@ -221,7 +221,7 @@ penguin schedule rm daily-report
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--model-id <id> --provider <p>] [--project-id <id>]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]
 penguin org show [--org-id <id>] [--json]                       # 概览：员工与状态、看板计数、预算占用、待处理事项
 penguin org chart [--org-id <id>] [--json]                      # 员工树
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
@@ -274,6 +274,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 分组说明：
 
 - `ls` / `show` / `chart`：Project 的组织及其员工、工单与支出计数；单个组织的概览——名称、使命与状态，按状态分的员工数，各列工单数，本期支出对照 CEO 预算，以及等你处理的事（@我、待审核工单、等我的阻塞）；以及按层级缩进的汇报树，逐员工列出头衔、实时状态、自身与累计支出和预算。校验失败的组织或员工以 `invalid: <原因>` 列出，不隐藏。
+- `create`：`--ceo-budget` 是 CEO 的月预算（美元），缺省 **100**。预算按累计线比较——该员工及其全部下属——所以 CEO 的预算就是整家公司的：新组织一开始就有上限而非无限，初始化会话的触发块里也会带上这个数字，CEO 据此裁剪自己的招募方案。`0` 是真的零预算；要重新变回无限，用 `PATCH .../employees/<org_id>_ceo` 传 `budget: null`（Web App 的员工编辑即发此请求）。
 - `hire`：`--agent-id`（既有 Agent）与 `--new-agent`（新建）二选一；`--name`、`--description`、`--skills`（新 Agent 的插件库插件，替换缺省的 `agent-company,agent-development`）描述新 Agent。`--workspace` 原样写入：组织公共工作区的子目录（`.` 即整个工作区）或绝对路径，不按 CLI 的 cwd 解析。`--budget` 是该员工及其全部下属的月预算（美元）。`employee set` 只改给出的字段；模型对「都给或都不给」，同各处约定。
 - `calendar`：与 `penguin schedule` 同一套写入器——`add` 缺省启用、`--disabled` 关闭，`--start-at now` 即当前时刻，`update` 读改写，`rm` 不做确认。日程项一律发往员工的工位会话，且只在组织与该员工都处于运行状态时触发；否则状态列显示 `paused`。
 - `ticket`：`ls` 取整个看板后在本地过滤（`--status` 为列名：`proposed`、`in_progress`、`review`、`done`、`rejected`）；`show` 先打印派生数据——所在列、运行状态、成本与含子工单成本、贡献会话数、子工单数——再打印工单文件本身。`create` 二选一：`--goal`（配合 `--criteria`）或以 `--body-file` 给出整个 Markdown 正文，头部都由服务端生成。`--json` 下 `ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。`start` 像 `run --background` 一样打印裸 session id，供 `penguin logs` / `penguin input` 接续。

@@ -112,6 +112,8 @@ const encoder = new TextEncoder();
 const ORG_NOW = "2026-09-02T10:00:00.000Z";
 const ORG_TODAY = "2026-09-02";
 const DEFAULT_CHANNEL_ID = "default_channel";
+/** The server's default for the CEO's monthly budget when creation names none. */
+const DEFAULT_CEO_BUDGET = 100;
 const ORG_PERIOD = "2026-09";
 const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
 const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
@@ -686,6 +688,15 @@ export class FakeServer {
         });
         // Creation opens the CEO's desk and starts the initialization run.
         const ceo = org.employees.find((e) => e.agentId === org.ceoAgentId)!;
+        // The CEO's chart entry carries the whole company's budget: the request's value,
+        // or the server's default when the caller sent none.
+        if (body.ceoBudget !== undefined && typeof body.ceoBudget !== "number") {
+          return this.badRequest("ceoBudget must be a number.");
+        }
+        if (typeof body.ceoBudget === "number" && body.ceoBudget < 0) {
+          return this.badRequest("ceoBudget must not be negative.");
+        }
+        ceo.budget = typeof body.ceoBudget === "number" ? body.ceoBudget : DEFAULT_CEO_BUDGET;
         org.ceoDeskSessionId = String(this.openDesk(org, ceo, true).sessionId);
         return this.json(this.orgDetail(org), 201);
       }

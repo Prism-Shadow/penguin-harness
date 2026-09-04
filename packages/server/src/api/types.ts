@@ -1255,6 +1255,15 @@ export interface SessionInfo {
   tracePath?: string;
   /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
   messagingChannel?: MessagingChannel;
+  /**
+   * Company mode: the organization that owns this Session — a desk session of one of its
+   * employees, or a session contributing to one of its tickets — read from the organization
+   * caches. Absent for every ordinary Session. Development mode's list and its time buckets
+   * hide every row that carries it (only while company mode is available to that user: it is
+   * stamped either way, and company mode is what lists these Sessions instead), and the
+   * company sidebar's 工位 / 工单会话 groups are where they are listed.
+   */
+  orgId?: string;
 }
 
 /**
@@ -3748,6 +3757,13 @@ export interface OrganizationCreateRequest {
   workspace?: string;
   /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
   model?: { provider: string; modelId: string };
+  /**
+   * The CEO's monthly budget in USD, written as the `budget` of its `org_chart.yaml` entry.
+   * Budgets are compared on the cumulative line, so the CEO's is the whole company's.
+   * Omitted = 100; 0 is a real (zero) budget, not "unbounded" — only clearing the field
+   * later (`PATCH …/employees/:agentId` with `budget: null`) leaves the CEO unbounded.
+   */
+  ceoBudget?: number;
 }
 
 export interface OrganizationPatchRequest {

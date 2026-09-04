@@ -5,8 +5,8 @@
  * not (each with a Join action — people may join any channel), then the archived ones folded
  * away. A row carries its unread count and, when a message names the reader, an "@me" chip.
  *
- * "New channel" sits where "New chat" sits in development mode, and the list's header holds
- * the "Sessions" menu — the desk and ticket sessions that used to be this list's rows.
+ * "New channel" sits where "New chat" sits in development mode; the organization's desk and
+ * ticket sessions follow the list as their own groups (org-session-groups.tsx).
  *
  * The list itself is the store's (state/company.tsx): one listing per organization, refreshed
  * when a message event says a counter moved, so the sidebar, the rail and the channel view
@@ -30,7 +30,6 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
 import { NewChannelDialog } from "./channel-dialogs";
-import { ChannelSessionsMenu } from "./channel-sessions-menu";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
 
 /** A channel (lucide hash): the mark every channel but the all-hands one wears. */
@@ -197,12 +196,10 @@ function GroupTitle({ label, count }: { label: string; count: number }) {
 export function ChannelSidebar({
   projectId,
   orgId,
-  activeSessionId,
   onNavigate,
 }: {
   projectId: string;
   orgId: string;
-  activeSessionId: string | null;
   onNavigate?: () => void;
 }) {
   const company = useCompany();
@@ -241,18 +238,11 @@ export function ChannelSidebar({
 
   return (
     <>
-      {/* The list's header: its name and the "Sessions" menu, at the height and density of
-          the development list's own header row. */}
+      {/* The list's header, at the height and density of the development list's own. */}
       <div className="mt-3 flex items-center justify-between gap-2 px-1 pt-2">
         <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
           {S.company.channels.listTitle}
         </span>
-        <ChannelSessionsMenu
-          projectId={projectId}
-          orgId={orgId}
-          activeSessionId={activeSessionId}
-          {...(onNavigate ? { onNavigate } : {})}
-        />
       </div>
       {channels === null ? (
         company.channelsError !== null ? (

@@ -311,6 +311,8 @@ export interface Messages {
     employeeWorkspace: string;
     /** --budget: monthly USD for the employee plus every subordinate. */
     budget: string;
+    /** create's --ceo-budget: the CEO's monthly USD, which is the whole company's. */
+    ceoBudget: string;
     duties: string;
     /** calendar's --agent-id: the employee the event belongs to (defaults to PENGUIN_AGENT_ID); a filter on `ls`. */
     calendarAgentId: string;
@@ -366,7 +368,8 @@ export interface Messages {
     hireTargetConflict(): string;
     /** hire: --name / --description / --skills describe the new Agent only. */
     newAgentFieldsOnly(): string;
-    budgetInvalid(value: string): string;
+    /** A non-numeric or negative budget on any of the budget flags (named, since there are several). */
+    budgetInvalid(flag: string, value: string): string;
     /** employee set with no field to change. */
     nothingToSet(): string;
     /** A --status / --to value that is not a kanban column. */
@@ -1073,6 +1076,8 @@ const en: Messages = {
     employeeWorkspace:
       "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
     budget: "Monthly budget in USD for the employee plus everyone below it",
+    ceoBudget:
+      "The CEO's monthly budget in USD, which is the whole company's (budgets accumulate along the reporting line)",
     duties: "Duties, in prose",
     calendarAgentId:
       "Employee the event belongs to (defaults to PENGUIN_AGENT_ID); on ls, list only this employee's events",
@@ -1118,8 +1123,8 @@ const en: Messages = {
     hireTargetConflict: () =>
       "Pass exactly one of --agent-id (an existing Agent) and --new-agent (create one).",
     newAgentFieldsOnly: () => "--name, --description and --skills describe --new-agent only.",
-    budgetInvalid: (value) =>
-      `Invalid --budget value "${value}": expected a non-negative amount in USD.`,
+    budgetInvalid: (flag, value) =>
+      `Invalid ${flag} value "${value}": expected a non-negative amount in USD.`,
     nothingToSet: () => "Nothing to update: pass at least one field.",
     statusInvalid: (value) =>
       `Invalid column "${value}": expected proposed, in_progress, review, done or rejected.`,
@@ -1783,6 +1788,7 @@ const zh: Messages = {
     reportsTo: "上级的 Agent id",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
     budget: "月预算（美元），含该员工及其全部下属",
+    ceoBudget: "CEO 的月预算（美元）；预算沿汇报线累计，CEO 的预算就是整家公司的",
     duties: "职责描述",
     calendarAgentId: "日程项所属员工（缺省 PENGUIN_AGENT_ID）；ls 上只列该员工的日程项",
     calendarTitle: "日程项标题",
@@ -1824,7 +1830,7 @@ const zh: Messages = {
     hireTargetConflict: () =>
       "--agent-id（既有 Agent）与 --new-agent（新建）二选一，且必须给一个。",
     newAgentFieldsOnly: () => "--name、--description 与 --skills 只用于描述 --new-agent。",
-    budgetInvalid: (value) => `--budget 值「${value}」无效：应为非负的美元金额。`,
+    budgetInvalid: (flag, value) => `${flag} 值「${value}」无效：应为非负的美元金额。`,
     nothingToSet: () => "没有要更新的内容：至少给出一个字段。",
     statusInvalid: (value) =>
       `列名「${value}」无效：应为 proposed、in_progress、review、done 或 rejected。`,

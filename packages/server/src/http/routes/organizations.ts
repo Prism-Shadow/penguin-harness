@@ -169,6 +169,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
     const timezone = optionalString(body, "timezone", { minLen: 1, maxLen: 64 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
+    const ceoBudget = optionalNumber(body, "ceoBudget", { nonNegative: true });
     const model = parseModel(body);
     const detail = await deps.orgService.create(
       projectId,
@@ -178,6 +179,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(name !== undefined ? { name } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
         ...(workspace !== undefined ? { workspace } : {}),
+        ...(ceoBudget !== undefined ? { ceoBudget } : {}),
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,

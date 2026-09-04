@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { latestConversation } from "../../lib/session-grouping";
+import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -21,6 +21,7 @@ import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, NewChannelButton } from "../../features/company/channel-sidebar";
+import { DeskRailRows } from "../../features/company/org-session-groups";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -86,8 +87,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
-  const lastSession = useMemo(() => latestConversation(sessions), [sessions]);
+  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are not conversations of this list wherever company mode can list them as themselves. */
+  const lastSession = useMemo(
+    () => latestConversation(withoutOrgSessions(sessions, company.available)),
+    [sessions, company.available],
+  );
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {
@@ -214,13 +218,16 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </NavLink>
           );
         })}
-        {/* The organization's channels, under the pages the way they sit under the nav in the
-            pinned sidebar. A hairline says where the pages end; each row carries its own
-            unread count, since a rail with no labels must still say how much is waiting. */}
+        {/* The organization's channels and then its desks, under the pages the way they sit
+            under the nav in the pinned sidebar. A hairline says where each run ends; a channel
+            row carries its own unread count and a desk its running dot, since a rail with no
+            labels must still say how much is waiting. */}
         {inCompany && navOrg !== null && (
           <>
             <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
             <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+            <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+            <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
           </>
         )}
       </nav>

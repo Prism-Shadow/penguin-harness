@@ -462,6 +462,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
+          "company-setup",
         ],
       },
       {
