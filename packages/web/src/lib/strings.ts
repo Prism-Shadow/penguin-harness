@@ -1869,7 +1869,6 @@ Benchmark：
       subagent: (n: number) => `子智能体（${n}）`,
       schedule: (n: number) => `定时任务（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
-      organization: (n: number) => `组织（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
     /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
@@ -2422,6 +2421,12 @@ Benchmark：
     workspaceEmpty: "组织自己的 workspace/ 目录",
     workspaceMenuHint: "选一个已存在的目录作为公司工作区",
     workspaceClear: "改回组织自己的目录",
+    /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
+    ceoBudget: "CEO 预算",
+    ceoBudgetHint: "每月 USD；CEO 的预算就是整家公司的预算",
+    /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
+    draftRestored: "已恢复上次未提交的草稿",
+    clearDraft: "清空草稿",
     creating: "创建中…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
@@ -2463,15 +2468,16 @@ Benchmark：
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "不限",
-    /** The company sidebar's session list: one group per organization, two folders inside. */
+    /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
     sessionList: {
-      menu: "会话",
-      menuLabel: "组织会话",
-      desks: (n: number): string => `工位会话（${n}）`,
+      desks: (n: number): string => `工位（${n}）`,
       ticketSessions: (n: number): string => `工单会话（${n}）`,
-      empty: "这个组织还没有会话",
+      deskOf: (name: string): string => `${name} 的工位`,
+      running: "运行中",
+      noEmployees: "这个组织还没有员工",
+      noTicketSessions: "还没有工单会话",
       untitledSession: "未命名会话",
-      loadFailed: "会话列表加载失败",
+      loadFailed: "员工列表加载失败",
     },
     overview: {
       title: "概览",

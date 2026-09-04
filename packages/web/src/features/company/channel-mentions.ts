@@ -168,11 +168,6 @@ export function mentionRuns(text: string): TextRun[] {
   return runs;
 }
 
-/** Whether a message addresses the given user (their `user:` principal) or everyone. */
-export function mentionsUser(mentions: readonly string[], userId: string): boolean {
-  return mentions.includes(`user:${userId}`) || mentions.includes("all");
-}
-
 /**
  * The candidates a channel's composer offers: everyone above who is a member of it, `all`
  * always kept (it means that channel's membership). A null membership — the channel detail

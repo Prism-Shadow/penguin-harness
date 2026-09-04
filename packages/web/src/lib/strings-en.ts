@@ -1908,7 +1908,6 @@ Scenarios:
       subagent: (n: number) => `Subagents (${n})`,
       schedule: (n: number) => `Scheduled (${n})`,
       archived: (n: number) => `Archived (${n})`,
-      organization: (n: number) => `Organization (${n})`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
@@ -2476,6 +2475,12 @@ Scenarios:
     workspaceEmpty: "The organization's own workspace/ directory",
     workspaceMenuHint: "Pick an existing directory as the company workspace",
     workspaceClear: "Back to the organization's own directory",
+    /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
+    ceoBudget: "CEO budget",
+    ceoBudgetHint: "Monthly USD; the CEO's budget is the whole company's",
+    /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
+    draftRestored: "Restored the draft you had not submitted",
+    clearDraft: "Clear draft",
     creating: "Creating…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "Organization settings",
@@ -2518,15 +2523,16 @@ Scenarios:
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
-    /** The channel list's "Sessions" menu: desk sessions per employee, ticket sessions per ticket. */
+    /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
     sessionList: {
-      menu: "Sessions",
-      menuLabel: "Organization sessions",
-      desks: (n: number): string => `Desk sessions (${n})`,
+      desks: (n: number): string => `Desks (${n})`,
       ticketSessions: (n: number): string => `Ticket sessions (${n})`,
-      empty: "No sessions in this organization yet",
+      deskOf: (name: string): string => `${name}'s desk`,
+      running: "Running",
+      noEmployees: "This organization has no employees yet",
+      noTicketSessions: "No ticket sessions yet",
       untitledSession: "Untitled session",
-      loadFailed: "The session list could not be loaded",
+      loadFailed: "The employee list could not be loaded",
     },
     overview: {
       title: "Overview",

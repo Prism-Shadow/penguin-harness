@@ -48,7 +48,6 @@ import {
   mentionIsMe,
   mentionLabel,
   mentionRuns,
-  mentionsUser,
 } from "./channel-mentions";
 import {
   appendMessage,
@@ -56,6 +55,7 @@ import {
   clockTime,
   dayKind,
   earlierDay,
+  hopChipShown,
   lastMessageId,
   messageCount,
 } from "./channel-stream";
@@ -453,38 +453,34 @@ export function ChannelView() {
             >
               {clockTime(first.time)}
             </span>
-            {item.hop > 0 && (
+            {hopChipShown(item.hop) && (
               <span className="text-[11px] text-gray-400 dark:text-gray-500">
                 {S.company.channels.hop(item.hop)}
               </span>
             )}
           </div>
-          {item.messages.map((m) => {
-            const addressed = mentionsUser(m.mentions, me);
-            return (
-              <div
-                key={m.id}
-                id={m.id}
-                className={`group relative -mx-2 rounded-md px-2 py-0.5 ${
-                  addressed
-                    ? "bg-amber-50/70 dark:bg-amber-950/25"
-                    : "hover:bg-gray-50 dark:hover:bg-gray-900/60"
-                }`}
+          {item.messages.map((m) => (
+            <div
+              key={m.id}
+              id={m.id}
+              /* A message that names the reader is marked by its mention chip alone: a
+                   tinted row reads as a state of the whole message, and in a channel where
+                   most messages name someone it turns the stream into a highlight. */
+              className="group relative -mx-2 rounded-md px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-900/60"
+            >
+              <p className="whitespace-pre-wrap pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                {renderText(m)}
+              </p>
+              {renderRefs(m)}
+              <span
+                className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
+                title={formatDateTime(m.time)}
+                aria-label={S.company.channels.sentAt(formatDateTime(m.time))}
               >
-                <p className="whitespace-pre-wrap pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-                  {renderText(m)}
-                </p>
-                {renderRefs(m)}
-                <span
-                  className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
-                  title={formatDateTime(m.time)}
-                  aria-label={S.company.channels.sentAt(formatDateTime(m.time))}
-                >
-                  {clockTime(m.time)}
-                </span>
-              </div>
-            );
-          })}
+                {clockTime(m.time)}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     );

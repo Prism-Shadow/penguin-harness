@@ -237,6 +237,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.orgCreateDraft.",
+    scope: "install",
+    why: "An unsubmitted create-organization form, keyed by user and Project id and holding a Workspace path and model ref of this root.",
+  },
+  {
+    kind: "family",
     key: "penguin.lastAgentId.",
     scope: "install",
     why: "The Agent id last selected, per Project.",

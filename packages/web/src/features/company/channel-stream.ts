@@ -24,6 +24,15 @@ export type StreamItem =
 export const RUN_GAP_MS = 5 * 60_000;
 
 /**
+ * Whether a run's header shows its hop count. Hop 1 is the ordinary case — an employee
+ * answering a trigger — and a chip on every single answer says nothing; from the second hop
+ * the message is an agent answering an agent, which is the thing worth seeing.
+ */
+export function hopChipShown(hop: number): boolean {
+  return hop >= 2;
+}
+
+/**
  * The stream in display order. The unread divider goes before the first message whose id
  * sorts after the read cursor (ids sort in write order, which is how the server counts
  * unread), and it breaks a run: the messages either side of it must not share a header. No

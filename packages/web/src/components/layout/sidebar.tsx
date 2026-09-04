@@ -23,9 +23,11 @@
  * -> bottom user config (theme / language / System settings / logout).
  * In company mode the shape holds but the objects change: the organization switcher stands
  * where the Project switcher stands, "New channel" where "New chat" is, the organization's
- * six pages in the nav group, and the channel list where the conversation list is — its desk
- * and ticket sessions live in the "Sessions" menu in that list's header
- * (features/company/channel-sidebar.tsx).
+ * six pages in the nav group, and the channel list where the conversation list is, followed
+ * by the organization's own two groups — 工位 (one row per employee) and 工单会话
+ * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
+ * development list is the user's OWN conversations only: an organization's desk and ticket
+ * Sessions are filtered out of every group, bucket and folder here.
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -64,10 +66,10 @@ import {
   groupSessionsByWorkspace,
   hiddenRowCount,
   matchesSessionQuery,
-  partitionOrgSessions,
   partitionSessions,
   sessionCategory,
   totalCategoryCounts,
+  withoutOrgSessions,
   workspaceGroupKey,
   workspaceLabel,
 } from "../../lib/session-grouping";
@@ -174,6 +176,7 @@ import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { OrgSwitcher } from "../../features/company/org-switcher";
 import { ChannelSidebar, NewChannelButton } from "../../features/company/channel-sidebar";
+import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import {
   COMPANY_NAV_KEYS,
@@ -182,9 +185,6 @@ import {
   parseOrgKey,
 } from "../../features/company/company-nav";
 import type { WorkMode } from "../../features/company/company-nav";
-
-/** The empty membership set: a time bucket's rows were already split by organization one level up. */
-const NO_ORG_SESSIONS: ReadonlySet<string> = new Set();
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -309,8 +309,7 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
  * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
  * the composite never collides across groups or with plain group keys.
  */
-const folderKey = (groupKey: string, category: FolderCategory | "organization") =>
-  `${category}\0${groupKey}`;
+const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
 
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
@@ -349,8 +348,8 @@ export function Sidebar({
     setCurrentAgentId,
   } = useProject();
   const {
-    sessions,
-    byAgent,
+    sessions: allSessions,
+    byAgent: allByAgent,
     countsByAgent,
     workspaceCountsByAgent,
     isLoadedFor,
@@ -362,7 +361,6 @@ export function Sidebar({
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
-
   const [projectOpen, setProjectOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -375,6 +373,27 @@ export function Sidebar({
   const inCompany = company.workMode === "company";
   /** The organization the company nav points at: the open one, else the one last opened (the switcher names the same). */
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
+
+  /**
+   * The rows this list renders: the user's OWN conversations. An organization's desk and
+   * ticket Sessions (marked by `orgId`) are driven by its scheduler and are listed as
+   * themselves in company mode's 工位 / 工单会话 groups, so they are filtered out here — once,
+   * at the source, or a dropped row would still conjure the Workspace group, Agent group or
+   * time bucket it belongs to. With company mode unavailable there is no such group to send
+   * them to, and they stay (see withoutOrgSessions).
+   */
+  const companyAvailable = company.available;
+  const sessions = useMemo(
+    () => withoutOrgSessions(allSessions, companyAvailable),
+    [allSessions, companyAvailable],
+  );
+  const byAgent = useMemo(() => {
+    const map = new Map<string, SessionInfo[]>();
+    for (const [agentId, rows] of allByAgent)
+      map.set(agentId, withoutOrgSessions(rows, companyAvailable));
+    return map;
+  }, [allByAgent, companyAvailable]);
+
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -638,10 +657,7 @@ export function Sidebar({
    * the same reason. Null outside time mode, so no other mode pays for the two passes.
    */
   const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
-  /** Time mode splits the organization's rows off before bucketing: they get one shared folder below the buckets, like the other folders. */
-  const timeSplit =
-    timeParts === null ? null : partitionOrgSessions(timeParts.active, company.orgSessionIds);
-  const timeGroups = timeSplit === null ? [] : groupSessionsByTime(timeSplit.active, Date.now());
+  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeParts.active, Date.now());
 
   /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders and the whole-list "More" read the summed counts. */
   const projectCounts = totalCategoryCounts(countsByAgent);
@@ -1137,18 +1153,6 @@ export function Sidebar({
     else if (isOrgRoute(location.pathname)) go("/chat");
   };
 
-  /** Open/close the development sidebar's organization folder (nothing to fetch: its rows are already loaded active rows). */
-  const toggleOrgFolder = (groupKey: string) => {
-    if (searching) return;
-    const key = folderKey(groupKey, "organization");
-    setOpenFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   /** agentId → display name (row hint tooltips in workspace mode). */
   const agentNameById = useMemo(
     () => new Map(agents.map((a) => [a.agentId, agentDisplayName(a)])),
@@ -1364,14 +1368,8 @@ export function Sidebar({
     withAgentHint: boolean,
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
-    /** Desk and ticket Session ids of the Project's organizations (time buckets pass none: their rows were split one level up). */
-    orgIds: ReadonlySet<string> = company.orgSessionIds,
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
-    // Development mode files an organization's desk and ticket Sessions into their own folder
-    // below the active list: a scheduler-driven desk is not one of the user's conversations,
-    // and the company sidebar is where it is listed as itself.
-    const split = partitionOrgSessions(parts.active, orgIds);
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1381,7 +1379,7 @@ export function Sidebar({
     // While searching, the display cap is bypassed — every loaded match shows, and
     // "More" hides (it pages the unfiltered list and would read as "more matches",
     // which the server cannot promise).
-    const orderedActive = orderSessionRows(split.active, (s) => s.sessionId, {
+    const orderedActive = orderSessionRows(parts.active, (s) => s.sessionId, {
       pinned: pinnedSessions,
       sortMode: effectiveSortMode,
       order: sessionOrder,
@@ -1406,8 +1404,7 @@ export function Sidebar({
     const hiddenActive = searching
       ? 0
       : hiddenRowCount({
-          // The organization folder's rows are shown too — they left the active list, not the page.
-          shown: shownActive.length + split.organization.length,
+          shown: shownActive.length,
           loaded: parts.active.length,
           total: totals?.active ?? 0,
           fullyLoaded,
@@ -1415,13 +1412,11 @@ export function Sidebar({
     // "Show less" appears once the group is revealed past its first page and there is
     // something for it to hide again.
     const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && split.active.length > SIDEBAR_PAGE_SIZE;
+      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
-    const orgFolder = renderOrgFolder(groupKey, split.organization, withAgentHint);
-    const empty =
-      split.active.length === 0 && orgFolder === null && folders.every((f) => f === null);
+    const empty = parts.active.length === 0 && folders.every((f) => f === null);
     const activePending = pendingLoads.has(loadKey(groupKey, "active"));
     return (
       <>
@@ -1463,32 +1458,11 @@ export function Sidebar({
           />
         )}
 
-        {/* Folders (collapsed by default): the organization's desks and ticket sessions first
-            (they are conversations of this group's Agents too, just not the user's own), then
-            subagent — spawned from the conversations at hand — then scheduled background
-            runs, then archived (archived wins over the origin folders). */}
-        {orgFolder}
+        {/* Folders (collapsed by default): subagent — spawned from the conversations at hand
+            — then scheduled background runs, then archived (archived wins over the origin
+            folders). */}
         {folders}
       </>
-    );
-  };
-
-  /**
-   * The development sidebar's automatic organization folder: the group's desk and ticket
-   * Sessions, collapsed by default like the other folders. Nothing is fetched on expand — the
-   * rows are active rows already in memory — and while searching it is forced open like the
-   * rest, so a match is never hidden.
-   */
-  const renderOrgFolder = (groupKey: string, rows: SessionInfo[], withAgentHint: boolean) => {
-    if (rows.length === 0) return null;
-    return (
-      <FolderSection
-        label={S.chat.folderGroups.organization(rows.length)}
-        open={searching || openFolders.has(folderKey(groupKey, "organization"))}
-        onToggle={() => toggleOrgFolder(groupKey)}
-      >
-        {renderRows(rows, withAgentHint)}
-      </FolderSection>
     );
   };
 
@@ -1780,14 +1754,21 @@ export function Sidebar({
         {inCompany ? (
           navOrg !== null && (
             /* Company mode: the organization's channels, where development mode lists
-               conversations. Its desk and ticket sessions are one menu away, in the list's
-               own header — they are not a second list. */
-            <ChannelSidebar
-              projectId={navOrg.projectId}
-              orgId={navOrg.orgId}
-              activeSessionId={activeSessionId}
-              {...(onNavigate ? { onNavigate } : {})}
-            />
+               conversations, and below them its own two groups — one row per employee's
+               desk, and the sessions attached to tickets. */
+            <>
+              <ChannelSidebar
+                projectId={navOrg.projectId}
+                orgId={navOrg.orgId}
+                {...(onNavigate ? { onNavigate } : {})}
+              />
+              <OrgSessionGroups
+                projectId={navOrg.projectId}
+                orgId={navOrg.orgId}
+                activeSessionId={activeSessionId}
+                {...(onNavigate ? { onNavigate } : {})}
+              />
+            </>
           )
         ) : (
           <>
@@ -2217,7 +2198,6 @@ export function Sidebar({
                             true,
                             undefined,
                             () => [],
-                            NO_ORG_SESSIONS,
                           )}
                     </div>
                   );
@@ -2225,14 +2205,11 @@ export function Sidebar({
 
                 {/* Empty only when the shared folders below are empty too (renderGroupBody's own
                 rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
-                {timeGroups.length === 0 &&
-                  !searching &&
-                  (timeSplit === null || timeSplit.organization.length === 0) &&
-                  timeFolders.every((f) => f === null) && (
-                    <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-                      {S.chat.noSessions}
-                    </p>
-                  )}
+                {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
+                  <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                    {S.chat.noSessions}
+                  </p>
+                )}
 
                 {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
                 puts them, so the row that pulls one belongs to the list, not to a bucket —
@@ -2251,12 +2228,8 @@ export function Sidebar({
                     />
                   )}
 
-                {/* The shared, Project-wide folders (see timeFolders), the organization's rows first. */}
-                <div className="pt-2.5">
-                  {timeSplit !== null &&
-                    renderOrgFolder(TIME_FOLDERS_GROUP_KEY, timeSplit.organization, true)}
-                  {timeFolders}
-                </div>
+                {/* The shared, Project-wide folders (see timeFolders). */}
+                <div className="pt-2.5">{timeFolders}</div>
               </>
             )}
 

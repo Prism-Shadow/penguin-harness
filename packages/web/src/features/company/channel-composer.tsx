@@ -23,8 +23,16 @@ import {
 } from "./channel-mentions";
 import type { MentionCandidate, MentionKind } from "./channel-mentions";
 
-/** The box grows with the draft up to this many pixels, then scrolls inside. */
+/** The box grows with the draft up to this many pixels, then scrolls inside (`max-h-40`). */
 const MAX_BOX_PX = 160;
+
+/**
+ * The composer's resting height, shared by the box and the send button so the two read as one
+ * control: a 20px line (`leading-5`) plus 2×9px of padding plus the 1px border on each side.
+ * The button carries it as `h-10`; the box reaches it through `min-h-10` and keeps it as it
+ * grows, because the measurement below adds the border back.
+ */
+const ROW_PX = 40;
 
 function kindTitle(kind: MentionKind): string {
   if (kind === "employee") return S.company.channels.employees;
@@ -58,12 +66,15 @@ export function ChannelComposer({
   const active = suggestions[Math.min(highlight, Math.max(0, suggestions.length - 1))];
 
   // The box follows its content up to the cap, so a long draft stays in view without a
-  // scrollbar appearing at the second line.
+  // scrollbar appearing at the second line. `scrollHeight` is content + padding and the box
+  // is border-box, so the border has to be added back — without it every line would be set
+  // 2px short and the box would scroll against itself from the very first one.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, MAX_BOX_PX)}px`;
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = `${Math.min(Math.max(el.scrollHeight + border, ROW_PX), MAX_BOX_PX)}px`;
   }, [text]);
 
   const pick = (c: MentionCandidate) => {
@@ -160,7 +171,7 @@ export function ChannelComposer({
               }}
               onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
               onKeyDown={onKeyDown}
-              className="block max-h-40 min-h-[2.75rem] w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-2.5 text-sm leading-relaxed placeholder:text-gray-400 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:placeholder:text-gray-500"
+              className="block max-h-40 min-h-10 w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-[9px] text-sm leading-5 placeholder:text-gray-400 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:placeholder:text-gray-500"
             />
           }
         >
@@ -199,8 +210,11 @@ export function ChannelComposer({
             ))}
           </div>
         </Dropdown>
+        {/* `items-end` on the row plus a fixed height here: the button stays welded to the
+            box's bottom edge as the box grows for a multi-line draft. */}
         <Button
           variant="primary"
+          className="h-10 shrink-0"
           disabled={sending || text.trim() === ""}
           onClick={() => void send()}
         >

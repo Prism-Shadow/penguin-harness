@@ -140,16 +140,21 @@ describe("company store event routing", () => {
     expect(store.getState().versions.messages).toBe(2);
   });
 
-  it("drops the open organization's channels when another one is opened", () => {
+  it("drops the open organization's channels and roster when another one is opened", () => {
     const store = createCompanyStore();
     store.setState({
       currentOrgKey: "p1/acme",
       channels: [channel({ unread: 3 })],
       channelUnread: 3,
+      orgChart: { ceoAgentId: "ceo", employees: [] },
+      orgChartError: "boom",
     });
     store.getState().setCurrentOrg("p1/other");
     expect(store.getState().channels).toBeNull();
     expect(store.getState().channelUnread).toBe(0);
+    // The 工位 group's roster belongs to the organization it was read for.
+    expect(store.getState().orgChart).toBeNull();
+    expect(store.getState().orgChartError).toBeNull();
   });
 
   it("bumps the version of each family, and the organization list for the ones that change a summary", () => {

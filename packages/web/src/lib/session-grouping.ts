@@ -410,19 +410,38 @@ export function pinnedFirst<T>(
 }
 
 /**
- * Splits a group's active conversations into the ones an organization owns — desk and
- * ticket Sessions, by id — and the rest. Development mode files the organization's rows
- * into an automatic "organization" folder like the subagent / scheduled folders, so a
- * scheduler-driven desk does not sit among the user's own conversations; an empty id set
- * (company mode off, or nothing loaded yet) leaves every row where it was.
+ * Splits a group's conversations into the user's own and the ones an organization owns —
+ * its desk and ticket Sessions, which the sessions DTO marks with the owning `orgId`.
+ *
+ * Development mode lists only the first half: an organization's Sessions are driven by its
+ * scheduler, not by the user, and company mode's sidebar lists them as themselves (工位 /
+ * 工单会话). They are still COUNTED here, because the server's per-category totals include
+ * them: a group whose whole remainder is organizational must offer no "more" row, and
+ * subtracting what was dropped is what keeps that row honest.
  */
-export function partitionOrgSessions<T extends { sessionId: string }>(
-  active: readonly T[],
-  orgSessionIds: ReadonlySet<string>,
-): { active: T[]; organization: T[] } {
-  if (orgSessionIds.size === 0) return { active: [...active], organization: [] };
+export function partitionOrgSessions<T extends { sessionId: string; orgId?: string }>(
+  rows: readonly T[],
+): { own: T[]; organization: T[] } {
   const own: T[] = [];
   const organization: T[] = [];
-  for (const s of active) (orgSessionIds.has(s.sessionId) ? organization : own).push(s);
-  return { active: own, organization };
+  for (const s of rows) (s.orgId === undefined || s.orgId === "" ? own : organization).push(s);
+  return { own, organization };
+}
+
+/**
+ * The development list's own rows.
+ *
+ * `companyModeAvailable` is the whole policy, and it is required rather than defaulted so
+ * every call site has to answer it: the server stamps `orgId` on an organization's Sessions
+ * whichever way the company-mode switches stand, so with company mode unavailable — the
+ * admin's master switch off, or the user's own — there is no sidebar that lists them, and
+ * hiding them here would put them out of reach entirely. They then stay in the development
+ * list as ordinary conversations.
+ */
+export function withoutOrgSessions<T extends { sessionId: string; orgId?: string }>(
+  rows: readonly T[],
+  companyModeAvailable: boolean,
+): T[] {
+  if (!companyModeAvailable) return [...rows];
+  return partitionOrgSessions(rows).own;
 }

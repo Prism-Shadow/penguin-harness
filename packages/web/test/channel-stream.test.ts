@@ -1,6 +1,7 @@
 /**
  * channel-stream.ts unit tests: day separators and sender runs, the unread divider at the read
- * cursor, day arithmetic for the separators and paging, and the immutable live append.
+ * cursor, which hop counts are worth a chip, day arithmetic for the separators and paging,
+ * and the immutable live append.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
@@ -9,6 +10,7 @@ import {
   buildStream,
   dayKind,
   earlierDay,
+  hopChipShown,
   lastMessageId,
   messageCount,
   shiftDate,
@@ -120,5 +122,15 @@ describe("appendMessage, lastMessageId and messageCount", () => {
     expect(lastMessageId(rolled)).toBe(b1.id);
     expect(messageCount(rolled)).toBe(3);
     expect(lastMessageId([{ date: "2026-09-02", messages: [] }])).toBeNull();
+  });
+});
+
+describe("hopChipShown", () => {
+  it("says nothing about the first hop and marks every chain from the second", () => {
+    // Hop 0 is a person writing, hop 1 an employee answering a trigger: both ordinary.
+    expect(hopChipShown(0)).toBe(false);
+    expect(hopChipShown(1)).toBe(false);
+    expect(hopChipShown(2)).toBe(true);
+    expect(hopChipShown(5)).toBe(true);
   });
 });
