@@ -583,6 +583,14 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
       updated = { ...updated, title };
+      // The list learns of a rename it did not make — the CLI's `--title`, another tab —
+      // the same way it learns of a generated one: the generator publishes this exact
+      // event, and the row handler is already listening for it.
+      deps.notifyProjectUsers(row.projectId, {
+        type: "session_title",
+        sessionId: row.sessionId,
+        title,
+      });
     }
     if (approvalMode !== undefined) {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.

@@ -30,6 +30,11 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
+import {
+  TerminalsAcrossMachines,
+  isRemoteTerminalRef,
+  relayTerminalStream,
+} from "../machines/terminal-relay.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
@@ -178,7 +183,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       })
       .map(([group]) => group);
 
-    const terminals = new TerminalManager(ctx.resources, {
+    // Answers `get` for a pty on a machine too (machines/terminal-relay.ts).
+    const terminals = new TerminalsAcrossMachines(ctx.resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => caps?.hmr.assetsDir() ?? null,
     });
@@ -332,7 +338,26 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       }),
       http,
       terminals: () => terminals,
-      attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
+      attachStream: (ws, session, url, log) => {
+        // A pty on a machine: relay to that machine's own stream through the connection
+        // this server holds. The runtime handed the socket over exactly as for a local pty.
+        if (isRemoteTerminalRef(session)) {
+          const business = deps;
+          void relayTerminalStream(
+            ws,
+            session,
+            url,
+            {
+              proxyTarget: (id) =>
+                business === null ? Promise.resolve(null) : business.machines.proxyTarget(id),
+              isAdmin: (userId) => business?.authService.isAdmin(userId) === true,
+            },
+            log,
+          );
+          return;
+        }
+        bindTerminalStream(ws, session, url, log);
+      },
       business: () => business,
       // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.

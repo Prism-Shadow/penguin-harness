@@ -2252,13 +2252,18 @@ export type ServerEvent =
   | { type: "hello" }
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
-  /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
+  /**
+   * A Session now exists. On the user channel for every creation — the CLI, another tab,
+   * a schedule, an agent spawning a child — so the list learns about rows it did not make;
+   * and on the parent Session's channel for a subagent, so a tab watching the parent run
+   * refreshes in place. `source` is absent for a user-created Session, as it is on the row.
+   */
   | {
       type: "session_created";
       projectId: string;
       agentId: string;
       sessionId: string;
-      source: SessionSource;
+      source?: SessionSource;
     }
   | ScheduleServerEvent
   | GoalServerEvent;
