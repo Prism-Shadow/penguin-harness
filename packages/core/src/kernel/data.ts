@@ -94,9 +94,16 @@ export function dataExtends(
     const members = splitUnion(b);
     if (members !== null) return members.some((m) => dataExtends(a, m, types, seen));
   }
-  // Intersections.
+  // Intersections. On the right, both halves must hold. On the left, the halves only
+  // mean something together — `{ a } & { b }` is `{ a; b }` — so object members are
+  // merged into one shape first; only when a half is not an object does either half
+  // alone have to fit.
   if (isOp(b, "&")) return dataExtends(a, b[0], types, seen) && dataExtends(a, b[2], types, seen);
-  if (isOp(a, "&")) return dataExtends(a[0], b, types, seen) || dataExtends(a[2], b, types, seen);
+  if (isOp(a, "&")) {
+    const merged = mergeIntersection(a, types);
+    if (merged !== null) return dataExtends(merged, b, types, seen);
+    return dataExtends(a[0], b, types, seen) || dataExtends(a[2], b, types, seen);
+  }
   // Arrays, in either spelling.
   const aElem = isArrayForm(a) ? a[0] : typeof a === "string" ? arrayElem(a) : null;
   const bElem = isArrayForm(b) ? b[0] : typeof b === "string" ? arrayElem(b) : null;
@@ -147,6 +154,45 @@ function objectExtends(
     if (aIndex !== undefined && !dataExtends(aIndex, bIndex, types, seen)) return false;
   }
   return true;
+}
+
+/**
+ * `A & B & …` as one object definition, when every member (references followed) is a
+ * plain object; null otherwise. A key both sides carry keeps both constraints, as an
+ * intersection of its own; a key required by any member is required.
+ */
+function mergeIntersection(d: Def, types: TypeTable): { [k: string]: Def } | null {
+  const members: Array<{ [k: string]: Def }> = [];
+  const collect = (x: Def): boolean => {
+    if (isOp(x, "&")) return collect(x[0]) && collect(x[2]);
+    const ref = refOf(x);
+    const resolved = ref === null ? x : types[ref];
+    if (resolved === undefined || !isJsonObject(resolved) || refOf(resolved) !== null) return false;
+    members.push(resolved);
+    return true;
+  };
+  if (!collect(d)) return null;
+  const out: { [k: string]: Def } = {};
+  const seenKeys = new Map<string, { def: Def; optional: boolean }>();
+  for (const m of members) {
+    for (const [k, def] of Object.entries(m)) {
+      if (k === "[string]") {
+        out["[string]"] = "[string]" in out ? [out["[string]"]!, "&", def!] : def!;
+        continue;
+      }
+      const optional = k.endsWith("?");
+      const name = optional ? k.slice(0, -1) : k;
+      const have = seenKeys.get(name);
+      seenKeys.set(
+        name,
+        have === undefined
+          ? { def: def!, optional }
+          : { def: [have.def, "&", def!], optional: have.optional && optional },
+      );
+    }
+  }
+  for (const [name, { def, optional }] of seenKeys) out[optional ? `${name}?` : name] = def;
+  return out;
 }
 
 /** Whether `undefined` fits the definition — an optional parameter's test. */

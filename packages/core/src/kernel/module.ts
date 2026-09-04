@@ -547,14 +547,31 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
     if (value === undefined) throw new ModuleBootError(`no api '${alias}' on module '${module}'`);
     return value;
   };
-  const disposeAll = () => {
-    for (const name of [...created].reverse()) {
-      const entry = instances.get(name)!;
-      for (const dispose of entry.disposers.reverse()) dispose();
-      entry.disposers.length = 0;
+  /** Runs every disposer, newest first, through failures; the failures come back together. */
+  const drain = (disposers: Array<() => void>): unknown[] => {
+    const failures: unknown[] = [];
+    for (const dispose of disposers.reverse()) {
+      try {
+        dispose();
+      } catch (err) {
+        failures.push(err);
+      }
     }
-    created.length = 0;
-    instances.clear();
+    disposers.length = 0;
+    return failures;
+  };
+  const disposeAll = () => {
+    const failures: unknown[] = [];
+    try {
+      for (const name of [...created].reverse())
+        failures.push(...drain(instances.get(name)!.disposers));
+    } finally {
+      created.length = 0;
+      instances.clear();
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, `${failures.length} disposers failed`);
   };
   try {
     for (const n of order) {
@@ -596,25 +613,41 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
         effect: (dispose) => disposers.push(dispose),
       };
       const context = migrateContext(n.def, opts.parked?.[mf.name]);
-      const inst = await n.def.create(ctx, context);
-      for (const alias of Object.keys(mf.provides)) {
-        const value = inst.api[alias];
-        if (value === null || (typeof value !== "object" && typeof value !== "function")) {
-          throw new ModuleBootError(`${mf.name}: create() returned no api for provides.${alias}`);
-        }
-        const decl = provides[mf.name]![alias]!;
-        const missing = Object.keys(decl.methods).filter(
-          (m) => typeof (value as Record<string, unknown>)[m] !== "function",
-        );
-        const absent = Object.entries(decl.fields ?? {})
-          .filter(([, expr]) => !("maybe" in expr))
-          .filter(([f]) => (value as Record<string, unknown>)[f] === undefined)
-          .map(([f]) => f);
-        if (missing.length > 0 || absent.length > 0) {
-          throw new ModuleBootError(
-            `${mf.name}: api '${alias}' does not satisfy '${decl.name}': missing [${[...missing, ...absent].join(", ")}]`,
+      // Effects registered while this module is being created are its own to release when
+      // it fails — the outer cleanup only knows the modules that made it into `instances`.
+      let inst: ModuleInstance;
+      try {
+        inst = await n.def.create(ctx, context);
+      } catch (err) {
+        drain(disposers);
+        throw err;
+      }
+      const validate = () => {
+        for (const alias of Object.keys(mf.provides)) {
+          const value = inst.api[alias];
+          if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+            throw new ModuleBootError(`${mf.name}: create() returned no api for provides.${alias}`);
+          }
+          const decl = provides[mf.name]![alias]!;
+          const missing = Object.keys(decl.methods).filter(
+            (m) => typeof (value as Record<string, unknown>)[m] !== "function",
           );
+          const absent = Object.entries(decl.fields ?? {})
+            .filter(([, expr]) => !("maybe" in expr))
+            .filter(([f]) => (value as Record<string, unknown>)[f] === undefined)
+            .map(([f]) => f);
+          if (missing.length > 0 || absent.length > 0) {
+            throw new ModuleBootError(
+              `${mf.name}: api '${alias}' does not satisfy '${decl.name}': missing [${[...missing, ...absent].join(", ")}]`,
+            );
+          }
         }
+      };
+      try {
+        validate();
+      } catch (err) {
+        drain(disposers);
+        throw err;
       }
       instances.set(mf.name, { inst, disposers });
       created.push(mf.name);

@@ -28,6 +28,12 @@ const meta = {
 
 const text = fs.readFileSync(inPath, "utf8");
 const table = JSON.parse(text);
+/** For anything from the command line that lands in the page: a ref name may carry `<`. */
+const esc = (s) =>
+  String(s).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+  );
 if (typeof table.hash !== "string") {
   console.error(`iface-page: ${inPath} carries no hash — regenerate it with gen-ifaces`);
   process.exit(1);
@@ -83,9 +89,9 @@ summary { cursor: pointer; color: var(--muted); }
 <body>
 <header>
   <h1>module tree</h1>
-  <span class="hash" title="sha256 of the interface table">${table.hash}</span>
+  <span class="hash" title="sha256 of the interface table">${esc(table.hash)}</span>
   <a href="ifaces.json">ifaces.json</a>
-  ${meta.repo ? `<a href="https://github.com/${meta.repo}/commit/${meta.sha}"><code>${meta.sha.slice(0, 7)}</code> ${meta.ref}</a>` : ""}
+  ${meta.repo ? `<a href="https://github.com/${esc(meta.repo)}/commit/${encodeURIComponent(meta.sha)}"><code>${esc(meta.sha.slice(0, 7))}</code> ${esc(meta.ref)}</a>` : ""}
   <input id="q" type="search" placeholder="filter nodes and interfaces">
 </header>
 <main>
@@ -201,7 +207,9 @@ document.getElementById("tree").addEventListener("click", (e) => {
 });
 document.getElementById("q").addEventListener("input", (e) => {
   const q = e.target.value.trim().toLowerCase();
-  document.querySelectorAll("nav li[data-name]").forEach((li) => {
+  // Descendants first (reverse document order): a parent stays visible while a child
+  // matches, and that has to be this query's answer, not the previous one's.
+  [...document.querySelectorAll("nav li[data-name]")].reverse().forEach((li) => {
     li.classList.toggle("hidden", q !== "" && !li.dataset.name.toLowerCase().includes(q) && !li.querySelector("li[data-name]:not(.hidden)"));
   });
 });

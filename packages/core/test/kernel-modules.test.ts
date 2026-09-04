@@ -11,6 +11,7 @@ import {
   checkTree,
   Component,
   defineModule,
+  extendsExpr,
   Interface,
   Module,
   ModuleBootError,
@@ -176,6 +177,22 @@ const tree = (...children: Manifest[]) => ({
   children: children.map((manifest) => ({ manifest, children: [] })),
 });
 
+describe("extendsExpr", () => {
+  it("a pair that fails is not remembered as holding by the next branch that meets it", () => {
+    const t: IfaceTable = {
+      "a#A": { name: "A", methods: { x: { params: [], returns: str } }, slots: {} },
+      "a#B": { name: "B", methods: { x: { params: [], returns: num } }, slots: {} },
+    };
+    const seen = new Set<string>();
+    expect(extendsExpr({ iface: "a#A" }, { iface: "a#B" }, t, seen)).toBe(false);
+    expect(seen.size).toBe(0);
+    // The first member fails; the second is the same pair and must fail the same way.
+    expect(extendsExpr({ iface: "a#A" }, { oneOf: [{ iface: "a#B" }, { iface: "a#B" }] }, t)).toBe(
+      false,
+    );
+  });
+});
+
 describe("checkTree", () => {
   it("passes a consistent tree", () => {
     expect(checkTree(tree(http, sessions, scheduler), table).problems).toEqual([]);
@@ -240,6 +257,72 @@ describe("checkTree", () => {
     const t = { ...table, "inner#Sessions": Sessions };
     expect(checkTree(root, t).problems).toEqual([
       expect.objectContaining({ kind: "unresolved", why: "not visible from here" }),
+    ]);
+  });
+  it("a module cannot require itself, nor an ancestor — created after its children, its api is not there yet", () => {
+    const selfish = manifest({
+      name: "scheduler",
+      requires: { runner: { iface: "ScheduleTaskRunner", from: "scheduler" } },
+    });
+    expect(checkTree(tree(http, sessions, selfish), table).problems).toEqual([
+      expect.objectContaining({ kind: "unresolved", from: "scheduler", why: "itself" }),
+    ]);
+
+    const byName = manifest({
+      name: "inner",
+      requires: { sessions: { iface: "Sessions", from: "outer" } },
+    });
+    const unnamed = manifest({ name: "inner", requires: { sessions: { iface: "Sessions" } } });
+    const outerOf = (inner: Manifest) => ({
+      manifest: platform,
+      children: [
+        {
+          manifest: manifest({
+            name: "outer",
+            provides: { sessions: "Sessions" },
+            children: ["inner"],
+          }),
+          children: [{ manifest: inner, children: [] }],
+        },
+      ],
+    });
+    const t = { ...table, "outer#Sessions": Sessions, "inner#Sessions": Sessions };
+    expect(checkTree(outerOf(byName), t).problems).toEqual([
+      expect.objectContaining({
+        kind: "unresolved",
+        from: "outer",
+        why: expect.stringContaining("an ancestor"),
+      }),
+    ]);
+    expect(checkTree(outerOf(unnamed), t).problems).toEqual([
+      expect.objectContaining({ kind: "unresolved", from: "" }),
+    ]);
+  });
+
+  it("a contribution reaches a parent or a sibling, not another subtree's child", () => {
+    const parentSlot = {
+      manifest: platform,
+      children: [
+        {
+          manifest: manifest({ name: "http", provides: { http: "Http" }, children: ["sessions"] }),
+          children: [{ manifest: sessions, children: [] }],
+        },
+      ],
+    };
+    expect(checkTree(parentSlot, table).problems).toEqual([]);
+
+    const hidden = {
+      manifest: platform,
+      children: [
+        {
+          manifest: manifest({ name: "wrapper", children: ["http"] }),
+          children: [{ manifest: http, children: [] }],
+        },
+        { manifest: sessions, children: [] },
+      ],
+    };
+    expect(checkTree(hidden, table).problems).toEqual([
+      expect.objectContaining({ kind: "no-such-slot", slotKey: "http.routes" }),
     ]);
   });
 });
@@ -385,6 +468,83 @@ describe("bootModules", () => {
         parked: { counter: { v: 2, self: { n: "x" } } },
       }),
     ).rejects.toThrow(ModuleBootError);
+  });
+  it("dispose runs every effect even when one throws, and reports the failures together", async () => {
+    const released: string[] = [];
+    const root = defineModule(platform, {
+      create: () => ({ api: {} }),
+      children: [
+        defineModule(http, {
+          create(ctx) {
+            ctx.effect(() => {
+              released.push("http");
+            });
+            return { api: { http: { handle: async () => null } } };
+          },
+        }),
+        defineModule(sessions, {
+          create(ctx) {
+            ctx.effect(() => {
+              throw new Error("sessions boom");
+            });
+            ctx.effect(() => {
+              released.push("sessions");
+            });
+            return { api: { sessions: sessionsApi }, bind: { "sessions.routes": "HANDLER" } };
+          },
+        }),
+        defineModule(scheduler, {
+          create(ctx) {
+            ctx.effect(() => {
+              released.push("scheduler");
+            });
+            return { api: {} };
+          },
+        }),
+      ],
+    });
+    const booted = await bootModules(root, { ifaces: table, resources });
+    expect(() => booted.dispose()).toThrow("sessions boom");
+    expect(released.sort()).toEqual(["http", "scheduler", "sessions"]);
+    expect(booted.has("sessions")).toBe(false);
+  });
+
+  it("a module that fails to create, or creates an api that does not satisfy, releases its own effects", async () => {
+    const released: string[] = [];
+    const failing = (body: () => never | { api: Record<string, unknown> }) =>
+      defineModule(platform, {
+        create: () => ({ api: {} }),
+        children: [
+          defineModule(http, { create: () => ({ api: { http: { handle: async () => null } } }) }),
+          defineModule(sessions, {
+            create(ctx) {
+              ctx.effect(() => {
+                released.push("sessions");
+              });
+              return body();
+            },
+          }),
+          defineModule(scheduler, { create: () => ({ api: {} }) }),
+        ],
+      });
+    await expect(
+      bootModules(
+        failing(() => {
+          throw new Error("no sessions today");
+        }),
+        { ifaces: table, resources },
+      ),
+    ).rejects.toThrow("no sessions today");
+    expect(released).toEqual(["sessions"]);
+
+    released.length = 0;
+    await expect(
+      bootModules(
+        failing(() => ({ api: { sessions: {} } })),
+        { ifaces: table, resources },
+      ),
+    ).rejects.toThrow("does not satisfy");
+    expect(released).toEqual(["sessions"]);
   });
 });
 
