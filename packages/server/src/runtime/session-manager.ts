@@ -90,10 +90,9 @@ import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { mergedNoProxy } from "../net/proxy.js";
-import { userChannelKey } from "../http/routes/events.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
+import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -2349,8 +2348,7 @@ export class SessionsModule {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
-  @Use() private readonly projectsRepo!: Projects;
-  @Use() private readonly membersRepo!: Members;
+  @Use() private readonly projectEvents!: ProjectEvents;
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
   @Use() private readonly orgCache!: OrgCache;
@@ -2429,17 +2427,8 @@ export class SessionsModule {
         }),
     };
 
-    const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
-      const ownerUserId = this.projectsRepo.findById(projectId)?.ownerUserId;
-      if (ownerUserId === undefined) return;
-      const audience = new Set([
-        ownerUserId,
-        ...this.membersRepo.list(projectId).map((m) => m.userId),
-      ]);
-      for (const userId of audience) {
-        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-      }
-    };
+    const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
+      this.projectEvents.notifyProjectUsers(projectId, event);
     const titles = this.titleGenerators.create({
       sessions: sessionsRepo,
       channels,
@@ -2482,6 +2471,7 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
+      notifyProjectUsers,
       messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide
       // organization sessions and the company sidebar can group its own. The caches are a

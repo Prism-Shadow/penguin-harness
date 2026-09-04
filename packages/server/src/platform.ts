@@ -97,6 +97,7 @@ import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
+import { ProjectNotifier } from "./services/project-events.js";
 import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
@@ -115,6 +116,7 @@ import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
 import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
+import { TerminalRelay } from "./machines/terminal-relay.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -136,6 +138,7 @@ import {
   ModelOAuth,
   ModelProviderAuthTokens,
   ProjectConfigStore,
+  ProjectEvents,
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
@@ -272,6 +275,7 @@ export class IdentityModule {}
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
+    ProjectNotifier,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
@@ -292,6 +296,7 @@ export class IdentityModule {}
     PlatformAuth,
     ModelScopeAuth,
     InitialProjectProvisioner,
+    ProjectEvents,
   ],
 })
 export class ProjectsModule {}
@@ -462,6 +467,7 @@ export class WorkflowsModule {}
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
+    TerminalRelay,
     WorkflowsModule,
     Startup,
   ],
