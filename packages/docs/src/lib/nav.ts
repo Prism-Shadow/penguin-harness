@@ -36,7 +36,7 @@ export const DOCS_NAV: DocsSectionDef[] = [
       { slug: "introduction" },
       {
         slug: "quickstart",
-        children: ["quickstart-desktop", "quickstart-cli", "quickstart-sdk"],
+        children: ["quickstart-desktop", "quickstart-cli", "quickstart-docker", "quickstart-sdk"],
       },
     ],
   },

@@ -1,0 +1,5 @@
+# The image installs PenguinHarness from the published npm package, so the build context
+# needs nothing from this repository except the entrypoint script. Excluding everything
+# else keeps .git, node_modules and every package's dist out of the builder.
+*
+!docker

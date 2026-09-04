@@ -1,0 +1,269 @@
+# Docker: build the official image and publish it to GHCR.
+#
+# Three entry points, two jobs:
+# - pull_request touching the image's own files: `smoke` builds for amd64 and actually runs the
+#   container — readiness, sign-in, the healthcheck, the unprivileged user, a graceful stop and a
+#   restart onto the same data root. It builds PENGUIN_VERSION=latest, so it proves the Dockerfile
+#   rather than the PR's code (the image installs a published npm package; see the Dockerfile).
+# - workflow_call from release.yml's `docker` job, after `publish-npm` has landed the tag's version.
+# - workflow_dispatch for a manual re-publish, mirroring release.yml's own dispatch input.
+name: Docker
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+      push:
+        description: "Push to GHCR (false builds without publishing)"
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+      push:
+        description: "Push to GHCR (false builds without publishing)"
+        required: false
+        default: true
+        type: boolean
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker/**
+      - .github/workflows/docker.yml
+
+concurrency:
+  group: docker-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: ghcr.io/prism-shadow/penguin-harness
+
+jobs:
+  # Build once and put the container through the contract the docs promise. Only amd64: this
+  # job exists to catch a broken Dockerfile in minutes, and the arm64 leg of a release build
+  # compiles node-pty under QEMU.
+  smoke:
+    name: Build and run (amd64)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: penguin-harness:pr
+          build-args: PENGUIN_VERSION=latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Nothing about the image is root-only, so the entrypoint's privilege drop is observable
+      # from a one-off run: `id -u` goes through the same entrypoint the server does.
+      - name: Entrypoint drops to uid 1000
+        run: |
+          uid="$(docker run --rm penguin-harness:pr id -u)"
+          echo "entrypoint ran the command as uid $uid"
+          [ "$uid" = "1000" ]
+
+      - name: Start the container
+        run: |
+          docker run -d --name penguin -p 7364:7364 \
+            -e PENGUIN_SEED_ADMIN_PASSWORD=ci-password-123 \
+            -v penguin-data:/data \
+            penguin-harness:pr
+
+      - name: Wait for the server
+        run: |
+          for _ in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:7364/api/install > /tmp/install.json; then
+              jq -e '.installId | type == "string" and (. | length) > 0' /tmp/install.json
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "error: the server did not answer /api/install within 90s" >&2
+          docker logs penguin >&2
+          exit 1
+
+      # The pinned seed password suppresses the first-login notice, so a successful login is
+      # what proves the seed ran; /api/version then proves the session cookie is usable.
+      - name: Sign in and read the version
+        run: |
+          code="$(curl -s -o /tmp/login.json -w '%{http_code}' -c /tmp/cookies.txt \
+            -H 'content-type: application/json' \
+            -d '{"userId":"admin","password":"ci-password-123"}' \
+            http://127.0.0.1:7364/api/auth/login)"
+          if [ "$code" != "200" ]; then
+            echo "error: login answered $code" >&2
+            cat /tmp/login.json >&2
+            exit 1
+          fi
+          curl -fsS -b /tmp/cookies.txt http://127.0.0.1:7364/api/version > /tmp/version.json
+          jq -e '.version | type == "string"' /tmp/version.json
+
+      # web.db was created by the server itself, so its owner is the euid the server runs as.
+      - name: Data root belongs to the unprivileged user
+        run: |
+          owners="$(docker exec penguin stat -c '%n %u:%g' /data /data/web.db)"
+          echo "$owners"
+          [ "$(docker exec penguin stat -c %u /data)" = "1000" ]
+          [ "$(docker exec penguin stat -c %u /data/web.db)" = "1000" ]
+
+      - name: HEALTHCHECK reports healthy
+        run: |
+          for _ in $(seq 1 90); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' penguin)"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then break; fi
+            sleep 1
+          done
+          echo "error: healthcheck ended in '$status'" >&2
+          docker inspect -f '{{json .State.Health}}' penguin >&2
+          exit 1
+
+      # tini forwards SIGTERM to `penguin server`, which forwards it to the service child; the
+      # service interrupts running Tasks, waits for them to wrap up and closes the database.
+      # An idle server has nothing to drain, so this is a matter of a second, not the grace period.
+      - name: Stops gracefully
+        run: |
+          start="$(date +%s)"
+          docker stop -t 30 penguin
+          elapsed="$(( $(date +%s) - start ))"
+          code="$(docker inspect -f '{{.State.ExitCode}}' penguin)"
+          echo "stopped in ${elapsed}s with exit code $code"
+          [ "$code" = "0" ]
+          [ "$elapsed" -lt 15 ]
+
+      # The lock left behind by the stopped process must not refuse the next start, and the
+      # data root must come back with its user intact rather than being seeded a second time.
+      - name: Restarts onto the same data root
+        run: |
+          docker start penguin
+          for _ in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:7364/api/install > /dev/null; then break; fi
+            sleep 1
+          done
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            -d '{"userId":"admin","password":"ci-password-123"}' \
+            http://127.0.0.1:7364/api/auth/login)"
+          if [ "$code" != "200" ]; then
+            echo "error: login after restart answered $code" >&2
+            docker logs penguin >&2
+            exit 1
+          fi
+
+      - name: Container log
+        if: always()
+        run: docker logs penguin || true
+
+  publish:
+    name: Build and push
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # `latest` moves only when the tag is GitHub's current latest Release, so re-publishing an
+      # older tag cannot demote the newest image. `X.Y` is emitted only for a plain X.Y.Z tag —
+      # a prerelease has no meaningful minor line to move.
+      - name: Resolve the version and its tags
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          V="${TAG#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "minor=${V%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "minor=" >> "$GITHUB_OUTPUT"
+            echo "$TAG is not a plain X.Y.Z tag; publishing the exact version only."
+          fi
+
+      - name: Determine whether the tag is the latest Release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          LATEST_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          if [ "$TAG" = "$LATEST_TAG" ]; then
+            echo "update=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG will be published without moving :latest (current latest: $LATEST_TAG)."
+          fi
+
+      # The image installs the published package, and publish-npm runs in parallel with the rest
+      # of the release: `needs` guarantees the publish step returned, not that the registry serves
+      # the version yet. Tests `npm view`'s output rather than its exit code, for the reason the
+      # publish job documents: a missing version exits 0 on older npm and 1 on newer, and only the
+      # output distinguishes the two.
+      - name: Wait for the npm package
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          for _ in $(seq 1 120); do
+            if [ -n "$(npm view "@prismshadow/penguin-cli@$V" version 2>/dev/null || true)" ]; then
+              echo "@prismshadow/penguin-cli@$V is on the registry."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "error: @prismshadow/penguin-cli@$V did not reach the npm registry within 20 minutes" >&2
+          exit 1
+
+      # arm64 is emulated: the release image is built on one x64 runner, and node-pty compiles
+      # under QEMU on that leg (minutes, not hours).
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.minor }},enable=${{ steps.version.outputs.minor != '' }}
+            type=raw,value=latest,enable=${{ steps.latest.outputs.update == 'true' }}
+
+      # provenance is off: the attestation manifest it attaches shows up in the package listing as
+      # an "unknown/unknown" platform, which is worse for a reader than the attestation is worth.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: PENGUIN_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false

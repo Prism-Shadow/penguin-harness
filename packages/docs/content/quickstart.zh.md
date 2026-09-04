@@ -3,19 +3,20 @@ title: 快速开始
 description: 桌面端、命令行、SDK 三条路线，挑一条装好 PenguinHarness 并跑通第一个 Task。
 ---
 
-PenguinHarness 有三条入口，背后是同一个引擎，区别只在你以什么方式接触它。先挑一条适合自己的，各自的页面会把你一路带到第一个 Task：
+PenguinHarness 有四条入口，背后是同一个引擎，区别只在你以什么方式接触它。先挑一条适合自己的，各自的页面会把你一路带到第一个 Task：
 
 | 路线 | 适合 | 需要用终端吗 |
 | --- | --- | --- |
 | [桌面端应用](/quickstart-desktop) | 想直接把 PenguinHarness 当成一个应用来用 | 不需要——而且它会替你装好 `penguin` 命令 |
 | [命令行与 Web 应用](/quickstart-cli) | 装到服务器或远程机器，或想要 `penguin` 命令 | 安装时用一次 |
+| [Docker](/quickstart-docker) | 部署而非安装——一个容器、一个卷 | 启动时用一次 |
 | [SDK](/quickstart-sdk) | 把引擎嵌进自己的 TypeScript 程序 | 需要 |
 
 拿不准就选[桌面端应用](/quickstart-desktop)：它步骤最少，而且换到另一条路线不用重来。macOS 与 Windows 的安装包均已签名，只有下载来的 Linux AppImage 在首次启动前需要一步操作，那一页里写了。
 
-## 三条路线共用什么
+## 各条路线共用什么
 
-- **同一个数据目录**：`~/.penguin/data`（Windows 为 `%USERPROFILE%\.penguin\data`）。Agent、模型配置与历史会话互通，所以三条路线可以随时混用——桌面端配好的模型，CLI 与 SDK 立刻就能用。
+- **同一个数据目录**：`~/.penguin/data`（Windows 为 `%USERPROFILE%\.penguin\data`；容器内为 `/data`）。Agent、模型配置与历史会话都在其中，因此同机的几条路线可以随时混用——桌面端配好的模型，CLI 与 SDK 立刻就能用。
 - **同一时刻只有一个服务端**：一个数据目录只跑一个服务端进程。命令行已经用 `penguin web` 启动过实例时，桌面端应用会直接接入它，而不是再起一个。
 - **同一套界面**：桌面端应用与 `penguin web` 打开的是同一个 Web App，只是前者内嵌了服务端、免去登录。
 
@@ -29,4 +30,5 @@ PenguinHarness 不内置任何模型凭据，跑第一个 Task 之前必须先�
 
 - [桌面端应用](/quickstart-desktop)：双击安装，打开即已登录。
 - [命令行与 Web 应用](/quickstart-cli)：一行安装 `penguin`，含完整的安装参考。
+- [Docker](/quickstart-docker)：官方镜像，用于经网络访问的服务端。
 - [SDK](/quickstart-sdk)：在自己的程序里创建 Agent 与 Session。
