@@ -12,6 +12,7 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
  * Under a Project because the page is, and because this Project's Model credentials go to
@@ -61,9 +62,13 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.post("/:machineId/install", async (c) => {
+    // `replaceProgram`: the answer to a job that came back asking for it (see the job's
+    // canReplaceProgram). Read leniently — an absent body is the ordinary install.
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const started = await deps.machines.startInstall(
       requireValidId(c, "projectId"),
       c.req.param("machineId"),
+      body.replaceProgram === true,
     );
     if (!started.ok) {
       // Each refusal is its own code: the page renders a sentence per case, and "no image"
@@ -149,6 +154,28 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:machineId/release", (c) => {
     deps.machines.release(requireValidId(c, "projectId"), c.req.param("machineId"));
     return c.json(state(c));
+  });
+
+  /**
+   * Restarts that machine's server: stop, then start on the same port. What makes it worth a
+   * control of its own is that a machine's FILES can be brought forward while it runs — a
+   * replicated store, an install that matched — and only a restart makes the process match
+   * them. 202, or 409 when a job already runs.
+   */
+  app.post("/:machineId/restart", async (c) => {
+    const started = await deps.machines.startRestart(c.req.param("machineId"));
+    if (!started.ok) {
+      if (started.why === "busy")
+        throw new HttpError(409, "job_running", "A job is already running.");
+      if (started.why === "unknown-machine") {
+        throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+      }
+      if (started.why === "self") {
+        throw new HttpError(409, "self_restart", "That is the machine this server runs on.");
+      }
+      throw new HttpError(409, "not_installed", "Nothing is installed on that machine yet.");
+    }
+    return c.json(state(c), 202);
   });
 
   app.post("/:machineId/disconnect", (c) => {

@@ -226,9 +226,14 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
         errors.record({ source: "process", err, code: "trace_adoption_failed" });
       });
-      // Machines: re-hold every connection the record says was held, starting a remote
-      // server that is down on the way. Fire-and-forget for the same reason: a host that is
-      // slow to answer must not hold up the App that serves everything else.
+      // Machines, in one sweep (service.ts start()): a push here is a push everywhere, so
+      // this App booting hands the same build on to any machine still carrying a different
+      // one — cheap when there is nothing to do, since which machines are behind is read
+      // from the install records, not asked over the network — and then re-holds every
+      // connection the record says was held, starting a remote server that is down on the
+      // way and handing each its Model config as it connects. Fire-and-forget for the same
+      // reason as the adoption sweep: a host that is slow to answer must not hold up the
+      // App that serves everything else.
       void deps.machines.start().catch((err: unknown) => {
         errors.record({ source: "process", err, code: "machines_reconnect_failed" });
       });
@@ -255,6 +260,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
     //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - machine tunnels     ssh children + machines-connect.json (pid/port) → adopted by
+    //                         the successor's tunnelPortFor, which checks the pid is alive
     //   - runtime singletons  db / auth / channels / config / proxy / desktop —
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
@@ -290,6 +297,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
       terminals.quiesce();
+      // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
+      // processes that keep forwarding across the swap, and the successor adopts them by the
+      // pid recorded in web.db (machines/service.ts).
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();

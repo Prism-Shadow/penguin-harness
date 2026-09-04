@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
+import { FAR_SIDE_SCRIPTS } from "../../scripts/far-side-scripts.mjs";
 
 export default defineConfig({
   // Explicitly name entries to preserve subpath exports: "./api", "./lock",
@@ -40,16 +41,22 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  // The release installers, as REAL files beside the bundles. A remote install scp's one to
-  // the far side and runs it there, resolving it next to this module — so it has to exist in
-  // dist/, which `files: ["dist"]` is what npm ships. tsup only emits its entries, and these
-  // are copied and never imported, so nothing in the module graph would pull them along.
-  // A missing source throws here, which fails the build rather than shipping a package whose
+  // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
+  // a remote install feeds to the far side (the one thing that has to arrive before the CLI
+  // does; everything after is a `penguin` subcommand the machine already has). Each is
+  // resolved next to this module at runtime, so each has to exist in dist/ —
+  // which `files: ["dist"]` is what npm ships. tsup only emits its entries, and these are
+  // copied and never imported, so nothing in the module graph would pull them along. A
+  // missing source throws here, failing the build rather than shipping a package whose
   // Machines page dies at "prepare the installer".
+  //
+  // The SET comes from scripts/far-side-scripts.mjs, shared with the hot push that has to
+  // ship the same one (see that module): two hand-kept copies drifted once already.
   onSuccess: async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
-    for (const name of ["install.sh", "install.ps1"]) {
-      fs.copyFileSync(path.join(here, "..", "..", name), path.join(here, "dist", name));
+    const repo = path.join(here, "..", "..");
+    for (const { name, from } of FAR_SIDE_SCRIPTS) {
+      fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }
   },
 });

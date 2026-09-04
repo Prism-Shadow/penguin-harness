@@ -130,7 +130,7 @@ export interface UpgradeAllTarget {
  * directory whose materialization was interrupted; no asset path can collide with it
  * (assets arrive as `node_modules/...` paths).
  */
-const MATERIALIZED = ".materialized";
+export const MATERIALIZED = ".materialized";
 
 export type UpgradeOutcome =
   | {

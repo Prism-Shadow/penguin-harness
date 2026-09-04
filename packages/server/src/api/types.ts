@@ -3370,7 +3370,8 @@ export interface MachineInfo {
   /**
    * What the last probe found over there, or null when none has been taken. Never filled in
    * at list time: a probe costs an ssh round trip per machine, so the list reports the last
-   * answer and the page asks for a fresh one when it wants one.
+   * answer and the page asks for a fresh one when it wants one — on a widening schedule,
+   * since each probe is an ssh round trip while the list is only the config's text.
    */
   status: MachineServerStatus | null;
 }
@@ -3397,7 +3398,7 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  kind: "install" | "connect";
+  kind: "install" | "connect" | "restart";
   machineId: string;
   alias: string;
   running: boolean;
@@ -3406,7 +3407,19 @@ export interface MachineJob {
     | null
     | { ok: true; installed: "installed" | "already-installed"; version: string | null }
     | { ok: true; connected: true }
-    | { ok: false; step: string; message: string };
+    | {
+        ok: false;
+        step: string;
+        message: string;
+        /**
+         * The failure has a next step this side can take, and it needs saying yes to:
+         * installing the PROGRAM over there and restarting it. Set when a hot update could
+         * not be handed over — the machine's store holds no CLI this server can talk to, and
+         * installing is what replicates one. Offered rather than done, because it restarts a
+         * server this Project does not own alone.
+         */
+        canReplaceProgram?: true;
+      };
 }
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */

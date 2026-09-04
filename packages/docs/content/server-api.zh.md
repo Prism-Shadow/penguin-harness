@@ -114,9 +114,10 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/projects/:projectId/machines | 本机，加上**服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、每台最近一次探测到的状态、本服务端会安装的版本，以及正在运行或最近一次的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
 | POST | /api/projects/:projectId/machines/probe | 询问本 Project 已安装的机器各自的状态（每台一次 ssh 往返，并发 5）并返回带有最新状态的列表 |
-| POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
+| POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行。请求体 `{replaceProgram: true}` 用于回答任务给出的那个提议：即便版本已一致也照装不误，并重启它 |
 | POST | /api/projects/:projectId/machines/:machineId/connect | 把该机器的服务端拉起来，并**持有**对它的那唯一一条连接——一个 `ssh -T -D` 会话，不会因空闲而关闭，断了会自行重建，服务端重启或热推之后也会恢复；返回 `202` 与同样的响应体，此时连接任务已在运行。Windows 机器返回 `409` `connect_unsupported`：那边没有可以持有会话的 shell |
 | POST | /api/projects/:projectId/machines/:machineId/disconnect | 断开连接。远端服务端**保持运行**——那是那台机器自己的服务端，别人可能正在上面 |
+| POST | /api/projects/:projectId/machines/:machineId/restart | 停止该机器的服务端并在同一端口重新启动；返回 `202`，若已有任务在跑则 `409`。它值得成为一个独立操作，是因为一台机器的**文件**可以在它运行时被更新，而只有重启才能让进程与之相符 |
 | GET | /api/projects/:projectId/machines/:machineId/dirs?path= | 该机器上 `path` 的子目录，经由持有的连接读取——工作区选择器浏览的就是它。与代理一样，按机器**自身的 id** 寻址。机器未连接时返回 `404`：读取从不自行打开 ssh |
 | POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 
@@ -134,7 +135,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由本服务端持有的那一条 ssh 会话拨达——是该会话内部的一个 channel（走它的 SOCKS 端口），从不是第二条连接。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。**仅限管理员**，且只有一个身份：请求在对端以那台机器的管理员身份发出，会话由本服务端通过自己的 ssh 权限铸造（在机器上执行 `penguin auth token`）——浏览器的 cookie 不会过去，机器的 cookie 也不会回来。只有 `/api` 会被转发——前端始终是本地的。
 
-安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）是同一形状的任务，以 `job.kind` 区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接为 `{ok: true, connected: true}`，失败为 `{ok: false, step, message}`。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
+安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）与重启（`POST …/restart`）是同一形状的任务，以 `job.kind`（`install` / `connect` / `restart`）区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接与重启为 `{ok: true, connected: true}`，失败为 `{ok: false, step, message, canReplaceProgram?}`——`canReplaceProgram` 标记一种下一步是「无论如何都安装程序」的失败（`POST …/install` 带 `{replaceProgram: true}`），只提供选项而不自动执行，因为它会重启一个别人可能正在用的服务端。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
 
 在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端不会把这份构建盖到自己正在运行的程序目录上。除 `local` 那一行之外，指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
 
