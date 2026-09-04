@@ -399,8 +399,18 @@ export class WorkflowService implements Workflows {
   private watch(projectId: string, agentId: string): void {
     const k = `${projectId}/${agentId}`;
     if (this.watchers.has(k) || this.disposed) return;
-    const dir = workflowsDir(this.paths.root, projectId, agentId);
-    if (!fs.existsSync(dir)) return;
+    const declared = workflowsDir(this.paths.root, projectId, agentId);
+    if (!fs.existsSync(declared)) return;
+    // Watch the REAL path: libuv compares each event's filename against the string it was
+    // given, and a Windows short name (`RUNNER~1\…`, which is what os.tmpdir() hands back
+    // on a CI runner) never matches the long name the events carry — the mismatch trips an
+    // assertion inside fs-event.c and aborts the whole process, which no `try` can catch.
+    let dir: string;
+    try {
+      dir = fs.realpathSync.native(declared);
+    } catch {
+      dir = declared;
+    }
     let watcher: fs.FSWatcher;
     try {
       watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
