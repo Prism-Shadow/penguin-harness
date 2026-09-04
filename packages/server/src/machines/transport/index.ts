@@ -11,7 +11,12 @@
  * waits for the first. A trigger — a probe request, a boot sweep, an install — never brings a
  * connection of its own.
  */
-export { MachineConnection, closeConnectionTo, connectionTo } from "./connection.js";
+export {
+  MachineConnection,
+  closeAllConnections,
+  closeConnectionTo,
+  connectionTo,
+} from "./connection.js";
 export type { MachineChannel } from "./connection.js";
 export { sessionOf } from "./ssh-session.js";
 export type { ShellSession } from "./ssh-session.js";

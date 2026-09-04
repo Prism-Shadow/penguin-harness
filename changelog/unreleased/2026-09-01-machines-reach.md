@@ -34,4 +34,6 @@ Addressed by the machine's **own id** ([#568](https://github.com/Prism-Shadow/pe
 
 `POST …/connect` is a job of the same shape as an install, `job.kind` telling them apart. `POST …/disconnect` drops the connection and leaves the remote server running — it is that machine's own, and other people may be on it. `GET …/dirs?path=` lists a machine's subdirectories over the connection, so choosing a directory on it costs one command and no round trip to its API.
 
-An App that boots reconnects what was connected, five machines at a time, closing the session the previous generation left behind on its way.
+A held connection stays held: it never idles out, and one that drops — a network blip, keepalives giving up on a dead link — is re-established by the transport itself, with a backoff, until a disconnect lets it go. Connections belong to the generation that opened them: a hot push closes every one this generation holds on its way out, and the next re-holds each the record says was held, five machines at a time, starting a remote server that is down on the way. Nothing is ever closed by a pid remembered from before.
+
+A Windows machine cannot be connected yet — its sshd hands commands to cmd.exe, and there is no shell to hold a session on — and `POST …/connect` says so up front (`409` `connect_unsupported`) rather than failing a POSIX command in the job's log. Browsing a machine's directories requires a held connection: `GET …/dirs` is `404` on a disconnected machine and opens nothing.

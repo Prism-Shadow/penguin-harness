@@ -30,7 +30,13 @@ import type { MachineInfo, MachineJob, MachineServerStatus } from "../api/types.
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
-import { closeConnectionTo, connectionTo, listHostAliases, sessionOf } from "./transport/index.js";
+import {
+  closeAllConnections,
+  closeConnectionTo,
+  connectionTo,
+  listHostAliases,
+  sessionOf,
+} from "./transport/index.js";
 import type { MachineConnection, ShellSession } from "./transport/index.js";
 import { machineIdentity } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
@@ -40,12 +46,12 @@ import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { mintTokenOnRemote } from "./remote-token.js";
 import { startRemoteServer } from "./server-control.js";
-import type { MachinesRepo } from "../db/repos/machines.js";
+import type { MachineRow, MachinesRepo } from "../db/repos/machines.js";
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 /** Why a connect was refused before any ssh ran. */
-type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self";
+type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
 
 /**
  * What this service does to the world, injectable as a set. Production passes none of them;
@@ -62,8 +68,8 @@ export interface MachinesEffects {
   /** One command on a machine, over its shared shell. */
   runOn: (target: RemoteTarget, command: string) => Promise<ExecResult>;
   startServer: (target: RemoteTarget, port: number) => ReturnType<typeof startRemoteServer>;
-  /** Brings the one connection to a machine up. */
-  open: (target: RemoteTarget) => ReturnType<MachineConnection["open"]>;
+  /** Brings the one connection to a machine up and HOLDS it (transport/connection.ts). */
+  hold: (target: RemoteTarget) => ReturnType<MachineConnection["hold"]>;
   /** The connection held to a machine, while it is up. */
   session: (address: string) => ShellSession | null;
   /** An http.Agent that dials that machine's server through its session. */
@@ -74,16 +80,6 @@ export interface MachinesEffects {
 
 /** The id of the entry standing for the machine this server runs on. */
 const LOCAL_MACHINE_ID = "local";
-
-/** True when a pid names a process this account can see (EPERM still means it is there). */
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
 
 /** How many machines are worked on at once by the automatic sweeps and the probe. */
 const CONCURRENCY = 5;
@@ -136,7 +132,7 @@ export class MachinesService {
       probe: probeServerState,
       runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, this.#effects.runOn),
-      open: (target) => connectionTo(target).open(),
+      hold: (target) => connectionTo(target).hold(),
       session: (address) => sessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       now: () => new Date(),
@@ -180,29 +176,39 @@ export class MachinesService {
 
   /**
    * The connection held to a machine, or null. This generation's own: a hot-swapped platform
-   * starts with none and reconnects (autoConnect), closing the session the record names on
-   * its way — the previous generation's child, which nothing else would kill before its
-   * idle timer.
+   * starts with none — the generation before closed what it opened on its way out (stop) —
+   * and re-holds every machine the record says was held (start).
    */
   #liveSession(address: string): ShellSession | null {
     return this.#effects.session(address);
   }
 
-  /** Brings the connection to a machine up, if it is not, and records it. */
+  /**
+   * Holds the connection to a machine — brought up if it is not, promoted if a passing probe
+   * already opened it — and records that it is held. The transport keeps it from here: no
+   * idle timer, reopened on its own when it drops, until disconnect().
+   */
   async #connection(
     address: string,
     target: RemoteTarget,
   ): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
-    const live = this.#liveSession(address);
-    if (live !== null) return { ok: true, session: live };
-    const recorded = this.repo.get(address)?.sessionPid;
-    if (recorded != null && recorded !== process.pid && pidAlive(recorded)) {
-      closeConnectionTo(address, recorded); // A previous generation's, or a stale one.
+    const held = await this.#effects.hold(target);
+    if (!held.ok) return held;
+    if (this.repo.get(address)?.sessionPid !== held.session.pid) {
+      this.repo.patch(address, { sessionPid: held.session.pid });
     }
-    const opened = await this.#effects.open(target);
-    if (!opened.ok) return opened;
-    this.repo.patch(address, { sessionPid: opened.session.pid });
-    return opened;
+    return held;
+  }
+
+  /**
+   * The row to speak to a machine through, by its OWN id. Two aliases for one host are two
+   * rows with one id: the one with a live session is the one to use, and failing that the
+   * repo's own order (newest install first), so the choice is the same on every call rather
+   * than whichever row SQLite happened to return.
+   */
+  #rowFor(machineId: string): MachineRow | null {
+    const rows = this.repo.byMachineId(machineId);
+    return rows.find((row) => this.#liveSession(row.address) !== null) ?? rows[0] ?? null;
   }
 
   /**
@@ -304,7 +310,7 @@ export class MachinesService {
    * anyway, and a machine nobody asks about is simply not measured.
    */
   noteApiSeen(machineId: string, outcome: { ok: true } | { ok: false; detail: string }): void {
-    const address = this.repo.byMachineId(machineId)?.address;
+    const address = this.#rowFor(machineId)?.address;
     if (address === undefined) return;
     const at = this.#effects.now().toISOString();
     this.#apiSeen.set(
@@ -321,7 +327,7 @@ export class MachinesService {
   async proxyTarget(
     machineId: string,
   ): Promise<{ agent: http.Agent; port: number; cookie: string } | null> {
-    const row = this.repo.byMachineId(machineId);
+    const row = this.#rowFor(machineId);
     if (row === null || row.remotePort === null || this.#liveSession(row.address) === null) {
       return null;
     }
@@ -336,8 +342,10 @@ export class MachinesService {
   }
 
   /**
-   * The subdirectories of `dir` on a machine, over the shared shell — so picking a
-   * workspace on it costs one command and no round trip to its API.
+   * The subdirectories of `dir` on a machine, over the HELD connection — so picking a
+   * workspace on it costs one command and no round trip to its API. Null when the machine is
+   * not connected: a read must not open ssh on its own, or a disconnected machine would be
+   * reconnected by whoever browsed it.
    */
   async listDirs(
     machineId: string,
@@ -347,8 +355,8 @@ export class MachinesService {
     parent: string | null;
     entries: { name: string; path: string }[];
   } | null> {
-    const row = this.repo.byMachineId(machineId);
-    if (row === null) return null;
+    const row = this.#rowFor(machineId);
+    if (row === null || this.#liveSession(row.address) === null) return null;
     const target = this.#targetOf(row.address.slice("ssh:".length));
     const result = await this.#effects.runOn(target, listDirsCommand(dir));
     if (result.code !== 0) return null;
@@ -384,24 +392,28 @@ export class MachinesService {
     const queue = this.list(projectId).filter((m) => !m.local && m.installed !== null);
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
-        const checkedAt = this.#effects.now().toISOString();
-        const target = this.#targetOf(machine.alias);
-        const probe = await this.#effects.probe(
-          target,
-          this.#effects.runOn,
-          this.repo.get(machine.id)?.platform ?? null,
-        );
-        const state = probe.state;
-        this.#statuses.set(machine.id, {
-          state: state.kind,
-          checkedAt,
-          ...(state.kind === "running" ? { port: state.port } : {}),
-          ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
-        });
-        this.#rememberMachineId(machine.id, probe.machineId);
+        await this.#refreshStatus(machine.id, this.#targetOf(machine.alias));
       }
     });
     await Promise.all(workers);
+  }
+
+  /**
+   * Writes down what a probe just said — the status, and the id if it gave one. EVERY probe
+   * goes through here, the scheduled round and a connect's own alike: a connect that started
+   * a server and heard it answer is the freshest fact there is about that machine, and a page
+   * that still showed it stopped until the next scheduled round would be reporting an older
+   * answer over a newer one.
+   */
+  #recordProbe(address: string, probe: Awaited<ReturnType<MachinesEffects["probe"]>>): void {
+    const state = probe.state;
+    this.#statuses.set(address, {
+      state: state.kind,
+      checkedAt: this.#effects.now().toISOString(),
+      ...(state.kind === "running" ? { port: state.port } : {}),
+      ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
+    });
+    this.#rememberMachineId(address, probe.machineId);
   }
 
   /**
@@ -447,19 +459,16 @@ export class MachinesService {
    * having worked.
    */
   async #refreshStatus(address: string, target: RemoteTarget): Promise<void> {
-    const probe = await this.#effects.probe(
+    this.#recordProbe(address, await this.#probe(address, target));
+  }
+
+  /** One probe of a machine, in the dialect its install found it to speak. */
+  #probe(address: string, target: RemoteTarget): ReturnType<MachinesEffects["probe"]> {
+    return this.#effects.probe(
       target,
       this.#effects.runOn,
       this.repo.get(address)?.platform ?? null,
     );
-    const state = probe.state;
-    this.#statuses.set(address, {
-      state: state.kind,
-      checkedAt: this.#effects.now().toISOString(),
-      ...(state.kind === "running" ? { port: state.port } : {}),
-      ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
-    });
-    this.#rememberMachineId(address, probe.machineId);
   }
 
   // --- jobs ---------------------------------------------------------------------------------
@@ -573,6 +582,11 @@ export class MachinesService {
       return { ok: false, why: "self" };
     }
     if (machine.installed === null) return { ok: false, why: "not-installed" };
+    // A Windows remote has no `sh` to hold a session on (transport/connection.ts), so there
+    // is no connection to hold, no SOCKS port to dial its API through, and no shell to browse
+    // it with. Said here, in one sentence, rather than discovered as a POSIX command failing
+    // under cmd.exe in the job's log.
+    if (this.repo.get(address)?.platform === "win32") return { ok: false, why: "unsupported" };
     this.#startJob("connect", machine, (say) => this.#connect(machine, say));
     return { ok: true };
   }
@@ -587,15 +601,25 @@ export class MachinesService {
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
     // that failed, or pick up a new key) now costs one probe and stays honest.
     say("Asking what is running there…");
-    const platform = this.repo.get(address)?.platform ?? null;
-    const probed = await this.#effects.probe(target, this.#effects.runOn, platform);
+    const probed = await this.#probe(address, target);
+    this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
       // Reported in the machine's own words: OpenSSH's diagnostic, or the CLI's. What to do
       // about a machine whose store holds no CLI this server can talk to is a later problem
       // — this one is honest about not having reached it.
       return { ok: false, step: "connect", message: probed.state.detail };
     }
-    this.#rememberMachineId(address, probed.machineId);
+    // The refusal startConnect made from the record, made again from what was just heard: an
+    // alias never probed before, or one repointed here since, answers this server's own id
+    // only now — and a connection "to" it would be a tunnel from this server back to itself.
+    if (probed.machineId !== null && probed.machineId === this.#machineId) {
+      return {
+        ok: false,
+        step: "connect",
+        message:
+          "That alias reaches this very machine — it answered with this server's own id. There is nothing to connect to.",
+      };
+    }
     let remotePort: number;
     if (probed.state.kind === "running") {
       remotePort = probed.state.port;
@@ -605,9 +629,9 @@ export class MachinesService {
       say(`Starting its server on port ${remotePort}…`);
       const started = await this.#effects.startServer(target, remotePort);
       if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
-      // A machine mints its id when its server starts, so one that was down had none.
-      const again = await this.#effects.probe(target, this.#effects.runOn, platform);
-      this.#rememberMachineId(address, again.machineId);
+      // A machine mints its id when its server starts, so one that was down had none — and
+      // its port and pid are now the freshest fact about it.
+      this.#recordProbe(address, await this.#probe(address, target));
     }
 
     say("Opening the connection…");
@@ -623,14 +647,34 @@ export class MachinesService {
    * machine's own server, and other people may be on it.
    */
   disconnect(address: string): void {
-    closeConnectionTo(address, this.repo.get(address)?.sessionPid);
+    closeConnectionTo(address);
     this.#sessions.delete(address);
     if (this.repo.get(address) !== null) {
       this.repo.patch(address, { sessionPid: null });
     }
   }
 
-  // --- the automatic sweeps, run when an App boots ----------------------------------------------
+  // --- the generation's lifetime: what an App does at boot and on its way out ------------------
+
+  /**
+   * Re-holds every connection the record says was held — a restart or a hot push in between
+   * notwithstanding — five machines at a time, starting a server that is down on the way.
+   * Only those: an explicit disconnect cleared its record, and a machine merely installed on
+   * was never asked for. Called by the platform at boot and not awaited there: a host that is
+   * slow to answer must not hold up the App that serves everything else.
+   */
+  async start(): Promise<void> {
+    await this.autoConnect();
+  }
+
+  /**
+   * Closes every connection THIS generation opened — the platform's dispose effect on a hot
+   * push. The record of which were held stays, so the successor's start() brings each back.
+   * Nothing here closes by a remembered pid: the child handles are this generation's own.
+   */
+  stop(): void {
+    closeAllConnections();
+  }
 
   /** Runs `work` with this machine's slot held, or returns null when it is already busy. */
   async #withMachine<T>(address: string, work: () => Promise<T>): Promise<T | null> {
@@ -661,10 +705,15 @@ export class MachinesService {
     await Promise.all(workers);
   }
 
-  /** Connects every installed machine that has no connection, starting its server if it is down. */
+  /** Re-holds every machine recorded as held that this generation does not yet hold. */
   async autoConnect(): Promise<void> {
     const unconnected = this.#allMachines().filter(
-      (m) => !m.local && m.installed !== null && m.connection === null,
+      (m) =>
+        !m.local &&
+        m.installed !== null &&
+        m.connection === null &&
+        this.repo.get(m.id)?.sessionPid != null &&
+        this.repo.get(m.id)?.platform !== "win32",
     );
     await this.#sweep(
       unconnected.map((m) => m.id),

@@ -226,6 +226,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
         errors.record({ source: "process", err, code: "trace_adoption_failed" });
       });
+      // Machines: re-hold every connection the record says was held, starting a remote
+      // server that is down on the way. Fire-and-forget for the same reason: a host that is
+      // slow to answer must not hold up the App that serves everything else.
+      void deps.machines.start().catch((err: unknown) => {
+        errors.record({ source: "process", err, code: "machines_reconnect_failed" });
+      });
     }
 
     // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
@@ -261,6 +267,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //                         commands (dev servers etc.) that would otherwise run on
     //                         orphaned and invisible to the successor's fresh Session
     //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
+    //   - machine connections stop() closes every ssh session this generation opened;
+    //                         successor start() re-holds each the record says was held
     // DETACHED (the object survives, this App's grip on it does not):
     //   - pty exit listeners  unsubscribed, so a dead generation never releases a
     //                         registry id the successor owns
@@ -286,6 +294,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       if (business !== null) {
         business.scheduler.stop();
         business.messaging.stop();
+        business.machines.stop();
         drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
       }
       drained = Promise.allSettled(drains).then(() => undefined);

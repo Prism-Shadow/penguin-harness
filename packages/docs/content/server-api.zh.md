@@ -115,9 +115,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/projects/:projectId/machines | 本机，加上**服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、每台最近一次探测到的状态、本服务端会安装的版本，以及正在运行或最近一次的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
 | POST | /api/projects/:projectId/machines/probe | 询问本 Project 已安装的机器各自的状态（每台一次 ssh 往返，并发 5）并返回带有最新状态的列表 |
 | POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
-| POST | /api/projects/:projectId/machines/:machineId/connect | 把该机器的服务端拉起来，并对它保持那唯一的一条连接——一个 `ssh -T -D` 会话；返回 `202` 与同样的响应体，此时连接任务已在运行 |
+| POST | /api/projects/:projectId/machines/:machineId/connect | 把该机器的服务端拉起来，并**持有**对它的那唯一一条连接——一个 `ssh -T -D` 会话，不会因空闲而关闭，断了会自行重建，服务端重启或热推之后也会恢复；返回 `202` 与同样的响应体，此时连接任务已在运行。Windows 机器返回 `409` `connect_unsupported`：那边没有可以持有会话的 shell |
 | POST | /api/projects/:projectId/machines/:machineId/disconnect | 断开连接。远端服务端**保持运行**——那是那台机器自己的服务端，别人可能正在上面 |
-| GET | /api/projects/:projectId/machines/:machineId/dirs?path= | 该机器上 `path` 的子目录，经由共享 shell 读取——工作区选择器浏览的就是它。与代理一样，按机器**自身的 id** 寻址 |
+| GET | /api/projects/:projectId/machines/:machineId/dirs?path= | 该机器上 `path` 的子目录，经由持有的连接读取——工作区选择器浏览的就是它。与代理一样，按机器**自身的 id** 寻址。机器未连接时返回 `404`：读取从不自行打开 ssh |
 | POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 
 无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，也从不解析：列表就是配置的文本（无论声明了几百台主机都只是一次文件读取），而别名原样交给 ssh——它的含义由 ssh 自己按自己的配置、每次都重新决定。

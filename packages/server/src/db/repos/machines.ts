@@ -16,7 +16,12 @@ export interface MachineRow {
   /** What this server last installed there; null when it never has. */
   version: string | null;
   installedAt: string | null;
-  /** The ssh session this server holds to it — recorded so a successor generation can close it. */
+  /**
+   * Non-null while a connection to it is HELD: the pid of the session as of the last connect.
+   * A record of intent, not a handle — a restart or a hot push re-holds every machine with one,
+   * and a disconnect clears it. It is never used to kill anything: a pid read back from a file
+   * may by then be anyone's.
+   */
   sessionPid: number | null;
   /** The port its server was bound to over there, as of the last connect. */
   remotePort: number | null;
@@ -60,9 +65,18 @@ export class MachinesRepo {
     return row === undefined ? null : toRow(row);
   }
 
-  byMachineId(machineId: string): MachineRow | null {
-    const row = this.db.prepare("SELECT * FROM machines WHERE machine_id = ?").get(machineId);
-    return row === undefined ? null : toRow(row);
+  /**
+   * Every row answering to a machine's own id — two aliases for one host are two rows with
+   * one id. Newest install first, then by address, so the order is the same every time; which
+   * of them to speak through is the service's to decide (it knows which has a session).
+   */
+  byMachineId(machineId: string): MachineRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM machines WHERE machine_id = ? ORDER BY installed_at DESC, address ASC",
+      )
+      .all(machineId)
+      .map(toRow);
   }
 
   all(): MachineRow[] {

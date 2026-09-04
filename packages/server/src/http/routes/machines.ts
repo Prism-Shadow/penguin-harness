@@ -113,6 +113,13 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
           "Nothing is installed on that machine yet. Install it first.",
         );
       }
+      if (started.why === "unsupported") {
+        throw new HttpError(
+          409,
+          "connect_unsupported",
+          "A Windows machine cannot be connected yet: its sshd hands commands to cmd.exe, and there is no shell to hold a session on.",
+        );
+      }
       throw new HttpError(409, "connect_refused", "That machine cannot be connected to.");
     }
     return c.json(state(c), 202);

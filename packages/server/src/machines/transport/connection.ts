@@ -23,11 +23,25 @@
  * The handle is stateless on purpose: per-machine state stays in ssh-session.ts, keyed by
  * address, so holding a MachineConnection costs nothing and dropping one leaks nothing. The
  * address is always `ssh:<alias>` — the one spelling every registry in machines/ uses.
+ *
+ * LIFETIME. A session a passing command opened is transient and idles out; one a connect
+ * asked to HOLD is kept — reopened by the transport itself when it drops, until a disconnect
+ * closes it. Sessions belong to the generation that opened them: a platform generation on its
+ * way out closes all of its own (closeAllConnections), and the next re-holds what the record
+ * says was held. No session is ever closed by a pid remembered from before.
  */
 import http from "node:http";
 import type net from "node:net";
 import { run, runWithInput } from "./exec.js";
-import { closeShell, openShell, runOnShell, sessionOf } from "./ssh-session.js";
+import {
+  closeAllShells,
+  closeShell,
+  holdShell,
+  isHeld,
+  openShell,
+  runOnShell,
+  sessionOf,
+} from "./ssh-session.js";
 import type { ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
@@ -81,9 +95,19 @@ export class MachineConnection implements MachineChannel {
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
 
-  /** Brings the session up, or says why it cannot be. */
+  /** Brings the session up, or says why it cannot be. Transient: it idles out unused. */
   open(): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
     return openShell(this.address, this.target);
+  }
+
+  /** Brings the session up and KEEPS it — see the module doc — or says why it cannot be. */
+  hold(): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
+    return holdShell(this.address, this.target);
+  }
+
+  /** Whether the session to this machine is a held one. */
+  held(): boolean {
+    return isHeld(this.address);
   }
 
   /** The session while it is up. */
@@ -142,20 +166,16 @@ export function connectionTo(target: RemoteTarget): MachineConnection {
 }
 
 /**
- * Lets go of the connection to a machine. By address rather than on the handle: a disconnect
- * can outlive the resolvability of its target (an alias removed from the ssh config still
- * has a session to close). `pid` collects a session a previous platform generation opened
- * and recorded, which this generation's registry does not know (ssh-session.ts).
+ * Lets go of the connection to a machine, held or not. By address rather than on the handle:
+ * a disconnect can outlive the resolvability of its target (an alias removed from the ssh
+ * config still has a session to close). Only this generation's own registry is consulted —
+ * there is deliberately no way to close a session by a pid remembered from before.
  */
-export function closeConnectionTo(address: string, pid?: number | null): void {
-  const own = sessionOf(address)?.pid;
+export function closeConnectionTo(address: string): void {
   closeShell(address);
-  // Never our own current session, and never this process: the recorded pid can be anything.
-  if (pid != null && pid !== process.pid && pid !== own) {
-    try {
-      process.kill(pid);
-    } catch {
-      // Already gone.
-    }
-  }
+}
+
+/** Every connection this generation opened, closed — the platform's dispose effect. */
+export function closeAllConnections(): void {
+  closeAllShells();
 }

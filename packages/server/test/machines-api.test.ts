@@ -61,7 +61,7 @@ function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> 
     }),
     // The connection: a fake registry this suite marks machines connected in, the way the
     // transport's own registry answers `session` for a held ssh session.
-    open: async (target) => {
+    hold: async (target) => {
       connected.add(`ssh:${target.alias}`);
       return { ok: true, session: { pid: process.pid, socksPort: 1 } };
     },
@@ -587,16 +587,18 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Starting its server");
     });
 
-    it("reconnecting over a live connection to an answering server starts nothing and opens nothing", async () => {
+    it("reconnecting over a live connection to an answering server starts nothing new", async () => {
+      // hold() is idempotent in the transport: it promotes the session in place. What must
+      // not happen is a start — the server is up — and the record must name the held session.
       const starts: number[] = [];
-      let opens = 0;
+      let holds = 0;
       await boot({
         startServer: async (_t, port) => {
           starts.push(port);
           return { ok: true };
         },
-        open: async () => {
-          opens++;
+        hold: async () => {
+          holds++;
           return { ok: true, session: { pid: process.pid, socksPort: 1 } };
         },
       });
@@ -607,7 +609,220 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
       expect(starts).toEqual([]);
-      expect(opens).toBe(0);
+      expect(holds).toBe(1);
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+    });
+
+    it("a connect's own probes are the machine's status: it does not read as stopped until the next round", async () => {
+      let up = false;
+      await boot({
+        probe: async () =>
+          up
+            ? {
+                state: { kind: "running" as const, port: 7364, pid: 4242 },
+                machineId: "LNrJdHAZJ91G58i0",
+              }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async () => {
+          up = true;
+          return { ok: true };
+        },
+      });
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      const nas = (
+        (await (await admin.get(`/api/projects/${PROJECT}/machines`)).json()) as MachinesResponse
+      ).machines.find((m) => m.id === "ssh:nas");
+      expect(nas?.status).toMatchObject({ state: "running", port: 7364 });
+      expect(nas?.machineId).toBe("LNrJdHAZJ91G58i0");
+      expect(nas?.connection).not.toBeNull();
+    });
+
+    it("refuses, from what it just heard, an alias that answers this server's own id", async () => {
+      // Never probed before, so the record could not refuse it; the probe inside the job can.
+      let holds = 0;
+      await boot({
+        probe: async () => ({
+          state: { kind: "running" as const, port: 7364, pid: 1 },
+          machineId: LOCAL_ID,
+        }),
+        hold: async () => {
+          holds++;
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: false, step: "connect" });
+      expect((t.deps.machines.job()?.result as { message: string }).message).toContain(
+        "this server's own id",
+      );
+      expect(holds).toBe(0);
+    });
+
+    it("409s a Windows machine up front: there is no shell to hold a session on", async () => {
+      await boot();
+      installed("9.9.9");
+      machinesRepo.patch("ssh:nas", { platform: "win32" });
+      const res = await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+        "connect_unsupported",
+      );
+      expect(t.deps.machines.job()).toBeNull();
+    });
+
+    it("start() re-holds what the record says was held, and only that", async () => {
+      const heldNow: string[] = [];
+      await boot({
+        hold: async (target) => {
+          heldNow.push(target.alias);
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      // nas was held by the generation before; build-box was installed on but never asked
+      // for, and a Windows host has nothing to hold.
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 424242,
+        remotePort: 7364,
+      });
+      machinesRepo.patch("ssh:build-box", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: null,
+      });
+      await t.deps.machines.start();
+      expect(heldNow).toEqual(["nas"]);
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+      expect(t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.connection).toEqual({
+        pid: process.pid,
+      });
+    });
+
+    it("disconnect clears the record, so a later boot leaves the machine alone", async () => {
+      const heldNow: string[] = [];
+      await boot({
+        hold: async (target) => {
+          heldNow.push(target.alias);
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+
+      await admin.post("/api/projects/default_project/machines/ssh:nas/disconnect");
+      connected.delete("ssh:nas");
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBeNull();
+      heldNow.length = 0;
+      await t.deps.machines.start();
+      expect(heldNow).toEqual([]);
+    });
+  });
+
+  describe("browsing a machine's directories", () => {
+    const ID = "LNrJdHAZJ91G58i0";
+    /** A machine this server holds a connection to, whose id a probe has heard. */
+    const connectedMachine = () => {
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        machineId: ID,
+        remotePort: 7364,
+      });
+      connected.add("ssh:nas");
+    };
+    const listing = (stdout: string) => async (_t: unknown, command: string) =>
+      command.includes("---penguin-dirs---")
+        ? { code: 0, stdout, stderr: "", timedOut: false }
+        : {
+            code: 0,
+            stdout: "---penguin-auth-token---\nremote-token\n",
+            stderr: "",
+            timedOut: false,
+          };
+
+    it("lists the subdirectories at the path the machine resolved, parent included", async () => {
+      const asked: string[] = [];
+      await boot({
+        runOn: async (_t, command) => {
+          asked.push(command);
+          return listing("/home/deploy/work\n---penguin-dirs---\nsrc\nnotes\n")(_t, command);
+        },
+      });
+      connectedMachine();
+      const res = await admin.get(`/api/projects/${PROJECT}/machines/${ID}/dirs?path=~/work`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        path: "/home/deploy/work",
+        parent: "/home/deploy",
+        entries: [
+          { name: "notes", path: "/home/deploy/work/notes" },
+          { name: "src", path: "/home/deploy/work/src" },
+        ],
+      });
+      // The path went to the machine quoted, so a name with a space is one argument there.
+      expect(asked.find((c) => c.includes("---penguin-dirs---"))).toContain("'~/work'");
+    });
+
+    it("404s a directory the machine does not have", async () => {
+      await boot({
+        runOn: async (_t, command) =>
+          command.includes("---penguin-dirs---")
+            ? { code: 3, stdout: "", stderr: "", timedOut: false }
+            : { code: 0, stdout: "", stderr: "", timedOut: false },
+      });
+      connectedMachine();
+      const res = await admin.get(`/api/projects/${PROJECT}/machines/${ID}/dirs?path=/nope`);
+      expect(res.status).toBe(404);
+    });
+
+    it("404s a machine that is not connected, and asks it nothing — a read never opens ssh", async () => {
+      const asked: string[] = [];
+      await boot({
+        runOn: async (_t, command) => {
+          asked.push(command);
+          return { code: 0, stdout: "", stderr: "", timedOut: false };
+        },
+      });
+      connectedMachine();
+      connected.delete("ssh:nas");
+      const res = await admin.get(`/api/projects/${PROJECT}/machines/${ID}/dirs`);
+      expect(res.status).toBe(404);
+      expect(asked).toEqual([]);
+    });
+
+    it("speaks through the alias that holds the session when two aliases share one machine", async () => {
+      const asked: string[] = [];
+      await boot({
+        runOn: async (target, command) => {
+          asked.push(target.alias);
+          return listing("/home/deploy\n---penguin-dirs---\n")(target, command);
+        },
+      });
+      // Both aliases answered the same id; only build-box is connected.
+      machinesRepo.patch("ssh:nas", {
+        machineId: ID,
+        version: "9.9.9",
+        installedAt: "2026-08-02T00:00:00.000Z",
+      });
+      machinesRepo.patch("ssh:build-box", {
+        machineId: ID,
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+      });
+      connected.add("ssh:build-box");
+      const res = await admin.get(`/api/projects/${PROJECT}/machines/${ID}/dirs`);
+      expect(res.status).toBe(200);
+      expect(asked).toEqual(["build-box"]);
     });
   });
 
