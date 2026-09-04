@@ -372,8 +372,6 @@ export const NAV_ICONS = {
     "M5 5h14v14H5zM9 9h6v6H9zM7.5 5V2.4M12 5V2.4M16.5 5V2.4M7.5 19v2.6M12 19v2.6M16.5 19v2.6M5 7.5H2.4M5 12H2.4M5 16.5H2.4M19 7.5h2.6M19 12h2.6M19 16.5h2.6",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
-  /** Plugin marketplace (a power plug: two prongs + body + cable). */
-  plugins: "M9 2v5m6-5v5M6 7h12v3a6 6 0 0 1-12 0zM12 16v6",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   /** Trace observation (an open eye with its pupil): watching what a run actually did. */
   traces: `${EYE_OUTLINE}M14.7 12a2.7 2.7 0 1 1-5.4 0 2.7 2.7 0 0 1 5.4 0z`,

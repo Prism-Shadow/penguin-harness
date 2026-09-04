@@ -26,7 +26,9 @@ import {
 import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,
+  PluginIndexResponse,
   PluginLibraryResponse,
+  PluginReadmeResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
@@ -36,7 +38,6 @@ import type { Access } from "../../mechanisms/projects.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "./hooks.js";
-import type { PluginIndexResponse, PluginReadmeResponse } from "../../api/types.js";
 import { builtinPluginRegistry } from "../../plugin/registry.js";
 
 /** What these route groups reach — bound by their component below. */

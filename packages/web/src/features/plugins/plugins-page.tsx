@@ -43,10 +43,10 @@ import type {
   AgentSummary,
   HookItem,
   PluginGroupItem,
+  PluginIndexEntry,
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
-import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
