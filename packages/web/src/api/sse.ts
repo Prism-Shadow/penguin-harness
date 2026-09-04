@@ -13,6 +13,8 @@
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
+import { apiUrl } from "../lib/server-context";
+import { machineForSession } from "../lib/session-machines";
 
 export interface StreamHandlers {
   /**
@@ -63,10 +65,20 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
 
 /** Subscribes to a Session's output stream (GET /api/sessions/:sessionId/stream). */
 export function openSessionStream(sessionId: string, handlers: StreamHandlers): StreamConnection {
-  return subscribe(`/api/sessions/${encodeURIComponent(sessionId)}/stream`, handlers);
+  // Routed like every other Session call: the stream comes from the machine running it.
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/stream`;
+  return subscribe(apiUrl(path, machineForSession(sessionId)), handlers);
 }
 
-/** Subscribes to the user-level server event stream (GET /api/events; reserved for scheduled-task notifications). */
-export function openUserEvents(handlers: StreamHandlers): StreamConnection {
-  return subscribe("/api/events", handlers);
+/**
+ * Subscribes to the user-level server event stream (GET /api/events) — this server's, or a
+ * machine's through the same-origin proxy. A Session on a machine changes state on THAT
+ * machine's server, and only its stream says so; the list is assembled from every connected
+ * machine, so its liveness has to be too.
+ */
+export function openUserEvents(
+  handlers: StreamHandlers,
+  machineId: string | null = null,
+): StreamConnection {
+  return subscribe(apiUrl("/api/events", machineId), handlers);
 }
