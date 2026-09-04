@@ -116,6 +116,22 @@ export function isTopicFileName(name: string): boolean {
 }
 
 /**
+ * Orders topic file names identically on every host. `localeCompare` is deliberately not used
+ * here: with no locale argument it follows the server's own locale, so the same scope listed its
+ * files one way under `en_US.UTF-8` and another under `zh_CN.UTF-8` — and that order is what an
+ * export document carries. Case-folded first, so `Alpha.md` still sorts between `a.md` and
+ * `beta.md` rather than jumping ahead of both as raw code units would; ties then fall back to
+ * code units so the order is total. `toLowerCase`, never `toLocaleLowerCase` — the locale-aware
+ * one would put the dependency straight back.
+ */
+function compareTopicFileNames(a: string, b: string): number {
+  const foldedA = a.toLowerCase();
+  const foldedB = b.toLowerCase();
+  if (foldedA !== foldedB) return foldedA < foldedB ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
  * Validates a transfer document on its way to the server's disk.
  *
  * Everything here is untrusted: the document may have been hand-written, produced by another
@@ -301,7 +317,7 @@ export class MemoryService {
       return (await fs.readdir(dir, { withFileTypes: true }))
         .filter((e) => e.isFile() && isTopicFileName(e.name))
         .map((e) => e.name)
-        .sort((a, b) => a.localeCompare(b));
+        .sort(compareTopicFileNames);
     } catch {
       return [];
     }
