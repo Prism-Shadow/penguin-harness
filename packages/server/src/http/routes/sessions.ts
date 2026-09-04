@@ -490,7 +490,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
       workspace = await assertWorkspaceAllowed({ workspace });
-      assertWorkspaceOutsidePinnedState(deps, workspace);
+      await assertWorkspaceOutsidePinnedState(deps, workspace);
     }
     const session = await deps.sessionService.createSession({
       projectId,

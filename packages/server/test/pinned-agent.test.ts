@@ -135,11 +135,43 @@ describe("pinned agent", () => {
     await expectPinned(
       await admin.post(`${url}/sessions`, { workspace: path.join(stateDir, "skills") }),
     );
+    // An adjacent sibling only shares a name prefix; it is outside and stays allowed.
+    const sibling = `${stateDir}_backup`;
+    await fs.mkdir(sibling, { recursive: true });
+    expect((await admin.post(`${url}/sessions`, { workspace: sibling })).status).toBe(201);
     // A Workspace elsewhere is unaffected.
     const elsewhere = path.join(t.root, "scratch");
     await fs.mkdir(elsewhere, { recursive: true });
     expect((await admin.post(`${url}/sessions`, { workspace: elsewhere })).status).toBe(201);
   });
+
+  // Skipped on Windows only because creating a directory symlink there needs a privilege CI does
+  // not have; Windows reaches this same shape without one, through 8.3 short names.
+  it.skipIf(process.platform === "win32")(
+    "refuses it through a symlinked data root, where the two paths are spelled differently",
+    async () => {
+      // What macOS and Windows do by default: the Workspace arrives as a realpath while the data
+      // root is spelled some other way — `/var` -> `/private/var` there, an 8.3 short name on
+      // Windows — so the same directory reads as a traversal unless both sides are resolved. On
+      // Linux the spelling has to be arranged; in production PENGUIN_HOME supplies it.
+      await admin.put(`/api/projects/${PROJECT}/models`, {
+        defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+        models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6" }],
+      });
+      const alias = `${t.root}-alias`;
+      await fs.symlink(t.root, alias, "dir");
+      const realRoot = t.deps.config.root;
+      t.deps.config.root = alias;
+      try {
+        const viaAlias = agentStateDir(alias, PROJECT, PINNED);
+        expect(viaAlias).not.toBe(agentStateDir(realRoot, PROJECT, PINNED));
+        await expectPinned(await admin.post(`${url}/sessions`, { workspace: viaAlias }));
+      } finally {
+        t.deps.config.root = realRoot;
+        await fs.rm(alias, { force: true });
+      }
+    },
+  );
 
   it("provisions a new user into the pinned Project instead of one carrying a second Agent", async () => {
     const user = await provisionUser(t.app, "alice");

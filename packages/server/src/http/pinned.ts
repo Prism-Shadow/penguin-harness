@@ -13,6 +13,7 @@
  * edit it. The pinned Docker export's entrypoint is what closes that half, by making the
  * definition files root-owned and read-only before dropping the server to an unprivileged user.
  */
+import fs from "node:fs/promises";
 import path from "node:path";
 import { agentStateDir } from "@prismshadow/penguin-core";
 import { HttpError } from "./errors.js";
@@ -48,13 +49,28 @@ export function requirePinnedTarget(deps: AppDeps, projectId: string, agentId: s
  * file tools would reach the locked definition through a Workspace, which is a write path the
  * route guards above never see.
  *
- * `workspace` is already a realpath (assertWorkspaceAllowed), so a symlink cannot smuggle a path
- * past this prefix test.
+ * Both sides are resolved before they are compared, and that is the whole of the check being
+ * correct: `resolvedWorkspace` arrives from `assertWorkspaceAllowed` as a realpath, while the
+ * data root is whatever PENGUIN_HOME spells — a symlinked path on macOS (`/var` -> `/private/var`),
+ * an 8.3 short name on Windows, a bind mount reached through a link anywhere. Two spellings of the
+ * one directory look like a traversal to `path.relative`, and the Workspace is then waved through.
+ *
+ * The state directory exists by the time this runs: the caller has already established that the
+ * target is the pinned Agent and that its `system_config.yaml` is there.
  */
-export function assertWorkspaceOutsidePinnedState(deps: AppDeps, workspace: string): void {
+export async function assertWorkspaceOutsidePinnedState(
+  deps: AppDeps,
+  resolvedWorkspace: string,
+): Promise<void> {
   const pinned = deps.config.pinnedAgent;
   if (pinned === null) return;
-  const stateDir = agentStateDir(deps.config.root, pinned.projectId, pinned.agentId);
-  const rel = path.relative(stateDir, workspace);
-  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) throw pinnedError();
+  const stateDir = await fs.realpath(
+    agentStateDir(deps.config.root, pinned.projectId, pinned.agentId),
+  );
+  const rel = path.relative(stateDir, resolvedWorkspace);
+  // A `..` **segment** means outside; `rel.startsWith("..")` would also match a real child named
+  // `..foo`, which is inside and must be refused. An adjacent sibling (`agent_state_backup`) comes
+  // back as `../agent_state_backup` and is correctly outside.
+  const outside = rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+  if (!outside) throw pinnedError();
 }
