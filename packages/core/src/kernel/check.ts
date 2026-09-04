@@ -11,8 +11,13 @@
  *   3. every `provides` names an interface the table actually carries.
  *
  * Visibility is lexical: a module sees its siblings, its ancestors and their siblings —
- * not another subtree's internals. Anything the host publishes (the runtime's
- * capabilities) is visible everywhere, as a virtual root-level sibling.
+ * not another subtree's internals, and not itself. Anything the host publishes (the
+ * runtime's capabilities) is visible everywhere, as a virtual root-level sibling.
+ *
+ * Ancestors are visible to CONTRIBUTE to (a child fills its parent's slots), not to
+ * REQUIRE from: a parent is created after its children, so its api does not exist when
+ * a child is created. The booter orders it so; the check refuses the requirement here,
+ * before any code runs, rather than letting it surface as a dependency cycle at boot.
  */
 import { type } from "arktype";
 import type { Json } from "./json.js";
@@ -42,8 +47,10 @@ export type Problem =
 interface Located {
   path: string;
   manifest: Manifest;
-  /** Module names this module may wire to. */
+  /** Module names this module may wire to or contribute to. */
   visible: Set<string>;
+  /** The subset of `visible` that is an ancestor — contributable, not requirable. */
+  ancestors: Set<string>;
 }
 
 /** Provided interfaces of a module, by alias, resolved through the table. */
@@ -63,17 +70,28 @@ function provided(
 
 function locate(root: ManifestNode): Located[] {
   const out: Located[] = [];
-  const walk = (node: ManifestNode, path: string, inherited: string[]) => {
-    const siblings = node.children.map((c) => c.manifest.name);
+  const walk = (node: ManifestNode, path: string, inherited: string[], ancestors: string[]) => {
+    const names = node.children.map((c) => c.manifest.name);
+    const above = [...ancestors, node.manifest.name];
     for (const child of node.children) {
       const childPath = `${path}/${child.manifest.name}`;
-      const visible = new Set([...inherited, node.manifest.name, ...siblings]);
-      out.push({ path: childPath, manifest: child.manifest, visible });
-      walk(child, childPath, [...inherited, node.manifest.name, ...siblings]);
+      const siblings = names.filter((n) => n !== child.manifest.name);
+      out.push({
+        path: childPath,
+        manifest: child.manifest,
+        visible: new Set([...inherited, node.manifest.name, ...siblings]),
+        ancestors: new Set(above),
+      });
+      walk(child, childPath, [...inherited, node.manifest.name, ...names], above);
     }
   };
-  out.push({ path: `/${root.manifest.name}`, manifest: root.manifest, visible: new Set() });
-  walk(root, `/${root.manifest.name}`, []);
+  out.push({
+    path: `/${root.manifest.name}`,
+    manifest: root.manifest,
+    visible: new Set(),
+    ancestors: new Set(),
+  });
+  walk(root, `/${root.manifest.name}`, [], []);
   return out;
 }
 
@@ -119,15 +137,18 @@ export function checkTree(
         problems.push({ path: m.path, kind: "unknown-iface", alias, ref: need.iface });
         continue;
       }
+      const requirable = (from: string) =>
+        (m.visible.has(from) && !m.ancestors.has(from)) || from in published;
       const candidates =
         need.from !== undefined
           ? [need.from]
-          : [...m.visible, ...Object.keys(published)].filter((name) => name !== mf.name);
+          : [...m.visible, ...Object.keys(published)].filter(
+              (name) => name !== mf.name && requirable(name),
+            );
       const matches: string[] = [];
       let lastMismatch: { from: string; method: string; why: string } | null = null;
       for (const from of candidates) {
-        const visibleHere = m.visible.has(from) || from in published;
-        if (!visibleHere) continue;
+        if (!requirable(from)) continue;
         const offered = provides[from];
         if (offered === undefined) continue;
         for (const decl of Object.values(offered)) {
@@ -142,13 +163,19 @@ export function checkTree(
       if (matches.length === 1) continue;
       if (need.from !== undefined) {
         const from = need.from;
-        if (!(m.visible.has(from) || from in published) || provides[from] === undefined) {
+        if (!requirable(from) || provides[from] === undefined) {
           problems.push({
             path: m.path,
             kind: "unresolved",
             alias,
             from,
-            why: byName.has(from) ? "not visible from here" : "no such module",
+            why: m.ancestors.has(from)
+              ? "an ancestor — created after its children, so its api is not there yet"
+              : from === mf.name
+                ? "itself"
+                : byName.has(from)
+                  ? "not visible from here"
+                  : "no such module",
           });
         } else if (lastMismatch !== null) {
           problems.push({ path: m.path, kind: "mismatch", alias, ...lastMismatch });
@@ -170,7 +197,10 @@ export function checkTree(
     }
     for (const [slotKey, entries] of Object.entries(mf.contributes)) {
       const split = splitSlotKey(slotKey);
-      const target = split === null ? undefined : provides[split.module];
+      const reachable =
+        split !== null &&
+        (split.module === mf.name || m.visible.has(split.module) || split.module in published);
+      const target = reachable ? provides[split.module] : undefined;
       const slot =
         split === null || target === undefined
           ? undefined
