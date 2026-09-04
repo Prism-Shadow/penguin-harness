@@ -69,6 +69,8 @@ export const en: Strings = {
     disconnect: "Disconnect",
     /** A connected machine: its filesystem and API can be reached from here. */
     reachable: "Reachable",
+    /** The composer's Agent row when the workspace's machine could not be asked for its Agents. */
+    agentsUnreachable: "That machine is not connected \u2014 connect it on the Machines page",
     /** Manual re-probe, for when you already know something changed. */
     refresh: "Refresh",
     checking: "Checking\u2026",
