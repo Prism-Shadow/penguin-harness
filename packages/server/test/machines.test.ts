@@ -11,13 +11,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
+import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   cmdQuote,
   runInstallScriptCommand,
   unpackStoreCommand,
   scpArgs,
+  sessionArgs,
   shQuote,
   sshArgs,
 } from "../src/machines/commands.js";
@@ -67,37 +68,6 @@ describe("parseHostAliases", () => {
     const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
     expect(aliases).toContain("top");
     expect(aliases).toContain("deep");
-  });
-});
-
-describe("parseSshSettings", () => {
-  it("reads what ssh resolved, keeping every identityfile", () => {
-    const settings = parseSshSettings(
-      [
-        "user deploy",
-        "hostname 10.0.0.4",
-        "port 2222",
-        "identityfile ~/.ssh/id_ed25519",
-        "identityfile ~/.ssh/id_rsa",
-        "proxyjump bastion",
-      ].join("\n"),
-      "build-box",
-    );
-    expect(settings).toEqual({
-      user: "deploy",
-      hostname: "10.0.0.4",
-      port: 2222,
-      identityFiles: ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"],
-      proxyJump: "bastion",
-    });
-  });
-
-  it("falls back to ssh's own defaults rather than throwing on a config it cannot read", () => {
-    const settings = parseSshSettings("garbage\nport not-a-number\nproxyjump none", "gpu-1");
-    expect(settings.hostname).toBe("gpu-1"); // the alias stands in
-    expect(settings.port).toBe(22);
-    expect(settings.user).toBe("");
-    expect(settings.proxyJump).toBeNull();
   });
 });
 
@@ -189,6 +159,23 @@ describe("ssh / scp invocations", () => {
     expect(scpArgs(target, ["/tmp/a"], "/tmp/dir")).toContain("BatchMode=yes");
   });
 
+  it("holds ONE session per machine: no tty, a SOCKS listener on loopback, keepalives, sh", () => {
+    const args = sessionArgs(target, 49152).join(" ");
+    expect(args).toContain("-T");
+    expect(args).toContain("-D 127.0.0.1:49152");
+    expect(args).toContain("ExitOnForwardFailure=yes");
+    expect(args).toContain("ServerAliveInterval=15");
+    expect(args).toContain("BatchMode=yes");
+    expect(args.endsWith("build-box sh")).toBe(true);
+    // Nothing is forwarded by name: any port on the machine is a channel through -D.
+    expect(args).not.toContain("-L ");
+  });
+
+  it("refuses a SOCKS port that is not one", () => {
+    expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
+    expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
+  });
+
   it("selects the account on the command line, never by writing the ssh config", () => {
     expect(sshArgs(target, "true")).toContain("User=deploy");
     expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
@@ -232,12 +219,15 @@ describe("ssh / scp invocations", () => {
     });
   });
 
-  it("unpacks the streamed store into the default data root", () => {
+  it("unpacks the streamed store into the hmr directory it was tarred from", () => {
+    // The members are named relative to the sending side's own hmr directory, so the two
+    // `-C` arguments have to name the same layer: one level too high writes a harness.json
+    // and a store/ nothing reads, and the machine goes on answering with what it held.
     expect(unpackStoreCommand("linux")).toBe(
-      'mkdir -p "$HOME/.penguin/data" && tar -xzf - -C "$HOME/.penguin/data"',
+      'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
     expect(unpackStoreCommand("win32")).toBe(
-      '(if not exist "%USERPROFILE%\\.penguin\\data" mkdir "%USERPROFILE%\\.penguin\\data") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data"',
+      '(if not exist "%USERPROFILE%\\.penguin\\data\\hmr" mkdir "%USERPROFILE%\\.penguin\\data\\hmr") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data\\hmr"',
     );
   });
 });

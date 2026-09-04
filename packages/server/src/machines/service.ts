@@ -26,12 +26,12 @@
  * 30 MB transfer to reach the same place.
  */
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
-import { listHostAliases, resolveTarget } from "./transport/index.js";
+import { listHostAliases } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import type { MachinesRepo } from "../db/repos/machines.js";
 
 /** Why a start was refused before any ssh ran. */
-export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image";
+export type InstallRefusal = "busy" | "unknown-machine" | "no-image";
 
 /**
  * The three things this service does to the world, injectable as a set. Production passes
@@ -42,7 +42,6 @@ export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-i
  */
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
-  resolveTarget: typeof resolveTarget;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
@@ -66,7 +65,6 @@ export class MachinesService {
     this.#assets = assets;
     this.#effects = {
       listAliases: listHostAliases,
-      resolveTarget,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       now: () => new Date(),
@@ -159,9 +157,6 @@ export class MachinesService {
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
 
-    const resolved = await this.#effects.resolveTarget(alias);
-    if (resolved === null) return { ok: false, why: "unresolvable" };
-
     const job: MachineInstallJob = {
       machineId,
       alias,
@@ -179,11 +174,13 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
-        say(`Installing ${plan.version} on ${resolved.machine}…`);
+        say(`Installing ${plan.version} on ${alias}…`);
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
-          target: { alias, user: resolved.settings.user },
+          // The alias IS the target: what it means — user, host, port, key, jump host — is
+          // ssh's to resolve, from its own config, every time it is handed the alias.
+          target: { alias, user: "" },
           plan,
           onProgress: say,
           assets: this.#assets,

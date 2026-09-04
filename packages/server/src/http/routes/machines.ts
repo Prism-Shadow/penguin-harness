@@ -70,17 +70,10 @@ export function machinesRoutes(deps: AppDeps): Hono<AppEnv> {
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
       }
-      if (started.why === "no-image") {
-        throw new HttpError(
-          409,
-          "no_install_image",
-          "This server has no install image to push. A packaged or installed server carries one; a development checkout gets one from its first hot push.",
-        );
-      }
       throw new HttpError(
-        502,
-        "unresolvable_host",
-        "ssh could not resolve that host. Check ~/.ssh/config, or that ssh is on PATH.",
+        409,
+        "no_install_image",
+        "This server has no install image to push. A packaged or installed server carries one; a development checkout gets one from its first hot push.",
       );
     }
     return c.json(state(c), 202);

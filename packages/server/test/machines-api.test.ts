@@ -43,17 +43,6 @@ const IDENTITY: RemoteIdentity = {
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
     listAliases: () => ["build-box", "nas"],
-    resolveTarget: async (alias) => ({
-      alias,
-      settings: {
-        user: "deploy",
-        hostname: `${alias}.example`,
-        port: 22,
-        identityFiles: [],
-        proxyJump: null,
-      },
-      machine: `deploy@${alias}`,
-    }),
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
     install: async (opts): Promise<RemoteInstallOutcome> => {
@@ -185,7 +174,7 @@ describe("machines API", () => {
       ).json()) as MachinesResponse;
       expect(body.job?.result).toEqual({ ok: true, kind: "installed", version: "9.9.9" });
       // The first line is this server's own, the rest are the push's.
-      expect(body.job?.log[0]).toBe("Installing 9.9.9 on deploy@nas…");
+      expect(body.job?.log[0]).toBe("Installing 9.9.9 on nas…");
       expect(body.job?.log).toContain("Pushing…");
     });
 
@@ -397,15 +386,6 @@ describe("machines API", () => {
       expect(res.status).toBe(409);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
         "no_install_image",
-      );
-    });
-
-    it("502s a host ssh itself cannot resolve", async () => {
-      await boot({ resolveTarget: async () => null });
-      const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/install`);
-      expect(res.status).toBe(502);
-      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
-        "unresolvable_host",
       );
     });
   });
