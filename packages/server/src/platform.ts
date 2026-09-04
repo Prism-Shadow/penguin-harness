@@ -82,6 +82,7 @@ import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { ProjectAccess } from "./services/project-access.js";
+import { ProjectNotifier } from "./services/project-events.js";
 import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
@@ -96,6 +97,7 @@ import { SandboxModule } from "./sandbox/service.js";
 import { HostAssembly } from "./services/host-assembly.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
+import { TerminalRelay } from "./machines/terminal-relay.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -115,6 +117,7 @@ import {
   Members,
   ModelOAuth,
   ProjectConfigStore,
+  ProjectEvents,
   ProjectLifecycle,
   Projects,
 } from "./mechanisms/projects.js";
@@ -250,6 +253,7 @@ export class IdentityModule {}
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
+    ProjectNotifier,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
@@ -265,6 +269,7 @@ export class IdentityModule {}
     ProjectConfigStore,
     ModelOAuth,
     InitialProjectProvisioner,
+    ProjectEvents,
   ],
 })
 export class ProjectsModule {}
@@ -401,6 +406,7 @@ export class PackagesModule {}
     SandboxModule,
     TerminalModule,
     MachinesModule,
+    TerminalRelay,
     WorkflowsModule,
     PackagesModule,
     Startup,
