@@ -355,7 +355,11 @@ describe("usage-service model totals (unfiltered, for the models page)", () => {
   beforeEach(() => {
     db = openDatabase(":memory:");
     repo = wire(UsageRepo, { db: db });
-    service = wire(UsageService, { usage: repo, errors: wire(ErrorsRepo, { db: db }), lookupPricing: lookup });
+    service = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: lookup,
+    });
   });
   afterEach(() => db.close());
 

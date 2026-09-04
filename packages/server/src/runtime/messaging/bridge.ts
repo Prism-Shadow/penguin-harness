@@ -1890,7 +1890,7 @@ export abstract class QQScan extends Interface<
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
-  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" }, MessagingChannelConnector>;
+  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
 }
 
 @Module({
