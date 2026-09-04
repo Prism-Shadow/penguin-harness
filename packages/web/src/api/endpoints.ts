@@ -1215,14 +1215,18 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
  * job. The Machines page polls this while a job runs — the progress lines live on the job,
  * not on the event channel, because they belong to the one page that is waiting for them.
  */
-export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
+export const getMachines = (projectId: string) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines`);
 
-/** Starts an install (202, long-running); the returned body already carries the new job. */
-export const installOnMachine = (machineId: string) =>
-  apiFetch<MachinesResponse>(`/api/machines/${encodeURIComponent(machineId)}/install`, {
-    method: "POST",
-    body: {},
-  });
+/**
+ * Starts an install (202, long-running) and gives the machine to this Project; the returned
+ * body already carries the new job.
+ */
+export const installOnMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/install`,
+    { method: "POST", body: {} },
+  );
 
 // Version & self-update ----------------------------------------------------------------
 

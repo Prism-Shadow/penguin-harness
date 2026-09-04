@@ -9,11 +9,12 @@
  * itself is the ordinary one (install.sh, install.ps1), downloading the pinned release from
  * the remote's own network.
  *
- * COUNT THE HANDSHAKES. Every one of these is a separate ssh connection, and a handshake to
- * a distant or loaded host costs tens of seconds — so a step that can ride an existing
- * connection must. A POSIX install is one call: the installer goes in on ssh's stdin, the
- * same shape as the documented `curl … | sh`, which is what lets the scratch directory, the
- * scp and the cleanup disappear entirely.
+ * COUNT THE HANDSHAKES. A handshake to a distant or loaded host costs tens of seconds — so
+ * everything rides the ONE connection ssh-session.ts holds per machine: commands, the
+ * installer and the store on its stdin, every TCP connection through its SOCKS port. A POSIX
+ * install is therefore the installer going in on that stdin, the same shape as the documented
+ * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup disappear
+ * entirely.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -107,15 +108,52 @@ export function runInstallScriptCommand(
 
 /**
  * Unpacks the replicated hmr state (harness.json + store/), streamed to ssh's stdin as one
- * tar.gz, into the remote's default data root — where a server this page installed will look
- * for it on boot (hmr/host.ts's restore). `tar` reads stdin with `-f -` on both sides;
+ * tar.gz, into the remote's HMR DIRECTORY. `tar` reads stdin with `-f -` on both sides;
  * Windows 10+ ships bsdtar.
+ *
+ * `<data root>/hmr`, not the data root itself: the members are named relative to the sending
+ * side's own hmr directory (install-server.ts tars `-C <root>/hmr harness.json store`), so
+ * the two `-C` arguments have to name the same layer. Extracting one directory too high
+ * writes a `harness.json` and a `store/` that nothing reads — hmr/host.ts fixes the layout at
+ * `<root>/hmr` — and the machine goes on answering with whatever it held before, so the
+ * replication reports success and achieves nothing.
  */
 export function unpackStoreCommand(platform: RemotePlatform): string {
   if (platform === "win32") {
-    const root = "%USERPROFILE%\\.penguin\\data";
+    const root = "%USERPROFILE%\\.penguin\\data\\hmr";
     return `(if not exist ${cmdQuote(root)} mkdir ${cmdQuote(root)}) & tar -xzf - -C ${cmdQuote(root)}`;
   }
-  const root = "$HOME/.penguin/data";
+  const root = "$HOME/.penguin/data/hmr";
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
+}
+
+// --- tunnelling to that server ---------------------------------------------------------------
+
+/**
+ * `ssh -T -D 127.0.0.1:<port> <alias> sh` — the ONE connection to a machine (transport/
+ * ssh-session.ts). `-T` because it is a command channel, not a terminal; `sh` rather than a
+ * login shell, so a profile's banner cannot land in the first command's output; `-D` so the
+ * session doubles as a SOCKS server on a loopback port of ours, through which every TCP
+ * connection to the machine is a channel inside this same session. ExitOnForwardFailure turns
+ * "local port taken" into an exit instead of a session that silently cannot dial, and the
+ * keepalives surface a dead link within a minute.
+ */
+export function sessionArgs(target: RemoteTarget, socksPort: number): string[] {
+  if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
+    throw new Error(`bad port ${socksPort}`);
+  }
+  return [
+    ...connectionOptions(target),
+    "-T",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-D",
+    `127.0.0.1:${socksPort}`,
+    target.alias,
+    "sh",
+  ];
 }

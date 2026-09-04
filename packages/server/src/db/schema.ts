@@ -141,6 +141,22 @@ CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global sett
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default
 );
+CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
+  singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention
+  machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at
+);
+CREATE TABLE IF NOT EXISTS machines (          -- one row per machine this server installed on or reached (machines/service.ts)
+  address      TEXT PRIMARY KEY,               -- 'ssh:<alias>'
+  machine_id   TEXT,                           -- that machine's own id, once heard
+  version      TEXT,                           -- what this server last installed there; NULL = never
+  installed_at TEXT,
+  session_pid  INTEGER,                        -- the ssh session this server holds to it; what a successor App closes after a hot swap
+  remote_port  INTEGER                         -- its server's port over there, as of the last connect
+);
+CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses; no row = none yet. Follows the Project out, like project_members
+  project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
+  addresses  TEXT NOT NULL                     -- JSON array of 'ssh:<alias>'
+);
 CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk Trace tree (services/trace-index.ts): the directories stay the single source of truth, every row is rebuildable from disk, and a row is never authority for absence — consumers reconcile + retry on a miss, so a stale index costs one extra scan, never a false 404
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,

@@ -32,6 +32,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useProject } from "../../state/project";
 import { formatDateTime } from "../../lib/format";
 import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
@@ -67,6 +68,11 @@ function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
 
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
+  // Machines belong to the Project, like every other row in this nav group: switching
+  // Projects switches which machines are listed, and installing here gives the machine to
+  // THIS Project.
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** True while a POST has not come back yet — the server has no job to report in that window. */
@@ -82,13 +88,14 @@ export function MachinesPage() {
   };
 
   const load = useCallback(async () => {
+    if (projectId === null) return; // No Project chosen yet: nothing to list machines for.
     try {
-      setState(await api.getMachines());
+      setState(await api.getMachines(projectId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
@@ -125,10 +132,10 @@ export function MachinesPage() {
   const selected = machines.find((machine) => machine.id === selectedId) ?? null;
 
   const install = async () => {
-    if (selectedId === null) return;
+    if (selectedId === null || projectId === null) return;
     setStarting(true);
     try {
-      setState(await api.installOnMachine(selectedId));
+      setState(await api.installOnMachine(projectId, selectedId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));

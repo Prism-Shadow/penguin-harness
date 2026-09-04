@@ -180,6 +180,46 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 4,
+    name: "machines",
+    // Three new tables, nothing existing touched: a platform rolled back to one without
+    // machines never queries them. Swap-safe on its own; a database still behind
+    // drop-goal-state is refused whole by that one first, which is the rule.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the machines feature; do not re-derive from schema.ts.
+      // IF NOT EXISTS because the declarative track may already have created them (ADOPTION).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS machine (
+          singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),
+          machine_id TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS machines (
+          address      TEXT PRIMARY KEY,
+          machine_id   TEXT,
+          version      TEXT,
+          installed_at TEXT,
+          session_pid  INTEGER,
+          remote_port  INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS machine_project (
+          project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
+          addresses  TEXT NOT NULL
+        );
+      `);
+    },
+    // LOSES this server's own machine id (every stored reference to it on other machines
+    // then points at nothing), what was installed where, the sessions held, and which
+    // machines each Project used.
+    down(db) {
+      db.exec(`
+        DROP TABLE IF EXISTS machine_project;
+        DROP TABLE IF EXISTS machines;
+        DROP TABLE IF EXISTS machine;
+      `);
+    },
+  },
+  {
+    version: 5,
     name: "company-mode-org-caches",
     // Additive: seven new tables for company mode (organizations of Agents), no change to any
     // existing table. Every row is either rebuildable from the organization's files (desks.toml,
@@ -276,7 +316,7 @@ export const MIGRATIONS: readonly Migration[] = [
     },
   },
   {
-    version: 5,
+    version: 6,
     name: "company-mode-channels",
     // The organization's single group chat became channels: a message lives in
     // `channels/<channel_id>/<date>.jsonl`, so the tail-scan cursor and each user's read
@@ -310,7 +350,7 @@ export const MIGRATIONS: readonly Migration[] = [
         );
       `);
     },
-    // Recreates the two tables under their old names, exactly as migration 4 declared them —
+    // Recreates the two tables under their old names, exactly as migration 5 declared them —
     // EMPTY. LOSES every scan cursor (re-derived by the next pass, which republishes the
     // messages it re-reads) and every read cursor (users see the recent days as unread once).
     down(db) {

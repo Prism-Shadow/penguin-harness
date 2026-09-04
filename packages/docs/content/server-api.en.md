@@ -112,8 +112,9 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/machines | The host aliases of the SERVER's own `~/.ssh/config`, the version this server would install, and the running or last install job: `{machines: [{id, alias, installed}], imageVersion, job}` |
-| POST | /api/machines/:machineId/install | Start installing this build on that host; `202` with the same body, the job now running |
+| GET | /api/projects/:projectId/machines | The host aliases of the SERVER's own `~/.ssh/config` with what THIS PROJECT has installed on each, the version this server would install, and the running or last install job: `{machines: [{id, alias, installed, elsewhere?}], imageVersion, job}`. `elsewhere` is a host another Project installed — a machine to adopt rather than install |
+| POST | /api/projects/:projectId/machines/:machineId/install | Start installing this build on that host and give it to this Project; `202` with the same body, the job now running |
+| POST | /api/projects/:projectId/machines/:machineId/release | Drop that machine from this Project; the install on it stays |
 
 Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config — it is read, and `ssh -G` resolves an alias only at install time, so a config declaring hundreds of hosts costs one file read.
 

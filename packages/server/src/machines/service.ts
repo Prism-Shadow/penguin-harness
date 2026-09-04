@@ -13,22 +13,25 @@
  * step is idempotent — the far side's installer stages, smoke-tests and swaps, and an
  * unchanged version is a no-op.
  *
- * The RESULT is. Which machines carry this program is not a property of the last job — it
- * has to outlive the job, the process and the next install somewhere else — so a successful
- * install is written to `<data root>/machines-installs.json` (installs.ts) and read back
- * into every list(). Without it "installed" would blink out the moment anything else
- * happened, which is exactly what it did before this file wrote anything down.
+ * The RESULT is, in web.db (MachinesRepo): which machines carry this program, and which
+ * Project uses which. It has to outlive the job, the process and the next install somewhere
+ * else. It is a record of what WE did, not a survey of the far side — a machine someone
+ * wiped by hand still reads as installed here, and the install itself is what corrects that,
+ * since it probes the remote before deciding anything.
+ *
+ * A machine BELONGS TO A PROJECT. The host is shared — one program, one ssh config entry —
+ * but which Projects use it is this server's own bookkeeping, because a Project's machines
+ * are where that Project's work runs. A host installed for another Project is reported as
+ * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
+ * 30 MB transfer to reach the same place.
  */
-import fs from "node:fs";
-import path from "node:path";
 import type { MachineInfo, MachineInstallJob } from "../api/types.js";
-import { listHostAliases, resolveTarget } from "./targets.js";
+import { listHostAliases } from "./transport/index.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
-import { parseInstallRecords, withInstallRecord } from "./installs.js";
-import type { InstallRecord } from "./installs.js";
+import type { MachinesRepo } from "../db/repos/machines.js";
 
 /** Why a start was refused before any ssh ran. */
-export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-image";
+export type InstallRefusal = "busy" | "unknown-machine" | "no-image";
 
 /**
  * The three things this service does to the world, injectable as a set. Production passes
@@ -39,7 +42,6 @@ export type InstallRefusal = "busy" | "unknown-machine" | "unresolvable" | "no-i
  */
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
-  resolveTarget: typeof resolveTarget;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
@@ -50,22 +52,19 @@ export class MachinesService {
   #job: MachineInstallJob | null = null;
   readonly #effects: MachinesEffects;
 
-  /**
-   * `dataRoot` is the server's own data root: it holds the hmr state a push replicates, and
-   * the install records below.
-   */
   /** Where a pushed bundle's assets were unpacked; null in a packaged server (hmr.assetsDir). */
   readonly #assets: () => string | null;
 
+  /** `dataRoot` is the server's own data root: it holds the hmr state a push replicates. */
   constructor(
     private readonly dataRoot: string,
+    private readonly repo: MachinesRepo,
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
   ) {
     this.#assets = assets;
     this.#effects = {
       listAliases: listHostAliases,
-      resolveTarget,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       now: () => new Date(),
@@ -73,30 +72,53 @@ export class MachinesService {
     };
   }
 
-  /** Where the install records live — beside the other per-machine state in the data root. */
-  get #recordsFile(): string {
-    return path.join(this.dataRoot, "machines-installs.json");
+  /**
+   * The addresses a Project uses: exactly its own list, empty until an install gives it one.
+   *
+   * Nothing is inherited, the default Project included. The store starts empty (the JSON
+   * file it replaces is not read), so there is nothing for a first Project to inherit — and
+   * an inheritance that materialised on the Project's first write made the answer depend on
+   * whether that write had happened yet. A machine belongs to the Project that installed it
+   * or adopted it, and to no other; one released by every Project reads as `elsewhere` for
+   * all of them, which is what makes it adoptable again.
+   */
+  #members(projectId: string): string[] {
+    return this.repo.members(projectId) ?? [];
   }
 
-  /** The records file's text, or null when there is none yet (or it cannot be read). */
-  #readRecords(): string | null {
-    try {
-      return fs.readFileSync(this.#recordsFile, "utf8");
-    } catch {
-      return null; // Never installed from this server yet, or an unreadable file: nothing remembered.
-    }
+  #setMember(projectId: string, address: string, member: boolean): void {
+    const current = this.#members(projectId);
+    this.repo.setMembers(
+      projectId,
+      member ? [...new Set([...current, address])] : current.filter((entry) => entry !== address),
+    );
   }
 
   /**
-   * The ssh config's host aliases, each carrying what this server last installed there.
-   * Empty when there is no config, which is not an error.
+   * The ssh config's host aliases, answered for one Project: `installed` means installed FOR
+   * THIS PROJECT, and a host this server installed on but this Project does not use is
+   * reported through `elsewhere`. Empty when there is no config, which is not an error.
    */
-  list(): MachineInfo[] {
-    const records = parseInstallRecords(this.#readRecords());
-    return this.#effects.listAliases().map((alias) => {
+  list(projectId: string): MachineInfo[] {
+    const members = new Set(this.#members(projectId));
+    return this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
-      return { id, alias, installed: records[id] ?? null };
+      const row = this.repo.get(id);
+      const installed =
+        row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" };
+      const mine = members.has(id);
+      return {
+        id,
+        alias,
+        installed: mine ? installed : null,
+        ...(!mine && installed !== null ? { elsewhere: installed } : {}),
+      };
     });
+  }
+
+  /** Drops a machine from a Project. The program stays installed; only the membership goes. */
+  release(projectId: string, address: string): void {
+    this.#setMember(projectId, address, false);
   }
 
   /**
@@ -118,24 +140,26 @@ export class MachinesService {
    * a job already running, an alias this config does not declare, an ssh that cannot resolve
    * it, no image to send — are answered synchronously, so the page distinguishes "did not
    * start" from "started and failed" without reading the log.
+   *
+   * Success also gives the machine to the Project that asked for it: an install is how a
+   * Project acquires a machine, and one that installed but belonged to nobody would not
+   * appear in the list it was started from.
    */
   async startInstall(
+    projectId: string,
     machineId: string,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
     if (this.#job?.running === true) return { ok: false, why: "busy" };
 
-    const machine = this.list().find((entry) => entry.id === machineId);
-    if (machine === undefined) return { ok: false, why: "unknown-machine" };
+    const alias = this.#effects.listAliases().find((entry) => `ssh:${entry}` === machineId);
+    if (alias === undefined) return { ok: false, why: "unknown-machine" };
 
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
 
-    const resolved = await this.#effects.resolveTarget(machine.alias);
-    if (resolved === null) return { ok: false, why: "unresolvable" };
-
     const job: MachineInstallJob = {
       machineId,
-      alias: machine.alias,
+      alias,
       running: true,
       log: [],
       result: null,
@@ -150,11 +174,13 @@ export class MachinesService {
     // path does not turn into a `failed` outcome itself.
     void (async () => {
       try {
-        say(`Installing ${plan.version} on ${resolved.machine}…`);
+        say(`Installing ${plan.version} on ${alias}…`);
         // No identity passed: installOnRemote runs the probe itself as its first step and
         // narrates it, so the page shows what the machine turned out to be.
         const outcome = await this.#effects.install({
-          target: { alias: machine.alias, user: resolved.settings.user },
+          // The alias IS the target: what it means — user, host, port, key, jump host — is
+          // ssh's to resolve, from its own config, every time it is handed the alias.
+          target: { alias, user: "" },
           plan,
           onProgress: say,
           assets: this.#assets,
@@ -164,10 +190,11 @@ export class MachinesService {
           return;
         }
         const version = outcome.kind === "already-installed" ? outcome.version : plan.version;
-        // Remember it BEFORE the job settles, so the first poll that sees `running: false`
+        // Remembered BEFORE the job settles, so the first poll that sees `running: false`
         // already sees the machine marked installed — otherwise the page would flash the
         // verdict and a still-uninstalled row in the same frame.
-        this.#remember(machineId, { version, at: this.#effects.now().toISOString() });
+        this.repo.patch(machineId, { version, installedAt: this.#effects.now().toISOString() });
+        this.#setMember(projectId, machineId, true);
         job.result = { ok: true, kind: outcome.kind, version };
       } catch (err) {
         job.result = {
@@ -181,34 +208,5 @@ export class MachinesService {
     })();
 
     return { ok: true };
-  }
-
-  /**
-   * Writes one machine's record.
-   *
-   * Through a temp file and a rename rather than straight onto the target: a plain write
-   * truncates first, so a crash mid-write leaves bytes the parser reads as "nothing
-   * installed anywhere" — treating damage as empty is right for a cache, but it means a
-   * torn write silently forgets every OTHER machine too, not just the one being recorded.
-   * Rename is one step; a reader sees the old file or the new one.
-   *
-   * A failure here is swallowed: the install itself already succeeded, and the far side has
-   * the program whether or not this side managed to note it down. Forgetting costs one
-   * needless reinstall, which is a no-op on the remote.
-   */
-  #remember(machineId: string, record: InstallRecord): void {
-    const next = withInstallRecord(this.#readRecords(), machineId, record);
-    const tmp = `${this.#recordsFile}.tmp-${process.pid}`;
-    try {
-      fs.mkdirSync(path.dirname(this.#recordsFile), { recursive: true });
-      fs.writeFileSync(tmp, next);
-      fs.renameSync(tmp, this.#recordsFile);
-    } catch {
-      try {
-        fs.rmSync(tmp, { force: true });
-      } catch {
-        /* the temp file is litter at worst */
-      }
-    }
   }
 }

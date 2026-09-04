@@ -44,6 +44,7 @@ import {
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
+import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
@@ -1156,7 +1157,9 @@ export function buildAppDeps(
     lifecycle: caps.lifecycle,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),
+    machines:
+      overrides.machines ??
+      new MachinesService(config.root, new MachinesRepo(db), {}, () => hmr.assetsDir()),
     hmr,
     proxyControl: caps.proxyControl,
     log,
@@ -1253,10 +1256,10 @@ export function createApp(
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
-  app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Plugin library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/plugins", pluginLibraryRoutes());
+  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));

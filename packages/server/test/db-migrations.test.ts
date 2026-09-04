@@ -44,12 +44,7 @@ const GOAL_STATE_DDL = `
   CREATE INDEX idx_goal_session ON goal_state(session_id);
 `;
 
-/**
- * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
- * lacked, plus the one table it had that today's declaration dropped. Derived from
- * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
- */
-/** The company-mode tables migration 4 adds: a database from before it never had them. */
+/** The company-mode tables migration 5 adds: a database from before it never had them. */
 function dropCompanyModeTables(db: DatabaseSync): void {
   for (const table of [
     "org_sessions",
@@ -64,6 +59,11 @@ function dropCompanyModeTables(db: DatabaseSync): void {
   }
 }
 
+/**
+ * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
+ * lacked, plus the one table it had that today's declaration dropped. Derived from
+ * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
+ */
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
@@ -76,8 +76,8 @@ function open024(): DatabaseSync {
 }
 
 /**
- * The two chat tables as migration 4 declared them (frozen: company mode's chat became
- * channels in migration 5 — renamed tables, `channel_id` in the primary keys — and the
+ * The two chat tables as migration 5 declared them (frozen: company mode's chat became
+ * channels in migration 6 — renamed tables, `channel_id` in the primary keys — and the
  * migration that recreates them must not learn a new shape).
  */
 const PRE_CHANNEL_CHAT_DDL = `
@@ -99,12 +99,12 @@ const PRE_CHANNEL_CHAT_DDL = `
   );
 `;
 
-/** A database stamped at migration 4: company mode's caches, before chat became channels. */
-function open4(): DatabaseSync {
+/** A database stamped at migration 5: company mode's caches, before chat became channels. */
+function open5(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec(PRE_CHANNEL_CHAT_DDL);
-  db.exec("PRAGMA user_version = 4");
+  db.exec("PRAGMA user_version = 5");
   return db;
 }
 
@@ -114,6 +114,9 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
+  // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
+  // migration 4 is what adds them. Without this the fixture is a database no release made.
+  db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
   db.exec("PRAGMA user_version = 2");
   return db;
 }
@@ -315,9 +318,9 @@ describe("0.2.9 → current: drop-goal-state", () => {
   });
 });
 
-describe("migration 4 → current: company-mode-channels", () => {
+describe("migration 5 → current: company-mode-channels", () => {
   it("renames both chat tables and puts channel_id in their primary keys, recreating them empty", () => {
-    const db = open4();
+    const db = open5();
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
@@ -328,7 +331,7 @@ describe("migration 4 → current: company-mode-channels", () => {
       expect(shape(db)).not.toBe(shape(fresh));
 
       expect(migrate(db).applied).toEqual(
-        MIGRATIONS.filter((m) => m.version > 4).map((m) => m.name),
+        MIGRATIONS.filter((m) => m.version > 5).map((m) => m.name),
       );
       expect(shape(db)).toBe(shape(fresh));
       // Renamed and recreated, not altered: the old tables are gone, nothing is carried
@@ -353,17 +356,17 @@ describe("migration 4 → current: company-mode-channels", () => {
   });
 
   it("down puts the old tables and the single-chat shape back, empty", () => {
-    const db = open4();
-    const at4 = open4();
+    const db = open5();
+    const at5 = open5();
     try {
       migrate(db);
-      rollbackTo(db, 4);
-      expect(schemaVersion(db)).toBe(4);
-      expect(shape(db)).toBe(shape(at4));
+      rollbackTo(db, 5);
+      expect(schemaVersion(db)).toBe(5);
+      expect(shape(db)).toBe(shape(at5));
       expect(db.prepare("SELECT COUNT(*) AS n FROM org_chat_state").get()).toEqual({ n: 0 });
     } finally {
       db.close();
-      at4.close();
+      at5.close();
     }
   });
 });
@@ -433,6 +436,7 @@ describe("rollbackTo", () => {
       const r = rollbackTo(db, 1);
       expect(r.from).toBe(LATEST_VERSION);
       expect(r.to).toBe(1);
+      // Newest first, all the way down to 1.
       expect(r.reverted).toEqual(
         MIGRATIONS.filter((m) => m.version > 1)
           .map((m) => m.name)
@@ -443,6 +447,16 @@ describe("rollbackTo", () => {
       ).map((c) => c.name);
       expect(cols).not.toContain("render_markdown");
       expect(cols).not.toContain("final_reply_only");
+      // And what the migrations above 2 created is gone with them, goal_state back.
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+          name: string;
+        }[]
+      ).map((t) => t.name);
+      expect(tables).not.toContain("machines");
+      expect(tables).not.toContain("machine_project");
+      expect(tables).not.toContain("org_channel_reads");
+      expect(tables).toContain("goal_state");
     } finally {
       db.close();
     }

@@ -22,11 +22,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runInstallScriptCommand, scpArgs, sshArgs, unpackStoreCommand } from "./commands.js";
+import { runInstallScriptCommand, unpackStoreCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
-import { looksLikeAuthFailure, run, runPiped, runWithInput } from "./exec.js";
+import { connectionTo, looksLikeAuthFailure, runBytes } from "./transport/index.js";
+import type { MachineChannel } from "./transport/index.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
 const installerFileFor = (platform: RemotePlatform): string =>
@@ -141,33 +142,39 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
 }
 
 /**
- * Asks the machine what it is. POSIX first; a cmd.exe host answers that with an error, which
- * parses as "not a machine I recognize", and the Windows form is tried next. Two round trips
- * at worst, once per connect.
+ * Asks the machine what it is. POSIX first, over the session — the only round trip a POSIX
+ * host ever costs. A cmd.exe host has no `sh` to hold a session on, so the session dies
+ * unopened and the Windows form is asked on a connection of its own. Two round trips at
+ * worst, once per connect.
  */
 export async function detectRemote(
   target: RemoteTarget,
+  channel?: MachineChannel,
 ): Promise<{ identity: RemoteIdentity } | { error: string }> {
-  for (const probe of [POSIX_PROBE, WINDOWS_PROBE]) {
-    const result = await run("ssh", sshArgs(target, probe), { timeoutMs: 30_000 });
-    const identity = parseProbeOutput(result.stdout);
-    if (identity) return { identity };
-    if (result.code !== 0 && looksLikeAuthFailure(result)) {
-      return {
-        error: `${result.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-      };
-    }
-    // A connection-level failure is fatal for both probes; only an unrecognized ANSWER is
-    // worth retrying in the other shell's dialect.
-    if (result.code !== 0 && result.stdout.trim() === "" && result.stderr.trim() !== "") {
-      const stderr = result.stderr.trim();
-      if (!/not recognized|command not found|is not recognized/i.test(stderr)) {
-        return { error: stderr };
-      }
-    }
+  const conn = channel ?? connectionTo(target);
+  const posix = await conn.exec(POSIX_PROBE);
+  const identity = parseProbeOutput(posix.stdout);
+  if (identity) return { identity };
+  // The session's output is merged, so ssh's own words arrive as stdout.
+  const said = posix.stdout.trim();
+  if (posix.code !== 0 && looksLikeAuthFailure({ ...posix, stderr: said })) {
+    return {
+      error: `${said}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
+    };
   }
+  const windows = await conn.oneShot(WINDOWS_PROBE, { timeoutMs: 30_000 });
+  const identityWin = parseProbeOutput(windows.stdout);
+  if (identityWin) return { identity: identityWin };
+  if (windows.code !== 0 && looksLikeAuthFailure(windows)) {
+    return {
+      error: `${windows.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
+    };
+  }
+  const words = said || windows.stderr.trim();
   return {
-    error: "Could not tell what that machine is: neither the POSIX nor the Windows probe answered.",
+    error:
+      "Could not tell what that machine is: neither the POSIX nor the Windows probe answered." +
+      (words === "" ? "" : ` It said: ${words}`),
   };
 }
 
@@ -189,14 +196,17 @@ export async function installOnRemote(opts: {
   identity?: RemoteIdentity;
   /** The hmr capability's assetsDir accessor: where a pushed bundle's assets were unpacked. */
   assets?: () => string | null;
+  /** The channel to the machine; a test hands in a scripted one. */
+  channel?: MachineChannel;
 }): Promise<RemoteInstallOutcome> {
   const { target, plan } = opts;
+  const conn = opts.channel ?? connectionTo(target);
   const say = opts.onProgress ?? (() => {});
 
   let identity = opts.identity;
   if (identity === undefined) {
     say("Asking what that machine is…");
-    const detected = await detectRemote(target);
+    const detected = await detectRemote(target, conn);
     if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
     identity = detected.identity;
     say(`${identity.platform}-${identity.arch}.`);
@@ -251,7 +261,7 @@ export async function installOnRemote(opts: {
         const local = path.join(os.tmpdir(), name);
         fs.writeFileSync(local, installer);
         windowsTmp = { local, remote: `%USERPROFILE%\\${name}` };
-        const copy = await run("scp", scpArgs(target, [local], "."));
+        const copy = await conn.copyTo([local], ".");
         if (copy.code !== 0) {
           return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
         }
@@ -260,14 +270,12 @@ export async function installOnRemote(opts: {
         where = { platform: identity.platform };
       }
       const step = runInstallScriptCommand(`v${plan.baseVersion}`, where);
-      // One connection when the script rides stdin, and the far side's own progress is
-      // relayed as it arrives rather than after the minutes an install can take.
+      // The script rides the session's stdin as a heredoc, and the far side's own progress
+      // is relayed as it arrives rather than after the minutes an install can take. A Windows
+      // host runs its copied script on a connection of its own (no session to ride).
       const install = step.scriptOnStdin
-        ? await runWithInput("ssh", sshArgs(target, step.command), {
-            input: installer,
-            onLine: say,
-          })
-        : await run("ssh", sshArgs(target, step.command));
+        ? await conn.stream(step.command, { input: installer, onLine: say })
+        : await conn.oneShot(step.command);
       if (install.code !== 0) {
         return {
           kind: "failed",
@@ -280,22 +288,84 @@ export async function installOnRemote(opts: {
 
     if (plan.hmrDir !== null && identity.harness !== plan.harness) {
       say("Replicating the pushed version…");
-      // harness.json and store/ only: uploads/ is this machine's scratch, not state.
-      const sync = await runPiped(
-        { file: "tar", args: ["-czf", "-", "-C", plan.hmrDir, "harness.json", "store"] },
-        { file: "ssh", args: sshArgs(target, unpackStoreCommand(identity.platform)) },
-      );
+      // harness.json and store/ only: uploads/ is this machine's scratch, not state. Packed
+      // here, then handed to the machine's tar on the session's stdin.
+      const packed = await runBytes("tar", [
+        "-czf",
+        "-",
+        "-C",
+        plan.hmrDir,
+        "harness.json",
+        "store",
+      ]);
+      if (packed.code !== 0) {
+        return {
+          kind: "failed",
+          step: "replicate the pushed version",
+          detail: packed.stderr.trim() || `tar exited ${packed.code}`,
+        };
+      }
+      const unpack = unpackStoreCommand(identity.platform);
+      const sync =
+        identity.platform === "win32"
+          ? await conn.oneShot(unpack, { input: packed.stdout })
+          : await conn.stream(unpack, { input: packed.stdout });
       if (sync.code !== 0) {
         return {
           kind: "failed",
           step: "replicate the pushed version",
-          detail: sync.stderr.trim() || `tar | ssh exited ${sync.code}`,
+          detail:
+            `${sync.stdout.trim()}\n${sync.stderr.trim()}`.trim() || `tar exited ${sync.code}`,
         };
       }
       output.push(`Pushed version replicated (${plan.version}).`);
     }
 
-    return { kind: "installed", output: output.join("\n").trim(), identity };
+    // ASK THE MACHINE what it now has, rather than reporting what we meant to put there.
+    // Every step above answers for itself — the installer exited 0, the store unpacked — and
+    // none of them answers the only question that matters, which is whether the thing on
+    // disk over there is now this version. An install that ran cleanly and changed nothing
+    // (wrong home, a package manager that declined, a path the installer did not own) would
+    // otherwise be recorded as a success at OUR version, and that record is what
+    // syncOutOfDate filters on: the machine is then excluded from the very sweep that would
+    // have tried again. A false success here does not just mislead, it seals itself in.
+    say("Checking what it ended up with…");
+    const after = await detectRemote(target, conn);
+    if ("error" in after) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail: `the install ran, but the machine could not be asked what it now has: ${after.error}`,
+      };
+    }
+    if (after.identity.installedVersion !== plan.baseVersion) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail:
+          `the install reported success, but the machine still has ` +
+          `${after.identity.installedVersion ?? "no install"} where ${plan.baseVersion} was expected.`,
+      };
+    }
+    // The base is only half of what gets recorded. A plan carrying a pushed state is recorded
+    // at `plan.version`, which is the base plus that state's content sha — so a store whose
+    // unpack exited 0 without landing (a partial tarball, a data root somewhere else, a
+    // harness.json the far side could not replace) would seal the machine in at a version it
+    // is not running. This is the comparison the entry gate above already makes; the machine
+    // has to still make it true afterwards. Scoped to a plan that HAD a pushed state: a
+    // base-only install neither carries nor removes one, and must not be failed for a remote
+    // hmr directory it was never asked to touch.
+    if (plan.hmrDir !== null && after.identity.harness !== plan.harness) {
+      return {
+        kind: "failed",
+        step: "verify the install",
+        detail:
+          "the install reported success, but the pushed version is not what the machine ended " +
+          `up with: it reports ${after.identity.harness === null ? "no pushed state" : "a different one"}.`,
+      };
+    }
+
+    return { kind: "installed", output: output.join("\n").trim(), identity: after.identity };
   } finally {
     // Nothing to clean on a POSIX remote: the installer was never a file there. A Windows
     // one deletes its own copy as part of the install command; this is the local original.
