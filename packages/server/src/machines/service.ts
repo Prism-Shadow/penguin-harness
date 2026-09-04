@@ -1134,7 +1134,13 @@ export class MachinesService {
 export abstract class Machines extends Interface<
   Pick<
     MachinesService,
-    "list" | "imageVersion" | "job" | "startInstall" | "start" | "syncModelsEverywhere"
+    | "list"
+    | "imageVersion"
+    | "job"
+    | "startInstall"
+    | "start"
+    | "syncModelsEverywhere"
+    | "proxyTarget"
   >
 >() {}
 
