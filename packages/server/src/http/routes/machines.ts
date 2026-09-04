@@ -30,12 +30,12 @@ import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MachinesService } from "../../machines/service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MachinesRouteDeps {
   machines: MachinesService;
-  access: ProjectAccess;
+  access: Access;
 }
 
 export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {

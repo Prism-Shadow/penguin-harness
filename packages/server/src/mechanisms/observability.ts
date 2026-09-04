@@ -18,8 +18,14 @@ import type {
   UsageRecordInsert,
   UsageSeriesGranularity,
   UsageSeriesModelSums,
+  PeakTier,
 } from "../db/repos/usage.js";
-import type { UsageErrorsPage, UsageGroupBy, UsageResponse } from "../api/types.js";
+import type {
+  UsageErrorsPage,
+  UsageGroupBy,
+  UsageResponse,
+  UsageModelTotals,
+} from "../api/types.js";
 import type { UsageContext } from "../runtime/usage-recorder.js";
 import type {
   AbortPayload,
@@ -48,10 +54,11 @@ import type {
   ToolCallPayload,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
-import type { UsageQuery } from "../services/usage-service.js";
-import type { UsageErrorsClearQuery, UsageErrorsQuery } from "../services/usage-service.js";
-import type { PeakTier } from "../db/repos/usage.js";
-import type { UsageModelTotals } from "../api/types.js";
+import type {
+  UsageQuery,
+  UsageErrorsClearQuery,
+  UsageErrorsQuery,
+} from "../services/usage-service.js";
 
 /** ErrorLog: the mechanism ErrorsRepo implements. */
 export abstract class ErrorLog extends Interface<{

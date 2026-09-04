@@ -1,9 +1,7 @@
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { Opaque, Slot } from "@prismshadow/penguin-core/kernel";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";

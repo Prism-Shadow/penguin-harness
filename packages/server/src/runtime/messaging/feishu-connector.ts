@@ -19,10 +19,9 @@ import type {
 } from "./connector.js";
 import { feishuCardOf } from "./feishu-card.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
-import { FeishuApiError } from "./feishu-sdk.js";
+import { FeishuApiError, createLarkSdk } from "./feishu-sdk.js";
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
-import { createLarkSdk } from "./feishu-sdk.js";
 
 /** Default Feishu open-platform domain (Lark tenants override it in the form). */
 export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";

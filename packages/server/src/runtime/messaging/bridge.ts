@@ -74,7 +74,7 @@ import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-c
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../../services/attachment-limits.js";
+import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
@@ -94,14 +94,12 @@ import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
 import { MessagingMediaTooLargeError, MessagingPermissionError, isImageFileName } from "./media.js";
 import { replyFileMentions } from "./reply-files.js";
-import { Component, Interface } from "@prismshadow/penguin-core/kernel";
-import type { Slot } from "@prismshadow/penguin-core/kernel";
+import { Component, Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { QQScanTransportHandle } from "./qq-scan.js";
-import { QQScanService } from "./qq-scan.js";
-import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { QQScanService, createQQScanTransport } from "./qq-scan.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Hono } from "hono";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
 import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
@@ -109,8 +107,6 @@ import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
 import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
-import { createQQScanTransport } from "./qq-scan.js";
-import { toAttachmentLimits } from "../../services/attachment-limits.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
 import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
 import type { Access } from "../../mechanisms/projects.js";
@@ -1892,7 +1888,7 @@ export abstract class QQScan extends Interface<
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
-  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" }, MessagingChannelConnector>;
+  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
 }
 
 @Module({
