@@ -112,8 +112,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/machines | **服务端自身** `~/.ssh/config` 中的主机别名、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias, installed}], imageVersion, job}` |
-| POST | /api/machines/:machineId/install | 在该主机上安装当前构建；返回 `202` 与同样的响应体，此时任务已在运行 |
+| GET | /api/projects/:projectId/machines | **服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、本服务端会安装的版本，以及正在运行或最近一次的安装任务：`{machines: [{id, alias, installed, elsewhere?}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
+| POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行 |
+| POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
 
 无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，`ssh -G` 仅在真正安装时才解析别名，因此哪怕配置声明了几百台主机，列表也只是一次文件读取。
 
