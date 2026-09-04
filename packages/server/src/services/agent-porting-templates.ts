@@ -619,15 +619,19 @@ fi
 
 # A first-boot server, on loopback only: setup has to talk to a running server, and nothing
 # outside the container may reach one that is still accepting writes to the definition.
+#
+# Addressed as localhost, not 127.0.0.1: a loopback bind canonicalizes the App onto localhost
+# and serves Workspace previews from 127.0.0.1, so the API answers 401 there. The listener is
+# still 127.0.0.1 (plus its ::1 companion) — only the Host header differs.
 start_local_server() {
   as_node env PENGUIN_PINNED_AGENT="\$1" penguin server --host 127.0.0.1 --port "\$PORT" &
   SERVER_PID=\$!
   trap 'kill -TERM "\$SERVER_PID" 2>/dev/null || true' TERM INT
   for _ in \$(seq 1 60); do
-    curl -sf "http://127.0.0.1:\$PORT/api/install" >/dev/null 2>&1 && return 0
+    curl -sf "http://localhost:\$PORT/api/install" >/dev/null 2>&1 && return 0
     sleep 1
   done
-  echo "The server did not answer on 127.0.0.1:\$PORT within 60s." >&2
+  echo "The server did not answer on localhost:\$PORT within 60s." >&2
   return 1
 }
 
@@ -663,7 +667,7 @@ if [ ! -f "\$SENTINEL" ]; then
   as_node penguin agent import penguin-agent.json \\
     --agent-id "\$AGENT_ID" \\
     --project-id "\$PROJECT_ID" \\
-    --server "http://127.0.0.1:\$PORT"
+    --server "http://localhost:\$PORT"
   stop_local_server
 
   # Extra accounts, pinned this time: an unpinned server hands a new user a project of their
@@ -677,7 +681,7 @@ if [ ! -f "\$SENTINEL" ]; then
       echo "Creating user \$name …"
       # node builds the body so a password containing a quote or a backslash stays intact.
       body="\$(node -e 'process.stdout.write(JSON.stringify({userId:process.argv[1],password:process.argv[2]}))' "\$name" "\$password")"
-      curl -sSf -X POST "http://127.0.0.1:\$PORT/api/admin/users" \\
+      curl -sSf -X POST "http://localhost:\$PORT/api/admin/users" \\
         -H "Authorization: Bearer \$API_TOKEN" \\
         -H "Content-Type: application/json" \\
         --data "\$body" -o /dev/null \\

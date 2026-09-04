@@ -215,6 +215,10 @@ describe("agent porting", () => {
     // Phase 1 imports through a loopback-only server that is deliberately still unpinned…
     expect(entrypoint).toContain("penguin agent import penguin-agent.json");
     expect(entrypoint).toContain("--host 127.0.0.1");
+    // …addressed as localhost, because a loopback bind serves previews (not the API) on
+    // 127.0.0.1 and answers 401 there…
+    expect(entrypoint).toContain('--server "http://localhost:$PORT"');
+    expect(entrypoint).not.toContain("http://127.0.0.1:");
     // …phase 2 locks the definition files and leaves memory and the vault alone…
     expect(entrypoint).toContain("chown -R root:root");
     expect(entrypoint).toContain("chmod 1775");
