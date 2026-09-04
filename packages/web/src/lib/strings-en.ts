@@ -152,17 +152,6 @@ export const en: Strings = {
     pluginProjectNone: "Choose a Project",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "Sharing",
-    sharingInfo:
-      "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
-    sharingDesc:
-      "The server publishes as the `gh` CLI logged in on its machine when there is one; this token is the fallback. It is write-only: the page shows whether one is stored, never the value.",
-    githubToken: "GitHub token",
-    githubTokenHint:
-      "Needs the gist scope (fine-grained token: Gists → Read and write). Leaving it empty and saving changes nothing.",
-    githubTokenStored: "A token is stored.",
-    githubTokenMissing: "No token yet: Agents can be installed from a gist, but not published.",
-    githubTokenReplace: "Enter a new token to replace it",
-    githubTokenClear: "Clear token",
     sandboxTitle: "Sandbox",
     sandboxInfo:
       "The confinement agent commands run under. What enforces it is a backend contributed by a plugin (bwrap on Linux, Seatbelt on macOS, MXC on Windows, or DSH); with none installed, choosing a mode confines nothing. The settings park with the platform, so they survive a hot update.",
@@ -178,6 +167,17 @@ export const en: Strings = {
     sandboxBackends: "Backends",
     sandboxNoBackend:
       "This deployment has no sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
+    sharingInfo:
+      "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
+    sharingDesc:
+      "The server publishes as the `gh` CLI logged in on its machine when there is one; this token is the fallback. It is write-only: the page shows whether one is stored, never the value.",
+    githubToken: "GitHub token",
+    githubTokenHint:
+      "Needs the gist scope (fine-grained token: Gists → Read and write). Leaving it empty and saving changes nothing.",
+    githubTokenStored: "A token is stored.",
+    githubTokenMissing: "No token yet: Agents can be installed from a gist, but not published.",
+    githubTokenReplace: "Enter a new token to replace it",
+    githubTokenClear: "Clear token",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",

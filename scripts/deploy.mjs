@@ -343,7 +343,6 @@ async function main() {
     `pushing ${Object.keys(files).length} web files + ${transferNote} + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );
 
-  const auth = await authHeaders();
   const started = Date.now();
   const res = await request(`${baseUrl}/api/hmr/upgrade`, {
     method: "POST",

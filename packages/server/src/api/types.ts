@@ -25,9 +25,9 @@ import type {
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
-import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 import type {
   PackageManifest as PackageManifestType,
   PublishedGist as PublishedGistType,
@@ -3616,6 +3616,7 @@ export interface AgentPackagePreviewResponse {
   kind: AgentPackageSourceKind;
   /** The manifest's Agent id, or the source's name when the source carries no manifest. */
   suggestedId: string;
+}
 
 /**
  * One field of a plugin's declared configuration (`package.json#penguin.configuration

@@ -151,17 +151,6 @@ export const zh = {
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "分享",
-    sharingInfo:
-      "把 Agent 的定义（系统配置、提示词、技能、工具、工作流）发布为 GitHub gist，或从 gist 安装。发布需要一个带 gist 权限的 GitHub token，由服务器保存；安装公开 gist 不需要 token。",
-    sharingDesc:
-      "服务器优先用它所在机器上 gh CLI 的登录身份发布；没有 gh 时才用这个 token。它只写不读，界面只显示是否已配置。",
-    githubToken: "GitHub token",
-    githubTokenHint:
-      "需要 gist 权限（Fine-grained token: Gists → Read and write）。留空并保存不会改动。",
-    githubTokenStored: "已配置 token。",
-    githubTokenMissing: "尚未配置 token：Agent 可以从 gist 安装，但不能发布。",
-    githubTokenReplace: "输入新 token 以替换",
-    githubTokenClear: "清除 token",
     /** Admin-only sub-page (server-global): the options loaded plugins declare. */
     pluginsTitle: "插件",
     pluginsInfo:
@@ -186,6 +175,17 @@ export const zh = {
     sandboxBackends: "可用后端",
     sandboxNoBackend:
       "这台部署没有沙盒后端：选择模式不会产生任何实际约束，先在插件页安装一个对应平台的后端。",
+    sharingInfo:
+      "把 Agent 的定义（系统配置、提示词、技能、工具、工作流）发布为 GitHub gist，或从 gist 安装。发布需要一个带 gist 权限的 GitHub token，由服务器保存；安装公开 gist 不需要 token。",
+    sharingDesc:
+      "服务器优先用它所在机器上 gh CLI 的登录身份发布；没有 gh 时才用这个 token。它只写不读，界面只显示是否已配置。",
+    githubToken: "GitHub token",
+    githubTokenHint:
+      "需要 gist 权限（Fine-grained token: Gists → Read and write）。留空并保存不会改动。",
+    githubTokenStored: "已配置 token。",
+    githubTokenMissing: "尚未配置 token：Agent 可以从 gist 安装，但不能发布。",
+    githubTokenReplace: "输入新 token 以替换",
+    githubTokenClear: "清除 token",
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",

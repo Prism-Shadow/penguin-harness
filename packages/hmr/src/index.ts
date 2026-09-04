@@ -21,3 +21,4 @@ export type {
 } from "./host.js";
 export { HotResources } from "./resources.js";
 export * from "./manifest.js";
+export * from "./ifaces-diff.js";
