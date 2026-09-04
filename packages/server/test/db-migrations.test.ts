@@ -447,7 +447,8 @@ describe("rollbackTo", () => {
       ).map((c) => c.name);
       expect(cols).not.toContain("render_markdown");
       expect(cols).not.toContain("final_reply_only");
-      // And what the migrations above 2 created is gone with them, goal_state back.
+      // And what the migrations above 1 created is gone with them; goal_state, which 3
+      // dropped, is back.
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
           name: string;
