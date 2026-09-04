@@ -3,6 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#608](https://github.com/Prism-Shadow/penguin-harness/pull/608)
 
 [English](2026-09-04-memory-file-order-locale.md)
 
