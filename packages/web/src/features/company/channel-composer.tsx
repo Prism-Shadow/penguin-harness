@@ -23,16 +23,14 @@ import {
 } from "./channel-mentions";
 import type { MentionCandidate, MentionKind } from "./channel-mentions";
 
-/** The box grows with the draft up to this many pixels, then scrolls inside (`max-h-40`). */
-const MAX_BOX_PX = 160;
-
 /**
- * The composer's resting height, shared by the box and the send button so the two read as one
- * control: a 20px line (`leading-5`) plus 2×9px of padding plus the 1px border on each side.
- * The button carries it as `h-10`; the box reaches it through `min-h-10` and keeps it as it
- * grows, because the measurement below adds the border back.
+ * The box grows with the draft up to this many pixels, then scrolls inside — the same cap the
+ * development-mode composer sets in chat-input.tsx, and deliberately a pixel count rather than
+ * `max-h-40`: the root font is the reader's own (16 / 18 / 20px, theme.tsx FONT_PX), so a rem
+ * cap would let the box eat a different share of the stream at each scale. `max-h-40` is only
+ * the outer guard; this is the one that binds.
  */
-const ROW_PX = 40;
+const MAX_BOX_PX = 160;
 
 function kindTitle(kind: MentionKind): string {
   if (kind === "employee") return S.company.channels.employees;
@@ -69,12 +67,17 @@ export function ChannelComposer({
   // scrollbar appearing at the second line. `scrollHeight` is content + padding and the box
   // is border-box, so the border has to be added back — without it every line would be set
   // 2px short and the box would scroll against itself from the very first one.
+  //
+  // The resting height is not set here: `min-h-10` on the box and `h-10` on the button are the
+  // same 2.5rem, so an empty or single-line draft sits exactly as tall as 发送 at every font
+  // scale, and `min-height` outranks the height written below. The row is `items-end`, so the
+  // button stays welded to the box's bottom edge as the box grows.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
     const border = el.offsetHeight - el.clientHeight;
-    el.style.height = `${Math.min(Math.max(el.scrollHeight + border, ROW_PX), MAX_BOX_PX)}px`;
+    el.style.height = `${Math.min(el.scrollHeight + border, MAX_BOX_PX)}px`;
   }, [text]);
 
   const pick = (c: MentionCandidate) => {
