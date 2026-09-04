@@ -20,8 +20,10 @@
  *   https://api.deepseek.com carries no /v1, and the request path adds none).
  * - Every OpenAI Chat Completions compatible client — explicit
  *   `client_type: "openai-chat"` (gateways, custom and user-defined groups; the bare
- *   "openai" spelling is a deprecated pre-0.4.2 alias) plus the GLM / Kimi direct
- *   clients — POST {base}/chat/completions.
+ *   "openai" spelling is a deprecated pre-0.4.2 alias),
+ *   `client_type: "openai-chat-vllm-adapter"` (the vLLM group; an openai-chat subclass that
+ *   differs only in the thinking switch it sends), plus the GLM / Kimi direct clients —
+ *   POST {base}/chat/completions.
  *
  * The three generic protocol clients — `openai-responses`, `ant-messages`,
  * `openai-chat` — are also what the custom-model protocol detection stores.
@@ -42,7 +44,10 @@ export function protocolPathForModel(provider: string, clientType: string): stri
   // Order mirrors AutoLLMClient's routing.
   if (t.includes("ant-messages")) return "/v1/messages";
   if (t.includes("openai-responses")) return "/responses";
-  // openai-chat / openai-embedding / the deprecated bare "openai" alias.
+  // openai-chat / openai-chat-vllm-adapter / openai-embedding / the deprecated bare
+  // "openai" alias. AgentHub places openai-chat-vllm-adapter one branch earlier, matched by
+  // exact equality; here the substring reaches the same path, so the two orderings cannot
+  // disagree.
   if (t.includes("openai")) return "/chat/completions";
   // Legacy explicit client types (historical config): pin the family like auto-routing would.
   if (t.includes("claude")) return "/v1/messages";

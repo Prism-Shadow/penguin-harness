@@ -739,6 +739,8 @@ export const en: Strings = {
       "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
     vendorProtocolHint: (vendor: string): string =>
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
+    addProtocolHintPinned: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
