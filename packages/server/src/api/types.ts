@@ -3556,9 +3556,12 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  kind: "install" | "connect" | "restart";
+  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
+  kind: "install" | "connect" | "restart" | "use";
   machineId: string;
   alias: string;
+  /** Waiting its turn: jobs run one at a time, and a batch queues the rest. */
+  queued: boolean;
   running: boolean;
   log: string[];
   result:
@@ -3590,7 +3593,33 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
+  /** The running job, or the last one to finish — one at a time, as ever. */
   job: MachineJob | null;
+  /**
+   * Every job worth showing this generation: the queued ones, the running one, and the last
+   * finished one per machine — so a batch reads as a list of rows each saying where it is.
+   */
+  jobs: MachineJob[];
+}
+
+/** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
+export interface MachinesUseRequest {
+  /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
+  machines: string[];
+  /** Install the program even where its version matches, and restart there — the answer to a job that asked for it. */
+  replaceProgram?: boolean;
+}
+
+/** Why one machine of a batch was not queued; the rest were. */
+export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+export interface MachinesUseResponse extends MachinesResponse {
+  refused: { machineId: string; why: MachineUseRefusal }[];
+}
+
+/** `POST /api/projects/:projectId/machines/stop-using`: let go of these machines — connection dropped, Project membership released; the install stays. */
+export interface MachinesStopUsingRequest {
+  machines: string[];
 }
 
 // ---------------------------------------------------------------------------

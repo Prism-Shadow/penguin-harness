@@ -38,63 +38,63 @@ export const zh = {
   machines: {
     pageTitle: "机器",
     pageDesc:
-      "本服务端 ~/.ssh/config 里声明的主机。选一台即可把当前这套 PenguinHarness 装上去：探测对端、按需带上匹配的 Node 运行时、复制镜像并在对端完成安装。配置文件只读不写，安装使用服务端账户自己的 ssh 密钥。",
+      "本项目跑 agent 的机器。「使用」一台，服务端会自己装好程序、启动、连上并保持连接；「停用」则放开它。",
     /** Version line under the title; `version` is what would be pushed. */
     imageVersion: (version: string) => `将安装的版本：${version}`,
     noImage:
       "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
-    empty: "~/.ssh/config 中没有可用的主机。",
+    empty: "~/.ssh/config 中没有可添加的主机。",
     /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    pick: "选择机器…",
     search: "搜索主机…",
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
-    /** Heading of the entry for the machine this server itself runs on. */
+    /** Tag on a picker row this server already installed on for another project: adding it costs no transfer. */
+    elsewhere: "已装（其他项目）",
+    /** The entry for the machine this server itself runs on. */
     localTitle: "本机",
-    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
-    statusRunning: "运行中",
-    statusRunningOn: (port: number) => `运行中 · 端口 ${port}`,
-    statusStopped: "未运行",
-    statusUnreachable: "连不上",
-    statusUnknown: "未检查",
-    /** A machine carrying a different build from the one this server would install. */
-    update: "更新",
-    behind: "版本不一致",
-    upToDate: "已是最新",
-    /** Bringing a machine's server up and holding a tunnel to it. */
-    replaceProgram: "在那边安装程序并重启",
+    localReady: "就是这台服务端所在的机器，随时可用。",
+    /** Heading of the list of machines in use here. */
+    inUseTitle: (count: number) => `在用的机器（${count}）`,
+    noneInUse: "还没有在用的机器。",
+    sshHint:
+      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
+    /** The two verbs. */
+    add: "添加机器…",
+    addSelected: (count: number) => `使用这 ${count} 台`,
+    useSelected: (count: number) => `使用（${count}）`,
+    stopUsing: "停用",
+    selectAll: "全选",
+    selectedCount: (count: number) => `已选 ${count} 台`,
+    /** The one sentence a row says. */
+    queued: "排队中，等前面的机器处理完。",
+    working: "处理中…",
+    workingAt: (step: string) => `处理中：${step}`,
+    ready: "已连接，随时可用。",
+    readyOn: (port: number) => `已连接，随时可用（端口 ${port}）。`,
+    installedOnly: "已安装。Windows 机器暂时无法保持连接。",
+    behind: (version: string) => `装的是 ${version}，和本服务端不一致——点「使用」即可更新。`,
+    notConnected: "未连接——点「使用」即可连上。",
+    unreachable: "连不上这台机器。",
+    unreachableDetail: (detail: string) => `连不上这台机器：${detail}`,
+    stopped: "对端服务未运行——点「使用」即可启动。",
+    notChecked: "还没检查过。",
+    failedAt: (step: string) => `失败于「${step}」。`,
+    /** The forced install a failed job may offer. */
+    replaceProgram: "强制安装并重启",
     replaceProgramWhy:
       "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
-    restart: "重启",
-    restarting: "重启中\u2026",
-    connect: "连接",
-    connecting: "连接中…",
-    disconnect: "断开",
-    /** A connected machine: its filesystem and API can be reached from here. */
-    reachable: "可访问",
-    agentsUnreachable: "那台机器尚未连接——请在「机器」页面连接它",
-    /** Manual re-probe, for when you already know something changed. */
-    refresh: "刷新",
-    checking: "检查中…",
-    /** Heading of the standing list of machines this server has installed on. */
-    installedTitle: (count: number) => `已安装的机器（${count}）`,
-    /** What the selected machine already carries, remembered on the server across restarts. */
+    /** Refusals answered by machine id when a batch is queued. */
+    refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
+    refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
+    /** The fold under a row. */
+    details: "详情",
     installedAt: (version: string, when: string) => `已安装 ${version}（${when}）。`,
-    install: "安装",
-    installing: "安装中…",
-    reinstall: "重新安装",
-    /** This server already installed there for another project: taking it costs no transfer. */
-    adopt: "加入本项目",
-    installedElsewhere: (version: string) =>
-      `这台机器已装有 ${version}，但属于其他项目。加入本项目无需重新传输。`,
-    /** Terminal states of a finished job. */
-    installed: (version: string) => `已安装 ${version}。`,
-    alreadyInstalled: (version: string) => `已经是 ${version}，无需安装。`,
-    failedAt: (step: string) => `失败于「${step}」。`,
+    checkedAt: (when: string) => `上次检查：${when}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
-    adminOnly: "只有管理员可以安装到机器上。",
+    agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
+    adminOnly: "只有管理员可以管理机器。",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */

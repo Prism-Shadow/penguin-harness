@@ -34,64 +34,52 @@ export const en: Strings = {
   machines: {
     pageTitle: "Machines",
     pageDesc:
-      "The hosts declared in this server's own ~/.ssh/config. Pick one to install this build of PenguinHarness on it: the machine is probed, a matching Node runtime rides along only if it needs one, and the image is copied over and installed there. The config is read, never written, and the install uses the server account's own ssh keys.",
-    /** Version line under the title; `version` is what would be pushed. */
-    imageVersion: (version: string) => `Installs version ${version}`,
+      "The machines this Project runs agents on. Use one and this server installs the program, starts it, connects and stays connected; stop using it and the machine is let go.",
+    imageVersion: (version: string) => `Version to install: ${version}`,
     noImage:
       "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
-    empty: "No hosts in ~/.ssh/config.",
-    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    pick: "Choose a machine\u2026",
-    search: "Search hosts\u2026",
-    noMatch: "No host matches that.",
-    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
-    more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
-    /** Heading of the entry for the machine this server itself runs on. */
-    localTitle: "This machine",
-    /** A machine's server state as of the last probe; `statusUnknown` = not probed yet. */
-    statusRunning: "Running",
-    statusRunningOn: (port: number) => `Running on port ${port}`,
-    statusStopped: "Not running",
-    statusUnreachable: "Unreachable",
-    statusUnknown: "Not checked",
-    /** A machine carrying a different build from the one this server would install. */
-    update: "Update",
-    behind: "Out of sync",
-    upToDate: "Up to date",
-    /** Bringing a machine's server up and holding a tunnel to it. */
-    replaceProgram: "Install the program there and restart",
+    empty: "No host in ~/.ssh/config left to add.",
+    search: "Search hosts…",
+    noMatch: "No host matches.",
+    more: (count: number) => `${count} more not shown — keep typing to narrow it down.`,
+    elsewhere: "installed (other project)",
+    localTitle: "this server",
+    localReady: "The machine this server runs on. Always available.",
+    inUseTitle: (count: number) => `Machines in use (${count})`,
+    noneInUse: "No machine in use yet.",
+    sshHint:
+      "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
+    add: "Add machines…",
+    addSelected: (count: number) => `Use these ${count}`,
+    useSelected: (count: number) => `Use (${count})`,
+    stopUsing: "Stop using",
+    selectAll: "Select all",
+    selectedCount: (count: number) => `${count} selected`,
+    queued: "Waiting its turn behind the machines before it.",
+    working: "Working…",
+    workingAt: (step: string) => `Working: ${step}`,
+    ready: "Connected and ready.",
+    readyOn: (port: number) => `Connected and ready (port ${port}).`,
+    installedOnly: "Installed. A Windows machine cannot hold a connection yet.",
+    behind: (version: string) =>
+      `Carries ${version}, not this server's build — Use brings it up to date.`,
+    notConnected: "Not connected — Use connects it.",
+    unreachable: "This machine cannot be reached.",
+    unreachableDetail: (detail: string) => `This machine cannot be reached: ${detail}`,
+    stopped: "Its server is not running — Use starts it.",
+    notChecked: "Not checked yet.",
+    failedAt: (step: string) => `Failed at "${step}".`,
+    replaceProgram: "Install anyway and restart",
     replaceProgramWhy:
-      "Installs this build's program there whatever it holds now, and restarts its server — which interrupts anyone using it.",
-    restart: "Restart",
-    restarting: "Restarting\u2026",
-    connect: "Connect",
-    connecting: "Connecting\u2026",
-    disconnect: "Disconnect",
-    /** A connected machine: its filesystem and API can be reached from here. */
-    reachable: "Reachable",
-    /** The composer's Agent row when the workspace's machine could not be asked for its Agents. */
-    agentsUnreachable: "That machine is not connected \u2014 connect it on the Machines page",
-    /** Manual re-probe, for when you already know something changed. */
-    refresh: "Refresh",
-    checking: "Checking\u2026",
-    /** Heading of the standing list of machines this server has installed on. */
-    installedTitle: (count: number) => `Installed machines (${count})`,
-    /** What the selected machine already carries, remembered on the server across restarts. */
-    installedAt: (version: string, when: string) => `${version} installed here on ${when}.`,
-    install: "Install",
-    installing: "Installing\u2026",
-    reinstall: "Reinstall",
-    /** This server already installed there for another project: taking it costs no transfer. */
-    adopt: "Add to this project",
-    installedElsewhere: (version: string) =>
-      `${version} is already installed there, for another project \u2014 adding it here sends nothing.`,
-    /** Terminal states of a finished job. */
-    installed: (version: string) => `Installed ${version}.`,
-    alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,
-    failedAt: (step: string) => `It failed while trying to ${step}.`,
-    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
+      "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
+    refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
+    refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
+    details: "Details",
+    installedAt: (version: string, when: string) => `Installed ${version} (${when}).`,
+    checkedAt: (when: string) => `Last checked: ${when}`,
     output: "Output",
-    adminOnly: "Only an admin can install on a machine.",
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
+    adminOnly: "Only an admin can manage machines.",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */

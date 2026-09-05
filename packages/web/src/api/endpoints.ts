@@ -68,6 +68,7 @@ import type {
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   MachinesResponse,
+  MachinesUseResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -1313,6 +1314,26 @@ export const probeMachines = (projectId: string) =>
  * running job. `replaceProgram` answers a job that came back asking for it — installing the
  * program over there even though its version already matches, and restarting it.
  */
+/**
+ * Brings machines into use — install or update if needed, start, connect, sync — as one
+ * queued batch (202). `refused` names the ones that could be turned down without any ssh.
+ * `replaceProgram` answers a job that came back asking for it.
+ */
+export const useMachines = (projectId: string, machineIds: string[], replaceProgram = false) =>
+  apiFetch<MachinesUseResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/use`, {
+    method: "POST",
+    body: replaceProgram
+      ? { machines: machineIds, replaceProgram: true }
+      : { machines: machineIds },
+  });
+
+/** Lets machines go: connections dropped, Project membership released; the install stays. */
+export const stopUsingMachines = (projectId: string, machineIds: string[]) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/stop-using`, {
+    method: "POST",
+    body: { machines: machineIds },
+  });
+
 export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/install`,
