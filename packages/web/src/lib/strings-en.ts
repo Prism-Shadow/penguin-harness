@@ -63,6 +63,11 @@ export const en: Strings = {
       portRange: "A whole number from 1 to 65535.",
       exists: "The ssh config already has this alias.",
       added: (alias: string) => `Wrote ${alias}. Enable it from Add machines….`,
+      configure: "Configure ssh host",
+      editTitle: "Configure ssh host",
+      saved: (alias: string) => `Updated ${alias} in the ssh config.`,
+      foreign:
+        "This block was not written by PenguinHarness and may carry options this form does not know; edit it in ~/.ssh/config.",
     },
     add: "Add machines…",
     addSelected: (count: number) => `Enable these ${count}`,
