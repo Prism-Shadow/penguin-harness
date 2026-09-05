@@ -55,8 +55,8 @@ export const zh = {
     now: "刚刚",
     /** The verbs. */
     add: "添加机器…",
-    addSelected: (count: number) => `使用这 ${count} 台`,
-    use: "使用",
+    addSelected: (count: number) => `启用这 ${count} 台`,
+    use: "启用",
     stopUsing: "停用",
     /** One tap brings every machine behind this build forward (and reconnects it). */
     updateAll: (count: number) => `全部更新（${count}）`,
