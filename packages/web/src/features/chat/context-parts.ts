@@ -2,13 +2,13 @@
  * Context composition rows: the server's estimated parts, re-expressed on the scale the context
  * ring actually shows.
  *
- * The server splits a Session's current model context into six parts and ranks the tools whose
- * traffic occupies the most of it, sizing everything with a character heuristic rather than a
- * tokenizer (this project bundles none). Taken as counts those figures would contradict the
- * ring, which reports the provider's own measurement; taken as **shares** they are exactly what
- * the ring cannot say. So each part is expressed as its share of the estimate, applied to `now`
- * — the parts add up to the occupancy in the panel header, and the estimate's absolute error
- * never reaches the display.
+ * The server splits a Session's current model context into six parts and ranks the tools, and
+ * the files the file tools named, whose traffic occupies the most of it, sizing everything with
+ * a character heuristic rather than a tokenizer (this project bundles none). Taken as counts
+ * those figures would contradict the ring, which reports the provider's own measurement; taken
+ * as **shares** they are exactly what the ring cannot say. So each part is expressed as its
+ * share of the estimate, applied to `now` — the parts add up to the occupancy in the panel
+ * header, and the estimate's absolute error never reaches the display.
  *
  * Pure, no React: unit-tested in test/context-parts.test.ts, rendered by context-gauge.tsx.
  */
@@ -55,10 +55,23 @@ export interface ContextToolShare extends ContextShare {
   name: string;
 }
 
+export interface ContextFileShare extends ContextShare {
+  /** The path as the server spells it: Workspace-relative inside the Workspace, else absolute with `~` for the home directory. */
+  path: string;
+  /** The last segment of `path`, the row's lead. */
+  name: string;
+  /** Everything before `name`, without its trailing separator; empty for a bare file name. */
+  dir: string;
+  /** How many `read_file` / `edit_file` / `write_file` calls named the file. */
+  ops: { read: number; edit: number; write: number };
+}
+
 export interface ContextComposition {
   parts: ContextPartShare[];
   /** Tools ranked by the context their calls and results occupy; their shares are of the whole context, so they do not sum to 100. */
   tools: ContextToolShare[];
+  /** Files ranked the same way, over the three file tools' calls and results. */
+  files: ContextFileShare[];
 }
 
 /**
@@ -78,6 +91,10 @@ export function contextComposition(
   // so they land on exactly the measured occupancy and exactly 100%.
   const tokens = apportion(estimates, now);
   const percents = apportion(estimates, 100);
+  const share = (estimate: number): ContextShare => ({
+    tokens: Math.round((estimate / data.total) * now),
+    percent: Math.round((estimate / data.total) * 100),
+  });
   return {
     parts: CONTEXT_PART_KEYS.map((key, i) => ({
       key,
@@ -85,14 +102,28 @@ export function contextComposition(
       tokens: tokens[i] ?? 0,
       percent: percents[i] ?? 0,
     })),
-    // A ranking, not a partition: these are shares of the whole context and sum to less than it,
+    // Rankings, not partitions: these are shares of the whole context and sum to less than it,
     // so there is nothing to apportion against — each is simply rounded.
-    tools: data.topTools.map((t) => ({
-      name: t.name,
-      tokens: Math.round((t.tokens / data.total) * now),
-      percent: Math.round((t.tokens / data.total) * 100),
+    tools: data.topTools.map((t) => ({ name: t.name, ...share(t.tokens) })),
+    files: data.topFiles.map((f) => ({
+      path: f.path,
+      ...splitFilePath(f.path),
+      ops: f.ops,
+      ...share(f.tokens),
     })),
   };
+}
+
+/**
+ * Splits a path into its file name and the directory before it, on either separator — a
+ * Windows Workspace records backslashes, and the server keeps the platform's own spelling. The
+ * directory carries no trailing separator (`src/state` + `config.ts`); a bare file name has an
+ * empty one, and a file at the root keeps the root itself (`/` + `hosts`).
+ */
+export function splitFilePath(p: string): { name: string; dir: string } {
+  const cut = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  if (cut < 0) return { name: p, dir: "" };
+  return { name: p.slice(cut + 1), dir: p.slice(0, Math.max(cut, 1)) };
 }
 
 /**

@@ -4,7 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { CONTEXT_PART_KEYS, contextComposition } from "../src/features/chat/context-parts";
+import {
+  CONTEXT_PART_KEYS,
+  contextComposition,
+  splitFilePath,
+} from "../src/features/chat/context-parts";
 import { CONTEXT_PART_COLORS } from "../src/lib/category-colors";
 
 function response(over: Partial<SessionContextResponse> = {}): SessionContextResponse {
@@ -19,6 +23,7 @@ function response(over: Partial<SessionContextResponse> = {}): SessionContextRes
       { name: "read_file", tokens: 6000 },
       { name: "exec_command", tokens: 4000 },
     ],
+    topFiles: [],
     contextClosed: false,
     compactionThreshold: null,
     ...over,
@@ -84,6 +89,36 @@ describe("contextComposition", () => {
     expect(c.tools.reduce((n, t) => n + t.percent, 0)).toBeLessThan(100);
   });
 
+  it("scales the file ranking the same way and splits each path for display", () => {
+    const c = contextComposition(
+      response({
+        topFiles: [
+          { path: "src/state/config.ts", tokens: 5000, ops: { read: 2, edit: 1, write: 0 } },
+          { path: "~/notes.md", tokens: 1000, ops: { read: 1, edit: 0, write: 0 } },
+        ],
+      }),
+      50_000,
+    )!;
+    expect(c.files).toEqual([
+      {
+        path: "src/state/config.ts",
+        name: "config.ts",
+        dir: "src/state",
+        ops: { read: 2, edit: 1, write: 0 },
+        tokens: 12_500,
+        percent: 25,
+      },
+      {
+        path: "~/notes.md",
+        name: "notes.md",
+        dir: "~",
+        ops: { read: 1, edit: 0, write: 0 },
+        tokens: 2500,
+        percent: 5,
+      },
+    ]);
+  });
+
   it("has nothing to break down for an empty estimate or a closed context", () => {
     const empty = response({
       systemPrompt: 0,
@@ -98,5 +133,15 @@ describe("contextComposition", () => {
     expect(contextComposition(empty, 0)).toBeNull();
     // A completed compaction closed the context these figures describe; the next one is unmeasured.
     expect(contextComposition(response({ contextClosed: true }), 50_000)).toBeNull();
+  });
+});
+
+describe("splitFilePath", () => {
+  it("splits on either separator, keeping a root's own separator as the directory", () => {
+    expect(splitFilePath("src/state/config.ts")).toEqual({ name: "config.ts", dir: "src/state" });
+    expect(splitFilePath("C:\\ws\\src\\a.ts")).toEqual({ name: "a.ts", dir: "C:\\ws\\src" });
+    expect(splitFilePath("/etc/hosts")).toEqual({ name: "hosts", dir: "/etc" });
+    expect(splitFilePath("/hosts")).toEqual({ name: "hosts", dir: "/" });
+    expect(splitFilePath("README.md")).toEqual({ name: "README.md", dir: "" });
   });
 });
