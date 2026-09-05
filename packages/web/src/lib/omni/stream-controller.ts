@@ -217,6 +217,12 @@ export interface StreamController {
   loadNewer: () => Promise<void>;
   /** Drop the run and re-attach the live tail (the jump-to-latest button while detached); no-op while attached. */
   jumpToLatest: () => void;
+  /**
+   * Open the run at a unit cursor (the outline's jump to a turn that is not loaded): the
+   * window starting there replaces the run, detached unless it reaches the live tail.
+   * Rejects when the window could not be fetched; the run is then left as it was.
+   */
+  openAt: (cursor: string) => Promise<void>;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
   /** SSE server-event entry point (`eventId`: same as handleOmni). */
@@ -278,6 +284,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   const newer: HistoryEdgeState = { hasMore: false, loading: false, error: null };
   /** Bumped whenever the run changes shape at either end: the renderer re-anchors the reader on the next commit. */
   let edgesVersion = 0;
+  /** Bumped whenever the run is REPLACED (jump-to-latest, open-at): a frontier fetch from before it must not land on the new run. */
+  let runGeneration = 0;
 
   /** Cursor the next older window ends at: the run's start, or the tail's while nothing is frozen. Null = the beginning is loaded. */
   const topCursor = (): string | null => (windows.length > 0 ? windows[0]!.start : tailStart);
@@ -630,12 +638,13 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     const cursor = topCursor();
     if (older.loading || cursor === null) return;
     const currentEpoch = epoch;
+    const currentRun = runGeneration;
     older.loading = true;
     older.error = null;
     deps.onModelChange();
     try {
       const res = await deps.loadMessages({ kind: "before", cursor, messages: WINDOW_MESSAGES });
-      if (disposed || currentEpoch !== epoch) return;
+      if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return;
       // A before-request against a server without windowing support would return the
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
@@ -646,10 +655,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       shedFromBottom();
       edgesVersion += 1;
     } catch (e) {
-      if (disposed || currentEpoch !== epoch) return;
+      if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return;
       older.error = e instanceof Error ? e.message : String(e);
     } finally {
-      if (!disposed && currentEpoch === epoch) {
+      if (!disposed && currentEpoch === epoch && currentRun === runGeneration) {
         older.loading = false;
         deps.onModelChange();
       }
@@ -678,6 +687,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       return;
     }
     const currentEpoch = epoch;
+    const currentRun = runGeneration;
     newer.loading = true;
     newer.error = null;
     deps.onModelChange();
@@ -688,7 +698,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         ...(tailStart !== null ? { until: tailStart } : {}),
         messages: WINDOW_MESSAGES,
       });
-      if (disposed || currentEpoch !== epoch) return;
+      if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return;
       if (res.page === undefined) throw new Error("windowed history not supported");
       const after = res.page.after ?? null;
       const reachedTail = after === null || after === tailStart;
@@ -704,10 +714,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       shedFromTop();
       edgesVersion += 1;
     } catch (e) {
-      if (disposed || currentEpoch !== epoch) return;
+      if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return;
       newer.error = e instanceof Error ? e.message : String(e);
     } finally {
-      if (!disposed && currentEpoch === epoch) {
+      if (!disposed && currentEpoch === epoch && currentRun === runGeneration) {
         newer.loading = false;
         deps.onModelChange();
       }
@@ -719,18 +729,71 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * windows between here and there — drop the run, re-attach the tail, and backfill one
    * window above it again, the shape a fresh open has.
    */
-  const jumpToLatest = (): void => {
-    if (disposed || tailAttached) return;
+  /** The run becomes the tail alone, one window backfilled above it again — the shape a fresh open has. */
+  const resetToTail = (): void => {
+    runGeneration += 1;
     windows = [];
     tailAttached = true;
     newer.hasMore = false;
     newer.loading = false;
     newer.error = null;
     older.hasMore = tailStart !== null;
+    older.loading = false;
     older.error = null;
     edgesVersion += 1;
     deps.onModelChange();
     if (older.hasMore) void loadOlder();
+  };
+
+  const jumpToLatest = (): void => {
+    if (disposed || tailAttached) return;
+    resetToTail();
+  };
+
+  /**
+   * Open-at (the outline's jump to a turn outside the run): the window starting at the
+   * cursor becomes the whole run — detached, unless it reaches the tail's start, in which
+   * case the tail follows it — and both frontiers work from there as usual. Opening at the
+   * tail's own start is the tail itself. The run is replaced only once the window is in
+   * hand, so a failed fetch leaves the reader where they were.
+   */
+  const openAt = async (cursor: string): Promise<void> => {
+    if (disposed || phase !== "live" || failed) return;
+    if (cursor === tailStart) {
+      resetToTail();
+      return;
+    }
+    const currentEpoch = epoch;
+    const res = await deps.loadMessages({
+      kind: "after",
+      cursor,
+      ...(tailStart !== null ? { until: tailStart } : {}),
+      messages: WINDOW_MESSAGES,
+    });
+    if (disposed || currentEpoch !== epoch) return;
+    if (res.page === undefined) throw new Error("windowed history not supported");
+    const after = res.page.after ?? null;
+    const reachedTail = after === null || after === tailStart;
+    runGeneration += 1;
+    windows =
+      res.messages.length > 0
+        ? [
+            freezeWindow(
+              { messages: res.messages, page: res.page },
+              res.page.before ?? cursor,
+              after ?? tailStart ?? cursor,
+            ),
+          ]
+        : [];
+    tailAttached = reachedTail;
+    older.hasMore = topCursor() !== null;
+    older.loading = false;
+    older.error = null;
+    newer.hasMore = !tailAttached;
+    newer.loading = false;
+    newer.error = null;
+    edgesVersion += 1;
+    deps.onModelChange();
   };
 
   return {
@@ -797,6 +860,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     loadOlder,
     loadNewer,
     jumpToLatest,
+    openAt,
     handleOmni: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;

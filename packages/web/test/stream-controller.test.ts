@@ -739,6 +739,68 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     });
   });
 
+  it("openAt replaces the run with the window at a cursor, detached unless it reaches the tail; a fetch from the old run is discarded", async () => {
+    const h = await withRun();
+    // A backfill still in flight when the run is replaced must not land on the new run.
+    const stale = h.controller.loadOlder();
+    expect(h.controller.older.loading).toBe(true);
+
+    const open = h.controller.openAt("2:0");
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "after",
+      cursor: "2:0",
+      until: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
+    // Resolve the stale backfill FIRST (the pending queue is FIFO): it is ignored.
+    h.resolveLoad(
+      bigTurn("stale", 25),
+      undefined,
+      null,
+      pageInfo({ before: "3:0", earlierTurns: 2 }),
+    );
+    h.resolveLoad(
+      bigTurn("C", 25),
+      undefined,
+      null,
+      pageInfo({ before: "2:0", after: "3:0", earlierTurns: 1 }),
+    );
+    await open;
+    await stale;
+    expect(userTexts(h.controller.items)).toEqual(["question C"]);
+    expect(h.controller.tailAttached).toBe(false);
+    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.outlineOffset).toBe(1);
+
+    // Opening at a window that reaches the tail's start attaches the tail behind it.
+    const near = h.controller.openAt("4:0");
+    h.resolveLoad(
+      bigTurn("A", 25),
+      undefined,
+      null,
+      pageInfo({ before: "4:0", after: "5:0", earlierTurns: 3 }),
+    );
+    await near;
+    expect(h.controller.tailAttached).toBe(true);
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+
+    // Opening at the tail's own start is the tail.
+    const calls = h.loadCalls();
+    await h.controller.openAt("5:0");
+    expect(h.controller.windowCount).toBe(0);
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.loadCalls()).toBe(calls + 1); // the eager backfill above the tail
+
+    // A failed open leaves the run as it was and rejects.
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    const failing = h.controller.openAt("2:0");
+    h.rejectLoad(new Error("boom"));
+    await expect(failing).rejects.toThrow("boom");
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+  });
+
   it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {
     const h = await withRun();
     const b = h.controller.loadOlder();
