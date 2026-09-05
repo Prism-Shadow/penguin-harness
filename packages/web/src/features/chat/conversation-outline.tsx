@@ -33,15 +33,20 @@
  * computation considers only anchors that ARE entries: banner-only messages, merged image
  * fragments and later goal rounds carry anchors too, and crossing one of those must
  * highlight the entry that covers it rather than nothing.
+ *
+ * The entries are the WHOLE conversation (mergeOutline: the server index laid under the
+ * loaded turns), not just what the transcript holds. A turn that is not loaded has no
+ * anchor to jump to; clicking it opens the run at its cursor instead (useOutlineJump),
+ * and the jump completes on the commit that brings its anchor into the DOM.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import type { OutlineEntry } from "./outline-model";
+import { toastError } from "../../components/ui/toast";
+import type { OutlineTurn } from "./outline-model";
 import {
-  globalTurnNumber,
   outlineVisible,
   previewText,
   railTickPitch,
@@ -192,8 +197,8 @@ function RailOverflowMark({ edge }: { edge: "above" | "below" }) {
 
 /** The turn's reply preview for a card/menu row: text, an "answering" pulse for the newest running turn, or "". */
 function answerPreview(
-  entry: OutlineEntry,
-  entries: readonly OutlineEntry[],
+  entry: OutlineTurn,
+  entries: readonly OutlineTurn[],
   running: boolean,
   max: number,
 ): string {
@@ -201,22 +206,59 @@ function answerPreview(
   return running && entry === entries[entries.length - 1] ? S.chat.outlineAnswering : "";
 }
 
+/** Turns before the first listed one (an index-less server with a partial run): counted toward the gate, and the "more above" dots. */
+function hiddenBefore(entries: readonly OutlineTurn[]): number {
+  return entries.length > 0 ? entries[0]!.turn - 1 : 0;
+}
+
+/**
+ * The jump both shapes share. A loaded turn scrolls to its anchor right away; an unloaded
+ * one asks the owner to open the run at its cursor, then jumps on the first entries in
+ * which the turn has an anchor — the commit that put its window on screen. Only the
+ * latest pending turn is honoured: a second click before the first landed supersedes it.
+ */
+function useOutlineJump(
+  entries: readonly OutlineTurn[],
+  scrollRef: RefObject<HTMLDivElement | null>,
+  onOpenAt: (cursor: string) => Promise<void>,
+): (entry: OutlineTurn) => void {
+  const pendingRef = useRef<number | null>(null);
+  useEffect(() => {
+    const turn = pendingRef.current;
+    if (turn === null) return;
+    const landed = entries.find((entry) => entry.turn === turn);
+    if (landed === undefined || landed.anchorId === null) return;
+    pendingRef.current = null;
+    jumpToAnchor(scrollRef.current, landed.anchorId);
+  }, [entries, scrollRef]);
+  return useCallback(
+    (entry: OutlineTurn) => {
+      if (entry.anchorId !== null) {
+        pendingRef.current = null;
+        jumpToAnchor(scrollRef.current, entry.anchorId);
+        return;
+      }
+      if (entry.cursor === null) return;
+      pendingRef.current = entry.turn;
+      void onOpenAt(entry.cursor).catch(() => {
+        if (pendingRef.current === entry.turn) pendingRef.current = null;
+        toastError(S.chat.outlineOpenFailed);
+      });
+    },
+    [scrollRef, onOpenAt],
+  );
+}
+
 export function ConversationOutline({
   entries,
-  turnOffset = 0,
   version,
   scrollRef,
   running,
   fit,
+  onOpenAt,
 }: {
-  entries: OutlineEntry[];
-  /**
-   * Turns that exist BEFORE the loaded history window (windowed loading): added to every
-   * tick's global turn number, counted toward the visibility gate, and >0 keeps the
-   * "more above" edge dots on — numbering never lies about unloaded turns, and the rail
-   * signals that scrolling up will reveal them.
-   */
-  turnOffset?: number;
+  /** The whole conversation's turns (mergeOutline), loaded ones carrying their anchors. */
+  entries: OutlineTurn[];
   /** Stream repaint signal: re-runs the scrollspy as content grows or the stream remounts. */
   version: number;
   /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
@@ -225,19 +267,25 @@ export function ConversationOutline({
   running: boolean;
   /** The page-owned rail-fit measurement (shared with the toolbar fallback's visibility). */
   fit: OutlineRailFit;
+  /** Opens the run at a turn's cursor (a click on a turn that is not loaded). */
+  onOpenAt: (cursor: string) => Promise<void>;
 }) {
   const [activeId, setActiveId] = useState<number | null>(null);
-  /** Hovered/focused tick: which entry to preview, and the tick's center Y within the overlay (the card anchors there). */
-  const [hover, setHover] = useState<{ id: number; top: number } | null>(null);
+  /** Hovered/focused tick: which turn to preview, and the tick's center Y within the overlay (the card anchors there). */
+  const [hover, setHover] = useState<{ turn: number; top: number } | null>(null);
   const navRef = useRef<HTMLElement>(null);
+  const jump = useOutlineJump(entries, scrollRef, onOpenAt);
+  const before = hiddenBefore(entries);
 
   // Scrollspy: recomputed on scroll (rAF-throttled) and on every version bump — streaming
   // growth moves anchors without firing a scroll event. Listener re-attachment per bump is
   // cheap, and keying on version also re-binds after the stream remounts on a session switch.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!fit.shown || !el || !outlineVisible(turnOffset, entries.length)) return;
-    const ids = new Set(entries.map((entry) => entry.anchorId));
+    if (!fit.shown || !el || !outlineVisible(before, entries.length)) return;
+    const ids = new Set(
+      entries.flatMap((entry) => (entry.anchorId === null ? [] : [entry.anchorId])),
+    );
     let raf: number | null = null;
     const compute = () => {
       raf = null;
@@ -255,11 +303,11 @@ export function ConversationOutline({
     };
     // `entries` is rebuilt per version; length + version cover it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fit.shown, scrollRef, entries.length, turnOffset, version]);
+  }, [fit.shown, scrollRef, entries.length, before, version]);
 
   // The gate counts the WHOLE conversation (loaded + unloaded turns): a long session
   // whose tail window happens to hold few entries still deserves its index.
-  if (!fit.shown || !outlineVisible(turnOffset, entries.length)) return null;
+  if (!fit.shown || !outlineVisible(before, entries.length)) return null;
 
   /** Tick center Y relative to the rail overlay (the preview card anchors to it, clamped in render). */
   const tickTop = (e: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
@@ -286,7 +334,7 @@ export function ConversationOutline({
   const pitch = railTickPitch(fit.height, visible.length);
   // Looked up in the windowed slice: a tick the window slid away from mid-hover unmounts
   // without a mouseleave, and its card must not linger.
-  const hovered = hover === null ? null : (visible.find((en) => en.anchorId === hover.id) ?? null);
+  const hovered = hover === null ? null : (visible.find((en) => en.turn === hover.turn) ?? null);
   const cardAnswer = hovered === null ? "" : answerPreview(hovered, entries, running, 160);
 
   return (
@@ -302,31 +350,32 @@ export function ConversationOutline({
           inside the rail by construction, and this guarantees a mismeasure still can't
           push ticks (which take pointer events) out over the toolbar or composer. */}
       <div className="max-h-full overflow-hidden">
-        {/* "More above" also covers turns not yet LOADED (turnOffset > 0): the dots tell
-            the same story either way — earlier turns exist beyond the rendered ticks. */}
-        {(start > 0 || turnOffset > 0) && <RailOverflowMark edge="above" />}
-        {visible.map((entry, i) => {
-          const active = entry.anchorId === activeId;
+        {/* "More above" also covers turns the index does not list (an index-less server
+            with a partial run): the dots tell the same story either way — earlier turns
+            exist beyond the rendered ticks. */}
+        {(start > 0 || before > 0) && <RailOverflowMark edge="above" />}
+        {visible.map((entry) => {
+          const active = entry.anchorId !== null && entry.anchorId === activeId;
           return (
             <button
-              key={entry.anchorId}
+              key={entry.turn}
               type="button"
-              data-outline-tick={entry.anchorId}
+              data-outline-tick={entry.turn}
               aria-current={active || undefined}
-              // Global turn number (turnOffset + start + i): neither the sliding window
-              // nor a partially-loaded history changes how a turn is numbered.
+              // Global turn number: neither the sliding window nor what happens to be
+              // loaded changes how a turn is numbered.
               aria-label={S.chat.outlineTickLabel(
-                globalTurnNumber(turnOffset, start + i),
+                entry.turn,
                 entry.question || S.chat.outlineNoText,
               )}
               style={{ height: pitch }}
-              onMouseEnter={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
+              onMouseEnter={(e) => setHover({ turn: entry.turn, top: tickTop(e) })}
               onMouseLeave={() => setHover(null)}
-              onFocus={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
+              onFocus={(e) => setHover({ turn: entry.turn, top: tickTop(e) })}
               onBlur={() => setHover(null)}
               onClick={() => {
-                jumpToAnchor(scrollRef.current, entry.anchorId);
-                setActiveId(entry.anchorId);
+                jump(entry);
+                if (entry.anchorId !== null) setActiveId(entry.anchorId);
               }}
               className="group/tick pointer-events-auto flex w-10 items-center pl-2.5"
             >
@@ -386,25 +435,30 @@ export function ConversationOutline({
  */
 export function OutlineMenuButton({
   entries,
-  turnOffset = 0,
   scrollRef,
   running,
+  onOpenAt,
 }: {
-  entries: OutlineEntry[];
-  /** Turns before the loaded window (windowed loading): gates visibility on the WHOLE conversation; the list itself shows loaded turns only. */
-  turnOffset?: number;
+  /** The whole conversation's turns (mergeOutline), loaded ones carrying their anchors. */
+  entries: OutlineTurn[];
   scrollRef: RefObject<HTMLDivElement | null>;
   running: boolean;
+  /** Opens the run at a turn's cursor (a tap on a turn that is not loaded). */
+  onOpenAt: (cursor: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const jump = useOutlineJump(entries, scrollRef, onOpenAt);
   // Same gate as the rail: with this few turns neither shape earns its place.
-  if (!outlineVisible(turnOffset, entries.length)) return null;
+  if (!outlineVisible(hiddenBefore(entries), entries.length)) return null;
 
   const setOpenComputing = (next: boolean) => {
     if (next && scrollRef.current) {
       setActiveId(
-        computeActiveAnchor(scrollRef.current, new Set(entries.map((entry) => entry.anchorId))),
+        computeActiveAnchor(
+          scrollRef.current,
+          new Set(entries.flatMap((entry) => (entry.anchorId === null ? [] : [entry.anchorId]))),
+        ),
       );
     }
     setOpen(next);
@@ -430,15 +484,15 @@ export function OutlineMenuButton({
       <div className="max-h-[60vh] overflow-y-auto py-1">
         {entries.map((entry) => {
           const answer = answerPreview(entry, entries, running, 80);
-          const active = entry.anchorId === activeId;
+          const active = entry.anchorId !== null && entry.anchorId === activeId;
           return (
             <button
-              key={entry.anchorId}
+              key={entry.turn}
               type="button"
-              data-outline-menu-entry={entry.anchorId}
+              data-outline-menu-entry={entry.turn}
               aria-current={active || undefined}
               onClick={() => {
-                jumpToAnchor(scrollRef.current, entry.anchorId);
+                jump(entry);
                 setOpen(false);
               }}
               className={`block w-full px-3 py-1.5 text-left transition-colors duration-150 ${
