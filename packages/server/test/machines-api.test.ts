@@ -1505,6 +1505,59 @@ describe("machines API", () => {
     });
   });
 
+  describe("adding a host to the ssh config", () => {
+    const post = (body: Record<string, unknown>) =>
+      admin.post("/api/projects/default_project/machines/ssh-hosts", body);
+
+    it("appends the block, and the list names the new host at once", async () => {
+      const written: string[] = [];
+      const aliases = ["build-box", "nas"];
+      await boot({
+        listAliases: () => aliases,
+        appendHost: (block) => {
+          written.push(block);
+          aliases.push("orchid-2");
+        },
+      });
+      const res = await post({ alias: "orchid-2", hostName: "10.0.0.9", user: "k", port: "2222" });
+      expect(res.status).toBe(201);
+      expect(written).toEqual([
+        [
+          "# Added by PenguinHarness on 2026-08-24T12:00:00.000Z",
+          "Host orchid-2",
+          "  HostName 10.0.0.9",
+          "  User k",
+          "  Port 2222",
+          "",
+        ].join("\n"),
+      ]);
+      const body = (await res.json()) as MachinesResponse;
+      expect(body.machines.some((m) => m.id === "ssh:orchid-2")).toBe(true);
+    });
+
+    it("refuses an alias the config already declares, writing nothing", async () => {
+      const written: string[] = [];
+      await boot({ appendHost: (block) => void written.push(block) });
+      const res = await post({ alias: "nas", hostName: "10.0.0.9" });
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+        "ssh_host_exists",
+      );
+      expect(written).toEqual([]);
+    });
+
+    it("names the field that would not survive as one config line", async () => {
+      const written: string[] = [];
+      await boot({ appendHost: (block) => void written.push(block) });
+      const res = await post({ alias: "new box", hostName: "h" });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("ssh_host_invalid");
+      expect(body.error.message).toContain("alias");
+      expect(written).toEqual([]);
+    });
+  });
+
   describe("refusals decided before any ssh runs", () => {
     it("409s an install through an alias a probe has already heard this machine's id from", async () => {
       await boot();
