@@ -168,6 +168,28 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+    /**
+     * The touch key bar (terminal-keybar.tsx), shown only under `(pointer: coarse)`: the
+     * keys a phone's soft keyboard has none of. Cap faces are the key names themselves
+     * (Esc / Tab / Ctrl / Alt / ^C) and stay untranslated, as on a physical keyboard; these
+     * are their accessible names.
+     */
+    touchKeys: {
+      label: "终端快捷键",
+      esc: "Esc 键",
+      tab: "Tab 键",
+      /** Sticky: tap to arm, the next character composes with it. */
+      ctrl: "Ctrl 键（点一下，下一个字符生效）",
+      alt: "Alt 键（点一下，下一个字符生效）",
+      up: "上方向键",
+      down: "下方向键",
+      left: "左方向键",
+      right: "右方向键",
+      interrupt: "中断（Ctrl+C）",
+      paste: "粘贴",
+      hideKeyboard: "收起键盘",
+      showKeyboard: "调出键盘",
+    },
   },
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
@@ -204,6 +226,9 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
+    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
+    maximize: "放大到整屏",
+    restore: "还原高度",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
