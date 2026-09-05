@@ -149,6 +149,20 @@ describe("machines API", () => {
     it("needs a session at all", async () => {
       expect((await t.app.request("/api/projects/default_project/machines")).status).toBe(401);
     });
+
+    it("gates a machine's proxied API the same way, under its own prefix", async () => {
+      // /server/<machineId>/api/… is a protected group outside /api: the gate is what puts
+      // the user on the context, and an ungated prefix left the handler reading isAdmin off
+      // nothing — a 500, for the admin who was allowed and the stranger who was not.
+      expect((await t.app.request("/server/tXIvjrl0pgKa5_dD/api/version")).status).toBe(401);
+      const user = await provisionUser(t.app, "member");
+      const member = apiClient(t.app, user.cookie);
+      expect((await member.get("/server/tXIvjrl0pgKa5_dD/api/version")).status).toBe(403);
+      // An admin reaches the proxy itself, which answers for a machine it does not hold.
+      const res = await admin.get("/server/tXIvjrl0pgKa5_dD/api/version");
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not_connected");
+    });
   });
 
   describe("the list", () => {
