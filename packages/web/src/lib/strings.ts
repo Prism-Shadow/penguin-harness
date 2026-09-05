@@ -174,11 +174,26 @@ export const zh = {
     loadFailed: "轨迹加载失败",
   },
 
+  dashboard: {
+    title: "看板",
+    /** The two counts, read beside their numbers: "3 运行中", "1 待审核". */
+    running: "运行中",
+    pendingReview: "待审核",
+    /** The merged row of auto-created temporary Workspaces, as the sidebar groups them. */
+    temporaryWorkspaces: "临时工作区",
+    empty: "没有正在运行的会话",
+    emptyHint: "有会话正在运行或等待审批的工作区会显示在这里。",
+    loadFailed: "加载失败",
+    silentMachines: (n: number) => `${n} 台机器没有应答`,
+  },
+
   settings: {
     language: "语言",
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "系统设置",
+    /** Sidebar user-menu row, under the settings row, opening the dashboard page. */
+    dashboard: "看板",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",

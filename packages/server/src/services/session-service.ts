@@ -29,8 +29,10 @@ import type {
   SessionInfo,
   SessionSource,
   ServerEvent,
+  WorkspaceActivity,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
+import { workspaceActivityOf } from "./session-overview.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
@@ -99,6 +101,22 @@ export interface SessionServiceDeps {
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  /**
+   * The dashboard's per-Workspace totals over every Agent of the Project: Sessions running
+   * now, Sessions waiting on an approval. Read off the index and the manager and nothing
+   * else — no Trace work, no source classification: the counts are about this moment.
+   */
+  sessionsOverview(projectId: string): WorkspaceActivity[] {
+    return workspaceActivityOf(
+      this.deps.sessions.listByProject(projectId).map((row) => ({
+        workspace: row.workspace,
+        status: this.deps.manager.statusOf(row.sessionId),
+        pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
+        archived: (row.archivedAt ?? null) !== null,
+      })),
+    );
+  }
 
   /**
    * DB row -> SessionInfo (run status and pending approval count come from session-manager).

@@ -1274,6 +1274,24 @@ export interface SessionsResponse {
   workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
+/**
+ * One Workspace's live totals, for the dashboard: how many of its Sessions run right now
+ * and how many wait on a person's approval. A Workspace with neither is not listed.
+ */
+export interface WorkspaceActivity {
+  /** The Workspace path as its Sessions carry it (SessionInfo.workspace). */
+  workspace: string;
+  /** Sessions whose status is not idle — running, or compacting. */
+  running: number;
+  /** Sessions with at least one approval awaiting a human decision. */
+  pendingReview: number;
+}
+
+/** `GET /api/projects/:projectId/sessions/overview`: the Project's Sessions over every Agent, live, by Workspace. */
+export interface SessionsOverviewResponse {
+  workspaces: WorkspaceActivity[];
+}
+
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
