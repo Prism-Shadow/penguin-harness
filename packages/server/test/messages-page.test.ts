@@ -111,7 +111,7 @@ describe("messages windowed reads", () => {
       ...turn(3, 4, 4000),
     ]);
 
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 2 } });
     expect(userTexts(tail.messages)).toEqual(["q3", "q4"]);
     expect(tail.messages.some((m) => m.type === "session_meta")).toBe(false);
     expect(tail.before).toBeDefined();
@@ -122,7 +122,7 @@ describe("messages windowed reads", () => {
     const mid = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 1,
+      size: { units: 1 },
     });
     expect(userTexts(mid.messages)).toEqual(["q2"]);
     expect(mid.prior.turns).toBe(1);
@@ -132,7 +132,7 @@ describe("messages windowed reads", () => {
     const first = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(mid.before!)!,
-      limit: 5,
+      size: { units: 5 },
     });
     expect(userTexts(first.messages)).toEqual(["q1"]);
     expect(first.messages[0]!.type).toBe("session_meta");
@@ -183,7 +183,7 @@ describe("messages windowed reads", () => {
     ]);
 
     // Tail of 2 units = turn 2 (which spans BOTH shards, compaction included) + turn 3.
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 2 } });
     expect(userTexts(tail.messages)[0]).toBe("q2");
     expect(userTexts(tail.messages)).toContain("q3");
     expect(
@@ -197,7 +197,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 10,
+      size: { units: 10 },
     });
     expect(userTexts(older.messages)).toEqual(["q1"]);
     expect(older.before).toBeUndefined();
@@ -228,7 +228,7 @@ describe("messages windowed reads", () => {
       ...turn(2, 2, 2000),
     ]);
 
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     // The post-crash prompt is a unit of its own and stays visible.
     expect(userTexts(tail.messages)).toEqual(["q2"]);
     expect(tail.prior.turns).toBe(1);
@@ -237,7 +237,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 10,
+      size: { units: 10 },
     });
     const full = await service.readMessages(P, A, S);
     expect([...older.messages, ...tail.messages]).toEqual(full);
@@ -263,12 +263,12 @@ describe("messages windowed reads", () => {
       ...turn(2, 2, 2000),
     ]);
 
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(userTexts(tail.messages)).toEqual(["q2"]);
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 10,
+      size: { units: 10 },
     });
     const full = await service.readMessages(P, A, S);
     expect([...older.messages, ...tail.messages]).toEqual(full);
@@ -294,7 +294,7 @@ describe("messages windowed reads", () => {
 
     // limit 1 must take the WHOLE second turn: the cut lands at q2, never at the
     // steering text, its image, or between t1's call and output.
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(userTexts(tail.messages)[0]).toBe("q2");
     const kinds = tail.messages.map((m) => (m.payload as { type?: string }).type);
     expect(kinds).toContain("tool_call");
@@ -304,7 +304,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 10,
+      size: { units: 10 },
     });
     expect(userTexts(older.messages)).toEqual(["q1"]);
   });
@@ -351,7 +351,7 @@ describe("messages windowed reads", () => {
 
     // The newest unit is the idle notice's own turn, with two entries (q1, q2) before it —
     // the steered notice opened neither a unit nor an entry.
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(userTexts(tail.messages)[0]).toContain("proc-2");
     expect(tail.prior.turns).toBe(2);
     // The previous window is the WHOLE second turn: the cut lands at q2, never at the
@@ -359,7 +359,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 1,
+      size: { units: 1 },
     });
     expect(userTexts(older.messages)[0]).toBe("q2");
     expect(userTexts(older.messages).some((t) => t.includes("proc-1"))).toBe(true);
@@ -388,7 +388,7 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:08.000Z", requestEnd("completed")),
       at("2026-07-20T10:01:08.500Z", tokenUsage(counts(2000), counts(200))),
     ]);
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     // The newest unit is the WHOLE second turn — the cut lands at q2, not at the notice —
     // and only q1 precedes it in the outline numbering.
     expect(userTexts(tail.messages)[0]).toBe("q2");
@@ -428,7 +428,7 @@ describe("messages windowed reads", () => {
     // Four units in total (each send cuts), but only ONE outline entry precedes q4:
     // the text+images send counts once, the banner and the goal round count zero —
     // exactly buildOutline's rule, so q4 renders as global turn 2 with offset 1.
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(userTexts(tail.messages)).toEqual(["q4"]);
     expect(tail.prior.turns).toBe(1);
 
@@ -436,7 +436,7 @@ describe("messages windowed reads", () => {
     const goalWin = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 1,
+      size: { units: 1 },
     });
     expect(userTexts(goalWin.messages)[0]).toContain("goal round 2 protocol");
     expect(goalWin.prior.turns).toBe(1);
@@ -444,13 +444,13 @@ describe("messages windowed reads", () => {
     const bannerWin = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(goalWin.before!)!,
-      limit: 1,
+      size: { units: 1 },
     });
     expect(bannerWin.prior.turns).toBe(1); // only the image send precedes the banner
     const firstWin = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(bannerWin.before!)!,
-      limit: 1,
+      size: { units: 1 },
     });
     expect(firstWin.prior.turns).toBe(0);
     expect(firstWin.before).toBeUndefined();
@@ -468,7 +468,7 @@ describe("messages windowed reads", () => {
       ...turn(1, 2, 2000),
       ...turn(2, 3, 3000),
     ]);
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     // Web semantics: a turn's elapsed = last request_end − its first message = 3s each.
     expect(tail.prior.elapsedMs).toBe(2 * 3000);
     expect(tail.prior.sessionTokens).toBe(2000); // last session.total before the window
@@ -514,7 +514,7 @@ describe("messages windowed reads", () => {
       at("2026-07-20T10:01:03.800Z", tokenUsage(counts(70), counts(70))),
     ]);
 
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     // The window (turn 2) expands child2 in place, origin-tagged, pointer replaced.
     const origins = tail.messages.filter((m) => m.origin !== undefined);
     expect(origins.length).toBeGreaterThan(0);
@@ -530,7 +530,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: decodeCursor(tail.before!)!,
-      limit: 10,
+      size: { units: 10 },
     });
     const full = await service.readMessages(P, A, S);
     expect([...older.messages, ...tail.messages]).toEqual(full);
@@ -553,12 +553,12 @@ describe("messages windowed reads", () => {
     ]);
 
     // Priming: the first windowed read backfills the per-shard prefix cache (reads old shards once).
-    const primed = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    const primed = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(userTexts(primed.messages)).toEqual(["q5"]);
 
     // A tail request now touches ONLY the newest shard.
     harness.shardReads.length = 0;
-    await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 1 } });
     expect(harness.shardReads).toHaveLength(1);
     expect(harness.shardReads[0]).toContain(`${S}_003.jsonl`);
 
@@ -567,7 +567,7 @@ describe("messages windowed reads", () => {
     const older = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: { fileIndex: 2, ordinal: 1 },
-      limit: 1,
+      size: { units: 1 },
     });
     expect(userTexts(older.messages)).toEqual(["q2"]);
     expect(harness.shardReads.every((p) => !p.includes(`${S}_003.jsonl`))).toBe(true);
@@ -575,9 +575,10 @@ describe("messages windowed reads", () => {
   });
 
   it("cursor edge cases: unknown shard yields an empty end-of-history page; empty sessions page cleanly", async () => {
-    expect(await service.readMessagesPage(P, A, S, { kind: "tail", limit: 5 })).toEqual({
+    expect(await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 5 } })).toEqual({
       messages: [],
       prior: { turns: 0, subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+      reachesEnd: true,
     });
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),
@@ -586,7 +587,7 @@ describe("messages windowed reads", () => {
     const gone = await service.readMessagesPage(P, A, S, {
       kind: "before",
       cursor: { fileIndex: 9, ordinal: 4 },
-      limit: 5,
+      size: { units: 5 },
     });
     expect(gone.messages).toEqual([]);
     expect(gone.before).toBeUndefined();
@@ -599,13 +600,200 @@ describe("messages windowed reads", () => {
     expect(decodeCursor("a:b")).toBeNull();
   });
 
+  it("a message budget cuts at the newest unit that satisfies it and never inside a Task", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      ...turn(2, 3, 3000),
+      ...turn(3, 4, 4000),
+    ]);
+
+    // Seven messages need two whole five-message turns: the budget is a floor.
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { messages: 7 } });
+    expect(userTexts(tail.messages)).toEqual(["q3", "q4"]);
+    expect(tail.messages).toHaveLength(10);
+    expect(decodeCursor(tail.before!)).toEqual({ fileIndex: 1, ordinal: 11 });
+    expect(tail.reachesEnd).toBe(true);
+
+    // A budget smaller than one Task still yields the whole Task.
+    const one = await service.readMessagesPage(P, A, S, { kind: "tail", size: { messages: 1 } });
+    expect(userTexts(one.messages)).toEqual(["q4"]);
+    expect(one.messages).toHaveLength(5);
+
+    // A budget the transcript cannot meet reaches the beginning: preamble in, no cursor.
+    const all = await service.readMessagesPage(P, A, S, { kind: "tail", size: { messages: 100 } });
+    expect(userTexts(all.messages)).toEqual(["q1", "q2", "q3", "q4"]);
+    expect(all.messages[0]!.type).toBe("session_meta");
+    expect(all.before).toBeUndefined();
+
+    // `before` with a budget: two units back from q3's cursor is the transcript's first
+    // unit, which is never a cut — the window takes the beginning.
+    const prev = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      size: { messages: 6 },
+    });
+    expect(userTexts(prev.messages)).toEqual(["q1", "q2"]);
+    expect(prev.before).toBeUndefined();
+    expect(prev.reachesEnd).toBe(false);
+  });
+
+  it("after: forward windows tile the transcript, stop at `until`, and report the live edge", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-21", S, 2, [
+      sessionMeta(metaPayload()),
+      ...turn(2, 3, 3000),
+      ...turn(3, 4, 4000),
+      ...turn(4, 5, 5000),
+    ]);
+    const full = await service.readMessages(P, A, S);
+
+    // Backward chain, one turn per window: q5 | q4 | q3 | q2 | (preamble) q1.
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { messages: 5 } });
+    expect(userTexts(tail.messages)).toEqual(["q5"]);
+    expect(tail.before).toBe("2:11");
+    const b1 = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      size: { messages: 5 },
+    });
+    expect(userTexts(b1.messages)).toEqual(["q4"]);
+    expect(b1.before).toBe("2:6");
+    const b2 = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: { fileIndex: 2, ordinal: 6 },
+      size: { messages: 5 },
+    });
+    expect(userTexts(b2.messages)).toEqual(["q3"]);
+    expect(b2.before).toBe("2:1");
+    const b3 = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: { fileIndex: 2, ordinal: 1 },
+      size: { messages: 5 },
+    });
+    expect(userTexts(b3.messages)).toEqual(["q2"]);
+    expect(b3.before).toBe("1:6");
+    const b4 = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      size: { messages: 5 },
+    });
+    expect(userTexts(b4.messages)).toEqual(["q1"]);
+    expect(b4.before).toBeUndefined();
+
+    // Forward from q2, bounded by the tail's start: one turn, closed by its budget at
+    // q3's cursor; the page names its own start and the next window's.
+    const f1 = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      until: { fileIndex: 2, ordinal: 11 },
+      size: { messages: 5 },
+    });
+    expect(userTexts(f1.messages)).toEqual(["q2"]);
+    expect(f1.messages).toEqual(b3.messages);
+    expect(f1.before).toBe("1:6");
+    expect(f1.after).toBe("2:1");
+    expect(f1.reachesEnd).toBe(false);
+    expect(f1.prior).toEqual(b3.prior);
+
+    // A budget of seven takes two whole turns, and `until` closes the window before the
+    // tail's units — `after` then IS the bound, so the caller knows it arrived.
+    const f2 = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 2, ordinal: 1 },
+      until: { fileIndex: 2, ordinal: 11 },
+      size: { messages: 7 },
+    });
+    expect(userTexts(f2.messages)).toEqual(["q3", "q4"]);
+    expect(f2.after).toBe("2:11");
+    expect(f2.reachesEnd).toBe(false);
+    expect(f2.prior).toEqual(b2.prior);
+
+    // Unbounded from the tail's start: runs out of history, no `after`, live edge.
+    const f3 = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 2, ordinal: 11 },
+      until: null,
+      size: null,
+    });
+    expect(userTexts(f3.messages)).toEqual(["q5"]);
+    expect(f3.messages).toEqual(tail.messages);
+    expect(f3.after).toBeUndefined();
+    expect(f3.reachesEnd).toBe(true);
+
+    // Unit-sized forward pages work the same way.
+    const f4 = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 2, ordinal: 1 },
+      until: null,
+      size: { units: 1 },
+    });
+    expect(userTexts(f4.messages)).toEqual(["q3"]);
+    expect(f4.after).toBe("2:6");
+
+    // Backward windows and forward windows tile the same transcript.
+    expect([...b4.messages, ...f1.messages, ...f2.messages, ...f3.messages]).toEqual(full);
+  });
+
+  it("after: an unknown cursor shard is end-of-history; `until` at or behind the cursor is an empty window, a vanished one no bound", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+    ]);
+    const gone = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 9, ordinal: 0 },
+      until: null,
+      size: null,
+    });
+    expect(gone).toEqual({
+      messages: [],
+      prior: { turns: 0, subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+      reachesEnd: true,
+    });
+    // The Web client walks a detached run back down with `until` = the tail's start; a
+    // run that already ends there must get nothing, not the tail a second time.
+    const at = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      until: { fileIndex: 1, ordinal: 6 },
+      size: null,
+    });
+    expect(at.messages).toEqual([]);
+    expect(at.after).toBe("1:6");
+    expect(at.reachesEnd).toBe(false);
+    const behind = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      until: { fileIndex: 1, ordinal: 1 },
+      size: null,
+    });
+    expect(behind.messages).toEqual([]);
+    expect(behind.after).toBe("1:1");
+    const vanished = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      until: { fileIndex: 9, ordinal: 0 },
+      size: null,
+    });
+    expect(userTexts(vanished.messages)).toEqual(["q2"]);
+    expect(vanished.after).toBeUndefined();
+    expect(vanished.reachesEnd).toBe(true);
+  });
+
   it("tail covering the whole transcript returns everything with no cursor and equals the full read", async () => {
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),
       ...turn(0, 1, 1000),
       ...turn(1, 2, 2000),
     ]);
-    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 50 });
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", size: { units: 50 } });
     expect(tail.before).toBeUndefined();
     expect(tail.prior.turns).toBe(0);
     expect(tail.messages).toEqual(await service.readMessages(P, A, S));
