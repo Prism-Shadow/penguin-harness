@@ -3539,12 +3539,13 @@ export interface MachineJob {
         message: string;
         /**
          * The failure has a next step this side can take, and it needs saying yes to:
-         * installing the PROGRAM over there and restarting it. Set when a hot update could
-         * not be handed over — the machine's store holds no CLI this server can talk to, and
-         * installing is what replicates one. Offered rather than done, because it restarts a
-         * server this Project does not own alone.
+         * installing the PROGRAM over there and restarting it. Every failed install or
+         * connect offers it — a failure that leaves no next step leaves a person stuck —
+         * except a run that was itself that install, and one this server could not act on
+         * (no build of its own to send), which says `false`. Offered rather than done,
+         * because it restarts a server this Project does not own alone.
          */
-        canReplaceProgram?: true;
+        canReplaceProgram?: boolean;
       };
 }
 

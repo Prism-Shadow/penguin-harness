@@ -535,6 +535,14 @@ export class MachinesService {
   #startJob(
     kind: MachineJob["kind"],
     machine: MachineInfo,
+    /**
+     * Whether a failure offers installing the program anyway. Every failed install or
+     * connect does — a failure that leaves no next step leaves a person stuck — except a
+     * run that was itself that install, and a result that withholds it (`canReplaceProgram:
+     * false`, this server having nothing to send). Never taken on the page's own
+     * initiative: it stops a server other people may be using.
+     */
+    opts: { offerReplaceProgram: boolean },
     work: (say: (line: string) => void) => Promise<MachineJob["result"]>,
   ): void {
     const job: MachineJob = {
@@ -561,6 +569,13 @@ export class MachinesService {
           message: err instanceof Error ? err.message : String(err),
         };
       } finally {
+        if (
+          opts.offerReplaceProgram &&
+          job.result?.ok === false &&
+          job.result.canReplaceProgram === undefined
+        ) {
+          job.result = { ...job.result, canReplaceProgram: true };
+        }
         this.#busy.delete(machine.id);
         job.running = false;
       }
@@ -576,9 +591,9 @@ export class MachinesService {
     projectId: string,
     address: string,
     /**
-     * Install the program even when its version already matches, and restart it. Answers the
-     * one failure that needs it (see the job's `canReplaceProgram`); never inferred, because
-     * it stops a server other people may be using.
+     * Install the program even when its version already matches, and restart it. Every
+     * failed job offers it (see `canReplaceProgram`); never taken on the page's own
+     * initiative, because it stops a server other people may be using.
      */
     replaceProgram = false,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
@@ -597,7 +612,7 @@ export class MachinesService {
     if (plan === null) return { ok: false, why: "no-image" };
     const target = this.#targetOf(machine.alias);
 
-    this.#startJob("install", machine, async (say) => {
+    this.#startJob("install", machine, { offerReplaceProgram: !replaceProgram }, async (say) => {
       say(`Installing ${plan.version} on ${machineIdentity(target.alias, target.user)}…`);
       // Only the machine can say whether this alias is this host under another name.
       // Unreachable is not a refusal — a host with nothing installed yet answers exactly
@@ -654,13 +669,10 @@ export class MachinesService {
                 : pushed.kind === "refused"
                   ? `that machine refused this build — ${pushed.detail}`
                   : pushed.detail,
-            // Every failure on THIS path leaves the same next step: the release over there
-            // matches, so the installer is skipped, and the only thing that can still change
-            // the machine is installing it anyway — which replicates the store the update
-            // channel needs. Not offered for `no-build`, which is this server's own lack.
-            ...(pushed.kind !== "no-build" && !replaceProgram
-              ? { canReplaceProgram: true as const }
-              : {}),
+            // Installing anyway — every failed job's offer (#startJob) — is what replicates
+            // the store the update channel needs; withheld for `no-build`, this server's own
+            // lack, which installing would not mend.
+            ...(pushed.kind === "no-build" ? { canReplaceProgram: false as const } : {}),
           };
         } else if (!pushed.persisted) {
           // Live over there, and gone at its next restart: the machine could not write the
@@ -672,7 +684,6 @@ export class MachinesService {
             step: "hand over the pushed build",
             message:
               "that machine is running this build but could not write it to its disk — it will revert at its next restart. Check its disk and permissions.",
-            ...(replaceProgram ? {} : { canReplaceProgram: true as const }),
           };
         } else {
           say(pushed.detail === "" ? "Update accepted." : pushed.detail);
@@ -725,7 +736,9 @@ export class MachinesService {
     // it with. Said here, in one sentence, rather than discovered as a POSIX command failing
     // under cmd.exe in the job's log.
     if (this.repo.get(address)?.platform === "win32") return { ok: false, why: "unsupported" };
-    this.#startJob("connect", machine, (say) => this.#connect(machine, say));
+    this.#startJob("connect", machine, { offerReplaceProgram: true }, (say) =>
+      this.#connect(machine, say),
+    );
     return { ok: true };
   }
 
@@ -742,16 +755,10 @@ export class MachinesService {
     const probed = await this.#probe(address, target);
     this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
-      // The same dead end an install reaches, and the same way out: the machine cannot
-      // answer because the CLI in its store is not one this server can talk to, and the
-      // installer is what replaces it. Offered here too — a connect that only reports
-      // OpenSSH's or commander's words leaves a person with nothing to do next.
-      return {
-        ok: false,
-        step: "connect",
-        message: probed.state.detail,
-        canReplaceProgram: true,
-      };
+      // The same dead end an install reaches, and the same way out — installing anyway,
+      // which every failed job offers (#startJob): the machine cannot answer because the
+      // CLI in its store is not one this server can talk to, and the installer replaces it.
+      return { ok: false, step: "connect", message: probed.state.detail };
     }
     // The refusal startConnect made from the record, made again from what was just heard: an
     // alias never probed before, or one repointed here since, answers this server's own id
@@ -1012,7 +1019,7 @@ export class MachinesService {
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     if (machine.local) return { ok: false, why: "self" };
     if (machine.installed === null) return { ok: false, why: "not-installed" };
-    this.#startJob("restart", machine, async (say) => {
+    this.#startJob("restart", machine, { offerReplaceProgram: false }, async (say) => {
       const target = this.#targetOf(machine.alias);
       const done = await this.#restartServer(address, target, say);
       if (!done.ok) return { ok: false, step: "restart", message: done.detail };
