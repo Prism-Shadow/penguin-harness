@@ -1275,21 +1275,25 @@ export interface SessionsResponse {
 }
 
 /**
- * One Workspace's live totals, for the dashboard: how many of its Sessions run right now
- * and how many wait on a person's approval. A Workspace with neither is not listed.
+ * One Session's live facts, for the dashboard: where it is, whether it is working, whether it
+ * ever ran, and when it last did. The dashboard counts running and to-review from these the
+ * way the sidebar draws its glyphs — to-review is "finished since this browser last opened
+ * it", a per-browser fact the server cannot know, so it hands over the facts and not a count.
  */
-export interface WorkspaceActivity {
-  /** The Workspace path as its Sessions carry it (SessionInfo.workspace). */
+export interface SessionActivityInfo {
+  sessionId: string;
+  /** The Workspace path as the Session carries it (SessionInfo.workspace). */
   workspace: string;
-  /** Sessions whose status is not idle — running, or compacting. */
-  running: number;
-  /** Sessions with at least one approval awaiting a human decision. */
-  pendingReview: number;
+  status: SessionStatus;
+  /** Whether a Task has been started (SessionInfo.hasTrace): a Session that never ran has nothing to review. */
+  hasTrace: boolean;
+  /** SessionInfo.lastActiveAt — what the read/unread marker is compared against. */
+  lastActiveAt: string;
 }
 
-/** `GET /api/projects/:projectId/sessions/overview`: the Project's Sessions over every Agent, live, by Workspace. */
+/** `GET /api/projects/:projectId/sessions/overview`: every non-archived Session of the Project, over every Agent. */
 export interface SessionsOverviewResponse {
-  workspaces: WorkspaceActivity[];
+  sessions: SessionActivityInfo[];
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
