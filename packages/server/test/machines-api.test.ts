@@ -266,6 +266,8 @@ describe("machines API", () => {
         ok: false,
         step: "connect",
         message: "Permission denied (publickey).",
+        // Every failed install offers installing the program anyway.
+        canReplaceProgram: true,
       });
     });
 
