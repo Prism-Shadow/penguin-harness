@@ -27,6 +27,7 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
+  OutlineResponse,
   RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
@@ -812,6 +813,14 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         : {}),
       "cache-control": "private, max-age=31536000, immutable",
     });
+  });
+
+  // The conversation outline index: every turn, with the cursor a window opens at. Read
+  // from the per-shard cache plus one scan of the newest shard (see TraceService.readOutline).
+  app.get("/:sessionId/outline", async (c) => {
+    const row = resolveSession(c);
+    const entries = await deps.traceService.readOutline(row.projectId, row.agentId, row.sessionId);
+    return c.json({ entries } satisfies OutlineResponse);
   });
 
   app.get("/:sessionId/messages", async (c) => {

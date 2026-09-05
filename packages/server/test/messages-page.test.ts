@@ -787,6 +787,54 @@ describe("messages windowed reads", () => {
     expect(vanished.reachesEnd).toBe(true);
   });
 
+  it("outline index: every turn with its cursor, question and reply preview, across shards and from the cache", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      // An image-first send: the image opens the turn, the text that follows supplies
+      // the question (the two are one prompt, as buildOutline merges them).
+      at("2026-07-20T10:01:00.000Z", imageUrlMessage("data:image/png;base64,AAAA")),
+      at("2026-07-20T10:01:00.500Z", userText("what is in the picture")),
+      at("2026-07-20T10:01:02.000Z", assistantText("a cat")),
+      at("2026-07-20T10:01:03.000Z", assistantText("on a mat")),
+      at("2026-07-20T10:01:03.500Z", tokenUsage(counts(2000), counts(100))),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-21", S, 2, [
+      sessionMeta(metaPayload()),
+      // A handoff banner starts a Task but is not a turn: no entry, and q3 is turn 3.
+      at(
+        "2026-07-21T10:02:00.000Z",
+        userText(buildHandoffMessage({ agentId: "worker", workspace: "/tmp/w" })),
+      ),
+      at("2026-07-21T10:02:01.000Z", assistantText("banner reply")),
+      ...turn(3, 3, 3000),
+    ]);
+
+    const entries = await service.readOutline(P, A, S);
+    expect(entries.map((e) => [e.turn, e.cursor, e.question, e.answer])).toEqual([
+      [1, "1:1", "q1", "a1"],
+      [2, "1:6", "what is in the picture", "a cat on a mat"],
+      [3, "2:3", "q3", "a3"],
+    ]);
+    // Cursors are unit boundaries: a window opened at one starts with that very prompt.
+    const opened = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: decodeCursor(entries[1]!.cursor)!,
+      until: null,
+      size: { units: 1 },
+    });
+    expect(opened.messages[0]!.type).toBe("model_msg");
+    expect((opened.messages[0]!.payload as { type?: string }).type).toBe("image_url");
+    expect(opened.prior.turns).toBe(1);
+
+    // The old shard's entries come from the prefix cache: a second read touches only
+    // the newest shard.
+    harness.shardReads.length = 0;
+    expect(await service.readOutline(P, A, S)).toEqual(entries);
+    expect(harness.shardReads).toHaveLength(1);
+    expect(harness.shardReads[0]).toContain(`${S}_002.jsonl`);
+  });
+
   it("tail covering the whole transcript returns everything with no cursor and equals the full read", async () => {
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),

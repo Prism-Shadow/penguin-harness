@@ -58,6 +58,7 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MessagesResponse,
+  OutlineResponse,
   MessagingBindingsResponse,
   MessagingChannel,
   MessagingTestMessageResponse,
@@ -702,6 +703,14 @@ export type MessagesPageQuery =
  * scroll-up backfill — see stream-controller): the response then carries
  * `MessagesResponse.page`. Omitted = the legacy full read (the resync fallback path).
  */
+/**
+ * The conversation outline index: every turn of the session with the cursor a window can
+ * be opened at (see OutlineIndexEntry). The quick-jump rail lists these whatever part of
+ * the transcript is loaded.
+ */
+export const getOutline = (sessionId: string) =>
+  apiFetch<OutlineResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/outline`);
+
 export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
   const qs =
     page === undefined

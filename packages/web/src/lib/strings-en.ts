@@ -1581,6 +1581,7 @@ Scenarios:
     historyBeginning: "Beginning of conversation",
     loadingLater: "Loading later messages…",
     loadLaterRetry: "Failed to load later messages — click to retry",
+    outlineOpenFailed: "Could not open that turn",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */

@@ -1423,6 +1423,27 @@ export interface MessagesPageInfo {
   };
 }
 
+/**
+ * One turn of the conversation outline index (`GET /outline`): the Web's quick-jump rail
+ * lists every turn of a Session from this, whatever part of the transcript is loaded.
+ * Turn numbers follow the same entry rule the Web applies to loaded messages (and that
+ * `MessagesPageInfo.earlierTurns` counts with), so the two numberings agree.
+ */
+export interface OutlineIndexEntry {
+  /** Global 1-based turn number. */
+  turn: number;
+  /** Cursor of the turn's unit (`<shardIndex>:<ordinal>`): pass it as `after=` to open a window at this turn. */
+  cursor: string;
+  /** The prompt's raw text, capped ("" for an image-only prompt); the client strips protocol blocks as it does for loaded turns. */
+  question: string;
+  /** The turn's accumulated reply text, capped — a preview source. */
+  answer: string;
+}
+
+export interface OutlineResponse {
+  entries: OutlineIndexEntry[];
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: HistoryMessage[];

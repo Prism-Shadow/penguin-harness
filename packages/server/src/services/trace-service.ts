@@ -58,6 +58,7 @@ import type { SessionSources } from "../runtime/session-sources.js";
 import {
   cloneScanState,
   deserializePrefix,
+  collectOutline,
   encodeCursor,
   finalizeScan,
   initialScanState,
@@ -69,6 +70,8 @@ import type {
   MessageCursor,
   ScanState,
   WindowPriorStats,
+  OutlineIndexEntry,
+  ShardPrefix,
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
@@ -480,24 +483,32 @@ export class TraceService {
     files: LocatedFile[],
     upto: number,
     ctx: ExpandCtx,
-  ): Promise<ScanState[]> {
-    const states: ScanState[] = [];
+  ): Promise<ShardPrefix[]> {
+    const prefixes: ShardPrefix[] = [];
     for (let j = 0; j <= upto; j++) {
       const file = files[j]!;
       const cached = deserializePrefix(
         this.deps.index.repo.getPageStats(projectId, agentId, sessionId, file.index),
       );
       if (cached !== null) {
-        states.push(cached);
+        prefixes.push(cached);
         continue;
       }
-      const state = cloneScanState(j === 0 ? initialScanState() : states[j - 1]!);
+      const state = cloneScanState(j === 0 ? initialScanState() : prefixes[j - 1]!.state);
       const messages = await this.readShard(file.path);
+      // The outline rides the same pass: the turns this shard opens are cached with it,
+      // so the index of a long session costs one read per old shard, ever.
+      const { collector, entries } = collectOutline((ordinal) =>
+        encodeCursor({ fileIndex: file.index, ordinal }),
+      );
       await scanMessages(
         state,
         messages,
         () => {},
         (sid) => this.aggregateChild(projectId, sid, ctx),
+        0,
+        messages.length,
+        collector,
       );
       this.deps.index.repo.setPageStats(
         projectId,
@@ -505,11 +516,44 @@ export class TraceService {
         sessionId,
         file.index,
         file.sizeBytes,
-        serializePrefix(state),
+        serializePrefix(state, entries),
       );
-      states.push(state);
+      prefixes.push({ state, outline: entries });
     }
-    return states;
+    return prefixes;
+  }
+
+  /**
+   * The conversation outline index (the Web's quick-jump rail): every turn of the
+   * session, with the cursor a window can be opened at. Old shards contribute their
+   * cached entries; the newest shard is scanned each time from the cached carry-in — it
+   * is the one that grows, and bounded by its own size.
+   */
+  async readOutline(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<OutlineIndexEntry[]> {
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    if (files.length === 0) return [];
+    const ctx: ExpandCtx = {
+      projectScanned: false,
+      ancestry: new Set([sessionId]),
+      depth: 0,
+      raw: new Map(),
+    };
+    const last = files.length - 1;
+    const prefixes = await this.prefixStates(projectId, agentId, sessionId, files, last - 1, ctx);
+    const entries = prefixes.flatMap((p) => p.outline);
+    const newest = files[last]!;
+    const state = cloneScanState(last === 0 ? initialScanState() : prefixes[last - 1]!.state);
+    const messages = await this.readShard(newest.path);
+    const { collector, entries: tail } = collectOutline((ordinal) =>
+      encodeCursor({ fileIndex: newest.index, ordinal }),
+    );
+    // No child expansion: the outline needs neither subagent totals nor timestamps.
+    await scanMessages(state, messages, () => {}, null, 0, messages.length, collector);
+    return [...entries, ...tail];
   }
 
   /**
@@ -582,7 +626,9 @@ export class TraceService {
       startPos -= 1;
       const messages = await this.readShard(files[startPos]!.path);
       shardMessages.set(startPos, messages);
-      const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
+      const state = cloneScanState(
+        startPos === 0 ? initialScanState() : prefixes[startPos - 1]!.state,
+      );
       const to =
         startPos === endPos && endOrdinal !== null
           ? Math.min(endOrdinal, messages.length)
@@ -694,7 +740,9 @@ export class TraceService {
       startPos - 1,
       ctx,
     );
-    const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
+    const state = cloneScanState(
+      startPos === 0 ? initialScanState() : prefixes[startPos - 1]!.state,
+    );
     const shardMessages = new Map<number, OmniMessage[]>();
 
     // Up to the cursor, then through it: the boundary callback at the cursor's own

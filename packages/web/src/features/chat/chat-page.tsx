@@ -93,7 +93,9 @@ import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-d
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
-import { buildOutline } from "./outline-model";
+import { buildOutline, mergeOutline } from "./outline-model";
+import { useOutlineIndex } from "./use-outline-index";
+import { parseUserMessageBody } from "./user-message-body";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
@@ -435,10 +437,20 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
+  // The whole conversation's turns: the server index laid under the loaded entries, so
+  // the rail lists every turn whatever the run holds, and a click on an unloaded one can
+  // open the run there (see mergeOutline / useOutlineJump).
+  const outlineIndex = useOutlineIndex(selected?.sessionId ?? null, stream.taskState);
   const outline = useMemo(
-    () => buildOutline(allItems),
+    () =>
+      mergeOutline(
+        outlineIndex,
+        buildOutline(allItems),
+        stream.outlineOffset,
+        (raw) => parseUserMessageBody(raw)?.body ?? "",
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.edgesVersion, routeSessionId, outlineIndex],
   );
   // The subagents panel's model view: the live model, with backfilled windows' items and
   // nested subagent models merged in — a chip clicked on a backfilled turn must still
@@ -1708,9 +1720,9 @@ export function ChatPage() {
           {!railFit.shown && (
             <OutlineMenuButton
               entries={outline}
-              turnOffset={stream.outlineOffset}
               scrollRef={streamScrollRef}
               running={stream.taskState !== "idle"}
+              onOpenAt={stream.openAt}
             />
           )}
 
@@ -2023,11 +2035,11 @@ export function ChatPage() {
                           outline={
                             <ConversationOutline
                               entries={outline}
-                              turnOffset={stream.outlineOffset}
                               version={stream.version}
                               scrollRef={streamScrollRef}
                               running={stream.taskState !== "idle"}
                               fit={railFit}
+                              onOpenAt={stream.openAt}
                             />
                           }
                         />

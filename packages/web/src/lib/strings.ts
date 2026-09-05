@@ -1550,6 +1550,8 @@ Benchmark：
     /** Bottom-of-stream affordance while the loaded range has left the live tail behind (see stream-controller's window eviction). */
     loadingLater: "正在加载更新的对话…",
     loadLaterRetry: "更新的对话加载失败，点击重试",
+    /** Toast when a jump to a turn that is not loaded could not fetch its window. */
+    outlineOpenFailed: "无法打开该轮对话",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */
