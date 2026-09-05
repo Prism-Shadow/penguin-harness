@@ -28,7 +28,8 @@ describe("the page manifest", () => {
   it("the nav a member sees drops admin-only and unreleased pages", () => {
     const admin = navPagesFor(true).map((p) => p.key);
     const member = navPagesFor(false).map((p) => p.key);
-    expect(admin).not.toContain("machines"); // unreleased for everyone
+    expect(admin).toContain("machines"); // released, and admin-only
+    expect(member).not.toContain("machines");
     expect(member.every((key) => admin.includes(key))).toBe(true);
     for (const page of PAGES.filter((p) => p.nav === "main" && p.admin))
       expect(member).not.toContain(page.key);
