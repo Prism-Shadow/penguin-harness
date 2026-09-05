@@ -102,6 +102,7 @@ import type {
   LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
+  SessionsOverviewResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   PluginFilesResponse,
@@ -527,6 +528,17 @@ export const listSessions = (
     { server: machineId ?? null },
   );
 };
+
+/**
+ * The dashboard's read: per Workspace, how many Sessions run and how many wait on an
+ * approval, over every Agent of the Project. Asked of one server at a time, like the list —
+ * this one with no machine, or a machine by its id.
+ */
+export const getSessionsOverview = (projectId: string, machineId?: string | null) =>
+  apiFetch<SessionsOverviewResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/sessions/overview`,
+    { server: machineId ?? null },
+  );
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
