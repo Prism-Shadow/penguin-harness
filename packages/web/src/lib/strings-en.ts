@@ -44,10 +44,6 @@ export const en: Strings = {
     noneInUse: "No machine in use yet.",
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
-    colMachine: "Machine",
-    colState: "State",
-    colVersion: "Version",
-    colChecked: "Checked",
     now: "now",
     add: "Add machines…",
     addSelected: (count: number) => `Use these ${count}`,
