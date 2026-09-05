@@ -27,6 +27,7 @@ const state = (machines: MachineInfo[]): MachinesResponse => ({
   machines,
   imageVersion: "9.9.9",
   job: null,
+  jobs: [],
 });
 
 const INSTALL = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
