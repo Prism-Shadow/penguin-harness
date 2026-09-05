@@ -19,6 +19,7 @@ import {
   assistantText,
   scratchpadDir,
   toolCall,
+  userSteeringText,
   userText,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
@@ -316,6 +317,97 @@ describe("steer route", () => {
 
     t.deps.manager.decideApproval(SID, "tc-steer", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("an interrupt hands undelivered steering back instead of dropping it, and the recall still returns it", async () => {
+    // The user's case: the model is mid tool call (this run parks on its approval) when the
+    // interrupt lands. Core drops its steering queue as the run exits, so before this the
+    // queued message — and everything the user had typed into it — vanished with the run.
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const data = `data:text/plain;base64,${Buffer.from("keep my notes").toString("base64")}`;
+    const posted = await api.post(`/api/sessions/${SID}/steer`, {
+      text: " wait, do it differently ",
+      files: [{ fileName: "notes.txt", dataUrl: data }],
+    });
+    expect(posted.status).toBe(202);
+    const [queued] = t.deps.manager.pendingSteeringOf(SID);
+    expect(queued).toEqual({
+      id: expect.any(String),
+      text: "wait, do it differently",
+      images: 0,
+      files: 1,
+    });
+
+    expect(t.deps.manager.abortTask(SID)).toBe(true);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+
+    // Off the queue (nothing is going to deliver it now) but not gone: handed back, under the
+    // same id, so the composer can take it from there.
+    expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([]);
+    expect(t.deps.manager.returnedSteeringOf(SID)).toEqual([queued]);
+
+    // And the recall returns the whole message, attachment included, exactly as a queued one
+    // would have — this is what puts it back in the input box.
+    const res = await api.delete(`/api/sessions/${SID}/steer/${queued!.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      text: "wait, do it differently",
+      images: [],
+      files: [{ fileName: "notes.txt", dataUrl: data }],
+    });
+    expect(t.deps.manager.returnedSteeringOf(SID)).toEqual([]);
+
+    // Taken once only: a second attempt (another tab racing the same handback) is a 409.
+    const again = await api.delete(`/api/sessions/${SID}/steer/${queued!.id}`);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+  });
+
+  it("steering the run DID deliver is not handed back", async () => {
+    // The mirror is shifted as each [user_steering] message appears on the stream, and the
+    // handback runs after that stream is drained. A delivered message must therefore not
+    // return to the composer as though the user still owed it.
+    const delivering: OmniMessage[][] = [];
+    const sid2 = "session-2026-07-06-10-00-00-ccdd0002";
+    const row: SessionRow = {
+      sessionId: sid2,
+      projectId: "steerer-default_project",
+      agentId: "default_agent",
+      modelId: "m1",
+      provider: "custom",
+      workspace: "/tmp/w",
+      approvalMode: "always-ask",
+      title: null,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    };
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, {
+      ...steeringFakeSession(sid2, delivering),
+      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+        const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
+        yield tc;
+        const decision = await opts.approve(tc);
+        yield approvalDecision(decision, "tc-steer");
+        // The delivery itself: core emits one such message per queued entry.
+        yield userText(userSteeringText("already gone"));
+        yield assistantText("done");
+      },
+    });
+
+    await t.deps.manager.startTask(sid2, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(sid2) === 1);
+    await api.post(`/api/sessions/${sid2}/steer`, { text: "already gone" });
+    expect(t.deps.manager.pendingSteeringOf(sid2)).toHaveLength(1);
+
+    t.deps.manager.decideApproval(sid2, "tc-steer", "allow");
+    await waitFor(() => t.deps.manager.statusOf(sid2) === "idle");
+
+    // Shifted out by the delivery, so the run had nothing left to hand back.
+    expect(t.deps.manager.pendingSteeringOf(sid2)).toEqual([]);
+    expect(t.deps.manager.returnedSteeringOf(sid2)).toEqual([]);
   });
 
   it("recall after delivery → 409 not_pending; the mirror entry is left for the stream shift to retire", async () => {

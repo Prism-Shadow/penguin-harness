@@ -1604,6 +1604,7 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      returnedSteering={stream.returnedSteering}
       onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
