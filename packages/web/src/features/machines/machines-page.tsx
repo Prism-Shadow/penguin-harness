@@ -53,6 +53,7 @@ import {
 import type { MachineReading } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
+import { SshHostDialog } from "./ssh-host-dialog";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -65,6 +66,8 @@ const POLL_MS = 1500;
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
+/** The + beside Add machines: a new host for the ssh config. */
+const PLUS_PATH = "M12 5v14M5 12h14";
 /** Select all: a box with a check. Select none: the empty box. */
 const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
 const SELECT_NONE_PATH = "M4 5h16v14H4z";
@@ -137,6 +140,8 @@ export function MachinesPage() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   /** Cards unfolded to show their details. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  /** The form that adds a host to the ssh config. */
+  const [hostFormOpen, setHostFormOpen] = useState(false);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -440,8 +445,31 @@ export function MachinesPage() {
                 </div>
               )}
             </Dropdown>
+            {/* A host the config does not declare yet: the form writes it there, then it can
+                be added like any other. Same footing as the picker's button, one glyph wide. */}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={state === null}
+              title={S.machines.host.addTitle}
+              aria-label={S.machines.host.addTitle}
+              onClick={() => setHostFormOpen(true)}
+            >
+              <GlyphIcon d={PLUS_PATH} size={ICON_SIZE.inlineGlyph} />
+            </Button>
           </div>
         </div>
+        {projectId !== null && (
+          <SshHostDialog
+            open={hostFormOpen}
+            projectId={projectId}
+            onClose={() => setHostFormOpen(false)}
+            onAdded={(next) => {
+              setState(next);
+              setError(null);
+            }}
+          />
+        )}
 
         {error !== null && (
           <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>

@@ -3618,6 +3618,20 @@ export const MACHINE_PHASES = [
 ] as const;
 export type MachinePhase = (typeof MACHINE_PHASES)[number];
 
+/**
+ * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
+ * `~/.ssh/config`. Answers the machines list (201), or 400 `ssh_host_invalid` naming the
+ * field, or 409 `ssh_host_exists`.
+ */
+export interface SshHostRequest {
+  /** The alias — what `ssh <alias>` will take, and the machine's name everywhere here. */
+  alias: string;
+  hostName: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+}
+
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
 export interface MachinesUseRequest {
   /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
