@@ -16,7 +16,7 @@ import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/pengu
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 import { isSessionUnread, markSessionSeen } from "../src/lib/session-seen";
 import type { SessionSeenState } from "../src/lib/session-seen";
-import { sessionRowActivity } from "../src/lib/session-activity";
+import { sessionBackgroundTasks, sessionRowActivity } from "../src/lib/session-activity";
 
 const CREATED = "2026-08-19T09:00:00.000Z";
 /** When the user last had the Session open — every fixture's starting `lastActiveAt`. */
@@ -130,6 +130,62 @@ describe("session_state on the user channel", () => {
     const store = storeWith(session("a"));
     applyUserEvent(store, stateEvent("a", "compacting", STARTED), neverReload);
     expect(rowOf(store, "a").status).toBe("compacting");
+  });
+});
+
+describe("session_background on the user channel", () => {
+  const backgroundEvent = (
+    sessionId: string,
+    processes: number,
+    subagents: number,
+  ): ServerEvent => ({ type: "session_background", sessionId, processes, subagents });
+
+  it("sets the named row's counts and leaves every other row alone", () => {
+    const store = storeWith(session("a"), session("b"));
+    applyUserEvent(store, backgroundEvent("b", 1, 2), neverReload);
+    expect(rowOf(store, "b").backgroundTasks).toEqual({ processes: 1, subagents: 2 });
+    expect(sessionBackgroundTasks(rowOf(store, "b"))).toBe(3);
+    expect("backgroundTasks" in rowOf(store, "a")).toBe(false);
+  });
+
+  it("clears the field at zero, the shape a list fetch returns", () => {
+    const store = storeWith(session("a", { backgroundTasks: { processes: 1, subagents: 0 } }));
+    applyUserEvent(store, backgroundEvent("a", 0, 0), neverReload);
+    // Absent, not present-and-empty: every "has background work" check is one key test.
+    expect("backgroundTasks" in rowOf(store, "a")).toBe(false);
+    expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(0);
+  });
+
+  it("ignores a Session no loaded page holds instead of inventing a row", () => {
+    const store = storeWith(session("a"));
+    const before = store.getState().sessions;
+    applyUserEvent(store, backgroundEvent("not-loaded", 1, 0), neverReload);
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it("is a no-op when the counts already match", () => {
+    const store = storeWith(session("a", { backgroundTasks: { processes: 2, subagents: 1 } }));
+    const before = store.getState().sessions;
+    applyUserEvent(store, backgroundEvent("a", 2, 1), neverReload);
+    expect(store.getState().sessions).toBe(before);
+    // Zero onto an already-clear row is the same non-event.
+    const clear = storeWith(session("b"));
+    const beforeClear = clear.getState().sessions;
+    applyUserEvent(clear, backgroundEvent("b", 0, 0), neverReload);
+    expect(clear.getState().sessions).toBe(beforeClear);
+  });
+
+  it("moves neither the glyph nor the status: an idle, read row keeps its blank glyph and gains the mark", () => {
+    const store = storeWith(session("a"));
+    const seen = seenAt("a", LOOKED);
+    applyUserEvent(store, backgroundEvent("a", 1, 0), neverReload);
+    expect(glyph(store, "a", seen)).toBeNull();
+    expect(rowOf(store, "a").status).toBe("idle");
+    expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(1);
+    // A run ending does not touch the count either: the mark outlives the hourglass.
+    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
+    expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(1);
   });
 });
 

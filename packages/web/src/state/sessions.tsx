@@ -27,6 +27,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import type {
   ServerEvent,
+  SessionBackgroundTasks,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -184,6 +185,12 @@ interface SessionsStoreState {
   replace: (session: SessionInfo) => void;
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
+  /**
+   * Live background-task counts of one row, from the user channel's `session_background`;
+   * undefined clears the field the way the server omits it at zero. The row's mark and the
+   * chat header's count both read the field, so this is the one write that moves them.
+   */
+  setBackgroundTasks: (sessionId: string, tasks: SessionBackgroundTasks | undefined) => void;
 }
 
 /**
@@ -533,6 +540,31 @@ export function createSessionsStore() {
           sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
         });
       },
+
+      /**
+       * Same drop rule as `setStatus` and `setTitle`: an unlisted id is ignored, and equal
+       * counts leave the array untouched (a ping that changed nothing must not re-render every
+       * row). Zero is stored as absence — the same shape a list fetch returns — so the
+       * "has background work" test stays one `backgroundTasks !== undefined` check everywhere.
+       */
+      setBackgroundTasks: (sessionId, tasks) => {
+        const prev = get().sessions;
+        const target = prev.find((s) => s.sessionId === sessionId);
+        if (!target) return;
+        const cur = target.backgroundTasks;
+        const same =
+          cur === undefined || tasks === undefined
+            ? cur === tasks
+            : cur.processes === tasks.processes && cur.subagents === tasks.subagents;
+        if (same) return;
+        set({
+          sessions: prev.map((s) => {
+            if (s.sessionId !== sessionId) return s;
+            const { backgroundTasks: _dropped, ...rest } = s;
+            return tasks === undefined ? rest : { ...rest, backgroundTasks: tasks };
+          }),
+        });
+      },
     };
   });
 }
@@ -579,6 +611,20 @@ export function applyUserEvent(
   // opens (another tab's session, a subagent) get their titles the same way.
   if (ev.type === "session_title") {
     store.getState().setTitle(ev.sessionId, ev.title);
+    return;
+  }
+  // A Session's background work changed — a command promoted past its yield window, a
+  // process that exited or was stopped, a background subagent starting or finishing a round.
+  // The event carries the counts as they now stand, zeros included, so the row's mark can
+  // appear and disappear without a list fetch; the pair collapses to "none" at zero.
+  if (ev.type === "session_background") {
+    const { processes, subagents } = ev;
+    store
+      .getState()
+      .setBackgroundTasks(
+        ev.sessionId,
+        processes > 0 || subagents > 0 ? { processes, subagents } : undefined,
+      );
     return;
   }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips

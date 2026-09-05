@@ -38,7 +38,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
-import { sessionRowActivity } from "../../lib/session-activity";
+import { sessionBackgroundTasks, sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
@@ -140,7 +140,7 @@ import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { writeClipboard } from "../ui/copy-button";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
-import { SessionActivityIcon } from "../ui/session-activity-icon";
+import { BackgroundTasksMark, SessionActivityIcon } from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -1183,6 +1183,7 @@ export function Sidebar({
             // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so
             // the whole transition sequence is testable without a DOM.
             activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
+            background={sessionBackgroundTasks(s)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -2477,6 +2478,7 @@ function SessionRow({
   s,
   active,
   activity,
+  background,
   pinned,
   canPin = false,
   lastActive,
@@ -2499,6 +2501,8 @@ function SessionRow({
   active: boolean;
   /** Busy / settled-read / settled-unread / never-ran, already resolved by sessionRowActivity. */
   activity: SessionActivity;
+  /** Background tasks the Session still owns (sessionBackgroundTasks); 0 draws no mark. */
+  background: number;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2629,7 +2633,7 @@ function SessionRow({
               title={S.chat.pinnedSession}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={PIN_ICON} size={12} />
+              <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
@@ -2641,12 +2645,20 @@ function SessionRow({
               title={S.messaging.enabledIndicator[s.messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={12} />
+              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
+          {/* Beside the glyph, not instead of it: an idle row can still own background work,
+              and the mark leaves with the last task (live via session_background). */}
+          {background > 0 && (
+            <BackgroundTasksMark
+              label={S.chat.backgroundTasks(background)}
+              size={ICON_SIZE.rowMark}
+            />
+          )}
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

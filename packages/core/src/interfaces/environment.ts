@@ -463,6 +463,15 @@ export interface EnvironmentInterface {
    */
   setSubagentStateListener?(listener: () => void): void;
   /**
+   * Attaches the single listener for background-task state changes: a command session
+   * promoted to the background, exited, stopped or removed; a subagent session promoted,
+   * starting or settling a round, or released. Payload-free — the host re-reads
+   * `listBackgroundCommands` / `listBackgroundSubagents` on each ping, and reads them once
+   * when it attaches (pings before that are not buffered). Optional, same single-listener
+   * pattern as setSubagentStateListener.
+   */
+  setBackgroundStateListener?(listener: () => void): void;
+  /**
    * Attaches the host's session-lifetime fallback approval sink for child sessions: a child
    * approval with no window sink (an active run_subagent/input_subagent call) and no
    * background-launch standing sink is consulted through this instead of waiting for the

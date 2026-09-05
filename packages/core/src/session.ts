@@ -926,6 +926,11 @@ export class Session {
     this.environment.setSubagentStateListener?.(listener);
   }
 
+  /** Attaches the single listener for background-task state changes; the host re-reads `listBackgroundCommands` / `listBackgroundSubagents` on each ping (see EnvironmentInterface.setBackgroundStateListener). */
+  onBackgroundState(listener: () => void): void {
+    this.environment.setBackgroundStateListener?.(listener);
+  }
+
   /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
   private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
     this.pendingNotices.push(event);

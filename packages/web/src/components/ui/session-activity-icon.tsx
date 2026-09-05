@@ -1,6 +1,9 @@
 import { S } from "../../lib/strings";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
+import { GlyphIcon } from "./glyph-icon";
+import { BACKGROUND_TASKS_ICON } from "./icons";
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -24,6 +27,10 @@ type Activity = Exclude<SessionActivity, null>;
  * Every glyph also names its exact state in its accessible name and tooltip, so nothing here is
  * legible only to a sighted user with full colour vision. The read state announces nothing
  * because it renders nothing, which is correct — there is no state to report.
+ *
+ * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): an
+ * activity trace in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
+ * Session can still own a dev server or a background subagent, and the row says both.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
  * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
@@ -55,13 +62,34 @@ export function sessionActivityLabel(activity: Activity): string {
   return S.chat.statusCompletedUnread;
 }
 
-export function SessionActivityIcon({
-  activity,
-  size = 12,
-}: {
-  activity: Activity;
-  size?: number;
-}) {
+/**
+ * The background-task mark: "work is going on behind this" wherever the app says so — a
+ * session row and the chat header, where it stands for the conversation's whole set of
+ * background command processes and subagents, and a tool row, where it marks the one call
+ * that was made with `run_in_background`. `busy` ink, because that is what it means.
+ *
+ * Both props are the caller's to decide, because the two placements genuinely differ: the
+ * label names a count in one place and a single call in the other, and the size is the rung
+ * the surrounding row already uses (a session row's trailing marks, a tool row's inline
+ * glyphs). The label is the only carrier of the state — colour and shape never are — so it
+ * is required rather than defaulted. Rendered only when there is background work to report:
+ * the caller decides, so no row reserves a box for it.
+ */
+export function BackgroundTasksMark({ label, size }: { label: string; size: number }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center ${toneInk.busy}`}
+    >
+      <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
+    </span>
+  );
+}
+
+export function SessionActivityIcon({ activity }: { activity: Activity }) {
+  const size = ICON_SIZE.rowMark;
   const label = sessionActivityLabel(activity);
   if (activity === "completedUnread") {
     // The dot itself is exactly the Session status dot's geometry — `h-1.5 w-1.5`, 6px, the same
