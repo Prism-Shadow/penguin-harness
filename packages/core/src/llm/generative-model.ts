@@ -981,8 +981,9 @@ export class GenerativeModel implements LLMInterface {
     // explicitly for custom-named models. `defaultHeaders` carries the app attribution the
     // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
     // the routed client makes, and endpoints with no attribution scheme get no extra headers
-    // at all.
-    const headers = attributionHeaders(config.baseUrl);
+    // at all. `sessionId` (the Session's id) is forwarded so gateways that require a stable
+    // session id (OpenCode Go's `x-opencode-session`) can optimize routing per conversation.
+    const headers = attributionHeaders(config.baseUrl, config.sessionId);
     this.client = new AutoLLMClient({
       model: config.modelId,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
