@@ -25,7 +25,11 @@ import type {
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { OLDER_UNITS, TAIL_UNITS, createStreamController } from "../src/lib/omni/stream-controller";
+import {
+  MAX_LOADED_MESSAGES,
+  WINDOW_MESSAGES,
+  createStreamController,
+} from "../src/lib/omni/stream-controller";
 import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
 import type { AssistantTextItem, TaskStatsItem, ToolCallItem } from "../src/lib/omni/stream-model";
@@ -492,17 +496,28 @@ describe("live-tail seeding (reload mid-stream)", () => {
   });
 });
 
-describe("windowed history: tail-first load + scroll-up backfill", () => {
+describe("windowed history: message windows, an eager backfill, a bounded run", () => {
+  /** One older Task: prompt, reply, usage. */
   const OLD_TURN: OmniMessage[] = [
     at(userText("old question"), "2026-07-04T00:00:00.000Z"),
     at(assistantText("old answer"), "2026-07-04T00:00:02.000Z"),
     at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
   ];
+  /** A Task of exactly `size` messages, labelled so windows stay tellable apart. */
+  const bigTurn = (label: string, size: number): OmniMessage[] => [
+    at(userText(`question ${label}`), "2026-07-04T00:00:00.000Z"),
+    ...Array.from({ length: size - 2 }, (_, i) =>
+      at(assistantText(`answer ${label} ${i}`), "2026-07-04T00:00:01.000Z"),
+    ),
+    at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
+  ];
+  const userTexts = (items: readonly { kind: string }[]) =>
+    items.filter((i) => i.kind === "user_text").map((i) => (i as unknown as { text: string }).text);
 
-  it("initial load requests the TAIL window and seeds the prior stats into the tracker", async () => {
+  it("the initial load requests the TAIL window, seeds the prior stats, and backfills one more window eagerly", async () => {
     const h = createHarness();
     const p = h.controller.load();
-    expect(h.pageArgs[0]).toEqual({ kind: "tail", limit: TAIL_UNITS });
+    expect(h.pageArgs[0]).toEqual({ kind: "tail", messages: WINDOW_MESSAGES });
     h.controller.handleServer({ type: "task_state", state: "idle" });
     h.resolveLoad(
       HISTORY_TASK,
@@ -516,55 +531,58 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     );
     await p;
     expect(h.controller.outlineOffset).toBe(7);
-    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
     // Header basis: prior elapsed + the loaded turn's own span (usage at +5s of a turn
     // starting at 0s); token cumulative = in-window session.total + prior subagent total.
     expect(h.controller.model.stats.sessionElapsedMs).toBe(60_000 + 5_000);
     const stats = h.controller.model.items.find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.tokens).toBe(1000 + 500);
-  });
 
-  it("loadOlder prepends the previous window: frozen items ahead of the live model, unique ids, closed stats row", async () => {
-    const h = createHarness();
-    const p = h.controller.load();
-    h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "1:8", earlierTurns: 1 }));
-    await p;
-
-    const older = h.controller.loadOlder();
-    expect(h.pageArgs[1]).toEqual({ kind: "before", cursor: "1:8", limit: OLDER_UNITS });
-    // Reaches the beginning: no cursor, offset drops to 0.
-    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ earlierTurns: 0 }));
-    await older;
-
-    // The prepended window renders BEFORE the live model, with its last Task closed
+    // The backfill is already in flight, one window above the tail.
+    expect(h.pageArgs[1]).toEqual({ kind: "before", cursor: "2:10", messages: WINDOW_MESSAGES });
+    expect(h.controller.older).toEqual({ hasMore: true, loading: true, error: null });
+    h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ before: "1:8", earlierTurns: 6 }));
+    await flush();
+    expect(h.controller.windowCount).toBe(1);
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.outlineOffset).toBe(6);
+    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.newer.hasMore).toBe(false);
+    // The frozen window renders BEFORE the live model, with its last Task closed
     // (finalizeHistory — a newer window follows, so the Task is complete by construction).
-    expect(h.controller.prefixItems.map((i) => i.kind)).toEqual([
+    expect(h.controller.items.slice(0, 3).map((i) => i.kind)).toEqual([
       "user_text",
       "assistant_text",
       "task_stats",
     ]);
-    expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
-    expect(h.controller.outlineOffset).toBe(0);
-    // Ids stay unique across the concatenated view (negative prefix base vs. positive live ids).
-    const ids = [...h.controller.prefixItems, ...h.controller.model.items].map((i) => i.id);
+    // Ids stay unique across the concatenated view (negative frozen base vs. positive live ids).
+    const ids = h.controller.items.map((i) => i.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(h.controller.prefixItems.every((i) => i.id < 0)).toBe(true);
+    expect(h.controller.items.slice(0, 3).every((i) => i.id < 0)).toBe(true);
     // Its cumulative stats column carries on into the live window's figures.
-    const oldStats = h.controller.prefixItems.find((i) => i.kind === "task_stats") as TaskStatsItem;
+    const oldStats = h.controller.items.find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(oldStats.stats!.tokens).toBe(400);
   });
 
-  it("loadOlder without more history, while loading, or before the initial load is a no-op", async () => {
+  it("a session that fits one window has no cursor, no backfill, and renders the live model as is", async () => {
     const h = createHarness();
-    const early = h.controller.loadOlder(); // buffering phase: ignored
-    await early;
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo()); // no before cursor: beginning already loaded
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo());
     await p;
+    await flush();
+    expect(h.loadCalls()).toBe(1);
+    expect(h.controller.older.hasMore).toBe(false);
+    expect(h.controller.windowCount).toBe(0);
+    expect(h.controller.items).toBe(h.controller.model.items);
     await h.controller.loadOlder();
     expect(h.loadCalls()).toBe(1);
+  });
+
+  it("loadOlder before the initial load, and loadNewer while the tail is attached, are no-ops", async () => {
+    const h = createHarness();
+    await h.controller.loadOlder(); // buffering phase: ignored
+    await h.controller.loadNewer();
+    expect(h.loadCalls()).toBe(0);
   });
 
   it("a failed backfill surfaces on older.error and can be retried", async () => {
@@ -573,114 +591,297 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     h.controller.handleServer({ type: "task_state", state: "idle" });
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "1:8", earlierTurns: 1 }));
     await p;
-    const older = h.controller.loadOlder();
-    h.rejectLoad(new Error("boom"));
-    await older;
+    h.rejectLoad(new Error("boom")); // the eager backfill
+    await flush();
     expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: "boom" });
-    expect(h.controller.prefixItems).toHaveLength(0);
+    expect(h.controller.windowCount).toBe(0);
     const again = h.controller.loadOlder();
     h.resolveLoad(OLD_TURN, undefined, null, pageInfo());
     await again;
-    expect(h.controller.older.error).toBeNull();
-    expect(h.controller.prefixItems.length).toBeGreaterThan(0);
+    expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
+    expect(h.controller.windowCount).toBe(1);
   });
-});
 
-describe("resync decision tree (windowed history)", () => {
-  const tailPage = pageInfo({ before: "2:10", earlierTurns: 1 });
-
-  /** Boots a controller with a tail window + one backfilled prefix window. */
-  async function withPrefix(): Promise<Harness> {
+  /**
+   * Boots a controller holding a 25-message tail plus one eagerly backfilled 25-message
+   * window (window A): 50 loaded, under the budget by one more window's worth minus ten.
+   */
+  async function withRun(): Promise<Harness> {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, tailPage);
+    h.resolveLoad(
+      bigTurn("tail", 25),
+      undefined,
+      null,
+      pageInfo({ before: "5:0", earlierTurns: 4 }),
+    );
     await p;
-    const older = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    expect(h.controller.windowCount).toBe(1);
+    expect(h.controller.tailAttached).toBe(true);
+    return h;
+  }
+
+  it("past the budget, scrolling up sheds the live tail first, then the newest window; the run never drops below two windows", async () => {
+    expect(MAX_LOADED_MESSAGES).toBe(60); // the counts below are chosen against this
+    const h = await withRun();
+    const edgesBefore = h.controller.edgesVersion;
+
+    // + window B → 75 loaded: the tail is shed (50 stay), the transcript is the run alone.
+    const b = h.controller.loadOlder();
+    expect(h.pageArgs[2]).toEqual({ kind: "before", cursor: "4:0", messages: WINDOW_MESSAGES });
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+    expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual(["question B", "question A"]);
+    expect(h.controller.outlineOffset).toBe(2);
+    expect(h.controller.edgesVersion).toBeGreaterThan(edgesBefore);
+
+    // + window C → 75 again: the newest window (A) leaves, B and C stay around the reader.
+    const c = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
+    await c;
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual(["question C", "question B"]);
+    expect(h.controller.older.hasMore).toBe(true);
+
+    // The live model kept streaming meanwhile: it is off screen, not gone.
+    h.controller.handleOmni(at(userText("live prompt"), "2026-07-04T00:01:00.000Z"));
+    expect(userTexts(h.controller.items)).toEqual(["question C", "question B"]);
+    expect(userTexts(h.controller.model.items)).toContain("live prompt");
+
+    // Scrolling back down: the next window after B, bounded by the tail's start. It is
+    // window A again, and its end IS the tail's start — so the tail re-attaches, and the
+    // run sheds from the top down to the budget.
+    const n = h.controller.loadNewer();
+    expect(h.pageArgs[4]).toEqual({
+      kind: "after",
+      cursor: "4:0",
+      until: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
+    h.resolveLoad(
+      bigTurn("A", 25),
+      undefined,
+      null,
+      pageInfo({ before: "4:0", after: "5:0", earlierTurns: 3 }),
+    );
+    await n;
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.newer).toEqual({ hasMore: false, loading: false, error: null });
+    // C, B, A + tail = 101 → shed C, then B: A and the tail remain (51).
+    expect(h.controller.windowCount).toBe(1);
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail", "live prompt"]);
+    expect(h.controller.outlineOffset).toBe(3);
+    expect(h.controller.older.hasMore).toBe(true);
+    await h.controller.loadNewer(); // attached: nothing to do
+    expect(h.loadCalls()).toBe(5);
+  });
+
+  it("a run that already ends at the tail's start re-attaches without a fetch", async () => {
+    const h = await withRun();
+    // + window B → the tail is shed with A still right below the reader: the run's end
+    // IS the tail's start.
+    const b = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+    const calls = h.loadCalls();
+    await h.controller.loadNewer();
+    expect(h.loadCalls()).toBe(calls);
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.newer.hasMore).toBe(false);
+    // B, A + tail = 75 → B leaves: the tail's own units are never held twice.
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+  });
+
+  it("a forward page short of the tail appends a window and stays detached; a failure surfaces on newer.error", async () => {
+    const h = await withRun();
+    // Two windows up: the tail is shed, then A — the run [C, B] ends a window short of
+    // the tail, so walking down has something to fetch.
+    const b = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    const c = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
+    await c;
+    expect(h.controller.tailAttached).toBe(false);
+    expect(userTexts(h.controller.items)).toEqual(["question C", "question B"]);
+
+    const failed = h.controller.loadNewer();
+    h.rejectLoad(new Error("boom"));
+    await failed;
+    expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: "boom" });
+
+    // A page closed by its size, not by `until`: appended, the tail still off screen.
+    const n = h.controller.loadNewer();
+    h.resolveLoad(
+      bigTurn("A1", 5),
+      undefined,
+      null,
+      pageInfo({ before: "4:0", after: "4:5", earlierTurns: 3 }),
+    );
+    await n;
+    expect(h.controller.tailAttached).toBe(false);
+    expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: null });
+    expect(userTexts(h.controller.items)).toEqual(["question C", "question B", "question A1"]);
+    // The next forward page continues from that window's end.
+    void h.controller.loadNewer();
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "after",
+      cursor: "4:5",
+      until: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
+  });
+
+  it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {
+    const h = await withRun();
+    const b = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+    const edgesBefore = h.controller.edgesVersion;
+
+    h.controller.jumpToLatest();
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.windowCount).toBe(0);
+    expect(h.controller.edgesVersion).toBeGreaterThan(edgesBefore);
+    expect(h.controller.newer.hasMore).toBe(false);
+    expect(userTexts(h.controller.items)).toEqual(["question tail"]);
+    expect(h.controller.outlineOffset).toBe(4);
+    // The backfill above the tail is fetched again, from the tail's start.
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
+      kind: "before",
+      cursor: "5:0",
+      messages: WINDOW_MESSAGES,
+    });
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    expect(h.controller.windowCount).toBe(1);
+    h.controller.jumpToLatest(); // attached: nothing to do
+    expect(h.controller.windowCount).toBe(1);
+  });
+});
+
+describe("resync (windowed history)", () => {
+  /** Boots a controller with a tail window plus the eagerly backfilled window above it. */
+  async function withRun(): Promise<Harness> {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 1 }));
+    await p;
     h.resolveLoad(
       [at(userText("old question"), "2026-07-04T00:00:00.000Z")],
       undefined,
       null,
       pageInfo(),
     );
-    await older;
-    expect(h.controller.prefixItems.length).toBeGreaterThan(0);
+    await flush();
+    expect(h.controller.windowCount).toBe(1);
     return h;
   }
 
-  it("no prefix: resync refetches the TAIL window (initial-load shape)", async () => {
+  it("refetches the tail from its own start cursor and keeps the run: one fetch, continuity by construction", async () => {
+    const h = await withRun();
+    h.controller.handleServer({ type: "resync_required" });
+    expect(h.pageArgs[2]).toEqual({ kind: "after", cursor: "2:10" });
+    // New units arrived since: the refetch from the same start simply holds more.
+    h.resolveLoad(
+      [...HISTORY_TASK, at(userText("newer question"), "2026-07-05T00:01:00.000Z")],
+      undefined,
+      null,
+      pageInfo({ before: "2:10", earlierTurns: 1 }),
+    );
+    await flush();
+    expect(h.loadCalls()).toBe(3); // initial + backfill + one resync fetch
+    expect(h.controller.windowCount).toBe(1);
+    expect(h.controller.older.hasMore).toBe(false); // the backfill already reached the beginning
+    expect(h.controller.outlineOffset).toBe(0);
+    expect(h.controller.items.filter((i) => i.kind === "user_text")).toHaveLength(3);
+  });
+
+  it("a tail that reaches the beginning resyncs with the full read", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 3 }));
+    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ earlierTurns: 0 }));
     await p;
     h.controller.handleServer({ type: "resync_required" });
-    expect(h.pageArgs[1]).toEqual({ kind: "tail", limit: TAIL_UNITS });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 3 }));
+    expect(h.pageArgs[1]).toBeUndefined();
+    h.resolveLoad(HISTORY_TASK);
     await flush();
     expect(h.loadCalls()).toBe(2);
-    expect(h.controller.outlineOffset).toBe(3);
+    expect(h.controller.windowCount).toBe(0);
     expect(h.controller.model.items.some((i) => i.kind === "user_text")).toBe(true);
   });
 
-  it("prefix + provable continuity (identical window-start cursor): splice — prefix retained, one fetch", async () => {
-    const h = await withPrefix();
+  it("a refetch the server could not honour — no envelope — falls back to the full read and drops the run", async () => {
+    const h = await withRun();
     h.controller.handleServer({ type: "resync_required" });
-    // The refetched tail starts at the SAME cursor the current tail started at: no new
-    // units since — the new window abuts the prefix exactly.
-    h.resolveLoad(HISTORY_TASK, undefined, null, tailPage);
+    // A server without windowing support answers with the full transcript and no
+    // envelope: doubt — the full read follows within the same rebuild.
+    h.resolveLoad([...HISTORY_TASK]);
     await flush();
-    expect(h.loadCalls()).toBe(3); // initial + backfill + one resync fetch
-    expect(h.controller.prefixItems.length).toBeGreaterThan(0);
-    expect(h.controller.older.hasMore).toBe(false); // backfill already reached the beginning
-    expect(h.controller.model.items.some((i) => i.kind === "user_text")).toBe(true);
-  });
-
-  it("prefix + moved cursor (new units arrived): doubt — falls back to the FULL refetch, prefix dropped", async () => {
-    const h = await withPrefix();
-    h.controller.handleServer({ type: "resync_required" });
-    // The tail window slid forward: splicing would leave a gap between prefix and tail.
-    h.resolveLoad([], undefined, null, pageInfo({ before: "3:0", earlierTurns: 9 }));
-    await flush();
-    // The fallback full read (no page argument) is issued within the same rebuild.
     expect(h.pageArgs[h.pageArgs.length - 1]).toBeUndefined();
     h.resolveLoad([at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK]);
     await flush();
-    expect(h.controller.prefixItems).toHaveLength(0);
-    expect(h.controller.outlineOffset).toBe(0);
+    expect(h.controller.windowCount).toBe(0);
     expect(h.controller.older.hasMore).toBe(false);
+    expect(h.controller.outlineOffset).toBe(0);
     // The full transcript lives in the single model now.
     expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(2);
   });
 
-  it("prefix + tail reaching the beginning: prefix superseded without a second fetch", async () => {
-    const h = await withPrefix();
+  it("a refetch cut short (an `after` cursor came back) is doubt too: the full read", async () => {
+    const h = await withRun();
     h.controller.handleServer({ type: "resync_required" });
     h.resolveLoad(
-      [at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK],
+      HISTORY_TASK,
       undefined,
       null,
-      pageInfo({ earlierTurns: 0 }),
+      pageInfo({ before: "2:10", after: "3:0", earlierTurns: 1 }),
     );
     await flush();
-    expect(h.loadCalls()).toBe(3);
-    expect(h.controller.prefixItems).toHaveLength(0);
+    expect(h.pageArgs[h.pageArgs.length - 1]).toBeUndefined();
+    h.resolveLoad([at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK]);
+    await flush();
+    expect(h.controller.windowCount).toBe(0);
     expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(2);
   });
 
-  it("a legacy full response during resync (no page envelope) resets the windowed state", async () => {
-    const h = await withPrefix();
+  it("the tail keeps its attachment state across a resync: a shed tail stays off screen", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    const big = (label: string) => [
+      at(userText(`question ${label}`), "2026-07-04T00:00:00.000Z"),
+      ...Array.from({ length: 23 }, (_, i) =>
+        at(assistantText(`answer ${label} ${i}`), "2026-07-04T00:00:01.000Z"),
+      ),
+      at(tokenUsage(counts(400), counts(400)), "2026-07-04T00:00:04.000Z"),
+    ];
+    h.resolveLoad(big("tail"), undefined, null, pageInfo({ before: "5:0", earlierTurns: 4 }));
+    await p;
+    h.resolveLoad(big("A"), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    const b = h.controller.loadOlder();
+    h.resolveLoad(big("B"), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+
     h.controller.handleServer({ type: "resync_required" });
-    // A server without windowing support answers the tail request with the full
-    // transcript and no envelope: doubt — the full-fallback branch also covers it
-    // (the second fetch returns the same full transcript).
-    h.resolveLoad([...HISTORY_TASK]);
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({ kind: "after", cursor: "5:0" });
+    h.resolveLoad(big("tail"), undefined, null, pageInfo({ before: "5:0", earlierTurns: 4 }));
     await flush();
-    h.resolveLoad([at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK]);
-    await flush();
-    expect(h.controller.prefixItems).toHaveLength(0);
-    expect(h.controller.older.hasMore).toBe(false);
-    expect(h.controller.outlineOffset).toBe(0);
+    expect(h.controller.tailAttached).toBe(false);
+    expect(h.controller.windowCount).toBe(2);
+    expect(h.controller.newer.hasMore).toBe(true);
   });
 });
 

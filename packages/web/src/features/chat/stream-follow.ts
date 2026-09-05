@@ -40,6 +40,13 @@ export interface StreamFollow {
   scrolled(m: ScrollMetrics): void;
   /** Explicit re-entry (the back-to-bottom button): resumes follow immediately — the caller scrolls to the bottom right after, and the resulting scroll event sees a bottom position, keeping it stuck. */
   resume(): void;
+  /**
+   * Explicit exit with no gesture behind it: the bottom the reader had reached was not
+   * the live bottom (a detached history range just re-joined the live tail below it), so
+   * a stick judged from that position must not carry over. The next scroll event
+   * initializes from position again, as the very first one does.
+   */
+  park(): void;
 }
 
 export function createStreamFollow(): StreamFollow {
@@ -81,6 +88,10 @@ export function createStreamFollow(): StreamFollow {
       stick = true;
       // Forget the last position: the caller jumps to the bottom right after, and that large
       // downward scroll must not be judged against a stale historical scrollTop.
+      lastTop = null;
+    },
+    park() {
+      stick = false;
       lastTop = null;
     },
   };

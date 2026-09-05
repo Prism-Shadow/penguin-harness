@@ -406,22 +406,32 @@ export function ChatPage() {
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
 
-  // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // The rendered transcript: the loaded run — frozen windows (negative ids) ahead of the
+  // live tail model's items while the tail is attached. Keyed on the edges version as well
+  // as the stream version: the controller reshapes the run synchronously and its repaint
+  // signal is throttled, so a render forced by anything else in between must not pair
+  // the NEW edges version (read live below) with the OLD item list — the stream would
+  // re-anchor against a layout that has not changed yet and skip the commit that does.
   const allItems = useMemo(
-    () =>
-      stream.prefixItems.length > 0
-        ? [...stream.prefixItems, ...stream.model.items]
-        : stream.model.items,
+    () => [...stream.items],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.edgesVersion, routeSessionId],
+  );
+  // Everything loaded, the live tail included even while it is off screen (scrolling up
+  // sheds it from the transcript, not from the conversation): what recall and the
+  // subagents panel read, so neither loses the most recent turns to a scroll.
+  const historyItems = useMemo(
+    () => (stream.tailAttached ? allItems : [...allItems, ...stream.model.items]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, stream.edgesVersion, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
   // version): the composer's ↑/↓ recall list and the left outline's entries. Both read the
-  // LOADED transcript (prefix included), so backfilling extends recall and the index alike.
+  // LOADED transcript (frozen windows included), so backfilling extends recall and the
+  // index alike; the outline lists what is on screen.
   const inputHistory = useMemo(
-    () => buildInputHistory(allItems),
+    () => buildInputHistory(historyItems),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
@@ -436,15 +446,15 @@ export function ChatPage() {
   // version, which is exactly as fresh as everything else the panel renders.
   const panelModel = useMemo<StreamModel>(
     () =>
-      stream.prefixItems.length > 0 || stream.prefixSubagents.size > 0
+      stream.windowCount > 0 || stream.windowSubagents.size > 0
         ? {
             ...stream.model,
-            items: [...allItems],
-            subagents: new Map([...stream.prefixSubagents, ...stream.model.subagents]),
+            items: [...historyItems],
+            subagents: new Map([...stream.windowSubagents, ...stream.model.subagents]),
           }
         : stream.model,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.edgesVersion, routeSessionId],
   );
   // This conversation's memory changes, aggregated across every visible Task for the Memory
   // panel and the card (version keys the memo like panelModel). Backfilled windows are read
@@ -1988,15 +1998,24 @@ export function ChatPage() {
                           version={stream.version}
                           ctx={ctx}
                           scrollElRef={streamScrollRef}
-                          // Scroll-up backfill of older history windows (tail-first
-                          // loading): near-top scrolling prepends the previous window,
-                          // scroll position anchored (see MessageStream).
+                          // The loaded run's two frontiers (windowed history): near-top
+                          // scrolling prepends the previous window; once scrolling up has
+                          // shed the live tail, near-bottom scrolling walks back down to
+                          // it. The reader stays anchored through both (see MessageStream).
                           older={{
                             hasMore: stream.older.hasMore,
                             loading: stream.older.loading,
                             error: stream.older.error,
-                            prependedCount: stream.prefixItems.length,
+                            atBeginning: stream.windowCount > 0,
+                            edgesVersion: stream.edgesVersion,
                             onLoad: stream.loadOlder,
+                          }}
+                          newer={{
+                            hasMore: stream.newer.hasMore,
+                            loading: stream.newer.loading,
+                            error: stream.newer.error,
+                            onLoad: stream.loadNewer,
+                            onJump: stream.jumpToLatest,
                           }}
                           // Tick-rail minimap over the stream's left gutter (zero layout
                           // width; hides itself when the gutter is too narrow or the

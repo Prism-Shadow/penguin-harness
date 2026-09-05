@@ -1547,6 +1547,9 @@ Benchmark：
     loadEarlierRetry: "更早的对话加载失败，点击重试",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "已是对话开头",
+    /** Bottom-of-stream affordance while the loaded range has left the live tail behind (see stream-controller's window eviction). */
+    loadingLater: "正在加载更新的对话…",
+    loadLaterRetry: "更新的对话加载失败，点击重试",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */

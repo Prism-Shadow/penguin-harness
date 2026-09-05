@@ -41,8 +41,8 @@ import type {
   TaskCreateResponse,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
-import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest } from "../../services/trace-service.js";
+import { decodeCursor, type MessageCursor } from "../../services/message-window.js";
+import type { MessagesPageRequest, WindowSize } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -95,11 +95,11 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
 ];
 
-/** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
+/** Bounds for a windowed read's size (`limit` in units, `messages` as a budget, `tailLimit`), and the `before` page's default. */
 const MESSAGES_PAGE_LIMIT_MAX = 1000;
 const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
 
-/** Parse one windowed-read unit-count param (positive integer, capped). */
+/** Parse one windowed-read size param (positive integer, capped). */
 function pageLimit(raw: string, name: string): number {
   if (!/^\d{1,4}$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
   const v = Number.parseInt(raw, 10);
@@ -109,13 +109,6 @@ function pageLimit(raw: string, name: string): number {
   return v;
 }
 
-/**
- * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
- * read, byte-identical to the pre-pagination response (other consumers depend on it).
- * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
- * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
- * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
- */
 /**
  * Appends the running Task's already-published input messages that the Trace read has not
  * caught up to yet. Duplication is decided by exact envelope-JSON identity — the engine
@@ -135,27 +128,81 @@ function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): O
   return missing.length > 0 ? [...messages, ...missing] : messages;
 }
 
+/**
+ * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
+ * read, byte-identical to the pre-pagination response (other consumers depend on it).
+ *
+ * One FORM, exactly: `tailLimit=<n>` (the newest n units — the original spelling, size
+ * included), `tail=1` (the newest window), `before=<cursor>` (the window preceding the
+ * cursor) or `after=<cursor>` (the window starting at it). One SIZE at most: `limit=<n>`
+ * units or `messages=<n>` as a budget; `tail` requires one, `before` defaults to
+ * MESSAGES_PAGE_LIMIT_DEFAULT units, and `after` with neither runs to the end (or to
+ * `until=<cursor>`, its exclusive bound, which only `after` takes). Mixing forms, or a
+ * size with no form, is a caller bug worth a loud 400 rather than a guess.
+ */
 function messagesPageQuery(c: Context): MessagesPageRequest | null {
-  const rawTail = c.req.query("tailLimit");
+  const rawTailLimit = c.req.query("tailLimit");
+  const rawTail = c.req.query("tail");
   const rawBefore = c.req.query("before");
+  const rawAfter = c.req.query("after");
   const rawLimit = c.req.query("limit");
-  if (rawTail === undefined && rawBefore === undefined) {
-    if (rawLimit !== undefined) throw badRequest("limit requires before.");
+  const rawMessages = c.req.query("messages");
+  const rawUntil = c.req.query("until");
+  const forms = [rawTailLimit, rawTail, rawBefore, rawAfter].filter((v) => v !== undefined);
+  if (forms.length === 0) {
+    if (rawLimit !== undefined || rawMessages !== undefined || rawUntil !== undefined) {
+      throw badRequest(
+        "limit, messages and until require a window (tailLimit, tail, before or after).",
+      );
+    }
     return null;
   }
-  if (rawTail !== undefined) {
-    if (rawBefore !== undefined) throw badRequest("tailLimit and before are mutually exclusive.");
-    if (rawLimit !== undefined) throw badRequest("limit only applies to before requests.");
-    return { kind: "tail", limit: pageLimit(rawTail, "tailLimit") };
+  if (forms.length > 1) {
+    throw badRequest("tailLimit, tail, before and after are mutually exclusive.");
   }
-  const cursor = decodeCursor(rawBefore!);
-  if (cursor === null) {
-    throw badRequest("before must be a cursor of the form <shardIndex>:<ordinal>.");
+  if (rawLimit !== undefined && rawMessages !== undefined) {
+    throw badRequest("limit and messages are mutually exclusive.");
+  }
+  if (rawUntil !== undefined && rawAfter === undefined) {
+    throw badRequest("until only applies to after requests.");
+  }
+  const size = (): WindowSize | null =>
+    rawLimit !== undefined
+      ? { units: pageLimit(rawLimit, "limit") }
+      : rawMessages !== undefined
+        ? { messages: pageLimit(rawMessages, "messages") }
+        : null;
+  const cursorOf = (raw: string, name: string): MessageCursor => {
+    const cursor = decodeCursor(raw);
+    if (cursor === null) {
+      throw badRequest(`${name} must be a cursor of the form <shardIndex>:<ordinal>.`);
+    }
+    return cursor;
+  };
+  if (rawTailLimit !== undefined) {
+    if (rawLimit !== undefined || rawMessages !== undefined) {
+      throw badRequest("tailLimit carries its own size; limit and messages do not apply.");
+    }
+    return { kind: "tail", size: { units: pageLimit(rawTailLimit, "tailLimit") } };
+  }
+  if (rawTail !== undefined) {
+    if (rawTail !== "1") throw badRequest("tail must be 1.");
+    const tailSize = size();
+    if (tailSize === null) throw badRequest("tail requires limit or messages.");
+    return { kind: "tail", size: tailSize };
+  }
+  if (rawBefore !== undefined) {
+    return {
+      kind: "before",
+      cursor: cursorOf(rawBefore, "before"),
+      size: size() ?? { units: MESSAGES_PAGE_LIMIT_DEFAULT },
+    };
   }
   return {
-    kind: "before",
-    cursor,
-    limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
+    kind: "after",
+    cursor: cursorOf(rawAfter!, "after"),
+    until: rawUntil !== undefined ? cursorOf(rawUntil, "until") : null,
+    size: size(),
   };
 }
 
@@ -781,10 +828,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // complete message whose trace append is still in flight when the read starts is not
     // lost either.
     //
-    // Windowed reads keep the same contract on TAIL pages only: a tail page ends at the
-    // transcript's live edge, so the attachment's semantics are identical. A `before`
-    // page is immutable history — attaching in-flight fragments to it would seed them at
-    // the wrong position — so it never carries `live`.
+    // Windowed reads keep the same contract on pages that end at the live edge — a tail
+    // page, or an `after` page that runs out of history (decided after the read, so the
+    // capture happens for every non-`before` request). A `before` page is immutable
+    // history — attaching in-flight fragments to it would seed them at the wrong
+    // position — so it never carries `live`.
     let live: MessagesLiveTail | undefined;
     let pendingInputs: OmniMessage[] = [];
     if (page?.kind !== "before") {
@@ -818,6 +866,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       );
       const info: MessagesPageInfo = {
         ...(result.before !== undefined ? { before: result.before } : {}),
+        ...(result.after !== undefined ? { after: result.after } : {}),
         earlierTurns: result.prior.turns,
         prior: {
           subagentTokens: result.prior.subagentTokens,
@@ -826,9 +875,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
           contextTokens: result.prior.contextTokens,
         },
       };
+      // Only a page that ends at the live edge carries the live attachment and the held
+      // inputs: an `after` page closed by its size or `until` is immutable history like a
+      // `before` page, however it was captured above.
+      const liveEdge = result.reachesEnd;
       return c.json({
-        messages: appendPendingInputs(result.messages, pendingInputs),
-        ...(live !== undefined ? { live } : {}),
+        messages: liveEdge ? appendPendingInputs(result.messages, pendingInputs) : result.messages,
+        ...(liveEdge && live !== undefined ? { live } : {}),
         page: info,
       } satisfies MessagesResponse);
     }
