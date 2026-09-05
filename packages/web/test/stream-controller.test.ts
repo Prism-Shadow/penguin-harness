@@ -123,7 +123,14 @@ function createHarness(): Harness {
 function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   return {
     earlierTurns: 0,
-    prior: { subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+    prior: {
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    },
     ...over,
   };
 }
@@ -511,7 +518,14 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       pageInfo({
         before: "2:10",
         earlierTurns: 7,
-        prior: { subagentTokens: 500, elapsedMs: 60_000, sessionTokens: 900, contextTokens: 800 },
+        prior: {
+          subagentTokens: 500,
+          elapsedMs: 60_000,
+          apiMs: 25_000,
+          toolMs: 20_000,
+          sessionTokens: 900,
+          contextTokens: 800,
+        },
       }),
     );
     await p;
@@ -520,6 +534,10 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     // Header basis: prior elapsed + the loaded turn's own span (usage at +5s of a turn
     // starting at 0s); token cumulative = in-window session.total + prior subagent total.
     expect(h.controller.model.stats.sessionElapsedMs).toBe(60_000 + 5_000);
+    // The breakdown reloads with its total, so a windowed load never shows a full elapsed time
+    // beside components covering only the window.
+    expect(h.controller.model.stats.sessionLlmMs).toBe(25_000);
+    expect(h.controller.model.stats.sessionToolMs).toBe(20_000);
     const stats = h.controller.model.items.find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.tokens).toBe(1000 + 500);
   });

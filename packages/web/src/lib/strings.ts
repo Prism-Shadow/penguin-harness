@@ -1680,6 +1680,12 @@ Benchmark：
     statTotalTokens: "总 Token",
     statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
+    /**
+     * The elapsed time's two measured components, shown in parentheses after it. They may
+     * overlap (a background tool runs while the model decodes) and may leave a remainder
+     * (approval waits, harness overhead), so this reads as two measurements, never as a split.
+     */
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",

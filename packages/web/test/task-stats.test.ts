@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 import type { TokenUsagePayload } from "@prismshadow/penguin-core/omnimessage";
 import {
   addLlmDuration,
+  addToolExecution,
+  mergedIntervalMs,
+  seedPriorStats,
+  sessionElapsedBreakdown,
   beginCompaction,
   bucketCostUsd,
   commitPendingCompaction,
@@ -327,5 +331,117 @@ describe("formatTaskStats", () => {
         ZH_LABELS,
       ),
     ).toBe("[统计信息] 输入 tokens 4k（已缓存 3k） · 输出 tokens 1.2k · 42.5 tok/s");
+  });
+});
+
+describe("elapsed breakdown: API time and tool wall time", () => {
+  it("unions intervals so parallel tools count once", () => {
+    expect(mergedIntervalMs([])).toBe(0);
+    // Overlapping, nested, adjacent and out-of-order all reduce to the covered span.
+    expect(
+      mergedIntervalMs([
+        [3000, 9000],
+        [4000, 11000],
+      ]),
+    ).toBe(8000);
+    expect(
+      mergedIntervalMs([
+        [0, 10000],
+        [2000, 3000],
+      ]),
+    ).toBe(10000);
+    expect(
+      mergedIntervalMs([
+        [5000, 6000],
+        [0, 5000],
+      ]),
+    ).toBe(6000);
+    expect(
+      mergedIntervalMs([
+        [8000, 9000],
+        [0, 1000],
+      ]),
+    ).toBe(2000);
+    // Recording the same execution twice (a streamed stop, then the complete message) is what
+    // lets stream-model settle a duration twice without inflating the figure.
+    expect(
+      mergedIntervalMs([
+        [1000, 4000],
+        [1000, 4000],
+      ]),
+    ).toBe(3000);
+  });
+
+  it("drops executions that carry no wall time", () => {
+    const t = createTaskStatsTracker();
+    addToolExecution(t, 1000, 1000);
+    addToolExecution(t, 2000, 1000);
+    addToolExecution(t, Number.NaN, 5000);
+    expect(t.taskToolIntervals).toEqual([]);
+  });
+
+  it("folds both components into the session totals at the Task boundary", () => {
+    const t = createTaskStatsTracker();
+    addLlmDuration(t, 2000);
+    addToolExecution(t, 3000, 9000);
+    addToolExecution(t, 4000, 11000);
+    // Before the boundary the open Task's parts are already visible, so the breakdown keeps
+    // pace with the ticking total instead of lagging a whole Task behind it.
+    expect(sessionElapsedBreakdown(t)).toEqual({ apiMs: 2000, toolMs: 8000 });
+
+    endTask(t, 12000);
+    expect(t.sessionLlmMs).toBe(2000);
+    expect(t.sessionToolMs).toBe(8000);
+    expect(t.taskToolIntervals).toEqual([]);
+    expect(t.taskLlmMs).toBe(0);
+    expect(sessionElapsedBreakdown(t)).toEqual({ apiMs: 2000, toolMs: 8000 });
+
+    // A second Task accumulates on top rather than restarting.
+    addLlmDuration(t, 1000);
+    addToolExecution(t, 20000, 21000);
+    endTask(t, 3000);
+    expect(sessionElapsedBreakdown(t)).toEqual({ apiMs: 3000, toolMs: 9000 });
+  });
+
+  it("keeps the components' TPS denominator intact across the fold", () => {
+    const t = createTaskStatsTracker();
+    trackMainUsage(t, {
+      type: "token_usage",
+      session: { cache_read: 0, cache_write: 0, output: 1000, total: 1000 },
+      request: { cache_read: 0, cache_write: 0, output: 1000, total: 1000 },
+    });
+    addLlmDuration(t, 2000);
+    // endTask folds taskLlmMs into the session total AND still reports it as the TPS
+    // denominator: 1000 output tokens over 2s.
+    expect(endTask(t, 2000)?.outputTps).toBe(500);
+    expect(t.sessionLlmMs).toBe(2000);
+  });
+
+  it("drops a Task's components when its counters reset outside a boundary", () => {
+    const t = createTaskStatsTracker();
+    addLlmDuration(t, 2000);
+    addToolExecution(t, 1000, 5000);
+    // resetTaskCounters is the "usage outside a Task" path: it leaves sessionElapsedMs alone,
+    // so the components it discards must not reach the session totals either.
+    resetTaskCounters(t);
+    expect(sessionElapsedBreakdown(t)).toEqual({ apiMs: 0, toolMs: 0 });
+    expect(t.sessionLlmMs).toBe(0);
+    expect(t.sessionToolMs).toBe(0);
+  });
+
+  it("seeds the breakdown from a windowed load's prior stats", () => {
+    const t = createTaskStatsTracker();
+    seedPriorStats(t, {
+      subagentTokens: 0,
+      elapsedMs: 30000,
+      apiMs: 12000,
+      toolMs: 9000,
+      sessionTokens: 0,
+      contextTokens: 0,
+    });
+    // Total and components are seeded together: seeding one alone would show a full elapsed
+    // time beside components covering only the loaded window.
+    expect(t.sessionElapsedMs).toBe(30000);
+    expect(sessionElapsedBreakdown(t)).toEqual({ apiMs: 12000, toolMs: 9000 });
   });
 });

@@ -1716,6 +1716,7 @@ Scenarios:
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",

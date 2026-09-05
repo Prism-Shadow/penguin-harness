@@ -1409,6 +1409,14 @@ export interface MessagesPageInfo {
   prior: {
     subagentTokens: number;
     elapsedMs: number;
+    /**
+     * Model-API time and tool wall time accrued before this window, the breakdown of
+     * `elapsedMs` the chat header shows under it. Seeded together with their total: seeding
+     * one alone would put a full elapsed time beside components covering only the window.
+     * The two may overlap and do not partition `elapsedMs` (see `TraceTaskStats.toolMs`).
+     */
+    apiMs: number;
+    toolMs: number;
     sessionTokens: number;
     contextTokens: number;
   };
@@ -2459,6 +2467,21 @@ export interface TraceTaskStats {
    * output — there's no second figure to reconcile.
    */
   llmMs: number;
+  /**
+   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
+   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
+   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
+   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
+   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
+   * still running when the file ended, or interrupted — contributes nothing rather than being
+   * extrapolated to now.
+   *
+   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
+   * model decodes. They are two measured components of the turn's duration, not a partition of
+   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
+   * to neither). Never derive one by subtracting the other from the duration.
+   */
+  toolMs: number;
 }
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
@@ -2562,6 +2585,18 @@ export interface TraceAnalysisResponse {
    * frontend's events are paginated, so self-aggregation would undercount.
    */
   elapsedMs: number;
+  /**
+   * The file's model-API time: the sum of the turns' `llmMs` (human approval wait deducted,
+   * compaction requests included, so the scope matches `elapsedMs`).
+   */
+  apiMs: number;
+  /**
+   * The file's tool wall time: the sum of the turns' `toolMs` (parallel tools counted once
+   * within a turn). Summed per turn rather than unioned across the file, so the global figure
+   * stays the sum of the per-turn figures, exactly as `elapsedMs` is. May overlap `apiMs` —
+   * see `TraceTaskStats.toolMs`.
+   */
+  toolMs: number;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];

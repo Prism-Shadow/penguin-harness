@@ -52,7 +52,11 @@ import {
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
+import {
+  bucketCostUsd,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
@@ -206,6 +210,12 @@ interface HeaderStats {
   /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
   elapsedNode: ReactNode;
+  /**
+   * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
+   * component has anything to report yet (a conversation that has not run shows the bare
+   * time rather than a row of zeroes).
+   */
+  elapsedSplit: string | null;
 }
 
 /**
@@ -231,7 +241,25 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
         taskStartLocalMs={model.taskStartLocalMs}
       />
     ),
+    elapsedSplit: elapsedSplitText(stats),
   };
+}
+
+/**
+ * The parenthesised API / tool breakdown of the elapsed time, or null when both components are
+ * still zero. A component that is genuinely zero beside a non-zero one still prints: "no tool
+ * time" is worth reading. Unlike the total beside it this does not tick — it advances as each
+ * Request and tool closes, so mid-turn it trails the running total, and the two components can
+ * also overlap each other. Both are why it is rendered as two measurements, not as a split of
+ * the total (see sessionElapsedBreakdown).
+ */
+function elapsedSplitText(stats: TaskStatsTracker): string | null {
+  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
+  if (apiMs <= 0 && toolMs <= 0) return null;
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
 }
 
 /**
@@ -1745,7 +1773,7 @@ export function ChatPage() {
                   <StatChip
                     icon={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
-                    label={S.chat.statElapsed}
+                    label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
                   {/* Right of the time, only while the conversation has live background
                       processes: their count, in the live-status green. */}
@@ -1832,6 +1860,7 @@ export function ChatPage() {
                   )}
                   <li>
                     {S.chat.statElapsed} {hs.elapsedNode}
+                    {hs.elapsedSplit}
                   </li>
                 </ul>
               </div>

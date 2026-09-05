@@ -169,6 +169,21 @@ function InputChip({ buckets }: { buckets: Buckets }) {
   );
 }
 
+/**
+ * The parenthesised API / tool breakdown printed after a duration, or the empty string when
+ * neither component has anything. The two are measurements of the same span, not a partition
+ * of it: a tool running in the background overlaps the model's decoding, while approval waits
+ * and harness overhead belong to neither — so they may exceed or fall short of the duration
+ * they follow, and neither is ever derived from the other.
+ */
+function durationSplit(apiMs: number, toolMs: number): string {
+  if (apiMs <= 0 && toolMs <= 0) return "";
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
+}
+
 export function TraceFileView({
   projectId,
   agentId,
@@ -497,7 +512,10 @@ export function TraceFileView({
             />
             <SummaryRow
               label={S.chat.statElapsed}
-              value={humanizeDuration(Math.max(0, globalMs))}
+              value={`${humanizeDuration(Math.max(0, globalMs))}${durationSplit(
+                analysis.apiMs,
+                analysis.toolMs,
+              )}`}
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the
@@ -572,7 +590,7 @@ export function TraceFileView({
                 <StatChip
                   icon={STAT_ICONS.elapsed}
                   value={humanizeDuration(t.durationMs)}
-                  label={S.chat.statElapsed}
+                  label={`${S.chat.statElapsed}${durationSplit(st?.llmMs ?? 0, st?.toolMs ?? 0)}`}
                 />
                 <StatChip
                   icon={STAT_ICONS.tps}
