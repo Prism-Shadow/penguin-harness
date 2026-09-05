@@ -6,9 +6,11 @@
  * queues per machine, so a batch is one tap. "Stop using" lets a machine go. Every row is
  * one sentence saying where the machine is, and the sentence names what "use" would fix.
  *
- * Batch first: the rows carry checkboxes, every machine in use is ticked until someone
- * changes that, and the two verbs act on the selection. Machines not yet in use are behind
- * an "Add" picker — a fuzzy search over the ssh config, which can declare hundreds of hosts.
+ * One list, this machine included: it is a row like the others, marked as this server and
+ * without a tick, so the page is a fleet rather than a special case above a list. Rows carry
+ * a tick, every machine in use is ticked until someone changes that, and the verbs act on
+ * the selection from the list's own toolbar. Machines not yet in use are behind an "Add"
+ * picker — a fuzzy search over the ssh config, which can declare hundreds of hosts.
  *
  * The list polls while a job is queued or running, and re-probes the servers on a widening
  * schedule (probe-schedule.ts) so a machine that went quiet is noticed without a tap.
@@ -22,10 +24,12 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime } from "../../lib/format";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { Badge } from "../../components/ui/badge";
+import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { EmptyState } from "../../components/ui/empty-state";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, NAV_ICONS } from "../../components/ui/icons";
@@ -46,10 +50,53 @@ import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
+/** The one sentence a row says. */
+function readingText(reading: MachineReading): string {
+  const m = S.machines;
+  switch (reading.kind) {
+    case "queued":
+      return m.queued;
+    case "working":
+      return reading.step === null ? m.working : m.workingAt(reading.step);
+    case "failed":
+      return `${m.failedAt(reading.step)} ${reading.message}`;
+    case "ready":
+      return reading.port === null ? m.ready : m.readyOn(reading.port);
+    case "installedOnly":
+      return m.installedOnly;
+    case "behind":
+      return m.behind(reading.version);
+    case "notConnected":
+      return m.notConnected;
+    case "unreachable":
+      return reading.detail === null ? m.unreachable : m.unreachableDetail(reading.detail);
+    case "stopped":
+      return m.stopped;
+    case "unknown":
+      return m.notChecked;
+  }
+}
+
+/** The pill at the row's end: the reading in one word, in a badge tone that matches its mark. */
+const BADGE_TONE: Record<Tone, BadgeTone> = {
+  busy: "brand",
+  success: "green",
+  danger: "red",
+  attention: "amber",
+  muted: "gray",
+};
+
+function toggled(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
 /**
- * A drawn tick box, the same one for the batch bar, the rows and the picker. A real
- * checkbox semantically (role, aria-checked, keyboard), but drawn here: the browser's own
- * control takes the platform's colours and size, which sits badly beside the app's buttons.
+ * A drawn tick box, the same one for the toolbar, the rows and the picker. A real checkbox
+ * semantically (role, aria-checked, keyboard), but drawn here: the browser's own control
+ * takes the platform's colours and size, which sits badly beside the app's buttons.
  */
 function Tick({
   checked,
@@ -83,38 +130,16 @@ function Tick({
   );
 }
 
-/** The one sentence a row says. */
-function readingText(reading: MachineReading): string {
-  const m = S.machines;
-  switch (reading.kind) {
-    case "queued":
-      return m.queued;
-    case "working":
-      return reading.step === null ? m.working : m.workingAt(reading.step);
-    case "failed":
-      return `${m.failedAt(reading.step)} ${reading.message}`;
-    case "ready":
-      return reading.port === null ? m.ready : m.readyOn(reading.port);
-    case "installedOnly":
-      return m.installedOnly;
-    case "behind":
-      return m.behind(reading.version);
-    case "notConnected":
-      return m.notConnected;
-    case "unreachable":
-      return reading.detail === null ? m.unreachable : m.unreachableDetail(reading.detail);
-    case "stopped":
-      return m.stopped;
-    case "unknown":
-      return m.notChecked;
-  }
-}
-
-function toggled(set: Set<string>, id: string): Set<string> {
-  const next = new Set(set);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  return next;
+/** The tile at a row's head: the machine glyph, inked in the row's tone. */
+function MachineTile({ tone }: { tone: Tone }) {
+  return (
+    <div
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 ${toneInk[tone]}`}
+      aria-hidden="true"
+    >
+      <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.sectionMark} />
+    </div>
+  );
 }
 
 export function MachinesPage() {
@@ -303,236 +328,233 @@ export function MachinesPage() {
   const noImage = state !== null && imageVersion === null;
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
-      <header className="space-y-1">
-        <h1 className="text-lg font-semibold">{S.machines.pageTitle}</h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{S.machines.pageDesc}</p>
-      </header>
-
-      {imageVersion !== null && state !== null && (
-        <div
-          className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-sm ${
-            behind.length > 0 ? toneStrip.attention : "border-gray-200 dark:border-gray-800"
-          }`}
-        >
-          <span className="min-w-0 flex-1">
-            <span className="font-medium">{S.machines.imageVersion(imageVersion)}</span>
-            <span className="ml-2 text-xs text-gray-600 dark:text-gray-400">
-              {behind.length > 0
-                ? S.machines.behindCount(behind.length)
-                : inUse.length > 0
-                  ? S.machines.allCurrent
-                  : null}
-            </span>
-          </span>
-          {behind.length > 0 && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={posting || pending}
-              onClick={() => void use(behind.map((machine) => machine.id))}
-            >
-              {S.machines.updateAll(behind.length)}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {error !== null && (
-        <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
-      )}
-      {noImage && error === null && (
-        <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
-          {S.machines.noImage}
-        </div>
-      )}
-
-      {state === null ? (
-        <Skeleton className="h-24 w-full" />
-      ) : (
-        <>
-          {local !== null && (
-            <section className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
-              <div className="flex items-center gap-2">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.success}`} />
-                <span className="truncate text-sm font-medium">{local.alias}</span>
-                <span className="text-xs text-gray-500">{S.machines.localTitle}</span>
-              </div>
-              <p className={`mt-0.5 text-xs ${toneInk.success}`}>{S.machines.localReady}</p>
-            </section>
-          )}
-
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">{S.machines.inUseTitle(inUse.length)}</h2>
-              <Dropdown
-                open={pickerOpen}
-                setOpen={setPickerOpen}
-                button={
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={addable.length === 0 || noImage}
-                    onClick={() => setPickerOpen(!pickerOpen)}
-                    aria-haspopup="listbox"
-                    aria-expanded={pickerOpen}
-                  >
-                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.inlineGlyph} />
-                    {S.machines.add}
-                  </Button>
-                }
-                menuClass="w-80 max-w-[calc(100vw-2rem)] origin-top-right"
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">{S.machines.pageTitle}</h1>
+          <Dropdown
+            open={pickerOpen}
+            setOpen={setPickerOpen}
+            button={
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={state === null || addable.length === 0 || noImage}
+                onClick={() => setPickerOpen(!pickerOpen)}
+                aria-haspopup="listbox"
+                aria-expanded={pickerOpen}
               >
-                {/* The search row: matched characters bright and the rest dimmed — with a
-                    subsequence match, an unmarked row looks wrong. */}
-                <div className="px-2 pt-2 pb-1">
-                  <input
-                    type="search"
-                    autoFocus
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={S.machines.search}
-                    aria-label={S.machines.search}
-                    className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
-                  />
-                </div>
-                <ul
-                  role="listbox"
-                  aria-multiselectable="true"
-                  className="max-h-64 overflow-y-auto py-1"
+                <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.inlineGlyph} />
+                {S.machines.add}
+              </Button>
+            }
+            menuClass="w-80 max-w-[calc(100vw-2rem)] origin-top-right"
+          >
+            {/* The search row: matched characters bright and the rest dimmed — with a
+                subsequence match, an unmarked row looks wrong. */}
+            <div className="px-2 pt-2 pb-1">
+              <input
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={S.machines.search}
+                aria-label={S.machines.search}
+                className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+              />
+            </div>
+            <ul
+              role="listbox"
+              aria-multiselectable="true"
+              className="max-h-64 overflow-y-auto py-1"
+            >
+              {visible.map(({ machine, positions }) => {
+                const on = adding.has(machine.id);
+                return (
+                  <li key={machine.id} role="option" aria-selected={on}>
+                    <button
+                      type="button"
+                      onClick={() => toggleAdding(machine.id)}
+                      className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <Tick
+                        checked={on}
+                        label={machine.alias}
+                        onToggle={() => toggleAdding(machine.id)}
+                      />
+                      <span
+                        className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
+                      >
+                        {positions.length === 0
+                          ? machine.alias
+                          : highlightSegments(machine.alias, positions).map((segment, i) => (
+                              <span
+                                key={i}
+                                className={
+                                  segment.hit
+                                    ? "font-semibold text-gray-900 dark:text-white"
+                                    : undefined
+                                }
+                              >
+                                {segment.text}
+                              </span>
+                            ))}
+                      </span>
+                      {/* Installed by this server for another Project: adding it costs no
+                          transfer, and the version says whether it is current. */}
+                      {machine.elsewhere !== undefined && (
+                        <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                          {machine.elsewhere.version}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+              {visible.length === 0 && (
+                <li className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
+                  {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
+                </li>
+              )}
+              {hiddenCount > 0 && (
+                <li className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
+                  {S.machines.more(hiddenCount)}
+                </li>
+              )}
+            </ul>
+            <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-2 dark:border-gray-800">
+              <span className="text-xs text-gray-500">{S.machines.selectedCount(adding.size)}</span>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={adding.size === 0 || posting}
+                onClick={() => {
+                  const ids = [...adding];
+                  setPickerOpen(false);
+                  void use(ids);
+                }}
+              >
+                {S.machines.addSelected(adding.size)}
+              </Button>
+            </div>
+          </Dropdown>
+        </div>
+
+        {error !== null && (
+          <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
+        )}
+        {noImage && error === null && (
+          <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+            {S.machines.noImage}
+          </div>
+        )}
+
+        {/* The version line, which turns into the one-tap update when any machine is behind. */}
+        {imageVersion !== null &&
+          state !== null &&
+          (behind.length > 0 ? (
+            <div
+              className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{S.machines.imageVersion(imageVersion)}</span>
+                <span className="ml-2 text-xs">{S.machines.behindCount(behind.length)}</span>
+              </span>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={posting || pending}
+                onClick={() => void use(behind.map((machine) => machine.id))}
+              >
+                {S.machines.updateAll(behind.length)}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {S.machines.imageVersion(imageVersion)}
+              {inUse.length > 0 && <span className="ml-2">{S.machines.allCurrent}</span>}
+            </p>
+          ))}
+
+        {state === null ? (
+          <Skeleton className="h-40 w-full rounded-xl" />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+            {inUse.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-200 bg-gray-50/70 px-3 py-2 sm:px-4 dark:border-gray-800 dark:bg-gray-900/50">
+                <Tick checked={allSelected} label={S.machines.selectAll} onToggle={toggleAll} />
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="text-xs text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
                 >
-                  {visible.map(({ machine, positions }) => {
-                    const on = adding.has(machine.id);
-                    return (
-                      <li key={machine.id} role="option" aria-selected={on}>
-                        <button
-                          type="button"
-                          onClick={() => toggleAdding(machine.id)}
-                          className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <Tick
-                            checked={on}
-                            label={machine.alias}
-                            onToggle={() => toggleAdding(machine.id)}
-                          />
-                          <span
-                            className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
-                          >
-                            {positions.length === 0
-                              ? machine.alias
-                              : highlightSegments(machine.alias, positions).map((segment, i) => (
-                                  <span
-                                    key={i}
-                                    className={
-                                      segment.hit
-                                        ? "font-semibold text-gray-900 dark:text-white"
-                                        : undefined
-                                    }
-                                  >
-                                    {segment.text}
-                                  </span>
-                                ))}
-                          </span>
-                          {/* Installed by this server for another Project: adding it costs no
-                              transfer, and the version says whether it is current. */}
-                          {machine.elsewhere !== undefined && (
-                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                              {machine.elsewhere.version}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                  {visible.length === 0 && (
-                    <li className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
-                      {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
-                    </li>
-                  )}
-                  {hiddenCount > 0 && (
-                    <li className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
-                      {S.machines.more(hiddenCount)}
-                    </li>
-                  )}
-                </ul>
-                <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-2 dark:border-gray-800">
-                  <span className="text-xs text-gray-500">
-                    {S.machines.selectedCount(adding.size)}
-                  </span>
+                  {S.machines.selectedCount(selectedIds.length)}
+                </button>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={adding.size === 0 || posting}
-                    onClick={() => {
-                      const ids = [...adding];
-                      setPickerOpen(false);
-                      void use(ids);
-                    }}
+                    disabled={selectedIds.length === 0 || posting || noImage}
+                    onClick={() => void use(selectedIds)}
                   >
-                    {S.machines.addSelected(adding.size)}
+                    {S.machines.useSelected(selectedIds.length)}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={selectedIds.length === 0 || posting}
+                    onClick={() => void stopUsing(selectedIds)}
+                  >
+                    {S.machines.stopUsing}
                   </Button>
                 </div>
-              </Dropdown>
-            </div>
-
-            {inUse.length === 0 ? (
-              <EmptyState title={S.machines.noneInUse} description={S.machines.sshHint} />
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
-                  <div className="flex items-center gap-2.5 text-sm">
-                    <Tick checked={allSelected} label={S.machines.selectAll} onToggle={toggleAll} />
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-                    >
-                      {S.machines.selectedCount(selectedIds.length)}
-                    </button>
-                  </div>
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={selectedIds.length === 0 || posting || noImage}
-                      onClick={() => void use(selectedIds)}
-                    >
-                      {S.machines.useSelected(selectedIds.length)}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={selectedIds.length === 0 || posting}
-                      onClick={() => void stopUsing(selectedIds)}
-                    >
-                      {S.machines.stopUsing}
-                    </Button>
-                  </div>
-                </div>
-
-                <ul className="divide-y divide-gray-200 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {inUse.map((machine) => (
-                    <MachineRow
-                      key={machine.id}
-                      machine={machine}
-                      job={jobFor(jobs, machine.id)}
-                      imageVersion={imageVersion}
-                      checked={selection.has(machine.id)}
-                      onToggle={() => togglePicked(machine.id)}
-                      open={open.has(machine.id)}
-                      onToggleOpen={() => toggleOpen(machine.id)}
-                      busy={posting}
-                      onReplaceProgram={() => void use([machine.id], true)}
-                    />
-                  ))}
-                </ul>
-                <p className="text-xs text-gray-500">{S.machines.sshHint}</p>
-              </>
+              </div>
             )}
-          </section>
-        </>
-      )}
+            <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+              {local !== null && <LocalRow machine={local} />}
+              {inUse.map((machine) => (
+                <MachineRow
+                  key={machine.id}
+                  machine={machine}
+                  job={jobFor(jobs, machine.id)}
+                  imageVersion={imageVersion}
+                  checked={selection.has(machine.id)}
+                  onToggle={() => togglePicked(machine.id)}
+                  open={open.has(machine.id)}
+                  onToggleOpen={() => toggleOpen(machine.id)}
+                  busy={posting}
+                  onReplaceProgram={() => void use([machine.id], true)}
+                />
+              ))}
+              {inUse.length === 0 && (
+                <li className="px-3 py-3 text-sm text-gray-500 sm:px-4">
+                  <p>{S.machines.noneInUse}</p>
+                  <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** This server's own row: no tick, no fold — it is where the page is served from. */
+function LocalRow({ machine }: { machine: MachineInfo }) {
+  return (
+    <li className="flex items-center gap-2.5 px-3 py-2.5 sm:px-4">
+      <span className="w-4 shrink-0" aria-hidden="true" />
+      <MachineTile tone="success" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{machine.alias}</span>
+          <Badge tone="brand">{S.machines.localTitle}</Badge>
+        </div>
+        <p className={`truncate text-xs ${toneInk.success}`}>{S.machines.localReady}</p>
+      </div>
+      <Badge tone="green">{S.machines.state.ready}</Badge>
+    </li>
   );
 }
 
@@ -562,35 +584,28 @@ function MachineRow({
   const detailsId = `machine-details-${machine.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const moving = reading.kind === "working" || reading.kind === "queued";
   return (
-    <li className="px-3 py-2">
-      <div className="flex items-start gap-2.5">
-        <Tick checked={checked} label={machine.alias} onToggle={onToggle} className="mt-1" />
+    <li className="px-3 py-2.5 sm:px-4">
+      <div className="flex items-center gap-2.5">
+        <Tick checked={checked} label={machine.alias} onToggle={onToggle} />
+        <MachineTile tone={tone} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{machine.alias}</span>
             <span
               className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
               aria-hidden="true"
             />
-            <span className="truncate text-sm font-medium">{machine.alias}</span>
           </div>
-          <p className={`mt-0.5 text-xs break-words ${toneInk[tone]}`}>{readingText(reading)}</p>
-          {reading.kind === "failed" && reading.canReplaceProgram && (
-            <div className="mt-1.5">
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={busy}
-                title={S.machines.replaceProgramWhy}
-                onClick={onReplaceProgram}
-              >
-                {S.machines.replaceProgram}
-              </Button>
-            </div>
-          )}
+          <p
+            className={`text-xs ${toneInk[tone]} ${reading.kind === "failed" ? "break-words" : "truncate"}`}
+          >
+            {readingText(reading)}
+          </p>
         </div>
+        <Badge tone={BADGE_TONE[tone]}>{S.machines.state[reading.kind]}</Badge>
         <button
           type="button"
-          className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           aria-expanded={open}
           aria-controls={detailsId}
           aria-label={`${S.machines.details}: ${machine.alias}`}
@@ -602,7 +617,24 @@ function MachineRow({
           />
         </button>
       </div>
-      <div id={detailsId} hidden={!open} className="mt-2 space-y-1 pl-6 text-xs text-gray-500">
+      <div
+        id={detailsId}
+        hidden={!open}
+        className="mt-2 space-y-1.5 pl-[3.75rem] text-xs text-gray-500"
+      >
+        {reading.kind === "failed" && reading.canReplaceProgram && (
+          <div>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={busy}
+              title={S.machines.replaceProgramWhy}
+              onClick={onReplaceProgram}
+            >
+              {S.machines.replaceProgram}
+            </Button>
+          </div>
+        )}
         {machine.installed !== null && (
           <p>
             {S.machines.installedAt(
@@ -617,7 +649,7 @@ function MachineRow({
         {job !== null && job.log.length > 0 && (
           <details open={reading.kind === "failed"}>
             <summary className="cursor-pointer">{S.machines.output}</summary>
-            <pre className="mt-1 max-h-48 overflow-auto rounded bg-gray-50 p-2 font-mono text-[11px] whitespace-pre-wrap dark:bg-gray-900">
+            <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] whitespace-pre-wrap dark:bg-gray-900">
               {job.log.join("\n")}
             </pre>
           </details>
