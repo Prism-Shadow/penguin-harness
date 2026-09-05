@@ -750,9 +750,18 @@ export const sendMessagingTestMessage = (sessionId: string, channel: MessagingCh
     { method: "POST", body: {} },
   );
 
-/** Windowed history request: the newest N units (tail), or the N units before a cursor. */
+/**
+ * Windowed history request, sized as a message budget — the shortest run of whole Tasks
+ * holding at least `messages` (see MessagesPageInfo): the newest window (tail), the window
+ * before a cursor, or the window starting at one. The last never crosses `until`
+ * (exclusive; the live tail's start, so a forward page cannot overlap what is already
+ * held), and with `messages` omitted it runs to the end — the resync refetch of the live
+ * tail from its known start.
+ */
 export type MessagesPageQuery =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+  | { kind: "tail"; messages: number }
+  | { kind: "before"; cursor: string; messages: number }
+  | { kind: "after"; cursor: string; until?: string; messages?: number };
 
 /**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
@@ -770,8 +779,12 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
     page === undefined
       ? ""
       : page.kind === "tail"
-        ? `?tailLimit=${page.limit}`
-        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+        ? `?tail=1&messages=${page.messages}`
+        : page.kind === "before"
+          ? `?before=${encodeURIComponent(page.cursor)}&messages=${page.messages}`
+          : `?after=${encodeURIComponent(page.cursor)}` +
+            (page.until !== undefined ? `&until=${encodeURIComponent(page.until)}` : "") +
+            (page.messages !== undefined ? `&messages=${page.messages}` : "");
   return apiFetchWithMeta<MessagesResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
