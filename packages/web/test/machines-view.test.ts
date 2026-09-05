@@ -195,19 +195,28 @@ describe("installedMachines", () => {
     expect(installedMachines(response([]))).toEqual([]);
   });
 
-  it("keeps only the installed ones, most recent first", () => {
+  it("keeps only the installed ones, by name — never by install time, which an update rewrites", () => {
     const nas = { ...carrying("nas"), installed: older };
     const box = carrying("build-box");
     expect(
       installedMachines(response([], { machines: [here(), fresh("spare"), nas, box] })),
     ).toEqual([box, nas]);
+    // The same two after nas was just updated: the order does not move.
+    const fresher = { ...nas, installed: { version: "9.9.9", at: "2026-09-01T00:00:00.000Z" } };
+    expect(
+      installedMachines(response([], { machines: [here(), fresh("spare"), fresher, box] })),
+    ).toEqual([box, fresher]);
   });
 
-  it("keeps the config's order among installs sharing a timestamp, so the list does not shuffle between polls", () => {
-    const a = carrying("a");
-    const b = carrying("b");
-    const c = carrying("c");
-    expect(installedMachines(response([], { machines: [here(), a, b, c] }))).toEqual([a, b, c]);
+  it("compares names naturally, so gpu-2 sits before gpu-10", () => {
+    const two = carrying("gpu-2");
+    const ten = carrying("gpu-10");
+    const one = carrying("GPU-1");
+    expect(installedMachines(response([], { machines: [here(), ten, two, one] }))).toEqual([
+      one,
+      two,
+      ten,
+    ]);
   });
 
   it("does not mutate the response's own machine order (the picker reads it too)", () => {
