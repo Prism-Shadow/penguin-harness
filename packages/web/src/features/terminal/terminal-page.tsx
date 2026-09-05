@@ -16,9 +16,20 @@
  * When `?id=` points at a terminal that no longer exists (server restart, reaped after
  * exit), a fresh shell is created with the URL's cwd/name — the page always ends in a
  * usable terminal rather than a dead end.
+ *
+ * The page owns its own height rather than filling `#root`: on a touch device it is sized
+ * to the visual viewport, so a soft keyboard takes its bite out of the terminal instead of
+ * covering the bottom rows. The header compacts to fit a phone — the label and the status
+ * word go, the working directory truncates, and the marks that carry the meaning (the
+ * status dot, the "+") stay, each naming itself.
  */
 import { useCallback, useMemo, useState } from "react";
+import { ADD_ICON } from "../../components/ui/icons";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
+import { useVisualViewportHeight } from "../../lib/use-visual-viewport-height";
 import { useTerminalChrome } from "./terminal-appearance";
 import {
   TerminalView,
@@ -109,6 +120,8 @@ async function attachOrCreate(
 
 export function TerminalPage() {
   const chrome = useTerminalChrome();
+  const coarsePointer = useCoarsePointer();
+  const viewportHeight = useVisualViewportHeight(coarsePointer);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState<string>("");
   const [info, setInfo] = useState<TerminalInfo | null>(null);
@@ -158,32 +171,45 @@ export function TerminalPage() {
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
   return (
-    <div className={`flex h-screen w-screen flex-col ${chrome.surface}`}>
+    <div
+      // dvh for the browser's collapsing toolbars, an explicit pixel height (touch only)
+      // for the soft keyboard — see useVisualViewportHeight.
+      style={viewportHeight !== null ? { height: viewportHeight } : undefined}
+      className={`flex h-[100dvh] w-full flex-col ${chrome.surface}`}
+    >
       <header
-        className={`flex shrink-0 items-center gap-3 border-b px-4 py-2 text-xs ${chrome.border}`}
+        className={`flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs sm:gap-3 sm:px-4 ${chrome.border}`}
       >
-        <span className="font-medium">{S.terminal.title}</span>
-        <span className={chrome.muted}>{info?.cwd ?? params.cwd}</span>
+        <span className="hidden shrink-0 font-medium sm:inline">{S.terminal.title}</span>
+        <span className={`min-w-0 flex-1 truncate ${chrome.muted}`}>{info?.cwd ?? params.cwd}</span>
         <span
           data-testid="terminal-status"
           data-status={status}
-          className={
+          // The dot is the whole mark on a phone, so the sentence it stands for has to
+          // reach a screen reader from somewhere: the title carries it either way.
+          title={statusText}
+          className={`flex shrink-0 items-center gap-1 ${
             status === "ready"
               ? chrome.success
               : status === "connecting"
                 ? chrome.attention
                 : chrome.danger
-          }
+          }`}
         >
-          ● {statusText}
+          <span aria-hidden>●</span>
+          <span className="hidden sm:inline">{statusText}</span>
+          <span className="sr-only sm:hidden">{statusText}</span>
         </span>
         <button
           type="button"
           data-testid="terminal-new-shell"
           onClick={restart}
-          className={`ml-auto rounded border px-2 py-1 ${chrome.outlineButton}`}
+          aria-label={S.terminal.newShell}
+          title={S.terminal.newShell}
+          className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 ${chrome.outlineButton}`}
         >
-          {S.terminal.newShell}
+          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.rowLead} />
+          <span className="hidden sm:inline">{S.terminal.newShell}</span>
         </button>
       </header>
       <TerminalView
