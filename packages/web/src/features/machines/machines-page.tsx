@@ -1,97 +1,115 @@
 /**
- * Machines page: pick a host out of the SERVER's own `~/.ssh/config`, install this build on
- * it, connect to it, sign in to it.
+ * Machines: the hosts this Project runs agents on, and two verbs.
  *
- * The host list is a picker, not a rendered list: an ssh config routinely declares hundreds
- * of entries, so the panel shows a few rows, a fuzzy query reaches the rest, and a counter
- * names how many rows the view leaves out.
+ * "Use" is the whole of what a person wants from a machine — install or update the program
+ * there, start its server, connect, hand over the Model config — as one job the server
+ * queues per machine, so a batch is one tap. "Stop using" lets a machine go. Every row is
+ * one sentence saying where the machine is, and the sentence names what "use" would fix.
  *
- * An install is a job on the server: POST starts it and the page polls while it runs. The
- * progress lines are the far side's own words, rendered verbatim in a monospace block. One
- * job exists at a time server-side, so the panel follows THE JOB and names the alias it
- * belongs to, while the button follows the selection.
+ * Batch first: the rows carry checkboxes, every machine in use is ticked until someone
+ * changes that, and the two verbs act on the selection. Machines not yet in use are behind
+ * an "Add" picker — a fuzzy search over the ssh config, which can declare hundreds of hosts.
+ *
+ * The list polls while a job is queued or running, and re-probes the servers on a widening
+ * schedule (probe-schedule.ts) so a machine that went quiet is noticed without a tap.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime } from "../../lib/format";
-import { toneInk, toneStrip } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
-import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
-  connectAction,
-  installButtonState,
+  anyJobPending,
+  defaultSelection,
   installedMachines,
+  jobFor,
   localMachine,
-  outOfDate,
-  statusTone,
-  verdictOf,
+  readMachine,
+  readingTone,
 } from "./machines-view";
-import type { MachineVerdict } from "./machines-view";
+import type { MachineReading } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
-/** How often a running job is re-read. Slow enough to be free, fast enough that a step reads as progress. */
+/** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/** One machine's server state as a line of text, or null when it has not been probed yet. */
-function statusText(machine: MachineInfo): string | null {
-  const status = machine.status;
-  if (status === null) return null;
-  if (status.state === "running") {
-    return status.port === undefined
-      ? S.machines.statusRunning
-      : S.machines.statusRunningOn(status.port);
+const CHECKBOX_CLASS = "h-4 w-4 shrink-0 cursor-pointer";
+
+/** The one sentence a row says. */
+function readingText(reading: MachineReading): string {
+  const m = S.machines;
+  switch (reading.kind) {
+    case "queued":
+      return m.queued;
+    case "working":
+      return reading.step === null ? m.working : m.workingAt(reading.step);
+    case "failed":
+      return `${m.failedAt(reading.step)} ${reading.message}`;
+    case "ready":
+      return reading.port === null ? m.ready : m.readyOn(reading.port);
+    case "installedOnly":
+      return m.installedOnly;
+    case "behind":
+      return m.behind(reading.version);
+    case "notConnected":
+      return m.notConnected;
+    case "unreachable":
+      return reading.detail === null ? m.unreachable : m.unreachableDetail(reading.detail);
+    case "stopped":
+      return m.stopped;
+    case "unknown":
+      return m.notChecked;
   }
-  return status.state === "stopped" ? S.machines.statusStopped : S.machines.statusUnreachable;
 }
 
-/** A finished job's one-line verdict, and the tone that carries it. */
-function verdictLine(verdict: MachineVerdict): { text: string; tone: Tone } {
-  if (verdict.kind === "failed") {
-    return { text: S.machines.failedAt(verdict.step), tone: "danger" };
-  }
-  if (verdict.kind === "connected") return { text: S.machines.reachable, tone: "success" };
-  const version = verdict.version ?? "";
-  return {
-    text:
-      verdict.kind === "already-installed"
-        ? S.machines.alreadyInstalled(version)
-        : S.machines.installed(version),
-    tone: "success",
-  };
+function toggled(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
 }
 
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
   // Machines belong to the Project, like every other row in this nav group: switching
-  // Projects switches which machines are listed, and installing here gives the machine to
+  // Projects switches which machines are listed, and using one here gives the machine to
   // THIS Project — the same one whose Model credentials it will be handed.
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** True while a POST has not come back yet — the server has no job to report in that window. */
-  const [starting, setStarting] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** True while a POST has not come back yet. */
+  const [posting, setPosting] = useState(false);
+  /**
+   * The batch selection. Null means "untouched": every machine in use, including ones added
+   * later. Becomes a real set the first time someone ticks or unticks a row.
+   */
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  /** Rows whose details are unfolded. */
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
 
-  /** The picker panel; closing it always clears the query, so it reopens unfiltered. */
+  /** The picker panel; closing it always clears the query and its ticks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
   const [query, setQuery] = useState("");
-  const setPickerOpen = (open: boolean) => {
-    setPickerOpenState(open);
-    if (!open) setQuery("");
+  const [adding, setAdding] = useState<Set<string>>(() => new Set());
+  const setPickerOpen = (next: boolean) => {
+    setPickerOpenState(next);
+    if (!next) {
+      setQuery("");
+      setAdding(new Set());
+    }
   };
 
   const load = useCallback(async () => {
@@ -108,13 +126,13 @@ export function MachinesPage() {
     void load();
   }, [load]);
 
-  // Poll only while a job runs. Chained timeouts rather than an interval: a slow response
-  // must not stack requests behind itself.
-  const running = state?.job?.running === true;
+  // Poll only while a job is queued or running. Chained timeouts rather than an interval: a
+  // slow response must not stack requests behind itself.
+  const pending = state !== null && anyJobPending(state);
   const loadRef = useRef(load);
   loadRef.current = load;
   useEffect(() => {
-    if (!running) return;
+    if (!pending) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
@@ -129,32 +147,42 @@ export function MachinesPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [running]);
+  }, [pending]);
 
   const machines = useMemo(() => state?.machines ?? [], [state]);
-  const installed = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
+  const inUse = useMemo(() => (state === null ? [] : installedMachines(state)), [state]);
   const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
-  /** The machine whose connect POST is in flight — the server has no job to report yet. */
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
-  /** Aliases the picker offers: everything except this machine, which is not a target. */
-  const pickable = useMemo(() => machines.filter((machine) => !machine.local), [machines]);
-  const matched = useMemo(() => matchMachines(pickable, query), [pickable, query]);
+  const jobs = useMemo(() => state?.jobs ?? [], [state]);
+  const imageVersion = state?.imageVersion ?? null;
+  const selection = useMemo(
+    () => picked ?? (state === null ? new Set<string>() : defaultSelection(state)),
+    [picked, state],
+  );
+  const inUseIds = useMemo(() => new Set(inUse.map((machine) => machine.id)), [inUse]);
+  const selectedIds = useMemo(
+    () => [...selection].filter((id) => inUseIds.has(id)),
+    [selection, inUseIds],
+  );
+  const allSelected = inUse.length > 0 && selectedIds.length === inUse.length;
+
+  /** Hosts the picker offers: in the config, not this machine, not already in use here. */
+  const addable = useMemo(
+    () => machines.filter((machine) => !machine.local && !inUseIds.has(machine.id)),
+    [machines, inUseIds],
+  );
+  const matched = useMemo(() => matchMachines(addable, query), [addable, query]);
   const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenCount = matched.length - visible.length;
-  const selected = machines.find((machine) => machine.id === selectedId) ?? null;
 
   /**
-   * Re-probe the installed servers on a widening schedule (probe-schedule.ts). Separate from
-   * the job poll above: that one follows an install and stops when it settles, this one
-   * watches machines nobody is touching and has to stay cheap for hours.
+   * Re-probe the servers in use on a widening schedule. Separate from the job poll above:
+   * that one follows a job and stops when the queue drains, this one watches machines
+   * nobody is touching and has to stay cheap for hours.
    */
-  const [probing, setProbing] = useState(false);
   const settledRounds = useRef(0);
   const lastPrint = useRef<string | null>(null);
   const probe = useCallback(async () => {
     if (projectId === null) return;
-    setProbing(true);
     try {
       const next = await api.probeMachines(projectId);
       const print = probeFingerprint(next.machines);
@@ -165,17 +193,15 @@ export function MachinesPage() {
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
-    } finally {
-      setProbing(false);
     }
-  }, []);
+  }, [projectId]);
 
   const probeRef = useRef(probe);
   probeRef.current = probe;
-  /** Nothing installed anywhere: there is no server to ask about, so no timer runs at all. */
-  const hasInstalled = installed.length > 0;
+  /** Nothing in use anywhere: there is no server to ask about, so no timer runs at all. */
+  const hasInUse = inUse.length > 0;
   useEffect(() => {
-    if (!hasInstalled) return;
+    if (!hasInUse) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const arm = (delay: number) => {
@@ -191,429 +217,332 @@ export function MachinesPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [hasInstalled]);
+  }, [hasInUse]);
 
-  const connect = async (machineId: string) => {
+  const post = async (run: (projectId: string) => Promise<MachinesResponse>) => {
     if (projectId === null) return;
-    setConnecting(machineId);
+    setPosting(true);
     try {
-      setState(await api.connectMachine(projectId, machineId));
+      setState(await run(projectId));
       setError(null);
     } catch (err) {
       setError(apiErrorText(err));
     } finally {
-      setConnecting(null);
+      setPosting(false);
     }
   };
 
-  /**
-   * Restarts a machine's server. Its own control because a machine's FILES can be brought
-   * forward while it runs — a replicated store, an install that already matched — and only a
-   * restart makes the process match them.
-   */
-  const restart = async (machineId: string) => {
-    if (projectId === null) return;
-    setConnecting(machineId);
-    try {
-      setState(await api.restartMachine(projectId, machineId));
-      setError(null);
-    } catch (err) {
-      setError(apiErrorText(err));
-    } finally {
-      setConnecting(null);
-    }
-  };
+  const use = (ids: string[], replaceProgram = false) =>
+    post(async (project) => {
+      const answer = await api.useMachines(project, ids, replaceProgram);
+      if (answer.refused.length > 0) {
+        const byId = new Map(machines.map((machine) => [machine.id, machine.alias]));
+        // Set after `post` clears the error, by way of the microtask order: post awaits
+        // this, so its setError(null) runs first and this one stands.
+        queueMicrotask(() =>
+          setError(
+            answer.refused
+              .map(({ machineId, why }) => {
+                const alias = byId.get(machineId) ?? machineId;
+                if (why === "self") return S.machines.refusedSelf(alias);
+                if (why === "no-image") return S.machines.noImage;
+                return S.machines.refusedUnknown(alias);
+              })
+              .join(" "),
+          ),
+        );
+      }
+      return answer;
+    });
+  const stopUsing = (ids: string[]) => post((project) => api.stopUsingMachines(project, ids));
 
-  const disconnect = async (machineId: string) => {
-    if (projectId === null) return;
-    try {
-      setState(await api.disconnectMachine(projectId, machineId));
-      setError(null);
-    } catch (err) {
-      setError(apiErrorText(err));
-    }
-  };
+  const togglePicked = (id: string) => setPicked(toggled(picked ?? selection, id));
+  const toggleAll = () =>
+    setPicked(allSelected ? new Set() : new Set(inUse.map((machine) => machine.id)));
+  const toggleOpen = (id: string) => setOpen((prev) => toggled(prev, id));
+  const toggleAdding = (id: string) => setAdding((prev) => toggled(prev, id));
 
-  /**
-   * Starts an install, or adopts when this server already installed there for another
-   * Project — one button, because from where the person stands both answer "make this
-   * machine usable here" and only one of them costs a transfer.
-   */
-  const install = async (machineId = selectedId, replaceProgram = false) => {
-    if (machineId === null || projectId === null) return;
-    setStarting(true);
-    try {
-      setState(await api.installOnMachine(projectId, machineId, replaceProgram));
-      setError(null);
-    } catch (err) {
-      setError(apiErrorText(err));
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const job = state?.job ?? null;
-  const verdict = job === null ? null : verdictOf(job);
-  const verdictText = verdict === null ? null : verdictLine(verdict);
-  const button =
-    state === null
-      ? { action: "install" as const, disabled: true }
-      : installButtonState(selected, state, starting);
+  const noImage = state !== null && imageVersion === null;
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-          {S.machines.pageTitle}
-          <InfoPopover label={S.machines.pageTitle}>{S.machines.pageDesc}</InfoPopover>
-        </h1>
-
-        {error !== null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
-            {error}
-          </div>
+    <div className="mx-auto w-full max-w-3xl space-y-5 p-4 sm:p-6">
+      <header className="space-y-1">
+        <h1 className="text-lg font-semibold">{S.machines.pageTitle}</h1>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{S.machines.pageDesc}</p>
+        {imageVersion !== null && (
+          <p className="text-xs text-gray-500">{S.machines.imageVersion(imageVersion)}</p>
         )}
+      </header>
 
-        {state === null ? (
-          <div className="mt-6 space-y-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : (
-          <>
-            {state.imageVersion === null ? (
-              <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
-                {S.machines.noImage}
+      {error !== null && (
+        <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
+      )}
+      {noImage && error === null && (
+        <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+          {S.machines.noImage}
+        </div>
+      )}
+
+      {state === null ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <>
+          {local !== null && (
+            <section className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.success}`} />
+                <span className="truncate text-sm font-medium">{local.alias}</span>
+                <span className="text-xs text-gray-500">{S.machines.localTitle}</span>
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {S.machines.imageVersion(state.imageVersion)}
-              </p>
-            )}
+              <p className={`mt-0.5 text-xs ${toneInk.success}`}>{S.machines.localReady}</p>
+            </section>
+          )}
 
-            {machines.length === 0 ? (
-              <EmptyState title={S.machines.empty} />
-            ) : (
-              <div className="mt-6 flex items-start gap-2">
-                {/* The picker. Fuzzy query over the aliases, matched characters bright and
-                    the rest dimmed — with a subsequence match, an unmarked row looks wrong. */}
-                <Dropdown
-                  open={pickerOpen}
-                  setOpen={setPickerOpen}
-                  className="min-w-0 flex-1"
-                  menuClass="left-0 right-0 top-full mt-1 origin-top"
-                  button={
-                    <button
-                      type="button"
-                      onClick={() => setPickerOpen(!pickerOpen)}
-                      aria-haspopup="listbox"
-                      aria-expanded={pickerOpen}
-                      className="flex w-full items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-                    >
-                      <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                        <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                      </span>
-                      <span
-                        className={`min-w-0 flex-1 truncate ${selected === null ? "text-gray-400 dark:text-gray-500" : ""}`}
-                      >
-                        {selected?.alias ?? S.machines.pick}
-                      </span>
-                      <ChevronDown className="shrink-0 text-gray-400" />
-                    </button>
-                  }
-                >
-                  {machines.length > MAX_VISIBLE_MACHINES && (
-                    <div className="px-2 pt-1 pb-1">
-                      <input
-                        type="search"
-                        autoFocus
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder={S.machines.search}
-                        aria-label={S.machines.search}
-                        className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
-                      />
-                    </div>
-                  )}
-                  {visible.map(({ machine, positions }) => (
-                    <button
-                      key={machine.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(machine.id);
-                        setPickerOpen(false);
-                      }}
-                      className="flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-                    >
-                      <span
-                        className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
-                      >
-                        {positions.length === 0
-                          ? machine.alias
-                          : highlightSegments(machine.alias, positions).map((segment, i) => (
-                              <span
-                                key={i}
-                                className={
-                                  segment.hit
-                                    ? "font-semibold text-gray-900 dark:text-white"
-                                    : undefined
-                                }
-                              >
-                                {segment.text}
-                              </span>
-                            ))}
-                      </span>
-                      {/* Which hosts already carry this program — the version, not a bare
-                          tick, because a stale one is the reason to reinstall. */}
-                      {machine.installed !== null && (
-                        <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                          {machine.installed.version}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                  {visible.length === 0 && (
-                    <p className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
-                      {S.machines.noMatch}
-                    </p>
-                  )}
-                  {hiddenCount > 0 && (
-                    <p className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
-                      {S.machines.more(hiddenCount)}
-                    </p>
-                  )}
-                </Dropdown>
-                <Button
-                  variant="primary"
-                  disabled={button.disabled}
-                  onClick={() => void install()}
-                  className="shrink-0"
-                >
-                  {button.action === "installing"
-                    ? S.machines.installing
-                    : button.action === "adopt"
-                      ? S.machines.adopt
-                      : button.action === "update"
-                        ? S.machines.update
-                        : button.action === "reinstall"
-                          ? S.machines.reinstall
-                          : S.machines.install}
-                </Button>
-              </div>
-            )}
-
-            {selected?.elsewhere != null && (
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {S.machines.installedElsewhere(selected.elsewhere.version)}
-              </p>
-            )}
-
-            {selected?.installed != null && (
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {S.machines.installedAt(
-                  selected.installed.version,
-                  formatDateTime(selected.installed.at),
-                )}
-              </p>
-            )}
-
-            {/* This machine, first and on its own: it is where the page is being served
-                from, always up by definition, and never something to install onto. */}
-            {local !== null && (
-              <section className="mt-6">
-                <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
-                  {S.machines.localTitle}
-                </h2>
-                <div className="mt-2 flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
-                  <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                  </span>
-                  <span
-                    className="min-w-0 flex-1 truncate text-sm font-medium"
-                    title={local.machineId ?? undefined}
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">{S.machines.inUseTitle(inUse.length)}</h2>
+              <Dropdown
+                open={pickerOpen}
+                setOpen={setPickerOpen}
+                button={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={addable.length === 0 || noImage}
+                    onClick={() => setPickerOpen(!pickerOpen)}
+                    aria-haspopup="listbox"
+                    aria-expanded={pickerOpen}
                   >
-                    {local.alias}
-                  </span>
-                  {local.installed !== null && (
-                    <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                      {local.installed.version}
-                    </span>
-                  )}
-                  <span className={`shrink-0 text-xs ${toneInk[statusTone(local.status?.state)]}`}>
-                    {statusText(local) ?? S.machines.statusRunning}
-                  </span>
-                </div>
-              </section>
-            )}
-
-            {/* What this server has already installed, standing on the page rather than
-                only inside the picker: it is the answer to "what did I do", which a panel
-                that has to be opened one row at a time cannot give. */}
-            {installed.length > 0 && (
-              <section className="mt-6">
-                <div className="flex items-center gap-2">
-                  <h2 className="min-w-0 flex-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
-                    {S.machines.installedTitle(installed.length)}
-                  </h2>
-                  {/* The schedule widens on its own (probe-schedule.ts); this is for when
-                      you already know something changed and do not want to wait for it. */}
-                  <Button size="sm" variant="ghost" disabled={probing} onClick={() => void probe()}>
-                    {probing ? S.machines.checking : S.machines.refresh}
+                    <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.inlineGlyph} />
+                    {S.machines.add}
+                  </Button>
+                }
+                menuClass="w-[min(20rem,calc(100vw-2rem))] p-2"
+              >
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={S.machines.search}
+                  autoFocus
+                  className="mb-2 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900"
+                />
+                {visible.length === 0 ? (
+                  <p className="px-1 py-2 text-xs text-gray-500">
+                    {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
+                  </p>
+                ) : (
+                  <ul className="max-h-64 overflow-y-auto">
+                    {visible.map((match) => (
+                      <li key={match.machine.id}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <input
+                            type="checkbox"
+                            className={CHECKBOX_CLASS}
+                            checked={adding.has(match.machine.id)}
+                            onChange={() => toggleAdding(match.machine.id)}
+                          />
+                          <span className="min-w-0 flex-1 truncate">
+                            {highlightSegments(match.machine.alias, match.positions).map(
+                              (segment, index) =>
+                                segment.hit ? (
+                                  <mark
+                                    key={index}
+                                    className="bg-transparent font-semibold text-inherit"
+                                  >
+                                    {segment.text}
+                                  </mark>
+                                ) : (
+                                  <span key={index}>{segment.text}</span>
+                                ),
+                            )}
+                          </span>
+                          {match.machine.elsewhere !== undefined && (
+                            <span className="shrink-0 text-xs text-gray-500">
+                              {S.machines.elsewhere}
+                            </span>
+                          )}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {hiddenCount > 0 && (
+                  <p className="px-1 pt-1 text-xs text-gray-500">{S.machines.more(hiddenCount)}</p>
+                )}
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={adding.size === 0 || posting}
+                    onClick={() => {
+                      const ids = [...adding];
+                      setPickerOpen(false);
+                      void use(ids);
+                    }}
+                  >
+                    {S.machines.addSelected(adding.size)}
                   </Button>
                 </div>
-                <div className="mt-2 divide-y divide-gray-200 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {installed.map((machine) => {
-                    const action = connectAction(machine, state.job, connecting);
-                    return (
-                      <div
-                        key={machine.id}
-                        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${
-                          machine.id === selectedId
-                            ? "bg-gray-100 dark:bg-gray-800"
-                            : "bg-white dark:bg-gray-900"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setSelectedId(machine.id)}
-                          aria-current={machine.id === selectedId ? "true" : undefined}
-                          className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                        >
-                          <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                            <GlyphIcon d={NAV_ICONS.machines} size={ICON_SIZE.rowLead} />
-                          </span>
-                          {/* The alias is the label — it is what someone chose and recognises.
-                          The machine's own id is the identity, kept to the tooltip. */}
-                          <span
-                            className="min-w-0 flex-1 truncate text-sm font-medium"
-                            title={machine.machineId ?? undefined}
-                          >
-                            {machine.alias}
-                          </span>
-                          <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                            {machine.installed!.version}
-                          </span>
-                          {/* The server over there, as of the last probe. Never colour alone:
-                          the state is named in words, and unprobed says so too. */}
-                          <span
-                            className={`shrink-0 text-xs ${statusText(machine) === null ? "text-gray-400 dark:text-gray-500" : toneInk[statusTone(machine.status?.state)]}`}
-                            title={machine.status?.detail}
-                          >
-                            {statusText(machine) ?? S.machines.statusUnknown}
-                          </span>
-                        </button>
-                        {/* Connected means its filesystem and API are reachable from here —
-                          through the workspace picker, and anything else that names a
-                          machine. There is nothing to "enter": the window never moves. */}
-                        {action === "connected" ? (
-                          <>
-                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
-                              {S.machines.reachable}
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={running}
-                              onClick={() => void restart(machine.id)}
-                            >
-                              {S.machines.restart}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => void disconnect(machine.id)}
-                            >
-                              {S.machines.disconnect}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={running}
-                              onClick={() => void restart(machine.id)}
-                            >
-                              {S.machines.restart}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={action !== "connect" || state.job?.running === true}
-                              onClick={() => void connect(machine.id)}
-                            >
-                              {action === "connecting" ? S.machines.connecting : S.machines.connect}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+              </Dropdown>
+            </div>
 
-            {/* The job, whichever machine it belongs to — named, so a selection change
-                while one runs never leaves an unattributed log on screen. */}
-            {job !== null && (
-              <section className="mt-5 overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-                <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 dark:bg-gray-900">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{job.alias}</span>
-                  {running ? (
-                    <span className={`text-xs ${toneInk.busy}`}>
-                      {job.kind === "install"
-                        ? S.machines.installing
-                        : job.kind === "restart"
-                          ? S.machines.restarting
-                          : S.machines.connecting}
+            {inUse.length === 0 ? (
+              <EmptyState title={S.machines.noneInUse} description={S.machines.sshHint} />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className={CHECKBOX_CLASS}
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label={S.machines.selectAll}
+                    />
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {S.machines.selectedCount(selectedIds.length)}
                     </span>
-                  ) : (
-                    verdictText !== null && (
-                      <span className={`text-xs ${toneInk[verdictText.tone]}`}>
-                        {verdictText.text}
-                      </span>
-                    )
-                  )}
-                </div>
-                {job.log.length > 0 && (
-                  <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {S.machines.output}
-                    </p>
-                    <pre className="mt-1 max-h-64 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {job.log.join("\n")}
-                    </pre>
-                    {verdict?.kind === "failed" && (
-                      <pre
-                        className={`mt-2 font-mono text-xs break-words whitespace-pre-wrap ${toneInk.danger}`}
-                      >
-                        {verdict.message}
-                      </pre>
-                    )}
-                    {/* The one failure with a next step this side can take. Offered rather
-                        than taken: it restarts a server other people may be on. */}
-                    {verdict?.kind === "failed" && verdict.canReplaceProgram === true && (
-                      <div className="mt-3">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {S.machines.replaceProgramWhy}
-                        </p>
-                        <Button
-                          size="sm"
-                          className="mt-2"
-                          disabled={running}
-                          onClick={() => void install(job.machineId, true)}
-                        >
-                          {S.machines.replaceProgram}
-                        </Button>
-                      </div>
-                    )}
+                  </label>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={selectedIds.length === 0 || posting || noImage}
+                      onClick={() => void use(selectedIds)}
+                    >
+                      {S.machines.useSelected(selectedIds.length)}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={selectedIds.length === 0 || posting}
+                      onClick={() => void stopUsing(selectedIds)}
+                    >
+                      {S.machines.stopUsing}
+                    </Button>
                   </div>
-                )}
-              </section>
+                </div>
+
+                <ul className="divide-y divide-gray-200 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                  {inUse.map((machine) => (
+                    <MachineRow
+                      key={machine.id}
+                      machine={machine}
+                      job={jobFor(jobs, machine.id)}
+                      imageVersion={imageVersion}
+                      checked={selection.has(machine.id)}
+                      onToggle={() => togglePicked(machine.id)}
+                      open={open.has(machine.id)}
+                      onToggleOpen={() => toggleOpen(machine.id)}
+                      busy={posting}
+                      onReplaceProgram={() => void use([machine.id], true)}
+                    />
+                  ))}
+                </ul>
+                <p className="text-xs text-gray-500">{S.machines.sshHint}</p>
+              </>
             )}
-          </>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MachineRow({
+  machine,
+  job,
+  imageVersion,
+  checked,
+  onToggle,
+  open,
+  onToggleOpen,
+  busy,
+  onReplaceProgram,
+}: {
+  machine: MachineInfo;
+  job: MachineJob | null;
+  imageVersion: string | null;
+  checked: boolean;
+  onToggle: () => void;
+  open: boolean;
+  onToggleOpen: () => void;
+  busy: boolean;
+  onReplaceProgram: () => void;
+}) {
+  const reading = readMachine(machine, job, imageVersion);
+  const tone = readingTone(reading);
+  const detailsId = `machine-details-${machine.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const moving = reading.kind === "working" || reading.kind === "queued";
+  return (
+    <li className="px-3 py-2">
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className={`${CHECKBOX_CLASS} mt-1`}
+          checked={checked}
+          onChange={onToggle}
+          aria-label={machine.alias}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="truncate text-sm font-medium">{machine.alias}</span>
+          </div>
+          <p className={`mt-0.5 text-xs break-words ${toneInk[tone]}`}>{readingText(reading)}</p>
+          {reading.kind === "failed" && reading.canReplaceProgram && (
+            <div className="mt-1.5">
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                title={S.machines.replaceProgramWhy}
+                onClick={onReplaceProgram}
+              >
+                {S.machines.replaceProgram}
+              </Button>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          aria-expanded={open}
+          aria-controls={detailsId}
+          aria-label={`${S.machines.details}: ${machine.alias}`}
+          onClick={onToggleOpen}
+        >
+          <ChevronDown
+            size={ICON_SIZE.chevron}
+            className={`transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      </div>
+      <div id={detailsId} hidden={!open} className="mt-2 space-y-1 pl-6 text-xs text-gray-500">
+        {machine.installed !== null && (
+          <p>
+            {S.machines.installedAt(
+              machine.installed.version,
+              formatDateTime(machine.installed.at),
+            )}
+          </p>
+        )}
+        {machine.status !== null && (
+          <p>{S.machines.checkedAt(formatDateTime(machine.status.checkedAt))}</p>
+        )}
+        {job !== null && job.log.length > 0 && (
+          <details open={reading.kind === "failed"}>
+            <summary className="cursor-pointer">{S.machines.output}</summary>
+            <pre className="mt-1 max-h-48 overflow-auto rounded bg-gray-50 p-2 font-mono text-[11px] whitespace-pre-wrap dark:bg-gray-900">
+              {job.log.join("\n")}
+            </pre>
+          </details>
         )}
       </div>
-    </div>
+    </li>
   );
 }
