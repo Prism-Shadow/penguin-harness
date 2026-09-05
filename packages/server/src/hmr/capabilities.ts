@@ -29,7 +29,6 @@ import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { HmrHost } from "@prismshadow/penguin-hmr";
 import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -91,7 +90,6 @@ interface HmrInterfaces extends Interfaces {
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
   desktop: MembersOf<DesktopService>;
-  lifecycle: MembersOf<LifecycleService>;
 }
 
 export const HMR_INTERFACES: HmrInterfaces = {
@@ -109,7 +107,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "desktopToken",
     "portFile",
     "trustProxy",
-    "supervised",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
@@ -119,7 +116,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
   // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
-  lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
 export const HMR_INTERFACES_RESOURCE_ID = "runtime:interfaces";
@@ -219,12 +215,6 @@ export const HMR_HOST_RESOURCE_ID = "runtime:hmr-host";
  * admin surfaces), so the claim must distinguish "not desktop" from "not published".
  */
 export const HMR_DESKTOP_RESOURCE_ID = "runtime:desktop";
-/**
- * Process lifecycle (services/lifecycle-service.ts): whether a supervisor relaunches this
- * process, and the restart trigger. Always published — the platform's restart route needs
- * a definite "nobody would relaunch me" to refuse with, not a missing capability.
- */
-export const HMR_LIFECYCLE_RESOURCE_ID = "runtime:lifecycle";
 /** PARKED PLATFORM STATE, test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
 export const PARKED_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 /**
@@ -277,7 +267,6 @@ export interface HmrCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
-  lifecycle: LifecycleService;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -326,8 +315,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   const channels = resources.claim<ChannelHub>(HMR_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
-  const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
+  if (!config || !db || !channels || !proxyControl || !hmr) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -356,7 +344,6 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
-    ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
@@ -369,7 +356,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, replacements },
+    caps: { config, db, authState, channels, proxyControl, hmr, desktop, replacements },
   };
 }
 
@@ -452,11 +439,6 @@ export abstract class Desktop extends Interface<{
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
 
-/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
-export abstract class Lifecycle extends Interface<
-  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
->() {}
-
 export abstract class Log extends Interface<{
   line(text: string): void;
 }>() {}
@@ -537,14 +519,6 @@ export class RuntimeDesktop {
   setup() {
     const { desktop } = this.caps;
     this.desktop = { current: () => desktop };
-  }
-}
-@Module()
-export class RuntimeLifecycle {
-  @Provide() lifecycle!: Lifecycle;
-  constructor(private readonly caps: HmrCapabilities) {}
-  setup() {
-    this.lifecycle = this.caps.lifecycle;
   }
 }
 @Module()

@@ -37,7 +37,6 @@ import {
   HMR_CONFIG_RESOURCE_ID,
   HMR_DB_RESOURCE_ID,
   HMR_DESKTOP_RESOURCE_ID,
-  HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   PARKED_OVERRIDES_RESOURCE_ID,
   PARKED_TEST_PLUGINS_RESOURCE_ID,
@@ -101,7 +100,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
 import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
@@ -190,8 +188,6 @@ export interface ServerBoot {
   channels: ChannelHub;
   hmr: ServerHmrHost;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   tree: ModuleTree;
 }
 
@@ -267,8 +263,6 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // …and the parked half. The auth values and the nodes a test stands in for: platform
   // state, every one.
   hmr.resources.register(PARKED_AUTH_STATE_RESOURCE_ID, authState);
@@ -294,7 +288,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, lifecycle, tree };
+  return { config, db, channels, hmr, desktop, tree };
 }
 
 /** Assembles the Hono app (does not listen on a port). */
