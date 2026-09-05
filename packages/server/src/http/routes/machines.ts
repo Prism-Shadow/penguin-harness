@@ -25,7 +25,7 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { DirListResponse, MachinesResponse } from "../../api/types.js";
+import type { DirListResponse, MachinesResponse, MachinesUseResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -56,6 +56,42 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     machines: deps.machines.list(requireValidId(c, "projectId")),
     imageVersion: deps.machines.imageVersion(),
     job: deps.machines.job(),
+    jobs: deps.machines.jobs(),
+  });
+
+  /**
+   * Bring machines into use — the one verb a person needs. Each is queued for the whole
+   * pipeline (install if needed, hand over, connect, sync); what could be refused without
+   * any ssh is answered by id in `refused`, and the rest report through `jobs`. 202 always:
+   * the queue is the answer, even when some rows were refused.
+   */
+  app.post("/use", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const machines = Array.isArray(body.machines)
+      ? body.machines.filter((m): m is string => typeof m === "string")
+      : [];
+    if (machines.length === 0) {
+      throw new HttpError(400, "bad_request", "Name at least one machine to use.");
+    }
+    const { refused } = deps.machines.startUse(
+      requireValidId(c, "projectId"),
+      machines,
+      body.replaceProgram === true,
+    );
+    return c.json({ ...state(c), refused } satisfies MachinesUseResponse, 202);
+  });
+
+  /** Stop using machines: connections dropped, membership released; the install over there stays. */
+  app.post("/stop-using", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const machines = Array.isArray(body.machines)
+      ? body.machines.filter((m): m is string => typeof m === "string")
+      : [];
+    if (machines.length === 0) {
+      throw new HttpError(400, "bad_request", "Name at least one machine to stop using.");
+    }
+    deps.machines.stopUsing(requireValidId(c, "projectId"), machines);
+    return c.json(state(c));
   });
 
   app.get("/", (c) => c.json(state(c)));

@@ -3556,10 +3556,18 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  kind: "install" | "connect" | "restart";
+  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
+  kind: "install" | "connect" | "restart" | "use";
   machineId: string;
   alias: string;
+  /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
+  queued: boolean;
   running: boolean;
+  /**
+   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
+   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   */
+  phase: MachinePhase | null;
   log: string[];
   result:
     | null
@@ -3590,7 +3598,44 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
+  /** The most recently started job, running or finished. */
   job: MachineJob | null;
+  /**
+   * Every job worth showing this generation: the queued ones, the running one, and the last
+   * finished one per machine — so a batch reads as a list of rows each saying where it is.
+   */
+  jobs: MachineJob[];
+}
+
+/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+export const MACHINE_PHASES = [
+  "check",
+  "install",
+  "handover",
+  "restart",
+  "connect",
+  "sync",
+] as const;
+export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
+export interface MachinesUseRequest {
+  /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
+  machines: string[];
+  /** Install the program even where its version matches, and restart there — the answer to a job that asked for it. */
+  replaceProgram?: boolean;
+}
+
+/** Why one machine of a batch was not queued; the rest were. */
+export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+export interface MachinesUseResponse extends MachinesResponse {
+  refused: { machineId: string; why: MachineUseRefusal }[];
+}
+
+/** `POST /api/projects/:projectId/machines/stop-using`: let go of these machines — connection dropped, Project membership released; the install stays. */
+export interface MachinesStopUsingRequest {
+  machines: string[];
 }
 
 // ---------------------------------------------------------------------------
