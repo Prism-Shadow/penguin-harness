@@ -494,9 +494,9 @@ export function MachinesPage() {
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
             never move when a selection appears or goes. The count is the slot's label; on the
             right, select all and none, then the two verbs, each dimmed when it would do nothing. */}
-        <div className="mt-3 flex h-10 items-center gap-3 px-1 text-xs text-gray-500">
+        <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
           <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          <span className="ml-auto flex items-center gap-1">
+          <span className="ml-auto flex flex-wrap items-center gap-1">
             <Verb
               label={S.machines.pickAll}
               d={SELECT_ALL_PATH}
@@ -599,6 +599,7 @@ function Verb({
       disabled={disabled}
       title={title ?? label}
       aria-expanded={ariaExpanded}
+      className="whitespace-nowrap"
       onClick={(event) => {
         event.stopPropagation();
         onClick();
