@@ -184,7 +184,7 @@ export const zh = {
     empty: "没有正在运行的会话",
     /** The empty state while a machine did not answer: this server has nothing, the rest is unknown. */
     emptyHere: "本机没有正在运行的会话",
-    emptyHint: "有会话正在运行或等待审批的工作区会显示在这里。",
+    emptyHint: "有会话正在运行、或自你上次打开后已完成的工作区会显示在这里。",
     loadFailed: "加载失败",
     silentMachines: (n: number) => `${n} 台机器没有应答——那里的会话没有计入。请到机器页面连接它。`,
   },
