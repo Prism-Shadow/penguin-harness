@@ -23,7 +23,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
-import { MACHINE_PHASES } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -42,6 +41,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
 import { NAV_ICONS } from "../../components/ui/icons";
 import {
+  MACHINE_PHASES,
   anyJobPending,
   behindMachines,
   defaultSelection,
