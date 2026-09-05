@@ -14,7 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { unzipSync, strFromU8, zipSync } from "fflate";
+import { strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
   listInstalledSkills,
@@ -35,6 +35,7 @@ import {
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
   skillTooLarge,
+  unzipBounded,
 } from "../../services/skill-import-limits.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
@@ -65,34 +66,22 @@ interface ArchiveSkill {
  * Decodes and validates an uploaded skill zip. Accepted layouts: SKILL.md at the zip root
  * (name comes from frontmatter), or exactly one top-level directory containing SKILL.md
  * (the directory name is the Skill name, consistent with listInstalledSkills where the
- * directory name always wins). Directory entries are ignored (paths recreate them); every
- * file path is zip-slip-checked and the count/size limits enforced before anything is
- * returned. Frontmatter must parse to a non-null name, and the resolved Skill name must
+ * directory name always wins). Directory entries are ignored (paths recreate them); the count
+ * and size limits are enforced by unzipBounded before anything inflates, and every file path is
+ * zip-slip-checked. Frontmatter must parse to a non-null name, and the resolved Skill name must
  * match PLUGIN_NAME_PATTERN.
  */
 function parseSkillArchive(archive: Buffer): ArchiveSkill {
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(new Uint8Array(archive));
-  } catch {
+    entries = unzipBounded(new Uint8Array(archive));
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
     throw badRequest("dataBase64 is not a valid zip archive.");
   }
   const files = Object.entries(entries).filter(([name]) => !name.endsWith("/"));
   if (files.length === 0) throw badRequest("The zip archive contains no files.");
-  if (files.length > MAX_ARCHIVE_FILES) {
-    throw badRequest(`The zip archive exceeds the ${MAX_ARCHIVE_FILES}-file limit.`);
-  }
-  let total = 0;
-  for (const [name, data] of files) {
-    assertSafeEntryPath(name);
-    if (data.byteLength > MAX_FILE_BYTES) {
-      throw badRequest(`Zip entry exceeds the 5MB uncompressed limit: ${name}`);
-    }
-    total += data.byteLength;
-    if (total > MAX_TOTAL_BYTES) {
-      throw badRequest("The zip archive exceeds the 20MB uncompressed limit.");
-    }
-  }
+  for (const [name] of files) assertSafeEntryPath(name);
   const names = files.map(([name]) => name);
   let prefix = "";
   let dirName: string | undefined;
@@ -116,7 +105,19 @@ function parseSkillArchive(archive: Buffer): ArchiveSkill {
       `Invalid skill name ${JSON.stringify(name)}: only letters, digits, "_" and "-" are allowed.`,
     );
   }
-  return { name, files: new Map(files.map(([n, data]) => [n.slice(prefix.length), data])) };
+  return {
+    name,
+    files: new Map(
+      files.map(([n, data]) => {
+        const rel = n.slice(prefix.length);
+        // A file entry named exactly like the top-level directory leaves nothing behind once
+        // the prefix comes off, and the write would land on the Skill directory itself rather
+        // than a file in it — EISDIR, surfacing as a 500 instead of a rejection.
+        if (rel === "") throw badRequest(`Invalid zip entry path (names a directory): ${n}`);
+        return [rel, data] as const;
+      }),
+    ),
+  };
 }
 
 /**

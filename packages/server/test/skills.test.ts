@@ -355,6 +355,39 @@ describe("skills api", () => {
   const zipB64 = (files: Record<string, Uint8Array>): string =>
     Buffer.from(zipSync(files)).toString("base64");
 
+  /**
+   * Builds a zip and then rewrites the declared uncompressed size of the named entries, in both
+   * the local header and the central-directory record, leaving the compressed payload untouched.
+   * That is the shape of a zip bomb: the size a reader allocates comes from the header, not from
+   * the bytes that follow it.
+   */
+  const zipB64Declaring = (
+    files: Record<string, Uint8Array>,
+    declared: Record<string, number>,
+  ): string => {
+    const zip = zipSync(files);
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    const decoder = new TextDecoder();
+    const entryName = (start: number, lenAt: number, nameAt: number): string =>
+      decoder.decode(
+        zip.subarray(start + nameAt, start + nameAt + view.getUint16(start + lenAt, true)),
+      );
+    for (let i = 0; i + 4 <= zip.byteLength; i++) {
+      const signature = view.getUint32(i, true);
+      // Local file header (PK\3\4): name length at +26, name at +30, uncompressed size at +22.
+      if (signature === 0x04034b50) {
+        const size = declared[entryName(i, 26, 30)];
+        if (size !== undefined) view.setUint32(i + 22, size, true);
+      }
+      // Central-directory record (PK\1\2): name length at +28, name at +46, size at +24.
+      if (signature === 0x02014b50) {
+        const size = declared[entryName(i, 28, 46)];
+        if (size !== undefined) view.setUint32(i + 24, size, true);
+      }
+    }
+    return Buffer.from(zip).toString("base64");
+  };
+
   it("archive: nested top-dir layout — all files written (subdirs preserved), directory name wins over frontmatter", async () => {
     await createPlainAgent("zip_agent");
     const url = `${base("zip_agent")}/archive`;
@@ -409,6 +442,16 @@ describe("skills api", () => {
       });
       expect(res.status, entry).toBe(400);
     }
+    // A file entry named exactly like the top-level directory leaves an empty path once the
+    // prefix is stripped, so the write lands on the skill directory itself (EISDIR) instead of
+    // a file inside it — a rejection, not a crash.
+    const collision = await owner.post(`${url}/archive`, {
+      dataBase64: zipB64({
+        "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD),
+        "zip-skill": strToU8("x"),
+      }),
+    });
+    expect(collision.status).toBe(400);
     const list = (await (await owner.get(url)).json()) as AgentSkillsResponse;
     expect(list.skills).toEqual([]);
   });
@@ -475,6 +518,33 @@ describe("skills api", () => {
       total[`zip-skill/part${i}.bin`] = new Uint8Array(4200 * 1024);
     }
     expect((await owner.post(url, { dataBase64: zipB64(total) })).status).toBe(400);
+  });
+
+  it("archive: the uncompressed caps come off the central directory, not off what inflated", async () => {
+    await createPlainAgent("zip_declared_agent");
+    const url = `${base("zip_declared_agent")}/archive`;
+    // Both archives are a few hundred bytes on the wire and inflate to one byte per entry, so
+    // caps measured on what came back would pass them — while the reader has already allocated
+    // every declared byte to inflate into.
+    const perFile = zipB64Declaring(
+      { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD), "zip-skill/big.bin": strToU8("x") },
+      { "zip-skill/big.bin": 6 * 1024 * 1024 },
+    );
+    expect((await owner.post(url, { dataBase64: perFile })).status).toBe(400);
+    // Six entries, each declaring less than the 5MB per-file cap and together more than 20MB.
+    const parts: Record<string, Uint8Array> = { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) };
+    const declared: Record<string, number> = {};
+    for (let i = 0; i < 6; i++) {
+      parts[`zip-skill/part${i}.bin`] = strToU8("x");
+      declared[`zip-skill/part${i}.bin`] = 4 * 1024 * 1024;
+    }
+    expect((await owner.post(url, { dataBase64: zipB64Declaring(parts, declared) })).status).toBe(
+      400,
+    );
+    const list = (await (
+      await owner.get(base("zip_declared_agent"))
+    ).json()) as AgentSkillsResponse;
+    expect(list.skills).toEqual([]);
   });
 
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {
