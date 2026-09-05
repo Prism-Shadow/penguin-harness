@@ -100,18 +100,18 @@ export function readMachine(
   return { kind: "notConnected" };
 }
 
-/** The tone a reading's mark carries — by what it means, as tone.ts asks. */
+/** The tone a reading's mark carries — by what it means, as tone.ts asks; ready is muted, not success, so a fleet at rest reads grey. */
 export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
     case "working":
       return "busy";
-    case "ready":
-      return "success";
     case "failed":
     case "unreachable":
       return "danger";
+    case "ready":
     case "unknown":
+      // A healthy machine is the quiet one: green would raise a flag where none is needed.
       return "muted";
     default:
       return "attention";

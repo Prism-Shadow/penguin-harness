@@ -1,24 +1,25 @@
 /**
- * Machines: the fleet as a list, and two verbs.
+ * Machines: the fleet as cards, and two verbs.
  *
- * "Use" is the whole of what a person wants from a machine — install or update the program
+ * Enable is the whole of what a person wants from a machine — install or update the program
  * there, start its server, connect, hand over the Model config — as one job the server
- * queues per machine, so a batch is one tap. "Stop using" lets a machine go.
+ * queues per machine, so a batch is one tap. Disable lets a machine go.
  *
- * One row per machine, this server first. A row is the machine's name in mono and one
- * line beneath it in the row's tone: the state in a word, and beside it the single detail
+ * One card per machine, this server first. A card is the machine's name in mono and one
+ * line beneath it in the card's tone: the state in a word, and beside it the single detail
  * that matters — when it was last checked, the build it carries when that is behind this
- * server's, the far side's words when it failed. State is said once. At the row's end sits
- * a dot when nothing is needed, and "Use" when something is; the ⓘ opens the record and
- * the job's output in a pane beside the list, or a sheet on a narrow screen.
+ * server's, the far side's words when it failed. State is said once, and a healthy machine
+ * reads grey: green would raise a flag where none is needed. The card's foot carries the
+ * build, an Enable icon when something is needed, and the ⓘ that opens the record and the
+ * job's output in a pane beside the cards, or a sheet on a narrow screen.
  *
- * Selection is the row: clicking one toggles it, a selected row is a tinted band with a
- * rail on its left edge, and every machine in use starts selected. The verbs are the card's
- * own footer, present only while something is selected. A queued or working row grows a
- * stepper under its name, one segment per step of the pipeline, fed by the step the server
- * says it is on.
+ * Selection is the card: clicking one toggles it, a selected card darkens its border, and
+ * every machine in use starts selected. The verbs are icon buttons in a bar that keeps a
+ * fixed slot between the title and the cards, so the cards never move when a selection
+ * appears or goes. A queued or working card grows a stepper under its name, one segment per
+ * step of the pipeline, fed by the step the server says it is on.
  *
- * The list polls while a job is queued or running, and re-probes the servers on a widening
+ * The page polls while a job is queued or running, and re-probes the servers on a widening
  * schedule (probe-schedule.ts) so a machine that went quiet is noticed without a tap.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,8 +58,11 @@ import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/** The ⓘ at a row's end. */
+/** The ⓘ on a card. */
 const INFO_PATH = "M12 16v-4M12 8h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0";
+/** Enable: the power glyph. Disable: the same glyph, struck through. */
+const POWER_PATH = "M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0";
+const POWER_OFF_PATH = "M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0M4 4l16 16";
 
 const MONO = "font-mono text-[13px] tabular-nums";
 
@@ -460,81 +464,75 @@ export function MachinesPage() {
             className={`grid gap-4 ${wide && detail !== null ? "lg:grid-cols-[minmax(0,1fr)_20rem]" : ""}`}
           >
             <div className="min-w-0">
-              <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
-                <ul className="divide-y divide-gray-200 dark:divide-gray-800">
-                  {local !== null && (
-                    <LocalRow
-                      machine={local}
-                      open={detailId === local.id}
-                      onDetail={() => setDetailId(detailId === local.id ? null : local.id)}
-                    />
-                  )}
-                  {inUse.map((machine) => (
-                    <MachineRow
-                      key={machine.id}
-                      machine={machine}
-                      job={jobFor(jobs, machine.id)}
-                      imageVersion={imageVersion}
-                      locale={locale}
-                      selected={selection.has(machine.id)}
-                      onToggle={() => togglePicked(machine.id)}
-                      detailOpen={detailId === machine.id}
-                      onDetail={() => setDetailId(detailId === machine.id ? null : machine.id)}
-                      busy={posting}
-                      onUse={() => void use([machine.id])}
-                    />
-                  ))}
-                  {inUse.length === 0 && (
-                    <li className="px-4 py-4 text-sm text-gray-500">
-                      <p>{S.machines.noneInUse}</p>
-                      <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-                    </li>
-                  )}
-                </ul>
-                {/* The verbs: the card's own footer, present only while something is selected. */}
-                {selectedIds.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-gray-200 bg-gray-50/70 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40">
-                    <span className="tabular-nums">
-                      {S.machines.selectedCount(selectedIds.length)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                        onClick={pickAll}
-                      >
-                        {S.machines.pickAll}
-                      </button>
-                      ·
-                      <button
-                        type="button"
-                        className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                        onClick={pickNone}
-                      >
-                        {S.machines.pickNone}
-                      </button>
-                    </span>
-                    <span className="ml-auto flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={posting || noImage}
-                        onClick={() => void use(selectedIds)}
-                      >
-                        {S.machines.use}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={posting}
-                        onClick={() => void stopUsing(selectedIds)}
-                      >
-                        {S.machines.stopUsing}
-                      </Button>
-                    </span>
-                  </div>
+              {/* The selection bar: a fixed slot between the title and the cards, so the cards
+                  never move when a selection appears or goes. Empty of verbs until something
+                  is selected; the count stays as the slot's label. */}
+              <div className="mb-3 flex h-9 items-center gap-3 px-1 text-xs text-gray-500">
+                <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
+                {inUse.length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
+                      onClick={pickAll}
+                    >
+                      {S.machines.pickAll}
+                    </button>
+                    ·
+                    <button
+                      type="button"
+                      className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
+                      onClick={pickNone}
+                    >
+                      {S.machines.pickNone}
+                    </button>
+                  </span>
                 )}
+                <span className="ml-auto flex items-center gap-1">
+                  <IconAction
+                    label={S.machines.use}
+                    d={POWER_PATH}
+                    disabled={selectedIds.length === 0 || posting || noImage}
+                    onClick={() => void use(selectedIds)}
+                  />
+                  <IconAction
+                    label={S.machines.stopUsing}
+                    d={POWER_OFF_PATH}
+                    disabled={selectedIds.length === 0 || posting}
+                    onClick={() => void stopUsing(selectedIds)}
+                  />
+                </span>
               </div>
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {local !== null && (
+                  <LocalCard
+                    machine={local}
+                    open={detailId === local.id}
+                    onDetail={() => setDetailId(detailId === local.id ? null : local.id)}
+                  />
+                )}
+                {inUse.map((machine) => (
+                  <MachineCard
+                    key={machine.id}
+                    machine={machine}
+                    job={jobFor(jobs, machine.id)}
+                    imageVersion={imageVersion}
+                    locale={locale}
+                    selected={selection.has(machine.id)}
+                    onToggle={() => togglePicked(machine.id)}
+                    detailOpen={detailId === machine.id}
+                    onDetail={() => setDetailId(detailId === machine.id ? null : machine.id)}
+                    busy={posting}
+                    onUse={() => void use([machine.id])}
+                  />
+                ))}
+                {inUse.length === 0 && (
+                  <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 sm:col-span-2 xl:col-span-2 dark:border-gray-700">
+                    <p>{S.machines.noneInUse}</p>
+                    <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+                  </li>
+                )}
+              </ul>
             </div>
             {wide && detail !== null && (
               <aside className="min-w-0 rounded-xl border border-gray-200 dark:border-gray-800">
@@ -635,8 +633,47 @@ function InfoButton({
   );
 }
 
-/** This server's own row: not selectable — it is where the page is served from. */
-function LocalRow({
+/** An icon verb: enable (power) and disable (power, struck), for the bar and a card. */
+function IconAction({
+  label,
+  d,
+  disabled = false,
+  onClick,
+  emphasis = false,
+}: {
+  label: string;
+  d: string;
+  disabled?: boolean;
+  onClick: () => void;
+  emphasis?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={`rounded-md border p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        emphasis
+          ? "border-gray-300 text-gray-900 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800"
+          : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-900 dark:hover:border-gray-700 dark:hover:text-gray-100"
+      }`}
+    >
+      <GlyphIcon d={d} size={ICON_SIZE.iconButton} />
+    </button>
+  );
+}
+
+/** The card's shell, shared by this server's card and a machine's. */
+const CARD =
+  "group relative flex min-h-[7.5rem] flex-col gap-2 rounded-xl border p-4 text-sm transition-colors";
+
+/** This server's own card: not selectable — it is where the page is served from. */
+function LocalCard({
   machine,
   open,
   onDetail,
@@ -646,26 +683,27 @@ function LocalRow({
   onDetail: () => void;
 }) {
   return (
-    <li className="group flex items-center gap-3 px-4 py-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
-          <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
-            {S.machines.localTitle}
-          </span>
+    <li className={`${CARD} border-gray-200 dark:border-gray-800`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
+          <div className="mt-0.5 truncate text-xs text-gray-500">
+            {S.machines.state.serving}
+            {machine.installed !== null && ` · ${machine.installed.version}`}
+          </div>
         </div>
-        <div className={`truncate text-xs ${toneInk.success}`}>
-          {S.machines.state.serving}
-          {machine.installed !== null && ` · ${machine.installed.version}`}
-        </div>
+        <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+          {S.machines.localTitle}
+        </span>
       </div>
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.success}`} aria-hidden="true" />
-      <InfoButton alias={machine.alias} open={open} onClick={onDetail} />
+      <div className="mt-auto flex items-center justify-end">
+        <InfoButton alias={machine.alias} open={open} onClick={onDetail} />
+      </div>
     </li>
   );
 }
 
-function MachineRow({
+function MachineCard({
   machine,
   job,
   imageVersion,
@@ -698,48 +736,55 @@ function MachineRow({
       : step >= 0
         ? S.machines.phase[MACHINE_PHASES[step]!]
         : S.machines.working;
+  const behind = reading.kind === "behind";
   return (
     <li
       aria-selected={selected}
       onClick={onToggle}
-      className={`group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors ${
+      className={`${CARD} cursor-pointer ${
         selected
-          ? "bg-gray-100/80 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/50"
-          : "hover:bg-gray-50 dark:hover:bg-gray-900/40"
+          ? "border-gray-900 bg-gray-100/70 dark:border-gray-200 dark:bg-gray-800/40"
+          : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
-        {moving ? (
-          <Stepper step={step} caption={caption} />
-        ) : (
-          <div
-            className={`truncate text-xs ${toneInk[tone]}`}
-            title={reasonText(reading) ?? undefined}
-          >
-            {stateLine(reading, machine, locale)}
-          </div>
-        )}
-      </div>
-      {wantsUse(reading) ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={(event) => {
-            event.stopPropagation();
-            onUse();
-          }}
-        >
-          {S.machines.use}
-        </Button>
-      ) : (
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
+          {moving ? (
+            <Stepper step={step} caption={caption} />
+          ) : (
+            <div
+              className={`mt-0.5 truncate text-xs ${toneInk[tone]}`}
+              title={reasonText(reading) ?? undefined}
+            >
+              {stateLine(reading, machine, locale)}
+            </div>
+          )}
+        </div>
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
           aria-hidden="true"
         />
-      )}
-      <InfoButton alias={machine.alias} open={detailOpen} onClick={onDetail} />
+      </div>
+      <div className="mt-auto flex items-center justify-between gap-2">
+        <span
+          className={`${MONO} truncate text-xs ${behind ? "text-gray-400 line-through" : "text-gray-500"}`}
+        >
+          {machine.installed?.version ?? ""}
+        </span>
+        <span className="flex items-center gap-1">
+          {wantsUse(reading) && (
+            <IconAction
+              label={S.machines.use}
+              d={POWER_PATH}
+              disabled={busy}
+              onClick={onUse}
+              emphasis
+            />
+          )}
+          <InfoButton alias={machine.alias} open={detailOpen} onClick={onDetail} />
+        </span>
+      </div>
     </li>
   );
 }
@@ -847,10 +892,12 @@ function DetailPane({
           )}
           {wantsUse(reading) && (
             <Button size="sm" variant="primary" disabled={busy} onClick={() => onUse(false)}>
+              <GlyphIcon d={POWER_PATH} size={ICON_SIZE.inlineGlyph} />
               {m.use}
             </Button>
           )}
           <Button size="sm" variant="ghost" disabled={busy} onClick={onStopUsing}>
+            <GlyphIcon d={POWER_OFF_PATH} size={ICON_SIZE.inlineGlyph} />
             {m.stopUsing}
           </Button>
         </div>
