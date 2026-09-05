@@ -102,7 +102,16 @@ export function DashboardPage() {
   useEffect(() => {
     void load();
     const timer = setInterval(() => void load(), REFRESH_MS);
-    return () => clearInterval(timer);
+    // Coming back to the tab asks again at once: on a phone the board is glanced at between
+    // other things, and a fifteen-second-old answer is the one it would otherwise show first.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   const totals = rows === null ? null : dashboardTotals(rows);
