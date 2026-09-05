@@ -162,6 +162,9 @@ export function CloseButton({
 }
 
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
+/** Plus: "add one of these" — the dock's add-tab trigger, the terminal page's new shell. */
+export const ADD_ICON = "M12 5v14M5 12h14";
+
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
