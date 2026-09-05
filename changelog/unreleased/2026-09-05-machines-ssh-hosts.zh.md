@@ -3,7 +3,7 @@
 - **Date:** 2026-09-05
 - **Type:** feature
 - **Scope:** `web`, `server`
-- **PR:** _pending_
+- **PR:** [#624](https://github.com/Prism-Shadow/penguin-harness/pull/624)
 
 [English](2026-09-05-machines-ssh-hosts.md)
 
