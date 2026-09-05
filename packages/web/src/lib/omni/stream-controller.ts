@@ -77,31 +77,59 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
   return { epoch: id.slice(0, sep), seq };
 }
 
-/** A windowed history request (mirrors the server's tailLimit / before params). */
+/**
+ * A windowed history request (mirrors the server's paging grammar, sized as a message
+ * budget): the newest window, the window before a cursor, or the window starting at one
+ * — the last bounded by `until` (exclusive) and, with no `messages`, running to the end.
+ */
 export type MessagesPageQuery =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+  | { kind: "tail"; messages: number }
+  | { kind: "before"; cursor: string; messages: number }
+  | { kind: "after"; cursor: string; until?: string; messages?: number };
 
 /**
- * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 200 covers the vast
- * majority of real sessions in a single request, so ordinary conversations still load
- * whole exactly as before — only the pathological long tail (months-long sessions,
- * agentic marathons) starts windowed, which is the point: their full-transcript reads
- * were the unbounded memory/disk cost this pagination removes.
+ * Window size, as a message budget: a window is the shortest run of whole Tasks holding
+ * at least this many messages (the server's cut rule keeps every stream-model invariant
+ * inside it, so it is a floor — one Task of three hundred messages is one window). Sized
+ * for what a screen shows, not for what a session holds: opening a conversation reads one
+ * window and backfills a second in the background, and every further one is paid for as
+ * it is scrolled to.
  */
-export const TAIL_UNITS = 200;
-
-/** Scroll-up backfill window size: smaller than the tail so each prepend stays snappy. */
-export const OLDER_UNITS = 100;
+export const WINDOW_MESSAGES = 15;
 
 /**
- * Item-id space reserved per prepended window. The live model numbers its items upward
- * from 1; each prepended window numbers upward from its own NEGATIVE base, so ids stay
+ * The most messages kept loaded — and therefore rendered: the transcript renders exactly
+ * what is loaded, which is what bounds the DOM and the heap together without a
+ * virtualised list. Past it, whole windows leave from the end farther from the reader:
+ * scrolling up sheds the live tail first, then the newest windows; scrolling back down
+ * sheds the oldest. A budget, not a guarantee — the two windows around the reader always
+ * stay, however large a single Task made them.
+ */
+export const MAX_LOADED_MESSAGES = 60;
+
+/**
+ * Item-id space reserved per frozen window. The live model numbers its items upward
+ * from 1; each frozen window numbers upward from its own NEGATIVE base, so ids stay
  * unique across the concatenated view (React keys, outline anchors) without ever
- * renumbering already-mounted items. A window holds at most a few thousand items —
- * far under the span.
+ * renumbering already-mounted items — and bases are never reused, so a window fetched
+ * again after eviction gets fresh ids. A window holds at most a few thousand items — far
+ * under the span.
  */
-const PREPEND_ID_SPAN = 1_000_000;
+const WINDOW_ID_SPAN = 1_000_000;
+
+/** One frozen window of the loaded run. */
+interface HistoryWindow {
+  /** Cursor of its first unit; null = it starts at the transcript's beginning. */
+  start: string | null;
+  /** Cursor of the unit after it: the next window's start, or the live tail's. */
+  end: string;
+  items: ChatItem[];
+  subagents: Map<string, StreamModel>;
+  /** Messages it holds — its share of the loaded budget. */
+  messages: number;
+  /** Outline turns before it (the outline's numbering offset while it is the oldest loaded). */
+  earlierTurns: number;
+}
 
 export interface StreamControllerDeps {
   /**
@@ -144,37 +172,51 @@ export interface StreamControllerDeps {
   now?: () => number;
 }
 
-/** Scroll-up backfill state (drives the stream's top affordance). */
-export interface OlderHistoryState {
-  /** Older windows exist beyond the loaded prefix. */
+/** One end of the loaded run (drives the stream's top / bottom affordance). */
+export interface HistoryEdgeState {
+  /** More history lies past this end: older windows above, or the live tail (and any window before it) below. */
   hasMore: boolean;
-  /** A backfill request is in flight. */
+  /** A fetch for this end is in flight. */
   loading: boolean;
-  /** The last backfill failed (the affordance offers a retry); null = fine. */
+  /** The last fetch for this end failed (the affordance offers a retry); null = fine. */
   error: string | null;
 }
+
+/** The top end's state (the name the consumers grew up with). */
+export type OlderHistoryState = HistoryEdgeState;
 
 export interface StreamController {
   /** The current view model (a resync rebuild swaps in a new object): the LIVE tail window. */
   readonly model: StreamModel;
   /**
-   * Items of the backfilled older windows, oldest first — render them immediately BEFORE
-   * `model.items`. Frozen once built (their Tasks are complete); item ids are negative
-   * and unique across windows, so the concatenated list keys/anchors cleanly.
+   * The transcript to render: the loaded run — frozen windows oldest first, then the live
+   * model's items while the tail is attached. Frozen items carry negative ids, unique
+   * across windows, so the concatenated list keys/anchors cleanly.
    */
-  readonly prefixItems: readonly ChatItem[];
-  /** Nested subagent models of the backfilled windows (merged view for the subagents panel; disjoint from model.subagents — a child session lives in exactly one window). */
-  readonly prefixSubagents: ReadonlyMap<string, StreamModel>;
+  readonly items: readonly ChatItem[];
+  /** Nested subagent models of the frozen windows (merged view for the subagents panel; disjoint from model.subagents — a child session lives in exactly one window). */
+  readonly windowSubagents: ReadonlyMap<string, StreamModel>;
+  /** Frozen windows in the run (>0 gates the beginning-of-history marker: a session that fit one window shows no extra chrome). */
+  readonly windowCount: number;
+  /** Whether the live tail follows the frozen run on screen; false once scrolling up shed it (the model keeps streaming meanwhile). */
+  readonly tailAttached: boolean;
   /** Outline entries that exist before the OLDEST loaded window: the outline's global numbering offset. */
   readonly outlineOffset: number;
-  readonly older: OlderHistoryState;
+  readonly older: HistoryEdgeState;
+  readonly newer: HistoryEdgeState;
+  /** Bumped whenever the run changes shape at either end (a window in or out, the tail off or on): the renderer's cue to re-anchor the reader. */
+  readonly edgesVersion: number;
   readonly pendingApprovals: ReadonlyMap<string, PendingApproval>;
-  /** Load history for the first time (called once after connect-first): fetches the TAIL window. */
+  /** Load history for the first time (called once after connect-first): fetches the TAIL window, then one older window in the background. */
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
   /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
   loadOlder: () => Promise<void>;
+  /** Append the next window below the run, re-attaching the live tail when the run reaches its start; no-op while attached. */
+  loadNewer: () => Promise<void>;
+  /** Drop the run and re-attach the live tail (the jump-to-latest button while detached); no-op while attached. */
+  jumpToLatest: () => void;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
   /** SSE server-event entry point (`eventId`: same as handleOmni). */
@@ -185,6 +227,8 @@ export interface StreamController {
   resolveApproval: (key: string) => void;
   dispose: () => void;
 }
+
+const NO_ITEMS: readonly ChatItem[] = [];
 
 export function createStreamController(deps: StreamControllerDeps): StreamController {
   const now = deps.now ?? (() => Date.now());
@@ -205,47 +249,120 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   /** Whether the most recent load failed (retry only takes effect after a failure, to avoid mistakenly replaying history). */
   let failed = false;
 
-  // —— Windowed-history state (tail-first load + scroll-up backfill) ——
-  /** Items of backfilled older windows, oldest first (frozen; rendered before model.items). */
-  let prefixItems: ChatItem[] = [];
-  /** Nested subagent models owned by backfilled windows. */
-  let prefixSubagents = new Map<string, StreamModel>();
-  /** How many windows have been prepended (derives each one's negative item-id base). */
-  let prependCount = 0;
-  /** Cursor for the NEXT older window (= the oldest loaded window's start); null = beginning reached or full transcript loaded. */
-  let nextBefore: string | null = null;
+  // —— Windowed-history state: a contiguous run of frozen windows, then (or not) the live tail ——
   /**
-   * The LIVE tail window's start cursor, as returned by the last tail fetch — the resync
-   * continuity anchor: a refetched tail whose start cursor equals this provably abuts the
-   * retained prefix. Null = the tail reaches the beginning (or the transcript was loaded
-   * whole), in which case there is no prefix to splice against.
+   * The run's frozen part, oldest first. Every window here was built by its own model
+   * and closed by finalizeHistory — complete by construction, since a newer window (or
+   * the tail) follows — and its items carry ids from its own negative range.
    */
-  let tailStartCursor: string | null = null;
-  const older: OlderHistoryState = { hasMore: false, loading: false, error: null };
-  /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
-  let outlineOffset = 0;
+  let windows: HistoryWindow[] = [];
+  /** Windows ever frozen (derives each one's id base; never reused, so ids stay unique across evictions). */
+  let windowSeq = 0;
+  /**
+   * Whether the live tail follows the run on screen. False once scrolling up shed it
+   * (see shedFromBottom): the model keeps receiving the stream, the transcript shows the
+   * run alone, and loadNewer walks back down to it.
+   */
+  let tailAttached = true;
+  /**
+   * The live tail's start cursor (its first unit); null = the tail reaches the beginning
+   * (or the transcript was loaded whole). What resync refetches from — a refetch from the
+   * same start abuts the run by construction — and where a forward page stops.
+   */
+  let tailStart: string | null = null;
+  /** Outline turns before the tail (its numbering offset while no frozen window precedes it). */
+  let tailEarlierTurns = 0;
+  /** Messages the live tail holds — its share of the loaded budget: the fetch's count plus every complete message streamed since. */
+  let tailMessages = 0;
+  const older: HistoryEdgeState = { hasMore: false, loading: false, error: null };
+  const newer: HistoryEdgeState = { hasMore: false, loading: false, error: null };
+  /** Bumped whenever the run changes shape at either end: the renderer re-anchors the reader on the next commit. */
+  let edgesVersion = 0;
+
+  /** Cursor the next older window ends at: the run's start, or the tail's while nothing is frozen. Null = the beginning is loaded. */
+  const topCursor = (): string | null => (windows.length > 0 ? windows[0]!.start : tailStart);
+  const loadedMessages = (): number =>
+    windows.reduce((n, w) => n + w.messages, 0) + (tailAttached ? tailMessages : 0);
 
   /** Reset all windowed-history bookkeeping to "everything loaded from the beginning". */
   const resetPaging = (): void => {
-    prefixItems = [];
-    prefixSubagents = new Map();
-    prependCount = 0;
-    nextBefore = null;
-    tailStartCursor = null;
+    windows = [];
+    tailAttached = true;
+    tailStart = null;
+    tailEarlierTurns = 0;
+    tailMessages = 0;
     older.hasMore = false;
     older.loading = false;
     older.error = null;
-    outlineOffset = 0;
+    newer.hasMore = false;
+    newer.loading = false;
+    newer.error = null;
+    edgesVersion += 1;
   };
 
-  /** Adopt a TAIL page's pagination envelope as the fresh baseline (initial load / prefix-dropping rebuild). */
-  const adoptTailPage = (page: MessagesPageInfo | undefined): void => {
+  /** Adopt a TAIL page's pagination envelope as the fresh baseline (initial load / retry / a rebuild that dropped the run). */
+  const adoptTailPage = (page: MessagesPageInfo | undefined, messageCount: number): void => {
     resetPaging();
+    tailMessages = messageCount;
     if (page === undefined) return; // full transcript: nothing older exists by definition
-    nextBefore = page.before ?? null;
-    tailStartCursor = page.before ?? null;
-    older.hasMore = page.before !== undefined;
-    outlineOffset = page.earlierTurns;
+    tailStart = page.before ?? null;
+    tailEarlierTurns = page.earlierTurns;
+    older.hasMore = tailStart !== null;
+  };
+
+  /**
+   * A fetched window, frozen: a FRESH model builds its items (its own negative id base,
+   * priors seeded, finalizeHistory closing its last Task — complete by construction,
+   * since a newer window or the tail follows), and the model is then only a container.
+   */
+  const freezeWindow = (
+    res: { messages: OmniMessage[]; page: MessagesPageInfo },
+    start: string | null,
+    end: string,
+  ): HistoryWindow => {
+    windowSeq += 1;
+    const m = createStreamModel(localDecisions);
+    m.nextItemId = -windowSeq * WINDOW_ID_SPAN;
+    seedPriorStats(m.stats, res.page.prior);
+    pushMessages(m, res.messages, now(), null);
+    finalizeHistory(m);
+    return {
+      start,
+      end,
+      items: m.items,
+      subagents: m.subagents,
+      messages: res.messages.length,
+      earlierTurns: res.page.earlierTurns,
+    };
+  };
+
+  /**
+   * Past the budget after a prepend (the reader is at the top of the run): shed from the
+   * bottom — the live tail first, then the newest windows — keeping the two windows
+   * around the reader. The tail is only ever shed with a frozen window to stand in for
+   * it; a run of one huge window and a huge tail stays as it is.
+   */
+  const shedFromBottom = (): void => {
+    while (loadedMessages() > MAX_LOADED_MESSAGES) {
+      if (tailAttached) {
+        if (windows.length === 0) return;
+        tailAttached = false;
+        newer.hasMore = true;
+        newer.error = null;
+      } else if (windows.length > 2) {
+        windows.pop();
+      } else {
+        return;
+      }
+    }
+  };
+
+  /** Past the budget after an append or a re-attach (the reader is at the bottom of the run): shed the oldest windows, keeping what surrounds the reader. */
+  const shedFromTop = (): void => {
+    while (loadedMessages() > MAX_LOADED_MESSAGES && windows.length > (tailAttached ? 1 : 2)) {
+      windows.shift();
+    }
+    older.hasMore = topCursor() !== null;
   };
 
   /** Full clear (resync rebuilds): the server resends every still-pending approval_request on the same connection, child ones included. */
@@ -283,6 +400,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       return;
     }
     pushMessage(model, msg, now());
+    if (!isPartialPayload(msg.payload)) tailMessages += 1;
   };
 
   const handleServer = (ev: ServerEvent): void => {
@@ -340,27 +458,23 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
-   * resync_required decision tree — which refetch rebuilds the model. Resync means the
-   * SSE buffer was evicted and the transcript state is suspect, so every branch below
-   * chooses correctness over cleverness (ANY doubt falls back to the full read):
+   * resync_required — which refetch rebuilds the model. Resync means the SSE buffer was
+   * evicted and the transcript state is suspect, so every branch chooses correctness over
+   * cleverness (ANY doubt falls back to the full read):
    *
-   *   1. No backfilled prefix → refetch the TAIL window. Identical in shape to the
-   *      initial load: the window is a disk-true suffix, the buffered events replay
-   *      with overlap dedup, and the live attachment weaves in under the existing
-   *      channel-epoch guard (weaveLiveTail skips seeding when the cursor's epoch
-   *      doesn't match the events seen on this connection).
-   *   2. Prefix retained → refetch the TAIL window and splice ONLY when continuity is
-   *      provable: the refetched window's start cursor must EQUAL the recorded start
-   *      of the current tail window (cursors are (shard, ordinal) positions on
-   *      immutable storage, so equality proves the new tail abuts the prefix exactly —
-   *      no gap, no overlap). Equality holds precisely when no new unit started since
-   *      the last tail fetch, the common mid-Task resync.
-   *   3. Prefix retained but the refetched tail reaches the very beginning (no cursor)
-   *      → the tail alone provably covers everything: drop the prefix and use it.
-   *   4. Anything else — the start cursor moved (new units arrived), the response
-   *      carried no page envelope, or the tail fetch itself failed mid-decision —
-   *      is doubt: fall back to the legacy FULL refetch (one complete transcript, no
-   *      prefix, offsets zeroed). Slow but beyond suspicion.
+   *   1. The tail's start cursor is known → refetch the tail FROM THAT CURSOR (`after`,
+   *      unbounded). Cursors are (shard, ordinal) positions on immutable storage, so a
+   *      window that starts at the same cursor abuts the frozen run exactly — no gap, no
+   *      overlap — whether or not new units arrived since, which is what a size-based
+   *      tail refetch could never promise once the session had grown. The run and its
+   *      attachment state stay as they are; the buffered events replay with overlap
+   *      dedup, and the live attachment weaves in under the channel-epoch guard.
+   *   2. The tail reaches the beginning (no cursor: the transcript fit one window) →
+   *      the legacy FULL refetch, which IS that window.
+   *   3. The refetch could not be honoured — no page envelope (a server without
+   *      windowing), no start (the cursor's shard is gone), or an `after` cursor (the
+   *      read was cut short, which an unbounded request never is) — is doubt: the full
+   *      read, run dropped, offsets zeroed. Slow but beyond suspicion.
    *
    * The decision runs inside load() (it needs the response); this entry only picks the
    * request shape.
@@ -381,10 +495,11 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // the input for a skeleton, losing scroll position, expanded tool cards, and composer
     // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
     // no-new-text pause is invisible next to a full teardown.
-    await load(epoch, createStreamModel(localDecisions), {
-      page: { kind: "tail", limit: TAIL_UNITS },
-      splice: prefixItems.length > 0,
-    });
+    await load(
+      epoch,
+      createStreamModel(localDecisions),
+      tailStart !== null ? { page: { kind: "after", cursor: tailStart }, splice: true } : {},
+    );
   };
 
   /**
@@ -423,32 +538,35 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   const load = async (
     currentEpoch: number,
     freshModel?: StreamModel,
-    opts: { page?: MessagesPageQuery; splice?: boolean } = {},
+    opts: { page?: MessagesPageQuery; splice?: boolean; eager?: boolean } = {},
   ): Promise<void> => {
     try {
       let res = await deps.loadMessages(opts.page);
       if (disposed || currentEpoch !== epoch) return;
       if (opts.splice === true) {
-        // The resync decision tree's prefix-retained branches (see rebuild): splice only
-        // on exact cursor continuity; a beginning-reaching tail supersedes the prefix;
-        // everything else falls back to the full read within this same epoch (events
-        // keep buffering meanwhile).
+        // The resync refetch from the tail's own start (see rebuild): it abuts the run by
+        // construction, so the run and its paging state stay — unless the server could
+        // not honour the request, which is doubt: the full read within this same epoch
+        // (events keep buffering meanwhile).
         const start = res.page?.before ?? null;
-        if (res.page !== undefined && start !== null && start === tailStartCursor) {
-          // Continuity proven: keep prefix and paging state exactly as they are.
-        } else if (res.page !== undefined && start === null) {
-          adoptTailPage(res.page); // tail covers everything: prefix dropped, provably complete
+        if (
+          res.page !== undefined &&
+          start !== null &&
+          start === tailStart &&
+          res.page.after === undefined
+        ) {
+          tailMessages = res.messages.length;
         } else {
           res = await deps.loadMessages();
           if (disposed || currentEpoch !== epoch) return;
-          adoptTailPage(undefined); // full transcript: no prefix, no cursors
+          adoptTailPage(undefined, res.messages.length); // full transcript: no run, no cursors
         }
       } else if (opts.page !== undefined) {
-        // Fresh tail baseline (initial load / retry): any previously-loaded prefix is
+        // Fresh tail baseline (initial load / retry): any previously-loaded run is
         // superseded by the new window chain.
-        adoptTailPage(res.page);
+        adoptTailPage(res.page, res.messages.length);
       } else {
-        adoptTailPage(undefined);
+        adoptTailPage(undefined, res.messages.length);
       }
       const { messages, live, serverNowMs } = res;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
@@ -490,6 +608,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(false);
       deps.onModelChange();
+      // A fresh open shows one window and quietly fetches the one above it: about two
+      // screens on a phone, without the first paint waiting for the second.
+      if (opts.eager === true && older.hasMore) void loadOlder();
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
       failed = true;
@@ -499,45 +620,31 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
-   * Scroll-up backfill: fetch the window before the oldest loaded one and prepend it.
-   * The window's messages build a FRESH model (its own negative id base, priors seeded,
-   * finalizeHistory closing its last Task — complete by construction, since a newer
-   * window follows), whose items freeze into the prefix. Guarded to the live phase: a
-   * rebuild in flight owns the loading pipeline, and its epoch bump discards any
-   * backfill that raced it.
+   * Scroll-up backfill: fetch the window before the run's start and prepend it, frozen,
+   * then shed from the bottom if the run grew past its budget. Guarded to the live
+   * phase: a rebuild in flight owns the loading pipeline, and its epoch bump discards
+   * any backfill that raced it.
    */
   const loadOlder = async (): Promise<void> => {
     if (disposed || phase !== "live" || failed) return;
-    if (older.loading || !older.hasMore || nextBefore === null) return;
+    const cursor = topCursor();
+    if (older.loading || cursor === null) return;
     const currentEpoch = epoch;
     older.loading = true;
     older.error = null;
     deps.onModelChange();
     try {
-      const res = await deps.loadMessages({
-        kind: "before",
-        cursor: nextBefore,
-        limit: OLDER_UNITS,
-      });
+      const res = await deps.loadMessages({ kind: "before", cursor, messages: WINDOW_MESSAGES });
       if (disposed || currentEpoch !== epoch) return;
       // A before-request against a server without windowing support would return the
       // full transcript with no envelope; prepending that would duplicate history.
       if (res.page === undefined) throw new Error("windowed history not supported");
-      prependCount += 1;
-      const m = createStreamModel(localDecisions);
-      m.nextItemId = -prependCount * PREPEND_ID_SPAN;
-      seedPriorStats(m.stats, res.page.prior);
-      pushMessages(m, res.messages, now(), null);
-      finalizeHistory(m);
-      prefixItems = [...m.items, ...prefixItems];
-      // Child sessions live in exactly one window (a spawn is contained in its Task),
-      // so the merge is disjoint; newer windows' entries win defensively on a clash.
-      const mergedSubagents = new Map(m.subagents);
-      for (const [sid, sub] of prefixSubagents) mergedSubagents.set(sid, sub);
-      prefixSubagents = mergedSubagents;
-      nextBefore = res.page.before ?? null;
+      windows.unshift(
+        freezeWindow({ messages: res.messages, page: res.page }, res.page.before ?? null, cursor),
+      );
       older.hasMore = res.page.before !== undefined;
-      outlineOffset = res.page.earlierTurns;
+      shedFromBottom();
+      edgesVersion += 1;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
       older.error = e instanceof Error ? e.message : String(e);
@@ -549,28 +656,126 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
   };
 
+  /**
+   * Scroll-down backfill, once the tail has been shed: fetch the window after the run's
+   * end — never past the tail's start — and append it; a page that arrives at the
+   * tail's start re-attaches the live model instead (it IS the next window), and the
+   * run then sheds from the top if it grew past its budget.
+   */
+  const loadNewer = async (): Promise<void> => {
+    if (disposed || phase !== "live" || failed || tailAttached) return;
+    const last = windows[windows.length - 1];
+    if (newer.loading || last === undefined) return;
+    if (last.end === tailStart) {
+      // The run already ends where the tail begins (the tail was shed with no window
+      // after it): nothing lies between them to fetch — re-attach outright.
+      tailAttached = true;
+      newer.hasMore = false;
+      newer.error = null;
+      shedFromTop();
+      edgesVersion += 1;
+      deps.onModelChange();
+      return;
+    }
+    const currentEpoch = epoch;
+    newer.loading = true;
+    newer.error = null;
+    deps.onModelChange();
+    try {
+      const res = await deps.loadMessages({
+        kind: "after",
+        cursor: last.end,
+        ...(tailStart !== null ? { until: tailStart } : {}),
+        messages: WINDOW_MESSAGES,
+      });
+      if (disposed || currentEpoch !== epoch) return;
+      if (res.page === undefined) throw new Error("windowed history not supported");
+      const after = res.page.after ?? null;
+      const reachedTail = after === null || after === tailStart;
+      if (res.messages.length > 0) {
+        windows.push(
+          freezeWindow({ messages: res.messages, page: res.page }, last.end, after ?? last.end),
+        );
+      }
+      if (reachedTail) {
+        tailAttached = true;
+        newer.hasMore = false;
+      }
+      shedFromTop();
+      edgesVersion += 1;
+    } catch (e) {
+      if (disposed || currentEpoch !== epoch) return;
+      newer.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (!disposed && currentEpoch === epoch) {
+        newer.loading = false;
+        deps.onModelChange();
+      }
+    }
+  };
+
+  /**
+   * Jump-to-latest while detached: the reader wants the conversation's end, not the
+   * windows between here and there — drop the run, re-attach the tail, and backfill one
+   * window above it again, the shape a fresh open has.
+   */
+  const jumpToLatest = (): void => {
+    if (disposed || tailAttached) return;
+    windows = [];
+    tailAttached = true;
+    newer.hasMore = false;
+    newer.loading = false;
+    newer.error = null;
+    older.hasMore = tailStart !== null;
+    older.error = null;
+    edgesVersion += 1;
+    deps.onModelChange();
+    if (older.hasMore) void loadOlder();
+  };
+
   return {
     get model() {
       return model;
     },
-    get prefixItems(): readonly ChatItem[] {
-      return prefixItems;
+    get items(): readonly ChatItem[] {
+      if (windows.length === 0) return tailAttached ? model.items : NO_ITEMS;
+      const frozen = windows.flatMap((w) => w.items);
+      return tailAttached ? [...frozen, ...model.items] : frozen;
     },
-    get prefixSubagents(): ReadonlyMap<string, StreamModel> {
-      return prefixSubagents;
+    get windowSubagents(): ReadonlyMap<string, StreamModel> {
+      // Child sessions live in exactly one window (a spawn is contained in its Task), so
+      // the merge is disjoint; newer windows' entries win defensively on a clash.
+      const merged = new Map<string, StreamModel>();
+      for (const w of windows) for (const [sid, sub] of w.subagents) merged.set(sid, sub);
+      return merged;
+    },
+    get windowCount() {
+      return windows.length;
+    },
+    get tailAttached() {
+      return tailAttached;
     },
     get outlineOffset() {
-      return outlineOffset;
+      return windows.length > 0 ? windows[0]!.earlierTurns : tailEarlierTurns;
     },
-    get older(): OlderHistoryState {
+    get older(): HistoryEdgeState {
       return older;
+    },
+    get newer(): HistoryEdgeState {
+      return newer;
+    },
+    get edgesVersion() {
+      return edgesVersion;
     },
     get pendingApprovals(): ReadonlyMap<string, PendingApproval> {
       return pending;
     },
     load: () => {
       epoch += 1;
-      return load(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
+      return load(epoch, undefined, {
+        page: { kind: "tail", messages: WINDOW_MESSAGES },
+        eager: true,
+      });
     },
     retry: async () => {
       if (disposed || !failed) return;
@@ -580,15 +785,18 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // history straight onto it would duplicate the entire conversation (pushMessages appends with
       // no id-dedup). load() swaps the fresh model in only once the refetch succeeds, then replays
       // the still-accumulating buffer into it; localDecisions carry over via the shared set.
-      // The refetch is a fresh TAIL baseline: any retained prefix is superseded on success.
+      // The refetch is a fresh TAIL baseline: any retained run is superseded on success.
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
       await load(epoch, createStreamModel(localDecisions), {
-        page: { kind: "tail", limit: TAIL_UNITS },
+        page: { kind: "tail", messages: WINDOW_MESSAGES },
+        eager: true,
       });
     },
     loadOlder,
+    loadNewer,
+    jumpToLatest,
     handleOmni: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;
