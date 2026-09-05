@@ -49,6 +49,7 @@ import {
   terminalViewState,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { panelGlyph, panelLabel } from "./panel-meta";
@@ -317,15 +318,26 @@ export function DockPanel({
   // ---------------------------------------------------------------------------- selection
 
   // A terminal tab's × ends the shell itself (server-side) — an easy mis-click next to
-  // the tab, so it confirms first. Panel tabs close directly: nothing is lost.
+  // the tab, so it confirms first. A panel tab closes directly unless its body registered
+  // a close guard (the Files panel's editor holding unsaved text), which asks first.
   const [confirmKill, setConfirmKill] = useState<{ id: string; label: string } | null>(null);
   const closeTab = useCallback((tab: DockTab, label: string) => {
     if (tab.kind === "terminal") {
       setConfirmKill({ id: tab.terminalId, label });
       return;
     }
-    removeTab(tabKey(tab));
+    const key = tabKey(tab);
+    void confirmClose([key]).then((ok) => {
+      if (ok) removeTab(key);
+    });
   }, []);
+  // Hiding unmounts every body in the dock once it has collapsed: the guarded tabs get
+  // their say first.
+  const hide = useCallback(() => {
+    void confirmClose(tabs.map(tabKey)).then((ok) => {
+      if (ok) hideView(view);
+    });
+  }, [tabs, view]);
   const killConfirmed = useCallback(() => {
     if (!confirmKill) return;
     void killTerminal(confirmKill.id);
@@ -707,7 +719,7 @@ export function DockPanel({
             />
           </DockButton>
         )}
-        <DockButton label={S.dock.hideDock} testId="dock-close" onClick={() => hideView(view)}>
+        <DockButton label={S.dock.hideDock} testId="dock-close" onClick={hide}>
           <CloseIcon size={12} />
         </DockButton>
       </div>

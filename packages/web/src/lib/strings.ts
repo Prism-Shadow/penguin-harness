@@ -2209,10 +2209,16 @@ Benchmark：
     root: "根目录",
     empty: "空目录",
     previewUnsupported: "该类型不支持预览，请下载查看",
-    uploaded: "已上传",
-    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    uploadedCount: (n: number): string => `已上传 ${n} 个文件`,
+    uploading: (done: number, total: number): string => `正在上传 ${done}/${total}…`,
+    /** Oversize picks are named and skipped before anything is read. */
+    uploadTooLarge: (names: string, mb: number): string =>
+      `超过 ${mb}MB 上传上限，已跳过：${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `不支持上传文件夹，已跳过：${names}`,
+    /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "覆盖同名文件",
-    overwriteConfirm: (n: number): string => `当前目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
+    overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
     details: "详情",
@@ -2220,6 +2226,32 @@ Benchmark：
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",
+    /** The tree pane: its accessible name and the toolbar toggle's two states. */
+    treeLabel: "文件树",
+    showTree: "显示文件树",
+    hideTree: "隐藏文件树",
+    selectFile: "选择一个文件以预览",
+    /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
+    dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
+    /** In-place text editing. */
+    editorLabel: (name: string): string => `编辑 ${name}`,
+    unsaved: "有未保存的修改",
+    saveTitle: "保存（Ctrl+S / ⌘S）",
+    saveConfirmTitle: "保存文件",
+    saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
+    editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
+    saveTooLarge: (mb: number): string => `内容超过 ${mb}MB 写入上限，未保存`,
+    discardTitle: "放弃未保存的修改",
+    discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
+    discard: "放弃",
+    unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "磁盘上已变更",
+    changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
+    conflictTitle: "文件在磁盘上已变更",
+    conflictBody: (name: string): string =>
+      `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
+    overwriteAnyway: "仍然覆盖",
   },
 
   usage: {

@@ -120,6 +120,39 @@ describe("workspace-files-service", () => {
     // The outside file's content is unchanged.
     expect(await fs.readFile(victim, "utf8")).toBe("secret");
   });
+
+  it("write precondition: a matching version writes, one the file has moved past is refused with nothing written", async () => {
+    const { version } = await svc.read(ws, "b.txt");
+    // The Agent rewrites the same file while the user is editing it. mtime resolution can be
+    // coarse, so the size differs too — either half of the marker moving is a mismatch.
+    await fs.writeFile(path.join(ws, "b.txt"), "agent wrote this");
+
+    await expect(svc.write(ws, "b.txt", Buffer.from("user typed this"), version)).rejects.toEqual(
+      expect.objectContaining({ status: 409, code: "file_changed" }),
+    );
+    expect(await fs.readFile(path.join(ws, "b.txt"), "utf8")).toBe("agent wrote this");
+
+    // Re-reading picks up the new version, and the same save then goes through — and the
+    // file is truncated to the new content, not left with a tail of the longer old one.
+    const fresh = await svc.read(ws, "b.txt");
+    await svc.write(ws, "b.txt", Buffer.from("user typed this"), fresh.version);
+    expect(await fs.readFile(path.join(ws, "b.txt"), "utf8")).toBe("user typed this");
+  });
+
+  it("write precondition: no marker creates a file that was never there, a marker on a deleted file is refused and creates nothing", async () => {
+    // An upload reads no version and so carries no marker: unconditional create.
+    await svc.write(ws, "fresh.txt", Buffer.from("new"));
+    expect(await fs.readFile(path.join(ws, "fresh.txt"), "utf8")).toBe("new");
+
+    // The editor's marker says a file was read; the file being gone is a change like any
+    // other — and a refused write must not leave the empty file O_CREAT would have made.
+    const { version } = await svc.read(ws, "fresh.txt");
+    await fs.rm(path.join(ws, "fresh.txt"));
+    await expect(svc.write(ws, "fresh.txt", Buffer.from("x"), version)).rejects.toEqual(
+      expect.objectContaining({ status: 409, code: "file_changed" }),
+    );
+    expect(await fs.stat(path.join(ws, "fresh.txt")).catch(() => null)).toBeNull();
+  });
 });
 
 describe("files/stat route (batch existence check)", () => {
@@ -219,6 +252,46 @@ describe("files/stat route (batch existence check)", () => {
   it("files/content is never cached: the path holds whatever the Agent last wrote", async () => {
     const res = await owner.get(`/api/sessions/${sessionId}/files/content?path=a.txt`);
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("files/content: the read carries a version the write demands back — a save over an Agent's rewrite is 409, not a silent overwrite", async () => {
+    const url = `/api/sessions/${sessionId}/files/content?path=a.txt`;
+    const read = await owner.get(url);
+    const version = read.headers.get("etag");
+    expect(version).toMatch(/^W\/"\d+-\d+"$/);
+
+    // The user is editing a.txt when the Agent rewrites it mid-turn.
+    await fs.writeFile(path.join(workspace, "a.txt"), "written by the agent");
+
+    const stale = await owner.put(url, {
+      dataBase64: Buffer.from("typed by the user").toString("base64"),
+      ifVersion: version,
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({
+      error: { code: "file_changed", message: expect.any(String) },
+    });
+    expect(await fs.readFile(path.join(workspace, "a.txt"), "utf8")).toBe("written by the agent");
+
+    // The current version is accepted; so is a write that carries no version at all (an
+    // upload, which read none) — that absence is what makes a first write of a new file work.
+    const current = (await owner.get(url)).headers.get("etag");
+    const saved = await owner.put(url, {
+      dataBase64: Buffer.from("typed by the user").toString("base64"),
+      ifVersion: current,
+    });
+    expect(saved.status).toBe(204);
+    expect(await fs.readFile(path.join(workspace, "a.txt"), "utf8")).toBe("typed by the user");
+
+    const uploaded = await owner.put(`/api/sessions/${sessionId}/files/content?path=new.txt`, {
+      dataBase64: Buffer.from("uploaded").toString("base64"),
+    });
+    expect(uploaded.status).toBe(204);
+    expect(await fs.readFile(path.join(workspace, "new.txt"), "utf8")).toBe("uploaded");
+
+    // A non-string marker is a bad request, not a silently dropped precondition.
+    const bad = await owner.put(url, { dataBase64: "", ifVersion: 7 });
+    expect(bad.status).toBe(400);
   });
 
   it("existing files return in order, deduplicated; missing / directory / out-of-bounds all count as nonexistent, always 200", async () => {

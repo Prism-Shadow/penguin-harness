@@ -44,6 +44,7 @@ import type {
   FeishuTestResponse,
   FilesStatRequest,
   FilesStatResponse,
+  FilesWriteRequest,
   GoalResponse,
   InstallResponse,
   McpServerTestResponse,
@@ -984,10 +985,21 @@ export const workspaceFileUrl = (sessionId: string, path: string, download = fal
 export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
   `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
 
-export const uploadWorkspaceFile = (sessionId: string, path: string, dataBase64: string) =>
+/**
+ * Writes a Workspace file whole. `ifVersion` is the marker a previous read returned in its
+ * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
+ * the one that was read (the editor's save); leave it out and the write creates or replaces
+ * unconditionally (uploads, which read no version).
+ */
+export const uploadWorkspaceFile = (
+  sessionId: string,
+  path: string,
+  dataBase64: string,
+  ifVersion?: string,
+) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
-    body: { dataBase64 },
+    body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
   });
 

@@ -1217,7 +1217,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
     // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
     const preview = !download && c.req.query("preview") === "1";
-    const { data, fileName, contentType, scriptable } = await deps.workspaceFiles.read(
+    const { data, fileName, contentType, scriptable, version } = await deps.workspaceFiles.read(
       row.workspace,
       rel,
     );
@@ -1245,6 +1245,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
         // cache it by URL is how a re-read after a settled turn paints the previous version.
         "Cache-Control": "no-store",
+        // Not a cache validator — no-store above means nothing ever revalidates. It is the
+        // version of the bytes in this response, which the Files panel's editor hands back
+        // as `ifVersion` on save so the write can refuse to overwrite a newer file.
+        ETag: version,
         ...(preview && scriptable
           ? {
               "Content-Security-Policy":
@@ -1338,7 +1342,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (data.length > MAX_UPLOAD_BYTES) {
       throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
     }
-    await deps.workspaceFiles.write(row.workspace, rel, data);
+    // The editor's write precondition (see FilesWriteRequest); absent on an upload, which
+    // read no version and so writes unconditionally.
+    await deps.workspaceFiles.write(row.workspace, rel, data, optionalString(body, "ifVersion"));
     return c.body(null, 204);
   });
 

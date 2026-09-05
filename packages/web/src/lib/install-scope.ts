@@ -139,6 +139,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.files.treeVisible",
+    scope: "browser",
+    why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",

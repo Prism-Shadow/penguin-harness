@@ -2261,11 +2261,17 @@ Scenarios:
     root: "Workspace root",
     empty: "Empty directory",
     previewUnsupported: "Preview not supported for this type; download instead",
-    uploaded: "Uploaded",
-    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    uploadedCount: (n: number): string => (n === 1 ? "1 file uploaded" : `${n} files uploaded`),
+    uploading: (done: number, total: number): string => `Uploading ${done}/${total}…`,
+    /** Oversize picks are named and skipped before anything is read. */
+    uploadTooLarge: (names: string, mb: number): string =>
+      `Over the ${mb}MB upload limit, skipped: ${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `Folders cannot be uploaded, skipped: ${names}`,
+    /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "Overwrite existing files",
     overwriteConfirm: (n: number): string =>
-      `The current directory already has ${n} file(s) with these names — uploading will overwrite:`,
+      `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
     details: "Details",
@@ -2273,6 +2279,36 @@ Scenarios:
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
+    /** The tree pane: its accessible name and the toolbar toggle's two states. */
+    treeLabel: "File tree",
+    showTree: "Show file tree",
+    hideTree: "Hide file tree",
+    selectFile: "Select a file to preview",
+    /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
+    dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
+    /** In-place text editing. */
+    editorLabel: (name: string): string => `Editing ${name}`,
+    unsaved: "Unsaved changes",
+    saveTitle: "Save (Ctrl+S / ⌘S)",
+    saveConfirmTitle: "Save file",
+    saveConfirm: (name: string): string =>
+      `Save changes to ${name}? The file in the Workspace will be overwritten.`,
+    editTooLarge: (kb: number): string =>
+      `The file is larger than ${kb}KB and cannot be edited here — download it instead`,
+    saveTooLarge: (mb: number): string =>
+      `The content exceeds the ${mb}MB write limit and was not saved`,
+    discardTitle: "Discard unsaved changes",
+    discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
+    discard: "Discard",
+    unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "Changed on disk",
+    changedOnDiskHint:
+      "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    conflictTitle: "File changed on disk",
+    conflictBody: (name: string): string =>
+      `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
+    overwriteAnyway: "Overwrite",
   },
 
   usage: {
