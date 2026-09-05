@@ -146,6 +146,7 @@ describe("migration mechanism", () => {
         "messaging-delivery-flags",
         "drop-goal-state",
         "machines",
+        "machines-columns",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -205,6 +206,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-bindings",
         "messaging-delivery-flags",
         "machines",
+        "machines-columns",
       ]);
     } finally {
       db.close();
@@ -225,6 +227,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-delivery-flags",
         "drop-goal-state",
         "machines",
+        "machines-columns",
       ]);
     } finally {
       db.close();
@@ -248,12 +251,12 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines"]);
+      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines", "machines-columns"]);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines"]);
+      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines", "machines-columns"]);
     } finally {
       db.close();
       fresh.close();
@@ -324,6 +327,43 @@ describe("0.2.4 → current", () => {
   });
 });
 
+describe("a machines table from before migration 4", () => {
+  /** The machines table as the machines line created it before release: forwards, no session, no platform. */
+  const ADOPTED_MACHINES_DDL = `
+    CREATE TABLE machines (
+      address      TEXT PRIMARY KEY,
+      machine_id   TEXT,
+      version      TEXT,
+      installed_at TEXT,
+      forward_port INTEGER,
+      forward_pid  INTEGER,
+      remote_port  INTEGER
+    );
+  `;
+
+  it("is adopted by migration 4 as it stands, and gains the columns the row writes at 5", () => {
+    // What a data root that ran the machines line before its migration holds: IF NOT EXISTS
+    // kept the table, and the first connect failed on the insert naming session_pid.
+    const db = open029();
+    try {
+      db.exec(ADOPTED_MACHINES_DDL);
+      db.exec("PRAGMA user_version = 3");
+      expect(migrate(db).applied).toEqual(["machines", "machines-columns"]);
+      const columns = (db.prepare("PRAGMA table_info(machines)").all() as { name: string }[]).map(
+        (c) => c.name,
+      );
+      expect(columns).toEqual(expect.arrayContaining(["session_pid", "platform"]));
+      db.prepare(
+        "INSERT INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("ssh:nas", null, "9.9.9", "2026-09-04T00:00:00.000Z", 42, 7364, "linux");
+      // Idempotent: a table that already has them is left as it is.
+      expect(migrate(db).applied).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("rollbackTo", () => {
   /** Every migration states an undo or states that it has none — never leaves it unsaid. */
   it("every migration declares its down, one way or the other", () => {
@@ -339,11 +379,11 @@ describe("rollbackTo", () => {
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
 
-      const r = rollbackTo(db, LATEST_VERSION - 2);
+      const r = rollbackTo(db, LATEST_VERSION - 3);
       expect(r.from).toBe(LATEST_VERSION);
-      expect(r.to).toBe(LATEST_VERSION - 2);
-      // Newest first: the machines tables go, then goal_state comes back.
-      expect(r.reverted).toEqual(["machines", "drop-goal-state"]);
+      expect(r.to).toBe(LATEST_VERSION - 3);
+      // Newest first: the machines columns, the machines tables, then goal_state comes back.
+      expect(r.reverted).toEqual(["machines-columns", "machines", "drop-goal-state"]);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
           name: string;
@@ -382,6 +422,7 @@ describe("rollbackTo", () => {
       migrate(db);
       const r = rollbackTo(db, 0);
       expect(r.reverted).toEqual([
+        "machines-columns",
         "machines",
         "drop-goal-state",
         "messaging-delivery-flags",
