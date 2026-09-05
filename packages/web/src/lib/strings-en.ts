@@ -45,9 +45,12 @@ export const en: Strings = {
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
     now: "now",
     allHosts: (count: number) => `${count} more in ~/.ssh/config`,
-    fewer: "Show fewer",
+    expand: "Expand",
+    fewer: "Collapse",
     host: {
       addTitle: "New ssh host",
+      newVerb: "New",
+      configureVerb: "Configure",
       add: "Write to ssh config",
       alias: "Alias (Host)",
       aliasHint: "One word; `ssh <alias>` and this page will call the machine by it.",
@@ -102,7 +105,7 @@ export const en: Strings = {
     queued: "Waiting its turn behind the machines before it.",
     working: "Working…",
     failedAt: (step: string) => `Failed at "${step}".`,
-    replaceProgram: "Install anyway and restart",
+    replaceProgram: "Force install",
     replaceProgramWhy:
       "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
