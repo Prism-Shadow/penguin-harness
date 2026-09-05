@@ -19,7 +19,6 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { bootAppDeps, createRuntimeApp } from "./app.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
@@ -237,14 +236,6 @@ class PenguinServer {
     // TerminateProcess with no signal delivery.
     this.deps.desktop?.onShutdownRequest(() => void this.shutdown("desktop-shutdown"));
 
-    // Restart-to-update: POST /api/version/restart lands here once a self-update is
-    // installed — the same graceful shutdown, exiting with the code the supervising
-    // `penguin server|web` respawns on, so the relaunch runs the new release. The
-    // lifecycle service only fires it when a supervisor is actually there.
-    this.deps.lifecycle.onRestartRequest(
-      () => void this.shutdown("restart", SERVER_RESTART_EXIT_CODE),
-    );
-
     // Client-update relay: under the shell this process is an Electron utilityProcess and
     // carries process.parentPort; wire it to the desktop service so the update routes can
     // read the shell's updater snapshot and forward check/install. Absent port (a plain
@@ -387,7 +378,12 @@ class PenguinServer {
    * active runs (pending approvals converge to deny), wait ≤5s for wrap-up, then close
    * HTTP and SQLite.
    */
-  private async shutdown(signal: string, exitCode = 0): Promise<void> {
+  /**
+   * `exitCode` undefined leaves the code to `process.exitCode`: the platform's restart step
+   * presets core's SERVER_RESTART_EXIT_CODE there and raises SIGTERM, so this same shutdown
+   * is how the process leaves for its supervisor to relaunch (services/process-restart.ts).
+   */
+  private async shutdown(signal: string, exitCode?: number): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     console.log(`Received ${signal}, shutting down…`);

@@ -113,7 +113,6 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
-    supervised: false,
     // Off by default: no test may reach the network to list plugins.
     pluginIndexUrl: null,
   };
