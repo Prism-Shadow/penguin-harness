@@ -1344,7 +1344,7 @@ describe("machines API", () => {
     const jobsOf = () => t.deps.machines.jobs();
     const settled = () => jobsOf().every((job) => !job.queued && !job.running);
 
-    it("a batch is queued one behind the other: the first works while the rest wait, and each ends connected", async () => {
+    it("a batch works its machines side by side, and each ends connected", async () => {
       let release = () => {};
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -1361,14 +1361,17 @@ describe("machines API", () => {
       expect(started.status).toBe(202);
       const body = (await started.json()) as MachinesUseResponse;
       expect(body.refused).toEqual([]);
+      // Two hosts, two jobs at once: the second does not wait for the first's held install.
       expect(body.jobs.map((job) => [job.machineId, job.queued, job.running])).toEqual([
         ["ssh:build-box", false, true],
-        ["ssh:nas", true, false],
+        ["ssh:nas", false, true],
       ]);
+      await waitFor(() => jobsOf().some((job) => job.machineId === "ssh:nas" && !job.running));
+      expect(jobsOf().find((job) => job.machineId === "ssh:build-box")?.running).toBe(true);
 
       release();
       await waitFor(settled);
-      expect(installs).toEqual(["build-box", "nas"]);
+      expect([...installs].sort()).toEqual(["build-box", "nas"]);
       for (const job of jobsOf()) {
         expect(job.kind).toBe("use");
         expect(job.result).toEqual({ ok: true, connected: true });
