@@ -15,7 +15,7 @@ import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_GAP } from "../../lib/icon-scale";
 import { workspaceMachines } from "../../lib/workspace-machines";
@@ -119,9 +119,19 @@ export function DashboardPage() {
             {S.dashboard.loadFailed}: {error}
           </p>
         )}
+        {/* Said before the list, as a notice, never after it in small print: a board
+            missing a machine's answer is not a board that says "nothing is running". */}
+        {silent > 0 && (
+          <p role="status" className={`rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+            {S.dashboard.silentMachines(silent)}
+          </p>
+        )}
         {rows === null && error === null && <SkeletonList rows={4} />}
         {rows !== null && rows.length === 0 && (
-          <EmptyState title={S.dashboard.empty} description={S.dashboard.emptyHint} />
+          <EmptyState
+            title={silent > 0 ? S.dashboard.emptyHere : S.dashboard.empty}
+            description={S.dashboard.emptyHint}
+          />
         )}
         {rows !== null && rows.length > 0 && (
           <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white dark:divide-gray-800 dark:border-gray-800 dark:bg-gray-950">
@@ -144,11 +154,6 @@ export function DashboardPage() {
               </li>
             ))}
           </ul>
-        )}
-        {silent > 0 && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {S.dashboard.silentMachines(silent)}
-          </p>
         )}
       </div>
     </div>

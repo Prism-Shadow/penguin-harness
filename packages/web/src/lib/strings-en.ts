@@ -165,9 +165,12 @@ export const en: Strings = {
     /** The merged row of auto-created temporary Workspaces, as the sidebar groups them. */
     temporaryWorkspaces: "Temporary workspaces",
     empty: "Nothing is running",
+    /** The empty state while a machine did not answer: this server has nothing, the rest is unknown. */
+    emptyHere: "Nothing is running on this server",
     emptyHint: "Workspaces with a Session running or waiting on an approval appear here.",
     loadFailed: "Failed to load",
-    silentMachines: (n: number) => `${n} machine${n > 1 ? "s" : ""} did not answer`,
+    silentMachines: (n: number) =>
+      `${n} machine${n > 1 ? "s" : ""} did not answer — Sessions there are not counted. Connect to it on the Machines page.`,
   },
 
   settings: {
