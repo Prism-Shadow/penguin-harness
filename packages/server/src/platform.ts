@@ -170,7 +170,10 @@ export class Startup {
     // so this App booting hands the same build on to any machine still carrying a different
     // one — cheap when there is nothing to do, since which machines are behind is read from
     // the install records, not asked over the network — and then re-holds every connection
-    // the record says was held. Fire-and-forget for the same reason as the sweep above.
+    // the record says was held: the generation before closed what it opened on its way out,
+    // so without this a push or a restart leaves each machine disconnected until someone
+    // connects it by hand. Fire-and-forget for the same reason as the adoption sweep: a
+    // host that is slow to answer must not hold up the App that serves everything else.
     void this.machines.start().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "machines_reconnect_failed" });
     });
