@@ -9,10 +9,10 @@
  * machine's name in mono, and beneath it the state in a word with the single detail that
  * matters beside it — when it was last checked, the build it carries when that is behind
  * this server's, the far side's words when it failed. State is said once: the dot at the
- * card's edge is blue for a held connection, amber and red for what needs a person, grey
- * for settled. Everything else — the build, when it was installed, the server, the machine
- * id, the job's output, the forced install — lives inside the card and unfolds on the
- * chevron, so the fleet at rest is names and dots.
+ * card's edge is blue for a live link — this server, and a held connection — amber and red
+ * for what needs a person, grey for settled. Everything else — the build, the install
+ * date, the server, the machine id, the job's output, the forced install — lives inside
+ * the card and unfolds on the chevron, so the fleet at rest is names and dots.
  *
  * Selection is the card: clicking one toggles it, a selected card darkens its border, and
  * every machine in use starts selected. The verbs are plug and unplug icon buttons in a bar
@@ -637,7 +637,7 @@ function LocalCard({
           </div>
           <div className="mt-0.5 truncate text-xs text-gray-500">{S.machines.state.serving}</div>
         </div>
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.muted}`} aria-hidden="true" />
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.link}`} aria-hidden="true" />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
       <div id={id} hidden={!open}>
