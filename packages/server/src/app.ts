@@ -34,7 +34,6 @@ import {
   HMR_CONFIG_RESOURCE_ID,
   HMR_DB_RESOURCE_ID,
   HMR_DESKTOP_RESOURCE_ID,
-  HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
@@ -101,7 +100,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -188,8 +186,6 @@ export interface ServerBoot {
   /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
   control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   tree: ModuleTree;
 }
 
@@ -296,8 +292,6 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -319,7 +313,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  booted = { config, db, channels, hmr, control: ctl, desktop, tree };
   return booted;
 }
 
