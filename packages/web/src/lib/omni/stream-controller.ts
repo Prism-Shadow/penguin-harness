@@ -83,15 +83,20 @@ export type MessagesPageQuery =
 
 /**
  * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 200 covers the vast
- * majority of real sessions in a single request, so ordinary conversations still load
- * whole exactly as before — only the pathological long tail (months-long sessions,
- * agentic marathons) starts windowed, which is the point: their full-transcript reads
- * were the unbounded memory/disk cost this pagination removes.
+ * a user prompt (the server's cut rule; see MessagesPageInfo).
+ *
+ * Sized for the first paint, not for the whole session: what a reader looks at when a
+ * conversation opens is its end, and everything above that is paid for only if they
+ * scroll to it. A window large enough to swallow most sessions whole made the common
+ * open as expensive as the longest one it might have to serve — the read, the transfer
+ * and the parse all scale with it, and a months-long session paid all three before
+ * showing a single line. Ten units puts every session on the same windowed path, which
+ * also means the backfill below is exercised by ordinary use rather than only by the
+ * sessions large enough to have found its bugs the hard way.
  */
-export const TAIL_UNITS = 200;
+export const TAIL_UNITS = 10;
 
-/** Scroll-up backfill window size: smaller than the tail so each prepend stays snappy. */
+/** Scroll-up backfill window size: a scroll asks for more history than an open does. */
 export const OLDER_UNITS = 100;
 
 /**
