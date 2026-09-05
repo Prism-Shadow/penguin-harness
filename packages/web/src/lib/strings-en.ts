@@ -33,8 +33,6 @@ export const en: Strings = {
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
     pageTitle: "Machines",
-    pageDesc:
-      "The machines this Project runs agents on. Use one and this server installs the program, starts it, connects and stays connected; stop using it and the machine is let go.",
     imageVersion: (version: string) => `This server: ${version}`,
     behindCount: (count: number) => `${count} machine(s) on another version.`,
     allCurrent: "Every machine in use matches.",
@@ -45,10 +43,8 @@ export const en: Strings = {
     search: "Search hosts…",
     noMatch: "No host matches.",
     more: (count: number) => `${count} more not shown — keep typing to narrow it down.`,
-    elsewhere: "installed (other project)",
     localTitle: "this server",
-    localReady: "The machine this server runs on. Always available.",
-    inUseTitle: (count: number) => `Machines in use (${count})`,
+    localReady: "The machine this page is served from. Always available.",
     noneInUse: "No machine in use yet.",
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
@@ -58,6 +54,18 @@ export const en: Strings = {
     stopUsing: "Stop using",
     selectAll: "Select all",
     selectedCount: (count: number) => `${count} selected`,
+    state: {
+      queued: "Queued",
+      working: "Working",
+      ready: "Ready",
+      failed: "Failed",
+      installedOnly: "Installed",
+      behind: "Update",
+      notConnected: "Offline",
+      unreachable: "Unreachable",
+      stopped: "Stopped",
+      unknown: "Unchecked",
+    },
     queued: "Waiting its turn behind the machines before it.",
     working: "Working…",
     workingAt: (step: string) => `Working: ${step}`,
