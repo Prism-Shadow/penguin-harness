@@ -24,11 +24,13 @@ import { CompactionBanner } from "./compaction-banner";
 import { McpConnectBanner } from "./mcp-connect-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
+import { AppCenterBanner } from "./app-center-banner";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
 import { HarnessInjectedBanner } from "./harness-banner";
 import {
+  parseAppCenterMessage,
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
@@ -204,10 +206,13 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
       const scheduled = parseScheduledMessage(item.text);
-      // Source block for a skill invocation: parsing continues on scheduled's remaining body
-      // (scheduled -> skills, blocks stripped in a chain); a match collapses into a
+      // Source block for an App Center restart / stop request: the same one-line fold, with
+      // the request's instructions rendered as usual (a message carries one origin block).
+      const appCenter = scheduled ? null : parseAppCenterMessage(item.text);
+      // Source block for a skill invocation: parsing continues on the origin block's remaining
+      // body (origin -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : item.text;
+      const afterScheduled = scheduled ? scheduled.rest : appCenter ? appCenter.rest : item.text;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
@@ -219,6 +224,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return (
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
+          {appCenter && <AppCenterBanner origin={appCenter.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">

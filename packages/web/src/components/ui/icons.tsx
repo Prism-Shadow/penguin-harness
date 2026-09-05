@@ -208,8 +208,17 @@ export const PLUGIN_ICON =
 export const MAGIC_WAND_ICON =
   "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72zM14 7l3 3M5 6v4M3 8h4M19 14v4M17 16h4";
 
+/**
+ * App Center (a 2×2 grid of rounded squares, lucide's layout-grid): the mark of the apps
+ * registered from conversations — the nav entry and the chat banner of an App Center request.
+ */
+export const APP_CENTER_ICON =
+  "M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM14 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM4 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM14 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z";
+
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
+  /** App Center (the 2×2 grid). */
+  apps: APP_CENTER_ICON,
   /** Plugin library (the puzzle piece). */
   plugins: PLUGIN_ICON,
   /**

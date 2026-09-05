@@ -1,12 +1,13 @@
 /**
  * Shared "what did the user actually write" extraction for a user_text item, mirroring
- * MessageItem's parse chain (handoff / model-switch → scheduled → skills → attachment
- * lines) without any rendering. Harness-injected inputs never reach this parse: both
+ * MessageItem's parse chain (handoff / model-switch → scheduled / App Center → skills →
+ * attachment lines) without any rendering. Harness-injected inputs never reach this parse: both
  * callers skip them on the item's `sender` stamp. Input history and the conversation outline both
  * need this reduction, and each re-implementing the chain would drift from the renderer the
  * moment a new protocol block is added — this module is the single non-rendering copy.
  */
 import {
+  parseAppCenterMessage,
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
@@ -20,6 +21,8 @@ export interface UserMessageBody {
   body: string;
   /** True when the message was injected by a scheduled-task trigger rather than typed into the composer. */
   scheduled: boolean;
+  /** True when the message is an App Center restart / stop request ([app_center] block) — composed by the server, never typed. */
+  appCenter?: boolean;
   /**
    * True when the message is a background completion notice ([background_task_done] block);
    * `body` is then the harness-written report text after the block — a readable outline
@@ -42,11 +45,13 @@ export function parseUserMessageBody(raw: string): UserMessageBody | null {
     return { body: backgroundDone.rest.trim(), scheduled: false, backgroundDone: true };
   }
   const scheduled = parseScheduledMessage(raw);
-  const afterScheduled = scheduled ? scheduled.rest : raw;
+  const appCenter = scheduled ? null : parseAppCenterMessage(raw);
+  const afterScheduled = scheduled ? scheduled.rest : appCenter ? appCenter.rest : raw;
   const skills = parseSkillsMessage(afterScheduled);
   const { text } = splitAttachments(skills ? skills.rest : afterScheduled);
   return {
     body: text.trim(),
     scheduled: scheduled !== null,
+    ...(appCenter !== null ? { appCenter: true } : {}),
   };
 }

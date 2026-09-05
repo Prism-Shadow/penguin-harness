@@ -215,6 +215,31 @@ penguin schedule rm daily-report
 | `--enable` / `--disable`（`update`） | 翻转启用位；`update` 对存储项读改写：未指定的字段保留原值，切换目标类型时清掉另一类字段 |
 | `--project-id` / `--agent-id` / `--json` / `--server` | 同各处约定；`rm` 直接删除、不做确认（服务端的 owner 授权照旧生效） |
 
+## penguin app
+
+`penguin app ls` 列出 Project 已登记的应用——即[应用中心](/web-app#应用中心apps)的登记表，`<project>/apps/` 下每个应用一个 TOML 文件——列依次为 id、名称、类型、探测状态（`running` / `stopped` / `unknown`）、地址、所属会话的短 id 与登记时间；无法解析的登记文件也会列出并标记 `invalid`。`penguin app status <id>` 立即探测一个应用并打印 `<id>: <status> (<url>)`。`--json` / `--server` 同各处约定。
+
+`register` 是 `app-center` 技能在应用跑起来之后执行的命令：应用绑定到做出它的会话——`--session-id` 缺省取 `PENGUIN_SESSION_ID`，即 harness Agent 内的调用方会话——Agent 与 Workspace 由服务端按该会话填入，除非 `--workspace` 另有指定。与定时任务一样，文件是唯一真相源、CLI 是带校验的写入器：API 错误原样透出。登记一个已存在的显式 `--id` 即原地更新，端口或命令变了的会话重跑同一条命令即可；`unregister` 直接删除、不做确认。
+
+```bash
+penguin app register --name "Todo App" --id todo --url http://localhost:3000 \
+  --start-command "npm start" --stop-command "fuser -k 3000/tcp" --kind web
+penguin app ls
+penguin app status todo
+penguin app unregister todo
+```
+
+| 选项 | 说明 |
+| --- | --- |
+| `--name <s>` | 显示名称（必填）；未给 `--id` 时据此生成 id |
+| `--id <slug>` | 显式 id——字母、数字、`_` 与 `-`；已存在的 id 原地更新 |
+| `--url <url>` / `--health-url <url>` | 应用的本地地址（应用中心的「打开」链接与探测目标）；`--health-url` 改为探测另一地址 |
+| `--start-command <s>` / `--stop-command <s>` | 随重启 / 停止请求发回所属会话；停止命令应只针对这个应用（pid 文件或 `fuser -k <port>/tcp`——绝不用宽泛的 `pkill`） |
+| `--kind web\|api\|cli\|other` | 应用类型（缺省 `web`），只决定行首图标 |
+| `--session-id <id>` / `--workspace <path>` | 所属会话（缺省 `PENGUIN_SESSION_ID`）；应用不在该会话的 Workspace 时另指 Workspace（缺省取会话的） |
+| `--description <s>` | 名称下方的一句话 |
+| `--project-id` / `--json` / `--server` | 同各处约定 |
+
 ## 审批模式（--approve）
 
 | 模式 | 行为 |

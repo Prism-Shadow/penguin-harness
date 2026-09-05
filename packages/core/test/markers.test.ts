@@ -15,6 +15,7 @@ import {
   buildContextSummaryText,
   buildHandoffMessage,
   buildModelSwitchMessage,
+  buildAppCenterMessage,
   buildScheduledMessage,
   buildSkillsMessage,
   buildTurnAbortedBlock,
@@ -25,6 +26,7 @@ import {
   matchDualForm,
   parseHandoffMessage,
   parseModelSwitchMessage,
+  parseAppCenterMessage,
   parseScheduledMessage,
   parseSkillsMessage,
   parseUserSteeringText,
@@ -70,6 +72,7 @@ describe("marker block primitives", () => {
       MARKER_TAGS.scheduledTask,
       MARKER_TAGS.modelSwitchFrom,
       MARKER_TAGS.backgroundTaskDone,
+      MARKER_TAGS.appCenter,
     ]);
   });
 });
@@ -240,6 +243,36 @@ describe("origin blocks ([use_skills] / [handoff_from] / [scheduled_task] / [mod
         "<handoff_from>\nprose line\nagent: default_agent (General Agent)\nworkspace: /data/ws\n</handoff_from>",
       ),
     ).toEqual({ agentId: "default_agent", agentName: "General Agent", workspace: "/data/ws" });
+  });
+
+  it("[app_center]: block + instructions, parsed back with the app, action and body", () => {
+    const text = buildAppCenterMessage(
+      { appId: "todo-app", appName: "Todo", action: "restart" },
+      "Stop it, start it again, confirm.",
+    );
+    expect(text.startsWith("[app_center]\n")).toBe(true);
+    expect(text).toContain("app: todo-app (Todo)\naction: restart\n");
+    expect(parseAppCenterMessage(text)).toEqual({
+      origin: { appId: "todo-app", appName: "Todo", action: "restart" },
+      rest: "Stop it, start it again, confirm.",
+    });
+    // The parenthetical is omitted when the name equals the id; no body leaves only the block.
+    const bare = buildAppCenterMessage({ appId: "api", appName: "api", action: "stop" }, "");
+    expect(bare).toContain("app: api\naction: stop\n");
+    expect(parseAppCenterMessage(bare)).toEqual({
+      origin: { appId: "api", action: "stop" },
+      rest: "",
+    });
+    // An unknown action or a missing app is not an origin block; mid-text blocks don't parse.
+    expect(
+      parseAppCenterMessage("[app_center]\napp: x\naction: dance\n[/app_center]\n\np"),
+    ).toBeNull();
+    expect(parseAppCenterMessage("[app_center]\naction: stop\n[/app_center]\n\np")).toBeNull();
+    expect(parseAppCenterMessage(`preamble\n${text}`)).toBeNull();
+    // Legacy form.
+    expect(
+      parseAppCenterMessage("<app_center>\napp: old\naction: stop\n</app_center>\n\nbody"),
+    ).toEqual({ origin: { appId: "old", action: "stop" }, rest: "body" });
   });
 
   it("[scheduled_task]: block + prompt body, parsed back with the body as rest", () => {

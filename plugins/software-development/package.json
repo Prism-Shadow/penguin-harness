@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/software-development",
   "version": "0.2.9",
-  "description": "Software development end to end — disciplined software-engineering practice for real tasks, plus the Penguin visual language for every generated web page and app UI.",
+  "description": "Software development end to end — disciplined software-engineering practice for real tasks, the Penguin visual language for every generated web page and app UI, and App Center registration for the apps a conversation builds.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

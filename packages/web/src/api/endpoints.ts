@@ -22,6 +22,12 @@ import type {
   AgentPluginsInstallResponse,
   AgentSkillsResponse,
   AgentVaultConfigDto,
+  AppAction,
+  AppActionRequest,
+  AppActionResponse,
+  AppItem,
+  AppsResponse,
+  AppUpsertRequest,
   AgentsResponse,
   ApprovalDecisionRequest,
   AuthLoginRequest,
@@ -1032,6 +1038,38 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
     { method: "DELETE" },
+  );
+
+// App Center ----------------------------------------------------------------------------
+
+/** The Project's registered apps with their probed statuses; `refresh` bypasses the server's short status cache. */
+export const listApps = (projectId: string, refresh = false) =>
+  apiFetch<AppsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/apps${refresh ? "?refresh=1" : ""}`,
+  );
+
+export const createApp = (projectId: string, body: AppUpsertRequest & { id?: string }) =>
+  apiFetch<AppItem>(`/api/projects/${encodeURIComponent(projectId)}/apps`, {
+    method: "POST",
+    body,
+  });
+
+export const updateApp = (projectId: string, id: string, body: AppUpsertRequest) =>
+  apiFetch<AppItem>(
+    `/api/projects/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(id)}`,
+    { method: "PUT", body },
+  );
+
+export const deleteApp = (projectId: string, id: string) =>
+  apiFetch<void>(`/api/projects/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+/** Sends a restart / stop request to the app's owning Session (a new Task, or steering into the running one). */
+export const appAction = (projectId: string, id: string, action: AppAction) =>
+  apiFetch<AppActionResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(id)}/actions`,
+    { method: "POST", body: { action } satisfies AppActionRequest },
   );
 
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
