@@ -100,7 +100,7 @@ export function readMachine(
   return { kind: "notConnected" };
 }
 
-/** The tone a reading's mark carries — by what it means, as tone.ts asks; ready is muted, not success, so a fleet at rest reads grey. */
+/** The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is `link`, never `success`. */
 export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
@@ -110,8 +110,9 @@ export function readingTone(reading: MachineReading): Tone {
     case "unreachable":
       return "danger";
     case "ready":
+      // A held connection is a live link, not a verdict: blue, never green.
+      return "link";
     case "unknown":
-      // A healthy machine is the quiet one: green would raise a flag where none is needed.
       return "muted";
     default:
       return "attention";

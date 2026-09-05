@@ -5,19 +5,20 @@
  * there, start its server, connect, hand over the Model config — as one job the server
  * queues per machine, so a batch is one tap. Disable lets a machine go.
  *
- * One card per machine, this server first. A card is the machine's name in mono and one
- * line beneath it in the card's tone: the state in a word, and beside it the single detail
- * that matters — when it was last checked, the build it carries when that is behind this
- * server's, the far side's words when it failed. State is said once, and a healthy machine
- * reads grey: green would raise a flag where none is needed. The card's foot carries the
- * build, an Enable icon when something is needed, and the ⓘ that opens the record and the
- * job's output in a pane beside the cards, or a sheet on a narrow screen.
+ * One card per machine, one per row, this server first. A card at rest is two lines: the
+ * machine's name in mono, and beneath it the state in a word with the single detail that
+ * matters beside it — when it was last checked, the build it carries when that is behind
+ * this server's, the far side's words when it failed. State is said once: the dot at the
+ * card's edge is blue for a held connection, amber and red for what needs a person, grey
+ * for settled. Everything else — the build, when it was installed, the server, the machine
+ * id, the job's output, the forced install — lives inside the card and unfolds on the
+ * chevron, so the fleet at rest is names and dots.
  *
  * Selection is the card: clicking one toggles it, a selected card darkens its border, and
- * every machine in use starts selected. The verbs are icon buttons in a bar that keeps a
- * fixed slot between the title and the cards, so the cards never move when a selection
- * appears or goes. A queued or working card grows a stepper under its name, one segment per
- * step of the pipeline, fed by the step the server says it is on.
+ * every machine in use starts selected. The verbs are plug and unplug icon buttons in a bar
+ * that keeps a fixed slot between the title and the cards, so the cards never move when a
+ * selection appears or goes. A queued or working card grows a stepper under its name, one
+ * segment per step of the pipeline, fed by the step the server says it is on.
  *
  * The page polls while a job is queued or running, and re-probes the servers on a widening
  * schedule (probe-schedule.ts) so a machine that went quiet is noticed without a tap.
@@ -35,10 +36,9 @@ import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Sheet } from "../../components/ui/sheet";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -58,15 +58,13 @@ import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/** The ⓘ on a card. */
-const INFO_PATH = "M12 16v-4M12 8h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0";
-/** Enable: the power glyph. Disable: the same glyph, struck through. */
-const POWER_PATH = "M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0";
-const POWER_OFF_PATH = "M12 3v9M18.36 6.64a9 9 0 1 1-12.73 0M4 4l16 16";
+/** Enable: a plug on its cord. Disable: the plug pulled — the cord parted from the body. */
+const PLUG_PATH = "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4";
+const UNPLUG_PATH = "M9 2v4M15 2v4M6 6h12v3a6 6 0 0 1-12 0V6zM12 19v3M9.5 16.5l5-2M9.5 14.5l5 2";
 
 const MONO = "font-mono text-[13px] tabular-nums";
 
-/** The reason a row gives under its name, when it has one: the far side's own words. */
+/** The reason a card gives under its name, when it has one: the far side's own words. */
 function reasonText(reading: MachineReading): string | null {
   switch (reading.kind) {
     case "failed":
@@ -77,6 +75,29 @@ function reasonText(reading: MachineReading): string | null {
       return reading.step;
     default:
       return null;
+  }
+}
+
+/** The one line under a machine's name: its state, and the one detail that matters beside it. */
+function stateLine(reading: MachineReading, machine: MachineInfo, locale: "zh" | "en"): string {
+  const m = S.machines;
+  const word = m.state[reading.kind];
+  const checked =
+    machine.connection !== null
+      ? m.now
+      : machine.status !== null
+        ? formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)
+        : null;
+  switch (reading.kind) {
+    case "behind":
+      return `${word} · ${reading.version}`;
+    case "failed":
+      return `${word} · ${reading.message}`;
+    case "queued":
+    case "working":
+      return word;
+    default:
+      return checked === null ? word : `${word} · ${checked}`;
   }
 }
 
@@ -93,27 +114,11 @@ function toggled(set: Set<string>, id: string): Set<string> {
   return next;
 }
 
-/** True on screens wide enough for the detail pane to sit beside the table (Tailwind's lg). */
-function useWide(): boolean {
-  const query = "(min-width: 1024px)";
-  const [wide, setWide] = useState(() =>
-    typeof window === "undefined" ? true : window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    const onChange = () => setWide(media.matches);
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
-  }, []);
-  return wide;
-}
-
 export function MachinesPage() {
   useDocumentTitle(S.machines.pageTitle);
   const { locale } = useLocale();
-  const wide = useWide();
   // Machines belong to the Project, like every other row in this nav group: switching
-  // Projects switches which machines are listed, and using one here gives the machine to
+  // Projects switches which machines are listed, and enabling one here gives the machine to
   // THIS Project — the same one whose Model credentials it will be handed.
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -123,11 +128,11 @@ export function MachinesPage() {
   const [posting, setPosting] = useState(false);
   /**
    * The batch selection. Null means "untouched": every machine in use, including ones added
-   * later. Becomes a real set the first time someone clicks a row.
+   * later. Becomes a real set the first time someone clicks a card.
    */
   const [picked, setPicked] = useState<Set<string> | null>(null);
-  /** The machine whose detail pane is open. */
-  const [detailId, setDetailId] = useState<string | null>(null);
+  /** Cards unfolded to show their details. */
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -194,10 +199,6 @@ export function MachinesPage() {
   );
   /** Machines in use that carry another build: what one tap brings to this server's version. */
   const behind = useMemo(() => (state === null ? [] : behindMachines(state)), [state]);
-  const detail = useMemo(
-    () => machines.find((machine) => machine.id === detailId) ?? null,
-    [machines, detailId],
-  );
 
   /** Hosts the picker offers: in the config, not this machine, not already in use here. */
   const addable = useMemo(
@@ -293,41 +294,17 @@ export function MachinesPage() {
   const togglePicked = (id: string) => setPicked(toggled(picked ?? selection, id));
   const pickAll = () => setPicked(new Set(inUse.map((machine) => machine.id)));
   const pickNone = () => setPicked(new Set());
+  const toggleExpanded = (id: string) => setExpanded((prev) => toggled(prev, id));
   const toggleAdding = (id: string) => setAdding((prev) => toggled(prev, id));
 
   const noImage = state !== null && imageVersion === null;
 
-  const detailPane =
-    detail !== null ? (
-      <DetailPane
-        machine={detail}
-        job={jobFor(jobs, detail.id)}
-        imageVersion={imageVersion}
-        locale={locale}
-        busy={posting}
-        onClose={() => setDetailId(null)}
-        onUse={(replaceProgram) => void use([detail.id], replaceProgram)}
-        onStopUsing={() => {
-          setDetailId(null);
-          void stopUsing([detail.id]);
-        }}
-      />
-    ) : null;
-
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">{S.machines.pageTitle}</h1>
-          <div className="flex items-center gap-3">
-            {imageVersion !== null && (
-              <span
-                className={`${MONO} text-gray-500`}
-                title={S.machines.imageVersion(imageVersion)}
-              >
-                {imageVersion}
-              </span>
-            )}
+          <div className="flex items-center gap-2">
             {behind.length > 0 && (
               <Button
                 size="sm"
@@ -441,6 +418,7 @@ export function MachinesPage() {
                     void use(ids);
                   }}
                 >
+                  <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
                   {S.machines.addSelected(adding.size)}
                 </Button>
               </div>
@@ -449,191 +427,98 @@ export function MachinesPage() {
         </div>
 
         {error !== null && (
-          <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
+          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+            {error}
+          </div>
         )}
         {noImage && error === null && (
-          <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
             {S.machines.noImage}
           </div>
         )}
 
+        {/* The selection bar: a fixed slot between the title and the cards, so the cards
+            never move when a selection appears or goes. The count is the slot's label; the
+            verbs are dimmed until something is selected. */}
+        <div className="mt-3 flex h-10 items-center gap-3 px-1 text-xs text-gray-500">
+          <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
+          {inUse.length > 0 && (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
+                onClick={pickAll}
+              >
+                {S.machines.pickAll}
+              </button>
+              ·
+              <button
+                type="button"
+                className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
+                onClick={pickNone}
+              >
+                {S.machines.pickNone}
+              </button>
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1">
+            <IconAction
+              label={S.machines.use}
+              d={PLUG_PATH}
+              disabled={selectedIds.length === 0 || posting || noImage}
+              onClick={() => void use(selectedIds)}
+            />
+            <IconAction
+              label={S.machines.stopUsing}
+              d={UNPLUG_PATH}
+              disabled={selectedIds.length === 0 || posting}
+              onClick={() => void stopUsing(selectedIds)}
+            />
+          </span>
+        </div>
+
         {state === null ? (
           <Skeleton className="h-40 w-full rounded-xl" />
         ) : (
-          <div
-            className={`grid gap-4 ${wide && detail !== null ? "lg:grid-cols-[minmax(0,1fr)_20rem]" : ""}`}
-          >
-            <div className="min-w-0">
-              {/* The selection bar: a fixed slot between the title and the cards, so the cards
-                  never move when a selection appears or goes. Empty of verbs until something
-                  is selected; the count stays as the slot's label. */}
-              <div className="mb-3 flex h-9 items-center gap-3 px-1 text-xs text-gray-500">
-                <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-                {inUse.length > 0 && (
-                  <span className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                      onClick={pickAll}
-                    >
-                      {S.machines.pickAll}
-                    </button>
-                    ·
-                    <button
-                      type="button"
-                      className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                      onClick={pickNone}
-                    >
-                      {S.machines.pickNone}
-                    </button>
-                  </span>
-                )}
-                <span className="ml-auto flex items-center gap-1">
-                  <IconAction
-                    label={S.machines.use}
-                    d={POWER_PATH}
-                    disabled={selectedIds.length === 0 || posting || noImage}
-                    onClick={() => void use(selectedIds)}
-                  />
-                  <IconAction
-                    label={S.machines.stopUsing}
-                    d={POWER_OFF_PATH}
-                    disabled={selectedIds.length === 0 || posting}
-                    onClick={() => void stopUsing(selectedIds)}
-                  />
-                </span>
-              </div>
-              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {local !== null && (
-                  <LocalCard
-                    machine={local}
-                    open={detailId === local.id}
-                    onDetail={() => setDetailId(detailId === local.id ? null : local.id)}
-                  />
-                )}
-                {inUse.map((machine) => (
-                  <MachineCard
-                    key={machine.id}
-                    machine={machine}
-                    job={jobFor(jobs, machine.id)}
-                    imageVersion={imageVersion}
-                    locale={locale}
-                    selected={selection.has(machine.id)}
-                    onToggle={() => togglePicked(machine.id)}
-                    detailOpen={detailId === machine.id}
-                    onDetail={() => setDetailId(detailId === machine.id ? null : machine.id)}
-                    busy={posting}
-                    onUse={() => void use([machine.id])}
-                  />
-                ))}
-                {inUse.length === 0 && (
-                  <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 sm:col-span-2 xl:col-span-2 dark:border-gray-700">
-                    <p>{S.machines.noneInUse}</p>
-                    <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-                  </li>
-                )}
-              </ul>
-            </div>
-            {wide && detail !== null && (
-              <aside className="min-w-0 rounded-xl border border-gray-200 dark:border-gray-800">
-                {detailPane}
-              </aside>
+          <ul className="space-y-2">
+            {local !== null && (
+              <LocalCard
+                machine={local}
+                locale={locale}
+                open={expanded.has(local.id)}
+                onToggleOpen={() => toggleExpanded(local.id)}
+              />
             )}
-          </div>
+            {inUse.map((machine) => (
+              <MachineCard
+                key={machine.id}
+                machine={machine}
+                job={jobFor(jobs, machine.id)}
+                imageVersion={imageVersion}
+                locale={locale}
+                selected={selection.has(machine.id)}
+                onToggle={() => togglePicked(machine.id)}
+                open={expanded.has(machine.id)}
+                onToggleOpen={() => toggleExpanded(machine.id)}
+                busy={posting}
+                onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
+                onStopUsing={() => void stopUsing([machine.id])}
+              />
+            ))}
+            {inUse.length === 0 && (
+              <li className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700">
+                <p>{S.machines.noneInUse}</p>
+                <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+              </li>
+            )}
+          </ul>
         )}
       </div>
-      {!wide && (
-        <Sheet
-          open={detail !== null}
-          snap="full"
-          onClose={() => setDetailId(null)}
-          title={detail?.alias}
-        >
-          {detailPane}
-        </Sheet>
-      )}
     </div>
   );
 }
 
-/** The one line under a machine's name: its state, and the one detail that matters beside it. */
-function stateLine(reading: MachineReading, machine: MachineInfo, locale: "zh" | "en"): string {
-  const m = S.machines;
-  const word = m.state[reading.kind];
-  const checked =
-    machine.connection !== null
-      ? m.now
-      : machine.status !== null
-        ? formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)
-        : null;
-  switch (reading.kind) {
-    case "behind":
-      return `${word} · ${reading.version}`;
-    case "failed":
-      return `${word} · ${reading.message}`;
-    case "queued":
-      return word;
-    case "working":
-      return word;
-    default:
-      return checked === null ? word : `${word} · ${checked}`;
-  }
-}
-
-/** The six-segment stepper under a working row, and the step it is on. */
-function Stepper({ step, caption }: { step: number; caption: string }) {
-  return (
-    <div className="mt-1.5 w-44 max-w-full">
-      <div className="flex gap-0.5" aria-hidden="true">
-        {MACHINE_PHASES.map((phase, index) => (
-          <span
-            key={phase}
-            className={`h-[3px] flex-1 rounded-sm ${
-              index < step
-                ? toneDot.busy
-                : index === step
-                  ? `${toneDot.busy} animate-pulse`
-                  : "bg-gray-200 dark:bg-gray-700"
-            }`}
-          />
-        ))}
-      </div>
-      <div className={`mt-1 truncate text-xs ${toneInk.busy}`}>{caption}</div>
-    </div>
-  );
-}
-
-/** The ⓘ at a row's end: quiet until the row is hovered or the pane is open. */
-function InfoButton({
-  alias,
-  open,
-  onClick,
-}: {
-  alias: string;
-  open: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={`${S.machines.details}: ${alias}`}
-      aria-pressed={open}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-      className={`rounded-md p-1 transition-opacity ${
-        open
-          ? "text-gray-900 dark:text-gray-100"
-          : "text-gray-400 opacity-60 group-hover:opacity-100 focus-visible:opacity-100 hover:text-gray-700 dark:hover:text-gray-200"
-      }`}
-    >
-      <GlyphIcon d={INFO_PATH} size={ICON_SIZE.rowLead} />
-    </button>
-  );
-}
-
-/** An icon verb: enable (power) and disable (power, struck), for the bar and a card. */
+/** An icon verb: plug (enable) and unplug (disable), for the bar and inside a card. */
 function IconAction({
   label,
   d,
@@ -668,36 +553,95 @@ function IconAction({
   );
 }
 
-/** The card's shell, shared by this server's card and a machine's. */
-const CARD =
-  "group relative flex min-h-[7.5rem] flex-col gap-2 rounded-xl border p-4 text-sm transition-colors";
+/** The chevron that unfolds a card's details. */
+function ExpandButton({
+  alias,
+  open,
+  controls,
+  onClick,
+}: {
+  alias: string;
+  open: boolean;
+  controls: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${S.machines.details}: ${alias}`}
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+    >
+      <ChevronDown
+        size={ICON_SIZE.chevron}
+        className={`transition-transform ${open ? "rotate-180" : ""}`}
+      />
+    </button>
+  );
+}
+
+/** The six-segment stepper under a working card, and the step it is on. */
+function Stepper({ step, caption }: { step: number; caption: string }) {
+  return (
+    <div className="mt-1.5 w-44 max-w-full">
+      <div className="flex gap-0.5" aria-hidden="true">
+        {MACHINE_PHASES.map((phase, index) => (
+          <span
+            key={phase}
+            className={`h-[3px] flex-1 rounded-sm ${
+              index < step
+                ? toneDot.busy
+                : index === step
+                  ? `${toneDot.busy} animate-pulse`
+                  : "bg-gray-200 dark:bg-gray-700"
+            }`}
+          />
+        ))}
+      </div>
+      <div className={`mt-1 truncate text-xs ${toneInk.busy}`}>{caption}</div>
+    </div>
+  );
+}
+
+const CARD = "rounded-xl border px-4 py-3 text-sm transition-colors";
+
+const domId = (machineId: string) => `machine-details-${machineId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
 /** This server's own card: not selectable — it is where the page is served from. */
 function LocalCard({
   machine,
+  locale,
   open,
-  onDetail,
+  onToggleOpen,
 }: {
   machine: MachineInfo;
+  locale: "zh" | "en";
   open: boolean;
-  onDetail: () => void;
+  onToggleOpen: () => void;
 }) {
+  const id = domId(machine.id);
   return (
     <li className={`${CARD} border-gray-200 dark:border-gray-800`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
-          <div className="mt-0.5 truncate text-xs text-gray-500">
-            {S.machines.state.serving}
-            {machine.installed !== null && ` · ${machine.installed.version}`}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
+            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+              {S.machines.localTitle}
+            </span>
           </div>
+          <div className="mt-0.5 truncate text-xs text-gray-500">{S.machines.state.serving}</div>
         </div>
-        <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
-          {S.machines.localTitle}
-        </span>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.muted}`} aria-hidden="true" />
+        <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div className="mt-auto flex items-center justify-end">
-        <InfoButton alias={machine.alias} open={open} onClick={onDetail} />
+      <div id={id} hidden={!open}>
+        <Details machine={machine} job={null} locale={locale} />
       </div>
     </li>
   );
@@ -710,10 +654,11 @@ function MachineCard({
   locale,
   selected,
   onToggle,
-  detailOpen,
-  onDetail,
+  open,
+  onToggleOpen,
   busy,
   onUse,
+  onStopUsing,
 }: {
   machine: MachineInfo;
   job: MachineJob | null;
@@ -721,10 +666,11 @@ function MachineCard({
   locale: "zh" | "en";
   selected: boolean;
   onToggle: () => void;
-  detailOpen: boolean;
-  onDetail: () => void;
+  open: boolean;
+  onToggleOpen: () => void;
   busy: boolean;
-  onUse: () => void;
+  onUse: (replaceProgram: boolean) => void;
+  onStopUsing: () => void;
 }) {
   const reading = readMachine(machine, job, imageVersion);
   const tone = readingTone(reading);
@@ -736,7 +682,10 @@ function MachineCard({
       : step >= 0
         ? S.machines.phase[MACHINE_PHASES[step]!]
         : S.machines.working;
-  const behind = reading.kind === "behind";
+  // The line under the name is grey unless it names a problem: the dot carries the state.
+  const lineInk =
+    tone === "attention" || tone === "danger" ? toneInk[tone] : "text-gray-500 dark:text-gray-400";
+  const id = domId(machine.id);
   return (
     <li
       aria-selected={selected}
@@ -747,96 +696,78 @@ function MachineCard({
           : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
           <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
           {moving ? (
             <Stepper step={step} caption={caption} />
           ) : (
             <div
-              className={`mt-0.5 truncate text-xs ${toneInk[tone]}`}
+              className={`mt-0.5 truncate text-xs ${lineInk}`}
               title={reasonText(reading) ?? undefined}
             >
               {stateLine(reading, machine, locale)}
             </div>
           )}
         </div>
+        {wantsUse(reading) && (
+          <IconAction
+            label={S.machines.use}
+            d={PLUG_PATH}
+            disabled={busy}
+            onClick={() => onUse(false)}
+            emphasis
+          />
+        )}
         <span
-          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
           aria-hidden="true"
         />
+        <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <span
-          className={`${MONO} truncate text-xs ${behind ? "text-gray-400 line-through" : "text-gray-500"}`}
-        >
-          {machine.installed?.version ?? ""}
-        </span>
-        <span className="flex items-center gap-1">
-          {wantsUse(reading) && (
-            <IconAction
-              label={S.machines.use}
-              d={POWER_PATH}
+      <div id={id} hidden={!open} onClick={(event) => event.stopPropagation()}>
+        <Details machine={machine} job={job} locale={locale} />
+        <div className="mt-3 flex flex-wrap gap-2">
+          {reading.kind === "failed" && reading.canReplaceProgram && (
+            <Button
+              size="sm"
+              variant="danger"
               disabled={busy}
-              onClick={onUse}
-              emphasis
-            />
+              title={S.machines.replaceProgramWhy}
+              onClick={() => onUse(true)}
+            >
+              {S.machines.replaceProgram}
+            </Button>
           )}
-          <InfoButton alias={machine.alias} open={detailOpen} onClick={onDetail} />
-        </span>
+          {wantsUse(reading) && (
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => onUse(false)}>
+              <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
+              {S.machines.use}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onStopUsing}>
+            <GlyphIcon d={UNPLUG_PATH} size={ICON_SIZE.inlineGlyph} />
+            {S.machines.stopUsing}
+          </Button>
+        </div>
       </div>
     </li>
   );
 }
 
-/** The record and the job's output for one machine, beside the table or in a sheet. */
-function DetailPane({
+/** The record and the job's output, unfolded inside a card. */
+function Details({
   machine,
   job,
-  imageVersion,
   locale,
-  busy,
-  onClose,
-  onUse,
-  onStopUsing,
 }: {
   machine: MachineInfo;
   job: MachineJob | null;
-  imageVersion: string | null;
   locale: "zh" | "en";
-  busy: boolean;
-  onClose: () => void;
-  onUse: (replaceProgram: boolean) => void;
-  onStopUsing: () => void;
 }) {
-  const reading = readMachine(machine, job, imageVersion);
-  const tone = readingTone(reading);
-  const step = stepIndex(job);
   const m = S.machines;
   return (
-    <div className="space-y-3 p-4 text-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className={`${MONO} truncate text-base font-semibold`}>{machine.alias}</div>
-          <div className={`text-xs ${toneInk[tone]}`}>
-            {machine.local ? m.state.serving : m.state[reading.kind]}
-            {job !== null && step >= 0 && (job.running || job.queued) && (
-              <span className="text-gray-500">
-                {" · "}
-                {m.stepOf(step + 1, MACHINE_PHASES.length)}
-              </span>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={S.common.close}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"
-        >
-          ×
-        </button>
-      </div>
+    <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-800">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         {machine.installed !== null && (
           <>
@@ -868,38 +799,13 @@ function DetailPane({
         )}
       </dl>
       {job !== null && job.log.length > 0 && (
-        <div>
+        <div className="mt-3">
           <div className="mb-1 text-xs text-gray-500">{m.output}</div>
           <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
             {job.log.slice(0, -1).join("\n")}
             {job.log.length > 1 ? "\n" : ""}
             <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>
           </pre>
-        </div>
-      )}
-      {!machine.local && (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {reading.kind === "failed" && reading.canReplaceProgram && (
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              title={m.replaceProgramWhy}
-              onClick={() => onUse(true)}
-            >
-              {m.replaceProgram}
-            </Button>
-          )}
-          {wantsUse(reading) && (
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => onUse(false)}>
-              <GlyphIcon d={POWER_PATH} size={ICON_SIZE.inlineGlyph} />
-              {m.use}
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onStopUsing}>
-            <GlyphIcon d={POWER_OFF_PATH} size={ICON_SIZE.inlineGlyph} />
-            {m.stopUsing}
-          </Button>
         </div>
       )}
     </div>
