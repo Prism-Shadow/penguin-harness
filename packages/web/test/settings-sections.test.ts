@@ -57,6 +57,8 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "sharing",
+      "sandbox",
       "users",
     ]);
   });
@@ -72,7 +74,14 @@ describe("visibleSettingsSections", () => {
   it("strips the desktop shell's window down to what a token session can use", () => {
     // No account page (no password to change — see offersChangePassword), no user
     // management (single-user server).
-    expect(shell.map((s) => s.key)).toEqual(["general", "appearance", "proxy", "uploads"]);
+    expect(shell.map((s) => s.key)).toEqual([
+      "general",
+      "appearance",
+      "proxy",
+      "uploads",
+      "sharing",
+      "sandbox",
+    ]);
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
@@ -84,6 +93,8 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "sharing",
+      "sandbox",
     ]);
   });
 });

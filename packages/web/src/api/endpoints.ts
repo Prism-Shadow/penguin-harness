@@ -143,6 +143,17 @@ import type {
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  WorkflowInfo,
+  WorkflowVersion,
+  AgentPackageResponse,
+  AgentPackagePublishResponse,
+  AgentPackagePreviewResponse,
+  AgentPackageSourceKind,
+  InstalledPluginsResponse,
+  SandboxSettingsResponse,
+  VersionRollbackResponse,
   VersionResponse,
   WorkspaceFilesResponse,
   ContributionsResponse,
@@ -1204,6 +1215,22 @@ export const installOnMachine = (projectId: string, machineId: string) =>
 // Version & self-update ----------------------------------------------------------------
 
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** The harness versions this data root has committed, newest first, and the current one. */
+export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
+/** Push a kept version back (admin); the swap follows the 202. */
+export const rollbackVersion = (id: string) =>
+  apiFetch<VersionRollbackResponse>("/api/version/history/rollback", {
+    method: "POST",
+    body: { id },
+  });
+/** A recorded interface table by hash — the module tree a version was built from. */
+export const getVersionIfacesTable = (hash: string) =>
+  apiFetch<unknown>(`/api/version/history/ifaces/${encodeURIComponent(hash)}`);
+/** What changed between two stored interface tables; either hash may be "none". */
+export const getVersionHistoryDiff = (from: string, to: string) =>
+  apiFetch<VersionHistoryDiffResponse>(
+    `/api/version/history/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
 
 /** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
 export const checkUpdate = (force = false) =>
@@ -1232,3 +1259,101 @@ export const desktopUpdateDownload = () =>
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
+
+// ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
+const workflowsBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workflows`;
+export const getWorkflows = (projectId: string, agentId: string) =>
+  apiFetch<{ workflows: WorkflowInfo[] }>(workflowsBase(projectId, agentId));
+/** Re-import the folder now (the server also does this whenever a file changes). */
+export const reloadWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<{ workflow: WorkflowInfo }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/reload`,
+    { method: "POST", body: {} },
+  );
+export const getWorkflowHistory = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<{ versions: WorkflowVersion[] }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/history`,
+  );
+/** Restore a recorded version's files (state.json is kept) and reload. */
+export const rollbackWorkflow = (
+  projectId: string,
+  agentId: string,
+  workflowId: string,
+  revision: string,
+) =>
+  apiFetch<{ workflow: WorkflowInfo }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
+    { method: "POST", body: { revision } },
+  );
+/** Delete the folder; its recorded versions stay on disk. */
+export const removeWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
+    method: "DELETE",
+  });
+
+// ---- Agent packages (an Agent's definition to a gist and back) ----
+export const getAgentPackage = (projectId: string, agentId: string) =>
+  apiFetch<AgentPackageResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package`,
+  );
+/** Owner only; `gistId` updates that gist instead of creating one. */
+export const publishAgentPackage = (
+  projectId: string,
+  agentId: string,
+  body: { gistId?: string; public: boolean },
+) =>
+  apiFetch<AgentPackagePublishResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package/publish`,
+    { method: "POST", body },
+  );
+/**
+ * Reads and validates a source as a package; writes nothing. A source is a gist link or id,
+ * `npm:<name>[@version]`, a GitHub repository or release URL, `github:o/r[#ref]`, a git URL,
+ * or an http(s) URL of a tarball; `kind` forces one reading.
+ */
+export const previewAgentPackage = (source: string, kind?: AgentPackageSourceKind) =>
+  apiFetch<AgentPackagePreviewResponse>("/api/agent-packages/preview", {
+    method: "POST",
+    body: { source, ...(kind === undefined ? {} : { kind }) },
+  });
+/** Owner only: installs the source as a new Agent of the Project. */
+export const installAgentPackage = (body: {
+  source: string;
+  kind?: AgentPackageSourceKind;
+  projectId: string;
+  agentId: string;
+}) => apiFetch<{ agentId: string }>("/api/agent-packages/install", { method: "POST", body });
+
+// ---- Plugins this deployment installs, and the confinement agent commands run under ----
+export const getInstalledPlugins = () =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed");
+/** Admin only; the list applies at the next server start (plugins load once per process). */
+export const putInstalledPlugins = (plugins: readonly string[]) =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+    method: "PUT",
+    body: { plugins },
+  });
+/**
+ * Admin only: npm-installs the package into the data root, then lists it. Slow — a cold
+ * registry fetch — and listing a package that is not on the machine means nothing, which is
+ * why the two happen together.
+ */
+export const installPlugin = (specifier: string) =>
+  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+    method: "POST",
+    body: { specifier },
+  });
+/** Admin only: drops it from the list and removes the package from the data root. */
+export const uninstallPlugin = (specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(
+    `/api/plugins/installed?specifier=${encodeURIComponent(specifier)}`,
+    { method: "DELETE" },
+  );
+export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
+/** Applies to the next command spawn; no restart. */
+export const adminPutSandbox = (body: {
+  mode: string;
+  network: "none" | null;
+  maskPaths: string[];
+}) => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox", { method: "PUT", body });

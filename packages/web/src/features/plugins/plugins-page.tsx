@@ -37,11 +37,12 @@
  *   which is why the page fetches both lists per Agent. Uninstall takes the plugin apart the
  *   same way: one DELETE per skill and one for the hook package.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type {
   AgentSummary,
   HookItem,
+  InstalledPluginsResponse,
   PluginGroupItem,
   PluginIndexEntry,
   PluginItem,
@@ -195,13 +196,15 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
-import { toneSurface } from "../../lib/tone";
+import { InstalledPluginsDialog } from "./installed-dialog";
+import { toneInk, toneSurface } from "../../lib/tone";
 
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
   const navigate = useNavigate();
   const { locale } = useLocale();
-  const userId = useAuth().user?.userId ?? null;
+  const { user } = useAuth();
+  const userId = user?.userId ?? null;
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
@@ -211,6 +214,9 @@ export function PluginsPage() {
   const [pendingBulk, setPendingBulk] = useState<PluginUpdatePlan | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
 
+  const [installedOpen, setInstalledOpen] = useState(false);
+  /** Bumped when the installed-plugins dialog closes, so the catalogue re-reads what it wrote. */
+  const [installedTick, setInstalledTick] = useState(0);
   const [groups, setGroups] = useState<PluginGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
@@ -450,10 +456,26 @@ export function PluginsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-          {S.plugins.pageTitle}
-          <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
-        </h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            {S.plugins.pageTitle}
+            <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
+          </h1>
+          {/* What this deployment installs and actually runs, as opposed to the library and the
+              registry listed below. */}
+          <Button variant="secondary" size="sm" onClick={() => setInstalledOpen(true)}>
+            <GlyphIcon d={NAV_ICONS.plugins} size={ICON_SIZE.inlineGlyph} />
+            {S.plugins.installedTitle}
+          </Button>
+        </div>
+        <InstalledPluginsDialog
+          open={installedOpen}
+          onClose={() => {
+            setInstalledOpen(false);
+            setInstalledTick((n) => n + 1);
+          }}
+          isAdmin={user?.isAdmin === true}
+        />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
@@ -590,7 +612,7 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
-      <RegistrySection />
+      <RegistrySection isAdmin={user?.isAdmin === true} installedTick={installedTick} />
     </div>
   );
 }
@@ -918,9 +940,46 @@ function InstallRow({
  * Read-only discovery: installing an indexed plugin is an install-side operation
  * (plugins.json under the data root), not a Web App one.
  */
-function RegistrySection() {
+function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; installedTick: number }) {
   const [plugins, setPlugins] = useState<PluginIndexEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What this deployment installs, so a catalogue row can say what it is for this server. */
+  const [installed, setInstalled] = useState<InstalledPluginsResponse | null>(null);
+  /** The row whose install or removal is running: npm is one at a time. */
+  const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
+
+  const reloadInstalled = useCallback(() => {
+    api.getInstalledPlugins().then(setInstalled, () => setInstalled(null));
+  }, []);
+  useEffect(reloadInstalled, [reloadInstalled, installedTick]);
+
+  /**
+   * Installs the package into the data root and then lists it — writing the list alone would
+   * name a package that is not on the machine, which is exactly the state the row would then
+   * have to report as broken. The running process is untouched until it restarts.
+   */
+  const runInstall = async (specifier: string, install: boolean) => {
+    if (pendingSpecifier !== null) return;
+    setPendingSpecifier(specifier);
+    try {
+      setInstalled(
+        install ? await api.installPlugin(specifier) : await api.uninstallPlugin(specifier),
+      );
+      toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setPendingSpecifier(null);
+    }
+  };
+  const specifiers = (installed?.plugins ?? []).map((p) => p.specifier);
+  const stateOf = (name: string): "none" | "pending" | "active" => {
+    const row = installed?.plugins.find((p) => p.specifier === name);
+    if (row === undefined) return "none";
+    return row.active ? "active" : "pending";
+  };
+  /** Shipped with this build: installable without a download, and NOT installed until asked. */
+  const isShipped = (name: string) => installed?.shipped.includes(name) === true;
   /**
    * Sources that answered with nothing. A published index that is down shortens this listing
    * instead of emptying it (the server merges tolerantly), so the section has to say so — a
@@ -971,7 +1030,16 @@ function RegistrySection() {
         <div className="mt-4 flex flex-col gap-2.5">
           {plugins.map((plugin) => (
             // Versions are distinct index entries (typst-style flat index), so the key needs both halves.
-            <RegistryRow key={`${plugin.name}@${plugin.version}`} plugin={plugin} />
+            <RegistryRow
+              key={`${plugin.name}@${plugin.version}`}
+              plugin={plugin}
+              state={stateOf(plugin.name)}
+              shipped={isShipped(plugin.name)}
+              busy={pendingSpecifier === plugin.name}
+              blocked={pendingSpecifier !== null && pendingSpecifier !== plugin.name}
+              onInstall={isAdmin ? () => void runInstall(plugin.name, true) : null}
+              onRemove={isAdmin ? () => void runInstall(plugin.name, false) : null}
+            />
           ))}
         </div>
       )}
@@ -980,54 +1048,125 @@ function RegistrySection() {
 }
 
 /**
- * One index entry as a row: icon tile + specifier/version, description, and a license +
- * keywords metadata row. The whole row is the link — a plugin has one destination, so a
- * separate "open" affordance would only add a second target for the same action.
+ * One index entry as a row: icon tile, specifier/version and description, a license +
+ * keywords metadata line, and a trailing cluster where a list row's chevron would sit — the
+ * app-store shape, so the action reads at a glance instead of riding a full-width footer bar.
+ * The row itself is the link — a plugin has one destination — and the cluster sits BESIDE
+ * that link rather than inside it: a button nested in an anchor is invalid markup, and the
+ * click would have two meanings.
+ *
+ * The cluster says what the deployment's own state is, not what the catalogue holds: not
+ * installed → an Install pill, installed but not loaded → the restart it waits for, running →
+ * a success chip; Remove is the quiet text action under a chip. Installing writes
+ * plugins.json; it does not load anything (see installed-dialog).
  */
-function RegistryRow({ plugin }: { plugin: PluginIndexEntry }) {
-  return (
-    <Link
-      to={`/plugins/registry/${plugin.name}`}
-      className="block rounded-md border border-gray-200 bg-white p-4 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
+function RegistryRow({
+  plugin,
+  state,
+  shipped,
+  busy,
+  blocked,
+  onInstall,
+  onRemove,
+}: {
+  plugin: PluginIndexEntry;
+  state: "none" | "pending" | "active";
+  /** The build carries this one: installing it copies nothing over the network. */
+  shipped: boolean;
+  /** This row's own install or removal is running. */
+  busy: boolean;
+  /** Another row's is: one npm at a time, so the rest are held rather than queued. */
+  blocked: boolean;
+  onInstall: (() => void) | null;
+  onRemove: (() => void) | null;
+}) {
+  const chip =
+    state === "active" ? (
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.success}`}>
+        {S.plugins.stateActive}
+      </span>
+    ) : state === "pending" ? (
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${toneSurface.attention}`}>
+        {S.plugins.installedRestart}
+      </span>
+    ) : null;
+  const shippedTag = shipped ? (
+    <span
+      title={S.plugins.builtinHint}
+      className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
     >
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-          <GlyphIcon d={NAV_ICONS.plugins} size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span
-              className="min-w-0 truncate font-mono text-[13px] font-semibold"
-              title={`${S.pluginRegistry.specifierHint}: ${plugin.name}`}
-            >
-              {plugin.name}
-            </span>
-            <span className="shrink-0 font-mono text-xs text-gray-400">v{plugin.version}</span>
+      {S.plugins.builtin}
+    </span>
+  ) : null;
+  return (
+    <div className="flex items-stretch rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
+      <Link
+        to={`/plugins/registry/${plugin.name}`}
+        className="min-w-0 flex-1 rounded-l-md p-4 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <GlyphIcon d={NAV_ICONS.plugins} size={18} />
           </div>
-          <p
-            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-            title={plugin.description}
-          >
-            {plugin.description}
-          </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span
+                className="min-w-0 truncate font-mono text-[13px] font-semibold"
+                title={`${S.pluginRegistry.specifierHint}: ${plugin.name}`}
+              >
+                {plugin.name}
+              </span>
+              <span className="shrink-0 font-mono text-xs text-gray-400">v{plugin.version}</span>
+            </div>
+            <p
+              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+              title={plugin.description}
+            >
+              {plugin.description}
+            </p>
+          </div>
+          {chip === null && onInstall === null && shippedTag === null && (
+            <GlyphIcon
+              d="M9 6l6 6-6 6"
+              size={14}
+              className="shrink-0 text-gray-300 dark:text-gray-600"
+            />
+          )}
         </div>
-        <GlyphIcon
-          d="M9 6l6 6-6 6"
-          size={14}
-          className="shrink-0 text-gray-300 dark:text-gray-600"
-        />
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
-        {(plugin.keywords ?? []).map((keyword) => (
-          <span
-            key={keyword}
-            className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-          >
-            {keyword}
-          </span>
-        ))}
-      </div>
-    </Link>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
+          {(plugin.keywords ?? []).map((keyword) => (
+            <span
+              key={keyword}
+              className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+            >
+              {keyword}
+            </span>
+          ))}
+        </div>
+      </Link>
+      {(chip !== null || onInstall !== null || shippedTag !== null) && (
+        <div className="flex shrink-0 flex-col items-end justify-center gap-1 py-3 pr-4 pl-1">
+          {state === "none" && shippedTag}
+          {state === "none"
+            ? onInstall !== null && (
+                <Button variant="primary" size="sm" disabled={busy || blocked} onClick={onInstall}>
+                  {busy ? S.plugins.installing : S.plugins.install}
+                </Button>
+              )
+            : chip}
+          {state !== "none" && onRemove !== null && (
+            <button
+              type="button"
+              disabled={busy || blocked}
+              onClick={onRemove}
+              className="text-[11px] text-gray-400 underline-offset-2 transition-colors duration-150 hover:text-red-600 hover:underline disabled:opacity-60 dark:text-gray-500 dark:hover:text-red-400"
+            >
+              {S.plugins.uninstall}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

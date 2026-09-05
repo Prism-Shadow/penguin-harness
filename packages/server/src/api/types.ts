@@ -24,7 +24,15 @@ import type {
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
-import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
+import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
+import type { IfacesDiff } from "../hmr/ifaces-diff.js";
+import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
+import type {
+  PackageManifest as PackageManifestType,
+  PublishedGist as PublishedGistType,
+  PublishMethod as PublishMethodType,
+} from "../mechanisms/packages.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -216,6 +224,11 @@ export interface ServerSettings {
    * image and the JSON framing), which is why raising it needs no separate setting.
    */
   attachmentTotalMb: number;
+  /**
+   * Whether a GitHub token is stored for publishing Agent packages as gists. The token
+   * itself never leaves the server: this flag is all any client is told.
+   */
+  githubTokenSet: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -226,6 +239,8 @@ export interface ServerSettingsResponse {
 export interface ServerSettingsUpdateRequest {
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
+  /** GitHub token with the `gist` scope, used to publish Agent packages; "" clears it. */
+  githubToken?: string;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -2289,7 +2304,11 @@ export type ScheduleServerEvent =
       agentId: string;
       name: string;
       sessionId: string;
-    };
+    }
+  /** A workflow of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  | { type: "workflow_updated"; projectId: string; agentId: string; workflow: WorkflowInfo }
+  /** A workflow's folder is gone — removed from the Web App or deleted on disk. */
+  | { type: "workflow_removed"; projectId: string; agentId: string; workflowId: string };
 
 // ---------------------------------------------------------------------------
 // Trace browsing and performance analysis
@@ -3229,6 +3248,35 @@ export interface LanguageIndexResponse {
  */
 export type VersionResponse = VersionReport;
 
+export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
+export type {
+  AgentPackage,
+  PackageFile,
+  PackageManifest,
+  PackagePreview,
+  PublishedGist,
+  PublishMethod,
+} from "../mechanisms/packages.js";
+export type {
+  WorkflowInfo,
+  WorkflowVersion,
+  WorkflowRequest,
+  WorkflowResponse,
+} from "../mechanisms/workflows.js";
+
+/** GET /api/version/history: the harness versions this data root has committed, newest first. */
+export type VersionHistoryResponse = HarnessHistory;
+
+/** POST /api/version/history/rollback `{ id }`: the push back has started; the swap follows. */
+export interface VersionRollbackResponse {
+  started: true;
+  id: string;
+}
+
+/** GET /api/version/history/diff?from=&to=: what changed between two stored interface tables. */
+export type VersionHistoryDiffResponse = IfacesDiff;
+export type { IfaceChange, IfacesDiff, MemberChange, ModuleChange } from "../hmr/ifaces-diff.js";
+
 /**
  * GET /api/version/update-check: newest published release vs the running version.
  * Always HTTP 200 (fail-soft): a lookup failure sets `error` and leaves `latestVersion`
@@ -3525,4 +3573,80 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** GET /api/projects/:p/agents/:a/package — what publishing would send. */
+export interface AgentPackageResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  /** Whether the server has any GitHub identity; false = the publish button explains why not. */
+  canPublish: boolean;
+  /** Which identity it would publish with: the server machine's `gh` login, or a stored token. */
+  publishVia: PublishMethodType;
+  /** The gist this Agent was published to before — a republish updates it. */
+  publishedGist: PublishedGistType | null;
+}
+
+/** POST …/package/publish — the gist it landed in. */
+export interface AgentPackagePublishResponse {
+  gistId: string;
+  url: string;
+  files: number;
+  bytes: number;
+  /** The gist already held exactly this: nothing was written, and no API call was spent. */
+  unchanged: boolean;
+}
+
+/** How an Agent package source is read (see the server's packages/sources.ts). */
+export type AgentPackageSourceKind = "gist" | "npm" | "github-release" | "github" | "git" | "url";
+
+/** POST /api/agent-packages/preview — a source read and validated, nothing written. */
+export interface AgentPackagePreviewResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  /** The resolved origin, for display: `npm:<name>@<version>`, `github:o/r#ref`, a gist URL, … */
+  source: string;
+  kind: AgentPackageSourceKind;
+  /** The manifest's Agent id, or the source's name when the source carries no manifest. */
+  suggestedId: string;
+}
+
+/** One plugin `<root>/plugins.json` lists (GET /api/plugins/installed). */
+export interface InstalledPlugin {
+  /** The package specifier as written in the file. */
+  specifier: string;
+  /** Whether the modules this package declares are all present in the running process. */
+  active: boolean;
+  /**
+   * Where the package came from: shipped with the build (a hot push's assets, or the
+   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
+   * plugin — being shipped is not being installed.
+   */
+  builtin: boolean;
+  /** Module names the package declares it adds. */
+  modules: string[];
+  /** Node names the package declares it stands in for. */
+  replaces: string[];
+  /** Why the package could not be read at all (unresolvable, not a plugin package). */
+  error?: string;
+}
+
+export interface InstalledPluginsResponse {
+  plugins: InstalledPlugin[];
+  /**
+   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
+   * `plugins/`): installable without a download, and not installed until listed.
+   */
+  shipped: string[];
+  /** The file the list lives in, named for the page that explains where to edit it by hand. */
+  file: string;
+  /** A listed plugin is not running: plugins load once per process, so a restart applies it. */
+  restartPending: boolean;
+}
+
+/** GET|PUT /api/admin/sandbox — the confinement settings and what can enforce them. */
+export interface SandboxSettingsResponse {
+  settings: SandboxSettingsType;
+  /** Mounted backends and the isolation dimensions each implements; empty = nothing enforces. */
+  backends: Array<{ name: string; dimensions: string[] }>;
 }

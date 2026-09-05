@@ -25,6 +25,7 @@ import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { versionRoutes } from "../http/routes/version.js";
 import type { Clock, Config, Lifecycle } from "../hmr/capabilities.js";
 import type { UpdateJob } from "./update-job.js";
+import type { HarnessHistoryIface } from "./harness-history.js";
 
 /** Repository the released artifacts come from (same slug as cli/update.ts's REPO_SLUG). */
 const REPO_SLUG = "Prism-Shadow/penguin-harness";
@@ -167,6 +168,7 @@ export class VersionRoutes {
   @Use() private readonly updateCheck!: UpdateCheck;
   @Use() private readonly updateJob!: UpdateJob;
   @Use() private readonly lifecycle!: Lifecycle;
+  @Use() private readonly history!: HarnessHistoryIface;
   @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = versionRoutes({
@@ -174,6 +176,7 @@ export class VersionRoutes {
       updateCheck: this.updateCheck,
       updateJob: this.updateJob,
       lifecycle: this.lifecycle,
+      history: this.history,
     });
   }
 }

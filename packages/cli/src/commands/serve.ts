@@ -3,7 +3,7 @@
  *
  *   penguin server [--port <port>] [--host <host>]
  *   penguin server reset-admin-password        (subcommand, see reset-password.ts)
- *   penguin web [--port <port>] [--host <host>] [--no-open]
+ *   penguin web [--port <port>] [--host <host>] [--no-open] [--app <project>/<agent>/<workflow>]
  *
  * Both are entry points into the same service process: after setting PORT / HOST, it
  * dynamically imports `@prismshadow/penguin-server` (whose entry point handles dotenv
@@ -84,6 +84,21 @@ export function browserCommand(platform: string, url: string): { command: string
 export function browserUrl(host: string, port: number): string {
   const target = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
   return `http://${target}:${port}/`;
+}
+
+/**
+ * `--app <project>/<agent>/<workflow>` → the path of that workflow's page as the whole app
+ * (the Web App's /app route: no sidebar, no chat; the command palette is the way out).
+ * Exactly three non-empty segments; anything else is a usage error. Exported for unit tests.
+ */
+export function appPagePath(spec: string): string {
+  const parts = spec.split("/");
+  if (parts.length !== 3 || parts.some((p) => p === "")) {
+    throw new Error(
+      `Invalid --app "${spec}". Expected <project>/<agent>/<workflow>, e.g. default_project/default_agent/todo.`,
+    );
+  }
+  return `app/${parts.map(encodeURIComponent).join("/")}`;
 }
 
 /**
@@ -355,7 +370,10 @@ export function registerServeCommands(program: Command, t: Messages): void {
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .option("--no-open", t.serve.noOpen)
-    .action(async (opts: { port?: string; host?: string; open: boolean }) => {
+    .option("--app <spec>", t.serve.app)
+    .action(async (opts: { port?: string; host?: string; open: boolean; app?: string }) => {
+      // Resolved first so a malformed spec fails before anything starts.
+      const page = opts.app === undefined ? "" : appPagePath(opts.app);
       const existing = await existingInstanceUrl();
       if (existing !== null) {
         process.stdout.write(t.webAlreadyRunning(existing) + "\n");
@@ -363,7 +381,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
         // no admin password yet prints a first-login LINK, and that link's token lives only
         // in the running server's memory — this terminal cannot reproduce it, and should
         // not. Its own console has it; restarting reissues it.
-        if (opts.open) openBrowser(existing);
+        if (opts.open) openBrowser(existing + page);
         return;
       }
       const { host, port } = await startServer(opts, t);
@@ -375,7 +393,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
         );
         return;
       }
-      process.stdout.write(`${t.webReady(url)}\n`);
-      if (opts.open) openBrowser(url);
+      process.stdout.write(`${t.webReady(url + page)}\n`);
+      if (opts.open) openBrowser(url + page);
     });
 }

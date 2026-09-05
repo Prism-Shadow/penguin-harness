@@ -22,7 +22,17 @@
 import { versionReport } from "../../version-report.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { RestartResponse, UpdateJobStatus, VersionResponse } from "../../api/types.js";
+import type {
+  RestartResponse,
+  UpdateJobStatus,
+  UpdateRunResponse,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  VersionResponse,
+  VersionRollbackResponse,
+} from "../../api/types.js";
+import { diffIfaces } from "../../hmr/ifaces-diff.js";
+import type { HarnessHistoryIface } from "../../services/harness-history.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
@@ -38,6 +48,7 @@ export interface VersionRouteDeps {
   updateJob: UpdateJob;
   /** Whether a supervisor relaunches this process, and the restart trigger the update flow pulls. */
   lifecycle: Lifecycle;
+  history: HarnessHistoryIface;
 }
 
 // The classifier lives with the job now; re-exported so its unit tests keep their import.
@@ -57,6 +68,41 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
 
   app.get("/", async (c) => {
     return c.json((await versionReport(deps.config.root)) satisfies VersionResponse);
+  });
+
+  /** The versions that have booted on this root, newest first, with the runtime's current commit. */
+  app.get("/history", async (c) => {
+    return c.json((await deps.history.list()) satisfies VersionHistoryResponse);
+  });
+
+  /** A recorded interface table by hash — what a version was built from. */
+  app.get("/history/ifaces/:hash", async (c) => {
+    const table = await deps.history.table(c.req.param("hash"));
+    if (table === null) throw new HttpError(404, "not_found", "No interface table with that hash.");
+    return c.json(table);
+  });
+
+  /** What changed between two recorded tables (`from` / `to` are hashes; either may be "none"). */
+  app.get("/history/diff", async (c) => {
+    const load = async (q: string | undefined) =>
+      q === undefined || q === "none" ? null : await deps.history.table(q);
+    const [from, to] = await Promise.all([load(c.req.query("from")), load(c.req.query("to"))]);
+    const asTable = (t: unknown) => t as Parameters<typeof diffIfaces>[0];
+    return c.json(diffIfaces(asTable(from), asTable(to)) satisfies VersionHistoryDiffResponse);
+  });
+
+  /** Pushes a kept version back through the runtime (admin). Answers before the swap: this platform is what gets replaced. */
+  app.post("/history/rollback", async (c) => {
+    if (!c.get("user").isAdmin) throw new HttpError(403, "forbidden", "Rollback is admin-only.");
+    const { id } = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id))
+      throw new HttpError(400, "bad_request", "`id` names a recorded version.");
+    const entries = (await deps.history.list()).entries;
+    const target = entries.find((e) => e.id === id);
+    if (target === undefined || !target.rollbackable)
+      throw new HttpError(404, "not_found", "No kept artifacts for that version.");
+    void deps.history.rollback(id).catch(() => undefined);
+    return c.json({ started: true, id } satisfies VersionRollbackResponse, 202);
   });
 
   app.get("/update-check", async (c) => {

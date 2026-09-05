@@ -45,6 +45,9 @@ files:
   # they arrive as collected dependencies, at the app root's node_modules.
   - dist/node_modules/**/*
   - bin/**/*
+  # The builtin plugins (scripts/build-assets.mjs → build-plugins.mjs): a second node_modules
+  # that must ship, named for the same reason dist/node_modules is above.
+  - plugins/**/*
   - package.json
   - from: ../web/dist
     to: web-dist

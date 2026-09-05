@@ -30,6 +30,8 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { buildBuiltinPlugins, prefixLayout } from "./build-plugins.mjs";
+import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,6 +64,7 @@ function usage(problem) {
   console.error(
     `${problem}\n\n` +
       "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build]\n" +
+      "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
       "  <url>   a full origin, when the target is not reached over loopback\n",
   );
@@ -72,8 +75,15 @@ const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
 const target = args.find((a) => !a.startsWith("--"));
 if (target === undefined) usage("[deploy] no target given.");
+// Two credentials, either one: the admin password (exchanged for a cookie), or the
+// runtime's own local API token (`<root>/api-token`, admin-equivalent — see
+// server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
-if (!ADMIN_PASSWORD) usage("[deploy] PENGUIN_ADMIN_PASSWORD is not set.");
+const API_TOKEN = process.env.PENGUIN_API_TOKEN;
+if (!ADMIN_PASSWORD && !API_TOKEN)
+  usage(
+    "[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).",
+  );
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
 const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
@@ -122,6 +132,12 @@ function request(urlStr, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
+/** The request headers that authenticate as admin: a Bearer token, or a cookie from a password login. */
+async function authHeaders() {
+  if (API_TOKEN) return { authorization: `Bearer ${API_TOKEN}` };
+  return { cookie: await login() };
+}
+
 /** Signs in as `admin` and returns the session cookie. */
 async function login() {
   const res = await request(`${baseUrl}/api/auth/login`, {
@@ -163,6 +179,12 @@ async function compileEntry(entry, outfile) {
     bundle: true,
     format: "esm",
     platform: "node",
+    // Class decorators (@Module / @Component) are TypeScript syntax Node cannot run: the
+    // target makes esbuild lower them, instead of passing them through as esnext.
+    target: "es2022",
+    // The plugin catalogue inlines each backend's own README.md as a string (the server's
+    // plugin/builtin-readmes.ts); its bundler config carries the same loader.
+    loader: { ".md": "text" },
     outfile,
     logLevel: "silent",
     banner: { js: ESM_CJS_BANNER },
@@ -240,6 +262,16 @@ async function readNativeAssets() {
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
   }
+  // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): bundled self-contained,
+  // from cache when unchanged, so a push carries the plugins of the revision it was built from.
+  const built = await buildBuiltinPlugins({ log });
+  for (const [rel, source] of prefixLayout(built)) {
+    files[`plugins/${rel}`] =
+      source.text !== undefined
+        ? Buffer.from(source.text).toString("base64")
+        : (await fsp.readFile(source.path)).toString("base64");
+  }
   return { files, exec };
 }
 
@@ -264,13 +296,43 @@ async function main() {
   const files = await readWebManifest();
   const assets = await readNativeAssets();
   const source = pushSource();
+  const auth = await authHeaders();
+
+  // Content-addressed transfer: name every asset by its sha256, ask the target which of
+  // those it lacks, and send only the missing blobs. A target without the probe (an older
+  // runtime) answers 404 and gets every file inline, the way pushes always worked.
+  const manifest = {};
+  const bySha = {};
+  for (const [rel, b64] of Object.entries(assets.files)) {
+    const sha = createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex");
+    manifest[rel] = { sha };
+    bySha[sha] = b64;
+  }
+  const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...auth },
+    body: JSON.stringify({ hashes: Object.keys(bySha) }),
+  });
+  let assetsPayload;
+  let transferNote;
+  if (probe.status === 200) {
+    const missing = new Set(JSON.parse(probe.body.toString("utf8")).missing ?? []);
+    const blobs = {};
+    for (const sha of missing) if (bySha[sha] !== undefined) blobs[sha] = bySha[sha];
+    assetsPayload = { manifest, blobs, exec: assets.exec };
+    transferNote = `${Object.keys(blobs).length} of ${Object.keys(bySha).length} asset blobs new to the target`;
+  } else {
+    assetsPayload = assets;
+    transferNote = `${Object.keys(assets.files).length} assets inline (target has no probe)`;
+  }
+
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
         platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
         web: { files },
-        assets,
+        assets: assetsPayload,
         ...(source === null ? {} : { source }),
       }),
     ),
@@ -278,13 +340,13 @@ async function main() {
   if (source !== null) log(`provenance: ${source.revision}`);
   log(
     `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
+    `pushing ${Object.keys(files).length} web files + ${transferNote} + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );
 
-  const cookie = await login();
   const started = Date.now();
   const res = await request(`${baseUrl}/api/hmr/upgrade`, {
     method: "POST",
-    headers: { "content-type": "application/gzip", cookie },
+    headers: { "content-type": "application/gzip", ...auth },
     body: gz,
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
