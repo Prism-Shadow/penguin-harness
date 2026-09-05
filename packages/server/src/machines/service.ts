@@ -302,7 +302,13 @@ export class MachinesService {
       id: LOCAL_MACHINE_ID,
       alias: os.hostname(),
       machineId: this.#machineId,
-      installed: { version: VERSION, at: lock?.startedAt ?? this.#effects.now().toISOString() },
+      // The build this process carries, not the package's release number: a hot-pushed
+      // server runs `0.2.9+hmr.<hash>`, and that is what it would install elsewhere, so it
+      // is what "this server" must say of itself — or the fleet reads as behind the wrong thing.
+      installed: {
+        version: this.imageVersion() ?? VERSION,
+        at: lock?.startedAt ?? this.#effects.now().toISOString(),
+      },
       local: true,
       connection: null,
       api: null,
