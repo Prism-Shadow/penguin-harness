@@ -37,7 +37,6 @@ import {
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_DESKTOP_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   type Replacements,
@@ -100,7 +99,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
 import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
@@ -187,8 +185,6 @@ export interface ServerBoot {
   channels: ChannelHub;
   hmr: HmrHost;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   tree: ModuleTree;
 }
 
@@ -255,8 +251,6 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
-  const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -275,7 +269,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, lifecycle, tree };
+  return { config, db, channels, hmr, desktop, tree };
 }
 
 /** Assembles the Hono app (does not listen on a port). */

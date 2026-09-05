@@ -24,7 +24,6 @@ import {
   PENGUIN_FAMILY,
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
@@ -320,7 +319,6 @@ describe("runtime capability handshake", () => {
     r.register(RUNTIME_CHANNELS_RESOURCE_ID, carrying("channels"));
     r.register(RUNTIME_PROXY_RESOURCE_ID, () => {});
     r.register(RUNTIME_HMR_RESOURCE_ID, carrying("hmr"));
-    r.register(RUNTIME_LIFECYCLE_RESOURCE_ID, carrying("lifecycle"));
   }
 
   it("refuses when the runtime publishes no descriptor (a runtime older than the handshake)", () => {
