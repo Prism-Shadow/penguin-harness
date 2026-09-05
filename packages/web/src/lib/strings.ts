@@ -65,7 +65,7 @@ export const zh = {
     /** Bringing a machine's server up and holding a tunnel to it. */
     replaceProgram: "在那边安装程序并重启",
     replaceProgramWhy:
-      "那台机器上的 PenguinHarness 接不了这次更新——本服务端推送过的东西还没到它那里。安装会把一份放上去并重启它的服务，正在用它的人会被打断。",
+      "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
     restart: "重启",
     restarting: "重启中\u2026",
     connect: "连接",
