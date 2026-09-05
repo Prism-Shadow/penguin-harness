@@ -32,6 +32,7 @@ import {
   mcpConnectBegin,
   mcpConnectEnd,
   partialText,
+  partialThinking,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -2084,6 +2085,97 @@ describe("compaction summary streaming (issue #290)", () => {
     const begin = types.indexOf("compaction_begin");
     const end = types.indexOf("compaction_end");
     expect(streamedTexts(out.slice(begin + 1, end))).toEqual(["[summary]whole[/summary]"]);
+  });
+
+  /** The thinking messages the compaction span pushed to the stream, in order. */
+  const streamedThinking = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .filter((m) => {
+        const t = (m.payload as { type?: string }).type;
+        return t === "partial_thinking" || t === "thinking";
+      })
+      .map((m) => (m.payload as { thinking?: string }).thinking ?? "");
+
+  it("streams the request's partial_thinking ahead of the summary the same way; the complete thinking stays off the stream", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            partialThinking("start"),
+            partialThinking("delta", "what matters is "),
+            partialThinking("delta", "the plan"),
+            partialThinking("stop"),
+            thinkingMessage("what matters is the plan"),
+            partialText("start"),
+            partialText("delta", "[summary]the plan[/summary]"),
+            partialText("stop"),
+            assistantText("[summary]the plan[/summary]"),
+            usage(160, 310),
+          ],
+        },
+      ],
+      "llm1",
+    );
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_stream_thinking" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+    const oldPath = trace.currentPath();
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    const types = payloadTypes(out);
+    const begin = types.indexOf("compaction_begin");
+    const end = types.indexOf("compaction_end");
+    const span = out.slice(begin + 1, end);
+    const spanTypes = payloadTypes(span);
+    // Every phase of the thinking fragment rides the stream, in front of the summary's own
+    // fragments, and the complete thinking that follows does not re-emit.
+    expect(spanTypes.filter((t) => t === "partial_thinking")).toHaveLength(4);
+    expect(spanTypes).not.toContain("thinking");
+    expect(spanTypes.indexOf("partial_thinking")).toBeLessThan(spanTypes.indexOf("partial_text"));
+    expect(streamedThinking(span)).toEqual(["", "what matters is ", "the plan", ""]);
+    expect(streamedTexts(span)).toEqual(["", "[summary]the plan[/summary]", ""]);
+    // The old Trace records the complete thinking as before; partials never persist.
+    const recorded = await readTrace(oldPath);
+    expect(streamedThinking(recorded)).toContain("what matters is the plan");
+    expect(payloadTypes(recorded)).not.toContain("partial_thinking");
+  });
+
+  it("an LLM that yields only complete thinking streams that thinking instead; a blank fidelity-only thinking stays off the stream", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            thinkingMessage("whole thought"),
+            thinkingMessage("", "completed", { signature: "opaque" }),
+            assistantText("[summary]whole[/summary]"),
+            usage(160, 310),
+          ],
+        },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    const types = payloadTypes(out);
+    const begin = types.indexOf("compaction_begin");
+    const end = types.indexOf("compaction_end");
+    expect(streamedThinking(out.slice(begin + 1, end))).toEqual(["whole thought"]);
   });
 });
 

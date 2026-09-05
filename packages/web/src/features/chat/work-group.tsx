@@ -1,10 +1,11 @@
 /**
  * "Reasoning & Tools" group: collapses a run of consecutive thinking +
  * tool-call items into one aggregated group.
- * Expand policy: the group defaults to expanded while it's the last segment of the message
- * stream (the current turn still in progress), and defaults to collapsed once later messages
- * push it away from the end (turn finished); a manual toggle by the user is respected afterward.
- * A pending approval **forces it open** — otherwise the approval buttons would be unreachable.
+ * Expand policy, two layers deep: the group opens while it is running and closes itself once
+ * it is done, and the thinking/tool rows inside it are appended one at a time and stay closed
+ * — the reader is shown that a step happened and how long it took, not its contents, until
+ * they ask. A manual toggle by the user is respected afterward. A pending approval **forces it
+ * open** — otherwise the approval buttons would be unreachable.
  *
  * Hierarchy: the group header is **a distinct title bar** (solid light-gray background + small
  * uppercase status text), and the thinking/tool-call rows inside the group sit on the white
@@ -76,18 +77,20 @@ export function WorkGroup({
   // Last segment + Task running = the model might still call another tool → show Running (even if there's no active item right now).
   const active = (isLast && ctx.taskRunning) || itemsRunning;
   const pending = hasPendingApproval(items, ctx);
-  const [open, setOpen] = useState(isLast);
+  const [open, setOpen] = useState(active);
   const userToggled = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Before any manual toggle, follow "is last segment": expanded while in progress (last
-  // segment), collapsed once pushed away from the end by later messages (turn finished).
-  // Deliberately not driven by per-item active — there can be a brief gap with no active item
-  // between two steps within a turn, and collapsing on that basis would flicker on every step
-  // and lose the internal expanded state.
+  // Before any manual toggle, follow the header's own Running/Done state: expanded while the
+  // group is working, collapsed the moment it is done — whether that is later messages pushing
+  // it away from the end mid-turn, or the Task ending on it. Deliberately `active` and not
+  // per-item `itemsRunning`: there can be a brief gap with no active item between two steps
+  // within a turn, and collapsing on that basis would flicker on every step and lose the
+  // internal expanded state — the "last segment + Task running" half of `active` bridges those
+  // gaps, so the group closes once and stays closed.
   useEffect(() => {
-    if (!userToggled.current) setOpen(isLast);
-  }, [isLast]);
+    if (!userToggled.current) setOpen(active);
+  }, [active]);
 
   // A pending approval must stay actionable: expand the group body regardless of collapsed state (the approval row lives inside it).
   const shown = open || pending;
