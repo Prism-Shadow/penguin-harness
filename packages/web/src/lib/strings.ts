@@ -39,8 +39,12 @@ export const zh = {
     pageTitle: "机器",
     pageDesc:
       "本项目跑 agent 的机器。「使用」一台，服务端会自己装好程序、启动、连上并保持连接；「停用」则放开它。",
-    /** Version line under the title; `version` is what would be pushed. */
-    imageVersion: (version: string) => `将安装的版本：${version}`,
+    /** The version strip: what this server would install, and whether the machines match it. */
+    imageVersion: (version: string) => `本服务端版本：${version}`,
+    behindCount: (count: number) => `${count} 台机器不是这个版本。`,
+    allCurrent: "在用的机器都是这个版本。",
+    /** One tap brings every machine behind this build forward (and reconnects it). */
+    updateAll: (count: number) => `全部更新（${count}）`,
     noImage:
       "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
     empty: "~/.ssh/config 中没有可添加的主机。",
