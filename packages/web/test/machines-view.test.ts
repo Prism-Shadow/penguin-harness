@@ -1,6 +1,5 @@
 /**
- * machines-view unit tests: the one sentence a Machines row says, and what the batch selects
- * by default.
+ * machines-view unit tests: the one reading a Machines card gives, and the machines in use.
  *
  * The reading's precedence is the point. The server's job for a machine is the freshest
  * word; a held connection settles "ready" over an older failed job, since a re-hold that
@@ -12,7 +11,6 @@ import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/pen
 import {
   anyJobPending,
   behindMachines,
-  defaultSelection,
   installedMachines,
   jobFor,
   localMachine,
@@ -227,15 +225,6 @@ describe("behindMachines", () => {
     const state = response([], { machines: [here(), fresh("spare"), carrying("nas"), old] });
     expect(behindMachines(state).map((machine) => machine.id)).toEqual(["ssh:old"]);
     expect(behindMachines({ ...state, imageVersion: null })).toEqual([]);
-  });
-});
-
-describe("the batch's default selection", () => {
-  it("ticks every machine in use and nothing else", () => {
-    const state = response([], {
-      machines: [here(), fresh("spare"), carrying("nas"), carrying("build-box")],
-    });
-    expect([...defaultSelection(state)].sort()).toEqual(["ssh:build-box", "ssh:nas"]);
   });
 });
 
