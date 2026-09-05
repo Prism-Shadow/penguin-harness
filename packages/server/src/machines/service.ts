@@ -30,6 +30,7 @@ import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   MachineInfo,
   MachineJob,
+  MachinePhase,
   MachineServerStatus,
   MachineUseRefusal,
 } from "../api/types.js";
@@ -70,6 +71,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
+
+/** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
+type Say = (line: string, phase?: MachinePhase) => void;
 
 /** How often a machine recorded as held, and not held now, is tried again. */
 const KEEP_HELD_MS = 60_000;
@@ -165,7 +169,7 @@ export class MachinesService {
   readonly #queue: Array<{
     job: MachineJob;
     opts: { offerReplaceProgram: boolean };
-    work: (say: (line: string) => void) => Promise<MachineJob["result"]>;
+    work: (say: Say) => Promise<MachineJob["result"]>;
   }> = [];
   /** The latest job per machine — queued, running or finished — for the page's rows. */
   readonly #jobs = new Map<string, MachineJob>();
@@ -572,7 +576,7 @@ export class MachinesService {
      * initiative: it stops a server other people may be using.
      */
     opts: { offerReplaceProgram: boolean },
-    work: (say: (line: string) => void) => Promise<MachineJob["result"]>,
+    work: (say: Say) => Promise<MachineJob["result"]>,
   ): void {
     const job: MachineJob = {
       kind,
@@ -580,6 +584,7 @@ export class MachinesService {
       alias: machine.alias,
       queued: true,
       running: false,
+      phase: null,
       log: [],
       result: null,
     };
@@ -602,8 +607,9 @@ export class MachinesService {
     job.queued = false;
     job.running = true;
     this.#job = job;
-    const say = (line: string) => {
+    const say: Say = (line, phase) => {
       job.log.push(line);
+      if (phase !== undefined) job.phase = phase;
     };
     try {
       this.#busy.add(job.machineId);
@@ -674,11 +680,11 @@ export class MachinesService {
     machine: MachineInfo,
     plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
     replaceProgram: boolean,
-    say: (line: string) => void,
+    say: Say,
   ): Promise<MachineJob["result"]> {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
-    say(`Installing ${plan.version} on ${machineIdentity(target.alias, target.user)}…`);
+    say(`Installing ${plan.version} on ${machineIdentity(target.alias, target.user)}…`, "check");
     // Only the machine can say whether this alias is this host under another name.
     // Unreachable is not a refusal — a host with nothing installed yet answers exactly
     // that — this server's own id is.
@@ -692,6 +698,7 @@ export class MachinesService {
           "That alias reaches this very machine — it answered with this server's own id. A server does not push this build over the program directory it is running from.",
       };
     }
+    say("Putting the program there…", "install");
     const outcome = await this.#effects.install({
       target,
       plan,
@@ -720,7 +727,7 @@ export class MachinesService {
       // version it is not running. The update channel is what makes the two agree, and it
       // asks the machine itself, so a runtime that cannot claim this platform refuses in
       // words rather than restarting into a silent fallback.
-      say("Handing this build to its own update channel…");
+      say("Handing this build to its own update channel…", "handover");
       const pushed = await this.#handOverBuild(address, target, say);
       if (pushed.kind === "no-server") {
         say("Its server is not running; this build will be used when it next starts.");
@@ -822,7 +829,7 @@ export class MachinesService {
     address: string,
     plan: NonNullable<ReturnType<MachinesEffects["resolvePlan"]>>,
     replaceProgram: boolean,
-    say: (line: string) => void,
+    say: Say,
   ): Promise<MachineJob["result"]> {
     // Read at run time, not at queue time: a batch's later rows see what the earlier ones did.
     const machine = this.#allMachines().find((entry) => entry.id === address);
@@ -835,7 +842,7 @@ export class MachinesService {
       const installed = await this.#installWork(projectId, machine, plan, replaceProgram, say);
       if (installed !== null && !installed.ok) return installed;
     } else {
-      say(`Already on ${plan.version}.`);
+      say(`Already on ${plan.version}.`, "check");
       // The Project that asked is the Project that uses it, install or no install.
       this.#setMember(projectId, address, true);
     }
@@ -884,7 +891,7 @@ export class MachinesService {
     return { ok: true };
   }
 
-  async #connect(machine: MachineInfo, say: (line: string) => void): Promise<MachineJob["result"]> {
+  async #connect(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
 
@@ -893,7 +900,7 @@ export class MachinesService {
     // dead server — and every caller that then found the machine silent asked for another
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
     // that failed, or pick up a new key) now costs one probe and stays honest.
-    say("Asking what is running there…");
+    say("Asking what is running there…", "check");
     const probed = await this.#probe(address, target);
     this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
@@ -936,13 +943,14 @@ export class MachinesService {
       this.#recordProbe(address, await this.#probe(address, target));
     }
 
-    say("Opening the connection…");
+    say("Opening the connection…", "connect");
     const connection = await this.#connection(address, target);
     if (!connection.ok) return { ok: false, step: "connect", message: connection.detail };
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model against THAT machine's config, so a
     // machine without our credentials is connected and unusable.
+    say("Handing over the Model config…", "sync");
     await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
     return { ok: true, connected: true };
   }
@@ -1003,7 +1011,7 @@ export class MachinesService {
     address: string,
     target: RemoteTarget,
     port: number,
-    say: (line: string) => void,
+    say: Say,
     projects: string[],
   ): Promise<void> {
     if (projects.length === 0) {
@@ -1085,11 +1093,7 @@ export class MachinesService {
   }
 
   /** Hands a machine this server's pushed build, through the connection held to it. */
-  async #handOverBuild(
-    address: string,
-    target: RemoteTarget,
-    say: (line: string) => void,
-  ): Promise<UpgradeOutcome> {
+  async #handOverBuild(address: string, target: RemoteTarget, say: Say): Promise<UpgradeOutcome> {
     const probed = await this.#effects.probe(
       target,
       this.#layout,
@@ -1130,7 +1134,7 @@ export class MachinesService {
   async #restartServer(
     address: string,
     target: RemoteTarget,
-    say: (line: string) => void,
+    say: Say,
   ): Promise<{ ok: true; port: number } | { ok: false; detail: string }> {
     const before = await this.#effects.probe(
       target,
@@ -1143,7 +1147,7 @@ export class MachinesService {
       return { ok: false, detail: "no server is running on that machine." };
     }
     const port = before.state.port;
-    say(`Stopping its server on port ${port}…`);
+    say(`Stopping its server on port ${port}…`, "restart");
     const stopped = await this.#effects.stopServer(target);
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
     // Its sessions died with it. The connection did not: it is an ssh session to the HOST,
@@ -1189,7 +1193,7 @@ export class MachinesService {
   async #restartAfterInstall(
     address: string,
     target: RemoteTarget,
-    say: (line: string) => void,
+    say: Say,
   ): Promise<{ ok: true } | { ok: false; detail: string }> {
     const before = await this.#effects.probe(
       target,
