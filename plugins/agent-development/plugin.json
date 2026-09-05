@@ -3,6 +3,6 @@
   "description_zh": "基于 PenguinHarness 的智能体开发：用 SDK 构建应用、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务。",
   "short_description": "SDK, unified LLM API, config and orchestration.",
   "short_description_zh": "SDK、统一 LLM API、配置与编排。",
-  "version": "2026-09-02.1",
+  "version": "2026-09-03.1",
   "category": "ai-app-development"
 }
