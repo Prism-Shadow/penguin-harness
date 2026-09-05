@@ -3,7 +3,7 @@
 - **Date:** 2026-09-05
 - **Type:** feature
 - **Scope:** `web`, `server`
-- **PR:** _pending_
+- **PR:** [#622](https://github.com/Prism-Shadow/penguin-harness/pull/622)
 
 [中文版](2026-09-05-machines-two-verbs.zh.md)
 
