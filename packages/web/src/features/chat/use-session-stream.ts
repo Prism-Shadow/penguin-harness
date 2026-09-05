@@ -75,6 +75,8 @@ export interface SessionStreamState {
   loadNewer: (opts?: FrontierLoadOptions) => void;
   /** Drop the run and re-attach the live tail (the jump button while detached). */
   jumpToLatest: () => void;
+  /** Open the run at a unit cursor (the outline's jump to an unloaded turn); rejects when the window could not be fetched. */
+  openAt: (cursor: string) => Promise<void>;
   version: number;
   /** True until history finishes loading. */
   loading: boolean;
@@ -321,6 +323,10 @@ export function useSessionStream(
   const jumpToLatest = useCallback(() => {
     controllerRef.current?.jumpToLatest();
   }, []);
+  const openAt = useCallback(
+    (cursor: string) => controllerRef.current?.openAt(cursor) ?? Promise.resolve(),
+    [],
+  );
 
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
@@ -338,6 +344,7 @@ export function useSessionStream(
     loadOlder,
     loadNewer,
     jumpToLatest,
+    openAt,
     version,
     loading,
     taskState,
