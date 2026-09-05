@@ -37,12 +37,8 @@ export const zh = {
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
     pageTitle: "机器",
-    /** The version strip: what this server would install, and whether the machines match it. */
+    /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
-    behindCount: (count: number) => `${count} 台机器不是这个版本。`,
-    allCurrent: "在用的机器都是这个版本。",
-    /** One tap brings every machine behind this build forward (and reconnects it). */
-    updateAll: (count: number) => `全部更新（${count}）`,
     noImage:
       "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
     empty: "~/.ssh/config 中没有可添加的主机。",
@@ -51,24 +47,34 @@ export const zh = {
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
-    /** The tag on this server's own row, and its sentence. */
+    /** The tag on this server's own row. */
     localTitle: "本服务端",
-    localReady: "页面就是从这台机器提供的，随时可用。",
     noneInUse: "还没有在用的机器。",
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    /** The two verbs. */
+    /** The table's columns. */
+    colMachine: "机器",
+    colState: "状态",
+    colVersion: "版本",
+    colChecked: "上次检查",
+    now: "刚刚",
+    /** The verbs. */
     add: "添加机器…",
     addSelected: (count: number) => `使用这 ${count} 台`,
-    useSelected: (count: number) => `使用（${count}）`,
+    use: "使用",
     stopUsing: "停用",
-    selectAll: "全选",
+    /** One tap brings every machine behind this build forward (and reconnects it). */
+    updateAll: (count: number) => `全部更新（${count}）`,
+    /** The floating bar over a selection. */
     selectedCount: (count: number) => `已选 ${count} 台`,
-    /** The one-word pill at a row's end, keyed by the row's reading. */
+    pickAll: "全选",
+    pickNone: "清空",
+    /** The one word in a row's State column, keyed by the row's reading; `serving` is this server's. */
     state: {
+      serving: "服务中",
       queued: "排队中",
       working: "处理中",
-      ready: "就绪",
+      ready: "已连接",
       failed: "失败",
       installedOnly: "已安装",
       behind: "待更新",
@@ -77,19 +83,18 @@ export const zh = {
       stopped: "未运行",
       unknown: "未检查",
     },
-    /** The one sentence a row says. */
+    /** The stepper's steps, in pipeline order, as the caption under a working row. */
+    phase: {
+      check: "检查对端…",
+      install: "安装程序…",
+      handover: "交接构建…",
+      restart: "重启服务…",
+      connect: "建立连接…",
+      sync: "下发模型配置…",
+    },
+    stepOf: (step: number, total: number) => `第 ${step}/${total} 步`,
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
-    workingAt: (step: string) => `处理中：${step}`,
-    ready: "已连接，随时可用。",
-    readyOn: (port: number) => `已连接，随时可用（端口 ${port}）。`,
-    installedOnly: "已安装。Windows 机器暂时无法保持连接。",
-    behind: (version: string) => `装的是 ${version}，和本服务端不一致——点「使用」即可更新。`,
-    notConnected: "未连接——点「使用」即可连上。",
-    unreachable: "连不上这台机器。",
-    unreachableDetail: (detail: string) => `连不上这台机器：${detail}`,
-    stopped: "对端服务未运行——点「使用」即可启动。",
-    notChecked: "还没检查过。",
     failedAt: (step: string) => `失败于「${step}」。`,
     /** The forced install a failed job may offer. */
     replaceProgram: "强制安装并重启",
@@ -98,10 +103,14 @@ export const zh = {
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    /** The fold under a row. */
+    /** The detail pane. */
     details: "详情",
-    installedAt: (version: string, when: string) => `已安装 ${version}（${when}）。`,
-    checkedAt: (when: string) => `上次检查：${when}`,
+    detailInstalled: "已安装",
+    detailSince: "安装于",
+    detailServer: "对端服务",
+    detailChecked: "上次检查",
+    detailMachineId: "机器 ID",
+    serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
     agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
