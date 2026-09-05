@@ -55,6 +55,7 @@ import type {
   SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
+  AgentAssembly,
 } from "@prismshadow/penguin-core";
 import type {
   PendingFollowUpInfo,
@@ -69,13 +70,35 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
-import type { ErrorSink } from "./error-recorder.js";
+import type { ErrorSink, ErrorRecorder } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import type { UsageContext } from "./usage-recorder.js";
+import type { UsageContext, UsageRecorder } from "./usage-recorder.js";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Log, RuntimeModule } from "../hmr/capabilities.js";
+import { AuthState } from "../auth/runtime-state.js";
+import { Channels } from "./channel.js";
+import { Config } from "../config.js";
+import { Overrides } from "../app.js";
+import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { SessionService } from "../services/session-service.js";
+import { TitleGenerator } from "./title-generator.js";
+import { loopbackHostRoles } from "../services/preview-token.js";
+import { mergedNoProxy } from "../net/proxy.js";
+import { userChannelKey } from "../http/routes/events.js";
+import type { ProjectConfigService } from "../services/project-config-service.js";
+import type { TraceIndexService } from "../services/trace-index.js";
+import type { SandboxService } from "../sandbox/service.js";
+import type { ServerSettingsRepo } from "../db/repos/server-settings.js";
+import type { MessagingBindingsRepo } from "../db/repos/messaging-bindings.js";
+import type { MembersRepo } from "../db/repos/members.js";
+import type { ProjectsRepo } from "../db/repos/projects.js";
+import type { HostAssembly } from "../services/host-assembly.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -229,6 +252,7 @@ export function createCoreSessionLoader(
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     confineSpawn?: () => SpawnConfiner | null;
+    assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
   return {
@@ -240,6 +264,7 @@ export function createCoreSessionLoader(
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
+        ...(opts.assembly ? { assembly: opts.assembly } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -2014,5 +2039,196 @@ export class SessionManager {
       });
     this.locks.set(sessionId, settled);
     return next;
+  }
+}
+
+/** The session runtime: one entry per live Session, task mutex, approvals, streaming. */
+export abstract class Sessions extends Interface<
+  Pick<
+    SessionManager,
+    | "statusOf"
+    | "pendingApprovalCount"
+    | "pendingApprovals"
+    | "pendingFollowUpCount"
+    | "pendingSteeringOf"
+    | "subagentsOf"
+    | "sendToSubagent"
+    | "abortSubagentRun"
+    | "pendingFollowUpsOf"
+    | "liveFragments"
+    | "pendingInputs"
+    | "pendingBootstrap"
+    | "activeCountForAgent"
+    | "invalidateAgentRuntimes"
+    | "invalidateProjectRuntimes"
+    | "assertCanAcceptTask"
+    | "startTask"
+    | "startGoal"
+    | "startCompact"
+    | "decideApproval"
+    | "steer"
+    | "recallSteering"
+    | "recallFollowUp"
+    | "retryNow"
+    | "abortTask"
+    | "listProcesses"
+    | "probeProcessServices"
+    | "killProcess"
+    | "removeProcess"
+    | "abortProject"
+    | "beginAgentDeletion"
+    | "endAgentDeletion"
+    | "beginSessionDeletion"
+    | "endSessionDeletion"
+    | "atIdleBoundary"
+    | "shutdown"
+    | "sweepIdle"
+  >
+>() {}
+
+export abstract class SessionServiceIface extends Interface<
+  Pick<
+    SessionServiceImpl,
+    | "toInfo"
+    | "hasTrace"
+    | "listSessions"
+    | "sessionStats"
+    | "createSession"
+    | "latestTracePath"
+    | "adoptUnmanagedTraceSessions"
+  >
+>() {}
+
+/** The three per-spawn policies every Session's command environment is built with. */
+@Interface()
+export abstract class SessionEnv {
+  abstract proxyEnv(): ProxyEnvPolicy | null;
+  abstract controlEnv(ctx: ControlEnvContext): Record<string, string>;
+  abstract confineSpawn(): SpawnConfiner | null;
+}
+
+@Module()
+export class SessionsModule {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly channels!: Channels;
+  @Use(RuntimeModule) private readonly authState!: AuthState;
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Use() private readonly sessionsRepo!: SessionsRepo;
+  @Use() private readonly sources!: SessionSources;
+  @Use() private readonly recorder!: UsageRecorder;
+  @Use() private readonly errors!: ErrorRecorder;
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly traceIndex!: TraceIndexService;
+  @Use(SandboxModule) private readonly sandbox!: Sandbox;
+  @Use() private readonly projectsRepo!: ProjectsRepo;
+  @Use() private readonly membersRepo!: MembersRepo;
+  @Use() private readonly messagingRepo!: MessagingBindingsRepo;
+  @Use() private readonly assembly!: HostAssembly;
+  @Provide() manager!: Sessions;
+  @Provide() sessionService!: SessionServiceIface;
+  @Provide() env!: SessionEnv;
+  setup() {
+    const { config, settings, authState } = this;
+    const overrides = this.overrides.value();
+    const log = (line: string) => this.log.line(line);
+    const channels = this.channels as ChannelHub;
+    const sessionsRepo = this.sessionsRepo;
+    const sources = this.sources;
+    const recorder = this.recorder;
+    const errors = this.errors;
+    const projectConfig = this.projectConfig;
+    const sandbox = this.sandbox as SandboxService;
+
+    // Which commands run confined, under which policy, by which backend is policy — the
+    // sandbox module's; core only carries the spawn seam, reached through this getter.
+    const env: SessionEnv = {
+      proxyEnv: (): ProxyEnvPolicy | null => {
+        if (!settings.getProxyForAgent()) return { mode: "strip" };
+        const url = settings.getProxyUrl();
+        return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+      },
+      controlEnv: (ctx: ControlEnvContext): Record<string, string> => {
+        const host =
+          config.host === "0.0.0.0" || config.host === "::"
+            ? "127.0.0.1"
+            : (loopbackHostRoles(config.host)?.app ?? config.host);
+        const token = authState.apiToken;
+        return {
+          PENGUIN_API_URL: `http://${host}:${config.port}`,
+          ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
+          PENGUIN_PROJECT_ID: ctx.projectId,
+          PENGUIN_AGENT_ID: ctx.agentId,
+          PENGUIN_SESSION_ID: ctx.sessionId,
+        };
+      },
+      confineSpawn: () => sandbox.confiner(),
+    };
+
+    const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
+      const ownerUserId = this.projectsRepo.findById(projectId)?.ownerUserId;
+      if (ownerUserId === undefined) return;
+      const audience = new Set([
+        ownerUserId,
+        ...this.membersRepo.list(projectId).map((m) => m.userId),
+      ]);
+      for (const userId of audience) {
+        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+      }
+    };
+    const titles =
+      overrides.titles ??
+      new TitleGenerator({
+        sessions: sessionsRepo,
+        channels,
+        recorder,
+        errors,
+        log,
+        notifyProjectUsers,
+      });
+    const manager = new SessionManager({
+      sessions: sessionsRepo,
+      channels,
+      loader:
+        overrides.loader ??
+        createCoreSessionLoader(config.root, sources, {
+          proxyEnv: env.proxyEnv,
+          controlEnv: env.controlEnv,
+          confineSpawn: env.confineSpawn,
+          assembly: this.assembly,
+        }),
+      sources,
+      recorder,
+      errors,
+      titles,
+      log,
+      notifyProjectUsers,
+      ...(overrides.now ? { now: overrides.now } : {}),
+    });
+    const sessionService = new SessionService({
+      root: config.root,
+      sessions: sessionsRepo,
+      manager,
+      projectConfig,
+      sources,
+      traceIndex: this.traceIndex,
+      proxyEnv: env.proxyEnv,
+      controlEnv: env.controlEnv,
+      messagingChannel: (sessionId) => {
+        const enabled = this.messagingRepo.findEnabled(sessionId);
+        return enabled !== null &&
+          (enabled.channel === "feishu" ||
+            enabled.channel === "telegram" ||
+            enabled.channel === "qq")
+          ? enabled.channel
+          : null;
+      },
+      confineSpawn: env.confineSpawn,
+      assembly: this.assembly,
+    });
+    this.manager = manager;
+    this.sessionService = sessionService;
+    this.env = env;
   }
 }

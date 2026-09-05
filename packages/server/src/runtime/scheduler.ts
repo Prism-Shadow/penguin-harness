@@ -26,18 +26,25 @@ import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { SchedulesRepo, ScheduleStateRow } from "../db/repos/schedules.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
-import type { ErrorSink } from "./error-recorder.js";
+import type { ErrorSink, ErrorRecorder } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
 import { latestSlotAt, slotInWindow } from "./schedule-file.js";
 import { ScheduleFileCache, readScheduleFile, validateScheduleModelRef } from "./schedule-store.js";
 import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleServerEvent } from "../api/types.js";
+import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { Channels } from "./channel.js";
+import type { Config } from "../config.js";
+import type { Overrides } from "../app.js";
+import type { ProjectConfigService } from "../services/project-config-service.js";
+import { userChannelKey } from "../http/routes/events.js";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
 const TICK_INTERVAL_MS = 30_000;
 
 /** Minimal dependency the scheduler needs from SessionManager (eases test doubles). */
-export interface ScheduleTaskRunner {
+export interface ScheduleTaskRunnerShape {
   statusOf(sessionId: string): string;
   startTask(
     sessionId: string,
@@ -46,7 +53,7 @@ export interface ScheduleTaskRunner {
 }
 
 /** Minimal dependency the scheduler needs from SessionService: new-Session mode (model ref passed through as a pair). */
-export interface ScheduleSessionCreator {
+export interface ScheduleSessionCreatorShape {
   createSession(args: {
     projectId: string;
     agentId: string;
@@ -57,6 +64,10 @@ export interface ScheduleSessionCreator {
   }): Promise<{ sessionId: string }>;
 }
 
+/** What the scheduler needs of the session runtime — declared here, at the consumer (Go style). */
+export abstract class ScheduleSessionCreator extends Interface<ScheduleSessionCreatorShape>() {}
+export abstract class ScheduleTaskRunner extends Interface<ScheduleTaskRunnerShape>() {}
+
 /**
  * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt
  * body: tells the model this was fired by a schedule; the frontend collapses the origin block
@@ -64,22 +75,6 @@ export interface ScheduleSessionCreator {
  * marker module, which also owns the parser the frontend uses.
  */
 export const scheduledMessage = buildScheduledMessage;
-
-export interface SchedulerDeps {
-  root: string;
-  repo: SchedulesRepo;
-  projects: ProjectsRepo;
-  sessions: SessionsRepo;
-  runner: ScheduleTaskRunner;
-  sessionCreator: ScheduleSessionCreator;
-  /** Project-config source for model-ref validation (ProjectConfigService's mtime-cached reads). */
-  projectConfig: ScheduleConfigSource;
-  errors: ErrorSink;
-  /** Fire and send are notified over the user-level event stream (app layer binds userChannelKey). */
-  notify: (userId: string, event: ScheduleServerEvent) => void;
-  now?: () => number;
-  intervalMs?: number;
-}
 
 /** A queued fire (at most one per task). */
 interface PendingFire {
@@ -96,22 +91,47 @@ export interface ScheduleEntryView {
   queued: boolean;
 }
 
+@Component()
 export class Scheduler {
-  private readonly now: () => number;
-  private readonly intervalMs: number;
+  private now: () => number = () => Date.now();
+  private intervalMs: number = TICK_INTERVAL_MS;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** key = `${projectId}\0${agentId}\0${name}` */
   private readonly pending = new Map<string, PendingFire>();
   private ticking = false;
+  private filesCache: ScheduleFileCache | null = null;
   /** mtime-gated schedule-file scans (public for test observability of its counters). */
-  readonly files: ScheduleFileCache;
+  get files(): ScheduleFileCache {
+    return (this.filesCache ??= new ScheduleFileCache(this.root));
+  }
   /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
   private readonly agentDirs = new Map<string, { mtimeMs: number; ids: string[] }>();
 
-  constructor(private readonly deps: SchedulerDeps) {
-    this.now = deps.now ?? (() => Date.now());
-    this.intervalMs = deps.intervalMs ?? TICK_INTERVAL_MS;
-    this.files = new ScheduleFileCache(deps.root);
+  @Use() private readonly config!: Config;
+  private get root(): string {
+    return this.config.root;
+  }
+  @Use() private readonly repo!: SchedulesRepo;
+  @Use() private readonly projects!: ProjectsRepo;
+  @Use() private readonly sessions!: SessionsRepo;
+  @Use() private readonly runner!: ScheduleTaskRunner;
+  @Use() private readonly sessionCreator!: ScheduleSessionCreator;
+  /** Project-config source for model-ref validation (mtime-cached reads). */
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly errors!: ErrorRecorder;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly overrides!: Overrides;
+
+  setup({ effect }: ClassCtx): void {
+    const overrides = this.overrides.value();
+    if (overrides.now) this.now = () => overrides.now!().getTime();
+    // Only active while this App is; the successor's start() reconciles missed fires.
+    effect(() => this.stop());
+  }
+
+  /** Fire and send are notified over the user-level event stream. */
+  private notify(userId: string, event: ScheduleServerEvent): void {
+    this.channels.get(userChannelKey(userId)).publish(event, "server_event");
   }
 
   /** Start: run one reconcile immediately (startup semantics: no backfill), then enter the periodic tick. */
@@ -133,7 +153,7 @@ export class Scheduler {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      const projects = this.deps.projects.listAll();
+      const projects = this.projects.listAll();
       for (const project of projects) {
         await this.reconcileProject(project.projectId, project.ownerUserId);
       }
@@ -146,7 +166,7 @@ export class Scheduler {
       }
       await this.drainQueue();
     } catch (err) {
-      this.deps.errors.record({ source: "schedule", err, code: "schedule_tick_failed" });
+      this.errors.record({ source: "schedule", err, code: "schedule_tick_failed" });
     } finally {
       this.ticking = false;
     }
@@ -154,7 +174,7 @@ export class Scheduler {
 
   /** Immediate-effect entry after a route write: reconcile just one Agent (bypassing the mtime gate) and drain its queue. */
   async reconcileAgent(projectId: string, agentId: string): Promise<void> {
-    const project = this.deps.projects.findById(projectId);
+    const project = this.projects.findById(projectId);
     if (!project) return;
     await this.reconcileOneAgent(projectId, agentId, project.ownerUserId, { force: true });
     await this.drainQueue();
@@ -165,7 +185,7 @@ export class Scheduler {
     projectId: string,
     agentId: string,
   ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }> {
-    const project = this.deps.projects.findById(projectId);
+    const project = this.projects.findById(projectId);
     const owner = project?.ownerUserId ?? null;
     const files = await this.files.list(projectId, agentId);
     const entries: ScheduleEntryView[] = [];
@@ -177,7 +197,7 @@ export class Scheduler {
       }
       // A model ref whose (provider, model_id) pair isn't in the config is treated like a parse failure: goes to invalidFiles, not scheduled.
       const refError = await validateScheduleModelRef(
-        this.deps.projectConfig,
+        this.projectConfig,
         projectId,
         file.parsed.def,
       );
@@ -203,7 +223,7 @@ export class Scheduler {
   /** For routes: state cleanup after a task is deleted (the unlink moved the dir mtime, but invalidate for immediate effect anyway). */
   dropEntry(projectId: string, agentId: string, name: string): void {
     this.pending.delete(this.keyOf(projectId, agentId, name));
-    this.deps.repo.delete(projectId, agentId, name);
+    this.repo.delete(projectId, agentId, name);
     this.files.invalidate(projectId, agentId);
   }
 
@@ -227,7 +247,7 @@ export class Scheduler {
    */
   private async listAgentIds(projectId: string): Promise<string[]> {
     const cached = this.agentDirs.get(projectId);
-    const mtimeMs = await statMtime(agentsDir(this.deps.root, projectId));
+    const mtimeMs = await statMtime(agentsDir(this.root, projectId));
     if (mtimeMs === null) {
       this.agentDirs.delete(projectId);
       return [];
@@ -235,7 +255,7 @@ export class Scheduler {
     if (cached && cached.mtimeMs === mtimeMs) return cached.ids;
     let ids: string[];
     try {
-      const items = await fs.readdir(agentsDir(this.deps.root, projectId), {
+      const items = await fs.readdir(agentsDir(this.root, projectId), {
         withFileTypes: true,
       });
       ids = items.filter((d) => d.isDirectory()).map((d) => d.name);
@@ -260,7 +280,7 @@ export class Scheduler {
     for (const file of files) {
       if (!file.parsed.ok) {
         // Skip invalid files and record an error (the recorder dedups within a short window, so storms don't spam).
-        this.deps.errors.record({
+        this.errors.record({
           source: "schedule",
           err: new Error(`Invalid schedule file: ${file.name}.toml — ${file.parsed.error}`),
           code: "schedule_invalid_file",
@@ -272,9 +292,9 @@ export class Scheduler {
       // At reconcile time, check the (provider, model_id) pair names a configured model: a
       // reference that doesn't is treated like an invalid file — skip scheduling and record an
       // error (recorder dedups in a short window); it recovers once the file/config is fixed.
-      const refError = await validateScheduleModelRef(this.deps.projectConfig, projectId, def);
+      const refError = await validateScheduleModelRef(this.projectConfig, projectId, def);
       if (refError !== null) {
-        this.deps.errors.record({
+        this.errors.record({
           source: "schedule",
           err: new Error(`Invalid schedule file: ${file.name}.toml — ${refError}`),
           code: "schedule_invalid_file",
@@ -301,7 +321,7 @@ export class Scheduler {
     raw: string,
   ): ScheduleStateRow {
     const defHash = createHash("sha1").update(raw).digest("hex");
-    const { row, fresh } = this.deps.repo.registerOrSync({
+    const { row, fresh } = this.repo.registerOrSync({
       projectId,
       agentId,
       name: def.name,
@@ -315,16 +335,16 @@ export class Scheduler {
     const slot = latestSlotAt(def, this.now());
     if (slot === null) return row;
     if (def.periodMs === undefined) {
-      this.deps.repo.markMissed(projectId, agentId, def.name);
+      this.repo.markMissed(projectId, agentId, def.name);
     } else {
-      this.deps.repo.markSlot(projectId, agentId, def.name, slot);
+      this.repo.markSlot(projectId, agentId, def.name, slot);
     }
-    return this.deps.repo.find(projectId, agentId, def.name) ?? row;
+    return this.repo.find(projectId, agentId, def.name) ?? row;
   }
 
   /** Clean up run state and queue entries for deleted files (deleting a file removes the task). */
   private cleanupMissing(projectId: string, agentId: string, presentNames: string[]): void {
-    const removed = this.deps.repo.deleteMissing(projectId, agentId, presentNames);
+    const removed = this.repo.deleteMissing(projectId, agentId, presentNames);
     for (const name of removed) this.pending.delete(this.keyOf(projectId, agentId, name));
   }
 
@@ -342,7 +362,7 @@ export class Scheduler {
     if (slot === null || !slotInWindow(def, slot)) return;
     if (state.lastSlotMs !== null && slot <= state.lastSlotMs) return;
     // Consume this slot: never retry the same slot whether the send then succeeds, queues, or fails (the twin rule of no-backfill).
-    this.deps.repo.markSlot(projectId, agentId, def.name, slot);
+    this.repo.markSlot(projectId, agentId, def.name, slot);
     await this.dispatch(projectId, agentId, def, state);
   }
 
@@ -355,9 +375,9 @@ export class Scheduler {
   ): Promise<void> {
     const key = this.keyOf(projectId, agentId, def.name);
     if (def.sessionId !== undefined) {
-      const row = this.deps.sessions.findById(def.sessionId);
+      const row = this.sessions.findById(def.sessionId);
       if (!row || row.projectId !== projectId || row.agentId !== agentId) {
-        this.deps.errors.record({
+        this.errors.record({
           source: "schedule",
           err: new Error(
             `Schedule ${def.name} is bound to a Session that does not exist: ${def.sessionId}`,
@@ -365,10 +385,10 @@ export class Scheduler {
           code: "schedule_session_missing",
           ctx: { projectId, agentId, sessionId: def.sessionId },
         });
-        this.deps.repo.markInvalid(projectId, agentId, def.name, "session_missing");
+        this.repo.markInvalid(projectId, agentId, def.name, "session_missing");
         return;
       }
-      if (this.deps.runner.statusOf(def.sessionId) !== "idle") {
+      if (this.runner.statusOf(def.sessionId) !== "idle") {
         // Queue when busy: at most one per task; new slots during the wait are consumed but don't stack.
         if (!this.pending.has(key)) {
           this.pending.set(key, { projectId, agentId, name: def.name, sessionId: def.sessionId });
@@ -387,7 +407,7 @@ export class Scheduler {
     }
     // New-Session mode: each fire opens a new session (optional workspace and paired model ref; same semantics as opening a session manually).
     try {
-      const info = await this.deps.sessionCreator.createSession({
+      const info = await this.sessionCreator.createSession({
         projectId,
         agentId,
         ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
@@ -397,7 +417,7 @@ export class Scheduler {
       });
       await this.send(projectId, agentId, def, state, info.sessionId);
     } catch (err) {
-      this.deps.errors.record({
+      this.errors.record({
         source: "schedule",
         err,
         code: "schedule_create_session_failed",
@@ -415,12 +435,12 @@ export class Scheduler {
   ): Promise<void> {
     const firedAt = new Date(this.now()).toISOString();
     try {
-      await this.deps.runner.startTask(sessionId, [
+      await this.runner.startTask(sessionId, [
         // sender "server": in the Trace this user turn was injected by the server's scheduler, not typed by a human.
         userText(scheduledMessage(def.name, firedAt, def.prompt), "server"),
       ]);
     } catch (err) {
-      this.deps.errors.record({
+      this.errors.record({
         source: "schedule",
         err,
         code: "schedule_send_failed",
@@ -428,7 +448,7 @@ export class Scheduler {
       });
       return;
     }
-    this.deps.repo.markFired(projectId, agentId, def.name, firedAt, def.periodMs === undefined);
+    this.repo.markFired(projectId, agentId, def.name, firedAt, def.periodMs === undefined);
     this.notifyFor(state, {
       type: "schedule_fired",
       projectId,
@@ -441,23 +461,23 @@ export class Scheduler {
   /** Drain the queue: send once the target Session is idle; drop if the task is disabled/deleted/invalid. */
   private async drainQueue(): Promise<void> {
     for (const [key, fire] of [...this.pending]) {
-      const state = this.deps.repo.find(fire.projectId, fire.agentId, fire.name);
+      const state = this.repo.find(fire.projectId, fire.agentId, fire.name);
       if (!state || state.invalidReason !== null) {
         this.pending.delete(key);
         continue;
       }
-      const file = await readScheduleFile(this.deps.root, fire.projectId, fire.agentId, fire.name);
+      const file = await readScheduleFile(this.root, fire.projectId, fire.agentId, fire.name);
       if (!file || !file.parsed.ok || !file.parsed.def.enabled) {
         this.pending.delete(key);
         continue;
       }
-      const row = this.deps.sessions.findById(fire.sessionId);
+      const row = this.sessions.findById(fire.sessionId);
       if (!row) {
         this.pending.delete(key);
-        this.deps.repo.markInvalid(fire.projectId, fire.agentId, fire.name, "session_missing");
+        this.repo.markInvalid(fire.projectId, fire.agentId, fire.name, "session_missing");
         continue;
       }
-      if (this.deps.runner.statusOf(fire.sessionId) !== "idle") continue;
+      if (this.runner.statusOf(fire.sessionId) !== "idle") continue;
       this.pending.delete(key);
       await this.send(fire.projectId, fire.agentId, file.parsed.def, state, fire.sessionId);
     }
@@ -466,6 +486,6 @@ export class Scheduler {
   /** Notify the creator (falls back to the Project owner at registration; silent if still absent). */
   private notifyFor(state: ScheduleStateRow, event: ScheduleServerEvent): void {
     const userId = state.creatorUserId;
-    if (userId) this.deps.notify(userId, event);
+    if (userId) this.notify(userId, event);
   }
 }

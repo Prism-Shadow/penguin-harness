@@ -2,8 +2,9 @@
  * Repo for the projects table: an index of ownership
  * relationships; the display name lives in project_config.toml.
  */
-import type { DatabaseSync } from "node:sqlite";
 import type { ProjectRole } from "../../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../database.js";
 
 export interface ProjectRow {
   projectId: string;
@@ -23,8 +24,9 @@ function mapRow(r: Record<string, unknown>): ProjectRow {
   };
 }
 
+@Component()
 export class ProjectsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   insert(row: ProjectRow): void {
     this.db

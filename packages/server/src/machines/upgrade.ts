@@ -16,7 +16,7 @@ import http from "node:http";
 import path from "node:path";
 import zlib from "node:zlib";
 import { machineApi } from "./machine-api.js";
-import { MATERIALIZED } from "../hmr/host.js";
+import { MATERIALIZED } from "../hmr/manifest.js";
 
 /** Long enough for 8 MB over a slow link, plus the unpack, boot and commit on the far side. */
 const APPLY_TIMEOUT_MS = 10 * 60_000;

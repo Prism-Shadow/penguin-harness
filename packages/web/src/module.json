@@ -1,0 +1,100 @@
+{
+  "name": "web",
+  "requires": {},
+  "provides": {
+    "web": "WebShell"
+  },
+  "contributes": {
+    "web.pages": [
+      {
+        "id": "web.chat",
+        "key": "chat",
+        "path": "/chat/:sessionId?",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ChatPage"
+        }
+      },
+      {
+        "id": "web.agents",
+        "key": "agents",
+        "path": "/agents",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "AgentsPage"
+        }
+      },
+      {
+        "id": "web.agent-settings",
+        "key": "agent-settings",
+        "path": "/agents/:agentId",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "AgentSettingsPage"
+        }
+      },
+      {
+        "id": "web.plugins",
+        "key": "plugins",
+        "path": "/plugins",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "PluginsPage"
+        }
+      },
+      {
+        "id": "web.models",
+        "key": "models",
+        "path": "/models",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ModelsPage"
+        }
+      },
+      {
+        "id": "web.machines",
+        "key": "machines",
+        "path": "/machines",
+        "nav": "main",
+        "admin": true,
+        "released": false,
+        "renderer": {
+          "builtin": "MachinesPage"
+        }
+      },
+      {
+        "id": "web.usage",
+        "key": "usage",
+        "path": "/usage",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "UsagePage"
+        }
+      },
+      {
+        "id": "web.benchmark",
+        "key": "benchmark",
+        "path": "/benchmark",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "BenchmarkPage"
+        }
+      }
+    ]
+  },
+  "children": []
+}

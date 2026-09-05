@@ -3,12 +3,13 @@
  * with JSON-encoded values. An absent row means the setting's built-in default, so
  * settings added after a web.db was formed need no migration.
  */
-import type { DatabaseSync } from "node:sqlite";
 import {
   clampAttachmentMb,
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
 } from "../../services/attachment-limits.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../database.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
@@ -33,8 +34,9 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 
+@Component()
 export class ServerSettingsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   /** Returns the raw JSON-encoded value; null if never set. */
   get(key: string): string | null {

@@ -1,10 +1,12 @@
 /**
  * ui_prefs table repo (UI preferences): free-form JSON storage.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../database.js";
 
+@Component()
 export class UiPrefsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   /** Returns the raw JSON string; null if never set. */
   get(userId: string): string | null {

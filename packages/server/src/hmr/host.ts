@@ -70,12 +70,20 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
-import type { Instance, Json, AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
-import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
+import type {
+  Instance,
+  Json,
+  AnyIface,
+  AnyImpl,
+  Opaque,
+  Resources,
+} from "@prismshadow/penguin-core/kernel";
+import { boot, initialDoc, upgrade, Interface } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
-import type { PlatformApi } from "../hmr/platform.js";
-import { packagedPlatform } from "../hmr/platform.js";
+import { MATERIALIZED } from "./manifest.js";
+import type { PlatformApi } from "./platform.js";
+import { packagedPlatform } from "./platform.js";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
@@ -124,13 +132,6 @@ export interface UpgradeAllTarget {
   assets?: UpgradeAssets;
   source?: GitSource;
 }
-
-/**
- * Written into an assets directory once every file in it is on disk. Its absence marks a
- * directory whose materialization was interrupted; no asset path can collide with it
- * (assets arrive as `node_modules/...` paths).
- */
-export const MATERIALIZED = ".materialized";
 
 export type UpgradeOutcome =
   | {
@@ -221,6 +222,15 @@ export class HmrHost {
    * in-flight promise (see `initPromise`) rather than each racing their own
    * restore()/packaged-boot.
    */
+  /**
+   * The App of THIS moment, or null before the first boot and after dispose. For the
+   * callers that outlive swaps — the runtime app, the process handlers — which must not
+   * hold a generation's objects across a push (see ServerBoot.tree).
+   */
+  currentApp(): Instance<PlatformApi> | null {
+    return this.instance;
+  }
+
   ensure(): Promise<Instance<PlatformApi>> {
     if (this.instance !== null) return Promise.resolve(this.instance);
     this.initPromise ??= this.initialize();
@@ -817,3 +827,18 @@ function filesMapFromGzip(gz: Buffer): Map<string, Buffer> {
   }
   return mem;
 }
+
+/** The hot-update host: the cross-generation resource registry and the current App. */
+@Interface()
+export abstract class Hmr {
+  abstract resources: Resources;
+  abstract ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  abstract resolveWebSource(): Opaque<
+    "WebSource",
+    NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
+  > | null;
+  abstract assetsDir(): string | null;
+  abstract dispose(): void;
+}
+/** Compile-time proof the host satisfies the contract. */
+export type _HmrCheck = HmrHost extends Hmr ? true : never;

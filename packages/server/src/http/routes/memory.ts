@@ -24,7 +24,15 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+
+import type { MemoryService } from "../../services/memory-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MemoryRouteDeps {
+  memoryService: MemoryService;
+  access: ProjectAccess;
+}
 import type { MemoryImportMode } from "../../api/types.js";
 import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } from "../validate.js";
 
@@ -37,14 +45,14 @@ function exportStamp(exportedAt: string): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
+export function memoryRoutes(deps: MemoryRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   /** Shared preamble: id validation before any path construction, then the Project membership check. */
   const scope = (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return { projectId, agentId };
   };
 
@@ -94,7 +102,7 @@ export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/scopes/:scopeKey/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const key = pathParam(c, "scopeKey");
     const body = await readJson(c);
     return c.json(

@@ -89,8 +89,12 @@ import type {
   QQInboundEvent,
   QQTransport,
 } from "./qq-api.js";
-import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError } from "./qq-api.js";
+import { QQ_BODY_INDEPENDENT_SEND_CODES, QQApiError, createQQTransport } from "./qq-api.js";
 import { qqMarkdownOf } from "./qq-markdown.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Overrides } from "../../app.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** The QQ binding's stored config document (`messaging_bindings.config_json`). */
 export interface QQBindingConfig extends Record<string, unknown> {
@@ -627,5 +631,28 @@ export class QQConnector implements MessagingChannelConnector {
     const result = ledger.chain.then(run);
     ledger.chain = result.catch(() => {});
     return result;
+  }
+}
+
+/** The qq connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-qq.connector",
+        channel: "qq",
+      },
+    ],
+  },
+})
+export class QqMessaging {
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Bind("messaging-qq.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const overrides = this.overrides.value();
+    this.connector = new QQConnector(overrides.qqTransport ?? createQQTransport(), {
+      ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
+      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    });
   }
 }

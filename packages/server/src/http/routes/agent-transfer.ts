@@ -7,7 +7,16 @@ import fs from "node:fs/promises";
 import { Hono } from "hono";
 import type { AgentImportResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { SnapshotService } from "../../services/snapshot-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentTransferRouteDeps {
+  agentConfigService: AgentConfigService;
+  access: ProjectAccess;
+  snapshots: SnapshotService;
+}
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
@@ -31,13 +40,13 @@ export function readArchiveBase64(body: Record<string, unknown>): Buffer {
   return archive;
 }
 
-export function agentTransferRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/export", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const { file, fileName } = await deps.snapshots.exportArchive(projectId, agentId);
     const bytes = await fs.readFile(file);
     return new Response(new Uint8Array(bytes), {
@@ -51,7 +60,7 @@ export function agentTransferRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/import", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const archive = readArchiveBase64(body);

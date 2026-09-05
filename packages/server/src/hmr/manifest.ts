@@ -30,6 +30,13 @@ import type { HarnessInfo } from "@prismshadow/penguin-core";
  * only ever produce handles that fail to reclaim). Paths are relative to hmrDir
  * (`<root>/hmr`).
  */
+/**
+ * Written into an assets directory once every file in it is on disk. Its absence marks a
+ * directory whose materialization was interrupted; no asset path can collide with it
+ * (assets arrive as `node_modules/...` paths).
+ */
+export const MATERIALIZED = ".materialized";
+
 export interface Manifest {
   platform?: { bundle: string };
   /**

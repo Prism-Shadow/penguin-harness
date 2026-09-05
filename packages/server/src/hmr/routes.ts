@@ -19,22 +19,37 @@
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
-import type { AppDeps } from "../app.js";
+import type { ServerConfig } from "../config.js";
+import type { AuthService } from "../auth/service.js";
+import type { HmrHost } from "./host.js";
+import type { ChannelHub } from "../runtime/channel.js";
+
+/** What the hot-update routes reach: runtime capabilities and the current App's auth. */
+export interface HmrRouteDeps {
+  hmr: HmrHost;
+  authService: AuthService;
+  config: ServerConfig;
+  channels: ChannelHub;
+}
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
+import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../http/errors.js";
 
 /** Bind addresses considered safe by default; anything else needs HTTPS. */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
-export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
+export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const hmr = deps.hmr;
   // Mounted BEFORE the global cookie-auth middleware (see app.ts): this gate
   // does its own auth (admin cookie only — see the network gate above for the
   // other half) rather than relying on the generic middleware being mounted
   // later.
-  const cookieAuth = authMiddleware(deps.authService, deps.config.trustProxy);
+  // Per request, not once: `deps.authService` is the current App's, and the App changes
+  // under this route group on every push it serves.
+  const cookieAuth: MiddlewareHandler<AppEnv> = (c, next) =>
+    authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback

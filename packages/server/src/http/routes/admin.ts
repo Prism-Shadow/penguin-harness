@@ -7,11 +7,22 @@ import { Hono } from "hono";
 import type { AdminUserCreateResponse, AdminUsersResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { rejectInDesktopMode } from "./desktop.js";
+import type { DesktopService, Desktop } from "../../services/desktop-service.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { pathParam, readJson, requireString } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { AdminService } from "../../services/admin-service.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Proxy } from "../../net/proxy.js";
+import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import { adminSettingsRoutes } from "./admin-settings.js";
 
-export function adminUsersRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AdminRouteDeps {
+  desktop: DesktopService | null;
+  adminService: AdminService;
+}
+
+export function adminUsersRoutes(deps: AdminRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", rejectInDesktopMode(deps));
@@ -47,4 +58,41 @@ export function adminUsersRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "admin-api.users",
+        prefix: "/api/admin/users",
+        auth: "user",
+        order: 30,
+      },
+      {
+        id: "admin-api.settings",
+        prefix: "/api/admin/settings",
+        auth: "user",
+        order: 40,
+      },
+    ],
+  },
+})
+export class AdminRoutes {
+  @Use() private readonly admin!: AdminService;
+  @Use() private readonly desktop!: Desktop;
+  @Use() private readonly proxy!: Proxy;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Bind("admin-api.users") usersRoutes!: Hono<AppEnv>;
+  @Bind("admin-api.settings") settingsRoutes!: Hono<AppEnv>;
+  setup() {
+    this.usersRoutes = adminUsersRoutes({
+      adminService: this.admin,
+      desktop: this.desktop.current() as DesktopService | null,
+    });
+    this.settingsRoutes = adminSettingsRoutes({
+      proxyControl: (settings) => this.proxy.apply(settings),
+      serverSettingsRepo: this.settings,
+    });
+  }
 }

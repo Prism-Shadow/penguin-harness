@@ -19,7 +19,11 @@ import type {
 } from "./connector.js";
 import { feishuCardOf } from "./feishu-card.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
-import { FeishuApiError } from "./feishu-sdk.js";
+import { FeishuApiError, createLarkSdk } from "./feishu-sdk.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Overrides } from "../../app.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** Default Feishu open-platform domain (Lark tenants override it in the form). */
 export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
@@ -309,5 +313,25 @@ export class FeishuConnector implements MessagingChannelConnector {
       ...(handlers.onReady ? { onReady: handlers.onReady } : {}),
       ...(handlers.onError ? { onError: handlers.onError } : {}),
     });
+  }
+}
+
+/** The feishu connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-feishu.connector",
+        channel: "feishu",
+      },
+    ],
+  },
+})
+export class FeishuMessaging {
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Bind("messaging-feishu.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const overrides = this.overrides.value();
+    this.connector = new FeishuConnector(overrides.feishuSdk ?? createLarkSdk());
   }
 }

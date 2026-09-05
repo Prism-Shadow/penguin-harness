@@ -12,7 +12,22 @@ import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig, Config } from "../../config.js";
+import type { SchedulesRepo, ScheduleStateRow } from "../../db/repos/schedules.js";
+import type { Scheduler } from "../../runtime/scheduler.js";
+import type { AgentConfigService } from "../../services/agent-config-service.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { ProjectConfigService } from "../../services/project-config-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface SchedulesRouteDeps {
+  agentConfigService: AgentConfigService;
+  config: ServerConfig;
+  projectConfigService: ProjectConfigService;
+  access: ProjectAccess;
+  scheduler: Scheduler;
+  schedulesRepo: SchedulesRepo;
+}
 import { HttpError } from "../errors.js";
 import {
   badRequest,
@@ -28,7 +43,6 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "../../db/repos/schedules.js";
 import {
   deleteScheduleFile,
   readScheduleFile,
@@ -36,6 +50,7 @@ import {
   validateScheduleModelRef,
   writeScheduleFile,
 } from "../../runtime/schedule-store.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */
 function parseUpsertBody(body: Record<string, unknown>): {
@@ -133,13 +148,13 @@ function requireScheduleName(raw: string | undefined): string {
   return raw;
 }
 
-export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
+export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const { entries, invalid } = await deps.scheduler.listAgent(projectId, agentId);
     const nowMs = Date.now();
@@ -153,7 +168,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const name = requireScheduleName(requireString(body, "name", { minLen: 1, maxLen: 100 }));
@@ -170,7 +185,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/template-placeholder", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const view = await deps.agentConfigService.insertTemplatePlaceholder(
       projectId,
       agentId,
@@ -182,7 +197,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     const item = await readItem(deps, projectId, agentId, name);
     return c.json(item);
@@ -191,7 +206,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.put("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     if (!(await readScheduleFile(deps.config.root, projectId, agentId, name))) {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
@@ -204,7 +219,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
   app.delete("/:name", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     const removed = await deleteScheduleFile(deps.config.root, projectId, agentId, name);
     if (!removed)
@@ -218,7 +233,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
 
 /** Write + register creator + reconcile immediately (API changes take effect right away). */
 async function upsert(
-  deps: AppDeps,
+  deps: SchedulesRouteDeps,
   userId: string,
   projectId: string,
   agentId: string,
@@ -247,7 +262,7 @@ async function upsert(
 }
 
 async function readItem(
-  deps: AppDeps,
+  deps: SchedulesRouteDeps,
   projectId: string,
   agentId: string,
   name: string,
@@ -258,4 +273,36 @@ async function readItem(
   const bad = invalid.find((i) => i.name === name);
   if (bad) throw badRequest(`Invalid schedule file: ${bad.error}`);
   throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "SchedulerRoutes.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/schedules",
+        auth: "user",
+        order: 200,
+      },
+    ],
+  },
+})
+export class SchedulerRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly agentConfig!: AgentConfigService;
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly scheduler!: Scheduler;
+  @Use() private readonly schedulesRepo!: SchedulesRepo;
+  @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = scheduleRoutes({
+      agentConfigService: this.agentConfig,
+      config: this.config,
+      projectConfigService: this.projectConfig,
+      access: this.access,
+      scheduler: this.scheduler,
+      schedulesRepo: this.schedulesRepo,
+    });
+  }
 }

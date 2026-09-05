@@ -22,7 +22,23 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { isHttpUrl } from "../../services/protocol-detect.js";
-import type { AppDeps } from "../../app.js";
+import type { SessionsRepo } from "../../db/repos/sessions.js";
+import type { ChannelHub } from "../../runtime/channel.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { ProjectAccess } from "../../services/project-access.js";
+import type { Machines } from "../../machines/service.js";
+import type { ProjectConfigService } from "../../services/project-config-service.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface ModelsRouteDeps {
+  channels: ChannelHub;
+  /** The machines this Project uses receive a credential change too (machines/service.ts). */
+  machines: Machines;
+  manager: SessionManager;
+  projectConfigService: ProjectConfigService;
+  access: ProjectAccess;
+  sessionsRepo: SessionsRepo;
+}
 
 /**
  * Live unlock for auth-dead composers: after a models/credential update, publish
@@ -31,7 +47,7 @@ import type { AppDeps } from "../../app.js";
  * response's `updatedAt` when it next loads). Shared with the key-minting routes, which
  * change the same credentials by a different path.
  */
-export function publishCredentialsUpdated(deps: AppDeps, projectId: string): void {
+export function publishCredentialsUpdated(deps: ModelsRouteDeps, projectId: string): void {
   const event: ServerEvent = { type: "credentials_updated" };
   for (const row of deps.sessionsRepo.listByProject(projectId)) {
     deps.channels.peek(row.sessionId)?.publish(event, "server_event");
@@ -52,7 +68,7 @@ export function publishCredentialsUpdated(deps: AppDeps, projectId: string): voi
  *   reach them or their Sessions keep failing on the old one — or start on the wrong default.
  *   Not awaited: the person editing is not the one who should wait for a set of ssh tunnels.
  */
-export function modelConfigChanged(deps: AppDeps, projectId: string): void {
+export function modelConfigChanged(deps: ModelsRouteDeps, projectId: string): void {
   deps.manager.invalidateProjectRuntimes(projectId);
   publishCredentialsUpdated(deps, projectId);
   void deps.machines.syncModelsEverywhere(projectId);
@@ -178,19 +194,19 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
   return req;
 }
 
-export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation.
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.projectConfigService.getModels(projectId));
   });
 
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const req = parseModelsUpdate(await readJson(c));
     const res = await deps.projectConfigService.updateModels(projectId, req);
     modelConfigChanged(deps, projectId);
@@ -207,7 +223,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // is part of what the sync carries.
   app.put("/default", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const ref: ModelRefDto = {
       provider: requireString(body, "provider", { minLen: 1, maxLen: 64 }),
@@ -224,7 +240,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // (adding a custom model), everything is taken from the request body.
   app.post("/test", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: ModelTestRequest = {
       provider: requireString(body, "provider", { minLen: 1, maxLen: 64 }),
@@ -276,7 +292,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // enum plus an HTTP status, where /test surfaces the upstream message verbatim.
   app.post("/detect", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: ModelProtocolDetectRequest = {
       baseUrl: requireString(body, "baseUrl", { minLen: 1, maxLen: 2000 }),
@@ -307,7 +323,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // reason) and the key travels only in request headers upstream.
   app.post("/list", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: EndpointModelListRequest = {
       baseUrl: requireString(body, "baseUrl", { minLen: 1, maxLen: 2000 }),
@@ -328,7 +344,7 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
    */
   app.post("/detect-vision", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: ModelVisionDetectRequest = {
       provider: requireString(body, "provider", { minLen: 1, maxLen: 64 }),

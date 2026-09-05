@@ -21,6 +21,7 @@
  * Docs: /docs/server-api § "Delivery Guarantees".
  */
 import { randomUUID } from "node:crypto";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** A numbered channel event; `id` is `<epoch>-<seq>`, `data` is serialized single-line JSON. */
 export interface ChannelEvent {
@@ -231,3 +232,17 @@ export class ChannelHub {
     this.channels.clear();
   }
 }
+
+/** One SSE channel (the class above satisfies this). */
+export type ChannelApi = Pick<Channel, "publish" | "sendTo" | "subscribe" | "replayAfter">;
+
+@Interface()
+export abstract class Channels {
+  abstract get(key: string): ChannelApi;
+  abstract peek(key: string): ChannelApi | undefined;
+  abstract broadcast(prefix: string, data: unknown, event?: string): void;
+  abstract dispose(): void;
+  abstract setActivityProbe(probe: (key: string) => boolean): void;
+}
+/** Compile-time proof the hub satisfies the contract. */
+export type _ChannelsCheck = ChannelHub extends Channels ? true : never;

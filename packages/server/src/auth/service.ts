@@ -13,8 +13,11 @@ import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
-import type { AuthRuntimeState } from "./runtime-state.js";
+import type { AuthRuntimeState, AuthState } from "./runtime-state.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config } from "../config.js";
+import type { Overrides } from "../app.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -61,37 +64,39 @@ export function toUserInfo(row: UserRow): UserInfo {
   };
 }
 
-export interface AuthServiceDeps {
-  users: UsersRepo;
-  authSessions: AuthSessionsRepo;
+@Component()
+export class AuthService {
+  @Use() private readonly users!: UsersRepo;
+  @Use() private readonly authSessions!: AuthSessionsRepo;
   /**
    * Process-scoped auth values (runtime-state.ts). Held by the RUNTIME so the link a boot
    * printed survives a platform push; everything else about auth is rebuilt with the App.
    */
-  state: AuthRuntimeState;
-  /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
-  provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
-  /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
-  seedAdminPassword: string | null;
-  sessionTtlMs: number;
-  sessionRenewMs: number;
-  /** Test double: scrypt work factor for hashes this service writes (SCRYPT_COST in production). */
-  passwordHashCost?: number;
-  now?: () => Date;
-}
-
-export class AuthService {
-  private readonly now: () => Date;
-  private readonly hashCost: number;
+  @Use() private readonly state!: AuthState;
+  /** Provisions the initial Project at signup — declared at the consumer, below. */
+  @Use() private readonly provisioner!: InitialProjectProvisioner;
+  @Use() private readonly config!: Config;
+  @Use() private readonly overrides!: Overrides;
+  private now: () => Date = () => new Date();
+  /** scrypt work factor for hashes this service writes; a test double lowers it. */
+  private hashCost: number = SCRYPT_COST;
   /** Session lifetime, for the cookie that must expire WITH the session, not before it. */
   get sessionTtlMs(): number {
-    return this.deps.sessionTtlMs;
+    return this.config.authSessionTtlMs;
+  }
+  private get sessionRenewMs(): number {
+    return this.config.authSessionRenewMs;
+  }
+  /** Fixed initial password for the seeded admin; null generates a random one at seed time. */
+  private get seedAdminPassword(): string | null {
+    return this.config.seedAdminPassword;
   }
 
-  constructor(private readonly deps: AuthServiceDeps) {
-    this.now = deps.now ?? (() => new Date());
-    this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
-    this.deps.authSessions.deleteExpired(this.now().toISOString());
+  setup(): void {
+    const overrides = this.overrides.value();
+    this.now = overrides.now ?? this.now;
+    this.hashCost = overrides.passwordHashCost ?? SCRYPT_COST;
+    this.authSessions.deleteExpired(this.now().toISOString());
   }
 
   /**
@@ -102,13 +107,13 @@ export class AuthService {
   mintFirstLogin(): string | null {
     if (!this.adminPasswordIsInitial()) return null;
     if (
-      this.deps.state.firstLoginToken !== null &&
-      this.authenticateWithMeta(this.deps.state.firstLoginToken) === null
+      this.state.firstLoginToken !== null &&
+      this.authenticateWithMeta(this.state.firstLoginToken) === null
     ) {
-      this.deps.state.firstLoginToken = null;
+      this.state.firstLoginToken = null;
     }
-    this.deps.state.firstLoginToken ??= this.issueSession(ADMIN_USER_ID, "setup");
-    return this.deps.state.firstLoginToken;
+    this.state.firstLoginToken ??= this.issueSession(ADMIN_USER_ID, "setup");
+    return this.state.firstLoginToken;
   }
 
   /**
@@ -117,7 +122,7 @@ export class AuthService {
    * that or the rescue link stays suppressed.
    */
   async adminPasswordIs(password: string): Promise<boolean> {
-    const row = this.deps.users.findById(ADMIN_USER_ID);
+    const row = this.users.findById(ADMIN_USER_ID);
     return row !== null && (await verifyPassword(password, row.passwordHash));
   }
 
@@ -127,8 +132,8 @@ export class AuthService {
    * the server retries on next startup.
    */
   async seedAdmin(): Promise<void> {
-    if (this.deps.users.count() > 0) return;
-    const password = this.deps.seedAdminPassword ?? generateInitialAdminPassword();
+    if (this.users.count() > 0) return;
+    const password = this.seedAdminPassword ?? generateInitialAdminPassword();
     // A pinned override must meet the same policy as every other password — rejected before
     // any insert, so a configuration typo cannot create a trivially weak privileged account.
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -143,11 +148,11 @@ export class AuthService {
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
     };
-    this.deps.users.insert(user);
+    this.users.insert(user);
     try {
-      await this.deps.provisionInitialProject(user, true);
+      await this.provisioner.provisionInitialProject(user, true);
     } catch (err) {
-      this.deps.users.delete(user.userId);
+      this.users.delete(user.userId);
       throw err;
     }
   }
@@ -158,14 +163,14 @@ export class AuthService {
    * because a prefetching browser would burn it before its reader clicked.
    */
   redeemFirstLogin(given: string): string | null {
-    const expected = this.deps.state.firstLoginToken;
+    const expected = this.state.firstLoginToken;
     if (expected === null || given === "" || !tokensEqual(given, expected)) return null;
     return this.authenticateWithMeta(expected) === null ? null : expected;
   }
 
   /** Whether the built-in admin still runs on its initial password (gates the first-login link). */
   adminPasswordIsInitial(): boolean {
-    return this.deps.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
+    return this.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
   }
 
   /** Consecutive login failures per userId (see the throttling comment on the constants). */
@@ -194,7 +199,7 @@ export class AuthService {
         );
       }
     }
-    const row = this.deps.users.findById(userId);
+    const row = this.users.findById(userId);
     const ok = row !== null && (await verifyPassword(password, row.passwordHash));
     if (!row || !ok) {
       this.loginFailures.set(userId, {
@@ -204,7 +209,7 @@ export class AuthService {
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.loginFailures.delete(userId);
-    this.deps.authSessions.deleteExpired(this.now().toISOString());
+    this.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
   }
 
@@ -214,7 +219,7 @@ export class AuthService {
    * broken deployment (seeding runs before the route exists).
    */
   loginDesktop(): { user: UserInfo; token: string } {
-    const row = this.deps.users.findById(ADMIN_USER_ID);
+    const row = this.users.findById(ADMIN_USER_ID);
     if (!row) {
       throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
     }
@@ -223,7 +228,7 @@ export class AuthService {
 
   /** Self password change (user settings): validates the old password first; the current session stays valid. */
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
-    const row = this.deps.users.findById(userId);
+    const row = this.users.findById(userId);
     if (!row || !(await verifyPassword(oldPassword, row.passwordHash))) {
       throw new HttpError(400, "password_mismatch", "Current password is incorrect.");
     }
@@ -243,7 +248,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
+    this.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
     // A successful set proves at least what the successful login that resets the counter
     // proves (the old password, or a desktop/setup session), so it resets it too. Without
     // this, anyone spamming the login endpoint holds the backoff window open, and the sign-in
@@ -255,14 +260,14 @@ export class AuthService {
     // allowed to change the password without knowing the old one — so one left behind is an
     // account takeover waiting to happen.
     if (userId === ADMIN_USER_ID) {
-      this.deps.authSessions.deleteByUserAndVia(userId, "setup");
-      this.deps.state.firstLoginToken = null;
+      this.authSessions.deleteByUserAndVia(userId, "setup");
+      this.state.firstLoginToken = null;
     }
   }
 
   /** Ends a session: the row is the session, so logout deletes it. Unknown token is a no-op. */
   logout(token: string): void {
-    this.deps.authSessions.delete(sessionTokenHash(token));
+    this.authSessions.delete(sessionTokenHash(token));
   }
 
   /**
@@ -272,7 +277,7 @@ export class AuthService {
    * outlive the App a push replaces (auth/runtime-state.ts).
    */
   localApiToken(): string | null {
-    return this.deps.state.apiToken;
+    return this.state.apiToken;
   }
 
   /**
@@ -282,10 +287,10 @@ export class AuthService {
    * null on mismatch, when no token was minted, or when the admin row is missing.
    */
   authenticateApiToken(token: string): { user: UserRow; via: SessionVia } | null {
-    const apiToken = this.deps.state.apiToken;
+    const apiToken = this.state.apiToken;
     if (apiToken === null || token.length === 0) return null;
     if (!tokensEqual(token, apiToken)) return null;
-    const user = this.deps.users.findById(ADMIN_USER_ID);
+    const user = this.users.findById(ADMIN_USER_ID);
     return user === null ? null : { user, via: "token" };
   }
 
@@ -297,23 +302,20 @@ export class AuthService {
    */
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null {
     const tokenHash = sessionTokenHash(token);
-    const session = this.deps.authSessions.findByTokenHash(tokenHash);
+    const session = this.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
     const now = this.now();
     const expiresAt = Date.parse(session.expiresAt);
     if (expiresAt <= now.getTime()) {
-      this.deps.authSessions.delete(tokenHash);
+      this.authSessions.delete(tokenHash);
       return null;
     }
-    const user = this.deps.users.findById(session.userId);
+    const user = this.users.findById(session.userId);
     if (!user) return null;
-    const renewable = expiresAt - Date.parse(session.createdAt) >= this.deps.sessionRenewMs;
+    const renewable = expiresAt - Date.parse(session.createdAt) >= this.sessionRenewMs;
     let renewed = false;
-    if (renewable && expiresAt - now.getTime() < this.deps.sessionRenewMs) {
-      this.deps.authSessions.touch(
-        tokenHash,
-        new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
-      );
+    if (renewable && expiresAt - now.getTime() < this.sessionRenewMs) {
+      this.authSessions.touch(tokenHash, new Date(now.getTime() + this.sessionTtlMs).toISOString());
       renewed = true;
     }
     const via: SessionVia =
@@ -322,11 +324,17 @@ export class AuthService {
   }
 
   private issueSession(userId: string, via: SessionViaValue): string {
-    return this.deps.authSessions.issue({
+    return this.authSessions.issue({
       userId,
       via,
       now: this.now(),
-      ttlMs: this.deps.sessionTtlMs,
+      ttlMs: this.sessionTtlMs,
     }).token;
   }
+}
+
+/** What signing a new user in needs of project administration — declared at the consumer. */
+@Interface()
+export abstract class InitialProjectProvisioner {
+  abstract provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
 }

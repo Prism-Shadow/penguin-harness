@@ -54,6 +54,8 @@
 import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
 import type { ErrorsRepo } from "../db/repos/errors.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Overrides } from "../app.js";
 
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
@@ -106,14 +108,18 @@ function messageOf(err: unknown): string {
   return raw.length > MESSAGE_MAX ? raw.slice(0, MESSAGE_MAX) : raw;
 }
 
+@Component()
 export class ErrorRecorder {
   /** Dedup table: `source \0 code \0 projectId` → timestamp of the last **persist** (see file header). */
   private readonly lastSeen = new Map<string, number>();
 
-  constructor(
-    private readonly errors: ErrorsRepo,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  @Use() private readonly errors!: ErrorsRepo;
+  @Use() private readonly overrides!: Overrides;
+  private now: () => Date = () => new Date();
+
+  setup(): void {
+    this.now = this.overrides.value().now ?? this.now;
+  }
 
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
   record(args: ErrorRecordArgs): void {

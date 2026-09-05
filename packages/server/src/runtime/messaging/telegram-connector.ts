@@ -58,7 +58,15 @@ import type {
   TelegramTransport,
   TelegramUpdate,
 } from "./telegram-api.js";
-import { TELEGRAM_MAX_DOWNLOAD_BYTES, TelegramApiError } from "./telegram-api.js";
+import {
+  TELEGRAM_MAX_DOWNLOAD_BYTES,
+  TelegramApiError,
+  createTelegramTransport,
+} from "./telegram-api.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { Overrides } from "../../app.js";
+import { RuntimeModule } from "../../hmr/capabilities.js";
 
 /** The Telegram binding's stored config document (`messaging_bindings.config_json`). */
 export interface TelegramBindingConfig extends Record<string, unknown> {
@@ -577,5 +585,28 @@ export class TelegramConnector implements MessagingChannelConnector {
         await sleep(this.retryDelayMs(failures), signal);
       }
     }
+  }
+}
+
+/** The telegram connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-telegram.connector",
+        channel: "telegram",
+      },
+    ],
+  },
+})
+export class TelegramMessaging {
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Bind("messaging-telegram.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const overrides = this.overrides.value();
+    this.connector = new TelegramConnector(
+      overrides.telegramTransport ?? createTelegramTransport(),
+      overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
+    );
   }
 }

@@ -11,6 +11,7 @@
  * Trace once per process lifetime.
  */
 import type { SessionSource } from "../api/types.js";
+import { Component } from "@prismshadow/penguin-core/kernel";
 
 /**
  * Narrows an untrusted value (on-disk Trace JSON / forwarded meta) to a SessionSource:
@@ -21,6 +22,7 @@ export function asSessionSource(v: unknown): SessionSource | undefined {
   return v === "schedule" || v === "subagent" ? v : undefined;
 }
 
+@Component()
 export class SessionSources {
   private readonly map = new Map<string, SessionSource | null>();
 

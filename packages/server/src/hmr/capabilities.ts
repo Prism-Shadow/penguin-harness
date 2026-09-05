@@ -21,16 +21,19 @@
  * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
-import type { ServerConfig } from "../config.js";
-import type { AuthRuntimeState } from "../auth/runtime-state.js";
+import type { Resources, ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { ServerConfig, Config } from "../config.js";
+import type { AuthRuntimeState, AuthState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
-import type { ChannelHub } from "../runtime/channel.js";
-import type { ProxySettings } from "../net/proxy.js";
-import type { BuildDepsOverrides } from "../app.js";
-import type { HmrHost } from "../hmr/host.js";
-import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
+import type { ChannelHub, Channels } from "../runtime/channel.js";
+import type { ProxySettings, Proxy } from "../net/proxy.js";
+import type { BuildDepsOverrides, Overrides } from "../app.js";
+import type { HmrHost, Hmr } from "./host.js";
+import type { DesktopService, Desktop } from "../services/desktop-service.js";
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../db/database.js";
+import type { LifecycleService, Lifecycle } from "../services/lifecycle-service.js";
+import type { ResourceGroups } from "./platform.js";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -325,4 +328,57 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
     kind: "claimed",
     caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, overrides },
   };
+}
+
+/**
+ * What the runtime publishes, as the platform's modules see it. The runtime registers live
+ * objects in the resource registry (hmr/capabilities.ts); this module claims them once and
+ * exposes each under an interface here. Every other module reaches the runtime only through
+ * these — `requires: { db: { iface: "runtime#Db", from: "RuntimeModule" } }` — so what a bundle
+ * needs from its host is written down and checked, not assumed.
+ */
+
+@Interface()
+export abstract class Log {
+  abstract line(text: string): void;
+}
+
+/**
+ * The claimed capabilities are handed in by the platform node, which is the one place the
+ * registry is read (see hmr/platform.ts): this module only presents them. It is the one
+ * module class with constructor arguments, so the platform pre-builds its instance.
+ */
+@Module()
+export class RuntimeModule {
+  @Provide() config!: Config;
+  @Provide() db!: Db;
+  @Provide() channels!: Channels;
+  @Provide() proxy!: Proxy;
+  @Provide() hmr!: Hmr;
+  @Provide() desktop!: Desktop;
+  @Provide() authState!: AuthState;
+  @Provide() lifecycle!: Lifecycle;
+  @Provide() overrides!: Overrides;
+  @Provide() log!: Log;
+  @Provide() resourceGroups!: ResourceGroups;
+  constructor(
+    private readonly caps: RuntimeCapabilities,
+    private readonly adoptable: (group: string) => boolean,
+  ) {}
+
+  setup(_ctx: ClassCtx) {
+    const { caps } = this;
+    const log = caps.overrides.log ?? ((line: string) => console.log(line));
+    this.config = caps.config;
+    this.db = caps.db;
+    this.channels = caps.channels;
+    this.proxy = { apply: caps.proxyControl };
+    this.hmr = caps.hmr;
+    this.desktop = { current: () => caps.desktop };
+    this.authState = caps.authState;
+    this.lifecycle = caps.lifecycle;
+    this.overrides = { value: () => caps.overrides };
+    this.log = { line: log };
+    this.resourceGroups = { adoptable: this.adoptable };
+  }
 }

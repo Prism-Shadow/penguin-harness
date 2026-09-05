@@ -26,6 +26,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
+import type { ModuleTree, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { ProjectAccess } from "./services/project-access.js";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
@@ -168,76 +170,29 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
-import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
+import { wire, Interface } from "@prismshadow/penguin-core/kernel";
 
-export interface AppDeps {
+/**
+ * What the runtime process holds after boot: the capabilities it owns for the process
+ * lifetime, and the module tree the platform built over them (src/modules). There is no
+ * flat bag of services here any more — a module names what it needs in its manifest.
+ */
+export interface ServerBoot {
   config: ServerConfig;
   db: DatabaseSync;
-  sessionsRepo: SessionsRepo;
-  prefsRepo: UiPrefsRepo;
-  /** Admin-level server-global settings (currently the proxy switches and address). */
-  serverSettingsRepo: ServerSettingsRepo;
-  authService: AuthService;
-  adminService: AdminService;
-  projectService: ProjectService;
-  projectConfigService: ProjectConfigService;
-  /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
-  modelOAuth: ModelOAuthService;
-  agentService: AgentService;
-  agentConfigService: AgentConfigService;
-  memoryService: MemoryService;
-  sessionService: SessionService;
-  traceService: TraceService;
-  /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
-  traceIndex: TraceIndexService;
-  usageService: UsageService;
-  /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
-  updateCheck: UpdateCheckService;
-  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
-  updateJob: UpdateJobService;
-  workspaceFiles: WorkspaceFilesService;
-  /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
-  previewTokens: PreviewTokenSigner;
-  benchmarks: BenchmarkService;
-  snapshots: SnapshotService;
-  schedulesRepo: SchedulesRepo;
-  errorsRepo: ErrorsRepo;
-  /** Session ↔ messaging-channel bot bindings (stored; runtime connections live on `messaging`). */
-  messagingRepo: MessagingBindingsRepo;
-  /** Messaging bridge — channel connectors + event connections (started by the platform next to the scheduler). */
-  messaging: MessagingBridge;
-  /** QQ scan-to-connect: the in-flight bind tasks and the AES keys that never leave the server. */
-  qqScan: QQScanService;
-  /** WeChat scan-to-connect: the in-flight codes and the poll handles that never leave the server. */
-  wechatScan: WeChatScanService;
-  scheduler: Scheduler;
   channels: ChannelHub;
-  manager: SessionManager;
-  /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
-  sessionSources: SessionSources;
-  /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
-  errors: ErrorRecorder;
-  /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
+  hmr: HmrHost;
   desktop: DesktopService | null;
   /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
   lifecycle: LifecycleService;
   /**
-   * Installing this build on a machine from the server's own `~/.ssh/config` (the Machines
-   * page). Business, not runtime: spawning ssh and packing an image are in-process effects,
-   * so the whole capability ships by push — see machines/service.ts.
+   * The CURRENT App's module tree — read it on every use, never hold what it returns
+   * across an await: a push replaces the App, disposes the old tree, and this resolves
+   * to the new one. During the swap itself (old disposed, new not yet booted) it is the
+   * last tree that was current, so a process handler that fires in that window still
+   * has something to record with.
    */
-  machines: MachinesService;
-  /** HMR host: loads/swaps/persists the platform and web bundles (park/boot kernel). */
-  hmr: HmrHost;
-  /**
-   * Applies proxy settings to the RUNTIME's global dispatcher. A capability rather than a
-   * direct import on purpose: a pushed bundle carries its own copy of net/proxy.js (and of
-   * undici), so calling its own applyProxySettings would configure a dispatcher
-   * globalThis.fetch never routes through.
-   */
-  proxyControl: ProxyControl;
-  /** Request log output (minimal one-liner); tests inject a noop. */
-  log: (line: string) => void;
+  readonly tree: ModuleTree;
 }
 
 export interface BuildDepsOverrides {
@@ -296,10 +251,10 @@ export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
   plugins?: PluginHost,
-): Promise<AppDeps> {
+): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
 
-  const usersRepo = new UsersRepo(db);
+  const usersRepo = wire(UsersRepo, { db: db });
 
   // Hoisted above the services so its registry can be populated before anything boots
   // against it.
@@ -345,7 +300,8 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
-  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
+  const lifecycle = new LifecycleService(config.supervised);
+  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -357,21 +313,91 @@ export async function bootAppDeps(
   // services, routes, the scheduler — is assembled inside its create(). The check reads
   // the in-process api member, not a registry entry: the instance IS the current App.
   const instance = await hmr.ensure();
-  const business = instance.api.business();
-  if (business === null) {
+  const tree = instance.api.business();
+  if (tree === null) {
     throw new Error("the packaged platform built no business surface");
   }
-  // The App's own deps, read off the booted instance — the same bag every caller of this
-  // function always received. Callers that outlive swaps (index.ts, the runtime app) may
-  // only touch its swap-stable members: the runtime singletons published above, and the
-  // stateless repos over this process's own db handle. The business machinery on it
-  // (manager, services, scheduler) belongs to THIS generation and goes stale at the next
-  // push — per-request business dispatch rides the seam, never this reference.
-  return business;
+  // Callers that outlive swaps (index.ts, the runtime app) hold the swap-stable members —
+  // the runtime singletons published above — and reach the business surface through
+  // `tree`, which resolves to whatever App is current at the moment of the read.
+  let last = tree;
+  const boot: ServerBoot = {
+    config,
+    db,
+    channels,
+    hmr,
+    desktop,
+    lifecycle,
+    get tree() {
+      // A pushed platform may carry no business surface (a bare kernel, a test's stand-in):
+      // then the last tree that was current stays the answer.
+      const api = hmr.currentApp()?.api as { business?: () => ModuleTree | null } | undefined;
+      const now = typeof api?.business === "function" ? api.business() : null;
+      if (now !== null && now !== undefined) last = now;
+      return last;
+    },
+  };
+  return boot;
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
+/** Per boot: the last instance of each business node the runtime reached, by `module#alias`. */
+const lastApis = new WeakMap<ServerBoot, Map<string, unknown>>();
+
+/**
+ * A business node as the runtime — which outlives every push — reaches it: the CURRENT
+ * App's, on every call. A pushed platform is free to carry a narrower tree; where the
+ * current App has no such node, the last one that did stays in force, so a push cannot
+ * take the runtime's own error recording or its login gate away by leaving them out.
+ * A disposed tree answers nothing, so "the last one" has to have been read while it
+ * was current: createRuntimeApp reads each node it relies on once, at construction.
+ */
+export function liveApi<T>(boot: ServerBoot, module: string, alias: string): T {
+  const key = `${module}#${alias}`;
+  let held = lastApis.get(boot);
+  if (held === undefined) lastApis.set(boot, (held = new Map()));
+  const tree = boot.tree;
+  if (tree.has(module)) {
+    const value = tree.api<T>(module, alias);
+    held.set(key, value);
+    return value;
+  }
+  const previous = held.get(key) as T | undefined;
+  if (previous === undefined) {
+    throw new Error(`the current App has no '${module}', and no App before it did either`);
+  }
+  return previous;
+}
+
+export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
+  // Nothing from the tree is captured: this app outlives every push, and each of these
+  // is the current App's on the request that reads it (see liveApi).
+  const errors = {
+    record: (entry: Parameters<ErrorRecorder["record"]>[0]) =>
+      liveApi<ErrorRecorder>(boot, "ErrorRecorder", "ErrorRecorder").record(entry),
+  };
+  const log = {
+    line: (text: string) =>
+      liveApi<{ line(text: string): void }>(boot, "RuntimeModule", "log").line(text),
+  };
+  const settings = () =>
+    liveApi<ServerSettingsRepo>(boot, "ServerSettingsRepo", "ServerSettingsRepo");
+  const access = () => liveApi<ProjectAccess>(boot, "ProjectAccess", "ProjectAccess");
+  const deps = {
+    config: boot.config,
+    desktop: boot.desktop,
+    get authService() {
+      return liveApi<AuthService>(boot, "AuthService", "AuthService");
+    },
+    hmr: boot.hmr,
+    channels: boot.channels,
+  };
+  // Read once now, while the packaged App is current: the floor a narrower push falls to.
+  liveApi(boot, "ErrorRecorder", "ErrorRecorder");
+  liveApi(boot, "RuntimeModule", "log");
+  settings();
+  access();
+  void deps.authService;
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
@@ -379,8 +405,8 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // exceptions are logged with a stack trace and collapsed to 500), and recording
   // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, deps);
-    deps.errors.record({
+    const projectId = attributedProjectId(c, { access: access() });
+    errors.record({
       source: "http",
       err,
       ...(projectId !== undefined ? { ctx: { projectId } } : {}),
@@ -394,7 +420,7 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     const start = performance.now();
     await next();
     const ms = Math.round(performance.now() - start);
-    deps.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
+    log.line(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
@@ -440,7 +466,7 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // size so the steady state allocates nothing.
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
+    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -474,8 +500,11 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
     // carries the auth middleware on its own subtree — the routes then gate on
     // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
+    // Resolved per request: `deps.authService` is the current App's (see ServerBoot.tree).
+    const updateGate: MiddlewareHandler<AppEnv> = (c, next) =>
+      authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
+    app.use("/api/desktop/update", updateGate);
+    app.use("/api/desktop/update/*", updateGate);
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
@@ -770,501 +799,9 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  * claim — one live instance per process, shared with the runtime. Everything else is
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
-export function buildAppDeps(
-  caps: RuntimeCapabilities,
-  overrides: BuildDepsOverrides = {},
-  // Spawn confinement (mechanism only here): platform.ts's create() hands in a getter
-  // over its own SandboxService, and it is threaded untouched through BOTH core entry
-  // paths — the loader (resume/self-heal) and SessionService (creation) — then re-read
-  // at every command spawn, like proxyEnv. Same-generation wiring on purpose: the
-  // sessions spawning through it are hard-stopped with their App, so no channel with a
-  // longer lifetime is needed. Policy itself lives in ../sandbox/.
-  confineSpawn: () => SpawnConfiner | null = () => null,
-): AppDeps {
-  const { config, db, authState, channels, hmr } = caps;
-  const log = overrides.log ?? ((line: string) => console.log(line));
 
-  // A pushed platform carries its own migrations, which is the only way the tables its
-  // business needs can reach a runtime older than they are — that runtime will never grow
-  // them by restarting, because it does not have them. swapPath: this boot can be rolled
-  // back, so a restart-only migration is refused here instead of being left behind.
-  migrate(db, { swapPath: true });
-
-  /**
-   * This machine's own id is minted on the first boot of this data root and stable ever
-   * after — every stored reference to this machine, here and on the machines it reaches,
-   * points at it. Behind a function so a test that passes its own service never mints one.
-   */
-  const buildMachines = (): MachinesService => {
-    const repo = new MachinesRepo(db);
-    return new MachinesService(config.root, repo.ownId(), repo, {}, () => hmr.assetsDir());
-  };
-
-  const usersRepo = new UsersRepo(db);
-  const projectsRepo = new ProjectsRepo(db);
-  const membersRepo = new MembersRepo(db);
-  // Auth is built HERE, with the App, so every rule it carries ships by push. The runtime
-  // publishes only `authState` — the values a push must not forget (auth/runtime-state.ts).
-  // `provisionInitialProject` closes over the projectService created below: seeding runs long
-  // after this returns, so the cycle costs a closure rather than an install-it-later hook.
-  const authService = new AuthService({
-    users: usersRepo,
-    authSessions: new AuthSessionsRepo(db),
-    state: authState,
-    provisionInitialProject: (user, isAdmin) =>
-      projectService.provisionInitialProject(user, isAdmin),
-    seedAdminPassword: config.seedAdminPassword,
-    sessionTtlMs: config.authSessionTtlMs,
-    sessionRenewMs: config.authSessionRenewMs,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-  const agentsRepo = new AgentsRepo(db);
-  const sessionsRepo = new SessionsRepo(db);
-  const usageRepo = new UsageRepo(db);
-  const errorsRepo = new ErrorsRepo(db);
-  const prefsRepo = new UiPrefsRepo(db);
-  const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Command-subprocess proxy policy for core, keyed on the
-  // "agent environment uses the proxy" switch (the app switch only drives the server's
-  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
-  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
-  // over whatever the environment carries; on without an address → pass the environment
-  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
-  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
-  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
-  // the manager adopts for the first Task).
-  const proxyEnv = (): ProxyEnvPolicy | null => {
-    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
-    const url = serverSettingsRepo.getProxyUrl();
-    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
-  };
-  // Harness-control env for command subprocesses of server-driven Sessions: the server's
-  // own canonical URL, its boot API token, and the Session's coordinates — what lets
-  // commands the Agent runs drive this harness back through the CLI/API. Threaded like
-  // proxyEnv through BOTH core entry paths (loader + SessionService), and evaluated per
-  // spawn: config.port is written back by index.ts once the real port is bound (PORT=0),
-  // so the URL must not be captured at assembly time. On a loopback bind the URL uses the
-  // canonical App host (`localhost`) — the counterpart name serves only /preview/*; a
-  // wildcard bind falls back to 127.0.0.1.
-  const canonicalApiUrl = (): string => {
-    const host =
-      config.host === "0.0.0.0" || config.host === "::"
-        ? "127.0.0.1"
-        : (loopbackHostRoles(config.host)?.app ?? config.host);
-    return `http://${host}:${config.port}`;
-  };
-  const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
-    const token = authService.localApiToken();
-    return {
-      PENGUIN_API_URL: canonicalApiUrl(),
-      ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
-      PENGUIN_PROJECT_ID: ctx.projectId,
-      PENGUIN_AGENT_ID: ctx.agentId,
-      PENGUIN_SESSION_ID: ctx.sessionId,
-    };
-  };
-  const schedulesRepo = new SchedulesRepo(db);
-
-  const projectConfigService = new ProjectConfigService(config.root);
-  // Per-App like the preview signer above: a flow holds a PKCE verifier and nothing durable,
-  // so a push or a restart costs the user one re-authorization and leaks nothing.
-  const modelOAuth = new ModelOAuthService({
-    applyGroupKey: (projectId, provider, apiKey) =>
-      projectConfigService.setGroupApiKey(projectId, provider, apiKey),
-  });
-  const agentConfigService = new AgentConfigService(config.root);
-  const snapshots = new SnapshotService(config.root);
-  const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
-  const memoryService = new MemoryService(config.root, agentConfigService);
-  // Session-origin registry: session_meta is the single source of truth (no DB column);
-  // shared by the manager (subagent registration), the loader (self-heal rebuild),
-  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
-  // listing classification.
-  const sessionSources = new SessionSources();
-  // Trace-file index: the derived cache every trace listing/locating path serves from
-  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
-  const traceIndexRepo = new TraceIndexRepo(db);
-  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
-  const traceService = new TraceService(config.root, {
-    index: traceIndex,
-    sessions: sessionsRepo,
-    sources: sessionSources,
-  });
-  const workspaceFiles = new WorkspaceFilesService();
-  // Per-process secret: preview tokens are short-lived, so losing them on restart is
-  // harmless and there is nothing to persist or rotate. (Per-App is the same trade at a
-  // smaller scale: a push invalidates open previews, and a preview is one reload away.)
-  const previewTokens = createPreviewTokenSigner();
-  const benchmarks = new BenchmarkService(config.root, workspaceFiles);
-  const usageService = new UsageService(
-    usageRepo,
-    errorsRepo,
-    // No clock here: a scheduled row's two rates come back together and each aggregation half
-    // is priced at the tier its own records ran in, which the query decides from their `ts`.
-    (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
-    overrides.now ?? (() => new Date()),
-  );
-  const updateCheck =
-    overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
-  const updateJob = overrides.updateJob ?? new UpdateJobService();
-
-  const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
-  const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
-  // Shared by SessionManager (run-state flips) and TitleGenerator (title updates): both are
-  // list-row facts that must reach tabs not subscribed to the Session's own channel.
-  //
-  // Audience = the Project's owner plus its members, i.e. exactly who
-  // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session they
-  // cannot open changed state or gained a title.
-  //
-  // `peek`, deliberately not `get`: a user who has never opened an event stream has no
-  // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
-  // (their next connection fetches the list, which carries the same statuses anyway).
-  const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
-    const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
-    if (ownerUserId === undefined) return;
-    const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
-    for (const userId of audience) {
-      channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-    }
-  };
-  const titles =
-    overrides.titles ??
-    new TitleGenerator({
-      sessions: sessionsRepo,
-      channels,
-      recorder,
-      errors,
-      log,
-      notifyProjectUsers,
-    });
-  const manager = new SessionManager({
-    sessions: sessionsRepo,
-    channels,
-    loader:
-      overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, confineSpawn }),
-    sources: sessionSources,
-    recorder,
-    errors,
-    titles,
-    log,
-    // Run-state flips reach the whole login session, not just the tab watching that one
-    // conversation (see the shared publisher above for the audience).
-    notifyProjectUsers,
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-
-  const projectService = new ProjectService({
-    root: config.root,
-    users: usersRepo,
-    projects: projectsRepo,
-    members: membersRepo,
-    agents: agentsRepo,
-    sessions: sessionsRepo,
-    usage: usageRepo,
-    errors: errorsRepo,
-    schedules: schedulesRepo,
-    projectConfig: projectConfigService,
-    manager,
-    traceIndex,
-  });
-  const adminService = new AdminService({
-    users: usersRepo,
-    authSessions: new AuthSessionsRepo(db),
-    projects: projectsRepo,
-    projectService,
-    ...(overrides.passwordHashCost !== undefined
-      ? { passwordHashCost: overrides.passwordHashCost }
-      : {}),
-    ...(overrides.now ? { now: overrides.now } : {}),
-  });
-  const messagingRepo = new MessagingBindingsRepo(db);
-  // Messaging bridge: assembled here, started by platform.ts's create() (tests drive it
-  // via sync()/fake transports, no real network), stopped by the same create()'s dispose
-  // effect. One connector per channel; further channels register here.
-  const messaging = new MessagingBridge({
-    repo: messagingRepo,
-    sessions: sessionsRepo,
-    // The same service the Files panel reads through: mirroring a file the reply mentions
-    // must obey exactly the containment rules browsing it does, not a second copy of them.
-    files: workspaceFiles,
-    root: config.root,
-    // Read through per message, not snapshotted: these are admin-settable, and every other
-    // caller resolves them per request so a change applies without a restart.
-    attachmentLimits: () => toAttachmentLimits(serverSettingsRepo.getAttachmentLimitsMb()),
-    channels,
-    runner: manager,
-    connectors: [
-      new FeishuConnector(overrides.feishuSdk ?? createLarkSdk()),
-      new TelegramConnector(
-        overrides.telegramTransport ?? createTelegramTransport(),
-        overrides.telegramRetryDelayMs ? { retryDelayMs: overrides.telegramRetryDelayMs } : {},
-      ),
-      new QQConnector(overrides.qqTransport ?? createQQTransport(), {
-        ...(overrides.qqTailFlushMs !== undefined ? { tailFlushMs: overrides.qqTailFlushMs } : {}),
-        ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-      }),
-      new WeChatConnector(
-        overrides.wechatTransport ?? createWeChatTransport(),
-        overrides.wechatRetryDelayMs ? { retryDelayMs: overrides.wechatRetryDelayMs } : {},
-      ),
-    ],
-    errors,
-    log,
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-    ...(overrides.messagingLineDelayMs !== undefined
-      ? { lineDelayMs: overrides.messagingLineDelayMs }
-      : {}),
-    ...(overrides.messagingInboundImageBudgetBytes !== undefined
-      ? { inboundImageBudgetBytes: overrides.messagingInboundImageBudgetBytes }
-      : {}),
-  });
-  // Scan-to-connect holds one AES key per in-flight bind task, in memory only: it decrypts
-  // an App Secret, and a task lives for the couple of minutes a person spends scanning.
-  const qqScan = new QQScanService(overrides.qqScanTransport ?? createQQScanTransport(), {
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-  });
-  // Same reasoning as above: what this one holds is the handle that collects a bot token
-  // rather than a key that decrypts a secret, and it is equally not worth persisting.
-  const wechatScan = new WeChatScanService(
-    overrides.wechatScanTransport ?? createWeChatScanTransport(),
-    { ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}) },
-  );
-  const sessionService = new SessionService({
-    root: config.root,
-    sessions: sessionsRepo,
-    manager,
-    projectConfig: projectConfigService,
-    sources: sessionSources,
-    traceIndex,
-    proxyEnv,
-    controlEnv,
-    // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
-    // the row); a point query per row keeps the repo out of the service. An unknown
-    // stored channel reads as none (same defensive skip as the bridge and the routes).
-    messagingChannel: (sessionId) => {
-      const enabled = messagingRepo.findEnabled(sessionId);
-      return enabled !== null &&
-        (enabled.channel === "feishu" ||
-          enabled.channel === "telegram" ||
-          enabled.channel === "qq" ||
-          enabled.channel === "wechat")
-        ? enabled.channel
-        : null;
-    },
-    confineSpawn,
-  });
-  // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
-  // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
-  const scheduler = new Scheduler({
-    root: config.root,
-    repo: schedulesRepo,
-    projects: projectsRepo,
-    sessions: sessionsRepo,
-    runner: manager,
-    sessionCreator: sessionService,
-    projectConfig: projectConfigService,
-    errors,
-    notify: (userId, event) => {
-      channels.get(userChannelKey(userId)).publish(event, "server_event");
-    },
-    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
-  });
-
-  return {
-    config,
-    db,
-    sessionsRepo,
-    prefsRepo,
-    serverSettingsRepo,
-    authService,
-    adminService,
-    projectService,
-    projectConfigService,
-    modelOAuth,
-    agentService,
-    agentConfigService,
-    memoryService,
-    sessionService,
-    traceService,
-    traceIndex,
-    usageService,
-    updateCheck,
-    updateJob,
-    workspaceFiles,
-    previewTokens,
-    benchmarks,
-    snapshots,
-    schedulesRepo,
-    errorsRepo,
-    messagingRepo,
-    qqScan,
-    wechatScan,
-    messaging,
-    scheduler,
-    channels,
-    manager,
-    sessionSources,
-    errors,
-    desktop: caps.desktop,
-    lifecycle: caps.lifecycle,
-    // Anchored at the data root: that is where the hmr store the pushable image comes from
-    // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? buildMachines(),
-    hmr,
-    proxyControl: caps.proxyControl,
-    log,
-  };
-}
-
-/** Prefixes the runtime serves itself; the platform app declines them unconditionally. */
-const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
-
-/**
- * Assembles the platform's ONE Hono app: every route the platform serves — the terminal
- * group and the business groups — registered together, so a swap replaces the whole route
- * table as a unit (routes + auth + error shaping; no listening, no logging).
- *
- * `deps` is null when the host published no business capabilities — a declared bare kernel:
- * the terminal group still serves, everything else declines. A runtime merely too OLD to
- * publish them never reaches here; the platform refuses to boot on one (hmr/platform.ts's
- * create), because that runtime still answers the business API out of its own routes.
- */
-export function createApp(
-  deps: AppDeps | null,
-  terminals: TerminalManager,
-  identity: Identity,
-): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-
-  // Error recording is layered in a lambda wrapping onError: handleError stays a
-  // pure function with unchanged behavior (HttpError is mapped as-is, unknown
-  // exceptions are logged with a stack trace and collapsed to 500), and recording
-  // to the DB is just a side-effect layered on top — skipped when no business (and so
-  // no errors table access) is running.
-  app.onError((err, c) => {
-    if (deps !== null) {
-      const projectId = attributedProjectId(c, deps);
-      deps.errors.record({
-        source: "http",
-        err,
-        ...(projectId !== undefined ? { ctx: { projectId } } : {}),
-      });
-    }
-    return handleError(err, c);
-  });
-  app.notFound(() => declined());
-
-  // The terminal group mounts FIRST and carries its own per-route identity gate: a
-  // matched terminal route ends the chain before the cookie auth below ever runs, and an
-  // unmatched /api/terminals path falls through it into the same auth-then-decline shape
-  // as any other unknown /api path.
-  app.route("/", terminalRoutes(terminals, identity));
-
-  if (deps === null) return app;
-
-  // Runtime-owned prefixes decline before anything else runs — in particular before the
-  // auth gate below, which would otherwise 401 an unauthenticated /api/auth/login instead
-  // of letting the runtime's own public route serve it.
-  app.use("*", async (c, next) => {
-    if (RUNTIME_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
-      return declined();
-    }
-    await next();
-  });
-
-  // The provider key-minting redirect receiver, and the only business route mounted outside
-  // the auth gate below — the same shape /api/desktop/update uses in reverse, and for the
-  // mirror-image reason. A loopback OAuth callback is reached by whichever browser the
-  // provider redirected: on the desktop the shell hands the authorization page to the system
-  // browser, which holds no session cookie for this origin, so requiring one 401'd every
-  // desktop authorization. It authorizes on the flow id instead, and all it may do with one
-  // is deposit the code it carried: the exchange that writes a key runs on the owner's poll
-  // of the status route, behind this gate (see the route module).
-  //
-  // Exactly this literal path, registered here so the exemption cannot widen: the group
-  // mount below still carries /start, /:flowId/code and the status route behind the gate,
-  // and because this registration comes first, `:flowId` can never swallow "callback". Only
-  // GET is served, and the handler refuses the HEAD that Hono re-dispatches into it.
-  app.route("/api/projects/:projectId/model-oauth/callback", modelOAuthCallbackRoutes(deps));
-
-  // The data root's install identity, public: the web app compares it against what it holds
-  // in `localStorage` before React mounts, which is before it knows whether anyone is signed
-  // in — and a just-wiped root, the case the whole mechanism exists for, has nobody signed in
-  // at all. See http/routes/install.ts.
-  //
-  // Mounted in the PLATFORM rather than the runtime because a hot push carries platform + cli
-  // + web dist as ONE version and never the runtime (hmr/host.ts): the bundle that calls this
-  // route and the route itself then always move together, whereas a runtime mount would let a
-  // pushed web dist arrive on an installation whose runtime does not serve what it asks for.
-  // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
-  // platform must serve it, not decline it.
-  app.route("/api/install", installRoutes(deps));
-  // `/server/<machineId>/api/…` — a connected machine's API, forwarded over the forward held
-  // to it and addressed by the machine's OWN id. Admins only: the request is made over there
-  // as that machine's admin, with a session this server minted over the ssh access that
-  // installed it, so this server's admin session is the one credential involved.
-  const serverProxy = machinesProxy(
-    (machineId) => deps.machines.proxyTarget(machineId),
-    (machineId, outcome) => deps.machines.noteApiSeen(machineId, outcome),
-  );
-  app.all(
-    `${SERVER_PROXY_PREFIX}*`,
-    authMiddleware(deps.authService, deps.config.trustProxy),
-    async (c) => {
-      if (!c.var.user.isAdmin) {
-        throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
-      }
-      const answer = await serverProxy(c.req.raw);
-      return answer ?? c.notFound();
-    },
-  );
-
-  // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
-  app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.route("/api/me", meRoutes(deps));
-  app.route("/api/version", versionRoutes(deps));
-  app.route("/api/admin/users", adminUsersRoutes(deps));
-  app.route("/api/admin/settings", adminSettingsRoutes(deps));
-  app.route("/api/events", eventsRoutes(deps));
-  // Plugin library listing: readable once logged in, not nested under a Project prefix.
-  app.route("/api/plugins", pluginLibraryRoutes());
-  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
-  app.route("/api/projects", projectsRoutes(deps));
-  app.route("/api/projects/:projectId/members", membersRoutes(deps));
-  app.route("/api/projects/:projectId/models", modelsRoutes(deps));
-  app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
-  app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
-  app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
-  app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
-  app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
-  app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/plugins", agentPluginsRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/hooks", agentHooksRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId", agentTransferRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/traces", agentTracesRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
-  app.route("/api/projects/:projectId/usage", usageRoutes(deps));
-  app.route("/api/sessions", sessionsRoutes(deps));
-  app.route("/api/sessions", sessionMessagingRoutes(deps));
-
-  // Workspace HTML preview on the separate preview origin: deliberately outside /api and
-  // outside the auth middleware — that origin never receives the session cookie, so the
-  // signed token in the path is the only credential.
-  app.route("/preview", previewRoutes(deps));
-
-  // An unknown /api path a logged-in caller reaches falls to notFound → decline → the
-  // runtime answers its own 404; unauthenticated callers are already 401'd above, which
-  // is the same shape the one-app assembly produced.
-  return app;
+/** Construction overrides — production publishes {}, tests publish live collaborators. */
+@Interface()
+export abstract class Overrides {
+  abstract value(): Opaque<"BuildDepsOverrides", BuildDepsOverrides>;
 }

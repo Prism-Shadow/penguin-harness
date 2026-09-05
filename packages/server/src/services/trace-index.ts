@@ -48,6 +48,8 @@ import { readTraceHead } from "../internal/trace-head.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config } from "../config.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -112,6 +114,7 @@ interface SeenDirs {
   dates: Map<string, number>;
 }
 
+@Component()
 export class TraceIndexService {
   private readonly seen = new Map<string, SeenDirs>();
   private readonly inflight = new Map<string, Promise<void>>();
@@ -122,12 +125,13 @@ export class TraceIndexService {
    */
   readonly counters = { gateStats: 0, dirScans: 0, headReads: 0 };
 
-  constructor(
-    private readonly root: string,
-    readonly repo: TraceIndexRepo,
-    /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
-    private readonly sources?: SessionSources,
-  ) {}
+  @Use() private readonly config!: Config;
+  private get root(): string {
+    return this.config.root;
+  }
+  @Use() readonly repo!: TraceIndexRepo;
+  /** Shared origin registry: registration-time classification publishes into it (single source of truth for `source`). */
+  @Use() private readonly sources?: SessionSources;
 
   /**
    * Brings one Agent's index in step with disk. Hot path: one root stat, then the
