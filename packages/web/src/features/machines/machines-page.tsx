@@ -1,22 +1,22 @@
 /**
- * Machines: the fleet as a table, and two verbs.
+ * Machines: the fleet as a list, and two verbs.
  *
  * "Use" is the whole of what a person wants from a machine — install or update the program
  * there, start its server, connect, hand over the Model config — as one job the server
  * queues per machine, so a batch is one tap. "Stop using" lets a machine go.
  *
- * One row per machine, this server included as the first row. The columns are the four
- * facts a fleet page owes its reader — the machine, its state in one word, the build it
- * carries, when it was last checked — and state is said exactly once per row, as that
- * word. A build behind this server's is an amber chip; the fix, "Use", sits at the end of
- * the rows that need it and nowhere else.
+ * One row per machine, this server first. A row is the machine's name in mono and one
+ * line beneath it in the row's tone: the state in a word, and beside it the single detail
+ * that matters — when it was last checked, the build it carries when that is behind this
+ * server's, the far side's words when it failed. State is said once. At the row's end sits
+ * a dot when nothing is needed, and "Use" when something is; the ⓘ opens the record and
+ * the job's output in a pane beside the list, or a sheet on a narrow screen.
  *
  * Selection is the row: clicking one toggles it, a selected row is a tinted band with a
- * rail on its left edge, and every machine in use starts selected. The verbs live in a bar
- * that floats over the table only while something is selected. A queued or working row
- * grows a stepper under its name, one segment per step of the pipeline, fed by the step the
- * server says it is on. The ⓘ at a row's end opens the record and the job's output in a
- * pane beside the table, or a sheet on a narrow screen.
+ * rail on its left edge, and every machine in use starts selected. The verbs are the card's
+ * own footer, present only while something is selected. A queued or working row grows a
+ * stepper under its name, one segment per step of the pipeline, fed by the step the server
+ * says it is on.
  *
  * The list polls while a job is queued or running, and re-probes the servers on a widening
  * schedule (probe-schedule.ts) so a machine that went quiet is noticed without a tap.
@@ -31,7 +31,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -47,7 +46,6 @@ import {
   installedMachines,
   jobFor,
   localMachine,
-  outOfDate,
   readMachine,
   readingTone,
   wantsUse,
@@ -63,7 +61,6 @@ const POLL_MS = 1500;
 const INFO_PATH = "M12 16v-4M12 8h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0";
 
 const MONO = "font-mono text-[13px] tabular-nums";
-const CELL = "px-3 py-2.5 align-middle whitespace-nowrap sm:px-4";
 
 /** The reason a row gives under its name, when it has one: the far side's own words. */
 function reasonText(reading: MachineReading): string | null {
@@ -463,67 +460,47 @@ export function MachinesPage() {
             className={`grid gap-4 ${wide && detail !== null ? "lg:grid-cols-[minmax(0,1fr)_20rem]" : ""}`}
           >
             <div className="min-w-0">
-              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 text-left text-[11px] tracking-wider text-gray-500 uppercase dark:bg-gray-900/60">
-                      <th className={`${CELL} font-medium`}>{S.machines.colMachine}</th>
-                      <th className={`${CELL} font-medium`}>{S.machines.colState}</th>
-                      <th className={`${CELL} hidden font-medium sm:table-cell`}>
-                        {S.machines.colVersion}
-                      </th>
-                      <th className={`${CELL} hidden font-medium md:table-cell`}>
-                        {S.machines.colChecked}
-                      </th>
-                      <th className={`${CELL} w-px`} />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                    {local !== null && (
-                      <LocalRow
-                        machine={local}
-                        open={detailId === local.id}
-                        onDetail={() => setDetailId(local.id)}
-                      />
-                    )}
-                    {inUse.map((machine) => (
-                      <MachineRow
-                        key={machine.id}
-                        machine={machine}
-                        job={jobFor(jobs, machine.id)}
-                        imageVersion={imageVersion}
-                        locale={locale}
-                        selected={selection.has(machine.id)}
-                        onToggle={() => togglePicked(machine.id)}
-                        detailOpen={detailId === machine.id}
-                        onDetail={() => setDetailId(detailId === machine.id ? null : machine.id)}
-                        busy={posting}
-                        onUse={() => void use([machine.id])}
-                      />
-                    ))}
-                    {inUse.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-4 text-sm text-gray-500">
-                          <p>{S.machines.noneInUse}</p>
-                          <p className="mt-1 text-xs">{S.machines.sshHint}</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* The verbs, floating over the table only while something is selected. */}
-              {selectedIds.length > 0 && (
-                <div className="sticky bottom-3 mt-3 flex justify-center">
-                  <div className="flex max-w-full flex-wrap items-center gap-2 rounded-full bg-gray-900 py-1.5 pr-1.5 pl-4 text-sm text-white shadow-lg dark:bg-gray-100 dark:text-gray-900">
+              <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+                <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+                  {local !== null && (
+                    <LocalRow
+                      machine={local}
+                      open={detailId === local.id}
+                      onDetail={() => setDetailId(detailId === local.id ? null : local.id)}
+                    />
+                  )}
+                  {inUse.map((machine) => (
+                    <MachineRow
+                      key={machine.id}
+                      machine={machine}
+                      job={jobFor(jobs, machine.id)}
+                      imageVersion={imageVersion}
+                      locale={locale}
+                      selected={selection.has(machine.id)}
+                      onToggle={() => togglePicked(machine.id)}
+                      detailOpen={detailId === machine.id}
+                      onDetail={() => setDetailId(detailId === machine.id ? null : machine.id)}
+                      busy={posting}
+                      onUse={() => void use([machine.id])}
+                    />
+                  ))}
+                  {inUse.length === 0 && (
+                    <li className="px-4 py-4 text-sm text-gray-500">
+                      <p>{S.machines.noneInUse}</p>
+                      <p className="mt-1 text-xs">{S.machines.sshHint}</p>
+                    </li>
+                  )}
+                </ul>
+                {/* The verbs: the card's own footer, present only while something is selected. */}
+                {selectedIds.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-gray-200 bg-gray-50/70 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40">
                     <span className="tabular-nums">
                       {S.machines.selectedCount(selectedIds.length)}
                     </span>
-                    <span className="flex items-center gap-1 text-xs opacity-70">
+                    <span className="flex items-center gap-1">
                       <button
                         type="button"
-                        className="hover:opacity-100 hover:underline"
+                        className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
                         onClick={pickAll}
                       >
                         {S.machines.pickAll}
@@ -531,33 +508,33 @@ export function MachinesPage() {
                       ·
                       <button
                         type="button"
-                        className="hover:opacity-100 hover:underline"
+                        className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
                         onClick={pickNone}
                       >
                         {S.machines.pickNone}
                       </button>
                     </span>
-                    <span className="ml-2 flex items-center gap-1.5">
-                      <button
-                        type="button"
+                    <span className="ml-auto flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
                         disabled={posting || noImage}
                         onClick={() => void use(selectedIds)}
-                        className="rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-900 transition-opacity hover:opacity-90 disabled:opacity-50 dark:bg-gray-900 dark:text-white"
                       >
                         {S.machines.use}
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         disabled={posting}
                         onClick={() => void stopUsing(selectedIds)}
-                        className="rounded-full px-3 py-1 text-xs font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50"
                       >
                         {S.machines.stopUsing}
-                      </button>
+                      </Button>
                     </span>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             {wide && detail !== null && (
               <aside className="min-w-0 rounded-xl border border-gray-200 dark:border-gray-800">
@@ -581,52 +558,54 @@ export function MachinesPage() {
   );
 }
 
-/** This server's own row: not selectable — it is where the page is served from. */
-function LocalRow({
-  machine,
-  open,
-  onDetail,
-}: {
-  machine: MachineInfo;
-  open: boolean;
-  onDetail: () => void;
-}) {
+/** The one line under a machine's name: its state, and the one detail that matters beside it. */
+function stateLine(reading: MachineReading, machine: MachineInfo, locale: "zh" | "en"): string {
+  const m = S.machines;
+  const word = m.state[reading.kind];
+  const checked =
+    machine.connection !== null
+      ? m.now
+      : machine.status !== null
+        ? formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)
+        : null;
+  switch (reading.kind) {
+    case "behind":
+      return `${word} · ${reading.version}`;
+    case "failed":
+      return `${word} · ${reading.message}`;
+    case "queued":
+      return word;
+    case "working":
+      return word;
+    default:
+      return checked === null ? word : `${word} · ${checked}`;
+  }
+}
+
+/** The six-segment stepper under a working row, and the step it is on. */
+function Stepper({ step, caption }: { step: number; caption: string }) {
   return (
-    <tr>
-      <td className={CELL}>
-        <span className={`${MONO} font-medium`}>{machine.alias}</span>
-        <span className="ml-2 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
-          {S.machines.localTitle}
-        </span>
-      </td>
-      <td className={CELL}>
-        <StateWord tone="success" word={S.machines.state.serving} />
-      </td>
-      <td className={`${CELL} hidden sm:table-cell`}>
-        {machine.installed !== null && (
-          <span className={`${MONO} text-gray-500`}>{machine.installed.version}</span>
-        )}
-      </td>
-      <td className={`${CELL} hidden text-gray-500 md:table-cell`}>{S.machines.now}</td>
-      <td className={`${CELL} text-right`}>
-        <InfoButton alias={machine.alias} open={open} onClick={onDetail} />
-      </td>
-    </tr>
+    <div className="mt-1.5 w-44 max-w-full">
+      <div className="flex gap-0.5" aria-hidden="true">
+        {MACHINE_PHASES.map((phase, index) => (
+          <span
+            key={phase}
+            className={`h-[3px] flex-1 rounded-sm ${
+              index < step
+                ? toneDot.busy
+                : index === step
+                  ? `${toneDot.busy} animate-pulse`
+                  : "bg-gray-200 dark:bg-gray-700"
+            }`}
+          />
+        ))}
+      </div>
+      <div className={`mt-1 truncate text-xs ${toneInk.busy}`}>{caption}</div>
+    </div>
   );
 }
 
-function StateWord({ tone, word, moving = false }: { tone: Tone; word: string; moving?: boolean }) {
-  return (
-    <span className={`inline-flex items-center gap-2 font-medium ${toneInk[tone]}`}>
-      <span
-        className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
-        aria-hidden="true"
-      />
-      {word}
-    </span>
-  );
-}
-
+/** The ⓘ at a row's end: quiet until the row is hovered or the pane is open. */
 function InfoButton({
   alias,
   open,
@@ -645,14 +624,44 @@ function InfoButton({
         event.stopPropagation();
         onClick();
       }}
-      className={`rounded-md border p-1 transition-colors ${
+      className={`rounded-md p-1 transition-opacity ${
         open
-          ? "border-gray-300 text-gray-900 dark:border-gray-600 dark:text-gray-100"
-          : "border-transparent text-gray-400 hover:border-gray-200 hover:text-gray-700 dark:hover:border-gray-700 dark:hover:text-gray-200"
+          ? "text-gray-900 dark:text-gray-100"
+          : "text-gray-400 opacity-60 group-hover:opacity-100 focus-visible:opacity-100 hover:text-gray-700 dark:hover:text-gray-200"
       }`}
     >
       <GlyphIcon d={INFO_PATH} size={ICON_SIZE.rowLead} />
     </button>
+  );
+}
+
+/** This server's own row: not selectable — it is where the page is served from. */
+function LocalRow({
+  machine,
+  open,
+  onDetail,
+}: {
+  machine: MachineInfo;
+  open: boolean;
+  onDetail: () => void;
+}) {
+  return (
+    <li className="group flex items-center gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
+          <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+            {S.machines.localTitle}
+          </span>
+        </div>
+        <div className={`truncate text-xs ${toneInk.success}`}>
+          {S.machines.state.serving}
+          {machine.installed !== null && ` · ${machine.installed.version}`}
+        </div>
+      </div>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.success}`} aria-hidden="true" />
+      <InfoButton alias={machine.alias} open={open} onClick={onDetail} />
+    </li>
   );
 }
 
@@ -682,94 +691,56 @@ function MachineRow({
   const reading = readMachine(machine, job, imageVersion);
   const tone = readingTone(reading);
   const moving = reading.kind === "working" || reading.kind === "queued";
-  const reason = reasonText(reading);
-  const behind = outOfDate(machine, imageVersion);
   const step = moving ? stepIndex(job) : -1;
+  const caption =
+    reading.kind === "queued"
+      ? S.machines.queued
+      : step >= 0
+        ? S.machines.phase[MACHINE_PHASES[step]!]
+        : S.machines.working;
   return (
-    <tr
+    <li
       aria-selected={selected}
       onClick={onToggle}
-      className={`cursor-pointer transition-colors ${
+      className={`group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors ${
         selected
-          ? "bg-gray-100/80 dark:bg-gray-800/50"
+          ? "bg-gray-100/80 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/50"
           : "hover:bg-gray-50 dark:hover:bg-gray-900/40"
       }`}
     >
-      <td className={`${CELL} ${selected ? "shadow-[inset_3px_0_0_var(--accent-bg)]" : ""}`}>
-        <span className={`${MONO} font-medium`}>{machine.alias}</span>
+      <div className="min-w-0 flex-1">
+        <div className={`${MONO} truncate font-medium`}>{machine.alias}</div>
         {moving ? (
-          <div className="mt-1.5 w-40 max-w-full">
-            <div className="flex gap-0.5" aria-hidden="true">
-              {MACHINE_PHASES.map((phase, index) => (
-                <span
-                  key={phase}
-                  className={`h-[3px] flex-1 rounded-sm ${
-                    index < step
-                      ? toneDot.busy
-                      : index === step
-                        ? `${toneDot.busy} animate-pulse`
-                        : "bg-gray-200 dark:bg-gray-700"
-                  }`}
-                />
-              ))}
-            </div>
-            <div className={`mt-1 truncate text-xs ${toneInk.busy}`}>
-              {reading.kind === "queued"
-                ? S.machines.queued
-                : step >= 0
-                  ? S.machines.phase[MACHINE_PHASES[step]!]
-                  : S.machines.working}
-            </div>
-          </div>
+          <Stepper step={step} caption={caption} />
         ) : (
-          reason !== null && (
-            <div className={`mt-0.5 max-w-64 truncate text-xs ${toneInk[tone]}`} title={reason}>
-              {reason}
-            </div>
-          )
+          <div
+            className={`truncate text-xs ${toneInk[tone]}`}
+            title={reasonText(reading) ?? undefined}
+          >
+            {stateLine(reading, machine, locale)}
+          </div>
         )}
-      </td>
-      <td className={CELL}>
-        <StateWord tone={tone} word={S.machines.state[reading.kind]} moving={moving} />
-      </td>
-      <td className={`${CELL} hidden sm:table-cell`}>
-        {machine.installed !== null &&
-          (behind ? (
-            <span
-              className={`${MONO} rounded border px-1.5 py-px text-xs ${toneInk.attention} border-current`}
-            >
-              {machine.installed.version}
-            </span>
-          ) : (
-            <span className={`${MONO} text-gray-500`}>{machine.installed.version}</span>
-          ))}
-      </td>
-      <td className={`${CELL} hidden text-gray-500 md:table-cell`}>
-        {machine.connection !== null
-          ? S.machines.now
-          : machine.status !== null
-            ? formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)
-            : "—"}
-      </td>
-      <td className={`${CELL} text-right`}>
-        <span className="inline-flex items-center gap-1.5">
-          {wantsUse(reading) && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={(event) => {
-                event.stopPropagation();
-                onUse();
-              }}
-            >
-              {S.machines.use}
-            </Button>
-          )}
-          <InfoButton alias={machine.alias} open={detailOpen} onClick={onDetail} />
-        </span>
-      </td>
-    </tr>
+      </div>
+      {wantsUse(reading) ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={(event) => {
+            event.stopPropagation();
+            onUse();
+          }}
+        >
+          {S.machines.use}
+        </Button>
+      ) : (
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          aria-hidden="true"
+        />
+      )}
+      <InfoButton alias={machine.alias} open={detailOpen} onClick={onDetail} />
+    </li>
   );
 }
 
