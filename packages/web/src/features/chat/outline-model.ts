@@ -26,6 +26,68 @@ export interface OutlineEntry {
   answer: string;
 }
 
+/**
+ * One turn as the index shapes show it: every turn of the conversation, loaded or not.
+ * A loaded turn carries its anchor (the jump target in the DOM); an unloaded one carries
+ * only the cursor a window can be opened at (see mergeOutline).
+ */
+export interface OutlineTurn {
+  /** Global 1-based turn number. */
+  turn: number;
+  /** The [data-outline-anchor] jump target while the turn is loaded; null otherwise. */
+  anchorId: number | null;
+  /** The turn's unit cursor from the server index; null when the index does not know it (an index-less server, or a turn newer than the index). */
+  cursor: string | null;
+  question: string;
+  answer: string;
+}
+
+/** The server index's shape, as this module needs it (the API type carries the same fields). */
+export interface OutlineIndexTurn {
+  turn: number;
+  cursor: string;
+  question: string;
+  answer: string;
+}
+
+/**
+ * The whole conversation's outline: the server index for every turn it knows, the loaded
+ * entries laid over it. A loaded turn wins — its preview is live (a reply still streaming,
+ * an answer the index was cut before) and it has an anchor to jump to — and the index
+ * fills in every other turn with its cursor. `turnOffset` places the loaded entries
+ * (MessagesPageInfo.earlierTurns: the server counts with the same entry rule, so the two
+ * numberings agree by construction). With no index at all this is the loaded entries
+ * alone, numbered from the offset — today's rail, exactly.
+ */
+export function mergeOutline(
+  index: readonly OutlineIndexTurn[],
+  loaded: readonly OutlineEntry[],
+  turnOffset: number,
+  stripQuestion: (raw: string) => string = (raw) => raw,
+): OutlineTurn[] {
+  const byTurn = new Map<number, OutlineTurn>();
+  for (const entry of index) {
+    byTurn.set(entry.turn, {
+      turn: entry.turn,
+      anchorId: null,
+      cursor: entry.cursor,
+      question: stripQuestion(entry.question),
+      answer: entry.answer,
+    });
+  }
+  loaded.forEach((entry, i) => {
+    const turn = globalTurnNumber(turnOffset, i);
+    byTurn.set(turn, {
+      turn,
+      anchorId: entry.anchorId,
+      cursor: byTurn.get(turn)?.cursor ?? null,
+      question: entry.question,
+      answer: entry.answer,
+    });
+  });
+  return [...byTurn.values()].sort((a, b) => a.turn - b.turn);
+}
+
 /** Answer accumulation cap: enough for any preview length while keeping rebuilds O(entries) cheap. */
 const ANSWER_CAP = 500;
 

@@ -5,6 +5,9 @@
  * tail once it outgrows its budget — so the DOM never holds the whole conversation — and
  * the jump button brings the live tail straight back.
  *
+ * The outline rail, fed by the server index, lists every turn whatever is loaded and
+ * opens the run at a turn on click.
+ *
  * Standalone spec: registers its own user and drives one session to sixteen exchanges
  * (the mock answers the first with thinking + exec_command and the rest with plain text).
  */
@@ -89,6 +92,21 @@ test("opens on a window, backfills on scroll with the reader anchored, sheds the
   const opened = await prompts(page).count();
   expect(opened).toBeGreaterThanOrEqual(4);
   await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
+
+  // The outline rail lists EVERY turn, not the loaded ones: sixteen ticks over a run that
+  // holds a handful of prompts. Clicking a tick for a turn that is not loaded opens the
+  // run at that turn — the transcript shows it, detached from the live tail — and the
+  // jump button brings the tail back.
+  await expect.poll(() => page.locator("[data-outline-tick]").count()).toBe(EXCHANGES);
+  await expect(page.getByText("第3问")).toHaveCount(0);
+  await page.locator('[data-outline-tick="3"]').click();
+  await expect(page.getByText("第3问")).toBeVisible();
+  await expect(page.locator("[data-stream-detached]")).toHaveCount(1);
+  await expect(page.locator("[data-outline-tick]")).toHaveCount(EXCHANGES);
+  await page.getByRole("button", { name: "回到最新消息" }).click();
+  await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
+  await expect(page.getByText(`第${EXCHANGES}问`)).toBeVisible();
+  await expect.poll(() => prompts(page).count()).toBeLessThan(EXCHANGES / 2);
 
   // Scroll to the top: the previous window lands above, and the prompt that was at the
   // top stays exactly where it was on screen (the reader is anchored, not pushed down).
