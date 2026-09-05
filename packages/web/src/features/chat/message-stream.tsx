@@ -126,8 +126,15 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
     const key = first.type === "group" ? first.items[0]!.id : first.item.id;
     const body = turn;
     turn = [];
+    // data-stream-node: the main stream's scroll anchoring finds the node the reader is on
+    // by it (see MessageStream); nested renders stay unstamped so the lookup never lands
+    // in a panel.
     nodes.push(
-      <div key={`turn-${key}`} className="group">
+      <div
+        key={`turn-${key}`}
+        {...(ctx.origin.length === 0 ? { "data-stream-node": `turn-${key}` } : {})}
+        className="group"
+      >
         {body.map((t) => renderSeg(t.seg, t.i))}
       </div>,
     );
@@ -147,7 +154,11 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       // lives outside React's managed props (className would wipe it on re-render).
       nodes.push(
         ctx.origin.length === 0 ? (
-          <div key={`anchor-${seg.item.id}`} data-outline-anchor={seg.item.id}>
+          <div
+            key={`anchor-${seg.item.id}`}
+            data-outline-anchor={seg.item.id}
+            data-stream-node={`user-${seg.item.id}`}
+          >
             {renderSeg(seg, i)}
           </div>
         ) : (
@@ -167,19 +178,37 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
 /** Scroll-up backfill wiring (windowed history): state + trigger for the top-of-stream affordance. */
 export interface OlderHistoryControls {
-  /** Older windows exist beyond the loaded history (scrolling near the top triggers onLoad). */
+  /** Older windows exist beyond the loaded run (scrolling near the top triggers onLoad). */
   hasMore: boolean;
   /** A backfill request is in flight (spinner row). */
   loading: boolean;
   /** The last backfill failed (retry row); null = fine. */
   error: string | null;
-  /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
-  prependedCount: number;
+  /** The run starts at the transcript's beginning after at least one backfill: gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
+  atBeginning: boolean;
+  /**
+   * Bumped whenever the loaded run changes shape at either end — a window prepended,
+   * appended or evicted, the live tail shed or re-attached. The commit after such a bump
+   * re-anchors the reader on the node they were on, whatever moved around it.
+   */
+  edgesVersion: number;
   onLoad: () => void;
+}
+
+/** Scroll-down wiring while the run has shed the live tail (stream-controller's shedFromBottom): state + trigger for the bottom-of-stream affordance. */
+export interface NewerHistoryControls {
+  /** The live tail is off screen: scrolling near the bottom appends the next window, the jump button re-attaches the tail directly. */
+  hasMore: boolean;
+  loading: boolean;
+  error: string | null;
+  onLoad: () => void;
+  onJump: () => void;
 }
 
 /** Distance from the top (px) at which scrolling starts fetching the previous history window. */
 const OLDER_TRIGGER_PX = 300;
+/** Distance from the bottom (px) at which scrolling, while the tail is off screen, fetches the next window. */
+const NEWER_TRIGGER_PX = 300;
 
 export function MessageStream({
   items,
@@ -188,6 +217,7 @@ export function MessageStream({
   scrollElRef,
   outline,
   older,
+  newer,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -203,6 +233,8 @@ export function MessageStream({
   outline?: ReactNode;
   /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
   older?: OlderHistoryControls;
+  /** Scroll-down backfill toward the live tail once it has been shed; omitted = the tail is always on screen. */
+  newer?: NewerHistoryControls;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -241,25 +273,53 @@ export function MessageStream({
   const lastTopRef = useRef<number | null>(null);
   const syncJump = () => {
     const el = scrollRef.current;
+    // While the live tail is off screen the button always has somewhere to go.
     setShowJump(
       !returningRef.current &&
-        !follow.stick &&
-        el !== null &&
-        el.scrollHeight - el.scrollTop - el.clientHeight > 1,
+        (newer?.hasMore === true ||
+          (!follow.stick && el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > 1)),
     );
   };
 
-  /** Held refs for prepend scroll anchoring (see the layout effect below). */
+  /** Held refs for the edge triggers and the re-anchoring below. */
   const olderRef = useRef(older);
   olderRef.current = older;
-  const lastPrependedRef = useRef(older?.prependedCount ?? 0);
+  const newerRef = useRef(newer);
+  newerRef.current = newer;
+  const lastEdgesRef = useRef(older?.edgesVersion ?? 0);
+  const lastDetachedRef = useRef(newer?.hasMore === true);
   const lastHeightRef = useRef(0);
+  /** The jump re-attached the tail: the next commit lands on the live bottom rather than re-anchoring. */
+  const pendingStickRef = useRef(false);
+  /**
+   * The node the reader is on — the first top-level node whose bottom is below the
+   * viewport's top — and where it sits in the viewport: what a re-anchor restores after
+   * the run changes shape around it. Refreshed on every scroll and every commit, so it
+   * is never older than the last thing that could have moved it.
+   */
+  const anchorRef = useRef<{ key: string; top: number } | null>(null);
+  const recordAnchor = (el: HTMLDivElement) => {
+    const top = el.scrollTop;
+    for (const node of el.querySelectorAll<HTMLElement>("[data-stream-node]")) {
+      if (node.offsetTop + node.offsetHeight > top) {
+        anchorRef.current = { key: node.dataset.streamNode ?? "", top: node.offsetTop - top };
+        return;
+      }
+    }
+    anchorRef.current = null;
+  };
 
   /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
   const maybeLoadOlder = (el: HTMLDivElement) => {
     const o = olderRef.current;
     if (!o || !o.hasMore || o.loading || o.error !== null) return;
     if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
+  };
+  /** Near the bottom of the run while the tail is off screen: fetch the next window (same gating). */
+  const maybeLoadNewer = (el: HTMLDivElement) => {
+    const n = newerRef.current;
+    if (!n || !n.hasMore || n.loading || n.error !== null) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < NEWER_TRIGGER_PX) n.onLoad();
   };
 
   const onScroll = () => {
@@ -277,6 +337,8 @@ export function MessageStream({
       clientHeight: el.clientHeight,
     });
     maybeLoadOlder(el);
+    maybeLoadNewer(el);
+    recordAnchor(el);
     syncJump();
   };
 
@@ -289,24 +351,47 @@ export function MessageStream({
   // conversation (see stream-follow.ts).
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
-    // message the user was reading exactly where it was by offsetting scrollTop by the
-    // content growth (same pre-paint timing as the stick snap, so nothing flashes).
-    // Keyed on the prepend count — ordinary streaming growth at the bottom must not
-    // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
-    // it still holds the pre-prepend height. Skipped while sticking (the snap below
-    // owns the position; a prepend while stuck at the bottom cannot move the tail).
-    const prepended = older?.prependedCount ?? 0;
-    if (el && prepended > lastPrependedRef.current && !follow.stick && !returningRef.current) {
-      el.scrollTop += el.scrollHeight - lastHeightRef.current;
+    const edges = older?.edgesVersion ?? 0;
+    const detached = newer?.hasMore === true;
+    // Re-anchoring: when the run changes shape — a window landing above the viewport, one
+    // leaving below it, the tail shed or re-attached — keep the node the reader was on
+    // exactly where it was (same pre-paint timing as the stick snap, so nothing flashes).
+    // By element rather than by height delta, because a prepend and an eviction can land
+    // in one commit and only the anchor's own displacement says what the reader should
+    // feel. Keyed on the edges version — ordinary streaming growth at the bottom must not
+    // shift the view. Skipped while sticking with the tail on screen (the snap below owns
+    // the position; a prepend while stuck at the bottom cannot move the tail).
+    if (el && edges !== lastEdgesRef.current && !returningRef.current) {
+      if (pendingStickRef.current) {
+        // The jump re-attached the tail: land on the live bottom and follow again.
+        pendingStickRef.current = false;
+        follow.resume();
+        stickToBottom(el, follow);
+      } else {
+        // A stick judged against the run's old bottom does not survive the tail re-joining
+        // below it: the reader was at the end of what was loaded, not of the conversation.
+        if (lastDetachedRef.current && !detached) follow.park();
+        if (!follow.stick || detached) {
+          const a = anchorRef.current;
+          const node =
+            a === null
+              ? null
+              : el.querySelector<HTMLElement>(`[data-stream-node="${CSS.escape(a.key)}"]`);
+          if (a !== null && node !== null) el.scrollTop = node.offsetTop - a.top;
+          else el.scrollTop += el.scrollHeight - lastHeightRef.current;
+        }
+      }
     }
-    lastPrependedRef.current = prepended;
+    lastEdgesRef.current = edges;
+    lastDetachedRef.current = detached;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && follow.stick && !returningRef.current) stickToBottom(el, follow);
+    // No snapping while the tail is off screen: the run's bottom is history, not the live edge.
+    if (el && follow.stick && !returningRef.current && !detached) stickToBottom(el, follow);
+    if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, follow, older?.prependedCount]);
+  }, [version, follow, older?.edgesVersion, newer?.hasMore]);
 
   // The container and the content can also resize OUTSIDE stream commits: the app shell's
   // notice banner (initial-password reminder) mounting after /api/me resolves shrinks the
@@ -336,6 +421,14 @@ export function MessageStream({
   const jumpToLatest = () => {
     const el = scrollRef.current;
     if (!el) return;
+    if (newer?.hasMore === true) {
+      // The live tail is off screen: re-attach it (the run is dropped) and land on its
+      // bottom at the commit — there is nothing to glide through in between.
+      cancelReturn();
+      pendingStickRef.current = true;
+      newer.onJump();
+      return;
+    }
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       follow.resume();
       stickToBottom(el, follow);
@@ -380,6 +473,9 @@ export function MessageStream({
           scrollRef.current = el;
           if (scrollElRef) scrollElRef.current = el;
         }}
+        // Machine-readable: the live tail is off screen (tests and tooling; the jump
+        // button is the visible sign).
+        {...(newer?.hasMore === true ? { "data-stream-detached": "true" } : {})}
         onScroll={onScroll}
         onWheel={(e) => {
           follow.wheel(e.deltaY);
@@ -403,33 +499,59 @@ export function MessageStream({
           {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
               row after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
-              nothing: scrolling near the top triggers the fetch by itself. */}
-          {older && items.length > 0 && (
-            <div className="flex justify-center pb-2">
-              {older.loading ? (
-                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-                  {S.chat.loadingEarlier}
-                </span>
-              ) : older.error !== null ? (
-                <button
-                  type="button"
-                  onClick={older.onLoad}
-                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  {S.chat.loadEarlierRetry}
-                </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
-                <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
-                  {S.chat.historyBeginning}
-                </span>
-              ) : null}
-            </div>
-          )}
+              nothing, but the row keeps its height the moment there IS history above: a
+              spinner that took space only while spinning pushed the transcript down by its
+              own height and pulled it back up with the window it announced. */}
+          {older &&
+            items.length > 0 &&
+            (older.hasMore || older.loading || older.error !== null || older.atBeginning) && (
+              <div className="flex h-7 items-center justify-center">
+                {older.loading ? (
+                  <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                    {S.chat.loadingEarlier}
+                  </span>
+                ) : older.error !== null ? (
+                  <button
+                    type="button"
+                    onClick={older.onLoad}
+                    className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                  >
+                    {S.chat.loadEarlierRetry}
+                  </button>
+                ) : !older.hasMore && older.atBeginning ? (
+                  <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.chat.historyBeginning}
+                  </span>
+                ) : null}
+              </div>
+            )}
           {items.length === 0 ? (
             <EmptyState title={S.chat.emptyStream} />
           ) : (
             <MessageItems items={items} ctx={ctx} />
+          )}
+          {/* Bottom-of-run affordance while the live tail is off screen: spinner while the
+              next window loads, a click-to-retry row after a failure. Idle shows nothing:
+              scrolling near the bottom fetches by itself, and the jump button is the way
+              straight back to the live edge. */}
+          {newer && newer.hasMore && items.length > 0 && (
+            <div className="flex h-7 items-center justify-center">
+              {newer.loading ? (
+                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  {S.chat.loadingLater}
+                </span>
+              ) : newer.error !== null ? (
+                <button
+                  type="button"
+                  onClick={newer.onLoad}
+                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  {S.chat.loadLaterRetry}
+                </button>
+              ) : null}
+            </div>
           )}
         </div>
       </div>

@@ -27,7 +27,7 @@ import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
 import { createStreamController } from "../../lib/omni/stream-controller";
 import type {
-  OlderHistoryState,
+  HistoryEdgeState,
   PendingApproval,
   StreamController,
 } from "../../lib/omni/stream-controller";
@@ -35,7 +35,11 @@ import { createStreamModel } from "../../lib/omni/stream-model";
 import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
-export type { OlderHistoryState, PendingApproval } from "../../lib/omni/stream-controller";
+export type {
+  HistoryEdgeState,
+  OlderHistoryState,
+  PendingApproval,
+} from "../../lib/omni/stream-controller";
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;
@@ -44,19 +48,31 @@ export interface SessionStreamState {
   /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
   /**
-   * Backfilled older-window items, oldest first — the transcript renders
-   * `[...prefixItems, ...model.items]`. Empty until the user scrolls up past the tail
-   * window (see loadOlder); ids are negative and unique, so keys/anchors stay clean.
+   * The transcript to render: the loaded run — frozen windows oldest first (negative,
+   * unique ids), then the live model's items while the tail is attached. See
+   * stream-controller for the run's shape and budget.
    */
-  prefixItems: readonly ChatItem[];
-  /** Nested subagent models owned by backfilled windows (the subagents panel merges them with model.subagents). */
-  prefixSubagents: ReadonlyMap<string, StreamModel>;
+  items: readonly ChatItem[];
+  /** Nested subagent models owned by frozen windows (the subagents panel merges them with model.subagents). */
+  windowSubagents: ReadonlyMap<string, StreamModel>;
+  /** Frozen windows in the run (>0 gates the beginning-of-history marker). */
+  windowCount: number;
+  /** Whether the live tail is on screen; false once scrolling up shed it (the model keeps streaming). */
+  tailAttached: boolean;
   /** Outline entries existing before the oldest loaded window (global turn-numbering offset). */
   outlineOffset: number;
-  /** Scroll-up backfill state (top affordance: spinner / retry / beginning-of-history). */
-  older: OlderHistoryState;
+  /** Top-frontier state (spinner / retry / beginning-of-history). */
+  older: HistoryEdgeState;
+  /** Bottom-frontier state while the tail is off screen (spinner / retry). */
+  newer: HistoryEdgeState;
+  /** Bumped whenever the run changes shape at either end (the stream re-anchors the reader). */
+  edgesVersion: number;
   /** Prepend the previous history window (triggered near the top of the loaded transcript). */
   loadOlder: () => void;
+  /** Append the next window, re-attaching the live tail once reached (triggered near the bottom while detached). */
+  loadNewer: () => void;
+  /** Drop the run and re-attach the live tail (the jump button while detached). */
+  jumpToLatest: () => void;
   version: number;
   /** True until history finishes loading. */
   loading: boolean;
@@ -92,9 +108,9 @@ export interface SessionStreamState {
 }
 
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
-const EMPTY_PREFIX: readonly ChatItem[] = [];
+const EMPTY_ITEMS: readonly ChatItem[] = [];
 const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
-const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
+const IDLE_EDGE: HistoryEdgeState = { hasMore: false, loading: false, error: null };
 
 export function useSessionStream(
   sessionId: string | null,
@@ -297,17 +313,29 @@ export function useSessionStream(
   const loadOlder = useCallback(() => {
     void controllerRef.current?.loadOlder();
   }, []);
+  const loadNewer = useCallback(() => {
+    void controllerRef.current?.loadNewer();
+  }, []);
+  const jumpToLatest = useCallback(() => {
+    controllerRef.current?.jumpToLatest();
+  }, []);
 
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
 
   return {
     model: controllerRef.current?.model ?? placeholderRef.current,
-    prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
-    prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,
+    items: controllerRef.current?.items ?? EMPTY_ITEMS,
+    windowSubagents: controllerRef.current?.windowSubagents ?? EMPTY_SUBAGENTS,
+    windowCount: controllerRef.current?.windowCount ?? 0,
+    tailAttached: controllerRef.current?.tailAttached ?? true,
     outlineOffset: controllerRef.current?.outlineOffset ?? 0,
-    older: controllerRef.current?.older ?? IDLE_OLDER,
+    older: controllerRef.current?.older ?? IDLE_EDGE,
+    newer: controllerRef.current?.newer ?? IDLE_EDGE,
+    edgesVersion: controllerRef.current?.edgesVersion ?? 0,
     loadOlder,
+    loadNewer,
+    jumpToLatest,
     version,
     loading,
     taskState,
