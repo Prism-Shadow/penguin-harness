@@ -12,6 +12,9 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
+ * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config; 201.
+ * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
+ * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
@@ -25,7 +28,12 @@
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { DirListResponse, MachinesResponse, MachinesUseResponse } from "../../api/types.js";
+import type {
+  DirListResponse,
+  MachinesResponse,
+  MachinesUseResponse,
+  SshHostResponse,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -79,6 +87,87 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       body.replaceProgram === true,
     );
     return c.json({ ...state(c), refused } satisfies MachinesUseResponse, 202);
+  });
+
+  /**
+   * Add a host to this server's ssh config. 201 with the list, which now names it; 400 with
+   * the offending field when the entry would not survive as one line each; 409 when the
+   * alias is already declared — ssh would take the earlier block and ignore this one.
+   */
+  /** A host entry as a request body carries it; the port may arrive as a string from a form. */
+  const hostBody = (body: Record<string, unknown>) => {
+    const str = (key: string) =>
+      typeof body[key] === "string" ? (body[key] as string) : undefined;
+    const portRaw = body.port;
+    const port =
+      typeof portRaw === "number"
+        ? portRaw
+        : typeof portRaw === "string" && portRaw.trim() !== ""
+          ? Number(portRaw)
+          : undefined;
+    return {
+      alias: str("alias") ?? "",
+      hostName: str("hostName") ?? "",
+      user: str("user"),
+      port,
+      identityFile: str("identityFile"),
+    };
+  };
+  const invalid = (problem: { field: string; why: string }) =>
+    new HttpError(
+      400,
+      "ssh_host_invalid",
+      `${problem.field}: ${problem.why === "required" ? "required" : "must be one word, with no space or #"}`,
+    );
+
+  app.post("/ssh-hosts", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const added = deps.machines.addSshHost(hostBody(body));
+    if (!added.ok) {
+      if (added.why === "exists") {
+        throw new HttpError(409, "ssh_host_exists", "That alias is already in the ssh config.");
+      }
+      throw invalid(added.problem);
+    }
+    return c.json(state(c), 201);
+  });
+
+  /** A host's block read back — for the form that configures it — and whether it may be rewritten. */
+  app.get("/ssh-hosts/:alias", (c) => {
+    const found = deps.machines.sshHost(c.req.param("alias"));
+    if (found === null) {
+      throw new HttpError(
+        404,
+        "ssh_host_not_found",
+        "No Host block for that alias in ~/.ssh/config itself; it may live in an included file.",
+      );
+    }
+    return c.json({ ...found.entry, editable: found.editable } satisfies SshHostResponse);
+  });
+
+  /** Rewrite a block this app wrote. 404 when there is none; 409 when it was written by hand. */
+  app.put("/ssh-hosts/:alias", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const { alias: _ignored, ...entry } = hostBody(body);
+    const updated = deps.machines.updateSshHost(c.req.param("alias"), entry);
+    if (!updated.ok) {
+      if (updated.why === "not-found") {
+        throw new HttpError(
+          404,
+          "ssh_host_not_found",
+          "No Host block for that alias in ~/.ssh/config.",
+        );
+      }
+      if (updated.why === "foreign") {
+        throw new HttpError(
+          409,
+          "ssh_host_foreign",
+          "That block was written by hand; edit it in ~/.ssh/config.",
+        );
+      }
+      throw invalid(updated.problem);
+    }
+    return c.json(state(c));
   });
 
   /** Stop using machines: connections dropped, membership released; the install over there stays. */

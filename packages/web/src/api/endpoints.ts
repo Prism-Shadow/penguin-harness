@@ -69,6 +69,8 @@ import type {
   ModelProtocolDetectResponse,
   MachinesResponse,
   MachinesUseResponse,
+  SshHostRequest,
+  SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -1326,6 +1328,30 @@ export const useMachines = (projectId: string, machineIds: string[], replaceProg
       ? { machines: machineIds, replaceProgram: true }
       : { machines: machineIds },
   });
+
+/** Appends a host block to this server's ~/.ssh/config; answers the machines list, which now names it (201). */
+export const addSshHost = (projectId: string, host: SshHostRequest) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`, {
+    method: "POST",
+    body: host,
+  });
+
+/** A host's ssh block read back, and whether this app wrote it (only then may it be rewritten). */
+export const getSshHost = (projectId: string, alias: string) =>
+  apiFetch<SshHostResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+  );
+
+/** Rewrites a block this app wrote; answers the machines list. */
+export const updateSshHost = (
+  projectId: string,
+  alias: string,
+  host: Omit<SshHostRequest, "alias">,
+) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+    { method: "PUT", body: host },
+  );
 
 /** Lets machines go: connections dropped, Project membership released; the install stays. */
 export const stopUsingMachines = (projectId: string, machineIds: string[]) =>

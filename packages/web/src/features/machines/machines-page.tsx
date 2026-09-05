@@ -37,8 +37,9 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Skeleton } from "../../components/ui/skeleton";
+import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
+import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -53,6 +54,8 @@ import {
 import type { MachineReading } from "./machines-view";
 import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
+import { SshHostDialog } from "./ssh-host-dialog";
+import type { HostFormMode } from "./ssh-host-dialog";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -65,6 +68,10 @@ const POLL_MS = 1500;
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
+/** The + in the picker's foot: a new host for the ssh config. */
+const PLUS_PATH = "M12 5v14M5 12h14";
+/** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
+const CHEVRON_PATH = "M6 9l6 6 6-6";
 /** Select all: a box with a check. Select none: the empty box. */
 const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
 const SELECT_NONE_PATH = "M4 5h16v14H4z";
@@ -137,6 +144,8 @@ export function MachinesPage() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   /** Cards unfolded to show their details. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  /** The form that adds a host to the ssh config, or configures one; null while closed. */
+  const [hostForm, setHostForm] = useState<HostFormMode | null>(null);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -294,6 +303,14 @@ export function MachinesPage() {
       return answer;
     });
   const stopUsing = (ids: string[]) => post((project) => api.stopUsingMachines(project, ids));
+  const configure = async (alias: string) => {
+    if (projectId === null) return;
+    try {
+      setHostForm({ kind: "edit", host: await api.getSshHost(projectId, alias) });
+    } catch (err) {
+      toastError(apiErrorText(err));
+    }
+  };
 
   const togglePicked = (id: string) => setPicked((prev) => toggled(prev, id));
   const pickAll = () => setPicked(new Set(inUse.map((machine) => machine.id)));
@@ -402,25 +419,33 @@ export function MachinesPage() {
                     {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
                   </li>
                 )}
-                {/* The rest of the config, folded: a chevron row unfolds every host in place,
-                    for when a search is the wrong tool and a person wants to see the list. */}
-                {(hiddenCount > 0 || (showAll && matched.length > MAX_VISIBLE_MACHINES)) && (
-                  <li>
-                    <button
-                      type="button"
-                      aria-expanded={showAll}
-                      onClick={() => setShowAll((open) => !open)}
-                      className="flex w-full items-center justify-between gap-2 px-3.5 py-2 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                    >
-                      {showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
-                      <ChevronDown
-                        size={ICON_SIZE.chevronDense}
-                        className={`transition-transform ${showAll ? "rotate-180" : ""}`}
-                      />
-                    </button>
-                  </li>
-                )}
               </ul>
+              {/* The foot: the rest of the config folded behind a chevron — for when a search
+                  is the wrong tool and a person wants to see the list — and, at the right, a
+                  new host for the config. */}
+              <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-2 py-1.5 dark:border-gray-800">
+                {hiddenCount > 0 || (showAll && matched.length > MAX_VISIBLE_MACHINES) ? (
+                  <Verb
+                    label={showAll ? S.machines.fewer : S.machines.expand}
+                    title={showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
+                    d={CHEVRON_PATH}
+                    glyphClass={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                    ariaExpanded={showAll}
+                    onClick={() => setShowAll((open) => !open)}
+                  />
+                ) : (
+                  <span />
+                )}
+                <Verb
+                  label={S.machines.host.newVerb}
+                  title={S.machines.host.addTitle}
+                  d={PLUS_PATH}
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setHostForm({ kind: "add" });
+                  }}
+                />
+              </div>
               {/* The confirm appears once something is picked; an empty footer says nothing. */}
               {adding.size > 0 && (
                 <div className="flex justify-end border-t border-gray-200 px-3 py-2 dark:border-gray-800">
@@ -442,6 +467,18 @@ export function MachinesPage() {
             </Dropdown>
           </div>
         </div>
+        {projectId !== null && hostForm !== null && (
+          <SshHostDialog
+            key={hostForm.kind === "edit" ? hostForm.host.alias : "add"}
+            mode={hostForm}
+            projectId={projectId}
+            onClose={() => setHostForm(null)}
+            onSaved={(next) => {
+              setState(next);
+              setError(null);
+            }}
+          />
+        )}
 
         {error !== null && (
           <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
@@ -457,29 +494,29 @@ export function MachinesPage() {
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
             never move when a selection appears or goes. The count is the slot's label; on the
             right, select all and none, then the two verbs, each dimmed when it would do nothing. */}
-        <div className="mt-3 flex h-10 items-center gap-3 px-1 text-xs text-gray-500">
+        <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
           <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          <span className="ml-auto flex items-center gap-1">
-            <IconAction
+          <span className="ml-auto flex flex-wrap items-center gap-1">
+            <Verb
               label={S.machines.pickAll}
               d={SELECT_ALL_PATH}
               disabled={inUse.length === 0 || selectedIds.length === inUse.length}
               onClick={pickAll}
             />
-            <IconAction
+            <Verb
               label={S.machines.pickNone}
               d={SELECT_NONE_PATH}
               disabled={selectedIds.length === 0}
               onClick={pickNone}
             />
             <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-            <IconAction
+            <Verb
               label={S.machines.use}
               d={PLUG_PATH}
               disabled={selectedIds.length === 0 || posting || noImage}
               onClick={() => void use(selectedIds)}
             />
-            <IconAction
+            <Verb
               label={S.machines.stopUsing}
               d={UNPLUG_PATH}
               disabled={selectedIds.length === 0 || posting}
@@ -514,6 +551,7 @@ export function MachinesPage() {
                 busy={posting}
                 onUse={(replaceProgram) => void use([machine.id], replaceProgram)}
                 onStopUsing={() => void stopUsing([machine.id])}
+                onConfigure={() => void configure(machine.alias)}
               />
             ))}
             {inUse.length === 0 && (
@@ -529,38 +567,47 @@ export function MachinesPage() {
   );
 }
 
-/** An icon verb: plug (enable) and unplug (disable), for the bar and inside a card. */
-function IconAction({
+/**
+ * Every verb on the page, in one shape: a small secondary button carrying one glyph and one
+ * word — enable, disable, configure, new, expand, select all, select none. One shape so a
+ * person learns it once; the glyph says which verb, the word confirms it. The forced
+ * install alone keeps the danger variant, since it interrupts whoever is on the machine.
+ */
+function Verb({
   label,
   d,
   disabled = false,
   onClick,
-  emphasis = false,
+  variant = "secondary",
+  title,
+  glyphClass = "",
+  ariaExpanded,
 }: {
   label: string;
   d: string;
   disabled?: boolean;
   onClick: () => void;
-  emphasis?: boolean;
+  variant?: "secondary" | "danger";
+  title?: string;
+  glyphClass?: string;
+  ariaExpanded?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
+    <Button
+      size="sm"
+      variant={variant}
       disabled={disabled}
+      title={title ?? label}
+      aria-expanded={ariaExpanded}
+      className="whitespace-nowrap"
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
-      className={`rounded-md border p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        emphasis
-          ? "border-gray-300 text-gray-900 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800"
-          : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-900 dark:hover:border-gray-700 dark:hover:text-gray-100"
-      }`}
     >
-      <GlyphIcon d={d} size={ICON_SIZE.iconButton} />
-    </button>
+      <GlyphIcon d={d} size={ICON_SIZE.inlineGlyph} className={glyphClass} />
+      {label}
+    </Button>
   );
 }
 
@@ -652,7 +699,7 @@ function LocalCard({
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
       <div id={id} hidden={!open}>
-        <Details machine={machine} job={null} locale={locale} />
+        <Record machine={machine} locale={locale} />
       </div>
     </li>
   );
@@ -670,6 +717,7 @@ function MachineCard({
   busy,
   onUse,
   onStopUsing,
+  onConfigure,
 }: {
   machine: MachineInfo;
   job: MachineJob | null;
@@ -682,6 +730,7 @@ function MachineCard({
   busy: boolean;
   onUse: (replaceProgram: boolean) => void;
   onStopUsing: () => void;
+  onConfigure: () => void;
 }) {
   const reading = readMachine(machine, job, imageVersion);
   const tone = readingTone(reading);
@@ -722,13 +771,7 @@ function MachineCard({
           )}
         </div>
         {wantsUse(reading) && (
-          <IconAction
-            label={S.machines.use}
-            d={PLUG_PATH}
-            disabled={busy}
-            onClick={() => onUse(false)}
-            emphasis
-          />
+          <Verb label={S.machines.use} d={PLUG_PATH} disabled={busy} onClick={() => onUse(false)} />
         )}
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
@@ -737,88 +780,94 @@ function MachineCard({
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
       </div>
       <div id={id} hidden={!open} onClick={(event) => event.stopPropagation()}>
-        <Details machine={machine} job={job} locale={locale} />
-        <div className="mt-3 flex flex-wrap gap-2">
+        <Record machine={machine} locale={locale} />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {reading.kind === "failed" && reading.canReplaceProgram && (
-            <Button
-              size="sm"
+            <Verb
+              label={S.machines.replaceProgram}
+              title={S.machines.replaceProgramWhy}
+              d={PLUG_PATH}
               variant="danger"
               disabled={busy}
-              title={S.machines.replaceProgramWhy}
               onClick={() => onUse(true)}
-            >
-              {S.machines.replaceProgram}
-            </Button>
+            />
           )}
           {wantsUse(reading) && (
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => onUse(false)}>
-              <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-              {S.machines.use}
-            </Button>
+            <Verb
+              label={S.machines.use}
+              d={PLUG_PATH}
+              disabled={busy}
+              onClick={() => onUse(false)}
+            />
           )}
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onStopUsing}>
-            <GlyphIcon d={UNPLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-            {S.machines.stopUsing}
-          </Button>
+          <Verb
+            label={S.machines.stopUsing}
+            d={UNPLUG_PATH}
+            disabled={busy}
+            onClick={onStopUsing}
+          />
+          <Verb
+            label={S.machines.host.configureVerb}
+            title={S.machines.host.configure}
+            d={GEAR_ICON}
+            disabled={busy}
+            onClick={onConfigure}
+          />
         </div>
+        <Output job={job} />
       </div>
     </li>
   );
 }
 
-/** The record and the job's output, unfolded inside a card. */
-function Details({
-  machine,
-  job,
-  locale,
-}: {
-  machine: MachineInfo;
-  job: MachineJob | null;
-  locale: "zh" | "en";
-}) {
+/** The record, unfolded inside a card. */
+function Record({ machine, locale }: { machine: MachineInfo; locale: "zh" | "en" }) {
   const m = S.machines;
   return (
-    <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-800">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        {machine.installed !== null && (
-          <>
-            <dt className="text-gray-500">{machine.local ? m.detailVersion : m.detailInstalled}</dt>
-            <dd className={MONO}>{machine.installed.version}</dd>
-            <dt className="text-gray-500">{machine.local ? m.detailStarted : m.detailSince}</dt>
-            <dd>{formatDateTime(machine.installed.at)}</dd>
-          </>
-        )}
-        {machine.status !== null && (
-          <>
-            <dt className="text-gray-500">{m.detailServer}</dt>
-            <dd>
-              {machine.status.state === "running"
-                ? m.serverUpOn(machine.status.port ?? 0)
-                : machine.status.state === "stopped"
-                  ? m.state.stopped
-                  : (machine.status.detail ?? m.state.unreachable)}
-            </dd>
-            <dt className="text-gray-500">{m.detailChecked}</dt>
-            <dd>{formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)}</dd>
-          </>
-        )}
-        {machine.machineId !== null && (
-          <>
-            <dt className="text-gray-500">{m.detailMachineId}</dt>
-            <dd className={`${MONO} truncate`}>{machine.machineId}</dd>
-          </>
-        )}
-      </dl>
-      {job !== null && job.log.length > 0 && (
-        <div className="mt-3">
-          <div className="mb-1 text-xs text-gray-500">{m.output}</div>
-          <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
-            {job.log.slice(0, -1).join("\n")}
-            {job.log.length > 1 ? "\n" : ""}
-            <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>
-          </pre>
-        </div>
+    <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t border-gray-200 pt-3 text-xs dark:border-gray-800">
+      {machine.installed !== null && (
+        <>
+          <dt className="text-gray-500">{machine.local ? m.detailVersion : m.detailInstalled}</dt>
+          <dd className={MONO}>{machine.installed.version}</dd>
+          <dt className="text-gray-500">{machine.local ? m.detailStarted : m.detailSince}</dt>
+          <dd>{formatDateTime(machine.installed.at)}</dd>
+        </>
       )}
+      {machine.status !== null && (
+        <>
+          <dt className="text-gray-500">{m.detailServer}</dt>
+          <dd>
+            {machine.status.state === "running"
+              ? m.serverUpOn(machine.status.port ?? 0)
+              : machine.status.state === "stopped"
+                ? m.state.stopped
+                : (machine.status.detail ?? m.state.unreachable)}
+          </dd>
+          <dt className="text-gray-500">{m.detailChecked}</dt>
+          <dd>{formatMessageTime(new Date(machine.status.checkedAt).getTime(), locale)}</dd>
+        </>
+      )}
+      {machine.machineId !== null && (
+        <>
+          <dt className="text-gray-500">{m.detailMachineId}</dt>
+          <dd className={`${MONO} truncate`}>{machine.machineId}</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+/** The job's output, unfolded inside a card, with its latest line bright. */
+function Output({ job }: { job: MachineJob | null }) {
+  if (job === null || job.log.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-xs text-gray-500">{S.machines.output}</div>
+      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
+        {job.log.slice(0, -1).join("\n")}
+        {job.log.length > 1 ? "\n" : ""}
+        <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>
+      </pre>
     </div>
   );
 }

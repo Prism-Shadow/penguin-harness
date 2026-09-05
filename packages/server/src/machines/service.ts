@@ -38,14 +38,24 @@ import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
 import {
+  appendHostBlock,
   closeAllConnections,
   closeConnectionTo,
   connectionTo,
   listHostAliases,
+  readSshConfig,
   sessionOf,
+  writeSshConfig,
 } from "./transport/index.js";
 import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
-import { machineIdentity } from "./ssh-config.js";
+import {
+  findHostBlock,
+  machineIdentity,
+  renderHostBlock,
+  replaceHostBlock,
+  validateHostEntry,
+} from "./ssh-config.js";
+import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
@@ -95,6 +105,10 @@ type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "u
  */
 export interface MachinesEffects {
   listAliases: typeof listHostAliases;
+  /** The writes to the ssh config: appending a host block a person composed in the page, and rewriting one this app wrote. */
+  appendHost: typeof appendHostBlock;
+  readConfig: typeof readSshConfig;
+  writeConfig: typeof writeSshConfig;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   probe: typeof probeServerState;
@@ -192,6 +206,9 @@ export class MachinesService {
     this.#layout = layout;
     this.#effects = {
       listAliases: listHostAliases,
+      appendHost: appendHostBlock,
+      readConfig: readSshConfig,
+      writeConfig: writeSshConfig,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
@@ -816,6 +833,61 @@ export class MachinesService {
   }
 
   /**
+   * Adds a host to this server's ssh config, so it can be enabled like any other. The block
+   * is validated before anything is written, and an alias the config already declares is
+   * refused rather than shadowed: ssh takes the first block that matches, so a second one
+   * would be silently ignored and the person would wonder why their edit did nothing.
+   */
+  addSshHost(
+    entry: SshHostEntry,
+  ):
+    | { ok: true }
+    | { ok: false; why: "invalid"; problem: SshHostProblem }
+    | { ok: false; why: "exists" } {
+    const problem = validateHostEntry(entry);
+    if (problem !== null) return { ok: false, why: "invalid", problem };
+    if (this.#effects.listAliases().includes(entry.alias.trim()))
+      return { ok: false, why: "exists" };
+    this.#effects.appendHost(renderHostBlock(entry, this.#effects.now()));
+    return { ok: true };
+  }
+
+  /**
+   * A host's block as the page can show it back: what it says, and whether this app wrote
+   * it — only then may the page rewrite it. A hand-written block may carry options this app
+   * does not know (a jump host, a key agent setting), and rewriting it would drop them.
+   */
+  sshHost(alias: string): { entry: SshHostEntry; editable: boolean } | null {
+    const text = this.#effects.readConfig();
+    if (text === null) return null;
+    const found = findHostBlock(text, alias);
+    return found === null ? null : { entry: found.entry, editable: found.ours };
+  }
+
+  /** Rewrites, in place, a block this app wrote; the alias stays, everything else is the new entry. */
+  updateSshHost(
+    alias: string,
+    entry: Omit<SshHostEntry, "alias">,
+  ):
+    | { ok: true }
+    | { ok: false; why: "invalid"; problem: SshHostProblem }
+    | { ok: false; why: "not-found" }
+    | { ok: false; why: "foreign" } {
+    const next: SshHostEntry = { ...entry, alias };
+    const problem = validateHostEntry(next);
+    if (problem !== null) return { ok: false, why: "invalid", problem };
+    const text = this.#effects.readConfig();
+    if (text === null) return { ok: false, why: "not-found" };
+    const found = findHostBlock(text, alias);
+    if (found === null) return { ok: false, why: "not-found" };
+    if (!found.ours) return { ok: false, why: "foreign" };
+    this.#effects.writeConfig(
+      replaceHostBlock(text, found, renderHostBlock(next, this.#effects.now())),
+    );
+    return { ok: true };
+  }
+
+  /**
    * Brings machines into use, as one queued batch: for each, install (or bring the build
    * forward) if the record says it is not on this server's build, then connect and hand it
    * the Model config — the whole of what a person means by "use this machine", as one job
@@ -1370,6 +1442,9 @@ export abstract class Machines extends Interface<
     | "jobs"
     | "startUse"
     | "stopUsing"
+    | "addSshHost"
+    | "sshHost"
+    | "updateSshHost"
   >
 >() {}
 
