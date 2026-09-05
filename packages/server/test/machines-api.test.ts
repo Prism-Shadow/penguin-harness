@@ -13,7 +13,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MachinesResponse } from "../src/api/types.js";
+import type { MachinesUseResponse, MachinesResponse } from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
@@ -1332,6 +1332,173 @@ describe("machines API", () => {
       expect(row?.platform).toBeNull();
       expect(row?.remotePort).toBeNull();
       expect((await byId("ssh:nas"))?.installed).toBeNull();
+    });
+  });
+
+  describe("using machines", () => {
+    const useBody = (machines: string[], replaceProgram = false) =>
+      admin.post("/api/projects/default_project/machines/use", {
+        machines,
+        ...(replaceProgram ? { replaceProgram } : {}),
+      });
+    const jobsOf = () => t.deps.machines.jobs();
+    const settled = () => jobsOf().every((job) => !job.queued && !job.running);
+
+    it("a batch is queued one behind the other: the first works while the rest wait, and each ends connected", async () => {
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const installs: string[] = [];
+      await boot({
+        install: async (opts) => {
+          installs.push(opts.target.alias);
+          if (installs.length === 1) await held;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const started = await useBody(["ssh:build-box", "ssh:nas"]);
+      expect(started.status).toBe(202);
+      const body = (await started.json()) as MachinesUseResponse;
+      expect(body.refused).toEqual([]);
+      expect(body.jobs.map((job) => [job.machineId, job.queued, job.running])).toEqual([
+        ["ssh:build-box", false, true],
+        ["ssh:nas", true, false],
+      ]);
+
+      release();
+      await waitFor(settled);
+      expect(installs).toEqual(["build-box", "nas"]);
+      for (const job of jobsOf()) {
+        expect(job.kind).toBe("use");
+        expect(job.result).toEqual({ ok: true, connected: true });
+      }
+      expect(connected).toEqual(new Set(["ssh:build-box", "ssh:nas"]));
+      expect(Object.keys(recordsInStore()).sort()).toEqual(["ssh:build-box", "ssh:nas"]);
+    });
+
+    it("a machine already on this build is not reinstalled: use goes straight to connecting", async () => {
+      let installs = 0;
+      await boot({
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(installs).toBe(0);
+      expect(jobsOf()[0]?.log[0]).toBe("Already on 9.9.9.");
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+    });
+
+    it("a machine behind this build is brought forward first, then connected", async () => {
+      let installs = 0;
+      await boot({
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      machinesRepo.patch("ssh:nas", { version: "9.9.8", installedAt: "2026-08-01T00:00:00.000Z" });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(installs).toBe(1);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(recordsInStore()["ssh:nas"]?.version).toBe("9.9.9");
+    });
+
+    it("an install that fails stops that machine's job there, with the forced install on offer, and the next machine still runs", async () => {
+      await boot({
+        install: async (opts) =>
+          opts.target.alias === "build-box"
+            ? { kind: "failed", step: "connect", detail: "Permission denied (publickey)." }
+            : { kind: "installed", output: "done", identity: IDENTITY },
+      });
+      await useBody(["ssh:build-box", "ssh:nas"]);
+      await waitFor(settled);
+      const [box, nas] = jobsOf();
+      expect(box?.result).toEqual({
+        ok: false,
+        step: "connect",
+        message: "Permission denied (publickey).",
+        canReplaceProgram: true,
+      });
+      expect(nas?.result).toEqual({ ok: true, connected: true });
+      expect(connected).toEqual(new Set(["ssh:nas"]));
+    });
+
+    it("refusals that need no ssh come back by id, and the rest of the batch is still queued", async () => {
+      await boot();
+      const body = (await (
+        await useBody(["ssh:nope", "local", "ssh:nas"])
+      ).json()) as MachinesUseResponse;
+      expect(body.refused).toEqual([
+        { machineId: "ssh:nope", why: "unknown-machine" },
+        { machineId: "local", why: "self" },
+      ]);
+      expect(body.jobs.map((job) => job.machineId)).toEqual(["ssh:nas"]);
+      await waitFor(settled);
+    });
+
+    it("an empty batch is a bad request", async () => {
+      await boot();
+      expect((await useBody([])).status).toBe(400);
+    });
+
+    it("stop using drops the connection and the membership, and keeps the install", async () => {
+      await boot();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(connected.has("ssh:nas")).toBe(true);
+      const stopped = await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      expect(stopped.status).toBe(200);
+      const body = (await stopped.json()) as MachinesResponse;
+      const nas = body.machines.find((machine) => machine.id === "ssh:nas");
+      // Released from the Project, the install itself remembered as somebody else's.
+      expect(nas?.installed).toBeNull();
+      expect(nas?.elsewhere?.version).toBe("9.9.9");
+      // Nothing re-holds a machine nobody uses: the held mark is gone from the record. (The
+      // fake transport's own registry is not the record's; the real one closes with the ssh.)
+      expect(machinesRepo.get("ssh:nas")?.sessionPid ?? null).toBeNull();
+    });
+
+    it("a machine whose re-hold failed waits out a backoff before the next try", async () => {
+      // A host that is down costs one ssh per try; without a backoff the standing intent
+      // would knock on it every minute forever.
+      let holds = 0;
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      await boot({
+        now: () => clock,
+        hold: async () => {
+          holds += 1;
+          return { ok: false, detail: "Connection refused" };
+        },
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 4242,
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      // Within the first minute after a failure: not tried again.
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      // Once the wait has passed, it is.
+      clock = new Date(clock.getTime() + 61_000);
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(2);
+      // The second failure doubles the wait: two minutes now, so one minute later is too soon.
+      clock = new Date(clock.getTime() + 61_000);
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(2);
     });
   });
 
