@@ -14,10 +14,11 @@
  *   POST /api/version/restart       -> admin only: restart into the installed release
  *
  * The restart is the supervisor's job: `penguin server|web` runs this process as a child and
- * relaunches it when it exits with core's SERVER_RESTART_EXIT_CODE, which is what the
- * lifecycle capability's trigger does after the graceful shutdown. Without a supervisor the
- * route says so (`no_supervisor`) instead of stopping a service nobody would bring back,
- * and the page shows the manual restart hint.
+ * relaunches it when it exits with core's SERVER_RESTART_EXIT_CODE, which is how the
+ * platform's own restart control leaves after the graceful shutdown
+ * (services/process-restart.ts). Without a supervisor the route says so (`no_supervisor`)
+ * instead of stopping a service nobody would bring back, and the page shows the manual
+ * restart hint.
  */
 import { versionReport } from "../../version-report.js";
 import { Hono } from "hono";
@@ -38,7 +39,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { UpdateCheck } from "../../services/update-check-service.js";
 import type { UpdateJob } from "../../services/update-job.js";
-import type { Lifecycle } from "../../hmr/capabilities.js";
+import type { RestartControl } from "../../services/process-restart.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VersionRouteDeps {
@@ -46,8 +47,8 @@ export interface VersionRouteDeps {
   updateCheck: UpdateCheck;
   /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
   updateJob: UpdateJob;
-  /** Whether a supervisor relaunches this process, and the restart trigger the update flow pulls. */
-  lifecycle: Lifecycle;
+  /** The "restart to update" step: whether a supervisor relaunches this process, and the leaving (services/process-restart.ts). */
+  restart: RestartControl;
   history: HarnessHistoryIface;
 }
 
@@ -129,15 +130,11 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
 
   app.post("/restart", (c) => {
     requireAdmin(c);
-    if (!deps.lifecycle.supervised()) {
+    if (!deps.restart.supervised()) {
       return c.json({ restarting: false, reason: "no_supervisor" } satisfies RestartResponse);
     }
     // Answer first, then leave: the response must be on the wire before the listener closes.
-    setTimeout(() => {
-      if (!deps.lifecycle.requestRestart()) {
-        console.error("[server] restart requested, but no restart trigger is registered");
-      }
-    }, RESTART_DELAY_MS).unref();
+    setTimeout(() => deps.restart.request(), RESTART_DELAY_MS).unref();
     return c.json({ restarting: true } satisfies RestartResponse);
   });
 
