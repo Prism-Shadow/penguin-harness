@@ -61,7 +61,7 @@ export const en: Strings = {
     /** Bringing a machine's server up and holding a tunnel to it. */
     replaceProgram: "Install the program there and restart",
     replaceProgramWhy:
-      "Its own copy of PenguinHarness cannot receive this update — nothing this server pushed is on it yet. Installing puts one there and restarts its server, which interrupts anyone using it.",
+      "Installs this build's program there whatever it holds now, and restarts its server — which interrupts anyone using it.",
     restart: "Restart",
     restarting: "Restarting\u2026",
     connect: "Connect",
