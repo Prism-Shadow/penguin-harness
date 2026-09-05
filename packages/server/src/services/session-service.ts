@@ -29,10 +29,9 @@ import type {
   SessionInfo,
   SessionSource,
   ServerEvent,
-  WorkspaceActivity,
+  SessionActivityInfo,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import { workspaceActivityOf } from "./session-overview.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
@@ -103,19 +102,23 @@ export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
   /**
-   * The dashboard's per-Workspace totals over every Agent of the Project: Sessions running
-   * now, Sessions waiting on an approval. Read off the index and the manager and nothing
-   * else — no Trace work, no source classification: the counts are about this moment.
+   * The dashboard's read: every non-archived Session of the Project over every Agent, as the
+   * facts it counts from. Off the index and the manager and nothing else — no Trace
+   * discovery, no source classification: `hasTrace` is the row's own flag, and the counts are
+   * about this moment. Read versus unread is the client's (a per-browser marker), which is
+   * why this hands over facts rather than totals.
    */
-  sessionsOverview(projectId: string): WorkspaceActivity[] {
-    return workspaceActivityOf(
-      this.deps.sessions.listByProject(projectId).map((row) => ({
+  sessionsOverview(projectId: string): SessionActivityInfo[] {
+    return this.deps.sessions
+      .listByProject(projectId)
+      .filter((row) => (row.archivedAt ?? null) === null)
+      .map((row) => ({
+        sessionId: row.sessionId,
         workspace: row.workspace,
         status: this.deps.manager.statusOf(row.sessionId),
-        pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
-        archived: (row.archivedAt ?? null) !== null,
-      })),
-    );
+        hasTrace: row.hasTrace === true,
+        lastActiveAt: row.lastActiveAt,
+      }));
   }
 
   /**

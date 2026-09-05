@@ -562,9 +562,9 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
 /** Session-level entry point: /api/sessions/:sessionId/*. */
 /**
- * `GET /api/projects/:projectId/sessions/overview` — the dashboard's read: per Workspace, how
- * many Sessions run and how many wait on an approval, over every Agent of the Project. Its
- * own group, since no existing prefix covers `/sessions` directly under a Project.
+ * `GET /api/projects/:projectId/sessions/overview` — the dashboard's read: every non-archived
+ * Session of the Project over every Agent, as the facts the page counts from. Its own group,
+ * since no existing prefix covers `/sessions` directly under a Project.
  */
 export function sessionOverviewRoutes(
   deps: Pick<SessionsRouteDeps, "access" | "sessionService">,
@@ -574,7 +574,7 @@ export function sessionOverviewRoutes(
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json({
-      workspaces: deps.sessionService.sessionsOverview(projectId),
+      sessions: deps.sessionService.sessionsOverview(projectId),
     } satisfies SessionsOverviewResponse);
   });
   return app;
