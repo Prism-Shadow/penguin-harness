@@ -51,6 +51,8 @@ export const zh = {
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
     now: "刚刚",
+    /** The fold under the header: every host in the ssh config not yet in use. */
+    allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
     /** The verbs. */
     add: "添加机器…",
     addSelected: (count: number) => `启用这 ${count} 台`,

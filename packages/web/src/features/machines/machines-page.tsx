@@ -137,6 +137,8 @@ export function MachinesPage() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   /** Cards unfolded to show their details. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  /** The fold under the header that lists every host in the ssh config not yet in use. */
+  const [allHostsOpen, setAllHostsOpen] = useState(false);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
@@ -419,6 +421,57 @@ export function MachinesPage() {
             </Dropdown>
           </div>
         </div>
+
+        {/* Under the header: a chevron that unfolds every host in the ssh config not yet in
+            use — the whole of what "add" could reach, for when a search is the wrong tool. */}
+        {addable.length > 0 && (
+          <div className="mt-1 flex flex-col items-end">
+            <button
+              type="button"
+              aria-expanded={allHostsOpen}
+              aria-controls="machines-all-hosts"
+              onClick={() => setAllHostsOpen((open) => !open)}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              {S.machines.allHosts(addable.length)}
+              <ChevronDown
+                size={ICON_SIZE.chevronDense}
+                className={`transition-transform ${allHostsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div
+              id="machines-all-hosts"
+              hidden={!allHostsOpen}
+              className="mt-1 w-full rounded-xl border border-dashed border-gray-300 p-3 dark:border-gray-700"
+            >
+              <ul className="flex flex-wrap gap-1.5">
+                {addable.map((machine) => (
+                  <li
+                    key={machine.id}
+                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 pl-2 text-xs dark:border-gray-800"
+                  >
+                    <span className={MONO}>{machine.alias}</span>
+                    {machine.elsewhere !== undefined && (
+                      <span className={`${MONO} ${toneInk.success}`}>
+                        {machine.elsewhere.version}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      title={S.machines.use}
+                      aria-label={`${S.machines.use}: ${machine.alias}`}
+                      disabled={posting || noImage}
+                      onClick={() => void use([machine.id])}
+                      className="rounded-r-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                    >
+                      <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {error !== null && (
           <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>

@@ -44,6 +44,7 @@ export const en: Strings = {
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
     now: "now",
+    allHosts: (count: number) => `${count} more in ~/.ssh/config`,
     add: "Add machines…",
     addSelected: (count: number) => `Enable these ${count}`,
     use: "Enable",
