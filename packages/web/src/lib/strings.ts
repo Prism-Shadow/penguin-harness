@@ -54,6 +54,25 @@ export const zh = {
     /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
     allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
     fewer: "收起",
+    /** The form that appends a host block to this server's ~/.ssh/config. */
+    host: {
+      addTitle: "新建 ssh 主机",
+      add: "写入 ssh 配置",
+      alias: "别名（Host）",
+      aliasHint: "一个词，之后 `ssh <别名>` 和这里都用它称呼这台机器。",
+      hostName: "地址（HostName）",
+      hostNameHint: "IP 或域名。",
+      user: "用户（User）",
+      userHint: "留空则用本服务端账户的用户名。",
+      port: "端口（Port）",
+      portHint: "留空为 22。",
+      identityFile: "密钥文件（IdentityFile）",
+      identityFileHint: "留空则用 ssh 的默认密钥。",
+      oneWord: "必须是一个词：不能有空格或 #。",
+      portRange: "1 到 65535 之间的整数。",
+      exists: "ssh 配置里已有这个别名。",
+      added: (alias: string) => `已写入 ${alias}。现在可以从「添加机器…」里启用它。`,
+    },
     /** The verbs. */
     add: "添加机器…",
     addSelected: (count: number) => `启用这 ${count} 台`,
