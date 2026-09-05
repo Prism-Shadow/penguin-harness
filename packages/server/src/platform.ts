@@ -93,7 +93,7 @@ import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { HostAssembly } from "./services/host-assembly.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
-import { MachinesModule } from "./machines/service.js";
+import { Machines, MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -155,6 +155,7 @@ import { WebModule, WebShell } from "./http/routes/contributions.js";
 export class Startup {
   @Use() private readonly scheduler!: Scheduling;
   @Use() private readonly sessionService!: SessionServiceIface;
+  @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
 
   async setup() {
@@ -164,6 +165,16 @@ export class Startup {
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "trace_adoption_failed" });
+    });
+    // Machines, in one sweep (machines/service.ts start()): a push here is a push everywhere,
+    // so this App booting hands the same build on to any machine still carrying a different
+    // one, and then re-holds every connection the record says was held — the generation
+    // before closed what it opened on its way out. Without this, every push and every
+    // restart leaves each machine disconnected until someone connects it by hand.
+    // Fire-and-forget for the same reason as the adoption sweep: a host that is slow to
+    // answer must not hold up the App that serves everything else.
+    void this.machines.start().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "machines_reconnect_failed" });
     });
   }
 }

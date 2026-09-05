@@ -947,6 +947,48 @@ describe("machines API", () => {
       });
     });
 
+    it("the App's boot re-holds what the record says was held, without being asked", async () => {
+      // What a hot push or a restart finds: a record written by the generation before. Nobody
+      // calls start() here — the Startup component does, as the App comes up.
+      const heldNow: string[] = [];
+      connected.clear();
+      machinesRoot = await makeTempRoot();
+      store = openDatabase(":memory:");
+      store
+        .prepare(
+          "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)",
+        )
+        .run("admin", "x", "2026-08-24T00:00:00.000Z");
+      store
+        .prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES (?, ?, ?)")
+        .run("default_project", "admin", "2026-08-24T00:00:00.000Z");
+      machinesRepo = new MachinesRepo(store);
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 424242,
+        remotePort: 7364,
+      });
+      t = await createTestApp({
+        machines: new MachinesService(
+          machinesRoot,
+          LOCAL_ID,
+          machinesRepo,
+          effects({
+            hold: async (target) => {
+              heldNow.push(target.alias);
+              connected.add(`ssh:${target.alias}`);
+              return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+            },
+          }),
+        ),
+      });
+      admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      await waitFor(() => heldNow.length > 0);
+      expect(heldNow).toEqual(["nas"]);
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(process.pid);
+    });
+
     it("disconnect clears the record, so a later boot leaves the machine alone", async () => {
       const heldNow: string[] = [];
       await boot({
