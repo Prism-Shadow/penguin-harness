@@ -1,89 +1,103 @@
 /**
- * What the Machines page's controls offer, decided as data rather than in JSX.
+ * What the Machines page derives from the server's answer: which machines are in use, the
+ * one sentence each row says, and what the batch selects by default.
  *
- * The server keeps ONE job at a time — an install or a connect — so the install button is
- * governed by which machine is SELECTED and which machine the job belongs to: they come
- * apart when someone picks a second host while the first installs. "Already installed"
- * comes from the machine's own persisted record, not from the job.
+ * A row's reading follows a fixed precedence. The server's job for that machine is the
+ * freshest word (queued, working, failed); a held connection settles "ready" whatever an
+ * older job said, so a machine a re-hold brought back after a failed job reads as ready
+ * rather than failed; only then does the last probe speak. Every reading a person can act
+ * on is fixed by the same verb — use the machine — so the page never has to explain which
+ * of install, update, start, connect a row needs.
  */
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type { Tone } from "../../lib/tone";
 
-/** The finished job's verdict, in the shape the page renders. */
-export type MachineVerdict =
-  | { kind: "installed"; version: string | null }
-  | { kind: "already-installed"; version: string | null }
-  | { kind: "connected" }
-  | { kind: "failed"; step: string; message: string; canReplaceProgram?: true };
+export type MachineReading =
+  /** Waiting its turn behind another machine's job. */
+  | { kind: "queued" }
+  /** The server is working on it; `step` is its latest line. */
+  | { kind: "working"; step: string | null }
+  /** The last job failed, in the far side's own words; `canReplaceProgram` offers the forced install. */
+  | { kind: "failed"; step: string; message: string; canReplaceProgram: boolean }
+  /** Connected and answering: agents can run there. */
+  | { kind: "ready"; port: number | null }
+  /** Installed, and that is as far as this server can take it (a Windows machine). */
+  | { kind: "installedOnly" }
+  /** Carrying a different build from the one this server would install. */
+  | { kind: "behind"; version: string }
+  /** Its server answers but nothing holds a connection to it. */
+  | { kind: "notConnected" }
+  | { kind: "unreachable"; detail: string | null }
+  | { kind: "stopped" }
+  /** Never probed. */
+  | { kind: "unknown" };
 
-/** How a machine's server reads right now, for the row that renders it. */
-export type StatusTone = "busy" | "success" | "attention" | "danger" | "muted";
-
-export interface InstallButtonState {
-  /**
-   * What the button offers. `update` is a reinstall onto a machine carrying a DIFFERENT
-   * build from the one this server would send. `adopt` is an install on a machine this
-   * server already installed for another Project: it short-circuits after one probe, and
-   * what it writes is this Project's membership.
-   */
-  action: "adopt" | "install" | "installing" | "reinstall" | "update";
-  /** True when the button must not start anything: nothing selected, a job running, a POST in flight, or no image. */
-  disabled: boolean;
+/** The job the server has for a machine — queued, running, or its last finished one. */
+export function jobFor(jobs: readonly MachineJob[], machineId: string): MachineJob | null {
+  return jobs.find((job) => job.machineId === machineId) ?? null;
 }
 
-export function verdictOf(job: MachineJob): MachineVerdict | null {
-  if (job.result === null) return null;
-  if (!job.result.ok) {
+export function readMachine(
+  machine: MachineInfo,
+  job: MachineJob | null,
+  imageVersion: string | null,
+): MachineReading {
+  if (job?.queued) return { kind: "queued" };
+  if (job?.running) return { kind: "working", step: job.log.at(-1) ?? null };
+  if (machine.connection !== null) {
     return {
-      kind: "failed",
-      step: job.result.step,
-      message: job.result.message,
-      ...(job.result.canReplaceProgram === true ? { canReplaceProgram: true as const } : {}),
+      kind: "ready",
+      port: machine.status?.state === "running" ? (machine.status.port ?? null) : null,
     };
   }
-  if ("connected" in job.result) return { kind: "connected" };
-  return { kind: job.result.installed, version: job.result.version };
+  const result = job?.result ?? null;
+  if (result !== null && !result.ok) {
+    return {
+      kind: "failed",
+      step: result.step,
+      message: result.message,
+      canReplaceProgram: result.canReplaceProgram === true,
+    };
+  }
+  if (result !== null && job?.kind === "use" && "installed" in result)
+    return { kind: "installedOnly" };
+  if (outOfDate(machine, imageVersion)) {
+    return { kind: "behind", version: machine.installed!.version };
+  }
+  const status = machine.status;
+  if (status === null) return { kind: "unknown" };
+  if (status.state === "unreachable") return { kind: "unreachable", detail: status.detail ?? null };
+  if (status.state === "stopped") return { kind: "stopped" };
+  return { kind: "notConnected" };
 }
 
-export function installButtonState(
-  selected: MachineInfo | null,
-  state: MachinesResponse,
-  starting: boolean,
-): InstallButtonState {
-  const job = state.job;
-  const runningSomewhere = job?.running === true;
-  const selectedIsRunning =
-    runningSomewhere && job.kind === "install" && job.machineId === selected?.id;
-  return {
-    action:
-      selectedIsRunning || starting
-        ? "installing"
-        : selected?.installed == null
-          ? selected?.elsewhere != null
-            ? "adopt"
-            : "install"
-          : outOfDate(selected, state.imageVersion)
-            ? "update"
-            : "reinstall",
-    disabled:
-      selected === null ||
-      selected.local ||
-      runningSomewhere ||
-      starting ||
-      state.imageVersion === null,
-  };
+/** The tone a reading's mark carries — by what it means, as tone.ts asks. */
+export function readingTone(reading: MachineReading): Tone {
+  switch (reading.kind) {
+    case "queued":
+    case "working":
+      return "busy";
+    case "ready":
+      return "success";
+    case "failed":
+    case "unreachable":
+      return "danger";
+    case "unknown":
+      return "muted";
+    default:
+      return "attention";
+  }
 }
 
-/** Only an unreachable machine is a problem worth colouring as one; stopped is settled. */
-export function statusTone(state: string | undefined): StatusTone {
-  if (state === "running") return "success";
-  if (state === "unreachable") return "danger";
-  return "muted";
+/** Whether "use" would change anything for this row — everything but ready, busy, and installed-as-far-as-it-goes. */
+export function wantsUse(reading: MachineReading): boolean {
+  return !["queued", "working", "ready", "installedOnly"].includes(reading.kind);
 }
 
 /**
- * The machines this server has installed on, most recently installed first. Ties keep the
- * config's order, so the list is stable between polls. The local entry is kept out: it is
- * where you are, not something you did.
+ * The machines in use here: those this server has installed on for this Project, most
+ * recently installed first. Ties keep the config's order, so the list is stable between
+ * polls. The local entry is kept out: it is where you are, not something you did.
  */
 export function installedMachines(state: MachinesResponse): MachineInfo[] {
   return state.machines
@@ -101,29 +115,25 @@ export function localMachine(state: MachinesResponse): MachineInfo | null {
   return state.machines.find((machine) => machine.local) ?? null;
 }
 
-/** What the connect control offers for one machine. */
-export type ConnectAction = "unavailable" | "connected" | "connecting" | "connect";
-
-export function connectAction(
-  machine: MachineInfo,
-  job: MachineJob | null,
-  starting: string | null,
-): ConnectAction {
-  if (machine.local || machine.installed === null) return "unavailable";
-  if (starting === machine.id) return "connecting";
-  if (job?.running === true && job.kind === "connect" && job.machineId === machine.id) {
-    return "connecting";
-  }
-  return machine.connection !== null ? "connected" : "connect";
-}
-
 /**
- * True when a machine carries a different build from the one this server would install.
- * Any difference, not "older": pushed versions are content hashes, which do not order.
- * False while the local image is unknown — with nothing to compare against, "behind" would
- * be a guess dressed as a fact.
+ * A machine carrying a different build from the one this server would install: what "use"
+ * brings forward. No image, or a fresh machine, is not "behind" — there is nothing to
+ * compare against, or nothing to update.
  */
 export function outOfDate(machine: MachineInfo, imageVersion: string | null): boolean {
   if (imageVersion === null || machine.local || machine.installed === null) return false;
   return machine.installed.version !== imageVersion;
+}
+
+/**
+ * The batch's selection when nobody has touched it: every machine in use. A person opening
+ * the page to "make them all work" should find them all already ticked.
+ */
+export function defaultSelection(state: MachinesResponse): Set<string> {
+  return new Set(installedMachines(state).map((machine) => machine.id));
+}
+
+/** Whether any job is still to come, which is when the page keeps polling. */
+export function anyJobPending(state: MachinesResponse): boolean {
+  return state.jobs.some((job) => job.queued || job.running);
 }
