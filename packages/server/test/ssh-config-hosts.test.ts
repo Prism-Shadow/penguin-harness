@@ -5,7 +5,12 @@
  * change what ssh reads.
  */
 import { describe, expect, it } from "vitest";
-import { renderHostBlock, validateHostEntry } from "../src/machines/ssh-config.js";
+import {
+  findHostBlock,
+  renderHostBlock,
+  replaceHostBlock,
+  validateHostEntry,
+} from "../src/machines/ssh-config.js";
 
 const AT = new Date("2026-09-05T12:00:00.000Z");
 
@@ -95,5 +100,74 @@ describe("renderHostBlock", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+const CONFIG = [
+  "Host *",
+  "  ServerAliveInterval 30",
+  "",
+  "Host nas gpu-1",
+  "  HostName 10.0.0.2",
+  "",
+  "# Added by PenguinHarness on 2026-09-05T12:00:00.000Z",
+  "Host orchid-2",
+  "  HostName 10.0.0.9",
+  "  User k",
+  "  Port 2222",
+  "",
+  "",
+  "Host lab",
+  "  HostName lab.example.net",
+  "  ProxyJump bastion",
+].join("\n");
+
+describe("findHostBlock", () => {
+  it("reads back a block this app wrote, marker included, trailing blanks excluded", () => {
+    expect(findHostBlock(CONFIG, "orchid-2")).toEqual({
+      start: 6,
+      end: 11,
+      ours: true,
+      entry: { alias: "orchid-2", hostName: "10.0.0.9", user: "k", port: 2222 },
+    });
+  });
+
+  it("finds a hand-written block but says it is not ours", () => {
+    expect(findHostBlock(CONFIG, "lab")).toEqual({
+      start: 13,
+      end: 16,
+      ours: false,
+      entry: { alias: "lab", hostName: "lab.example.net" },
+    });
+  });
+
+  it("does not match a line declaring several aliases, or an alias that is not there", () => {
+    expect(findHostBlock(CONFIG, "nas")).toBeNull();
+    expect(findHostBlock(CONFIG, "nope")).toBeNull();
+  });
+});
+
+describe("replaceHostBlock", () => {
+  it("swaps the block's lines for the new ones and leaves the rest of the file alone", () => {
+    const found = findHostBlock(CONFIG, "orchid-2")!;
+    const block = renderHostBlock(
+      { alias: "orchid-2", hostName: "10.0.0.10", port: 22 },
+      new Date("2026-09-06T00:00:00.000Z"),
+    );
+    const next = replaceHostBlock(CONFIG, found, block);
+    expect(next.split("\n").slice(6, 11)).toEqual([
+      "# Added by PenguinHarness on 2026-09-06T00:00:00.000Z",
+      "Host orchid-2",
+      "  HostName 10.0.0.10",
+      "  Port 22",
+      "",
+    ]);
+    expect(next.split("\n").slice(0, 6)).toEqual(CONFIG.split("\n").slice(0, 6));
+    expect(next.endsWith("  ProxyJump bastion")).toBe(true);
+    expect(findHostBlock(next, "orchid-2")?.entry).toEqual({
+      alias: "orchid-2",
+      hostName: "10.0.0.10",
+      port: 22,
+    });
   });
 });
