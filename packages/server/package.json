@@ -61,7 +61,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7368 -- tsx watch src/index.ts",
+    "dev": "node ../../scripts/dev-prebuild.mjs && node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PENGUIN_PROFILE=dev PORT=7368 -- tsx watch src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out src/ifaces.json",

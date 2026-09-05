@@ -19,10 +19,12 @@
  * | 7367 | `pnpm dev:docs` (Vite)             | none (static)              | `packages/docs/vite.config.ts`       |
  * | 7368 | `pnpm dev:server` (dev backend)    | `~/.penguin/dev-data`      | `packages/server/package.json` `dev` |
  * | 7369 | `pnpm penguin web` (dev CLI)       | `~/.penguin/dev-data-cli`  | the root and cli `penguin` scripts   |
+ * | 7370 | a machine's dev-profile server     | `~/.penguin-dev/data` there | `DEFAULT_DEV_SERVER_PORT` below      |
  *
  * The desktop app binds no fixed port in either form (PORT=0 with a per-instance sticky
- * preference); its release form shares `~/.penguin/data` with the CLI by design and its
- * dev form takes `~/.penguin/dev-data` (see `packages/desktop/src/app-identity.ts`). The
+ * preference); its release profile shares `~/.penguin/data` with the CLI by design and its
+ * dev profile — an unpackaged run, or any build launched with `--dev` — takes
+ * `~/.penguin/dev-data` (see `packages/desktop/src/app-identity.ts`). The
  * web e2e harness runs on 8930/8931 against a throwaway root (`packages/web/e2e/run.sh`).
  *
  * The development backend deliberately does **not** share 7364 with an installed one: the
@@ -48,3 +50,12 @@
 
 /** Default main server / Web UI port; deliberately avoids common defaults like 3000/8080. */
 export const DEFAULT_SERVER_PORT = 7364;
+
+/**
+ * Where a dev-profile instance starts the server it installs on another machine
+ * (`packages/server/src/machines/layout.ts`). Its own number because the release-profile
+ * server on that machine holds 7364, and the forward's local port must equal the remote
+ * one for Workspace previews to resolve — so the two profiles cannot share a number on
+ * either end.
+ */
+export const DEFAULT_DEV_SERVER_PORT = 7370;
