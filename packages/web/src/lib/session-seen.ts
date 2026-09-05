@@ -30,7 +30,8 @@ export interface SessionSeenStorage {
 }
 
 /** Storage key of one Project's seen markers (sidebar key-naming convention, `penguin.pinnedSessions.<projectId>` &c.). */
-export const sessionSeenKey = (projectId: string): string => `penguin.sessionSeen.${projectId}`;
+const SEEN_KEY_PREFIX = "penguin.sessionSeen.";
+export const sessionSeenKey = (projectId: string): string => `${SEEN_KEY_PREFIX}${projectId}`;
 
 /**
  * Cap on remembered markers per Project. Only Sessions the user actually opened get one, so
@@ -209,7 +210,41 @@ export function forgetSession(
   write(key, next, storage);
 }
 
-/** Test seam: drops the in-memory parse cache so a fresh storage stub is re-read. */
+/** Plain (non-hook) read of one Project's markers, for code outside a render. */
+export function readSessionSeen(projectId: string, storage?: SessionSeenStorage): SessionSeenState {
+  return read(sessionSeenKey(projectId), storage);
+}
+
+/**
+ * Forgets one key's parsed copy, so the next read re-parses storage and every subscriber
+ * re-renders with it. What another tab wrote lands here: a Session opened in a second tab or
+ * window is read there, and this tab's unread dots and dashboard counts have to follow —
+ * the cache otherwise served what it parsed at first read for the life of the page.
+ */
+export function dropSessionSeenCache(key: string): void {
+  seenStore.setState((prev) => {
+    if (!prev.cache.has(key)) return prev;
+    const cache = new Map(prev.cache);
+    cache.delete(key);
+    return { cache };
+  });
+}
+
+/** Drops the whole in-memory parse cache: every Project re-reads storage on its next read. */
 export function resetSessionSeenCache(): void {
   seenStore.setState({ cache: new Map() });
+}
+
+// The bridge from other tabs: `storage` fires in every OTHER same-origin document when one
+// writes, so a marker stamped over there invalidates the copy held here. Coming back to a
+// backgrounded tab re-reads everything as well — a window that was hidden may have missed
+// nothing, but the re-read costs one parse per Project and never shows a stale dot.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== null && event.key.startsWith(SEEN_KEY_PREFIX))
+      dropSessionSeenCache(event.key);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resetSessionSeenCache();
+  });
 }
