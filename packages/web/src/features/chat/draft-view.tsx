@@ -18,6 +18,9 @@
  * the page resumes where you left off; on successful send the cache clears, except
  * the model selection, which carries over as the next conversation's default
  * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
+ * The one thing that does not resume is a prompt a "Create with AI" surface composed
+ * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
+ * or sending it clears the slot exactly as a send would (see dropAiPrefill).
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
@@ -103,7 +106,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 300;
  * failure (private mode) both helpers degrade to "not consumed", and the in-component
  * ref still provides the previous apply-once-per-mount behavior.
  */
-type RouteStateField = "agentId" | "workspace";
+type RouteStateField = "agentId" | "workspace" | "autoSend";
 function loadAppliedRouteKey(field: RouteStateField): string | null {
   try {
     return sessionStorage.getItem(`penguin.chatRouteApplied.${field}`);
@@ -198,6 +201,13 @@ export function DraftView({
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
   /**
+   * The text came from a "Create with AI" surface rather than a keyboard (`aiPrefill`,
+   * draft-cache.ts): it seeded this draft and dies with it. The mark rides in the cache so a
+   * reload restores the same prefilled draft, and it is dropped by the first edit — from then on
+   * the text is the user's and is cached, parked and kept exactly like any other draft.
+   */
+  const aiPrefillRef = useRef(cached.aiPrefill === true);
+  /**
    * Selected skills (prefilled by "quick invoke" from the Skills page + checked in
    * the input area): passed to ChatInput as the initial selection via initialSkills
    * on mount, then written back through onSkillsChange and persisted immediately
@@ -251,7 +261,11 @@ export function DraftView({
   // on invalid value" effect would let the former write B in one render while the
   // latter, still judging by the stale closure's invalid value, writes the default
   // Agent and clobbers B.
-  const routeState = location.state as { agentId?: string; workspace?: string } | null;
+  const routeState = location.state as {
+    agentId?: string;
+    workspace?: string;
+    autoSend?: boolean;
+  } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
   /** One-shot marker for the project-default Agent (seeding precedence, see below). */
@@ -507,6 +521,9 @@ export function DraftView({
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
+    // Carried through every write, so a reload finds the prefill still marked as composed
+    // rather than resuming it as if it had been typed here.
+    if (aiPrefillRef.current) data.aiPrefill = true;
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
@@ -523,6 +540,9 @@ export function DraftView({
   const onTextChange = useCallback(
     (text: string) => {
       textRef.current = text;
+      // Editing an AI-composed prefill makes it the user's own text — an ordinary draft, kept
+      // when the page is left and parkable like any other (see aiPrefillRef).
+      aiPrefillRef.current = false;
       cancelPendingSave();
       saveTimer.current = window.setTimeout(() => {
         saveTimer.current = null;
@@ -538,10 +558,31 @@ export function DraftView({
     persistRef.current();
   }, []);
 
-  // Unmount: if there's still unsaved body text, flush it (so a route change/page switch doesn't lose the last few keystrokes).
+  /**
+   * Leaving an AI-composed prefill the user neither edited nor sent: the slot is left exactly as
+   * a successful send leaves it — model carry-over only — so the prompt cannot reappear in a
+   * later new conversation, and the next "Create with AI" jump has nothing to park. Storage is
+   * all this touches, deliberately: StrictMode runs the unmount cleanup once right after mount,
+   * and the persist effect above then rewrites the slot from component state, which must still
+   * describe the prefilled draft on screen.
+   */
+  const dropAiPrefill = useCallback(() => {
+    if (!userId) return;
+    if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
+    else clearDraft(draftKey(userId, projectId));
+  }, [userId, projectId, modelRef]);
+  /** Latest-closure mirror for the unmount cleanup (same convention as persistRef). */
+  const dropAiPrefillRef = useRef(dropAiPrefill);
+  dropAiPrefillRef.current = dropAiPrefill;
+
+  // Unmount: drop an untouched AI prefill, or else flush still-unsaved body text (so a route
+  // change/page switch doesn't lose the last few keystrokes). Exclusive by construction — a
+  // pending save exists only after an edit, and an edit clears the prefill mark.
   useEffect(
     () => () => {
-      if (saveTimer.current !== null) {
+      if (aiPrefillRef.current) {
+        dropAiPrefillRef.current();
+      } else if (saveTimer.current !== null) {
         window.clearTimeout(saveTimer.current);
         persistRef.current();
       }
@@ -577,6 +618,8 @@ export function DraftView({
     cancelPendingSave();
     // Clear the preselected skills too: any subsequent write (e.g. the unmount flush) must not resurrect a selection that's already been sent.
     skillsRef.current = [];
+    // A sent prefill has done its job; the unmount that follows has nothing left to drop.
+    aiPrefillRef.current = false;
     // The unmount flush routes through persistNow, which would otherwise write the
     // just-sent content back (into the parked entry, resurrecting a deleted row): with
     // the text gone the flush becomes an idempotent empty-shell write.
@@ -683,6 +726,60 @@ export function DraftView({
   const fillShortcut = useCallback((prompt: string) => {
     composerRef.current?.fillExample(prompt, []);
   }, []);
+
+  /**
+   * Auto-send for the "Create with AI" bridge (features/ai-create): the request arrives with
+   * `autoSend` in location.state and its prompt already in the draft cache, and the composer
+   * submits it — through the Send button's own path — once the send preconditions hold: the
+   * requested agent is the selected one, a model is known, and that agent's installed skills
+   * are loaded (a preselected skill is pruned against them first). Two steps rather than one:
+   * arming is state, so the submit runs one render later, after the composer's own pruning of
+   * the selection has committed. Consumed exactly once per history entry — the refs cover
+   * StrictMode's doubled effects and later dependency changes, the sessionStorage marker covers
+   * a reload (history.state keeps `autoSend`; see loadAppliedRouteKey). A Project with no model
+   * at all has nothing to send with: the marker is consumed and the prefilled draft stays, the
+   * ordinary draft state.
+   */
+  const autoSendRequested = routeState?.autoSend === true;
+  const autoSendConsumed = useRef(false);
+  const [autoSendArmed, setAutoSendArmed] = useState(false);
+  useEffect(() => {
+    if (!autoSendRequested || autoSendConsumed.current) return;
+    if (loadAppliedRouteKey("autoSend") === location.key) {
+      autoSendConsumed.current = true;
+      return;
+    }
+    if (!models) return;
+    const sendable = models.models.length > 0;
+    if (sendable) {
+      const wanted = stateAgentId ?? agentId;
+      const ready =
+        agentId !== null &&
+        agentId === wanted &&
+        agents.some((a) => a.agentId === agentId) &&
+        modelRef !== null &&
+        skillsLoaded;
+      if (!ready) return;
+    }
+    autoSendConsumed.current = true;
+    saveAppliedRouteKey("autoSend", location.key);
+    if (sendable) setAutoSendArmed(true);
+  }, [
+    autoSendRequested,
+    location.key,
+    models,
+    agents,
+    agentId,
+    stateAgentId,
+    modelRef,
+    skillsLoaded,
+  ]);
+  const autoSendFired = useRef(false);
+  useEffect(() => {
+    if (!autoSendArmed || autoSendFired.current) return;
+    autoSendFired.current = true;
+    composerRef.current?.submit();
+  }, [autoSendArmed]);
 
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes

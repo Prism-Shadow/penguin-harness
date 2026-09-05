@@ -475,6 +475,26 @@ export const en: Strings = {
     later: "Later",
   },
 
+  /** The "Create with AI" kit (features/ai-create): the create-button entries, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  aiCreate: {
+    withAi: "Create with AI",
+    manual: "Set up manually",
+    send: "Send to agent",
+    editInChat: "Edit in a new conversation",
+    copyPrompt: "Copy prompt",
+    examplesTitle: "Try an example",
+    fullPrompt: "Full prompt",
+    /** Who does the work, and where: the panel's lead line. */
+    byAgent: (name: string): string => `Done by ${name} in a new conversation`,
+    chooseAgent: "Agent that does the work",
+    placeholder: "Describe what you want — the more specific, the better",
+    /** Accessible name of the prompt box (it has no visible label). */
+    promptLabel: "Prompt",
+    noAgent: "This Project has no agent yet",
+    /** Accessible name of the split button's caret half. */
+    moreWays: "More ways to create",
+  },
+
   agent: {
     savedTakesEffect:
       "Saved. New conversations pick it up right away; running ones after their next compaction.",

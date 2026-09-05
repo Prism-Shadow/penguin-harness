@@ -749,9 +749,9 @@ function appendAttachmentParts(
 }
 
 /**
- * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * One entry so far: the draft screen's example cards fill this composer instead of submitting
- * on their own.
+ * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`:
+ * the draft screen's example cards fill this composer instead of submitting on their own, and
+ * its auto-send (a "Create with AI" bridge) submits through the Send button's own path.
  */
 export interface ComposerControl {
   /**
@@ -760,6 +760,12 @@ export interface ComposerControl {
    * has not installed are dropped here, where the installed list already lives.
    */
   fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
+  /**
+   * Submit the draft exactly as pressing Send would — the same `canSend` gate, the same path.
+   * Returns whether a send started; false means nothing is sendable right now (an empty draft,
+   * a send in flight, a running or compacting Session).
+   */
+  submit: () => boolean;
 }
 
 export function ChatInput({
@@ -1362,7 +1368,6 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  useImperativeHandle(controlRef, () => ({ fillExample }), [fillExample]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -1828,6 +1833,16 @@ export function ChatInput({
     if (!canSend) return;
     await sendNormal();
   };
+
+  /** The controlRef's submit (see ComposerControl): gated exactly like the Send button. */
+  const submit = (): boolean => {
+    if (!canSend) return false;
+    void send();
+    return true;
+  };
+  // Rebuilt every render on purpose: `send` closes over the whole draft state, and the handle
+  // must always reach the latest one.
+  useImperativeHandle(controlRef, () => ({ fillExample, submit }));
 
   /**
    * Applies a history step: the recalled text goes through the normal draft path

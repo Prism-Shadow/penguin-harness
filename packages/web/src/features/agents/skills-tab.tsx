@@ -25,7 +25,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
@@ -42,8 +41,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { parkActiveDraft } from "../chat/draft-sessions";
+import { useAiBridge } from "../ai-create";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
@@ -74,8 +72,8 @@ export function SkillsTab({
   onConfigChanged?: () => void;
 }) {
   const navigate = useNavigate();
+  const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
-  const userId = useAuth().user?.userId ?? null;
   const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
@@ -206,25 +204,14 @@ export function SkillsTab({
 
   /**
    * "Open a new chat" with this Agent: the same draft-state entry as the agents page
-   * "New Chat" button. A non-empty source also prefills the composer with the generated
-   * install prompt through the draft cache — the mechanism the skill library's quick
-   * invoke already uses, so draft-view itself needs no changes. handoffAgentId is
-   * cleared (a leftover handoff target would forward the install prompt to a different
-   * Agent) and the skill pre-selection reset alongside the overwritten text.
+   * "New Chat" button. A non-empty source goes through the AI bridge instead, which prefills
+   * the composer with the generated install prompt (parking typed-but-unsent draft text
+   * first) and clears a stale handoff target and skill pre-selection along with it.
    */
   const openChat = () => {
-    if (userId && projectId && trimmedSource) {
-      // Typed-but-unsent draft text becomes a parked draft conversation instead of being
-      // clobbered by the canned import prompt (draft-sessions.ts).
-      parkActiveDraft(userId, projectId);
-      const key = draftKey(userId, projectId);
-      saveDraft(key, {
-        ...loadDraft(key),
-        agentId,
-        text: buildImportPrompt(trimmedSource),
-        skills: [],
-        handoffAgentId: undefined,
-      });
+    if (trimmedSource) {
+      openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
+      return;
     }
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
