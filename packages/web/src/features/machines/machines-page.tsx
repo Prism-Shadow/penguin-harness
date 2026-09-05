@@ -58,9 +58,13 @@ import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-/** Enable: a plug on its cord. Disable: the plug pulled — the cord parted from the body. */
-const PLUG_PATH = "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4";
-const UNPLUG_PATH = "M9 2v4M15 2v4M6 6h12v3a6 6 0 0 1-12 0V6zM12 19v3M9.5 16.5l5-2M9.5 14.5l5 2";
+/**
+ * Enable: a plug seated in its socket, cord trailing. Disable: the plug lifted clear of the
+ * socket — prongs in the air, a gap, and the empty socket cup below. The two must differ in
+ * silhouette, not in detail: at icon size a detail is invisible.
+ */
+const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
+const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
 const MONO = "font-mono text-[13px] tabular-nums";
 
@@ -331,7 +335,7 @@ export function MachinesPage() {
                   {S.machines.add}
                 </Button>
               }
-              menuClass="w-80 max-w-[calc(100vw-2rem)] origin-top-right"
+              menuClass="top-full right-0 mt-1 w-80 max-w-[calc(100vw-2rem)] origin-top-right"
             >
               {/* The search row: matched characters bright and the rest dimmed — with a
                   subsequence match, an unmarked row looks wrong. */}
