@@ -1843,6 +1843,8 @@ Scenarios:
     loadEarlierRetry: "Failed to load earlier messages — click to retry",
     /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
     historyBeginning: "Beginning of conversation",
+    loadingLater: "Loading later messages…",
+    loadLaterRetry: "Failed to load later messages — click to retry",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */
