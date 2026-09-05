@@ -8,7 +8,7 @@
  * library types is withheld from the API until someone adds it here on purpose; skill bodies
  * and hook scripts never travel in a listing.
  */
-import { libraryPlugin } from "@prismshadow/penguin-core";
+import { hookPackageEnabled, libraryPlugin } from "@prismshadow/penguin-core";
 import type { HookManifest, LibraryPlugin, SkillMetadata } from "@prismshadow/penguin-core";
 import type { HookItem, PluginItem, SkillMetadataItem } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -59,6 +59,7 @@ export function toHookItem(hook: HookManifest & { icon?: string }): HookItem {
     ...(hook.description_zh !== undefined ? { descriptionZh: hook.description_zh } : {}),
     version: hook.version,
     events: hookEvents(hook),
+    enabled: hookPackageEnabled(hook),
     ...(hook.icon !== undefined ? { icon: hook.icon } : {}),
   };
 }

@@ -36,15 +36,15 @@ import {
   skillTooLarge,
 } from "../../services/skill-import-limits.js";
 
-/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
-const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
+/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks archive routes. */
+export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
 
 /**
  * Validates one zip entry path (zip-slip guard): rejects absolute paths (leading "/" or a
  * drive letter), backslashes and any ".." segment — a malicious archive must never write
- * outside the target Skill directory.
+ * outside the target Skill directory. Shared with the hooks archive routes.
  */
-function assertSafeEntryPath(name: string): void {
+export function assertSafeEntryPath(name: string): void {
   if (name.includes("\\")) throw badRequest(`Invalid zip entry path (backslash): ${name}`);
   if (name.startsWith("/") || /^[A-Za-z]:/.test(name)) {
     throw badRequest(`Invalid zip entry path (absolute): ${name}`);
