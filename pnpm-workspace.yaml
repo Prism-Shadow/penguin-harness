@@ -1,5 +1,9 @@
 packages:
   - "packages/*"
+  # Plugin packages a deployment installs and lists in plugins.json. They sit at the top
+  # level, outside packages/, because they are not part of the harness: nothing under
+  # packages/ depends on one, and the platform bundle carries none of them — what ships
+  # them is scripts/build-plugins.mjs, which packs each self-contained.
   - "plugins/*"
 # Dependency pins. pnpm 11 reads overrides ONLY from here — the package.json
 # "pnpm.overrides" block it used to honour is silently ignored, which resolved a second
@@ -21,9 +25,6 @@ syncInjectedDepsAfterScripts:
 allowBuilds:
   "@google/genai": true
   esbuild: true
-  # node-pty compiles its native pty binding (node-gyp) on install; without this the
-  # terminal server has no pty and every session fails to spawn.
-  node-pty: true
   protobufjs: true
   # electron's postinstall downloads the platform runtime binary; without this allow
   # entry pnpm skips it and `electron .` has nothing to launch.
@@ -31,10 +32,33 @@ allowBuilds:
   # electron-winstaller's script fetches Squirrel.Windows binaries; the desktop package
   # targets NSIS only, so the script is deliberately not run.
   electron-winstaller: false
+  # koffi (a transitive dependency of the DSH sandbox plugin package, never of the
+  # harness itself) ships per-platform prebuilds; its build script is only a fallback
+  # compile and the prebuilt binding loads fine without it. Deliberately skipped, like
+  # electron-winstaller.
+  koffi: false
+  # node-pty compiles its native pty binding (node-gyp) on install; without this the
+  # terminal server has no pty and every session fails to spawn. The allow entry is
+  # per-package-name, so it also builds the second, beta copy @microsoft/mxc-sdk pulls
+  # in — harmless, and that copy is never loaded (the MXC plugin only asks the SDK to
+  # BUILD a config; it spawns the runner through the harness, never through a pty).
+  node-pty: true
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which
 # would resolve agenthub back to the previous release and lose the fix the bump is for.
 # This package is first-party, so the exemption carries no third-party risk.
 # Every bump lands inside the age gate, so the entry names the pinned version and moves
 # with each bump rather than being removed.
 minimumReleaseAgeExclude:
+  - "@deepseek-ai/dsh-attachment@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-brand@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-invariants@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-llm@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-sandbox-local@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-sandbox-windows-acl@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-sandbox@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-scope@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-session@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-timeout@0.1.0-rc.7"
+  - "@deepseek-ai/dsh-typert-protocol@0.1.0-rc.7"
+  - "@microsoft/mxc-sdk@0.7.0"
   - "@prismshadow/agenthub@0.4.9"

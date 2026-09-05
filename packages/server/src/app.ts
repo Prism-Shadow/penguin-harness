@@ -59,7 +59,7 @@ import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
-import { EXTENSIONS_RESOURCE_ID, type ExtensionHost } from "./extension/host.js";
+import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
@@ -126,7 +126,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -287,15 +287,15 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  *
- * `extensions` is the host index.ts's loadExtensions step filled from extensions.json — handed in
+ * `plugins` is the host index.ts's loadPlugins step filled from plugins.json — handed in
  * rather than registered by the caller because the platform boots inside this function,
  * and everything it claims has to be in the registry first. Absent (tests), the platform
- * falls back to an empty host (see extension/index.ts's extensionHostFrom).
+ * falls back to an empty host (see plugin/index.ts's pluginHostFrom).
  */
 export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
-  extensions?: ExtensionHost,
+  plugins?: PluginHost,
 ): Promise<AppDeps> {
   const db = openDatabase(config.dbPath);
 
@@ -346,11 +346,11 @@ export async function bootAppDeps(
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
   hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
-  // The registry sweep only STARTS extension disposal (its disposers are sync) — the
+  // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
-  if (extensions !== undefined) {
-    hmr.resources.register(EXTENSIONS_RESOURCE_ID, extensions, () => void extensions.dispose());
+  if (plugins !== undefined) {
+    hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
   }
 
   // Boot the platform now rather than on the first request: the business surface —
@@ -773,6 +773,13 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
 export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
+  // Spawn confinement (mechanism only here): platform.ts's create() hands in a getter
+  // over its own SandboxService, and it is threaded untouched through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation) — then re-read
+  // at every command spawn, like proxyEnv. Same-generation wiring on purpose: the
+  // sessions spawning through it are hard-stopped with their App, so no channel with a
+  // longer lifetime is needed. Policy itself lives in ../sandbox/.
+  confineSpawn: () => SpawnConfiner | null = () => null,
 ): AppDeps {
   const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -939,7 +946,7 @@ export function buildAppDeps(
     channels,
     loader:
       overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, confineSpawn }),
     sources: sessionSources,
     recorder,
     errors,
@@ -1049,6 +1056,7 @@ export function buildAppDeps(
         ? enabled.channel
         : null;
     },
+    confineSpawn,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.

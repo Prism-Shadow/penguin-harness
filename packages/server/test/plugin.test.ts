@@ -1,5 +1,5 @@
 /**
- * Behavior tests for the extension seam: activate-once and its sealed subscription window,
+ * Behavior tests for the plugin seam: activate-once and its sealed subscription window,
  * typed event delivery in activation order, the two views (definition iface / flattened
  * instance context), disposables, workflow registration and calling, and re-delivery on
  * the boot a hot swap performs.
@@ -9,19 +9,25 @@ import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
-import { EXTENSIONS_RESOURCE_ID, ExtensionHost, extensionHostFrom } from "../src/extension/host.js";
-import type { PenguinContext, PenguinInterface, WorkflowFactory } from "../src/extension/index.js";
-import { instantiateWorkflows, WorkflowFactories } from "../src/extension/workflow.js";
+import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
+import type { PenguinContext, PenguinInterface } from "@prismshadow/penguin-core/plugin";
+import type { HarnessContext } from "../src/plugin/index.js";
+import { instantiateWorkflows, WorkflowFactories } from "../src/plugin/workflow.js";
+import type { WorkflowFactory } from "@prismshadow/penguin-core/plugin";
 
 function emptyIface(): PenguinInterface {
-  // The registry, not a bare Map: that IS the surface an extension gets (see platform.ts).
-  return { workflow: new WorkflowFactories(), tool: new Map() };
+  // The registry, not a bare Map: that IS the surface a plugin gets (see platform.ts).
+  return {
+    workflow: new WorkflowFactories(),
+    tool: new Map(),
+    sandbox: { registerProvider: () => {} },
+  };
 }
 
 /**
  * A registry whose host declares itself a bare kernel — right family, no capabilities
  * offered. That declaration is what makes a terminals-only boot legal (see
- * capabilities.ts's RuntimeClaim); extension delivery is business-independent, so this is
+ * capabilities.ts's RuntimeClaim); plugin delivery is business-independent, so this is
  * all these tests need behind the platform.
  */
 function bareKernel(): HotResources {
@@ -45,9 +51,9 @@ async function quietBoot(r: HotResources) {
   }
 }
 
-describe("extension host", () => {
+describe("plugin host", () => {
   it("activate runs once; typed events deliver both views in activation order", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     const log: string[] = [];
     let activations = 0;
     let seenIface: PenguinInterface | null = null;
@@ -74,15 +80,15 @@ describe("extension host", () => {
     const iface2 = emptyIface();
     host.emit("initialize", iface2);
 
-    // activate ran once per extension, while every event delivery re-walked the handlers.
+    // activate ran once per plugin, while every event delivery re-walked the handlers.
     expect(activations).toBe(1);
     expect(log).toEqual(["a:initialize", "a:create", "b:create", "a:initialize"]);
     expect(seenIface).toBe(iface2);
     expect(seenCtx).toBe(ctx);
   });
 
-  it("a subscription-less extension is fine, and events with no handlers deliver to no one", async () => {
-    const host = new ExtensionHost();
+  it("a subscription-less plugin is fine, and events with no handlers deliver to no one", async () => {
+    const host = new PluginHost();
     await host.use({ activate: () => {} });
     expect(() => {
       host.emit("initialize", emptyIface());
@@ -91,7 +97,7 @@ describe("extension host", () => {
   });
 
   it("the subscription window seals when activate settles", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     let leaked: ((event: "create", handler: (ctx: PenguinContext) => void) => void) | null = null;
     await host.use({
       activate(extCtx) {
@@ -104,7 +110,7 @@ describe("extension host", () => {
   });
 
   it("dispose runs disposables concurrently, awaits async ones, and isolates failures", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     const done: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -142,7 +148,7 @@ describe("extension host", () => {
       // Both failure shapes (sync throw, rejected promise) were isolated and reported.
       expect(warn).toHaveBeenCalledTimes(2);
 
-      // Idempotent: a second call finds no extensions and re-runs nothing.
+      // Idempotent: a second call finds no plugins and re-runs nothing.
       await host.dispose();
       expect(done).toEqual(["fast", "slow"]);
       expect(warn).toHaveBeenCalledTimes(2);
@@ -152,9 +158,9 @@ describe("extension host", () => {
   });
 });
 
-describe("extension host — activation is transactional", () => {
+describe("plugin host — activation is transactional", () => {
   it("an async activate is awaited, so its rejection is an ordinary load failure", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     const order: string[] = [];
     await expect(
       host.use({
@@ -167,13 +173,13 @@ describe("extension host — activation is transactional", () => {
         },
       }),
     ).rejects.toThrow(/async boom/);
-    // The failed extension is not published, so nothing it registered is ever delivered.
+    // The failed plugin is not published, so nothing it registered is ever delivered.
     host.emit("create", {} as PenguinContext);
     expect(order).toEqual([]);
   });
 
   it("a failed activate still runs whatever it had already registered for cleanup", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     let disposed = 0;
     await expect(
       host.use({
@@ -191,7 +197,7 @@ describe("extension host — activation is transactional", () => {
   });
 
   it("an async event handler is refused, and its rejection cannot escape", async () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     const rejections: unknown[] = [];
     const onRejection = (reason: unknown): void => void rejections.push(reason);
     process.on("unhandledRejection", onRejection);
@@ -247,7 +253,7 @@ describe("workflows: registration and plain invocation", () => {
   it("a duplicate workflow name is refused, not silently replaced", () => {
     const iface = emptyIface();
     iface.workflow.set("same", () => ({ run: () => "A" }));
-    // A bare Map would let the winner depend on extensions.json ordering, and an extension
+    // A bare Map would let the winner depend on plugins.json ordering, and a plugin
     // could take over a name another one owns without either noticing.
     expect(() => iface.workflow.set("same", () => ({ run: () => "B" }))).toThrow(
       /workflow 'same' is already registered/,
@@ -262,23 +268,23 @@ describe("workflows: registration and plain invocation", () => {
   });
 });
 
-describe("extensionHostFrom", () => {
+describe("pluginHostFrom", () => {
   it("claims the host the runtime published", () => {
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     const resources = new HotResources();
-    resources.register(EXTENSIONS_RESOURCE_ID, host);
-    expect(extensionHostFrom(resources)).toBe(host);
+    resources.register(PLUGINS_RESOURCE_ID, host);
+    expect(pluginHostFrom(resources)).toBe(host);
   });
 
   it("falls back to an empty host when nothing was published", () => {
     const iface: PenguinInterface = emptyIface();
-    // No throw, and nothing registers into the iface: no published host means no extensions.
-    extensionHostFrom(new HotResources()).emit("initialize", iface);
+    // No throw, and nothing registers into the iface: no published host means no plugins.
+    pluginHostFrom(new HotResources()).emit("initialize", iface);
     expect(iface.workflow.size).toBe(0);
   });
 });
 
-describe("extension seam on the real platform", () => {
+describe("plugin seam on the real platform", () => {
   it("boots an App when the runtime published no host at all", async () => {
     const inst = await quietBoot(bareKernel());
     try {
@@ -291,7 +297,7 @@ describe("extension seam on the real platform", () => {
   it("every App creation re-delivers both events, and the context carries what it registered", async () => {
     const contexts: PenguinContext[] = [];
     let initializes = 0;
-    const host = new ExtensionHost();
+    const host = new PluginHost();
     await host.use({
       activate(extCtx) {
         extCtx.on("initialize", (iface) => {
@@ -304,18 +310,21 @@ describe("extension seam on the real platform", () => {
       },
     });
     // The registry sits outside the reloadable tree and outlives a swap: publishing the
-    // host once is what lets both Apps below drive the same loaded extensions.
+    // host once is what lets both Apps below drive the same loaded plugins.
     const resources = bareKernel();
-    resources.register(EXTENSIONS_RESOURCE_ID, host);
+    resources.register(PLUGINS_RESOURCE_ID, host);
 
     const instA = await quietBoot(resources);
     try {
       expect(initializes).toBe(1);
       expect(contexts).toHaveLength(1);
       const ctx = contexts[0]!;
-      // context.* flatten: the platform's own member is directly on the context.
-      expect(typeof ctx.terminals.handleIds).toBe("function");
-      // …and the workflow this extension registered is instantiated and callable.
+      // The sandbox config surface rides the same context (see ../src/sandbox/).
+      expect(ctx.sandbox.settings()).toEqual({ mode: "danger-full-access" });
+      // `terminals` is NOT on the closed contract: it is this harness's own, so reaching it
+      // is an explicit cast — the same one a plugin depending on this embedder writes.
+      expect(typeof (ctx as HarnessContext).terminals.handleIds).toBe("function");
+      // …and the workflow this plugin registered is instantiated and callable.
       expect(ctx.workflows.names()).toContain("probe-1");
       expect(ctx.workflows.run("probe-1", 42)).toEqual({ echoed: 42 });
 

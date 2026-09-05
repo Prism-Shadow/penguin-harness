@@ -8,7 +8,7 @@
  * main() comes first in the file and is the sequence itself: each step is one PenguinServer
  * method, named after what it does and appearing in the order main() calls it. The order
  * carries real constraints — the proxy dispatcher before any outbound request, the instance
- * lock before the database opens, extensions loaded before the platform boots against them,
+ * lock before the database opens, plugins loaded before the platform boots against them,
  * the platform (and with it the whole business surface) before the first request is
  * served — so each step documents the constraint it stands on.
  *
@@ -25,8 +25,8 @@ import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import { clearInitialAdminPassword, renderFirstLoginNotice } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
-import { ExtensionHost } from "./extension/host.js";
-import { loadExtensions } from "./extension/loader.js";
+import { PluginHost } from "./plugin/host.js";
+import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
-  await server.loadExtensions();
+  await server.loadPlugins();
   await server.buildDeps();
   server.applyPersistedProxy();
   server.buildApp();
@@ -66,8 +66,8 @@ class PenguinServer {
 
   /** Assigned by readConfig(); every later step reads it. */
   private config!: ServerConfig;
-  /** Assigned by loadExtensions(); published to the platform tree by buildDeps(). */
-  private extensions!: ExtensionHost;
+  /** Assigned by loadPlugins(); published to the platform tree by buildDeps(). */
+  private plugins!: PluginHost;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: AppDeps;
   /** Assigned by buildApp(). */
@@ -118,44 +118,44 @@ class PenguinServer {
   }
 
   /**
-   * Extensions are configuration, and reading configuration is the runtime's job: take the
-   * specifiers extensions.json names, import them, and register each into this process's one
-   * ExtensionHost. Once per process — a hot swap re-delivers the hooks to these same extension
+   * Plugins are configuration, and reading configuration is the runtime's job: take the
+   * specifiers plugins.json names, import them, and register each into this process's one
+   * PluginHost. Once per process — a hot swap re-delivers the hooks to these same plugin
    * objects, which is the host's job, but must never import them again.
    *
-   * An extension that fails to load is skipped with a warning instead of taking the server
+   * A plugin that fails to load is skipped with a warning instead of taking the server
    * down: the capability it would have provided stays unavailable, which a deployment can
    * recover from, whereas a server that refuses to boot serves nobody.
    */
-  async loadExtensions(): Promise<void> {
-    this.extensions = new ExtensionHost();
-    const result = await loadExtensions(this.config.root);
-    for (const { specifier, extension } of result.loaded) {
-      // use() runs the extension's activate (awaiting an async one) and rolls back whatever
+  async loadPlugins(): Promise<void> {
+    this.plugins = new PluginHost();
+    const result = await loadPlugins(this.config.root);
+    for (const { specifier, plugin } of result.loaded) {
+      // use() runs the plugin's activate (awaiting an async one) and rolls back whatever
       // it registered before failing; a throw here is a LOAD failure, isolated per entry
       // like an import failure, not a per-App handler failure.
       try {
-        await this.extensions.use(extension);
+        await this.plugins.use(plugin);
       } catch (err) {
         result.failed.set(specifier, err instanceof Error ? err.message : String(err));
       }
     }
     for (const [specifier, reason] of result.failed) {
-      console.warn(`[extensions] skipped ${specifier}: ${reason}`);
+      console.warn(`[plugins] skipped ${specifier}: ${reason}`);
     }
   }
 
   /**
    * Builds the service graph: opens the database, publishes the runtime capabilities —
-   * the loaded extension host among them — and boots the platform, whose create() assembles
-   * the whole business surface (services, routes, the scheduler) and delivers the extension
+   * the loaded plugin host among them — and boots the platform, whose create() assembles
+   * the whole business surface (services, routes, the scheduler) and delivers the plugin
    * hooks. The host is handed in rather than registered here because the platform boots
    * INSIDE bootAppDeps: everything it claims has to be in the registry first, and the
    * registry is the only way a pushed bundle — compiled standalone — can reach these
-   * extension objects at all (see extension/index.ts's extensionHostFrom).
+   * plugin objects at all (see plugin/index.ts's pluginHostFrom).
    */
   async buildDeps(): Promise<void> {
-    this.deps = await bootAppDeps(this.config, {}, this.extensions);
+    this.deps = await bootAppDeps(this.config, {}, this.plugins);
   }
 
   /**
@@ -382,12 +382,12 @@ class PenguinServer {
     // for wrap-up) — through the instance the host holds, which a hot swap keeps current;
     // no registry pointer needed.
     await (await this.deps.hmr.ensure()).api.shutdown();
-    // Extension disposables: async-capable and awaited HERE — the one exit path that can
+    // Plugin disposables: async-capable and awaited HERE — the one exit path that can
     // await — under the same ≤5s convention as the manager's wrap-up above. The registry
     // sweep below would only fire them without awaiting. Idempotent, so the sweep's
     // fallback firing right after is a no-op.
     await Promise.race([
-      this.extensions.dispose(),
+      this.plugins.dispose(),
       new Promise<void>((resolve) => setTimeout(resolve, 5000).unref()),
     ]);
     // Disposing the host drains the App's effects (scheduler stop, manager hard-stop) and

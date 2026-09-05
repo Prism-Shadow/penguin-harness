@@ -2,13 +2,18 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
 import { toolCall } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
+import type {
+  ProxyEnvPolicy,
+  SpawnConfiner,
+  ToolConfig,
+  ToolDefinitionConfig,
+} from "../src/interfaces/index.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
@@ -487,6 +492,68 @@ describe("harness environment variables never reach a spawned command", () => {
       if (savedInherited === undefined) delete process.env.PENGUIN_API_URL;
       else process.env.PENGUIN_API_URL = savedInherited;
     }
+  });
+});
+
+describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
+  // The hosting server's platform layer supplies a SpawnConfiner getter through
+  // Agent -> Environment -> CommandSessionManager: the confiner sees the exact argv
+  // (shell included) and returns the argv to spawn instead; a throw fails the spawn
+  // closed. Standalone Environments (no getter) keep the historical direct spawn.
+  let confiner: SpawnConfiner | null = null;
+  let confinedEnv: Environment;
+
+  beforeEach(() => {
+    confiner = null;
+    confinedEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      confineSpawn: () => confiner,
+    });
+  });
+  afterEach(() => {
+    confinedEnv.dispose();
+  });
+
+  it("the confiner receives the exact argv plus cwd, and its rewrite is what runs", async () => {
+    let seen: { argv: readonly string[]; cwd: string; workspaceDir: string } | null = null;
+    confiner = (argv, opts) => {
+      seen = { argv, cwd: opts.cwd, workspaceDir: opts.workspaceDir };
+      // Stand-in runner: replaces the invocation wholesale and prints a marker, proving
+      // the child that actually ran is the rewritten argv, not the original shell.
+      return [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"];
+    };
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("CONFINED wrapped=");
+    expect(res.output).not.toContain("original\n");
+    expect(seen).not.toBeNull();
+    // The exact argv contract: last element is the command string, preceded by the shell.
+    expect(seen!.argv.at(-1)).toBe("echo original");
+    expect(seen!.argv.length).toBeGreaterThanOrEqual(2);
+    expect(seen!.cwd).toBe(tmp);
+    expect(seen!.workspaceDir).toBe(tmp);
+  });
+
+  it("a throwing confiner fails the spawn closed: reported as spawn error, nothing runs", async () => {
+    confiner = () => {
+      throw new Error('sandbox mode "workspace-write" requested but no backend is usable');
+    };
+    const res = await runTool(confinedEnv, "exec_command", {
+      cmd: "echo leaked > confine-leak.txt",
+    });
+    expect(res.stopReason).toBe("fatal");
+    expect(res.output).toContain('[spawn error: sandbox mode "workspace-write"');
+    // Fail-closed means the command never executed — not even unconfined.
+    await expect(access(path.join(tmp, "confine-leak.txt"))).rejects.toThrow();
+  });
+
+  it("the getter is re-read at every spawn, so a hot-swapped confiner needs no new Environment", async () => {
+    const first = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(first.output).toContain("unconfined-run");
+    confiner = () => [process.execPath, "-e", "console.log('CONFINED')"];
+    const second = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(second.output).toContain("CONFINED");
+    expect(second.output).not.toContain("unconfined-run");
   });
 });
 

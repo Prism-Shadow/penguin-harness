@@ -30,6 +30,8 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
+import type { SandboxProviderSource, SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import { SandboxService } from "../sandbox/index.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
@@ -38,9 +40,10 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "../extension/index.js";
-import { extensionHostFrom } from "../extension/host.js";
-import { instantiateWorkflows, WorkflowFactories } from "../extension/workflow.js";
+import type { PenguinInterface } from "@prismshadow/penguin-core/plugin";
+import type { HarnessContext } from "../plugin/index.js";
+import { pluginHostFrom } from "../plugin/host.js";
+import { instantiateWorkflows, WorkflowFactories } from "../plugin/workflow.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -78,12 +81,32 @@ export interface PlatformApi extends Park {
  * in the runtime's resource registry (they must — a swap disposes this tree), and the
  * document carries only their handle ids so the next instance can claim them back.
  */
-export type PlatformCtx = { motd: string; terminals?: string[] };
+export type PlatformCtx = {
+  motd: string;
+  terminals?: string[];
+  /**
+   * Active sandbox settings — parked state, not service memory: a hot swap constructs a
+   * fresh SandboxService, and without this the swap would silently reset a confining
+   * deployment to unconfined. Optional so a document parked before the field existed
+   * (and a default deployment, which never writes it) restores as confinement off.
+   */
+  sandbox?: SandboxSettings;
+};
 
 export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
-  context: schema<PlatformCtx>(type({ motd: "string", "terminals?": "string[]" })),
+  context: schema<PlatformCtx>(
+    type({
+      motd: "string",
+      "terminals?": "string[]",
+      "sandbox?": {
+        mode: "'read-only' | 'workspace-write' | 'danger-full-access'",
+        "network?": "'none'",
+        "maskPaths?": "string[]",
+      },
+    }),
+  ),
   methods: ["park", "info", "http", "terminals", "attachStream"],
 });
 
@@ -188,20 +211,50 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // and must not adopt them. It does not dispose them either: that happens at the
     // commit below, so a failed boot leaves them for the recovered predecessor.
     terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
-    // The extension seam (see ../extension/index.ts): the definition view first, then the
-    // instance context, with the workflows built in between — so an extension that registers
+    // The plugin seam (see ../plugin/index.ts): the definition view first, then the
+    // instance context, with the workflows built in between — so a plugin that registers
     // one always sees it instantiated in the App it registered into. The host is CLAIMED
-    // from the registry, never imported (see extensionHostFrom).
-    const extensions = extensionHostFrom(ctx.resources);
-    const extIface: PenguinInterface = {
+    // from the registry, never imported (see pluginHostFrom).
+    const plugins = pluginHostFrom(ctx.resources);
+    // Sandbox backends arrive as plugins through iface.sandbox (see ../plugin/);
+    // duplicates are refused, and the service routes policies by capability.
+    const sandboxProviders = new Map<string, SandboxProviderSource>();
+    const pluginIface: PenguinInterface = {
       workflow: new WorkflowFactories(),
       tool: new Map(),
+      sandbox: {
+        registerProvider(name, provider) {
+          if (sandboxProviders.has(name)) {
+            throw new Error(`sandbox provider '${name}' is already registered`);
+          }
+          sandboxProviders.set(name, provider);
+        },
+      },
     };
-    extensions.emit("initialize", extIface);
-    extensions.emit("create", {
-      workflows: instantiateWorkflows(extIface.workflow),
+    plugins.emit("initialize", pluginIface);
+    // "Which commands run confined, under which policy, by which backend" is policy —
+    // the whole capability lives in ../sandbox/ and reaches deployed machines by push;
+    // only core's spawn seam is mechanism. The confiner reaches core as a plain argument
+    // to buildAppDeps below — same-generation wiring, because the sessions that spawn
+    // through it are hard-stopped with this App (see the dispose effect), so nothing
+    // outlives the service that confines it.
+    const sandbox = new SandboxService(sandboxProviders);
+    // Rehydrate the parked settings (state rides the swap): without this, every hot push
+    // would construct a fresh service on defaults and silently un-confine a deployment
+    // that had confinement on.
+    if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
+    // Typed as HarnessContext, not the bare contract: `terminals` is this harness's own
+    // (see ../plugin/index.ts). Handlers receive it as PenguinContext and reach that
+    // member only by casting, which is where the dependency on this embedder gets stated.
+    const pluginContext: HarnessContext = {
+      workflows: instantiateWorkflows(pluginIface.workflow),
       terminals,
-    });
+      sandbox: {
+        configure: (settings) => sandbox.configure(settings),
+        settings: () => sandbox.currentSettings(),
+      },
+    };
+    plugins.emit("create", pluginContext);
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
@@ -210,7 +263,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     if (caps === null) {
       console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
-      deps = buildAppDeps(caps, caps.overrides);
+      deps = buildAppDeps(caps, caps.overrides, () => sandbox.confiner());
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -323,7 +376,18 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are
       // resources, and outliving a swap is the whole point. Process exit sweeps them
       // through the registry's own disposers.
-      park: () => ({ motd: context.motd, terminals: terminals.handleIds() }),
+      park: () => {
+        // The sandbox field is omitted while settings are the pristine default: a
+        // default deployment keeps parking what it always did, compatible with any
+        // bundle's schema; once confinement is configured, pushing a sandbox-ignorant
+        // bundle blocks rather than silently un-confining.
+        const parkedSandbox = sandbox.parkedSettings();
+        return {
+          motd: context.motd,
+          terminals: terminals.handleIds(),
+          ...(parkedSandbox !== undefined ? { sandbox: parkedSandbox } : {}),
+        };
+      },
       info: () => ({
         impl: "packaged",
         ifaceVersion: PlatformIface.version,
