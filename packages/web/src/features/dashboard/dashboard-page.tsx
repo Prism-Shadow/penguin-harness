@@ -1,15 +1,17 @@
 /**
  * The dashboard: a page sized for a phone that answers one question — where is work
  * happening, and where is a person needed. One row per Workspace with a Session running or
- * waiting on an approval, over every machine the Project's Sessions live on; two numbers per
- * row and nothing else. Reached from the user menu, under System settings; not in the nav.
+ * finished since this browser last looked at it, over every machine the Project's Sessions
+ * live on; two numbers per row and nothing else. The counts are the sidebar's own glyph
+ * states, read against the same per-browser seen markers, so the board and the list agree.
+ * Reached from the user menu, under System settings; not in the nav.
  *
  * Every server is asked itself: this one, and each machine that can be reached — the same
  * way the session list learns of Sessions elsewhere. A machine that does not answer is
  * counted and said, never silently dropped; a page that shows fewer rows than there are
  * Workspaces must say why. Non-admins cannot list machines, so they get this server's own.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { S } from "../../lib/strings";
@@ -19,10 +21,11 @@ import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_GAP } from "../../lib/icon-scale";
 import { workspaceMachines } from "../../lib/workspace-machines";
+import { useSessionSeen } from "../../lib/session-seen";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { dashboardRows, dashboardTotals } from "./dashboard-view";
-import type { DashboardRow, DashboardSource } from "./dashboard-view";
+import type { DashboardSource } from "./dashboard-view";
 
 /** A running Session moves in seconds; the board follows at a pace a phone's battery forgives. */
 const REFRESH_MS = 15_000;
@@ -52,7 +55,12 @@ export function DashboardPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   useDocumentTitle(S.dashboard.title);
-  const [rows, setRows] = useState<DashboardRow[] | null>(null);
+  const [sources, setSources] = useState<DashboardSource[] | null>(null);
+  const seen = useSessionSeen(projectId);
+  const rows = useMemo(
+    () => (sources === null ? null : dashboardRows(sources, seen)),
+    [sources, seen],
+  );
   const [silent, setSilent] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,12 +79,12 @@ export function DashboardPage() {
     }
     const answers = await Promise.allSettled(
       servers.map(async (server): Promise<DashboardSource> => {
-        const { workspaces } = await api.getSessionsOverview(projectId, server.machineId);
+        const { sessions } = await api.getSessionsOverview(projectId, server.machineId);
         return {
           machineId: server.machineId,
           machineLabel: server.label,
           local: server.local,
-          workspaces,
+          sessions,
         };
       }),
     );
@@ -88,7 +96,7 @@ export function DashboardPage() {
     }
     setError(null);
     setSilent(failed.length);
-    setRows(dashboardRows(sources));
+    setSources(sources);
   }, [projectId]);
 
   useEffect(() => {
