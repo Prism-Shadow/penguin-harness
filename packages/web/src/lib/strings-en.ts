@@ -14,9 +14,9 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
-    plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
+    plugins: "Plugins",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -1201,6 +1201,23 @@ export const en: Strings = {
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+  },
+
+  pluginRegistry: {
+    pageTitle: "Plugins",
+    empty: "No plugins yet",
+    specifierHint: "Package specifier for plugins.json",
+    back: "Back to Plugins",
+    readme: "Documentation",
+    noReadme: "This plugin has no documentation yet.",
+    notFound: "No such plugin.",
+    repository: "Repository",
+    homepage: "Homepage",
+    authors: "Authors",
+    license: "License",
+    copySpecifier: "Copy specifier",
+    copied: "Copied",
+    installHint: "To install, add the specifier to plugins.json under the data root.",
   },
 
   skills: {

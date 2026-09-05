@@ -197,6 +197,13 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
 
 `mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+### 插件注册表
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。仅用于发现——安装插件仍是运维侧编辑 `plugins.json` 的操作，此接口不会导入任何插件代码。
 
 ### Agent
 

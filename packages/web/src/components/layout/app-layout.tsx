@@ -83,13 +83,14 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
   };
 
-  /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
+  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
       switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
+    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
   ];

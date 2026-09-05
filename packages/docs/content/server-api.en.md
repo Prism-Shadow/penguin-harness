@@ -197,6 +197,13 @@ The PKCE verifier is generated server-side, held in memory for ten minutes, and 
 What that route may do is bounded a second time: it stores the code on the flow and nothing else. The exchange with the provider and the write into the Project's models both run on `GET /:flowId`, the owner's own poll, behind the session gate — so no key reaches a Project without its owner asking for its flow's status, and a failed exchange is reported there as `{status: error, error}` rather than on the redirect page. Nothing adjacent is exempt either: a longer path, any other method (`HEAD` on the literal path answers 405), and the three sibling routes all still require the session.
 
 `mode: manual` omits the callback so the authorization page shows a one-time code to carry back by hand, for deployments the redirect cannot reach. Whichever route redeems the code, a completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+### Plugin Registry
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+
+The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). Discovery only — installing an entry stays the operator-side `plugins.json` edit; this endpoint never imports plugin code.
 
 ### Agents
 

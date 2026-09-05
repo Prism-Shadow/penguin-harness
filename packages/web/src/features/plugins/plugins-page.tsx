@@ -38,11 +38,12 @@
  *   same way: one DELETE per skill and one for the hook package.
  */
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type {
   AgentSummary,
   HookItem,
   PluginGroupItem,
+  PluginIndexEntry,
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
@@ -61,7 +62,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PLUGIN_ICON } from "../../components/ui/icons";
+import { NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
@@ -588,6 +589,7 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
+      <RegistrySection />
     </div>
   );
 }
@@ -903,5 +905,115 @@ function InstallRow({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * The registry section: what this deployment's plugin index lists (GET
+ * /api/plugins/registry), below the library this build ships. One column because the entry
+ * that identifies a plugin is its package specifier — long, scoped and monospace, which
+ * side-by-side columns would truncate exactly where an operator reads.
+ *
+ * Read-only discovery: installing an indexed plugin is an install-side operation
+ * (plugins.json under the data root), not a Web App one.
+ */
+function RegistrySection() {
+  const [plugins, setPlugins] = useState<PluginIndexEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    api
+      .getPluginIndex()
+      .then((res) => {
+        if (!cancelled) setPlugins(res.plugins);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="mt-10">
+      <h2 className="text-base font-semibold">{S.pluginRegistry.pageTitle}</h2>
+      {error ? (
+        <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+      ) : plugins === null ? (
+        <div className="mt-4 flex flex-col gap-2.5">
+          {Array.from({ length: 3 }, (_, i) => (
+            <SkeletonCard key={i} className="p-4">
+              <Skeleton className="h-4 w-56" />
+              <Skeleton className="mt-2 h-4 w-3/4" />
+            </SkeletonCard>
+          ))}
+        </div>
+      ) : plugins.length === 0 ? (
+        <p className="mt-4 text-sm text-gray-400 dark:text-gray-500">{S.pluginRegistry.empty}</p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-2.5">
+          {plugins.map((plugin) => (
+            // Versions are distinct index entries (typst-style flat index), so the key needs both halves.
+            <RegistryRow key={`${plugin.name}@${plugin.version}`} plugin={plugin} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * One index entry as a row: icon tile + specifier/version, description, and a license +
+ * keywords metadata row. The whole row is the link — a plugin has one destination, so a
+ * separate "open" affordance would only add a second target for the same action.
+ */
+function RegistryRow({ plugin }: { plugin: PluginIndexEntry }) {
+  return (
+    <Link
+      to={`/plugins/registry/${plugin.name}`}
+      className="block rounded-md border border-gray-200 bg-white p-4 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
+    >
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          <GlyphIcon d={NAV_ICONS.plugins} size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span
+              className="min-w-0 truncate font-mono text-[13px] font-semibold"
+              title={`${S.pluginRegistry.specifierHint}: ${plugin.name}`}
+            >
+              {plugin.name}
+            </span>
+            <span className="shrink-0 font-mono text-xs text-gray-400">v{plugin.version}</span>
+          </div>
+          <p
+            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+            title={plugin.description}
+          >
+            {plugin.description}
+          </p>
+        </div>
+        <GlyphIcon
+          d="M9 6l6 6-6 6"
+          size={14}
+          className="shrink-0 text-gray-300 dark:text-gray-600"
+        />
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
+        {(plugin.keywords ?? []).map((keyword) => (
+          <span
+            key={keyword}
+            className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+          >
+            {keyword}
+          </span>
+        ))}
+      </div>
+    </Link>
   );
 }

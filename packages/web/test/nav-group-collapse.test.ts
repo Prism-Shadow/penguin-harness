@@ -74,7 +74,8 @@ describe("navKeysFor", () => {
     // keys), so offering a member the row would only ever produce a 403.
     expect([...navKeysFor(false)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
     // An admin sees the manifest minus what is built but not yet offered — `machines` today,
-    // which is why neither answer contains it and the two are equal for now.
+    // which is why neither answer contains it and the two are equal for now. The Plugins page
+    // carries the built-in library and the deployment's registry both, under one key.
     expect([...navKeysFor(true)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
     expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
   });

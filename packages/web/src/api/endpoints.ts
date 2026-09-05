@@ -95,6 +95,8 @@ import type {
   SessionPatchRequest,
   SessionResponse,
   SessionProcessesResponse,
+  PluginIndexResponse,
+  PluginReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -1054,6 +1056,12 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
     { method: "POST", body: { names } satisfies PluginInstallRequest },
   );
+
+/** Plugin index (available to any logged-in user): the merged index of every configured registry. */
+export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+export const getPluginReadme = (name: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
 export const getAgentSkills = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsResponse>(

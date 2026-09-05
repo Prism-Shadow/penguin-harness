@@ -18,9 +18,9 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    plugins: "插件库",
     models: "模型库",
     machines: "机器",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -1171,6 +1171,24 @@ export const zh = {
     uninstallConfirmBody: (name: string, agent: string): string =>
       `确定从 ${agent} 卸载钩子包 ${name} 吗？其全部脚本（含本地改动）将被删除。`,
     uninstalledToast: (name: string, agent: string): string => `已从 ${agent} 卸载钩子包 ${name}`,
+  },
+
+  pluginRegistry: {
+    pageTitle: "插件市场",
+    empty: "暂无插件",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "写入 plugins.json 的包名",
+    back: "返回插件市场",
+    readme: "说明文档",
+    noReadme: "该插件暂无说明文档。",
+    notFound: "找不到这个插件。",
+    repository: "源码仓库",
+    homepage: "主页",
+    authors: "作者",
+    license: "许可证",
+    copySpecifier: "复制包名",
+    copied: "已复制",
+    installHint: "安装方式：把包名写入数据目录下的 plugins.json。",
   },
 
   skills: {
