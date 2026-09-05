@@ -210,6 +210,17 @@ export class AuthService implements Auth {
   }
 
   /**
+   * Whether a user is an admin, by id — for a caller that has a user's NAME rather than an
+   * authenticated request: the terminal relay reads the owner out of a pty reference the
+   * runtime has already matched against the signed-in user (machines/terminal-relay.ts), and
+   * what is left to decide is whether that user may reach machines at all. Unknown users are
+   * not admins.
+   */
+  isAdmin(userId: string): boolean {
+    return this.users.findById(userId)?.isAdmin === true;
+  }
+
+  /**
    * Desktop-mode sign-in: an admin session with no password check — the claim route already
    * redeemed the shell's one-shot token, which is the credential here. Throws only on a
    * broken deployment (seeding runs before the route exists).

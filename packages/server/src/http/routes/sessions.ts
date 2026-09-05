@@ -79,6 +79,8 @@ export interface SessionsRouteDeps {
   previewTokens: PreviewTokenSigner;
   projectConfigService: ProjectConfigStore;
   access: Access;
+  /** Tells everyone who can see the Project about a change the list could not otherwise learn of. */
+  projectEvents: ProjectEvents;
   serverSettingsRepo: Settings;
   sessionService: SessionService;
   sessionSources: SessionOrigins;
@@ -116,7 +118,12 @@ import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { PreviewTokens } from "./preview.js";
-import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type {
+  Access,
+  ModelOAuth,
+  ProjectConfigStore,
+  ProjectEvents,
+} from "../../mechanisms/projects.js";
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
@@ -631,6 +638,14 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
       updated = { ...updated, title };
+      // The list learns of a rename it did not make — the CLI's `--title`, another tab —
+      // the same way it learns of a generated one: the generator publishes this exact
+      // event, and the row handler is already listening for it.
+      deps.projectEvents.notifyProjectUsers(row.projectId, {
+        type: "session_title",
+        sessionId: row.sessionId,
+        title,
+      });
     }
     if (approvalMode !== undefined) {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
@@ -1531,6 +1546,7 @@ export class SessionApiRoutes {
   @Use() private readonly messaging!: Messaging;
   @Use() private readonly schedulesRepo!: Schedules;
   @Use() private readonly access!: Access;
+  @Use() private readonly projectEvents!: ProjectEvents;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly modelOAuth!: ModelOAuth;
   @Use() private readonly traceIndex!: TraceIndex;
@@ -1570,6 +1586,7 @@ export class SessionApiRoutes {
       previewTokens: this.previewTokens as PreviewTokenSigner,
       projectConfigService,
       access,
+      projectEvents: this.projectEvents,
       serverSettingsRepo: this.settings,
       sessionService,
       sessionSources: this.sources,
