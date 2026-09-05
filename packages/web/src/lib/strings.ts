@@ -51,8 +51,9 @@ export const zh = {
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
     now: "刚刚",
-    /** The fold under the header: every host in the ssh config not yet in use. */
+    /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
     allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
+    fewer: "收起",
     /** The verbs. */
     add: "添加机器…",
     addSelected: (count: number) => `启用这 ${count} 台`,
@@ -102,6 +103,9 @@ export const zh = {
     details: "详情",
     detailInstalled: "已安装",
     detailSince: "安装于",
+    /** This server's own card says what build it runs and since when, not what was installed. */
+    detailVersion: "版本",
+    detailStarted: "启动于",
     detailServer: "对端服务",
     detailChecked: "上次检查",
     detailMachineId: "机器 ID",
