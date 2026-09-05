@@ -29,6 +29,7 @@ import type {
   SessionInfo,
   SessionSource,
   ServerEvent,
+  SessionActivityInfo,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -99,6 +100,26 @@ export interface SessionServiceDeps {
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  /**
+   * The dashboard's read: every non-archived Session of the Project over every Agent, as the
+   * facts it counts from. Off the index and the manager and nothing else — no Trace
+   * discovery, no source classification: `hasTrace` is the row's own flag, and the counts are
+   * about this moment. Read versus unread is the client's (a per-browser marker), which is
+   * why this hands over facts rather than totals.
+   */
+  sessionsOverview(projectId: string): SessionActivityInfo[] {
+    return this.deps.sessions
+      .listByProject(projectId)
+      .filter((row) => (row.archivedAt ?? null) === null)
+      .map((row) => ({
+        sessionId: row.sessionId,
+        workspace: row.workspace,
+        status: this.deps.manager.statusOf(row.sessionId),
+        hasTrace: row.hasTrace === true,
+        lastActiveAt: row.lastActiveAt,
+      }));
+  }
 
   /**
    * DB row -> SessionInfo (run status and pending approval count come from session-manager).

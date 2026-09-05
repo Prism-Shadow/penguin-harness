@@ -1274,6 +1274,28 @@ export interface SessionsResponse {
   workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
+/**
+ * One Session's live facts, for the dashboard: where it is, whether it is working, whether it
+ * ever ran, and when it last did. The dashboard counts running and to-review from these the
+ * way the sidebar draws its glyphs — to-review is "finished since this browser last opened
+ * it", a per-browser fact the server cannot know, so it hands over the facts and not a count.
+ */
+export interface SessionActivityInfo {
+  sessionId: string;
+  /** The Workspace path as the Session carries it (SessionInfo.workspace). */
+  workspace: string;
+  status: SessionStatus;
+  /** Whether a Task has been started (SessionInfo.hasTrace): a Session that never ran has nothing to review. */
+  hasTrace: boolean;
+  /** SessionInfo.lastActiveAt — what the read/unread marker is compared against. */
+  lastActiveAt: string;
+}
+
+/** `GET /api/projects/:projectId/sessions/overview`: every non-archived Session of the Project, over every Agent. */
+export interface SessionsOverviewResponse {
+  sessions: SessionActivityInfo[];
+}
+
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
