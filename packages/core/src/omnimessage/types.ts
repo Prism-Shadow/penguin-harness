@@ -233,7 +233,7 @@ export interface ToolCallOutputPayload {
   output: string;
   /**
    * Images carried by the tool output (optional): each is a `data:<mime>;base64,...` data URL,
-   * fed back to the model alongside the text (e.g. images read by read_image). Images aren't
+   * fed back to the model alongside the text (e.g. images read by read_file). Images aren't
    * incremental: the streaming path carries the whole set once via a single delta (see
    * `PartialToolCallOutputPayload.images`), and the complete message carries them again — the
    * streamed-and-joined result equals the complete message.

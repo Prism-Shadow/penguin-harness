@@ -2150,7 +2150,7 @@ export function ChatInput({
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,
           and on send the server writes them to the session's scratchpad and appends the file
-          path into the message text (the model views them via describe_image). A small note is
+          path into the message text (the model views them via read_file). A small note is
           shown while images are attached. */}
       {!vision && images.length > 0 && (
         <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">

@@ -1146,6 +1146,32 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
   });
 });
 
+describe("Environment — stored entries for tools removed since (read_image / describe_image)", () => {
+  it("skips them at assembly: not listed to the model, and a call by the old name gets the unknown-tool reply", async () => {
+    const stale: ToolDefinitionConfig[] = [
+      { name: "read_image", description: "old", forModel: "vision", permission: "r" },
+      { name: "describe_image", description: "old", forModel: "text-only", permission: "r" },
+    ];
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [execTool(), ...stale], mcpServers: [] },
+    });
+    expect((await env.listTools()).map((t) => t.name)).toEqual(["exec_command"]);
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "read_image",
+          arguments: '{"source":"a.png"}',
+          toolCallId: "call_stale",
+        }),
+      }),
+    );
+    const last = messages[messages.length - 1]!.payload as { output: string; stop_reason?: string };
+    expect(last.stop_reason).toBe("fatal");
+    expect(last.output).toContain("Unknown tool: read_image");
+  });
+});
+
 describe("Environment.executeTool — robustness", () => {
   it("returns an explanatory output for an unknown tool name without throwing", async () => {
     const env = new Environment({

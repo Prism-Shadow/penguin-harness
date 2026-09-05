@@ -354,8 +354,8 @@ describe("exec_command run_in_background", () => {
 });
 
 describe("input_command defaults", () => {
-  it("the default empty-poll wait is 120000ms", () => {
-    expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(120_000);
+  it("the default empty-poll wait is 110000ms", () => {
+    expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(110_000);
   });
 });
 

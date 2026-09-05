@@ -65,28 +65,26 @@ Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读�
 | `description` | 提供给模型的工具说明 |
 | `parameters` | 参数 JSON Schema |
 | `permission` | `"r"` 只读 / `"rw"` 读写 |
-| `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用 |
+| `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用（内置条目均不设——`read_file` 同时服务两类模型） |
 | `timeoutMs` | 单次调用超时(ms)，默认 120000;`<=0` 关闭 |
 | `maxOutputLength` | 输出长度上限(字符);`<=0` 关闭 |
 | `call_description` | 条目级开关：控制 `parameters` 中声明的 `description` 调用参数（开启时为必填）；缺省保留，`false` 时装配阶段将其连同 `required` 项从 schema 滤除 |
 
 ## 内置工具
 
-共 9 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
+共 7 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
-| `input_command` | rw | 130000 | 按 `process_id` 驱动命令会话：写 stdin、发 Ctrl-C、轮询输出，或终止（`kill: true`） |
-| `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
+| `input_command` | rw | 120000 | 按 `process_id` 驱动命令会话：写 stdin、发 Ctrl-C、轮询输出，或终止（`kill: true`） |
+| `read_file` | r | 60000 | 按 `cat -n` 风格带行号读取文本文件（以 offset/limit 分页），或读取图片（路径或 URL）作为图像内容返回——text-only 模型则由 `vision_model` 代读为文字 |
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
 | `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台 Subagent、运行中插话、停止其当前轮，或在其空闲时追加后续 Prompt |
-| `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
-| `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
 
-注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（如文件工具）与新增参数（`run_in_background`、`kill`、`abort`），已移除工具（`kill_command`、`kill_subagent`）的存量条目则不再装配——模型按旧名调用得到标准的未知工具报错；采纳新条目需手工编辑该 Agent 的 `system_config.yaml`（可从 `packages/core/src/state/default-config.ts` 的默认定义复制），或走「更新内核」。
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（如文件工具）与新增参数（`run_in_background`、`kill`、`abort`），已移除工具（`kill_command`、`kill_subagent`、`read_image`、`describe_image`）的存量条目则不再装配——模型按旧名调用得到标准的未知工具报错；读图之前落盘的 `read_file` 条目保留旧描述与旧超时（其背后的实现已能读图）。采纳当前定义需手工编辑该 Agent 的 `system_config.yaml`（可从 `packages/core/src/state/default-config.ts` 的默认定义复制），或走「更新内核」。
 
 ### 调用描述
 
@@ -124,7 +122,7 @@ exec_command(cmd)
 {
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
-  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 120000(一次轮询等完多数构建;想快速查看可传更小值)
+  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 110000(一次轮询等完多数构建;想快速查看可传更小值)
   description: string;     // 开关开启时必填
 }
 
@@ -136,13 +134,17 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 `read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
 
+`read_file` 也读图片。png/jpeg/gif/webp 文件（不超过 5MB，先按魔数、再按扩展名识别）或 `file_path` 里的 http(s) URL（URL 只作图片来源，优先看响应的 content-type）走读图分支，返回什么取决于 Session 模型的 vision 标记：接受图片的模型拿到图片本身作为图像内容（文本输出只有一行 `image/png, 123.4 kB`）；text-only 模型拿到的是 Project 配置的 `vision_model` 对 `prompt`（缺省为详细描述）的回答，以流式文本作为工具输出——图片不进入该 Session 的历史。未配置 `vision_model` 时，text-only Session 的读图以解释性错误失败，请用户到模型设置中选一个。见 [模型与 Provider](/models)。分支由 SDK 仅为 text-only Session 注入 Environment 的 `VisionDescriberService` 决定，因此同一条配置条目（不带 `forModel`）同时服务两类模型。
+
 ```ts
-// read_file — cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
-// 含 NUL 字节的二进制内容被拒绝并提示改用 Shell / 图像工具。
+// read_file — 文本文件按 cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
+// 不是受支持图片的二进制内容(含 NUL 字节)被拒绝并提示改用 Shell。图片(或 http(s) URL)
+// 则返回图像内容或文字描述,并忽略 offset/limit。
 {
-  file_path: string;       // 必填:绝对路径,或相对 Workspace 的路径
+  file_path: string;       // 必填:绝对路径,或相对 Workspace 的路径;图片亦可为 http(s) URL
   offset?: number;         // 起始行号(1 起);默认 1
   limit?: number;          // 最多返回的行数;默认 2000——未读完时尾部注记提示续读
+  prompt?: string;         // 对图片的提问,text-only 模型时由 vision_model 回答;缺省为详细描述
 }
 
 // edit_file — 文件必须已存在;old_string 必须恰好出现一次(或设 replace_all);
@@ -198,23 +200,6 @@ Web App 的智能体面板用**与主对话相同的 composer**（子会话变�
 - 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level(除非以 `thinking_level` 显式指定——机械性子任务可调低，深度分析可调高)与 Workspace 均继承父级，而非 Project 默认值。
 - 子 Session 继承父 Agent 的审批回调，审批模式随父生效。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
-
-### 图像工具
-
-`read_image` 与 `describe_image` 互斥，按 Session 模型的 vision 标记二选一装配。两者都接受 http(s) URL 或 Workspace 路径，支持 png/jpeg/gif/webp，不超过 5MB。text-only 模型走 `describe_image`：图片连同提问转交 Project 配置的 `vision_model`，其文字回答即工具输出。见 [模型与 Provider](/models)。
-
-```ts
-// read_image(vision 模型)
-{
-  source: string;          // 必填:http(s) URL,或 Workspace 内的文件路径
-}
-
-// describe_image(text-only 模型)
-{
-  source: string;          // 必填:同上
-  prompt?: string;         // 要对图片提出的问题;缺省为详细描述
-}
-```
 
 ### 后台完成回报
 

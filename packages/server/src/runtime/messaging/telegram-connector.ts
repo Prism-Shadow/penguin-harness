@@ -386,7 +386,7 @@ function normalizeUpdate(
   //
   // A picture dragged in uncompressed is a `document` too, and lands as an attachment
   // rather than as an inline image: the sender asked for the original bytes to arrive, and
-  // the model opens the path with `read_image` like any other file.
+  // the model opens the path with `read_file` like any other file.
   const doc = msg.document ?? null;
   const files: MessagingInboundFile[] =
     doc === null

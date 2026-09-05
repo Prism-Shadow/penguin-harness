@@ -151,7 +151,7 @@ While a Task is running, the host can queue a user message with `session.steer(i
 
 ## Input images
 
-An input image either rides the request as an image message or becomes an `[attached image: <path>]` line pointing at a file in the session scratchpad — the model then views it with `read_image` / `describe_image`, and the Web restores the thumbnail from the path. The conversion is one function bound once per Session (it is the only layer that knows both the scratchpad and the model's capability), and **each input path decides for itself whether to apply it**:
+An input image either rides the request as an image message or becomes an `[attached image: <path>]` line pointing at a file in the session scratchpad — the model then views it with `read_file`, and the Web restores the thumbnail from the path. The conversion is one function bound once per Session (it is the only layer that knows both the scratchpad and the model's capability), and **each input path decides for itself whether to apply it**:
 
 | Input | Folds when | Applied at |
 | --- | --- | --- |

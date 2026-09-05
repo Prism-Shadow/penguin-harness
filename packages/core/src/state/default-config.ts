@@ -593,7 +593,10 @@ export const DEFAULT_COMPACTION_PROMPT =
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
- * and subagent spawning.
+ * and subagent spawning. No entry carries a `forModel` annotation: `read_file` serves vision
+ * and text-only models alike (it reads images too, deciding at runtime whether to return
+ * image content or a vision model's description), so the per-model-class filter stays a
+ * config feature for entries that need it.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
@@ -601,30 +604,41 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "read_file",
       description:
-        "Read a text file and return its content with line numbers (cat -n style) — the preferred " +
-        "way to inspect a file. Returns up to 2000 lines starting at the given offset; for longer " +
-        "files call again with offset to continue. Use the image tools for images and the shell " +
-        "tool for binary files.",
+        "Read a file — the preferred way to inspect one. A text file comes back with line numbers " +
+        "(cat -n style), up to 2000 lines starting at offset; for a longer file call again with " +
+        "offset to continue. An image (png/jpeg/gif/webp up to 5MB; file_path may also be an " +
+        "http(s) URL) is returned as image content for you to view, or — when the current model " +
+        "cannot view images — described in text by the project's vision model, which answers " +
+        "`prompt`. Other binary files are rejected: use the shell tool for those.",
       parameters: {
         type: "object",
         properties: {
           file_path: {
             type: "string",
-            description: "Path to the file to read; absolute, or relative to the workspace.",
+            description:
+              "Path to the file to read; absolute, or relative to the workspace. For an image, an http(s) URL is accepted too.",
           },
           offset: {
             type: "number",
-            description: "1-based line number to start reading from; defaults to 1.",
+            description:
+              "1-based line number to start reading from; defaults to 1. Ignored for images.",
           },
           limit: {
             type: "number",
-            description: "Max lines to read; defaults to 2000.",
+            description: "Max lines to read; defaults to 2000. Ignored for images.",
+          },
+          prompt: {
+            type: "string",
+            description:
+              "A question about an image (e.g. transcribe the text, describe the chart, locate a UI element), answered by the vision model when the current model cannot view images; defaults to a detailed description. Ignored for text files.",
           },
         },
         required: ["file_path"],
       },
       permission: "r",
-      timeoutMs: 30000,
+      // Wide enough for an image read through the vision model: one download or file read plus
+      // one one-shot vision request.
+      timeoutMs: 60000,
       // Wider than the other tools' cap: a 2000-line window of code rarely fits in 16k characters.
       maxOutputLength: 64000,
     },
@@ -757,15 +771,15 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           yield_time_ms: {
             type: "number",
             description:
-              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 120000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
+              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 110000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
           },
         },
         required: ["description", "process_id"],
       },
       permission: "rw",
       call_description: true,
-      // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
-      timeoutMs: 130000,
+      // Same tier as exec_command; an empty poll's default wait (110000) sits under it (the yield ceiling is derived from timeoutMs, clamped inside the tool).
+      timeoutMs: 120000,
       maxOutputLength: 16000,
     },
     {
@@ -864,64 +878,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
-      maxOutputLength: 16000,
-    },
-    // The image-reading tools are mutually exclusive based on the session model's type
-    // (marked via each entry's forModel, filtered at assembly time): read_image is designed
-    // for vision models (the image is fed back as image content); describe_image is designed
-    // for text-only models (the image plus the prompt are sent to the Project's configured
-    // vision model, vision_model, whose text answer becomes the tool output).
-    {
-      name: "read_image",
-      forModel: "vision",
-      description:
-        "Read an image and return it as image content for you to view. Accepts an http(s) URL " +
-        "or a local file path (relative paths resolve against the workspace). " +
-        "Supports png/jpeg/gif/webp up to 5MB.",
-      parameters: {
-        type: "object",
-        properties: {
-          source: {
-            type: "string",
-            description:
-              "Image to read: an http(s) URL, or a local file path (absolute, or relative to the workspace).",
-          },
-        },
-        required: ["source"],
-      },
-      permission: "r",
-      timeoutMs: 60000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "describe_image",
-      forModel: "text-only",
-      description:
-        "Describe an image and return a TEXT description of it. The current model does not accept " +
-        "images directly, so the image is analyzed by the project's configured vision model and " +
-        "you get its text answer back. Use `prompt` to ask exactly what you need to know about " +
-        "the image (e.g. transcribe text, describe a chart, locate a UI element). Accepts an " +
-        "http(s) URL or a local file path (relative paths resolve against the workspace). " +
-        "Supports png/jpeg/gif/webp up to 5MB.",
-      parameters: {
-        type: "object",
-        properties: {
-          source: {
-            type: "string",
-            description:
-              "Image to read: an http(s) URL, or a local file path (absolute, or relative to the workspace).",
-          },
-          prompt: {
-            type: "string",
-            description:
-              "What to ask about the image; the vision model answers this. Defaults to a detailed description.",
-          },
-        },
-        required: ["source"],
-      },
-      permission: "r",
-      // Includes one vision-model request, so the timeout is slightly wider than plain image reading.
-      timeoutMs: 90000,
       maxOutputLength: 16000,
     },
   ];

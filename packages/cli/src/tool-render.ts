@@ -342,6 +342,8 @@ export function renderFileToolApprovalPayload(name: string, argsJson: string): s
   if (name === "read_file") {
     pushField("offset", args["offset"]);
     pushField("limit", args["limit"]);
+    // The image branch's question is sent to the vision model, so it is part of what is approved.
+    pushField("prompt", args["prompt"]);
   } else if (name === "edit_file") {
     pushField("old_string", args["old_string"]);
     pushField("new_string", args["new_string"]);

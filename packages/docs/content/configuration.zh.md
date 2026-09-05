@@ -51,7 +51,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | --- | --- |
 | `name` | Project 展示名（缺省显示 id） |
 | `default_model` | 缺省模型的成对引用 `{ provider, model_id }`，必须指向 `models` 中的条目 |
-| `vision_model` | 代读图片的视觉模型（供纯文本模型的 `describe_image` 使用），成对引用 |
+| `vision_model` | 代读图片的视觉模型（纯文本模型用 `read_file` 读图时由它代读），成对引用 |
 | `[command_policy]` | 沙箱安全策略：针对 shell 命令的拒绝规则，先于审批模式生效——见[沙箱安全策略](#沙箱安全策略) |
 | `[[models]]` | 可用模型条目列表 |
 

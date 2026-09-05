@@ -862,7 +862,7 @@ export const en: Strings = {
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
     setVisionModel: "Set as proxy vision model",
-    visionModelHint: "Describes images via describe_image for models without vision",
+    visionModelHint: "Describes images for models without vision when they read one with read_file",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -932,7 +932,7 @@ export const en: Strings = {
     },
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
-      `Make "${name}" the proxy vision model? Models without vision will read images through it via describe_image.`,
+      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
     confirmSaveTitle: "Save model settings",
     confirmSave: (name: string): string => `Save the changes to "${name}"?`,
     confirmDefaultTitle: "Set as default model",
@@ -1696,7 +1696,7 @@ Scenarios:
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
-      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
+      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
     infoPanel: "Session info",
     sessionStats: "Stats",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */

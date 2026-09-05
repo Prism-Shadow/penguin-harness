@@ -449,9 +449,10 @@ export class Environment implements EnvironmentInterface {
    * Only lists tools that have been assembled (i.e. supported by the registry) — tool names
    * unrecognized in config are not exposed to the LLM (consistent with the constructor);
    * the definition (description/parameters) treats **the config entry as the single source of
-   * truth** — factories must not rewrite the definition at runtime; where a differentiated
-   * implementation is needed, use a separate explicit tool-name entry with a `forModel`
-   * annotation (e.g. read_image / describe_image).
+   * truth** — factories must not rewrite the definition at runtime; a tool whose behavior
+   * depends on the session model reads the injected services instead (read_file consults
+   * `services.visionDescriber`), and a config that wants separate entries per model class
+   * annotates them with `forModel`.
    * Only exposes `{name, description, parameters}`, dropping permission/maxOutputLength.
    * MCP Server tools follow the builtin list: the first call connects the configured
    * servers and appends their discovered tools as `mcp__<server>__<tool>` entries

@@ -39,6 +39,14 @@ describe("previewArguments", () => {
     ).toBe("$ rm -rf build");
   });
 
+  it("previews the historical image tools by their source argument (old Traces)", () => {
+    expect(previewArguments("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
+    expect(
+      previewArguments("describe_image", '{"source":"https://x.test/a/b/c.png","prompt":"?"}'),
+    ).toBe("…/b/c.png");
+    expect(headerSubtitle("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
+  });
+
   it("falls back to the single-line raw arguments for other tools", () => {
     expect(previewArguments("search", '{"q": "a\n b"}')).toBe('{"q": "a b"}');
   });
@@ -140,6 +148,10 @@ describe("pendingFilePayload", () => {
     expect(pendingFilePayload("read_file", '{"file_path":"a.txt","offset":3,"limit":5}')).toBe(
       "file_path: a.txt\noffset: 3\nlimit: 5",
     );
+    // read_file's image branch forwards `prompt` to the vision model: it must be visible too.
+    expect(
+      pendingFilePayload("read_file", '{"file_path":"shot.png","prompt":"read the error"}'),
+    ).toBe("file_path: shot.png\nprompt: read the error");
   });
 
   it("returns null for non-file tools and incomplete JSON", () => {

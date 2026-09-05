@@ -39,7 +39,7 @@ export interface ToolResult {
    */
   note?: string;
   /**
-   * Images carried by the tool output (e.g. an image read by read_image): each entry is a
+   * Images carried by the tool output (e.g. an image read by read_file): each entry is a
    * `data:<mime>;base64,...` data URL. Attached by Environment during close-out: a single
    * streaming delta carries it all at once before stop, plus the final complete
    * `tool_call_output` (only carried on normal completion; images are not chunked and don't

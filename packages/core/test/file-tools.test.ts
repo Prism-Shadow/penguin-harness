@@ -3,7 +3,8 @@
  * every failure case, workspace-relative path resolution, offset/limit windows,
  * replace_all semantics, and parent-directory creation. Directly drives
  * BuiltinTool.execute and captures the generator's return value (same approach as
- * read-image.test.ts); Environment-side framing is covered by environment.test.ts.
+ * read-file-images.test.ts, which covers read_file's image branch); Environment-side framing
+ * is covered by environment.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -189,7 +190,7 @@ describe("read_file", () => {
     const { result, text } = await run(tool(), { file_path: "bin.dat" }, tmp);
     expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("binary");
-    expect(text).toContain("read_image");
+    expect(text).toContain("shell commands");
   });
 
   it("fails when offset is past the end of the file", async () => {
