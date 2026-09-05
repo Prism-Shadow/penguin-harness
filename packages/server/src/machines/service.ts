@@ -567,9 +567,10 @@ export class MachinesService {
   // --- jobs ---------------------------------------------------------------------------------
 
   /**
-   * Queues a job. Jobs run one at a time — an install is minutes of ssh and a transfer, and
-   * two at once would fight over the shell — so a batch is a queue, and each job knows
-   * whether it is waiting or working. Failures land in the job; nothing here throws.
+   * Queues a job. Up to CONCURRENCY machines are worked on at once — different hosts, so
+   * their ssh sessions and transfers do not contend — and one job per machine at a time; the
+   * rest wait in order, and each job knows whether it is waiting or working. Failures land
+   * in the job; nothing here throws.
    */
   #startJob(
     kind: MachineJob["kind"],
@@ -601,15 +602,35 @@ export class MachinesService {
     if (waiting !== -1) this.#queue.splice(waiting, 1);
     this.#jobs.set(machine.id, job);
     this.#queue.push({ job, opts, work });
-    void this.#drain();
+    this.#drain();
   }
 
-  /** Runs the queue's head to completion, then the next; a no-op while one is running. */
-  async #drain(): Promise<void> {
-    if (this.#job?.running === true) return;
-    const next = this.#queue.shift();
-    if (next === undefined) return;
-    const { job, opts, work } = next;
+  /** How many jobs are working right now. */
+  #runningCount(): number {
+    let n = 0;
+    for (const job of this.#jobs.values()) if (job.running) n += 1;
+    return n;
+  }
+
+  /** Whether any job is working — what the single-machine starters call "busy". */
+  #anyRunning(): boolean {
+    return this.#runningCount() > 0;
+  }
+
+  /** Starts queued jobs until CONCURRENCY are working; each one drains again as it ends. */
+  #drain(): void {
+    while (this.#runningCount() < CONCURRENCY) {
+      const next = this.#queue.shift();
+      if (next === undefined) return;
+      void this.#run(next.job, next.opts, next.work);
+    }
+  }
+
+  async #run(
+    job: MachineJob,
+    opts: { offerReplaceProgram: boolean },
+    work: (say: Say) => Promise<MachineJob["result"]>,
+  ): Promise<void> {
     job.queued = false;
     job.running = true;
     this.#job = job;
@@ -637,7 +658,7 @@ export class MachinesService {
       this.#busy.delete(job.machineId);
       job.running = false;
     }
-    void this.#drain();
+    this.#drain();
   }
 
   /** The queued, the running and the last finished job per machine — what the page lists. */
@@ -660,7 +681,7 @@ export class MachinesService {
      */
     replaceProgram = false,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
-    if (this.#job?.running === true) return { ok: false, why: "busy" };
+    if (this.#anyRunning()) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // Never this machine: a server does not push this build over its own program directory
@@ -878,7 +899,7 @@ export class MachinesService {
    * readiness wait is minutes in the bad case. Every step is idempotent, so a repeat is safe.
    */
   async startConnect(address: string): Promise<{ ok: true } | { ok: false; why: ConnectRefusal }> {
-    if (this.#job?.running === true) return { ok: false, why: "busy" };
+    if (this.#anyRunning()) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // The machine's own id is what settles "that is here": the alias may point back home.
@@ -1176,7 +1197,7 @@ export class MachinesService {
    * for the same reason: a stop plus a readiness wait is tens of seconds.
    */
   async startRestart(address: string): Promise<{ ok: true } | { ok: false; why: ConnectRefusal }> {
-    if (this.#job?.running === true) return { ok: false, why: "busy" };
+    if (this.#anyRunning()) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     if (machine.local) return { ok: false, why: "self" };
