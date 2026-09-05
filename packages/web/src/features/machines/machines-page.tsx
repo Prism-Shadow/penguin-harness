@@ -51,7 +51,7 @@ import {
   wantsUse,
 } from "./machines-view";
 import type { MachineReading } from "./machines-view";
-import { highlightSegments, matchMachines } from "./machines-match";
+import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
 /** How often the page re-reads the list while a job is queued or running. */
@@ -137,18 +137,19 @@ export function MachinesPage() {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   /** Cards unfolded to show their details. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  /** The fold under the header that lists every host in the ssh config not yet in use. */
-  const [allHostsOpen, setAllHostsOpen] = useState(false);
 
   /** The picker panel; closing it always clears the query and its picks, so it reopens fresh. */
   const [pickerOpen, setPickerOpenState] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<Set<string>>(() => new Set());
+  /** Whether the picker shows every match, or the first few with a chevron for the rest. */
+  const [showAll, setShowAll] = useState(false);
   const setPickerOpen = (next: boolean) => {
     setPickerOpenState(next);
     if (!next) {
       setQuery("");
       setAdding(new Set());
+      setShowAll(false);
     }
   };
 
@@ -209,6 +210,8 @@ export function MachinesPage() {
     [machines, inUseIds],
   );
   const matched = useMemo(() => matchMachines(addable, query), [addable, query]);
+  const visible = showAll ? matched : matched.slice(0, MAX_VISIBLE_MACHINES);
+  const hiddenCount = matched.length - visible.length;
 
   /**
    * Re-probe the servers in use on a widening schedule. Separate from the job poll above:
@@ -352,7 +355,7 @@ export function MachinesPage() {
                 aria-multiselectable="true"
                 className="max-h-64 overflow-y-auto py-1"
               >
-                {matched.map(({ machine, positions }) => {
+                {visible.map(({ machine, positions }) => {
                   const on = adding.has(machine.id);
                   return (
                     <li key={machine.id} role="option" aria-selected={on}>
@@ -399,6 +402,24 @@ export function MachinesPage() {
                     {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
                   </li>
                 )}
+                {/* The rest of the config, folded: a chevron row unfolds every host in place,
+                    for when a search is the wrong tool and a person wants to see the list. */}
+                {(hiddenCount > 0 || (showAll && matched.length > MAX_VISIBLE_MACHINES)) && (
+                  <li>
+                    <button
+                      type="button"
+                      aria-expanded={showAll}
+                      onClick={() => setShowAll((open) => !open)}
+                      className="flex w-full items-center justify-between gap-2 px-3.5 py-2 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                    >
+                      {showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
+                      <ChevronDown
+                        size={ICON_SIZE.chevronDense}
+                        className={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  </li>
+                )}
               </ul>
               {/* The confirm appears once something is picked; an empty footer says nothing. */}
               {adding.size > 0 && (
@@ -421,57 +442,6 @@ export function MachinesPage() {
             </Dropdown>
           </div>
         </div>
-
-        {/* Under the header: a chevron that unfolds every host in the ssh config not yet in
-            use — the whole of what "add" could reach, for when a search is the wrong tool. */}
-        {addable.length > 0 && (
-          <div className="mt-1 flex flex-col items-end">
-            <button
-              type="button"
-              aria-expanded={allHostsOpen}
-              aria-controls="machines-all-hosts"
-              onClick={() => setAllHostsOpen((open) => !open)}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors hover:text-gray-900 dark:hover:text-gray-100"
-            >
-              {S.machines.allHosts(addable.length)}
-              <ChevronDown
-                size={ICON_SIZE.chevronDense}
-                className={`transition-transform ${allHostsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            <div
-              id="machines-all-hosts"
-              hidden={!allHostsOpen}
-              className="mt-1 w-full rounded-xl border border-dashed border-gray-300 p-3 dark:border-gray-700"
-            >
-              <ul className="flex flex-wrap gap-1.5">
-                {addable.map((machine) => (
-                  <li
-                    key={machine.id}
-                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 pl-2 text-xs dark:border-gray-800"
-                  >
-                    <span className={MONO}>{machine.alias}</span>
-                    {machine.elsewhere !== undefined && (
-                      <span className={`${MONO} ${toneInk.success}`}>
-                        {machine.elsewhere.version}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      title={S.machines.use}
-                      aria-label={`${S.machines.use}: ${machine.alias}`}
-                      disabled={posting || noImage}
-                      onClick={() => void use([machine.id])}
-                      className="rounded-r-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                    >
-                      <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
 
         {error !== null && (
           <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
@@ -812,9 +782,9 @@ function Details({
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         {machine.installed !== null && (
           <>
-            <dt className="text-gray-500">{m.detailInstalled}</dt>
+            <dt className="text-gray-500">{machine.local ? m.detailVersion : m.detailInstalled}</dt>
             <dd className={MONO}>{machine.installed.version}</dd>
-            <dt className="text-gray-500">{m.detailSince}</dt>
+            <dt className="text-gray-500">{machine.local ? m.detailStarted : m.detailSince}</dt>
             <dd>{formatDateTime(machine.installed.at)}</dd>
           </>
         )}
