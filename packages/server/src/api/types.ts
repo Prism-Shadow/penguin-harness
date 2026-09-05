@@ -3176,6 +3176,12 @@ export interface PluginIndexEntry {
 /** GET /api/plugins: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
+  /**
+   * Sources that could not be read, by `source` and reason. Present and empty when every
+   * source answered. A remote index that is down shortens the listing rather than emptying
+   * it, so the page needs to be able to say so instead of silently showing less.
+   */
+  failures: { source: string; error: string }[];
 }
 
 /** GET /api/plugins/readme — long-form docs for one entry; `readme` is null when none exists. */
@@ -3183,6 +3189,30 @@ export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
   readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin-contributed languages
+// ---------------------------------------------------------------------------
+
+/**
+ * One language a plugin contributes, as the listing reports it. The grammar itself is not
+ * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
+ * shows are worth fetching (`GET /api/languages/:id/grammar`).
+ */
+export interface LanguageSummary {
+  /** Canonical id: the fence info string, and the id both endpoints address. */
+  id: string;
+  displayName: string;
+  /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
+  aliases?: string[];
+  /** File plugins without the dot, for the Workspace file viewer. */
+  plugins?: string[];
+}
+
+/** GET /api/languages: every language this App's plugins contributed, by id. */
+export interface LanguageIndexResponse {
+  languages: LanguageSummary[];
 }
 
 // ---------------------------------------------------------------------------

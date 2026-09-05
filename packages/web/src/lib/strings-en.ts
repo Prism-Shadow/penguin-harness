@@ -1211,6 +1211,11 @@ export const en: Strings = {
     readme: "Documentation",
     noReadme: "This plugin has no documentation yet.",
     notFound: "No such plugin.",
+    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    sourceUnavailable: (count: number): string =>
+      count === 1
+        ? "One plugin source could not be reached, so this list may be incomplete."
+        : `${count} plugin sources could not be reached, so this list may be incomplete.`,
     repository: "Repository",
     homepage: "Homepage",
     authors: "Authors",

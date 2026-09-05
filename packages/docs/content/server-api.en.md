@@ -201,9 +201,20 @@ What that route may do is bounded a second time: it stores the code on the flow 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[], failures: {source, error}[]}` — the builtin index merged with the published one; `failures` names any source that could not be read |
 
 The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). Discovery only — installing an entry stays the operator-side `plugins.json` edit; this endpoint never imports plugin code.
+
+Two sources are merged: the index embedded in the server package, and the one published by the index repository — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes, whose content a six-hourly workflow replaces. A source that cannot be read shortens the listing rather than emptying it and is named in `failures`; within one document, though, a single malformed entry still fails the whole index. `PENGUIN_PLUGIN_INDEX=off` disables the published lookup (no outbound request); any other value replaces its URL.
+
+### Extension-contributed languages
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/languages | Languages this App's extensions registered: `{languages: [{id, displayName, aliases?, extensions?}]}` — no grammars |
+| GET | /api/languages/:id/grammar | One language's TextMate grammar, in the shape Shiki's `loadLanguage` takes; `404` for an id nothing registered |
+
+The listing carries no grammars because one is tens to hundreds of kilobytes and only the languages a conversation shows are worth fetching; the grammar response is cached for an hour, since it cannot change without a new App and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar: Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code — nothing on this path evaluates anything an extension ships.
 
 ### Agents
 

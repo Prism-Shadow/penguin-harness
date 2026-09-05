@@ -195,6 +195,7 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
+import { toneSurface } from "../../lib/tone";
 
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
@@ -920,6 +921,12 @@ function InstallRow({
 function RegistrySection() {
   const [plugins, setPlugins] = useState<PluginIndexEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Sources that answered with nothing. A published index that is down shortens this listing
+   * instead of emptying it (the server merges tolerantly), so the section has to say so — a
+   * silently shorter list reads as "that plugin does not exist".
+   */
+  const [failures, setFailures] = useState<{ source: string; error: string }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -927,7 +934,9 @@ function RegistrySection() {
     api
       .getPluginIndex()
       .then((res) => {
-        if (!cancelled) setPlugins(res.plugins);
+        if (cancelled) return;
+        setPlugins(res.plugins);
+        setFailures(res.failures ?? []);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(apiErrorText(e));
@@ -940,6 +949,11 @@ function RegistrySection() {
   return (
     <section className="mt-10">
       <h2 className="text-base font-semibold">{S.pluginRegistry.pageTitle}</h2>
+      {failures.length > 0 && (
+        <div className={`mt-4 rounded-md px-3 py-2 text-sm ${toneSurface.attention}`}>
+          {S.pluginRegistry.sourceUnavailable(failures.length)}
+        </div>
+      )}
       {error ? (
         <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : plugins === null ? (
