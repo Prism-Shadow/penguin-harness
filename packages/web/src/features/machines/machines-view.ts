@@ -125,19 +125,19 @@ export function wantsUse(reading: MachineReading): boolean {
 }
 
 /**
- * The machines in use here: those this server has installed on for this Project, most
- * recently installed first. Ties keep the config's order, so the list is stable between
- * polls. The local entry is kept out: it is where you are, not something you did.
+ * The machines in use here: those this server has installed on for this Project, by name.
+ * By name and nothing else, because the order must not move under a person's eyes: an
+ * update rewrites the install time, a probe rewrites the status, and a card that jumps to
+ * the top on either is a card someone was about to click. Names compare naturally, so
+ * `gpu-2` sits before `gpu-10`. The local entry is kept out: it is where you are, not
+ * something you did.
  */
 export function installedMachines(state: MachinesResponse): MachineInfo[] {
   return state.machines
-    .map((machine, index) => ({ machine, index }))
-    .filter((entry) => entry.machine.installed != null && !entry.machine.local)
-    .sort((a, b) => {
-      const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
-      return at !== 0 ? at : a.index - b.index;
-    })
-    .map((entry) => entry.machine);
+    .filter((machine) => machine.installed != null && !machine.local)
+    .sort((a, b) =>
+      a.alias.localeCompare(b.alias, undefined, { numeric: true, sensitivity: "base" }),
+    );
 }
 
 /** The local entry, which the server always puts first. */
