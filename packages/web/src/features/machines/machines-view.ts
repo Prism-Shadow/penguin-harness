@@ -9,7 +9,12 @@
  * on is fixed by the same verb — use the machine — so the page never has to explain which
  * of install, update, start, connect a row needs.
  */
-import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import type {
+  MachineInfo,
+  MachineJob,
+  MachinePhase,
+  MachinesResponse,
+} from "@prismshadow/penguin-server/api";
 import type { Tone } from "../../lib/tone";
 
 export type MachineReading =
@@ -31,6 +36,30 @@ export type MachineReading =
   | { kind: "stopped" }
   /** Never probed. */
   | { kind: "unknown" };
+
+/**
+ * The pipeline's steps in the order a `use` job runs them — the stepper's segments. Spelled
+ * here rather than imported because the server's api entry reaches the web as types only;
+ * the type keeps it in step with the server's `MachinePhase`, and `PHASE_COMPLETE` fails
+ * the build if a step is missing.
+ */
+export const MACHINE_PHASES = [
+  "check",
+  "install",
+  "handover",
+  "restart",
+  "connect",
+  "sync",
+] as const satisfies readonly MachinePhase[];
+const PHASE_COMPLETE: Record<MachinePhase, true> = {
+  check: true,
+  install: true,
+  handover: true,
+  restart: true,
+  connect: true,
+  sync: true,
+};
+void PHASE_COMPLETE;
 
 /** The job the server has for a machine — queued, running, or its last finished one. */
 export function jobFor(jobs: readonly MachineJob[], machineId: string): MachineJob | null {
