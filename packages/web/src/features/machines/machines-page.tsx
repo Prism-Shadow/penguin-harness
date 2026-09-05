@@ -312,7 +312,7 @@ export function MachinesPage() {
             {behind.length > 0 && (
               <Button
                 size="sm"
-                variant="primary"
+                variant="secondary"
                 disabled={posting || pending}
                 onClick={() => void use(behind.map((machine) => machine.id))}
               >
