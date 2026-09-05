@@ -60,6 +60,7 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
+import { migrate } from "../db/migrations.js";
 import type { Auth } from "../mechanisms/identity.js";
 
 export interface PlatformApi extends Park {
@@ -230,6 +231,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       );
     }
     const caps = claim.kind === "claimed" ? claim.caps : null;
+    // A pushed platform carries its own migrations, which is the only way the tables its
+    // business needs can reach a runtime older than they are — that runtime will never grow
+    // them by restarting, because it does not have them. swapPath: this boot can be rolled
+    // back, so a restart-only migration is refused here instead of being left behind. Before
+    // any node is created: every repo below prepares its statements against this schema.
+    if (caps !== null) migrate(caps.db, { swapPath: true });
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
