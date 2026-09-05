@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
   anyJobPending,
+  behindMachines,
   defaultSelection,
   installedMachines,
   jobFor,
@@ -216,6 +217,15 @@ describe("installedMachines", () => {
     const state = response([], { machines: [nas, box] });
     installedMachines(state);
     expect(state.machines).toEqual([nas, box]);
+  });
+});
+
+describe("behindMachines", () => {
+  it("is the machines in use on another build, in list order, and nothing without a record", () => {
+    const old = { ...carrying("old"), installed: { version: "9.9.8", at: INSTALLED.at } };
+    const state = response([], { machines: [here(), fresh("spare"), carrying("nas"), old] });
+    expect(behindMachines(state).map((machine) => machine.id)).toEqual(["ssh:old"]);
+    expect(behindMachines({ ...state, imageVersion: null })).toEqual([]);
   });
 });
 
