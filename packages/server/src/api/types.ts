@@ -3563,6 +3563,11 @@ export interface MachineJob {
   /** Waiting its turn: jobs run one at a time, and a batch queues the rest. */
   queued: boolean;
   running: boolean;
+  /**
+   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
+   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   */
+  phase: MachinePhase | null;
   log: string[];
   result:
     | null
@@ -3601,6 +3606,17 @@ export interface MachinesResponse {
    */
   jobs: MachineJob[];
 }
+
+/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+export const MACHINE_PHASES = [
+  "check",
+  "install",
+  "handover",
+  "restart",
+  "connect",
+  "sync",
+] as const;
+export type MachinePhase = (typeof MACHINE_PHASES)[number];
 
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
 export interface MachinesUseRequest {

@@ -66,6 +66,7 @@ function job(over: Partial<MachineJob> = {}): MachineJob {
     alias: "nas",
     queued: false,
     running: true,
+    phase: null,
     log: ["Installing 9.9.9 on deploy@nas…"],
     result: null,
     ...over,
