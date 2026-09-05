@@ -5,8 +5,10 @@
  * so every aggregation is broken down by the `(provider, model_id)` pair and returns
  * raw Token sums (a model_id shared across providers is aggregated separately; never concatenated).
  */
-import type { DatabaseSync } from "node:sqlite";
 import type { UsageGroupBy } from "../../api/types.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { UsageStore } from "../../mechanisms/observability.js";
 
 export interface UsageRecordInsert {
   ts: string;
@@ -181,8 +183,9 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
   };
 }
 
-export class UsageRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class UsageRepo implements UsageStore {
+  @Use() private readonly db!: Db;
 
   insert(r: UsageRecordInsert): void {
     this.db

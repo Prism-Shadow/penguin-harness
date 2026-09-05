@@ -74,8 +74,9 @@ import type { Instance, Json, AnyIface, AnyImpl } from "@prismshadow/penguin-cor
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
-import type { PlatformApi } from "../hmr/platform.js";
-import { packagedPlatform } from "../hmr/platform.js";
+import { MATERIALIZED } from "./manifest.js";
+import type { PlatformApi } from "./platform.js";
+import { packagedPlatform } from "./platform.js";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
@@ -124,13 +125,6 @@ export interface UpgradeAllTarget {
   assets?: UpgradeAssets;
   source?: GitSource;
 }
-
-/**
- * Written into an assets directory once every file in it is on disk. Its absence marks a
- * directory whose materialization was interrupted; no asset path can collide with it
- * (assets arrive as `node_modules/...` paths).
- */
-export const MATERIALIZED = ".materialized";
 
 export type UpgradeOutcome =
   | {

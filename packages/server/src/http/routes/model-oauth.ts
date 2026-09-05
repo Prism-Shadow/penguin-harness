@@ -22,10 +22,21 @@ import type {
   ModelOAuthStatusResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface ModelOauthRouteDeps extends ModelsRouteDeps {
+  config: ServerConfig;
+  manager: SessionManager;
+  modelOAuth: ModelOAuth;
+  access: Access;
+}
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
+import type { ModelsRouteDeps } from "./models.js";
+import type { Access, ModelOAuth } from "../../mechanisms/projects.js";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -110,7 +121,7 @@ p { margin: 0; color: #4b5563; }
  * key up, open tabs unlock, and the machines this Project uses receive it. One helper for
  * every write path, so a key minted here reaches a machine the same way one pasted does.
  */
-function credentialsChanged(deps: AppDeps, projectId: string): void {
+function credentialsChanged(deps: ModelOauthRouteDeps, projectId: string): void {
   modelConfigChanged(deps, projectId);
 }
 
@@ -149,7 +160,7 @@ function credentialsChanged(deps: AppDeps, projectId: string): void {
  *
  * Answers HTML throughout — a person is looking at this tab, not a client parsing JSON.
  */
-export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
+export function modelOAuthCallbackRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) => {
@@ -195,7 +206,7 @@ export function modelOAuthCallbackRoutes(deps: AppDeps): Hono<AppEnv> {
   return app;
 }
 
-export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
+export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
@@ -203,7 +214,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
   // such flow and what keeps the authorize/exchange endpoints out of client control.
   app.post("/start", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
     const mode = parseMode(body.mode);
@@ -233,7 +244,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
   // callback this one IS reached by the App's own signed-in tab.
   app.post("/:flowId/code", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const flowId = c.req.param("flowId") ?? "";
     if (!FLOW_ID_RE.test(flowId)) {
       throw new HttpError(
@@ -263,7 +274,7 @@ export function modelOAuthRoutes(deps: AppDeps): Hono<AppEnv> {
   // written under the owner's own session (see the service's `deposit` and `poll`).
   app.get("/:flowId", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const flowId = c.req.param("flowId") ?? "";
     if (!FLOW_ID_RE.test(flowId)) {
       throw new HttpError(

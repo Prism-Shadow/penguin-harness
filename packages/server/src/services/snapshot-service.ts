@@ -25,6 +25,9 @@ import {
 } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { Snapshots } from "../mechanisms/agents.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
@@ -33,8 +36,12 @@ function isVaultEntry(entryPath: string): boolean {
   return path.posix.basename(entryPath.replaceAll("\\", "/")) === VAULT_BASENAME;
 }
 
-export class SnapshotService {
-  constructor(private readonly root: string) {}
+@Component()
+export class SnapshotService implements Snapshots {
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
 
   /** Current Agent State version number (missing field treated as 1); throws 404 if the Agent doesn't exist. */
   async currentVersion(projectId: string, agentId: string): Promise<number> {

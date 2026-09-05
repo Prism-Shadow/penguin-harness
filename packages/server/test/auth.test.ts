@@ -17,6 +17,8 @@ import {
   provisionUser,
   TEST_ADMIN_PASSWORD,
   testConfig,
+  flattenForTests,
+  replacementsFor,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -202,9 +204,11 @@ describe("auth", () => {
 
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {
     const root = await makeTempRoot();
-    const deps = await bootAppDeps(
-      { ...testConfig(root), seedAdminPassword: "x" },
-      { log: () => {} },
+    const deps = flattenForTests(
+      await bootAppDeps(
+        { ...testConfig(root), seedAdminPassword: "x" },
+        replacementsFor({ log: () => {} }),
+      ),
     );
     try {
       await expect(deps.authService.seedAdmin()).rejects.toThrow(/at least 8 characters/);

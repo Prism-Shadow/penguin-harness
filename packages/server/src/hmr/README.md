@@ -24,7 +24,7 @@ artifact storage and the atomic `harness.json` commit.
 Authentication is NOT on that list, and used to be. Who may set a password, how long a session
 lasts, how logins are throttled — that is policy, and a runtime that owned it made every auth
 fix wait for a full reinstall: a platform naming a member an older runtime's AuthService lacked
-was refused at the handshake. The App builds its own AuthService now (app.ts's buildAppDeps).
+was refused at the handshake. The App builds its own AuthService now (the `auth` module under src/modules).
 What the runtime still publishes is `runtime:auth-state`, the process-scoped values a push must
 not forget — the state layer, not a capability.
 

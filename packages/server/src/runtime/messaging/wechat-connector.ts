@@ -95,7 +95,10 @@ import type {
   WeChatInboundEvent,
   WeChatTransport,
 } from "./wechat-api.js";
-import { WECHAT_API_BASE } from "./wechat-api.js";
+import { WECHAT_API_BASE, createWeChatTransport } from "./wechat-api.js";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
+import type { MessagingTuning } from "./bridge.js";
 
 /** The WeChat binding's stored config document (`messaging_bindings.config_json`). */
 export interface WeChatBindingConfig extends Record<string, unknown> {
@@ -408,5 +411,41 @@ export class WeChatConnector implements MessagingChannelConnector {
       };
       signal.addEventListener("abort", onAbort, { once: true });
     });
+  }
+}
+
+/** The wechat connector, contributed to messaging.connectors like any third-party one would be. */
+@Component({
+  contributes: {
+    "MessagingModule.connectors": [
+      {
+        id: "messaging-wechat.connector",
+        channel: "wechat",
+      },
+    ],
+  },
+})
+export class WechatMessaging {
+  @Use() private readonly wechat!: WeChatTransportHandle;
+  @Use() private readonly tuning!: MessagingTuning;
+  @Bind("messaging-wechat.connector") connector!: MessagingChannelConnector;
+  setup() {
+    const { retryDelayMs } = this.tuning;
+    this.connector = new WeChatConnector(
+      this.wechat.transport,
+      retryDelayMs !== undefined ? { retryDelayMs } : {},
+    );
+  }
+}
+
+/** The long-poll + CDN transport as a node, so a test stands in a fake for the network. */
+export abstract class WeChatTransportHandle extends Interface<{
+  transport: Opaque<"WeChatTransport", WeChatTransport>;
+}>() {}
+@Module()
+export class WeChatTransportProvider {
+  @Provide() wechatTransport!: WeChatTransportHandle;
+  setup() {
+    this.wechatTransport = { transport: createWeChatTransport() };
   }
 }

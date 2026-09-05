@@ -23,27 +23,45 @@
  * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
-import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "../hmr/host.js";
+import type {
+  Impl,
+  Json,
+  Park,
+  IfaceTable,
+  ManifestTable,
+  ModuleDef,
+  ModuleTree,
+} from "@prismshadow/penguin-core/kernel";
+import {
+  defineIface,
+  schema,
+  type,
+  bootModules,
+  moduleDefOf,
+} from "@prismshadow/penguin-core/kernel";
+import type { PlatformBundle } from "./host.js";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import type { SandboxProviderSource, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { SandboxService } from "../sandbox/index.js";
-import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
-import { seamHttp } from "./hono-seam.js";
+import { Hono } from "hono";
+import type { AppEnv } from "../auth/middleware.js";
+import type { SessionManager } from "../runtime/session-manager.js";
+import { terminalRoutes } from "../terminal/routes.js";
+import type { Identity } from "../terminal/identity.js";
+import { platformDef } from "../platform.js";
+import { SandboxModule } from "../sandbox/service.js";
+import ifaceTable from "../ifaces.json" with { type: "json" };
+import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "@prismshadow/penguin-core/plugin";
-import type { HarnessContext } from "../plugin/index.js";
 import { pluginHostFrom } from "../plugin/host.js";
-import { instantiateWorkflows, WorkflowFactories } from "../plugin/workflow.js";
+import { migrate } from "../db/migrations.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -61,11 +79,11 @@ export interface PlatformApi extends Park {
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
   /**
-   * The business deps this App built (null on a declared bare kernel). In-process member,
+   * The module tree this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
    * "current App" pointer in the registry would be a duplicate channel.
    */
-  business(): AppDeps | null;
+  business(): ModuleTree | null;
   /** Process-exit graceful drain (manager ≤5s wrap-up, workflow park); no-op without business. */
   shutdown(): Promise<void>;
   /**
@@ -81,34 +99,72 @@ export interface PlatformApi extends Park {
  * in the runtime's resource registry (they must — a swap disposes this tree), and the
  * document carries only their handle ids so the next instance can claim them back.
  */
+/**
+ * The platform node's parked document. It has ONE version and only grows: a field, once
+ * written, keeps its meaning and stays written, so any platform ever pushed to a data
+ * root can read the document the newest one parks — the rollback a hot update must never
+ * lose. `terminals` and `sandbox` are what the first platforms parked and still read;
+ * `modules` is what the module tree parks, one document per node. This platform writes
+ * all three and reads `modules` first.
+ */
 export type PlatformCtx = {
   motd: string;
+  /** pty handle ids (the terminal module's parked state, also written here for older readers). */
   terminals?: string[];
-  /**
-   * Active sandbox settings — parked state, not service memory: a hot swap constructs a
-   * fresh SandboxService, and without this the swap would silently reset a confining
-   * deployment to unconfined. Optional so a document parked before the field existed
-   * (and a default deployment, which never writes it) restores as confinement off.
-   */
-  sandbox?: SandboxSettings;
+  /** Sandbox settings (the sandbox module's parked state, also written here for older readers). */
+  sandbox?: Json;
+  /** Each module's parked document, by node name (kernel bootModules). */
+  modules?: Record<string, Json>;
 };
 
 export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
   context: schema<PlatformCtx>(
+    // arktype infers `unknown` for the index signature where the context says Json; the
+    // runtime shape is the same, so the one cast lives here. Undeclared keys pass, so a
+    // reader that predates a field is not stopped by it.
     type({
       motd: "string",
       "terminals?": "string[]",
-      "sandbox?": {
-        mode: "'read-only' | 'workspace-write' | 'danger-full-access'",
-        "network?": "'none'",
-        "maskPaths?": "string[]",
-      },
-    }),
+      "sandbox?": "unknown",
+      "modules?": { "[string]": "unknown" },
+    }) as never,
   ),
   methods: ["park", "info", "http", "terminals", "attachStream"],
 });
+
+/** The node names the two parking modules were keyed by before nodes were named by class. */
+const RENAMED_NODES: Record<string, string> = {
+  terminal: "TerminalModule",
+  sandbox: "SandboxModule",
+};
+
+/**
+ * The module documents to boot from: what the last platform parked under `modules`
+ * (older node names mapped to the current ones), completed from the top-level fields
+ * when a platform older than the module tree parked them there.
+ */
+function parkedModules(context: PlatformCtx): Record<string, Json> {
+  const modules: Record<string, Json> = {};
+  for (const [key, value] of Object.entries(context.modules ?? {}))
+    modules[RENAMED_NODES[key] ?? key] = value;
+  if (modules.TerminalModule === undefined && context.terminals !== undefined)
+    modules.TerminalModule = { v: 1, self: { terminals: context.terminals } };
+  if (modules.SandboxModule === undefined && context.sandbox !== undefined)
+    modules.SandboxModule = { v: 1, self: { settings: context.sandbox } };
+  return modules;
+}
+
+/** A parking module's own state out of the tree's parked documents, for the top-level fields. */
+function parkedSelf(modules: Record<string, Json>, node: string): Record<string, Json> | null {
+  const doc = modules[node];
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) return null;
+  const self = (doc as { self?: Json }).self;
+  return self !== null && typeof self === "object" && !Array.isArray(self)
+    ? (self as Record<string, Json>)
+    : null;
+}
 
 /**
  * The resource interfaces this platform parks, by ID-prefix group (see
@@ -175,6 +231,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       );
     }
     const caps = claim.kind === "claimed" ? claim.caps : null;
+    // A pushed platform carries its own migrations, which is the only way the tables its
+    // business needs can reach a runtime older than they are — that runtime will never grow
+    // them by restarting, because it does not have them. swapPath: this boot can be rolled
+    // back, so a restart-only migration is refused here instead of being left behind. Before
+    // any node is created: every repo below prepares its statements against this schema.
+    if (caps !== null) migrate(caps.db, { swapPath: true });
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -185,10 +247,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     const inheritable = inherited !== undefined && inherited.family === DECLARED_RESOURCES.family;
     // DECIDE ONLY. Disposing a group kills live ptys and child processes, and nothing
     // brings them back — so the decision is computed here and ACTED ON at the bottom,
-    // once this App is fully built. Everything between can still throw (plugin handlers,
-    // workflow factories, the scheduler), and a boot that fails there is recovered by
-    // re-booting the previous bundle; that recovery is only honest if the resources it
-    // re-adopts are still alive.
+    // once this App is fully built. Everything between can still throw (a module's
+    // create, a workflow factory), and a boot that fails there is recovered by re-booting
+    // the previous bundle; that recovery is only honest if the resources it re-adopts are
+    // still alive.
     const doomedGroups = Object.entries(inherited ?? {})
       .filter(([group]) => group !== "family")
       .filter(([group, offered]) => {
@@ -200,135 +262,68 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         return !inheritable || !offers;
       })
       .map(([group]) => group);
+    const adoptable = (group: string) => !doomedGroups.includes(group);
 
-    const terminals = new TerminalManager(ctx.resources, {
-      // A pushed bundle's node-pty binaries live where the host materialized them.
-      assets: () => caps?.hmr.assetsDir() ?? null,
-    });
-    // Shells started before this instance existed are still running in the registry: claim
-    // them back so a push is invisible to whoever was typing in one — unless their group
-    // is doomed, in which case this build cannot speak the contract behind those handles
-    // and must not adopt them. It does not dispose them either: that happens at the
-    // commit below, so a failed boot leaves them for the recovered predecessor.
-    terminals.adopt(doomedGroups.includes("terminal") ? [] : (context.terminals ?? []));
-    // The plugin seam (see ../plugin/index.ts): the definition view first, then the
-    // instance context, with the workflows built in between — so a plugin that registers
-    // one always sees it instantiated in the App it registered into. The host is CLAIMED
-    // from the registry, never imported (see pluginHostFrom).
+    // Plugins are modules (see ../plugin/): the host is CLAIMED from the registry,
+    // never imported (see pluginHostFrom), and its modules join the tree below.
     const plugins = pluginHostFrom(ctx.resources);
-    // Sandbox backends arrive as plugins through iface.sandbox (see ../plugin/);
-    // duplicates are refused, and the service routes policies by capability.
-    const sandboxProviders = new Map<string, SandboxProviderSource>();
-    const pluginIface: PenguinInterface = {
-      workflow: new WorkflowFactories(),
-      tool: new Map(),
-      sandbox: {
-        registerProvider(name, provider) {
-          if (sandboxProviders.has(name)) {
-            throw new Error(`sandbox provider '${name}' is already registered`);
-          }
-          sandboxProviders.set(name, provider);
-        },
-      },
-    };
-    plugins.emit("initialize", pluginIface);
-    // "Which commands run confined, under which policy, by which backend" is policy —
-    // the whole capability lives in ../sandbox/ and reaches deployed machines by push;
-    // only core's spawn seam is mechanism. The confiner reaches core as a plain argument
-    // to buildAppDeps below — same-generation wiring, because the sessions that spawn
-    // through it are hard-stopped with this App (see the dispose effect), so nothing
-    // outlives the service that confines it.
-    const sandbox = new SandboxService(sandboxProviders);
-    // Rehydrate the parked settings (state rides the swap): without this, every hot push
-    // would construct a fresh service on defaults and silently un-confine a deployment
-    // that had confinement on.
-    if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
-    // Typed as HarnessContext, not the bare contract: `terminals` is this harness's own
-    // (see ../plugin/index.ts). Handlers receive it as PenguinContext and reach that
-    // member only by casting, which is where the dependency on this embedder gets stated.
-    const pluginContext: HarnessContext = {
-      workflows: instantiateWorkflows(pluginIface.workflow),
-      terminals,
-      sandbox: {
-        configure: (settings) => sandbox.configure(settings),
-        settings: () => sandbox.currentSettings(),
-      },
-    };
-    plugins.emit("create", pluginContext);
 
-    // The business deps, built per App over the runtime's published capabilities — see
-    // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
-    // every other capability-less host was refused above.
-    let deps: AppDeps | null = null;
+    let tree: ModuleTree;
+    let business: ModuleTree | null = null;
+    let terminals: TerminalManager;
     if (caps === null) {
+      // A declared bare kernel: terminals only, no business surface. The module tree is
+      // reduced to what needs no runtime capability — the sandbox floor and the backends
+      // registered into it — so confinement settings still park and restore.
       console.warn("[platform] bare kernel: terminals only, no business surface");
+      terminals = new TerminalManager(ctx.resources, { assets: () => null });
+      terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
+      tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
+        ifaces: ifaceTable as unknown as IfaceTable,
+        resources: ctx.resources,
+        parked: parkedModules(context),
+      });
     } else {
-      deps = buildAppDeps(caps, caps.overrides, () => sandbox.confiner());
-      // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
-      // scan; only active while this App is.
-      await deps.scheduler.start();
-      // Messaging bridge: connect every enabled Session binding (channel event
-      // streams); only active while this App is, like the scheduler.
-      await deps.messaging.start();
-      // Startup adoption sweep: fold Trace-only Sessions (legacy CLI-direct runs) into
-      // the sessions index as client:'cli' rows, so every later list is pure SQLite.
-      // Fire-and-forget — a broken trace shard must not block the boot — with failures
-      // recorded like any background capture point. Idempotent and mtime-gated, so the
-      // re-run after a hot swap costs only the gate checks.
-      const errors = deps.errors;
-      void deps.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
-        errors.record({ source: "process", err, code: "trace_adoption_failed" });
-      });
-      // Machines, in one sweep (service.ts start()): a push here is a push everywhere, so
-      // this App booting hands the same build on to any machine still carrying a different
-      // one — cheap when there is nothing to do, since which machines are behind is read
-      // from the install records, not asked over the network — and then re-holds every
-      // connection the record says was held, starting a remote server that is down on the
-      // way and handing each its Model config as it connects. Fire-and-forget for the same
-      // reason as the adoption sweep: a host that is slow to answer must not hold up the
-      // App that serves everything else.
-      void deps.machines.start().catch((err: unknown) => {
-        errors.record({ source: "process", err, code: "machines_reconnect_failed" });
-      });
+      // THE MODULE TREE (see ../platform.ts): every business service, every route
+      // group and the terminal manager are modules wired by their manifests — checked as
+      // data before any create() runs, created in dependency order. Sandbox backends the
+      // plugin host registered enter the same tree as one contributing module.
+      tree = await bootModules(
+        platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements()),
+        {
+          ifaces: ifaceTable as unknown as IfaceTable,
+          resources: ctx.resources,
+          parked: parkedModules(context),
+        },
+      );
+      business = tree;
+      terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
     }
-
-    // Ordinary code over this App's own auth (terminal/identity.ts): the same object the
-    // business routes authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const identity = identityFrom(deps?.authService ?? null);
-
-    // ONE app, ONE pointer: every route this App serves — terminal group and business
-    // groups — registers into a single Hono table, and the swap publishes deps + table +
-    // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
-    const app = createApp(deps, terminals, identity);
-    const business = deps;
+    // Ordinary code over this App's own auth: the same object the business routes
+    // authenticate with. A bare kernel has none — terminals stay fail-closed.
+    const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
+    const identity = identityFrom(auth);
+    const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a
     // claimed capability — overwrite-only across swaps, so a dead generation's hook is
     // replaced and never removed: "is this session busy" for the channel sweep.
-    if (caps !== null && business !== null) {
-      caps.channels.setActivityProbe((key) => business.manager.statusOf(key) !== "idle");
+    if (caps !== null && manager !== null) {
+      caps.channels.setActivityProbe((key) => manager.statusOf(key) !== "idle");
     }
-    // PARK — the App's complete resource inventory, split by fate. Everything stateful
-    // this App creates is on one of these three lists; a new resource must pick its list
-    // when it is added, or the swap leaks it.
+    // PARK — the App's resource inventory, split by fate:
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
-    //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - pty sessions        registry `terminal:*` + the terminal module's parked ids
     //   - machine tunnels     ssh children + machines-connect.json (pid/port) → adopted by
     //                         the successor's tunnelPortFor, which checks the pid is alive
-    //   - runtime singletons  db / auth / channels / config / proxy / desktop —
-    //                         runtime-owned, re-claimed by every App; not this App's to park
+    //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
+    //                         runtime-owned, re-claimed by every App
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
-    //   - scheduler           stop() now; successor start() reconciles missed fires
-    //   - messaging bridge    stop() closes the channel connections; successor start()
-    //                         reconnects every enabled binding from the DB
-    //   - agent runs          approvals → deny, drives → abort; a goal's GOAL.json reads
-    //                         as aborted once its Session is idle (GET /goal)
-    //   - session environments dispose() after the drive settles — kills background
-    //                         commands (dev servers etc.) that would otherwise run on
-    //                         orphaned and invisible to the successor's fresh Session
-    //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
-    //   - machine connections stop() closes every ssh session this generation opened;
-    //                         successor start() re-holds each the record says was held
+    //   - scheduler, messaging bridge, machine connections   their modules' dispose effects
+    //                         stop them; each successor's setup starts over from the record
+    //   - agent runs          approvals → deny, drives → abort (manager.shutdown below)
+    //   - session environments dispose() after the drive settles
+    //   - reap timers         the terminal module's effect quiesces them
     // DETACHED (the object survives, this App's grip on it does not):
     //   - pty exit listeners  unsubscribed, so a dead generation never releases a
     //                         registry id the successor owns
@@ -339,27 +334,23 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // and the progress log is simply lost, which re-running recovers); and SSE subscriber
     // closures (they serve the old generation's stream until the client reloads on
     // web_updated — the channel hub itself is runtime-owned).
-    // A build that adds a service with state of its own (sandbox settings, workflow
-    // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
-    // the contract, not a description of today's services.
-    //
-    // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
-    // actually end) cannot — dispose is sync — so it is exposed as api.drained(), which
-    // the KERNEL awaits between dispose and the successor's boot (kernel/upgrade.ts).
-    // Nothing about the handover touches the registry.
+    // A module with state of its own (sandbox settings, workflow refs, ssh tunnels, an
+    // in-flight job) belongs in the right list here — the list is the contract, not a
+    // description of today's modules.
+    // The tree's dispose runs every module's effects in reverse creation order; the
+    // asynchronous tail (waiting for aborted runs to end) cannot run inside a sync
+    // effect, so it is exposed as api.drained(), which the KERNEL awaits between dispose
+    // and the successor's boot (kernel/upgrade.ts). Nothing about the handover touches
+    // the registry.
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
-      terminals.quiesce();
       // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
       // processes that keep forwarding across the swap, and the successor adopts them by the
       // pid recorded in web.db (machines/service.ts).
       const drains: Promise<unknown>[] = [];
-      if (business !== null) {
-        business.scheduler.stop();
-        business.messaging.stop();
-        business.machines.stop();
-        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
-      }
+      if (manager !== null) drains.push(manager.shutdown(DRAIN_GRACE_MS));
+      tree.dispose();
+      if (business === null) terminals.quiesce();
       drained = Promise.allSettled(drains).then(() => undefined);
     });
 
@@ -370,22 +361,28 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
     ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
 
-    const http = seamHttp(app);
+    const httpApi = business?.api<{ fetch(request: Request): Promise<Response> }>(
+      "HttpModule",
+      "http",
+    );
+    const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
 
     return {
-      // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are
-      // resources, and outliving a swap is the whole point. Process exit sweeps them
-      // through the registry's own disposers.
       park: () => {
-        // The sandbox field is omitted while settings are the pristine default: a
-        // default deployment keeps parking what it always did, compatible with any
-        // bundle's schema; once confinement is configured, pushing a sandbox-ignorant
-        // bundle blocks rather than silently un-confining.
-        const parkedSandbox = sandbox.parkedSettings();
+        const modules = tree.park();
+        // The top-level fields are written for every platform that reads them: a bare
+        // kernel's own ptys, and the two parking modules' state in the form the first
+        // platforms parked it — so a rollback to any of them keeps terminals and confinement.
+        const terminalIds =
+          business === null
+            ? terminals.handleIds()
+            : (parkedSelf(modules, "TerminalModule")?.terminals as string[] | undefined);
+        const sandbox = parkedSelf(modules, "SandboxModule")?.settings;
         return {
           motd: context.motd,
-          terminals: terminals.handleIds(),
-          ...(parkedSandbox !== undefined ? { sandbox: parkedSandbox } : {}),
+          modules,
+          ...(terminalIds !== undefined ? { terminals: terminalIds } : {}),
+          ...(sandbox !== undefined ? { sandbox } : {}),
         };
       },
       info: () => ({
@@ -401,12 +398,41 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.
       shutdown: async () => {
-        if (business !== null) await business.manager.shutdown(DRAIN_GRACE_MS);
+        if (manager !== null) await manager.shutdown(DRAIN_GRACE_MS);
       },
       drained: () => drained,
     };
   },
 };
+
+/** A bare kernel's tree: the sandbox floor and whatever contributes to it, nothing that needs a capability. */
+function bareTree(
+  plugins: ModuleDef[],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
+): ModuleDef {
+  return {
+    manifest: {
+      name: "platform",
+      requires: {},
+      provides: {},
+      contributes: {},
+      children: ["SandboxModule", "*"],
+    },
+    children: [
+      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable, replace }),
+      ...plugins,
+    ],
+    create: () => ({ api: {} }),
+  };
+}
+
+/** The terminal-only surface of a declared bare kernel. */
+function bareApp(terminals: TerminalManager, identity: Identity): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.notFound(() => declined());
+  app.route("/", terminalRoutes(terminals, identity));
+  return app;
+}
 
 /**
  * The packaged bundle the runtime boots when nothing has been pushed yet — code AND its

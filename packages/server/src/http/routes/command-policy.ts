@@ -11,7 +11,13 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface CommandPolicyRouteDeps {
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+}
 
 /** Bounds for the rule list: enough for a serious deny list, small enough to stay a config file. */
 const MAX_RULES = 64;
@@ -93,18 +99,18 @@ function validateRules(value: unknown): RuleInput[] {
   return rules;
 }
 
-export function commandPolicyRoutes(deps: AppDeps): Hono<AppEnv> {
+export function commandPolicyRoutes(deps: CommandPolicyRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.projectConfigService.getCommandPolicy(projectId));
   });
 
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
 
     if (body.enabled !== undefined && typeof body.enabled !== "boolean") {

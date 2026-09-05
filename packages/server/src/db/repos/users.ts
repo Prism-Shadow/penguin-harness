@@ -2,7 +2,9 @@
  * users table repo: pure SQL wrapper, no business rules.
  * user_id is the login name (a semantic id, specified at creation, immutable).
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Users } from "../../mechanisms/identity.js";
 
 export interface UserRow {
   userId: string;
@@ -23,8 +25,9 @@ function mapRow(r: Record<string, unknown>): UserRow {
   };
 }
 
-export class UsersRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class UsersRepo implements Users {
+  @Use() private readonly db!: Db;
 
   insert(row: UserRow): void {
     this.db

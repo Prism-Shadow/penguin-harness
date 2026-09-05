@@ -29,10 +29,9 @@ import type {
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
-import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
+import type { ErrorFilter } from "../db/repos/errors.js";
 import { offPeakScheduledRefs } from "@prismshadow/penguin-core/model-catalog";
 import type {
-  UsageRepo,
   UsageModelSums,
   UsageGroupModelSums,
   UsageSeriesModelSums,
@@ -47,6 +46,10 @@ import {
   localDateMinusDays,
 } from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Clock } from "../hmr/capabilities.js";
+import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
 /**
  * Number of most-recent entries kept in the error detail table. Also the page size the whole
@@ -146,13 +149,14 @@ function refKey(provider: string, modelId: string): string {
   return `${provider}\0${modelId}`;
 }
 
-export class UsageService {
-  constructor(
-    private readonly usage: UsageRepo,
-    private readonly errors: ErrorsRepo,
-    private readonly lookupPricing: PricingLookup,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+@Component()
+export class UsageService implements UsageQueries {
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly clock!: Clock;
+  private lookupPricing: PricingLookup = (projectId, provider, modelId) =>
+    this.projectConfig.getPricing(projectId, provider, modelId);
 
   /**
    * The catalog's time-based schedules, as the aggregations want them.
@@ -172,7 +176,7 @@ export class UsageService {
   }
 
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
-    const today = formatLocalDate(this.now());
+    const today = formatLocalDate(this.clock.now());
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).
     const base: UsageFilter = {};
     if (q.agentId !== undefined) base.agentId = q.agentId;
@@ -196,7 +200,7 @@ export class UsageService {
     const todayRows = this.usage.bucketByModel(projectId, win(today, today), tiers);
     const last7dRows = this.usage.bucketByModel(
       projectId,
-      win(localDateMinusDays(this.now(), 6)),
+      win(localDateMinusDays(this.clock.now(), 6)),
       tiers,
     );
     const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
@@ -209,7 +213,7 @@ export class UsageService {
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
-    const seriesFrom = q.from ?? localDateMinusDays(this.now(), 29);
+    const seriesFrom = q.from ?? localDateMinusDays(this.clock.now(), 29);
     const seriesTo = q.to ?? today;
     // The series is zero-filled over the whole effective range: cap the bucket
     // count so an arbitrary range × precision combination cannot materialize an

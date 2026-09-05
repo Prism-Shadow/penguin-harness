@@ -33,7 +33,8 @@
  *   Promise<T> / PromiseLike<T>          → { promise }
  *   AsyncIterable<T> / AsyncGenerator<T> → { stream }
  *   void / undefined return              → { void }
- *   Opaque<"Name"> (core kernel/markers) → { opaque: "Name" } — the only by-name comparison
+ *   Opaque<"Name"> (core kernel/markers) → { opaque: "<package>#Name" } — the only by-name
+ *     comparison, and the name is always qualified by the declaring package
  *   <Name>Slots companion interface      → the slots of <Name>; a property typed Slot<D, C>
  *                                          declares a code half
  *   classes, Map/Set, generics, rest parameters, unions mixing data with non-data → error
@@ -98,6 +99,8 @@ function moduleNameOf(fileName) {
 }
 
 const table = {};
+/** `@Use` fields typed by a component class — a dependency on an implementation, not a mechanism. */
+const implementationDeps = [];
 /** Named data types, keyed like interfaces; signatures reference them as { "$ref": key }. */
 const types = {};
 /** Module manifests, extracted STATICALLY from each module.ts's defineModule({...}) literal. */
@@ -584,11 +587,51 @@ for (const project of projects) {
     return null;
   }
 
-  function opaqueName(type) {
+  /**
+   * The package a declaration belongs to — the second half of an opaque identity. A
+   * by-name comparison is only safe when the name is qualified by who declared it: two
+   * packages may both declare a `Resources`, and they must not match.
+   */
+  const packageCache = new Map();
+  function packageOf(fileName) {
+    if (/\/lib\.[\w.]+\.d\.ts$/.test(fileName)) return "lib";
+    // pnpm nests `node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>/…`: the LAST segment names the package.
+    const segments = [...fileName.matchAll(/node_modules\/(@[^/]+\/[^/]+|[^/@.][^/]*)/g)];
+    if (segments.length > 0) return segments[segments.length - 1][1];
+    let dir = path.dirname(fileName);
+    for (;;) {
+      if (packageCache.has(dir)) return packageCache.get(dir);
+      const pkg = path.join(dir, "package.json");
+      if (fs.existsSync(pkg)) {
+        const name = JSON.parse(fs.readFileSync(pkg, "utf8")).name;
+        packageCache.set(dir, name);
+        return name;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) return "?";
+      dir = parent;
+    }
+  }
+  /** `<package>#<name>`: an opaque identity, never a bare name. */
+  const opaqueId = (name, fileName) => `${packageOf(fileName)}#${name}`;
+
+  /**
+   * The identity of an `Opaque<"Name", T>`: the name, qualified by the package declaring
+   * T (else the package writing the marker) — so the same word in two packages is two
+   * identities.
+   */
+  function opaqueName(type, atNode) {
     const prop = type.getProperty("__opaque");
     if (!prop) return null;
     const t = checker.getNonNullableType(checker.getTypeOfSymbol(prop));
-    return t.isStringLiteral() ? t.value : null;
+    if (!t.isStringLiteral()) return null;
+    const parts = type.isIntersection()
+      ? type.types.filter((x) => !x.getProperty("__opaque") || x.getProperties().length > 1)
+      : [type];
+    const declaring = parts
+      .map((x) => (x.aliasSymbol ?? x.getSymbol())?.declarations?.[0]?.getSourceFile()?.fileName)
+      .find((f) => f !== undefined);
+    return opaqueId(t.value, declaring ?? atNode.getSourceFile().fileName);
   }
 
   /** TypeExpr for any type in a signature position. */
@@ -596,7 +639,7 @@ for (const project of projects) {
     notData = "";
     const f = type.getFlags();
     if (f & ts.TypeFlags.Void) return { void: true };
-    const opaque = opaqueName(type);
+    const opaque = opaqueName(type, atNode);
     if (opaque !== null) return { opaque };
     const symbol = type.getSymbol();
     const name = symbol?.getName();
@@ -649,7 +692,17 @@ for (const project of projects) {
           `tuple '${checker.typeToString(type)}' holds a non-data element (${notData})`,
         );
       }
-      if (isHostDeclared(symbol)) return { opaque: name };
+      // A mapped or anonymous type (`Pick<…>`, `Record<…>`, an inline `{…}`) has the lib's
+      // `__type` symbol; it is a shape, not a host object. With methods and a name (a
+      // `type X = Pick<…>` alias) it is an interface keyed by the alias; otherwise its
+      // members are projected in place.
+      const anonymous = name === "__type" || name === "__object";
+      if (anonymous && type.aliasSymbol && hasMethods(type, atNode)) {
+        const aliasDecl = type.aliasSymbol.declarations?.[0];
+        if (aliasDecl) return { iface: keyOf(type.aliasSymbol, aliasDecl) };
+      }
+      if (!anonymous && isHostDeclared(symbol))
+        return { opaque: opaqueId(name, symbol.declarations[0].getSourceFile().fileName) };
       // A plain object shape some member of which is not data (a Buffer field, a callback
       // property): structured, compared member by member.
       if (
@@ -672,6 +725,16 @@ for (const project of projects) {
       if (symbol && symbol.flags & ts.SymbolFlags.Class && !isIfaceClass(symbol)) {
         return fail(atNode, `class '${name}' in a signature: wrap it as Opaque<"${name}">`);
       }
+      // Inside a component's own surface, an interface with methods that is not an
+      // interface class is a host object of that class's world, compared by name — the
+      // component does not publish its dependencies' types as contracts.
+      if (lenient && hasMethods(type, atNode) && !isIfaceClass(symbol))
+        return {
+          opaque: opaqueId(
+            name,
+            symbol?.declarations?.[0]?.getSourceFile()?.fileName ?? atNode.getSourceFile().fileName,
+          ),
+        };
       if (hasMethods(type, atNode) || isIfaceClass(symbol)) {
         const decl = symbol?.declarations?.find(
           (d) =>
@@ -718,6 +781,8 @@ for (const project of projects) {
     return { params, returns: exprOf(signature.getReturnType(), atNode, stack) };
   }
 
+  /** True while a component member is being projected (see `tolerant` in ifaceOf). */
+  let lenient = false;
   const LIFECYCLE = new Set(["setup", "park", "migrations"]);
   /** A member of a component class that is not part of its interface. */
   const isHiddenMember = (prop) => {
@@ -742,13 +807,21 @@ for (const project of projects) {
     const tolerant = (prop, project) => {
       if (!component) return project();
       const mark = errors.length;
-      const out = project();
+      lenient = true;
+      let out;
+      try {
+        out = project();
+      } finally {
+        lenient = false;
+      }
       if (errors.length === mark) return out;
       const why = errors.splice(mark).map((e) => e.slice(e.indexOf(": ") + 2));
       warnings.push(
         `${where(prop.valueDeclaration ?? decl)}: component member '${prop.getName()}' is opaque in the contract (${why.join("; ")})`,
       );
-      return { opaque: `${symbol.getName()}.${prop.getName()}` };
+      return {
+        opaque: opaqueId(`${symbol.getName()}.${prop.getName()}`, decl.getSourceFile().fileName),
+      };
     };
     for (const prop of type.getProperties()) {
       if (component && isHiddenMember(prop)) continue;
@@ -871,6 +944,7 @@ for (const project of projects) {
   for (const [sym, { node, meta, file, kind, className }] of moduleClasses) {
     const m = {
       name: meta.name,
+      kind,
       requires: {},
       provides: {},
       contributes: meta.contributes ?? {},
@@ -879,6 +953,23 @@ for (const project of projects) {
     if (meta.context !== undefined) m.context = meta.context;
     if (kind === "component") {
       m.provides[className] = componentKeyBySymbol.get(sym);
+      // `implements Users`: the component declares the mechanism it implements; the
+      // provision is the same instance under the interface's name.
+      for (const clause of node.heritageClauses ?? []) {
+        if (clause.token !== ts.SyntaxKind.ImplementsKeyword) continue;
+        for (const t of clause.types) {
+          const s0 = checker.getSymbolAtLocation(t.expression);
+          const isym = s0 && s0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(s0) : s0;
+          const idecl = isym?.declarations?.find((d) => isInterfaceClassDecl(d));
+          if (!idecl) {
+            errors.push(
+              `${file}: ${className} implements '${t.getText()}', which is not an interface class (extends Interface<…>())`,
+            );
+            continue;
+          }
+          m.provides[isym.getName()] = keyOf(isym, idecl);
+        }
+      }
       if (meta.children !== undefined)
         errors.push(`${file}: a @Component has no children — it exports itself`);
     }
@@ -893,6 +984,8 @@ for (const project of projects) {
       const use = decoratorCall(member, "Use");
       if (use) {
         const req = { iface: ifaceKeyOfType(member.type, file) };
+        if (componentOfType(member.type) !== undefined)
+          implementationDeps.push(`${m.name}.${field} → ${member.type.getText()}`);
         if (use.arguments.length > 0) {
           const ref = refLiteral(use.arguments[0], file);
           const fromName = moduleNameBySymbol.get(ref?.$id);
@@ -913,6 +1006,19 @@ for (const project of projects) {
         m.provides[field] = ifaceKeyOfType(member.type, file);
       }
     }
+    // `exports: [Users, …]`: the module forwards a child's provision under that interface.
+    for (const exp of meta.exports ?? []) {
+      const isym = exp?.$id;
+      const idecl = isym?.declarations?.find((d) => isInterfaceClassDecl(d));
+      if (!idecl) {
+        errors.push(
+          `${file}: exports: an entry is not an interface class (extends Interface<…>())`,
+        );
+        continue;
+      }
+      m.provides[isym.getName()] = keyOf(isym, idecl);
+      (m.exports ??= []).push(isym.getName());
+    }
     for (const child of meta.children ?? []) {
       const childName = moduleNameBySymbol.get(child?.$id);
       if (childName === undefined)
@@ -921,6 +1027,40 @@ for (const project of projects) {
     }
     if (manifests[m.name]) errors.push(`${file}: module '${m.name}' is defined twice`);
     manifests[m.name] = m;
+  }
+  // Wire every requirement that names no module to the module that will provide it —
+  // the one visible provider declaring that very interface (siblings, or an ancestor's
+  // siblings; never an ancestor). Recorded as `from`, so the table says which MODULE a
+  // node depends on, not only which interface, and the booter follows the same choice.
+  {
+    const childOf = new Map();
+    for (const m of Object.values(manifests))
+      for (const c of m.children) if (c !== "*") childOf.set(c, m.name);
+    const visibleOf = (name) => {
+      const out = new Set();
+      const ancestors = new Set();
+      let cur = name;
+      for (;;) {
+        const parent = childOf.get(cur);
+        if (parent === undefined) break;
+        ancestors.add(parent);
+        for (const s of manifests[parent].children) if (s !== "*" && s !== name) out.add(s);
+        cur = parent;
+      }
+      for (const a of ancestors) out.delete(a); // an ancestor's exports face outward, not down
+      return out;
+    };
+    for (const m of Object.values(manifests)) {
+      if (!childOf.has(m.name)) continue; // roots and extension modules: the booter decides
+      const visible = visibleOf(m.name);
+      for (const [alias, req] of Object.entries(m.requires)) {
+        if (req.from !== undefined) continue;
+        const declaring = [...visible].filter((v) =>
+          Object.values(manifests[v]?.provides ?? {}).includes(req.iface),
+        );
+        if (declaring.length === 1) req.from = declaring[0];
+      }
+    }
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker
@@ -941,6 +1081,10 @@ for (const project of projects) {
 }
 
 for (const w of warnings) console.warn(`gen-ifaces: warning: ${w}`);
+// A node depends on mechanisms, never on implementations: a `@Use` field typed by a
+// @Component class is refused. The component implements an interface class; require that.
+for (const dep of implementationDeps)
+  errors.push(`${dep}: a @Use field names an implementation; require the interface it implements`);
 if (errors.length > 0) {
   for (const e of errors) console.error(`gen-ifaces: error: ${e}`);
   process.exit(1);

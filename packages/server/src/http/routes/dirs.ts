@@ -17,14 +17,21 @@ import { Hono } from "hono";
 import type { DirListResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { requireProjectDir, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { directorySkillsRoutes } from "./directory-skills.js";
+import type { Access } from "../../mechanisms/projects.js";
 
-export function dirsRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface DirsRouteDeps {
+  access: Access;
+}
+
+export function dirsRoutes(deps: DirsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
 
     // Default starting point: home directory; an explicit path must be absolute (the frontend always sends back the realpath result).
     const raw = c.req.query("path");
@@ -51,4 +58,33 @@ export function dirsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/** The Project-scoped directory routes; the repos and the access check are components of their own. */
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "projects.dirs",
+        prefix: "/api/projects/:projectId/dirs",
+        auth: "user",
+        order: 150,
+      },
+      {
+        id: "projects.dir-skills",
+        prefix: "/api/projects/:projectId/dir-skills",
+        auth: "user",
+        order: 160,
+      },
+    ],
+  },
+})
+export class ProjectsRoutes {
+  @Use() private readonly access!: Access;
+  @Bind("projects.dirs") dirsRoutes!: Hono<AppEnv>;
+  @Bind("projects.dir-skills") dirSkillsRoutes!: Hono<AppEnv>;
+  setup() {
+    this.dirsRoutes = dirsRoutes({ access: this.access });
+    this.dirSkillsRoutes = directorySkillsRoutes({ access: this.access });
+  }
 }

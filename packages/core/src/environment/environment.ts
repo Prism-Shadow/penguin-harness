@@ -45,10 +45,12 @@ import type {
   ToolConfig,
   ToolDefinition,
   ToolExecutionRequest,
+  ToolFactoryLike,
   ToolPermission,
 } from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import type { BuiltinToolFactory } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
@@ -158,6 +160,8 @@ export class Environment implements EnvironmentInterface {
   private readonly subagentRunner: SubagentRunner | null;
   /** The runtime services every tool factory receives — Session-lifetime registries and sinks, so each context's toolset is assembled onto the same ones. */
   private readonly services: EnvironmentServices;
+  /** Tool factories the host contributes (see EnvironmentConfig.toolFactories): they win over the builtin registry, and a re-equip reads them again. */
+  private readonly toolFactories: Readonly<Record<string, ToolFactoryLike>> | undefined;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -189,6 +193,7 @@ export class Environment implements EnvironmentInterface {
       // Live-forwarded background-subagent messages, same single-consumer pattern.
       backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
     };
+    this.toolFactories = config.toolFactories;
     this.equip(config.toolConfig);
     this.mcp = this.newMcpProvider(config.toolConfig.mcpServers);
   }
@@ -203,7 +208,9 @@ export class Environment implements EnvironmentInterface {
     this.toolConfig = toolConfig;
     this.tools = new Map();
     for (const def of toolConfig.customTools) {
-      const factory = BUILTIN_TOOL_FACTORIES[def.name];
+      const factory =
+        (this.toolFactories?.[def.name] as BuiltinToolFactory | undefined) ??
+        BUILTIN_TOOL_FACTORIES[def.name];
       if (factory) this.tools.set(def.name, factory(def, this.services));
     }
   }

@@ -41,6 +41,7 @@ import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.
 import { StreamErrorWatcher } from "../src/runtime/stream-error-watcher.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 function row(date: string, o: Partial<ErrorRecordInsert> = {}): ErrorRecordInsert {
   return {
@@ -64,7 +65,7 @@ describe("errors-repo", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
@@ -194,14 +195,14 @@ describe("errors-repo", () => {
       .map((r) => r.message as string);
 
   it("row cap: evicts the oldest rows by id (checked every pruneEvery inserts)", () => {
-    const capped = new ErrorsRepo(db, { maxRows: 5, pruneEvery: 2 });
+    const capped = wire(ErrorsRepo, { db: db, maxRows: 5, pruneEvery: 2 });
     for (let i = 0; i < 10; i++) capped.insert(row("2026-07-06", { message: `m${i}` }));
     // The 5 most recent rows within the cap are kept, older ones are evicted.
     expect(messages()).toEqual(["m5", "m6", "m7", "m8", "m9"]);
   });
 
   it("eviction counts rows: id gaps left by deleteByProject never misdelete valid data", () => {
-    const capped = new ErrorsRepo(db, { maxRows: 3, pruneEvery: 1 });
+    const capped = wire(ErrorsRepo, { db: db, maxRows: 3, pruneEvery: 1 });
     capped.insert(row("2026-07-06", { message: "keep-1" })); // id 1
     capped.insert(row("2026-07-06", { message: "keep-2" })); // id 2
     capped.insert(row("2026-07-06", { projectId: "p-gone", message: "gone" })); // id 3
@@ -224,12 +225,12 @@ describe("error-recorder", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
   it("HttpError → expected (keeps code and status)", () => {
-    new ErrorRecorder(repo, now).record({
+    wire(ErrorRecorder, { errors: repo, clock: { now: now } }).record({
       source: "http",
       err: new HttpError(
         404,
@@ -247,7 +248,7 @@ describe("error-recorder", () => {
   });
 
   it("non-HttpError → unexpected; HTTP source converges to 500, non-HTTP status is NULL", () => {
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "http", err: new Error("boom") });
     rec.record({
       source: "session",
@@ -267,7 +268,7 @@ describe("error-recorder", () => {
   });
 
   it("non-Error throwables and overlong messages: stringified and truncated to the cap", () => {
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "process", err: "a string error", code: "unhandled_rejection" });
     rec.record({ source: "usage", err: new Error("x".repeat(MESSAGE_MAX + 100)) });
     const rows = db.prepare("SELECT message FROM error_records ORDER BY id").all();
@@ -282,12 +283,15 @@ describe("error-recorder", () => {
       },
     } as unknown as ErrorsRepo;
     expect(() =>
-      new ErrorRecorder(broken).record({ source: "http", err: new Error("x") }),
+      wire(ErrorRecorder, { errors: broken, clock: { now: () => new Date() } }).record({
+        source: "http",
+        err: new Error("x"),
+      }),
     ).not.toThrow();
   });
 
   it("explicit kind wins over HttpError inference (sources self-report human need)", () => {
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     rec.record({ source: "llm", err: "timed out", code: "llm_timeout", kind: "expected" });
     rec.record({ source: "llm", err: "auth failed", code: "llm_failed", kind: "unexpected" });
     const rows = db.prepare("SELECT kind, source, status FROM error_records ORDER BY id").all();
@@ -300,7 +304,7 @@ describe("error-recorder", () => {
     // close, classified by messagingErrorKind, persisted under `messaging_connect_failed`.
     // Both rows land — the log keeps everything — but only the one a person has to act on
     // reaches the unexpected count the cost center highlights.
-    const rec = new ErrorRecorder(repo, now);
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } });
     const closed = (message: string, code: number, recovers: boolean) =>
       new MessagingConnectionClosedError(message, code, recovers);
     for (const err of [
@@ -333,7 +337,7 @@ describe("error-recorder", () => {
 
   it("short-window dedup: same-kind errors persist once per window, then resume", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = new ErrorRecorder(repo, () => new Date(t));
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = () =>
       rec.record({
         source: "http",
@@ -355,7 +359,7 @@ describe("error-recorder", () => {
   });
 
   it("dedup never crosses source / code / Project (kinds don't suppress each other)", () => {
-    const rec = new ErrorRecorder(repo, now); // time frozen: everything lands in the same window
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: now } }); // time frozen: everything lands in the same window
     const err = new Error("boom");
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" });
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" }); // same kind: discarded
@@ -368,7 +372,7 @@ describe("error-recorder", () => {
 
   it("bounded dedup table: expired entries cleaned first, else wiped; works afterward", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
-    const rec = new ErrorRecorder(repo, () => new Date(t));
+    const rec = wire(ErrorRecorder, { errors: repo, clock: { now: () => new Date(t) } });
     const boom = (code: string) =>
       rec.record({ source: "http", err: "boom", ctx: { projectId: "p1" }, code });
 
@@ -398,11 +402,12 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new ErrorsRepo(db);
+    repo = wire(ErrorsRepo, { db: db });
   });
   afterEach(() => db.close());
 
-  const watcher = () => new StreamErrorWatcher(new ErrorRecorder(repo, now), CTX);
+  const watcher = () =>
+    new StreamErrorWatcher(wire(ErrorRecorder, { errors: repo, clock: { now: now } }), CTX);
   const rows = () =>
     db.prepare("SELECT * FROM error_records ORDER BY id").all() as Array<Record<string, unknown>>;
 
@@ -1143,7 +1148,7 @@ describe("HTTP onError persistence (integration)", () => {
     // the rows a member can reach at offset N are the same set the summary counted, never
     // another tenant's and never the unattributed ones. Seeded directly so the interleaving is
     // exact — going through HTTP would collapse repeats into the recorder's dedup window.
-    const repo = new ErrorsRepo(t.deps.db);
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
     const seed = (owner: string | null, code: string) =>
       repo.insert({
         ts: "2026-07-27T00:00:00.000Z",
@@ -1205,7 +1210,7 @@ describe("HTTP onError persistence (integration)", () => {
   it("the paged error route narrows to one category on request, counting only that one", async () => {
     // What the cost-center badge asks: one row of `unexpected`, for the count and the newest
     // timestamp its dismissal is stamped against. Seeded directly, so the interleaving is exact.
-    const repo = new ErrorsRepo(t.deps.db);
+    const repo = wire(ErrorsRepo, { db: t.deps.db });
     const seed = (kind: string, code: string, ts: string) =>
       repo.insert({
         ts,
@@ -1244,7 +1249,7 @@ describe("HTTP onError persistence (integration)", () => {
 
   /** Seeds one row straight into the table, so a batch's dates and Agents are exact. */
   const seedRow = (o: Partial<ErrorRecordInsert> & { date: string; code: string }) =>
-    new ErrorsRepo(t.deps.db).insert({
+    wire(ErrorsRepo, { db: t.deps.db }).insert({
       ts: `${o.date}T00:00:00.000Z`,
       projectId,
       agentId: null,
@@ -1324,7 +1329,7 @@ describe("HTTP onError persistence (integration)", () => {
     // clear taking them would empty them out of every other Project's panel too. That keeps
     // the delete strictly narrower than any caller's read, admin included.
     const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    new ErrorsRepo(t.deps.db).insert({
+    wire(ErrorsRepo, { db: t.deps.db }).insert({
       ts: "2026-07-06T00:00:00.000Z",
       date: "2026-07-06",
       projectId: null,
@@ -1469,7 +1474,7 @@ describe("HTTP error attribution (only when the requester actually has Project a
   });
 
   it("the attribution check throws: onError survives, error lands unattributed", async () => {
-    t.deps.projectService.canAccess = () => {
+    t.deps.access.canAccess = () => {
       throw new Error("access check blew up");
     };
     const res = await ownerApi.get(`/api/projects/${projectId}/usage?groupBy=bogus`);

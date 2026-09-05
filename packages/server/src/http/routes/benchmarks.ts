@@ -11,19 +11,27 @@
  */
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface BenchmarksRouteDeps {
+  agentConfigService: AgentConfig;
+  benchmarks: Benchmarks;
+  access: Access;
+}
 import type { CaseMaterial } from "../../api/types.js";
 import { requireValidId } from "../validate.js";
+import type { AgentConfig, Benchmarks } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 
-function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
+function listCaseFiles(deps: BenchmarksRouteDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(
       await deps.benchmarks.listCaseFiles(
@@ -38,13 +46,13 @@ function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
   };
 }
 
-function readCaseFile(deps: AppDeps, material: CaseMaterial) {
+function readCaseFile(deps: BenchmarksRouteDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const download = c.req.query("download") === "1";
     const boundedPreview = !download && c.req.query("preview") === "1";
@@ -75,13 +83,13 @@ function readCaseFile(deps: AppDeps, material: CaseMaterial) {
   };
 }
 
-export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
+export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(await deps.benchmarks.list(projectId, agentId));
   });
@@ -90,7 +98,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(await deps.benchmarks.listCases(projectId, agentId, benchmarkId));
   });

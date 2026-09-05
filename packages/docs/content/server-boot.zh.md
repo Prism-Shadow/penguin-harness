@@ -50,7 +50,7 @@ main()  —— 每行一个 PenguinServer 方法
 SQLite · 认证（AuthService）              全部业务服务与路由（services + http/routes）
 ChannelHub（SSE 跨 swap 存活）            SessionManager · Scheduler
 HmrHost · 资源注册表                      TerminalManager（接管寄存的 pty）
-plugins.json 加载 + activate（⑤ 发布）    "initialize" / "create" 事件投递 · workflow 实例
+plugins.json 加载（⑤ 发布）                插件模块作为树的子节点创建
 ```
 
 **swap 语义：未实现 park 的状态一律硬中止**——待审批全部拒绝、运行中任务中止、scheduler 随旧 App 死掉，新 App 从认领的能力重建一切。只有实现了 park/adopt 的资源（终端 pty）跨 swap 存活。
@@ -68,45 +68,25 @@ App 创建的完整顺序在 `server/src/hmr/platform.ts` 的 `platformImpl.crea
 ```text
 platformImpl.create
 │
-├─ new TerminalManager(resources)    # 接管上一实例寄存的 pty
+├─ caps = claimRuntimeCapabilities(resources)   # db/auth-state/channels/config/proxy/hmr/desktop
 ├─ plugins = pluginHostFrom(resources)  # 认领运行时在 ④ 加载好的那个 host（未发布则为空 host）
-├─ iface = { workflow, tool, sandbox }   # 每个 App 全新的定义视图
-├─ plugins.emit("initialize", iface) # 定义视图，按激活顺序投递给每个 handler
-├─ sandbox = new SandboxService(已注册的后端)   # 由寄存的设置重新水合
-├─ plugins.emit("create", {          # 实例视图，注册关闭后组装
-│    workflows: instantiateWorkflows(iface.workflow),  # 全部 factory 在此被急切调用
-│    terminals,
-│    sandbox: { configure, settings },
-│  })
-├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ 业务面组装（caps 齐全时）：buildAppDeps——sandbox confiner 作为普通参数传入，
-   进入 session loader 的 spawn 路径 → scheduler.start()
-   → createApp（终端组 + 业务组注册进同一个 Hono app）
-   → 一次注册表写入发布 {deps, app, shutdown} 指针 → ctx.effect 注册 swap 硬中止
+├─ tree = bootModules(platformTree(caps, …, 插件模块), { ifaces, parked: context.modules })
+│    # 模块树（server/src/platform.ts）：
+│    # 每个服务和 repo 是一个 @Component（导出自己的 class），session 运行时、终端管理器和
+│    # http 装配是 @Module（导出别人的 class）。先校验它们的 manifest（gen-ifaces 从装饰器
+│    # 读出）——requires 按签名解析、contribution 按槽位校验——再按依赖顺序执行 setup()。
+│    # 插件模块（package.json#penguin.modules）是同一棵树的子节点。
+└─ ctx.effect：tree.dispose()（每个模块的 effect，逆序）+ manager.shutdown 排空
 ```
+插件是一组模块——与 harness 自身的构成单位相同。`package.json#penguin.modules` 承载它新增节点的 manifest（requires / provides / contributes / context / children / exports），`package.json#penguin.replaces` 承载它顶替节点的 manifest（以被顶替节点的名字——组件、模块或整个组）；包的默认导出是 `{ modules?: { <name>: { create } }, replaces?: { <name>: { create } } }`，加载时按名字配对。替身放入时不做检查；组装出的树在任何节点运行前作为整体校验，替身提供的少于消费者所需就按名字拒绝。按频率拆开：
 
-按频率拆开，插件生命周期是三层：
+| 时机          | 频率        | 发生什么                                                                                                                                         |
+| ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 加载          | 每进程一次  | 启动步骤 ④ `loadPlugins`：解析 `plugins.json` 里的 specifier、import、读它的 `package.json#penguin.modules`，把每个 manifest 与默认导出里同名的模块配对。没有 manifest 的包、代码与 manifest 不一致的包会带原因被跳过；`plugins.json` 不可读或格式错误则启动失败 |
+| 校验 + 创建   | 每 App 一次 | platform 把插件模块加入它的树；整棵树先作为数据校验（requires 按签名解析、contribution 按槽位校验），再按依赖顺序创建——所以模块在每次启动、每次热替换时都是全新创建的 |
+| 释放          | 每 App 一次 | 模块通过 `effect()` 登记的清理在 App 释放时按创建逆序执行；插件的任何东西都不会进入下一代 |
 
-| 时机           | 频率        | 发生什么                                                                                             |
-| -------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
-| 加载 + `activate(ctx)` | 每进程一次 | 启动步骤 ④ `loadPlugins`：解析 `plugins.json` 里的 specifier、import、执行其导出的 `activate`（async 会被等待）——`ctx.on(...)` 订阅与 `ctx.disposables` 登记只在这个窗口内有效。单条失败会回滚（跑掉它已登记的 disposable）并跳过；`plugins.json` 不可读或格式错误则启动失败 |
-| `"initialize"` 事件 | 每 App 一次 | handler 向全新的 `iface` 注册 workflow factory 与 sandbox 后端（`tool` 槽位保留未用）               |
-| workflow 实例化 | 每 App 一次 | `instantiateWorkflows` 在 emit 之前同步调用**全部** factory——实例随 App 创建整批诞生，不是首次调用时 |
-| `"create"`     | 每 App 一次 | 插件拿到实例视图 `ctx`（`workflows` + `terminals` + `sandbox`）                                      |
-| `workflows.run` | 每次调用    | 纯函数调用：无 Session、无审批、无流式                                                               |
-| Disposables    | 每进程一次  | 优雅关停时被 await（≤5s）；disposer 可以是 async，全部并发执行、单条失败被隔离——因此彼此必须独立     |
-
-由此可以读出几条行为事实：
-
-- **每 App 重投递**：`"initialize"` 与 `"create"` 在每次 App 创建时重新投递，注册永远落在当前实例上——热更新后的新 App 不可能带着空注册运行。
-- **实例不跨热更新**：factory 每 App 重新执行，带状态的 workflow 不会把上一个实例的状态带过热更新。
-- **订阅窗口就是 `activate`，返回即封闭**：handler 里再调 `ctx.on(...)` 会每次热 swap 累积一份，所以它直接抛错——在打包启动时就大声失败，而不是变成慢泄漏。disposables 与订阅同窗封闭，理由相同。
-- **handler 同步且不被包裹**：插件*加载*失败（import，或 `activate` 抛错/reject）按条目隔离，但事件 handler 没有 try/catch——抛错会使该次平台启动失败；返回 promise 的 handler 出于同样理由被拒绝（App 是围绕这次 emit 同步组装的，它的 rejection 只能以未处理形式逃逸）。
-- **workflow 重名被拒绝**：`iface.workflow` 是一个 `set` 会抛错的注册表，名字的归属不会随 `plugins.json` 顺序改变。
-- **事件词汇表有类型且只有一处**：`PluginEvents` 把每个事件名映射到它的载荷——加一个事件，平台的 emit 端和所有 handler 同时获得类型。
-- **约束是同代接线**：confiner 作为 `buildAppDeps` 的普通参数进入 core，经它 spawn 的 session 随所属 App 硬停——跨过 swap 的是寄存上下文上的生效设置，因此一次推送无法悄悄解除一个部署的约束。
-
-插件契约（`Plugin` / `PluginContext` / `PluginEvents` / `PenguinInterface` / `PenguinContext`，以及后端所针对编写的沙箱词汇）声明在 SDK 里，即 `@prismshadow/penguin-core/plugin`。`PenguinContext` 与 `PenguinInterface` 是封闭的：它们写明插件可以依赖的每一个成员，不再被声明合并重新打开。`terminals` 不可能位列其中——它是 harness 的类——因此它被命名在继承契约的 `HarnessContext` 上，而 `HarnessContext` 就是 `@prismshadow/penguin-server/plugin` 的全部；读取它的插件需写 `ctx as HarnessContext`，从而在使用处表明自己依赖这个宿主。不需要宿主专属成员的插件只引用 core：本仓库的每个沙箱后端都是如此，都不依赖 server 包。两个子路径都只产出类型。哪些插件存在由部署的 `<root>/plugins.json` 决定，harness 自身不 import 任何插件。
+插件契约（`Plugin` / `PluginModule`，加上沙箱词汇表）声明在 SDK 里，即 `@prismshadow/penguin-core/plugin`；`@prismshadow/penguin-server/plugin` 把它与插件模块可以 require 的接口（`Sandbox`、`Terminals`、`SessionManager`、`Agents`……）一并再导出。两个子路径都只产出类型。哪些插件存在由部署的 `<root>/plugins.json` 决定，harness 自身不 import 任何插件。组件的接口是它 class 的公开表面；模块的 provides 与消费者的窄 requires 是声明在归属代码旁边的抽象类（`extends Interface<…>()`）。`pnpm gen:ifaces` 把两者投影进 `src/ifaces.json`（生成物，不进版本库——`typecheck`、`build`、`test` 都会重新生成），即模块树据以校验的表。
 
 ## 子系统一览
 
@@ -124,8 +104,9 @@ platformImpl.create
 | Scheduler            | `runtime/scheduler.ts`——**App 级**（create 内启停）| schedules 路由；执行结果发布进 ChannelHub                                                                    |
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
-| 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | `activate(ctx: PluginContext)` + `PluginEvents` 事件表；配置面是 `<root>/plugins.json`                       |
-| 沙盒                 | `sandbox/service.ts`——**App 级**（create 内基于插件注册的后端构建） | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`；约束经 core 的 spawn seam 落到命令上，后端是 `plugins.json` 里点名的插件包 |
+| 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | `package.json#penguin.modules` + 默认导出 `{ modules }`；配置面是 `<root>/plugins.json` |
+| 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；`@Module({ children, exports })` 分组（`IdentityModule`、`ProjectsModule`……），exports 是组内 children 向树的其余部分提供的接口；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
+| 沙盒                 | `sandbox/service.ts`——**App 级**（一个模块；后端向它的 `providers` 槽位投递） | 插件模块向 `SandboxModule.providers` 投递的一条 contribution；约束经 core 的 spawn seam 落到命令上 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
 
 请求期还有一条固定路径值得知道：平台的 HTTP seam 把每个请求先交给当前 App 的 `http(request)`，返回 `null` 才落到运行时自己的路由；热更新进行中时请求在 seam 上排队等新 App 就绪，而不是打到半旧的实例上。

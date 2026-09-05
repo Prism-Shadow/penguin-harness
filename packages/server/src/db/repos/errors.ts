@@ -20,7 +20,9 @@
  * wrongly delete still-valid data within the cap. The first line of defense is
  * ErrorRecorder's short-window deduplication.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
 
 /** Row cap: once exceeded, oldest rows are evicted in ascending id order (see file header). */
 export const MAX_ROWS = 20000;
@@ -82,19 +84,14 @@ export interface ErrorItem {
   message: string;
 }
 
-export class ErrorsRepo {
-  private readonly maxRows: number;
-  private readonly pruneEvery: number;
+@Component()
+export class ErrorsRepo implements ErrorLog {
+  private readonly maxRows: number = MAX_ROWS;
+  private readonly pruneEvery: number = PRUNE_EVERY;
   /** Insert count since the last capacity check (see file header: avoids COUNT on every call). */
   private sinceCheck = 0;
 
-  constructor(
-    private readonly db: DatabaseSync,
-    limits: ErrorsRepoLimits = {},
-  ) {
-    this.maxRows = limits.maxRows ?? MAX_ROWS;
-    this.pruneEvery = limits.pruneEvery ?? PRUNE_EVERY;
-  }
+  @Use() private readonly db!: Db;
 
   insert(r: ErrorRecordInsert): void {
     this.db

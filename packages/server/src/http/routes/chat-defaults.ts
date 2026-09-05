@@ -12,21 +12,29 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { optionalEnum, optionalString, readJson, requireValidId } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
-import type { AppDeps } from "../../app.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
-export function chatDefaultsRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface ChatDefaultsRouteDeps {
+  agentConfigService: AgentConfig;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+}
+
+export function chatDefaultsRoutes(deps: ChatDefaultsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation.
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json(await deps.projectConfigService.getChatDefaults(projectId));
   });
 
   app.put("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     const body = await readJson(c);
     const req: ChatDefaultsDto = {};
 

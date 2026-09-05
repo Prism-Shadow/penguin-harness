@@ -1,3 +1,5 @@
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
 /**
  * WeChat scan-to-connect: binding the official claw bot by scanning a QR code in WeChat.
  *
@@ -463,5 +465,17 @@ export class WeChatScanService {
     }, WECHAT_SCAN_TASK_TTL_MS);
     timer.unref();
     this.sweepTimer = timer;
+  }
+}
+
+/** The scan-to-connect transport as a node, so a test stands in a fake for the network. */
+export abstract class WeChatScanTransportHandle extends Interface<{
+  transport: Opaque<"WeChatScanTransport", WeChatScanTransport>;
+}>() {}
+@Module()
+export class WeChatScanTransportProvider {
+  @Provide() wechatScanTransport!: WeChatScanTransportHandle;
+  setup() {
+    this.wechatScanTransport = { transport: createWeChatScanTransport() };
   }
 }

@@ -7,7 +7,9 @@
  * (registerOrSync resets the trigger state); a change to the file content fingerprint
  * only clears the disabled flag (the file becomes effective again after reconciliation).
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Schedules } from "../../mechanisms/sessions.js";
 
 export interface ScheduleStateRow {
   projectId: string;
@@ -39,8 +41,9 @@ function mapRow(r: Record<string, unknown>): ScheduleStateRow {
   };
 }
 
-export class SchedulesRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class SchedulesRepo implements Schedules {
+  @Use() private readonly db!: Db;
 
   find(projectId: string, agentId: string, name: string): ScheduleStateRow | null {
     const r = this.db

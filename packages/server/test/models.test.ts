@@ -30,6 +30,7 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** Catalog paired refs (config primary key = (provider, model_id)). */
 const catalogPairs = MODEL_CATALOG.map((m) => `${m.provider}\0${m.modelId}`);
@@ -465,7 +466,7 @@ describe("default_project presets", () => {
     // First have the "CLI" write a config with a single custom model, then admin seeding adopts it.
     t = await createTestApp({
       beforeSeed: async (root) => {
-        await new ProjectConfigService(root).writeRaw("default_project", {
+        await wire(ProjectConfigService, { paths: { root } }).writeRaw("default_project", {
           default_model: { provider: "custom", model_id: "cli-model" },
           models: [{ provider: "custom", model_id: "cli-model", context_window: 1234 }],
         });
@@ -601,7 +602,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // No clock is passed and none is wanted: which tier a given request ran in is decided from
     // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
     // is to say what the two tiers are. The number on disk is the peak one either way.
-    const svc = new ProjectConfigService(t.root);
+    const svc = wire(ProjectConfigService, { paths: { root: t.root } });
     const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
     const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect(rates!.peak.output).toBe(catalogPeak.output);
@@ -629,7 +630,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         : {}),
     }));
     await api.put(url(), { models: entries });
-    const svc = new ProjectConfigService(t.root);
+    const svc = wire(ProjectConfigService, { paths: { root: t.root } });
     // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
     // two tiers collapse to the typed number and the split costs a row and changes nothing.
     const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };

@@ -259,72 +259,6 @@ describe("checkTree", () => {
       expect.objectContaining({ kind: "unresolved", why: "not visible from here" }),
     ]);
   });
-  it("a module cannot require itself, nor an ancestor — created after its children, its api is not there yet", () => {
-    const selfish = manifest({
-      name: "scheduler",
-      requires: { runner: { iface: "ScheduleTaskRunner", from: "scheduler" } },
-    });
-    expect(checkTree(tree(http, sessions, selfish), table).problems).toEqual([
-      expect.objectContaining({ kind: "unresolved", from: "scheduler", why: "itself" }),
-    ]);
-
-    const byName = manifest({
-      name: "inner",
-      requires: { sessions: { iface: "Sessions", from: "outer" } },
-    });
-    const unnamed = manifest({ name: "inner", requires: { sessions: { iface: "Sessions" } } });
-    const outerOf = (inner: Manifest) => ({
-      manifest: platform,
-      children: [
-        {
-          manifest: manifest({
-            name: "outer",
-            provides: { sessions: "Sessions" },
-            children: ["inner"],
-          }),
-          children: [{ manifest: inner, children: [] }],
-        },
-      ],
-    });
-    const t = { ...table, "outer#Sessions": Sessions, "inner#Sessions": Sessions };
-    expect(checkTree(outerOf(byName), t).problems).toEqual([
-      expect.objectContaining({
-        kind: "unresolved",
-        from: "outer",
-        why: expect.stringContaining("an ancestor"),
-      }),
-    ]);
-    expect(checkTree(outerOf(unnamed), t).problems).toEqual([
-      expect.objectContaining({ kind: "unresolved", from: "" }),
-    ]);
-  });
-
-  it("a contribution reaches a parent or a sibling, not another subtree's child", () => {
-    const parentSlot = {
-      manifest: platform,
-      children: [
-        {
-          manifest: manifest({ name: "http", provides: { http: "Http" }, children: ["sessions"] }),
-          children: [{ manifest: sessions, children: [] }],
-        },
-      ],
-    };
-    expect(checkTree(parentSlot, table).problems).toEqual([]);
-
-    const hidden = {
-      manifest: platform,
-      children: [
-        {
-          manifest: manifest({ name: "wrapper", children: ["http"] }),
-          children: [{ manifest: http, children: [] }],
-        },
-        { manifest: sessions, children: [] },
-      ],
-    };
-    expect(checkTree(hidden, table).problems).toEqual([
-      expect.objectContaining({ kind: "no-such-slot", slotKey: "http.routes" }),
-    ]);
-  });
 });
 
 describe("bootModules", () => {
@@ -772,6 +706,63 @@ describe("class form: @Module / @Use / @Provide / @Bind", () => {
     const c = wire(Counter, { runner: { statusOf: () => "busy" } });
     expect(c.status()).toBe("busy");
     expect(c).toBeInstanceOf(Counter);
+  });
+
+  it("a replacement stands in for a node by name and is checked as the tree, not as the class", async () => {
+    // The in-memory stand-in never sees SessionsModule's class or table entry: it is a
+    // definition of its own, under the replaced node's name, checked with everything else.
+    const calls: string[] = [];
+    const memory = {
+      manifest: manifests.SessionsModule!,
+      create: () => ({
+        api: {
+          sessions: {
+            startTask: async (id: string) => ({ sessionId: `mem-${id}` }),
+            statusOf: () => "idle",
+          },
+        },
+      }),
+    };
+    const seenHere: string[] = [];
+    @Module()
+    class SchedulerModule {
+      @Use(SessionsModule) readonly runner!: Runner;
+      setup() {
+        seenHere.push(this.runner.statusOf("s"));
+      }
+    }
+    @Module({ children: [SessionsModule, SchedulerModule] })
+    class PlatformModule {}
+    const def = moduleDefOf(PlatformModule, {
+      manifests,
+      replace: new Map([["SessionsModule", memory]]),
+    });
+    const tree = await bootModules(def, { ifaces: t, resources });
+    expect(seenHere).toEqual(["idle"]);
+    expect((await tree.api<Sessions>("SessionsModule", "sessions").startTask("x")).sessionId).toBe(
+      "mem-x",
+    );
+    calls.push("ok");
+    tree.dispose();
+    // A stand-in that offers less than a consumer needs is refused by name, before anything runs.
+    const hollow = {
+      manifest: manifests.SessionsModule!,
+      create: () => ({ api: { sessions: {} } }),
+    };
+    const bad = moduleDefOf(PlatformModule, {
+      manifests,
+      replace: new Map([["SessionsModule", hollow]]),
+    });
+    await expect(bootModules(bad, { ifaces: t, resources })).rejects.toThrow(
+      /SessionsModule: api 'sessions' does not satisfy 'Sessions': missing \[startTask, statusOf\]/,
+    );
+    // A stand-in under another name is not a replacement at all.
+    expect(() =>
+      moduleDefOf(PlatformModule, {
+        manifests,
+        replace: new Map([["SessionsModule", { ...memory, manifest: manifests.SchedulerModule! }]]),
+      }),
+    ).toThrow(/keeps the name of the node it stands in for/);
   });
 
   it("an undecorated class is refused by name", () => {

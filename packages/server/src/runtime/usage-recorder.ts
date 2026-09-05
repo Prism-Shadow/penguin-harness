@@ -16,7 +16,9 @@
 import { isEventMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
-import type { UsageRepo } from "../db/repos/usage.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Clock } from "../hmr/capabilities.js";
+import type { UsageRecording, UsageStore } from "../mechanisms/observability.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -33,14 +35,13 @@ export interface UsageContext {
 /** Cap on the subagent attribution mapping: over the limit, evicts the oldest by insertion order (an evicted entry falls back to the main Session's Model attribution). */
 export const ORIGIN_MODELS_MAX = 1000;
 
-export class UsageRecorder {
+@Component()
+export class UsageRecorder implements UsageRecording {
   /** Subagent model attribution mapping: origin's last session_id → paired reference (session_id is globally unique). */
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
 
-  constructor(
-    private readonly usage: UsageRepo,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  @Use() private readonly usage!: UsageStore;
+  @Use() private readonly clock!: Clock;
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
   async record(ctx: UsageContext, msg: OmniMessage): Promise<void> {
@@ -75,7 +76,7 @@ export class UsageRecorder {
             provider: ctx.provider,
             modelId: ctx.modelId,
           });
-    const now = this.now();
+    const now = this.clock.now();
     const base = {
       ts: now.toISOString(),
       date: formatLocalDate(now),

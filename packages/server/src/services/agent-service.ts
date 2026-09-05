@@ -33,14 +33,15 @@ import {
   parseSkillFrontmatter,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
-import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
-import type { AgentConfigService } from "./agent-config-service.js";
-import type { SnapshotService } from "./snapshot-service.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { AgentConfig, AgentLifecycle, Snapshots } from "../mechanisms/agents.js";
+import type { AgentIndex } from "../mechanisms/projects.js";
 
 /**
  * How much of a SKILL.md is read to answer "which version is installed" (see `installedSkills`).
@@ -91,13 +92,15 @@ export interface AgentListItem {
   memoryCount: number;
 }
 
-export class AgentService {
-  constructor(
-    private readonly root: string,
-    private readonly agents: AgentsRepo,
-    private readonly agentConfig: AgentConfigService,
-    private readonly snapshots: SnapshotService,
-  ) {}
+@Component()
+export class AgentService implements AgentLifecycle {
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
+  @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly snapshots!: Snapshots;
 
   /** Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB. */
   async listAgents(projectId: string): Promise<AgentListItem[]> {

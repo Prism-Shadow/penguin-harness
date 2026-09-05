@@ -53,7 +53,9 @@
  */
 import { formatLocalDate } from "../internal/dates.js";
 import { HttpError } from "../http/errors.js";
-import type { ErrorsRepo } from "../db/repos/errors.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Clock } from "../hmr/capabilities.js";
+import type { ErrorLog, Errors } from "../mechanisms/observability.js";
 
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
@@ -106,20 +108,19 @@ function messageOf(err: unknown): string {
   return raw.length > MESSAGE_MAX ? raw.slice(0, MESSAGE_MAX) : raw;
 }
 
-export class ErrorRecorder {
+@Component()
+export class ErrorRecorder implements Errors {
   /** Dedup table: `source \0 code \0 projectId` → timestamp of the last **persist** (see file header). */
   private readonly lastSeen = new Map<string, number>();
 
-  constructor(
-    private readonly errors: ErrorsRepo,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  @Use() private readonly errors!: ErrorLog;
+  @Use() private readonly clock!: Clock;
 
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
   record(args: ErrorRecordArgs): void {
     try {
       const http = args.err instanceof HttpError ? args.err : null;
-      const now = this.now();
+      const now = this.clock.now();
       const projectId = args.ctx?.projectId ?? null;
       const code = args.code ?? http?.code ?? "internal";
       // Short-window dedup: coarse-grained to "same kind of error for the same Project"; repeats within the window aren't persisted.

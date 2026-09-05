@@ -14,6 +14,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import { makeTempRoot } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const P = "project-cfg";
 const PRICED = {
@@ -35,7 +36,7 @@ describe("project-config read cache", () => {
 
   beforeEach(async () => {
     root = await makeTempRoot();
-    svc = new ProjectConfigService(root);
+    svc = wire(ProjectConfigService, { paths: { root } });
     file = projectConfigPath(root, P);
     await svc.writeRaw(P, { name: "cached", models: [PRICED] });
     await backdate(file, "2026-01-01T00:00:00Z");

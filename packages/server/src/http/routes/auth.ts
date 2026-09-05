@@ -13,9 +13,18 @@ import { HttpError } from "../errors.js";
 import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { DesktopService } from "../../services/desktop-service.js";
+import type { Auth } from "../../mechanisms/identity.js";
 
-export function authRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AuthRouteDeps {
+  authService: Auth;
+  config: ServerConfig;
+  desktop: DesktopService | null;
+}
+
+export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/login", async (c) => {

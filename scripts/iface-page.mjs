@@ -69,6 +69,7 @@ nav button.current { outline: 1px solid var(--line); }
 .kind.module { color: var(--mod); border-color: var(--mod); }
 .kind.component { color: var(--comp); border-color: var(--comp); }
 .kind.iface { color: var(--accent); border-color: var(--accent); }
+.kind.group { color: var(--ink); border-color: var(--ink); }
 .kind.slot { color: var(--muted); border-color: var(--muted); }
 section { padding: 16px 24px; max-width: 1100px; }
 section h2 { margin: 0 0 4px; font-size: 20px; }
@@ -104,7 +105,7 @@ const T = JSON.parse(document.getElementById("data").textContent);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const short = (key) => key.slice(key.indexOf("#") + 1);
 const ref = (key, kind) => '<a class="ref" href="#' + kind + ':' + encodeURIComponent(key) + '" title="' + esc(key) + '">' + esc(short(key)) + "</a>";
-const isComponent = (m) => Object.entries(m.provides).length === 1 && Object.entries(m.provides).every(([alias, key]) => key === m.name + "#" + alias);
+const kindOf = (m) => (m.kind === "component" ? "component" : m.exports?.length ? "group" : "module");
 
 // --- TypeExpr → TypeScript-ish text (mirrors core kernel/sig.ts) ---
 function data(d) {
@@ -122,7 +123,7 @@ function expr(e) {
   if ("data" in e) return data(e.data);
   if ("$ref" in e) return ref(e.$ref, "type");
   if ("iface" in e) return ref(e.iface, "iface");
-  if ("opaque" in e) return '<span class="opaque">' + esc(e.opaque) + "</span>";
+  if ("opaque" in e) return '<span class="opaque" title="' + esc(e.opaque) + '">' + esc(short(e.opaque)) + "</span>";
   if ("void" in e) return "void";
   if ("promise" in e) return "Promise&lt;" + expr(e.promise) + "&gt;";
   if ("stream" in e) return "AsyncIterable&lt;" + expr(e.stream) + "&gt;";
@@ -146,7 +147,7 @@ const roots = Object.keys(modules).filter((n) => !childOf.has(n));
 function node(name) {
   const m = modules[name];
   if (!m) return "<li><button disabled>" + esc(name) + " (not in this table)</button></li>";
-  const kind = isComponent(m) ? "component" : "module";
+  const kind = kindOf(m);
   const kids = m.children.map((c) => (c === "*" ? '<li><span class="kind slot">slot</span><span class="muted">plugin modules</span></li>' : node(c))).join("");
   return "<li data-name=\\"" + esc(name) + "\\"><button data-go=\\"node:" + encodeURIComponent(name) + "\\"><span class=\\"kind " + kind + "\\">" + kind[0] + "</span>" + esc(name) + "</button>" + (kids ? "<ul>" + kids + "</ul>" : "") + "</li>";
 }
@@ -159,7 +160,7 @@ document.getElementById("tree").innerHTML =
 // --- detail ---
 function showNode(name) {
   const m = modules[name];
-  const kind = isComponent(m) ? "component" : "module";
+  const kind = kindOf(m);
   const req = Object.entries(m.requires);
   const prov = Object.entries(m.provides);
   const contrib = Object.entries(m.contributes);
@@ -168,8 +169,8 @@ function showNode(name) {
     (m.context ? "<p class=\\"muted\\">parks context v" + esc(m.context.version) + "</p>" : "") +
     "<h3>requires (" + req.length + ")</h3>" + (req.length ? "<table><tr><th>field</th><th>interface</th><th>from</th></tr>" +
       req.map(([f, r]) => "<tr><td><code>" + esc(f) + "</code></td><td>" + ref(r.iface, "iface") + "</td><td>" + (r.from ? '<a class="ref" href="#node:' + encodeURIComponent(r.from) + '">' + esc(r.from) + "</a>" : "<span class=\\"muted\\">by structure</span>") + "</td></tr>").join("") + "</table>" : "<p class=\\"muted\\">nothing</p>") +
-    "<h3>provides (" + prov.length + ")</h3>" + (prov.length ? "<table><tr><th>alias</th><th>interface</th></tr>" +
-      prov.map(([a, k]) => "<tr><td><code>" + esc(a) + "</code></td><td>" + ref(k, "iface") + "</td></tr>").join("") + "</table>" : "<p class=\\"muted\\">nothing</p>") +
+    "<h3>" + (m.exports?.length ? "exports" : "provides") + " (" + prov.length + ")</h3>" + (prov.length ? "<table><tr><th>alias</th><th>interface</th>" + (m.exports?.length ? "<th></th>" : "") + "</tr>" +
+      prov.map(([a, k]) => "<tr><td><code>" + esc(a) + "</code></td><td>" + ref(k, "iface") + "</td>" + (m.exports?.length ? "<td class=\\"muted\\">" + (m.exports.includes(a) ? "from a child" : "") + "</td>" : "") + "</tr>").join("") + "</table>" : "<p class=\\"muted\\">nothing</p>") +
     "<h3>contributes (" + contrib.length + ")</h3>" + (contrib.length ? contrib.map(([slot, items]) =>
       "<details open><summary><code>" + esc(slot) + "</code> × " + items.length + "</summary><pre>" + esc(JSON.stringify(items, null, 2)) + "</pre></details>").join("") : "<p class=\\"muted\\">nothing</p>") +
     (m.children.length ? "<h3>children (" + m.children.length + ")</h3><p>" + m.children.map((c) => c === "*" ? "<span class=\\"muted\\">+ plugin modules</span>" : '<a class="ref" href="#node:' + encodeURIComponent(c) + '">' + esc(c) + "</a>").join(", ") + "</p>" : "") +

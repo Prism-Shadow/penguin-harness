@@ -27,7 +27,9 @@
  * fields and its account identity stay. The repo does not interpret the document; each
  * channel's connector and route own its shape.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 
 export interface MessagingBindingRow {
   sessionId: string;
@@ -116,8 +118,9 @@ function mapRow(r: Record<string, unknown>): MessagingBindingRow {
   };
 }
 
-export class MessagingBindingsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class MessagingBindingsRepo implements MessagingBindings {
+  @Use() private readonly db!: Db;
 
   /** The Session's saved config of ONE channel (null when that channel is not configured). */
   find(sessionId: string, channel: string): MessagingBindingRow | null {

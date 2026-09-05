@@ -4,12 +4,11 @@
  * settings' ride on the parked platform context.
  */
 import { describe, expect, it, vi } from "vitest";
-import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
+import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
-import type { PenguinContext } from "@prismshadow/penguin-core/plugin";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import type {
@@ -171,9 +170,31 @@ describe("sandbox settings ride the parked context across a swap", () => {
     // terminals-only boot legal (see capabilities.ts's RuntimeClaim). The sandbox floor is
     // business-independent, so this is all these tests need behind the platform.
     resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    // The observer is itself a plugin module requiring the sandbox — the surface an
+    // actual consumer has.
+    let seen: SandboxService | null = null;
     const host = new PluginHost();
-    let seen: PenguinContext | null = null;
-    await host.use({ activate: (extCtx) => extCtx.on("create", (ctx) => (seen = ctx)) });
+    host.use({
+      specifier: "observer",
+      replaces: [],
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "observer",
+            requires: {
+              sandbox: { iface: "@prismshadow/penguin-server#Sandbox", from: "SandboxModule" },
+            },
+            provides: {},
+            contributes: {},
+            children: [],
+          }),
+          create({ use }) {
+            seen = use.sandbox as SandboxService;
+            return { api: {} };
+          },
+        },
+      ],
+    });
     resources.register(PLUGINS_RESOURCE_ID, host);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const inst = await boot(
@@ -182,18 +203,54 @@ describe("sandbox settings ride the parked context across a swap", () => {
       initialDoc(packagedPlatform.iface, doc),
       resources,
     ).finally(() => warn.mockRestore());
-    return { inst, ctx: () => seen! };
+    return { inst, ctx: () => ({ sandbox: { settings: () => seen!.currentSettings() } }) };
   }
 
   it("a confining mode survives park -> fresh boot instead of resetting to unconfined", async () => {
-    const a = await bootObserved({ motd: "m", sandbox: { mode: "read-only" } });
+    // The settings live in the sandbox module's own parked document (platform v2).
+    const a = await bootObserved({
+      motd: "m",
+      modules: { SandboxModule: { v: 1, self: { settings: { mode: "read-only" } } } },
+    });
     try {
       expect(a.ctx().sandbox.settings()).toEqual({ mode: "read-only" });
 
-      const parked = (await a.inst.api.park()) as { motd: string; sandbox?: { mode: string } };
-      expect(parked.sandbox).toEqual({ mode: "read-only" });
+      const parked = (await a.inst.api.park()) as {
+        motd: string;
+        modules: { SandboxModule?: { self: { settings?: { mode: string } } | null } };
+      };
+      expect(parked.modules.SandboxModule?.self).toEqual({ settings: { mode: "read-only" } });
 
       const b = await bootObserved(parked);
+      try {
+        expect(b.ctx().sandbox.settings()).toEqual({ mode: "read-only" });
+      } finally {
+        b.inst.dispose();
+      }
+    } finally {
+      a.inst.dispose();
+    }
+  });
+
+  it("the document stays readable across generations: a first-generation doc boots, and what parks is a first-generation doc", async () => {
+    // The first platforms parked the settings as a top-level `sandbox` field, with no `modules`.
+    const a = await bootObserved({ motd: "gen-1", sandbox: { mode: "read-only" } });
+    try {
+      expect(a.ctx().sandbox.settings()).toEqual({ mode: "read-only" });
+      const parked = (await a.inst.api.park()) as {
+        motd: string;
+        sandbox?: unknown;
+        modules: { SandboxModule?: { self: unknown }; sandbox?: unknown };
+      };
+      // Parked both ways: under the node for this generation, top-level for the first one —
+      // so a rollback to a first-generation platform still confines.
+      expect(parked.modules.SandboxModule?.self).toEqual({ settings: { mode: "read-only" } });
+      expect(parked.sandbox).toEqual({ mode: "read-only" });
+      // A document parked under the node's earlier hand-written name reads the same.
+      const b = await bootObserved({
+        motd: "gen-2",
+        modules: { sandbox: { v: 1, self: { settings: { mode: "read-only" } } } },
+      });
       try {
         expect(b.ctx().sandbox.settings()).toEqual({ mode: "read-only" });
       } finally {
@@ -208,10 +265,12 @@ describe("sandbox settings ride the parked context across a swap", () => {
     const a = await bootObserved({ motd: "old-doc" });
     try {
       expect(a.ctx().sandbox.settings()).toEqual({ mode: "danger-full-access" });
-      // The sandbox field is absent, not present-and-default: that is what keeps a
-      // default deployment's document acceptable to a sandbox-ignorant bundle's schema.
-      const parked = (await a.inst.api.park()) as { motd: string; sandbox?: unknown };
-      expect(parked.sandbox).toBeUndefined();
+      // Pristine settings park as nothing, not as present-and-default.
+      const parked = (await a.inst.api.park()) as {
+        motd: string;
+        modules: { SandboxModule?: { self: unknown } };
+      };
+      expect(parked.modules.SandboxModule?.self ?? null).toBeNull();
       expect(parked.motd).toBe("old-doc");
     } finally {
       a.inst.dispose();

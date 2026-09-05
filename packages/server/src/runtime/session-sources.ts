@@ -11,6 +11,8 @@
  * Trace once per process lifetime.
  */
 import type { SessionSource } from "../api/types.js";
+import { Component } from "@prismshadow/penguin-core/kernel";
+import type { SessionOrigins } from "../mechanisms/sessions.js";
 
 /**
  * Narrows an untrusted value (on-disk Trace JSON / forwarded meta) to a SessionSource:
@@ -21,7 +23,8 @@ export function asSessionSource(v: unknown): SessionSource | undefined {
   return v === "schedule" || v === "subagent" ? v : undefined;
 }
 
-export class SessionSources {
+@Component()
+export class SessionSources implements SessionOrigins {
   private readonly map = new Map<string, SessionSource | null>();
 
   /** Records a Session's origin as read from session_meta (`null` = meta seen, user-created). */
