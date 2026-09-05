@@ -3,6 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#614](https://github.com/Prism-Shadow/penguin-harness/pull/614)
 
 [中文版](2026-09-04-plugin-library-host-package.zh.md)
 
