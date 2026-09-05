@@ -39,7 +39,6 @@ export const en: Strings = {
     empty: "No host in ~/.ssh/config left to add.",
     search: "Search hosts…",
     noMatch: "No host matches.",
-    more: (count: number) => `${count} more not shown — keep typing to narrow it down.`,
     localTitle: "this server",
     noneInUse: "No machine in use yet.",
     sshHint:

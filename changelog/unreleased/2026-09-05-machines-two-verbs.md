@@ -11,10 +11,10 @@ The Machines page is now two verbs and one sentence per machine. **Use** does ev
 
 ## Details
 
-- The page is a table: machine, its state in one word, the build it carries, when it was last checked. This server is the first row. A build behind this server's is an amber chip, and **Use** sits at the end of only the rows that need it.
-- Selection is the row: click one to select it, and every machine in use starts selected, so "make them all work" and "let them all go" are one tap each from the bar that floats over the table while something is selected. A batch is queued on the server one machine after another.
+- One card per machine, this server first. A card at rest is two lines: the name, and the state with the one detail beside it — when it was last checked, the build it carries when that is behind this server's, the far side's words when it failed. The dot at the card's edge is blue for a live connection, amber and red for what needs a person, grey for settled. **Enable** sits on the cards that need it.
+- Selection is the card: click one to select it. Select all, select none, **Enable** (a plug) and **Disable** (the plug pulled) are icon buttons in a bar that keeps a fixed slot between the title and the cards, so nothing moves when a selection appears or goes. A batch is queued on the server one machine after another.
 - A queued or working row grows a stepper under its name, one segment per step of the pipeline (check, install, hand over, restart, connect, sync), fed by the step the server says it is on.
-- The ⓘ at a row's end opens the machine's record and the job's full output in a pane beside the table, or a sheet on a phone.
+- The chevron unfolds the card: the build, the install date, the server's state and port, the last check, the machine id, the job's full output, and the forced install when a job offers it.
 - Machines not yet in use live behind **Add machines…**, a search over the server's ssh config. Picking several and confirming uses them all.
 - Once a machine is connected, staying connected is the server's job: a machine that drops and does not come back is retried on a widening wait — from a minute up to fifteen — until it is held again or someone stops using it. Restarting the server no longer leaves machines disconnected until someone visits the page.
 - The forced install ("Install anyway and restart") is offered only on a row whose job failed, as before, and still warns that it interrupts whoever is using that machine.

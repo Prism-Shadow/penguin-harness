@@ -45,8 +45,6 @@ export const zh = {
     /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
     search: "搜索主机…",
     noMatch: "没有匹配的主机。",
-    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
-    more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
     /** The tag on this server's own row. */
     localTitle: "本服务端",
     noneInUse: "还没有在用的机器。",
