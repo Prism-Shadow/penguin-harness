@@ -52,11 +52,6 @@ export const zh = {
     noneInUse: "还没有在用的机器。",
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    /** The table's columns. */
-    colMachine: "机器",
-    colState: "状态",
-    colVersion: "版本",
-    colChecked: "上次检查",
     now: "刚刚",
     /** The verbs. */
     add: "添加机器…",
