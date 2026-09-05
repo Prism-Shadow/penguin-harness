@@ -3560,7 +3560,7 @@ export interface MachineJob {
   kind: "install" | "connect" | "restart" | "use";
   machineId: string;
   alias: string;
-  /** Waiting its turn: jobs run one at a time, and a batch queues the rest. */
+  /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
   queued: boolean;
   running: boolean;
   /**
@@ -3598,7 +3598,7 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
-  /** The running job, or the last one to finish — one at a time, as ever. */
+  /** The most recently started job, running or finished. */
   job: MachineJob | null;
   /**
    * Every job worth showing this generation: the queued ones, the running one, and the last
