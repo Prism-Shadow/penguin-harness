@@ -29,7 +29,6 @@ import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { HmrHost } from "./host.js";
 import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -91,7 +90,6 @@ interface RuntimeInterfaces extends Interfaces {
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
   desktop: MembersOf<DesktopService>;
-  lifecycle: MembersOf<LifecycleService>;
 }
 
 export const RUNTIME_INTERFACES: RuntimeInterfaces = {
@@ -109,7 +107,6 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "desktopToken",
     "portFile",
     "trustProxy",
-    "supervised",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
@@ -119,7 +116,6 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
-  lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
 export const RUNTIME_INTERFACES_RESOURCE_ID = "runtime:interfaces";
@@ -187,12 +183,6 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
  * admin surfaces), so the claim must distinguish "not desktop" from "not published".
  */
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
-/**
- * Process lifecycle (services/lifecycle-service.ts): whether a supervisor relaunches this
- * process, and the restart trigger. Always published — the platform's restart route needs
- * a definite "nobody would relaunch me" to refuse with, not a missing capability.
- */
-export const RUNTIME_LIFECYCLE_RESOURCE_ID = "runtime:lifecycle";
 /** Test-only: the node Replacements published by bootAppDeps for the platform boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 
@@ -235,7 +225,6 @@ export interface RuntimeCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
-  lifecycle: LifecycleService;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -284,8 +273,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  const lifecycle = resources.claim<LifecycleService>(RUNTIME_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
+  if (!config || !db || !channels || !proxyControl || !hmr) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -314,7 +302,6 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
-    ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
@@ -327,7 +314,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, replacements },
+    caps: { config, db, authState, channels, proxyControl, hmr, desktop, replacements },
   };
 }
 
@@ -398,11 +385,6 @@ export abstract class Desktop extends Interface<{
 }>() {}
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
-
-/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
-export abstract class Lifecycle extends Interface<
-  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
->() {}
 
 export abstract class Log extends Interface<{
   line(text: string): void;
@@ -484,14 +466,6 @@ export class RuntimeDesktop {
   setup() {
     const { desktop } = this.caps;
     this.desktop = { current: () => desktop };
-  }
-}
-@Module()
-export class RuntimeLifecycle {
-  @Provide() lifecycle!: Lifecycle;
-  constructor(private readonly caps: RuntimeCapabilities) {}
-  setup() {
-    this.lifecycle = this.caps.lifecycle;
   }
 }
 @Module()
