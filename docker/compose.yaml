@@ -1,0 +1,29 @@
+# Minimal PenguinHarness deployment. `docker compose up -d`, then read the first-login
+# link out of `docker compose logs penguin`.
+#
+# See https://penguin.ooo/docs/quickstart-docker for the first sign-in, upgrades, running
+# behind a reverse proxy, and the rescue path for a forgotten admin password.
+services:
+  penguin:
+    image: ghcr.io/prism-shadow/penguin-harness:latest
+    restart: unless-stopped
+    ports:
+      - "7364:7364"
+    volumes:
+      - penguin-data:/data
+    # Shutting down interrupts running Tasks and waits for them to wrap up, which can take
+    # a few seconds longer than Docker's 10s default.
+    stop_grace_period: 30s
+    # environment:
+    #   # Pins the built-in admin's password INSTEAD of printing a first-login link. It
+    #   # applies only on the very first boot, while no user exists, and must be at least
+    #   # 8 characters. Adding it to an already-claimed data root does nothing.
+    #   PENGUIN_SEED_ADMIN_PASSWORD: "choose-something-long"
+    #   # Behind a reverse proxy that terminates TLS and sets or strips x-forwarded-proto
+    #   # itself, so session cookies are marked Secure.
+    #   PENGUIN_TRUST_PROXY: "1"
+    #   # Disables the server's only outbound non-model request, the new-release check.
+    #   PENGUIN_UPDATE_CHECK: "off"
+
+volumes:
+  penguin-data:

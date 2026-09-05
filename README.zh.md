@@ -119,7 +119,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 安装
 
-优先使用桌面端，也可以在本地电脑或服务器上安装命令行。两种方式共用 `~/.penguin/data` 目录，可自由混用：
+优先使用桌面端，也可以在本地电脑或服务器上安装命令行。两种方式共用 `~/.penguin/data` 目录，可自由混用；服务端也可以一条 `docker run` 起来：
 
 - **🖥️ 桌面端应用**——双击安装：内嵌服务端，打开即已登录，全程无需终端。
 - **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
@@ -172,6 +172,15 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 npm install -g @prismshadow/penguin-cli
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
+
+### 🐳 Docker
+
+```bash
+docker run -d --name penguin -p 7364:7364 -v penguin-data:/data ghcr.io/prism-shadow/penguin-harness:latest
+docker logs penguin       # 首次登录链接，把其中的 localhost 换成你的主机地址
+```
+
+官方镜像以非特权用户在 `0.0.0.0:7364` 上运行同一个服务端，数据目录落在 `/data` 卷上，提供 `linux/amd64` 与 `linux/arm64`。compose 文件与完整部署说明（反向代理、升级、救援路径）见 [Docker 快速开始](https://penguin.ooo/docs/quickstart-docker)。
 
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>
