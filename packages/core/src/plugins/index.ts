@@ -179,51 +179,101 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/**
- * The nearest package root above this module: `packages/core` from source or dist, and the
- * bundling package's own root wherever core is inlined (the CLI bundle, the desktop server
- * bundle) — which is exactly whose package.json lists the plugin packages to resolve.
- */
-function packageRoot(): string {
-  const start = path.dirname(fileURLToPath(import.meta.url));
-  let dir = start;
-  for (;;) {
-    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error(`No package.json above the plugin loader at ${start}`);
-    dir = parent;
-  }
-}
-const PKG_ROOT = packageRoot();
 /** npm-name prefix of the per-plugin packages (the host package's dependencies name them). */
 const PLUGIN_PKG_PREFIX = "@penguinharness/";
+
+/**
+ * The host package: the package whose `dependencies` name the plugin packages — `packages/core`
+ * from source or dist, and the bundling package's own root wherever core is inlined (the CLI
+ * bundle, the desktop server bundle). Looked for above this module first, then above the
+ * running program (`process.argv[1]`): a hot-pushed platform bundle sits in the data root's
+ * store, where nothing above it is a package, and the plugins it can offer are the ones
+ * installed beside the program that booted it. The first package.json naming a plugin
+ * package wins; failing that, the first package.json at all (an empty library, with a root
+ * to name in errors); failing that, null.
+ *
+ * Found on first use and never at import: the bundle has to LOAD on a machine that has no
+ * host package, and the library call is then what fails, naming both places it looked.
+ */
+interface HostPackage {
+  root: string;
+  /** Resolves the plugin packages the way a `require` from the host package would. */
+  require: NodeJS.Require;
+}
+
+const LOADER_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function programDir(): string | null {
+  const entry = process.argv[1];
+  return typeof entry === "string" && entry !== "" ? path.dirname(path.resolve(entry)) : null;
+}
+
+function findHostPackage(): HostPackage | null {
+  let first: HostPackage | null = null;
+  for (const start of [LOADER_DIR, programDir()]) {
+    if (start === null) continue;
+    for (let dir = start; ;) {
+      const file = path.join(dir, "package.json");
+      if (fs.existsSync(file)) {
+        const candidate: HostPackage = { root: dir, require: createRequire(file) };
+        if (Object.keys(readDependencies(candidate)).some((d) => d.startsWith(PLUGIN_PKG_PREFIX)))
+          return candidate;
+        first ??= candidate;
+        break;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  return first;
+}
+
+let host: HostPackage | null | undefined;
+function hostPackage(): HostPackage {
+  if (host === undefined) host = findHostPackage();
+  if (host === null) {
+    const program = programDir();
+    throw new Error(
+      `No package.json above the plugin loader at ${LOADER_DIR}` +
+        (program === null ? "" : ` or above the program at ${program}`),
+    );
+  }
+  return host;
+}
+
+/** The host package's `dependencies`, read fresh — the same file its own `require` resolves from. */
+function readDependencies(pkg: HostPackage): Record<string, string> {
+  const parsed = JSON.parse(fs.readFileSync(path.join(pkg.root, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  return parsed.dependencies ?? {};
+}
 
 /**
  * Where the plugin directories live, name → absolute root. Each plugin is its own npm package
  * (`@penguinharness/<name>`, `plugins/<name>/` in the repo): the host package's `dependencies`
  * name them (core, the CLI, and the desktop app — whose packaged manifest keeps that field
  * and nothing else, so `devDependencies` would not survive into an installer), and each is
- * resolved through Node from this module's own location, so the lookup walks the same
- * `node_modules` chain a `require` from here would: the workspace, an npm install and the
+ * resolved through Node from the host package (hostPackage), so the lookup walks the same
+ * `node_modules` chain a `require` from there would: the workspace, an npm install, the
  * packed desktop app (electron-builder collects the declared packages into its node_modules)
- * all land on their own copy. Read fresh on every call, like the plugin files themselves.
+ * and the program a hot-pushed platform booted from all land on their own copy. Read fresh
+ * on every call, like the plugin files themselves.
  */
 function pluginRoots(): Map<string, string> {
   const roots = new Map<string, string>();
-  const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-  };
-  const require = createRequire(import.meta.url);
-  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+  const pkg = hostPackage();
+  for (const dep of Object.keys(readDependencies(pkg))) {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
     let manifest: string;
     try {
-      manifest = require.resolve(`${dep}/package.json`);
+      manifest = pkg.require.resolve(`${dep}/package.json`);
     } catch (err) {
       // A declared plugin that Node cannot find is a broken install (the deployment did not
       // carry the package), not a smaller library.
       throw new Error(
-        `Plugin package ${dep} is declared in ${PKG_ROOT}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
+        `Plugin package ${dep} is declared in ${pkg.root}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     roots.set(dep.slice(PLUGIN_PKG_PREFIX.length), path.dirname(manifest));
