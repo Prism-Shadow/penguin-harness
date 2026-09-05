@@ -1159,6 +1159,101 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
+    /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
+    createAction: "Schedule a task",
+    /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
+    targetThisSession: "This conversation",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "Scheduled tasks",
+    panelSubtitle:
+      "Ask the agent to run tasks, send reminders or monitor for updates on a schedule",
+    panelSearchPlaceholder: "Search scheduled tasks",
+    filterAll: "All",
+    filterActive: "Active",
+    filterPaused: "Paused",
+    filterCompleted: "Completed",
+    panelEmpty: "No scheduled tasks in this conversation yet",
+    panelNoMatch: "No matching scheduled tasks",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "Send the first message, then schedule tasks for this conversation",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "More actions",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `Every day at ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `Every ${weekday} at ${time}`,
+      everyDays: (n: number, time: string): string => `Every ${n} days at ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "Every hour" : `Every ${n} hours`),
+      everyMinutes: (n: number): string => `Every ${n} minutes`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `One-off · ${when}`,
+      next: (when: string): string => `Next: ${when}`,
+      today: (time: string): string => `today ${time}`,
+      tomorrow: (time: string): string => `tomorrow ${time}`,
+      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${monthDay}, ${year}, ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel sends into the current Session, the settings tab into a new one. */
+    aiCreateTitle: "Create a scheduled task with AI",
+    aiCreateInSessionDesc:
+      "Describe what to schedule; the agent creates it in this conversation and confirms the time it set.",
+    aiCreateDesc:
+      "Describe what to schedule; the agent creates it for this agent in a new conversation and confirms the time it set.",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `Done by "${name}" in this conversation`,
+    sendToSession: "Send to this conversation",
+    sentToSession: "Sent to this conversation",
+    steeredToSession: "Sent to the running task as a steering message",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "Create the request above as a scheduled task bound to this Session: write a TOML file under agent_state/schedule/ with `session_id` set to this Session's id (see the Environment section), a semantic file name and `start_at`; add `period` when it repeats and `end_at` when the request has a natural end. Then confirm the schedule you set in one line.",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "Suggestions",
+    suggestions: {
+      dailyBrief: {
+        name: "Daily brief",
+        hint: "Weekdays at 08:00",
+        description: "Yesterday's progress and today's to-dos, summarized",
+        prompt:
+          "Every weekday at 8:00 AM, give me a brief: yesterday's progress in this conversation and today's to-dos",
+        agentPrompt:
+          "Every weekday at 8:00 AM, produce a brief: yesterday's progress and today's to-dos",
+      },
+      weeklyReview: {
+        name: "Weekly review",
+        hint: "Fridays at 16:00",
+        description: "Turn the week's work into a status update",
+        prompt: "Every Friday at 16:00, turn this week's work into a status update",
+        agentPrompt: "Every Friday at 16:00, turn this week's work into a status update",
+      },
+      followUp: {
+        name: "Follow-up reminder",
+        hint: "One-off",
+        description: "A reminder to follow up on something, at the time you name",
+        prompt: "Tomorrow at 10:00, remind me to follow up on X",
+        agentPrompt: "Tomorrow at 10:00, remind me to follow up on X",
+      },
+      monitor: {
+        name: "Monitor for updates",
+        hint: "Every 6 hours",
+        description: "Check a page or data source for changes on a schedule",
+        prompt: "Every 6 hours, check <url> for updates and tell me what changed",
+        agentPrompt: "Every 6 hours, check <url> for updates and report what changed",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "Enable schedules",

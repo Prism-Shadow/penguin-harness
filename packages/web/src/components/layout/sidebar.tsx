@@ -149,6 +149,10 @@ import { SkeletonList } from "../ui/skeleton";
 import { UpdateDot } from "../ui/update-dot";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
+import { ScheduleCreateChooser } from "../../features/schedules/schedule-create-chooser";
+import { ScheduleFormModal } from "../../features/schedules/schedule-form-modal";
+import { SCHEDULE_AI_ROUTE_STATE } from "../../features/schedules/schedule-route";
+import type { AnchorRect } from "../../lib/context-menu";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
@@ -322,6 +326,7 @@ export function Sidebar({
     setCurrentProjectId,
     reloadProjects,
     agents,
+    reloadAgents,
     currentAgent,
     setCurrentAgentId,
   } = useProject();
@@ -456,6 +461,8 @@ export function Sidebar({
   const [renameError, setRenameError] = useState<string | null>(null);
   /** Session whose messaging-binding dialog is open (null = none). */
   const [messagingSession, setMessagingSession] = useState<SessionInfo | null>(null);
+  /** Session a scheduled task is being set up for by hand (row menu "Schedule a task → Set up manually"; null = none). */
+  const [scheduleSession, setScheduleSession] = useState<SessionInfo | null>(null);
 
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
@@ -1205,6 +1212,13 @@ export function Sidebar({
               setRenamingSession(x);
             }}
             onMessaging={(x) => setMessagingSession(x)}
+            // The AI path lives on the chat page: the route state opens the conversation's
+            // scheduled-tasks panel with the AI dialog up (chat-page.tsx consumes it).
+            onScheduleAi={(x) =>
+              navigate(`/chat/${x.sessionId}`, { state: SCHEDULE_AI_ROUTE_STATE })
+            }
+            onScheduleManual={(x) => setScheduleSession(x)}
+            canManualSchedule={currentProject?.role === "owner"}
             onDelete={(x) => setDeletingSession(x)}
             onToggleArchive={(x) => void toggleArchive(x)}
           />
@@ -2251,6 +2265,19 @@ export function Sidebar({
         />
       )}
 
+      {/* Manual scheduled-task form (row menu "Schedule a task → Set up manually"), pinned to
+          that Session; a created task moves the agent card's schedule count. */}
+      {scheduleSession && (
+        <ScheduleFormModal
+          open
+          agentId={scheduleSession.agentId}
+          editing={null}
+          lockedSessionId={scheduleSession.sessionId}
+          onClose={() => setScheduleSession(null)}
+          onSaved={() => void reloadAgents()}
+        />
+      )}
+
       {/* Rename workspace (alias edit, same Modal + Input idiom as rename chat): the alias
           replaces the directory basename as the group label; leaving it blank reverts to
           the basename — so an empty save is valid here, unlike the chat rename. */}
@@ -2492,6 +2519,9 @@ function SessionRow({
   onTogglePin,
   onRename,
   onMessaging,
+  onScheduleAi,
+  onScheduleManual,
+  canManualSchedule,
   onDelete,
   onToggleArchive,
 }: {
@@ -2520,12 +2550,25 @@ function SessionRow({
   onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
   onMessaging: (s: SessionInfo) => void;
+  /** "Schedule a task → Create with AI": the conversation opens with its scheduled-tasks panel and the AI dialog up. */
+  onScheduleAi: (s: SessionInfo) => void;
+  /** "Schedule a task → Set up manually": the form, pinned to this Session. */
+  onScheduleManual: (s: SessionInfo) => void;
+  /** Whether the manual path is offered (writes are owner-only). */
+  canManualSchedule: boolean;
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
   const ctx = useRowContextMenu();
+  /**
+   * "Schedule a task" forks into AI / manual: the menu closes and this chooser opens at the
+   * same anchor (the pointer, the ellipsis or the row — wherever the menu hung).
+   */
+  const [scheduleChooser, setScheduleChooser] = useState<AnchorRect | null>(null);
   /** Run one action on this Session, closing the context menu first if it was open. */
   const run = (action: SessionRowAction) => {
+    // Read before close(): the menu's anchor is where the chooser lands.
+    const anchor = ctx.anchor;
     ctx.close();
     const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
       pin: onTogglePin,
@@ -2538,6 +2581,7 @@ function SessionRow({
         toastSuccess(S.common.copied);
       },
       messaging: onMessaging,
+      schedule: () => setScheduleChooser(anchor),
       archive: onToggleArchive,
       delete: onDelete,
     };
@@ -2704,6 +2748,15 @@ function SessionRow({
             onRun={runFromMenu}
           />
         </Dropdown>
+        <ScheduleCreateChooser
+          anchor={scheduleChooser}
+          anchorOwner={ctx.anchorOwner}
+          returnFocus={ctx.returnFocus}
+          canManual={canManualSchedule}
+          onClose={() => setScheduleChooser(null)}
+          onAi={() => onScheduleAi(s)}
+          onManual={() => onScheduleManual(s)}
+        />
       </div>
     </li>
   );

@@ -29,7 +29,7 @@ import {
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
-import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
+import { MESSAGING_RELAY_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
 import { STAT_ICONS } from "../src/lib/stat-icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -44,8 +44,8 @@ describe("HOVER_ROW_ACTIONS", () => {
     expect([...HOVER_ROW_ACTIONS]).toEqual(["archive"]);
   });
 
-  it("does not carry rename, pin, delete or the messaging binding — those live in the menu", () => {
-    for (const action of ["rename", "pin", "delete", "messaging", "copy"]) {
+  it("does not carry rename, pin, delete, the messaging binding or scheduling — those live in the menu", () => {
+    for (const action of ["rename", "pin", "delete", "messaging", "copy", "schedule"]) {
       expect(HOVER_ROW_ACTIONS as readonly string[]).not.toContain(action);
     }
   });
@@ -58,6 +58,7 @@ describe("contextMenuActions", () => {
       "rename",
       "copy",
       "messaging",
+      "schedule",
       "archive",
       "delete",
     ]);
@@ -68,9 +69,20 @@ describe("contextMenuActions", () => {
       "rename",
       "copy",
       "messaging",
+      "schedule",
       "archive",
       "delete",
     ]);
+  });
+
+  it("places scheduling a task right after the messaging binding, before archive", () => {
+    // The two actions that configure what the Session does next sit together, ahead of the
+    // pair that puts it away.
+    for (const canPin of [true, false]) {
+      const actions = contextMenuActions(canPin);
+      expect(actions.indexOf("schedule")).toBe(actions.indexOf("messaging") + 1);
+      expect(actions.indexOf("archive")).toBe(actions.indexOf("schedule") + 1);
+    }
   });
 
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
@@ -128,7 +140,15 @@ describe("the hover buttons' CSS contract", () => {
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
-    const all: SessionRowAction[] = ["pin", "rename", "copy", "messaging", "archive", "delete"];
+    const all: SessionRowAction[] = [
+      "pin",
+      "rename",
+      "copy",
+      "messaging",
+      "schedule",
+      "archive",
+      "delete",
+    ];
     for (const action of all) {
       const item = sessionRowMenuItem(action, RESTING);
       expect(item.label).toBeTruthy();
@@ -139,7 +159,7 @@ describe("sessionRowMenuItem", () => {
 
   it("gives the actions distinct glyphs, so a row is not read by its label alone", () => {
     const icons = (
-      ["pin", "rename", "copy", "messaging", "archive", "delete"] as SessionRowAction[]
+      ["pin", "rename", "copy", "messaging", "schedule", "archive", "delete"] as SessionRowAction[]
     ).map((a) => sessionRowMenuItem(a, RESTING).icon);
     expect(new Set(icons).size).toBe(icons.length);
     // Remote control wears the same paper plane the session row flies while it is relaying:
@@ -150,6 +170,8 @@ describe("sessionRowMenuItem", () => {
       // The same glyph the details card's copy button shows, so one value has one mark.
       STAT_ICONS.copy,
       MESSAGING_RELAY_ICON,
+      // The alarm clock the schedule count and the dock panel wear.
+      SCHEDULE_ICON,
       ARCHIVE_ICON,
       TRASH_ICON,
     ]);
@@ -183,6 +205,7 @@ describe("sessionRowMenuItem", () => {
     expect(sessionRowMenuItem("rename", RESTING).label).toBe(en.chat.renameSession);
     expect(sessionRowMenuItem("copy", RESTING).label).toBe(en.chat.copySessionId);
     expect(sessionRowMenuItem("messaging", RESTING).label).toBe(en.messaging.bindAction);
+    expect(sessionRowMenuItem("schedule", RESTING).label).toBe(en.schedule.createAction);
     // The hover buttons are icon-only, so their label IS their accessible name: an English
     // row must not fall back to the zh catalog and leave a Chinese name on the button.
     for (const action of HOVER_ROW_ACTIONS) {

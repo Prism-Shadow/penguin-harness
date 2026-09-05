@@ -277,6 +277,7 @@ function DockPicker({
         {row("memory")}
         {row("trace")}
         {row("messaging")}
+        {row("schedules")}
       </div>
     </div>
   );

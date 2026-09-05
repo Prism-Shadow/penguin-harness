@@ -1133,6 +1133,96 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
+    createAction: "创建定时任务",
+    /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
+    targetThisSession: "本对话",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "定时任务",
+    panelSubtitle: "让智能体按计划替你执行任务、发送提醒或监控更新",
+    panelSearchPlaceholder: "搜索定时任务",
+    filterAll: "全部",
+    filterActive: "生效中",
+    filterPaused: "已暂停",
+    filterCompleted: "已完成",
+    panelEmpty: "这段对话还没有定时任务",
+    panelNoMatch: "没有匹配的定时任务",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "发送第一条消息后即可为这段对话安排定时任务",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "更多操作",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `每天 ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `每${weekday} ${time}`,
+      everyDays: (n: number, time: string): string => `每 ${n} 天 ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "每小时" : `每 ${n} 小时`),
+      everyMinutes: (n: number): string => `每 ${n} 分钟`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `一次性 · ${when}`,
+      next: (when: string): string => `下次 ${when}`,
+      today: (time: string): string => `今天 ${time}`,
+      tomorrow: (time: string): string => `明天 ${time}`,
+      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay} ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${year} 年 ${monthDay} ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel sends into the current Session, the settings tab into a new one. */
+    aiCreateTitle: "让 AI 创建定时任务",
+    aiCreateInSessionDesc: "描述要安排的事，智能体会在这段对话里创建它，并确认设定的时间。",
+    aiCreateDesc: "描述要安排的事，智能体会在新对话里为该 Agent 创建它，并确认设定的时间。",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `将由「${name}」在本对话中完成`,
+    sendToSession: "发送到本对话",
+    sentToSession: "已发送到本对话",
+    steeredToSession: "已作为插话发送给运行中的任务",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "请把上面的请求创建为绑定到本对话的定时任务：在 agent_state/schedule/ 下写一个 TOML 文件，`session_id` 取本对话的 Session ID（见 Environment 段），文件名取有意义的英文名，设置 `start_at`；需要重复执行时写 `period`，请求有自然终点时写 `end_at`。创建后用一行确认你设定的时间安排。",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "建议",
+    suggestions: {
+      dailyBrief: {
+        name: "每日简报",
+        hint: "每个工作日 08:00",
+        description: "汇总昨天的进展与今天的待办",
+        prompt: "每个工作日早上 8 点给我一份简报：昨天这段对话里的进展与今天的待办",
+        agentPrompt: "每个工作日早上 8 点生成一份简报：昨天的进展与今天的待办",
+      },
+      weeklyReview: {
+        name: "每周回顾",
+        hint: "每周五 16:00",
+        description: "把本周的工作整理成一份状态更新",
+        prompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+        agentPrompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+      },
+      followUp: {
+        name: "跟进提醒",
+        hint: "一次性",
+        description: "到点提醒你跟进某件事",
+        prompt: "明天 10:00 提醒我跟进 X",
+        agentPrompt: "明天 10:00 提醒我跟进 X",
+      },
+      monitor: {
+        name: "监控更新",
+        hint: "每 6 小时",
+        description: "定期检查一个页面或数据源的变化",
+        prompt: "每 6 小时检查 <url> 是否有更新并告诉我变化",
+        agentPrompt: "每 6 小时检查 <url> 是否有更新，有变化时告诉我",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "启用定时任务",

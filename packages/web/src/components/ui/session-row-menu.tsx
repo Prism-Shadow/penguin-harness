@@ -10,8 +10,8 @@
  *   pointer entry is the ellipsis; delete moved inside the menu with them (still
  *   danger-styled there), keeping the hover surface to one safe direct action.
  * - Right-clicking a row (or holding it on touch, Shift+F10 on the keyboard, or clicking
- *   the ellipsis) opens the whole set — pin, rename, messaging, archive, delete — as a
- *   labelled menu.
+ *   the ellipsis) opens the whole set — pin, rename, copy the id, messaging, schedule a
+ *   task, archive, delete — as a labelled menu.
  *
  * Rename therefore keeps a home: every Session must stay renamable, archivable and
  * deletable, and paring the hover affordance down would otherwise have dropped rename
@@ -22,7 +22,7 @@ import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
-import { MESSAGING_RELAY_ICON } from "./icons";
+import { MESSAGING_RELAY_ICON, SCHEDULE_ICON } from "./icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
@@ -62,7 +62,8 @@ export const overflowMenuGlyph = (d: string) => (
 );
 
 /** One thing a Session row can do to its Session. */
-export type SessionRowAction = "pin" | "rename" | "copy" | "messaging" | "archive" | "delete";
+export type SessionRowAction =
+  "pin" | "rename" | "copy" | "messaging" | "schedule" | "archive" | "delete";
 
 /** Row state the labels and glyphs read (both of the toggles flip on it). */
 export interface SessionRowState {
@@ -81,13 +82,14 @@ export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
  * The context menu's actions. Pin only reorders rows in the active list, so folder rows
  * (archived / subagent / scheduled) offer the rest without it — the same gate the
  * ellipsis menu applied before this moved. Copying the id sits next to rename, the other
- * action about which Session this is rather than what happens to it, and the messaging
- * binding sits with them, before the archive/delete pair.
+ * action about which Session this is rather than what happens to it; the messaging binding
+ * and scheduling a task — the two that configure what the Session does next — follow, before
+ * the archive/delete pair.
  */
 export function contextMenuActions(canPin: boolean): readonly SessionRowAction[] {
   return canPin
-    ? ["pin", "rename", "copy", "messaging", "archive", "delete"]
-    : ["rename", "copy", "messaging", "archive", "delete"];
+    ? ["pin", "rename", "copy", "messaging", "schedule", "archive", "delete"]
+    : ["rename", "copy", "messaging", "schedule", "archive", "delete"];
 }
 
 export interface SessionRowMenuItem {
@@ -121,6 +123,10 @@ export function sessionRowMenuItem(
       // and the mark it produces are one feature, and a reader should not have to learn two
       // shapes for it.
       return { label: S.messaging.bindAction, icon: MESSAGING_RELAY_ICON, danger: false };
+    case "schedule":
+      // The alarm clock the schedule count and the dock panel wear: the entry that creates a
+      // task carries the mark of what it creates.
+      return { label: S.schedule.createAction, icon: SCHEDULE_ICON, danger: false };
     case "archive":
       return {
         label: state.archived ? S.chat.unarchiveSession : S.chat.archiveSession,

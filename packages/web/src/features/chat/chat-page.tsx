@@ -105,6 +105,9 @@ import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
+import { SchedulePanel } from "../schedules/schedule-panel";
+import type { SessionSendOutcome } from "../schedules/schedule-ai-modal";
+import { wantsScheduleAi } from "../schedules/schedule-route";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
@@ -336,11 +339,14 @@ export function ChatPage() {
   const [subagentTaskScope, setSubagentTaskScope] = useState<{
     anchorSessionId: string;
   } | null>(null);
+  /** Schedules tab: open its AI dialog (the Session row menu's "Schedule a task → Create with AI"). */
+  const [scheduleAiRequest, setScheduleAiRequest] = useState<{ key: string } | null>(null);
   useEffect(() => {
     setFileOpenRequest(null);
     setMemoryRequest(null);
     setSubagentFocus(null);
     setSubagentTaskScope(null);
+    setScheduleAiRequest(null);
   }, [routeSessionId]);
   // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
   // so a re-added tab is a fresh mount that would otherwise replay the stale command —
@@ -349,6 +355,7 @@ export function ChatPage() {
   const workspaceTabExists = panelDock("workspace") !== null;
   const memoryTabExists = panelDock("memory") !== null;
   const agentsTabExists = panelDock("agents") !== null;
+  const schedulesTabExists = panelDock("schedules") !== null;
   useEffect(() => {
     if (!workspaceTabExists) setFileOpenRequest(null);
   }, [workspaceTabExists]);
@@ -361,6 +368,9 @@ export function ChatPage() {
       setSubagentTaskScope(null);
     }
   }, [agentsTabExists]);
+  useEffect(() => {
+    if (!schedulesTabExists) setScheduleAiRequest(null);
+  }, [schedulesTabExists]);
   // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
   // just bound to their own stored entry — every "this is a draft, not a Session" branch
   // below treats the two alike.
@@ -377,6 +387,24 @@ export function ChatPage() {
     if (draft) return;
     setDockCwd(selected?.workspace ?? null);
   }, [draft, selected?.workspace]);
+
+  // The Session row menu's "Schedule a task → Create with AI" arrives as route state: the
+  // schedules tab comes to the front and its AI dialog comes up. The dock it opens in is
+  // the one the tab already lives in (the right dock when it has no home yet), like every
+  // other jump command — naming a dock here would drag a tab the user had moved to the
+  // bottom back to the edge. Consumed by replacing the history entry's state, so a reload
+  // or a return through history shows the conversation as it is rather than the dialog
+  // again. Waits for the Session to resolve — the tab body is keyed by Session and reads
+  // the request on mount — by which time AppLayout has pointed the dock scope at this
+  // conversation (a layout effect, so it runs before this one).
+  const scheduleAiWanted = wantsScheduleAi(location.state);
+  const sessionResolved = selected !== null;
+  useEffect(() => {
+    if (!scheduleAiWanted || !sessionResolved) return;
+    openPanel("schedules");
+    setScheduleAiRequest({ key: location.key });
+    navigate(location.pathname, { replace: true });
+  }, [scheduleAiWanted, sessionResolved, location.key, location.pathname, navigate]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -1158,6 +1186,40 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  /**
+   * The scheduled-tasks panel's "Send to this conversation": text alone, delivered the way
+   * the composer would deliver it — a steering message while a Task runs, otherwise a task
+   * posted with queueIfBusy (it starts at once when idle, and queues behind a run the steer
+   * call found already ending). The composer's own draft is left alone: this is not the
+   * user's typed message. Errors toast here; the outcome tells the dialog whether to close.
+   */
+  const sendTextToSession = useCallback(
+    async (text: string): Promise<SessionSendOutcome> => {
+      if (!selected) return "failed";
+      try {
+        if (stream.taskState === "running") {
+          try {
+            await api.postSteer(selected.sessionId, { text });
+            return "steered";
+          } catch (e) {
+            // 409: the run ended between the state event and the call — post it as a task.
+            if (!(e instanceof ApiError && e.status === 409)) throw e;
+          }
+        }
+        const res = await api.postTask(selected.sessionId, {
+          input: [{ type: "text", text }],
+          queueIfBusy: true,
+        });
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return "sent";
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return "failed";
+      }
+    },
+    [selected, stream.taskState, syncHealedSessionId],
+  );
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1471,7 +1533,14 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
+    if (!selected)
+      return (
+        <EmptyState
+          title={panelLabel(kind)}
+          // The schedules tab says what the first message unlocks; the other tabs share one line.
+          description={kind === "schedules" ? S.schedule.panelDraftEmpty : S.dock.draftEmpty}
+        />
+      );
     switch (kind) {
       case "agents":
         return (
@@ -1529,6 +1598,16 @@ export function ChatPage() {
       case "messaging":
         return (
           <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
+        );
+      case "schedules":
+        return (
+          <SchedulePanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            aiRequest={scheduleAiRequest}
+            onSendToSession={sendTextToSession}
+          />
         );
     }
   };

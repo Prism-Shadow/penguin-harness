@@ -208,6 +208,15 @@ export const PLUGIN_ICON =
 export const MAGIC_WAND_ICON =
   "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72zM14 7l3 3M5 6v4M3 8h4M19 14v4M17 16h4";
 
+/**
+ * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
+ * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
+ * panel and the Session row menu's entry. Distinct from the plain clock face that means "most
+ * recent" in the list options.
+ */
+export const SCHEDULE_ICON =
+  "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5";
+
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (the puzzle piece). */

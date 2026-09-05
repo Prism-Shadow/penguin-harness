@@ -52,7 +52,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
+import { GEAR_ICON, HOOK_ICON, PLUGIN_ICON, SCHEDULE_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -85,8 +85,8 @@ const CARD_ICONS = {
   sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** Vault key count (key: bow + teeth) */
   vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
-  /** Schedule count (alarm clock: dial + hands + twin bells, distinct from the plain clock face used for "last modified") */
-  schedules: "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5",
+  /** Schedule count: the alarm clock every scheduled-task surface wears. */
+  schedules: SCHEDULE_ICON,
   /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
