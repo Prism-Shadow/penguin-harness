@@ -125,6 +125,11 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
   return machine.installed.version !== imageVersion;
 }
 
+/** The machines in use that carry another build — what "update all" brings forward, in list order. */
+export function behindMachines(state: MachinesResponse): MachineInfo[] {
+  return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+}
+
 /**
  * The batch's selection when nobody has touched it: every machine in use. A person opening
  * the page to "make them all work" should find them all already ticked.

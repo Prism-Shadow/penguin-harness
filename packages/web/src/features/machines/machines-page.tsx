@@ -28,9 +28,10 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
+import { CheckIcon, ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import {
   anyJobPending,
+  behindMachines,
   defaultSelection,
   installedMachines,
   jobFor,
@@ -45,7 +46,42 @@ import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
 
-const CHECKBOX_CLASS = "h-4 w-4 shrink-0 cursor-pointer";
+/**
+ * A drawn tick box, the same one for the batch bar, the rows and the picker. A real
+ * checkbox semantically (role, aria-checked, keyboard), but drawn here: the browser's own
+ * control takes the platform's colours and size, which sits badly beside the app's buttons.
+ */
+function Tick({
+  checked,
+  label,
+  onToggle,
+  className = "",
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors duration-150 ${
+        checked
+          ? "border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
+          : "border-gray-300 bg-white hover:border-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:hover:border-gray-400"
+      } ${className}`}
+    >
+      {checked && <CheckIcon size={11} />}
+    </button>
+  );
+}
 
 /** The one sentence a row says. */
 function readingText(reading: MachineReading): string {
@@ -164,6 +200,8 @@ export function MachinesPage() {
     [selection, inUseIds],
   );
   const allSelected = inUse.length > 0 && selectedIds.length === inUse.length;
+  /** Machines in use that carry another build: what one tap brings to this server's version. */
+  const behind = useMemo(() => (state === null ? [] : behindMachines(state)), [state]);
 
   /** Hosts the picker offers: in the config, not this machine, not already in use here. */
   const addable = useMemo(
@@ -269,10 +307,36 @@ export function MachinesPage() {
       <header className="space-y-1">
         <h1 className="text-lg font-semibold">{S.machines.pageTitle}</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400">{S.machines.pageDesc}</p>
-        {imageVersion !== null && (
-          <p className="text-xs text-gray-500">{S.machines.imageVersion(imageVersion)}</p>
-        )}
       </header>
+
+      {imageVersion !== null && state !== null && (
+        <div
+          className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-sm ${
+            behind.length > 0 ? toneStrip.attention : "border-gray-200 dark:border-gray-800"
+          }`}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">{S.machines.imageVersion(imageVersion)}</span>
+            <span className="ml-2 text-xs text-gray-600 dark:text-gray-400">
+              {behind.length > 0
+                ? S.machines.behindCount(behind.length)
+                : inUse.length > 0
+                  ? S.machines.allCurrent
+                  : null}
+            </span>
+          </span>
+          {behind.length > 0 && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={posting || pending}
+              onClick={() => void use(behind.map((machine) => machine.id))}
+            >
+              {S.machines.updateAll(behind.length)}
+            </Button>
+          )}
+        </div>
+      )}
 
       {error !== null && (
         <div className={`rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
@@ -317,60 +381,84 @@ export function MachinesPage() {
                     {S.machines.add}
                   </Button>
                 }
-                menuClass="w-[min(20rem,calc(100vw-2rem))] p-2"
+                menuClass="w-80 max-w-[calc(100vw-2rem)] origin-top-right"
               >
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={S.machines.search}
-                  autoFocus
-                  className="mb-2 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900"
-                />
-                {visible.length === 0 ? (
-                  <p className="px-1 py-2 text-xs text-gray-500">
-                    {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
-                  </p>
-                ) : (
-                  <ul className="max-h-64 overflow-y-auto">
-                    {visible.map((match) => (
-                      <li key={match.machine.id}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
-                          <input
-                            type="checkbox"
-                            className={CHECKBOX_CLASS}
-                            checked={adding.has(match.machine.id)}
-                            onChange={() => toggleAdding(match.machine.id)}
+                {/* The search row: matched characters bright and the rest dimmed — with a
+                    subsequence match, an unmarked row looks wrong. */}
+                <div className="px-2 pt-2 pb-1">
+                  <input
+                    type="search"
+                    autoFocus
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={S.machines.search}
+                    aria-label={S.machines.search}
+                    className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+                  />
+                </div>
+                <ul
+                  role="listbox"
+                  aria-multiselectable="true"
+                  className="max-h-64 overflow-y-auto py-1"
+                >
+                  {visible.map(({ machine, positions }) => {
+                    const on = adding.has(machine.id);
+                    return (
+                      <li key={machine.id} role="option" aria-selected={on}>
+                        <button
+                          type="button"
+                          onClick={() => toggleAdding(machine.id)}
+                          className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          <Tick
+                            checked={on}
+                            label={machine.alias}
+                            onToggle={() => toggleAdding(machine.id)}
                           />
-                          <span className="min-w-0 flex-1 truncate">
-                            {highlightSegments(match.machine.alias, match.positions).map(
-                              (segment, index) =>
-                                segment.hit ? (
-                                  <mark
-                                    key={index}
-                                    className="bg-transparent font-semibold text-inherit"
+                          <span
+                            className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
+                          >
+                            {positions.length === 0
+                              ? machine.alias
+                              : highlightSegments(machine.alias, positions).map((segment, i) => (
+                                  <span
+                                    key={i}
+                                    className={
+                                      segment.hit
+                                        ? "font-semibold text-gray-900 dark:text-white"
+                                        : undefined
+                                    }
                                   >
                                     {segment.text}
-                                  </mark>
-                                ) : (
-                                  <span key={index}>{segment.text}</span>
-                                ),
-                            )}
+                                  </span>
+                                ))}
                           </span>
-                          {match.machine.elsewhere !== undefined && (
-                            <span className="shrink-0 text-xs text-gray-500">
-                              {S.machines.elsewhere}
+                          {/* Installed by this server for another Project: adding it costs no
+                              transfer, and the version says whether it is current. */}
+                          {machine.elsewhere !== undefined && (
+                            <span className={`shrink-0 text-xs ${toneInk.success}`}>
+                              {machine.elsewhere.version}
                             </span>
                           )}
-                        </label>
+                        </button>
                       </li>
-                    ))}
-                  </ul>
-                )}
-                {hiddenCount > 0 && (
-                  <p className="px-1 pt-1 text-xs text-gray-500">{S.machines.more(hiddenCount)}</p>
-                )}
-                <div className="mt-2 flex justify-end">
+                    );
+                  })}
+                  {visible.length === 0 && (
+                    <li className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
+                    </li>
+                  )}
+                  {hiddenCount > 0 && (
+                    <li className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
+                      {S.machines.more(hiddenCount)}
+                    </li>
+                  )}
+                </ul>
+                <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-2 dark:border-gray-800">
+                  <span className="text-xs text-gray-500">
+                    {S.machines.selectedCount(adding.size)}
+                  </span>
                   <Button
                     size="sm"
                     variant="primary"
@@ -392,18 +480,16 @@ export function MachinesPage() {
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className={CHECKBOX_CLASS}
-                      checked={allSelected}
-                      onChange={toggleAll}
-                      aria-label={S.machines.selectAll}
-                    />
-                    <span className="text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center gap-2.5 text-sm">
+                    <Tick checked={allSelected} label={S.machines.selectAll} onToggle={toggleAll} />
+                    <button
+                      type="button"
+                      onClick={toggleAll}
+                      className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    >
                       {S.machines.selectedCount(selectedIds.length)}
-                    </span>
-                  </label>
+                    </button>
+                  </div>
                   <div className="ml-auto flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
@@ -477,14 +563,8 @@ function MachineRow({
   const moving = reading.kind === "working" || reading.kind === "queued";
   return (
     <li className="px-3 py-2">
-      <div className="flex items-start gap-2">
-        <input
-          type="checkbox"
-          className={`${CHECKBOX_CLASS} mt-1`}
-          checked={checked}
-          onChange={onToggle}
-          aria-label={machine.alias}
-        />
+      <div className="flex items-start gap-2.5">
+        <Tick checked={checked} label={machine.alias} onToggle={onToggle} className="mt-1" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span

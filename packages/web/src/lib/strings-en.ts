@@ -35,7 +35,10 @@ export const en: Strings = {
     pageTitle: "Machines",
     pageDesc:
       "The machines this Project runs agents on. Use one and this server installs the program, starts it, connects and stays connected; stop using it and the machine is let go.",
-    imageVersion: (version: string) => `Version to install: ${version}`,
+    imageVersion: (version: string) => `This server: ${version}`,
+    behindCount: (count: number) => `${count} machine(s) on another version.`,
+    allCurrent: "Every machine in use matches.",
+    updateAll: (count: number) => `Update all (${count})`,
     noImage:
       "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
     empty: "No host in ~/.ssh/config left to add.",
