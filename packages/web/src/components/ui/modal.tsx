@@ -10,15 +10,20 @@
  * rectangle, leaving a misaligned edge (a white sliver showing through). After
  * portaling, every modal is a sibling child of body and stacks naturally in DOM
  * order.
+ *
+ * **Focus is contained**: opening moves focus into the panel, Tab and Shift+Tab cycle
+ * inside it, and closing returns focus to whatever held it before. `role="dialog"` plus
+ * `aria-modal` announce the page behind as out of scope, but neither moves focus — without
+ * the trap, Tab walks straight out of the overlay into content the dialog sits on top of.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { CloseButton } from "./icons";
 
 export interface ModalProps {
   open: boolean;
-  /** Dialog name: rendered as the header bar, or (headerless) exposed as the panel's aria-label only. */
+  /** Dialog name: rendered as the header bar and used to name the dialog, or (headerless) exposed as the panel's aria-label only. */
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -61,6 +66,26 @@ export function isTopEscLayer(id: symbol): boolean {
   return escLayers[escLayers.length - 1] === id;
 }
 
+/**
+ * The elements an overlay hands focus to, in DOM order. Shared with Dropdown so a dialog and
+ * a menu agree on what "focusable" means. Visually hidden controls stay in the set on
+ * purpose: the app's file pickers are hidden the `sr-only` way rather than with `display:
+ * none` precisely so they keep their place in the Tab order (hidden-file-input.tsx).
+ */
+export const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Index that Tab — or Shift+Tab, `backward` — moves to within a ring of `count` focusables,
+ * wrapping at both ends so focus cannot walk out of the dialog. `at` is -1 when focus sits on
+ * the panel container itself rather than on one of the ring's elements, which enters the ring
+ * at whichever end the direction implies.
+ */
+export function nextFocusIndex(count: number, at: number, backward: boolean): number {
+  if (at < 0) return backward ? count - 1 : 0;
+  return (at + (backward ? -1 : 1) + count) % count;
+}
+
 export function Modal({
   open,
   title,
@@ -79,6 +104,24 @@ export function Modal({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Where focus goes when the dialog closes, read during render rather than in the effect
+  // below: a child with `autoFocus` is focused during the same commit, before any effect
+  // runs, so by effect time document.activeElement already points inside the dialog and the
+  // element to return to is gone. Written only on the closed->open edge, so reopening from a
+  // different trigger returns to that trigger, and a StrictMode double-mount — whose extra
+  // cleanup restores focus once before the real one — does not drop the target.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+  if (open !== wasOpenRef.current) {
+    wasOpenRef.current = open;
+    if (open)
+      restoreFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+
   useEffect(() => {
     if (!open) return;
     const id = pushEscLayer();
@@ -92,6 +135,47 @@ export function Modal({
     };
   }, [open]);
 
+  // Opening moves focus into the panel, closing hands it back. `aria-modal` tells assistive
+  // tech the page behind is out of scope but moves nothing, so without this a keyboard user
+  // stays parked on the trigger with the dialog's own controls several Tabs away.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    // A child with autoFocus already claimed focus during the commit — leave it there.
+    if (panel && !panel.contains(document.activeElement))
+      (panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? panel).focus();
+    // Every close path lands in this cleanup: Escape, the close button, the overlay
+    // mousedown, `open` going false, and the dialog unmounting outright.
+    return () => restoreFocusRef.current?.focus();
+  }, [open]);
+
+  /**
+   * Tab and Shift+Tab cycle inside the panel instead of walking out into the page behind the
+   * overlay.
+   *
+   * Two things this must not take over. A control that owns Tab for its own model (the
+   * composer's slash picker accepts a completion with it) marks the event handled, and this
+   * yields to that the way Dropdown's arrow keys do. And a menu or popover opened from inside
+   * the dialog is portaled to body — outside this panel's DOM subtree, yet still a React
+   * child, so its keydown bubbles through here; the containment check leaves that panel's own
+   * focus alone.
+   */
+  const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab" || e.defaultPrevented) return;
+    const panel = panelRef.current;
+    if (!panel?.contains(document.activeElement)) return;
+    e.preventDefault();
+    const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)];
+    // A dialog with nothing focusable in it keeps focus on the container, which is what the
+    // panel's tabIndex={-1} is for.
+    if (items.length === 0) {
+      panel.focus();
+      return;
+    }
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    items[nextFocusIndex(items.length, at, e.shiftKey)]?.focus();
+  };
+
   if (!open) return null;
   return createPortal(
     <div
@@ -101,12 +185,21 @@ export function Modal({
       }}
     >
       <div
-        {...(headerless ? { role: "dialog", "aria-label": title } : {})}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        // The titled branch is named by its own heading rather than a second copy of the
+        // string, so a renamed dialog cannot end up announcing the old name.
+        {...(headerless ? { "aria-label": title } : { "aria-labelledby": titleId })}
+        tabIndex={-1}
+        onKeyDown={onPanelKeyDown}
         className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} rounded-t-lg border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
       >
         {!headerless && (
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-            <h2 className="text-base font-semibold">{title}</h2>
+            <h2 id={titleId} className="text-base font-semibold">
+              {title}
+            </h2>
             <CloseButton onClose={onClose} />
           </div>
         )}
