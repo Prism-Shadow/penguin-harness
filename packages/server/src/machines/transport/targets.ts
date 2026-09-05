@@ -77,3 +77,17 @@ export function appendHostBlock(block: string): void {
   const lead = existing === "" ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
   fs.appendFileSync(file, lead + block);
 }
+
+/** The config's text, or null when there is none to read. */
+export function readSshConfig(): string | null {
+  try {
+    return fs.readFileSync(path.join(SSH_DIR(), "config"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the config back whole — after a block this app wrote was rewritten in place. */
+export function writeSshConfig(text: string): void {
+  fs.writeFileSync(path.join(SSH_DIR(), "config"), text, { mode: 0o600 });
+}

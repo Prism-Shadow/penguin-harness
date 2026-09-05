@@ -70,6 +70,7 @@ import type {
   MachinesResponse,
   MachinesUseResponse,
   SshHostRequest,
+  SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -1334,6 +1335,23 @@ export const addSshHost = (projectId: string, host: SshHostRequest) =>
     method: "POST",
     body: host,
   });
+
+/** A host's ssh block read back, and whether this app wrote it (only then may it be rewritten). */
+export const getSshHost = (projectId: string, alias: string) =>
+  apiFetch<SshHostResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+  );
+
+/** Rewrites a block this app wrote; answers the machines list. */
+export const updateSshHost = (
+  projectId: string,
+  alias: string,
+  host: Omit<SshHostRequest, "alias">,
+) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+    { method: "PUT", body: host },
+  );
 
 /** Lets machines go: connections dropped, Project membership released; the install stays. */
 export const stopUsingMachines = (projectId: string, machineIds: string[]) =>

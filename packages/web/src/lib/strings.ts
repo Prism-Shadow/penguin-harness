@@ -72,6 +72,12 @@ export const zh = {
       portRange: "1 到 65535 之间的整数。",
       exists: "ssh 配置里已有这个别名。",
       added: (alias: string) => `已写入 ${alias}。现在可以从「添加机器…」里启用它。`,
+      /** Configuring a host this app wrote: the same form, the alias fixed. */
+      configure: "配置 ssh 主机",
+      editTitle: "配置 ssh 主机",
+      saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
+      foreign:
+        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请直接编辑 ~/.ssh/config。",
     },
     /** The verbs. */
     add: "添加机器…",
