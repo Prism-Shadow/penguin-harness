@@ -22,6 +22,7 @@ import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
+import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
 import { PAGES, mergePages } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
@@ -40,6 +41,7 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   MachinesPage,
   UsagePage,
   BenchmarkPage,
+  DashboardPage,
 };
 
 const BUILTIN_RENDERERS: ReadonlySet<string> = new Set(Object.keys(BUILTIN_PAGES));

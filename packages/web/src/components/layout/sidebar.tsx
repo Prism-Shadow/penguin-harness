@@ -2171,6 +2171,19 @@ export function Sidebar({
             >
               {S.settings.systemSettings}
             </button>
+            {/* The dashboard: a phone-sized overview of where Sessions run and where one waits
+                on a person. A row under the settings entry rather than a nav group — it is
+                opened deliberately, on a phone, not lived in. */}
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setUserOpen(false);
+                navigate("/dashboard");
+              }}
+            >
+              {S.settings.dashboard}
+            </button>
             {/* Update entry, directly under the settings entry rather than on a page inside
                 it: one row for both backends (the server release here, the shell's own
                 updater in the desktop window), naming where the update flow stands and
