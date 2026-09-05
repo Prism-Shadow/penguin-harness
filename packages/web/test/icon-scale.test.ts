@@ -59,6 +59,17 @@ describe("one glyph, one home", () => {
   it("draws the collapse chevron in exactly one place", () => {
     expect(occurrences("M9 5l7 7-7 7")).toEqual(["components/ui/chevron.tsx"]);
   });
+
+  // The two dock edges are drawn from three places at once — the chat toolbar's pull-open
+  // buttons, the dock header's move-dock buttons and the floating launcher's ball — which is
+  // exactly how the marks above accumulated their copies.
+  it("draws the bottom-dock mark in exactly one place", () => {
+    expect(occurrences("M4 5h16v14H4zM4 14h16")).toEqual(["components/ui/icons.tsx"]);
+  });
+
+  it("draws the right-dock mark in exactly one place", () => {
+    expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual(["components/ui/icons.tsx"]);
+  });
 });
 
 describe("stroke weights", () => {

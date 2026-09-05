@@ -106,6 +106,7 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { DockPanel } from "../dock/dock-panel";
+import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
@@ -1975,7 +1976,10 @@ export function ChatPage() {
                   // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
                   // recreated when the first message arrives (preserving draft/focus).
                   <>
-                    <div className="min-h-0 flex-1">
+                    {/* `relative`: the floating dock launcher below anchors to this body —
+                        the region between the toolbar and the composer — so clamping to
+                        it keeps the launcher off both. */}
+                    <div className="relative min-h-0 flex-1">
                       {emptyChat ? (
                         <div className="flex h-full items-center justify-center px-4">
                           <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
@@ -2013,6 +2017,9 @@ export function ChatPage() {
                           }
                         />
                       )}
+                      {/* The right dock's floating launcher: rides this body's right edge
+                          while that dock is hidden, and opens its panels in one click. */}
+                      <DockLauncher agentsPending={anySubagentPending} />
                     </div>
                     <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
                       <div className="mx-auto max-w-3xl">

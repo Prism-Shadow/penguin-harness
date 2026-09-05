@@ -255,6 +255,37 @@
 .anim-fade {
   animation: fade-in 120ms ease-out both;
 }
+
+/* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
+   with a slight overshoot and fold back without one. `--fan-shift` is an entry's start
+   offset toward the ball, set per fan direction. The resting state is the base state, so
+   the reduced-motion block below leaves the entries in place instead of hiding them. */
+@keyframes launcher-fan-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--fan-shift, 8px)) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes launcher-fan-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--fan-shift, 8px)) scale(0.5);
+  }
+}
+.launcher-fan-in {
+  animation: launcher-fan-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.launcher-fan-out {
+  animation: launcher-fan-out 140ms ease-in both;
+}
 /* Message item entrance. */
 .anim-msg {
   animation: msg-in 180ms ease-out both;
