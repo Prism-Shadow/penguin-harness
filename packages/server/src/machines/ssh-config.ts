@@ -134,3 +134,61 @@ export function renderHostBlock(entry: SshHostEntry, at: Date): string {
   }
   return lines.join("\n") + "\n";
 }
+
+/** The comment `renderHostBlock` leads with; a block that carries it is one this app wrote. */
+const MARKER = /^# Added by PenguinHarness on /;
+const OPTION = /^(\S+)\s+(.*)$/;
+
+/** A host block found in a config: its lines (`start` to `end`, exclusive), what it says, and whether this app wrote it. */
+export interface HostBlockFound {
+  start: number;
+  end: number;
+  entry: SshHostEntry;
+  ours: boolean;
+}
+
+/**
+ * The block declaring exactly `alias` — a `Host` line naming that one alias and nothing
+ * else — with the options this app knows read back out of it. The block runs to the next
+ * `Host` or `Match` line or the end of the file, less any trailing blank lines, and takes in
+ * the marker comment above it when there is one, so replacing the block replaces the
+ * comment too. A `Host a b` line is not a match: it configures two aliases at once, and
+ * rewriting it as one would drop the other.
+ */
+export function findHostBlock(text: string, alias: string): HostBlockFound | null {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const host = HOST_KEYWORD.exec(lines[i]!.trim());
+    if (!host) continue;
+    const aliases = host[1]!.split(/\s+/).filter((entry) => entry !== "");
+    if (aliases.length !== 1 || aliases[0] !== alias) continue;
+    let end = i + 1;
+    while (end < lines.length && !/^(host|match)\s/i.test(lines[end]!.trim())) end++;
+    while (end > i + 1 && lines[end - 1]!.trim() === "") end--;
+    const ours = i > 0 && MARKER.test(lines[i - 1]!.trim());
+    const entry: SshHostEntry = { alias, hostName: "" };
+    for (const raw of lines.slice(i + 1, end)) {
+      const line = raw.trim();
+      if (line === "" || line.startsWith("#")) continue;
+      const option = OPTION.exec(line);
+      if (!option) continue;
+      const key = option[1]!.toLowerCase();
+      const value = option[2]!.trim();
+      if (key === "hostname") entry.hostName = value;
+      else if (key === "user") entry.user = value;
+      else if (key === "port") {
+        const port = Number(value);
+        if (Number.isInteger(port)) entry.port = port;
+      } else if (key === "identityfile") entry.identityFile = value;
+    }
+    return { start: ours ? i - 1 : i, end, entry, ours };
+  }
+  return null;
+}
+
+/** The config with `found`'s lines replaced by a freshly rendered block. */
+export function replaceHostBlock(text: string, found: HostBlockFound, block: string): string {
+  const lines = text.split("\n");
+  lines.splice(found.start, found.end - found.start, ...block.replace(/\n$/, "").split("\n"));
+  return lines.join("\n");
+}
