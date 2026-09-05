@@ -37,8 +37,6 @@ export const zh = {
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
     pageTitle: "机器",
-    pageDesc:
-      "本项目跑 agent 的机器。「使用」一台，服务端会自己装好程序、启动、连上并保持连接；「停用」则放开它。",
     /** The version strip: what this server would install, and whether the machines match it. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     behindCount: (count: number) => `${count} 台机器不是这个版本。`,
@@ -53,13 +51,9 @@ export const zh = {
     noMatch: "没有匹配的主机。",
     /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
     more: (count: number) => `另有 ${count} 台未显示——继续输入以缩小范围。`,
-    /** Tag on a picker row this server already installed on for another project: adding it costs no transfer. */
-    elsewhere: "已装（其他项目）",
-    /** The entry for the machine this server itself runs on. */
-    localTitle: "本机",
-    localReady: "就是这台服务端所在的机器，随时可用。",
-    /** Heading of the list of machines in use here. */
-    inUseTitle: (count: number) => `在用的机器（${count}）`,
+    /** The tag on this server's own row, and its sentence. */
+    localTitle: "本服务端",
+    localReady: "页面就是从这台机器提供的，随时可用。",
     noneInUse: "还没有在用的机器。",
     sshHint:
       "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
@@ -70,6 +64,19 @@ export const zh = {
     stopUsing: "停用",
     selectAll: "全选",
     selectedCount: (count: number) => `已选 ${count} 台`,
+    /** The one-word pill at a row's end, keyed by the row's reading. */
+    state: {
+      queued: "排队中",
+      working: "处理中",
+      ready: "就绪",
+      failed: "失败",
+      installedOnly: "已安装",
+      behind: "待更新",
+      notConnected: "未连接",
+      unreachable: "连不上",
+      stopped: "未运行",
+      unknown: "未检查",
+    },
     /** The one sentence a row says. */
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
