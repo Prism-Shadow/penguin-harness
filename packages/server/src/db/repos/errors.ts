@@ -52,6 +52,12 @@ export interface ErrorRecordInsert {
 export interface ErrorFilter {
   from?: string;
   to?: string;
+  /**
+   * Instant bounds (UTC ISO strings, the spelling `ts` is written in) narrowing the date
+   * range to a trailing window — the last hour, the last 24 hours. Both or neither.
+   */
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
   /** One error category (`unexpected` / `expected`); absent counts both, which is what the panel shows. */
   kind?: string;
@@ -153,6 +159,14 @@ export class ErrorsRepo {
       conds.push("date <= :to");
       params.to = f.to;
     }
+    if (f.fromTs !== undefined) {
+      conds.push("ts >= :fromTs");
+      params.fromTs = f.fromTs;
+    }
+    if (f.toTs !== undefined) {
+      conds.push("ts <= :toTs");
+      params.toTs = f.toTs;
+    }
     if (f.agentId !== undefined) {
       // Filtering by Agent naturally leaves only that Agent's errors (HTTP / process-level errors have no agent_id).
       conds.push("agent_id = :agentId");
@@ -221,23 +235,18 @@ export class ErrorsRepo {
   /**
    * Deletes the rows a matching read would have returned, and answers how many went.
    *
-   * The WHERE comes from the same `conds` the SELECTs use, so the delete can never reach a row
-   * the caller's own reads could not: narrowing a filter narrows both halves together, and
-   * there is no second expression to drift.
-   *
-   * `includeGlobal` is deliberately not accepted. Unattributed rows belong to no Project and
-   * appear in EVERY Project's admin view, so a Project-scoped clear that took them would empty
-   * them out of every other Project's panel as well — the same line deleteByProject and
-   * deleteByAgent already draw. Clearing them is an admin-wide act and needs an admin-wide
-   * surface, not a side effect of tidying one Project.
-   *
-   * The `Omit` on the parameter says that, but it does not enforce it: excess-property checking
-   * only fires on a fresh object literal, so a caller already holding an `ErrorFilter` could
-   * forward one carrying `includeGlobal: true` and compile clean. Hence the explicit `false`
-   * below — the guard is in the query, where a future caller cannot get around it.
+   * The WHERE comes from the same `conds` the SELECTs use, `includeGlobal` included, so the
+   * delete reaches exactly the rows the caller's own reads reach and never one more: narrowing
+   * a filter narrows both halves together, and there is no second expression to drift. The
+   * caller passes the `includeGlobal` it reads with — an admin's clear takes the unattributed
+   * rows an admin's panel shows, and a member's clear, like a member's read, never sees them.
+   * Unattributed rows sit in every Project's admin view, so clearing them from one Project's
+   * panel clears them from every other's too: that is the one person who can see them anywhere
+   * emptying instance-wide noise, not one tenant reaching into another. deleteByProject and
+   * deleteByAgent keep leaving them alone — a cascade is not a person deciding to clear.
    */
-  deleteFiltered(projectId: string, f: Omit<ErrorFilter, "includeGlobal"> = {}): number {
-    const { where, params } = this.conds(projectId, { ...f, includeGlobal: false });
+  deleteFiltered(projectId: string, f: ErrorFilter = {}): number {
+    const { where, params } = this.conds(projectId, f);
     const res = this.db.prepare(`DELETE FROM error_records WHERE ${where}`).run(params);
     return Number(res.changes);
   }

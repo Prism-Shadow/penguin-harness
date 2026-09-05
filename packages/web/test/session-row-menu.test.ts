@@ -52,13 +52,13 @@ describe("HOVER_ROW_ACTIONS", () => {
 });
 
 describe("contextMenuActions", () => {
-  it("carries the whole set when the row can be pinned", () => {
+  it("carries the whole set when the row can be pinned, with the id copy between archive and delete", () => {
     expect([...contextMenuActions(true)]).toEqual([
       "pin",
       "rename",
-      "copy",
       "messaging",
       "archive",
+      "copy",
       "delete",
     ]);
   });
@@ -66,9 +66,9 @@ describe("contextMenuActions", () => {
   it("drops only pin on rows where pinning cannot reorder anything (folder rows)", () => {
     expect([...contextMenuActions(false)]).toEqual([
       "rename",
-      "copy",
       "messaging",
       "archive",
+      "copy",
       "delete",
     ]);
   });
@@ -128,7 +128,7 @@ describe("the hover buttons' CSS contract", () => {
 
 describe("sessionRowMenuItem", () => {
   it("gives every action a label, a glyph, and only delete the destructive treatment", () => {
-    const all: SessionRowAction[] = ["pin", "rename", "copy", "messaging", "archive", "delete"];
+    const all: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
     for (const action of all) {
       const item = sessionRowMenuItem(action, RESTING);
       expect(item.label).toBeTruthy();
@@ -139,7 +139,7 @@ describe("sessionRowMenuItem", () => {
 
   it("gives the actions distinct glyphs, so a row is not read by its label alone", () => {
     const icons = (
-      ["pin", "rename", "copy", "messaging", "archive", "delete"] as SessionRowAction[]
+      ["pin", "rename", "messaging", "archive", "copy", "delete"] as SessionRowAction[]
     ).map((a) => sessionRowMenuItem(a, RESTING).icon);
     expect(new Set(icons).size).toBe(icons.length);
     // Remote control wears the same paper plane the session row flies while it is relaying:
@@ -147,10 +147,10 @@ describe("sessionRowMenuItem", () => {
     expect(icons).toEqual([
       PIN_ICON,
       PENCIL_ICON,
-      // The same glyph the details card's copy button shows, so one value has one mark.
-      STAT_ICONS.copy,
       MESSAGING_RELAY_ICON,
       ARCHIVE_ICON,
+      // The same glyph the details card's copy button shows, so one value has one mark.
+      STAT_ICONS.copy,
       TRASH_ICON,
     ]);
   });

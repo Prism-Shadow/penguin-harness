@@ -323,6 +323,9 @@ describe("model-catalog", () => {
       ["kimi-k3", 1048576, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
+      ["seed-2.1-pro", 256000, true],
+      ["seed-2.1-turbo", 256000, true],
+      ["seed-evolving", 256000, true],
     ]);
     for (const m of td) {
       expect(m.clientType).toBe("openai-chat");
@@ -352,6 +355,9 @@ describe("model-catalog", () => {
       ["deepseek-v4-flash-0731", 0.5, [1.5, 4.5, 0.05]],
       ["kimi-k3", 0.2, [16, 80, 1.6]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
+      ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
+      ["seed-2.1-turbo", 0.5, [1.5, 7.5, 0.3]],
+      ["seed-evolving", 0.5, [3, 15, 0.6]],
     ];
     for (const [modelId, discount, cnyBilled] of discounted) {
       const entry = td.find((m) => m.modelId === modelId)!;
@@ -361,7 +367,7 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those six are promoted; every other row bills its list price unchanged.
+    // Exactly those nine are promoted; every other row bills its list price unchanged.
     expect(
       td
         .filter((m) => m.discount !== undefined)

@@ -10,8 +10,8 @@
  *   pointer entry is the ellipsis; delete moved inside the menu with them (still
  *   danger-styled there), keeping the hover surface to one safe direct action.
  * - Right-clicking a row (or holding it on touch, Shift+F10 on the keyboard, or clicking
- *   the ellipsis) opens the whole set — pin, rename, messaging, archive, delete — as a
- *   labelled menu.
+ *   the ellipsis) opens the whole set — pin, rename, messaging, archive, copy id, delete —
+ *   as a labelled menu.
  *
  * Rename therefore keeps a home: every Session must stay renamable, archivable and
  * deletable, and paring the hover affordance down would otherwise have dropped rename
@@ -80,14 +80,15 @@ export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
 /**
  * The context menu's actions. Pin only reorders rows in the active list, so folder rows
  * (archived / subagent / scheduled) offer the rest without it — the same gate the
- * ellipsis menu applied before this moved. Copying the id sits next to rename, the other
- * action about which Session this is rather than what happens to it, and the messaging
- * binding sits with them, before the archive/delete pair.
+ * ellipsis menu applied before this moved. The order runs from the actions that change
+ * the Session to the one that ends it: pin, rename and the messaging binding first, then
+ * archive, then copying the id — the one row that changes nothing, kept between archive
+ * and delete — and delete last.
  */
 export function contextMenuActions(canPin: boolean): readonly SessionRowAction[] {
   return canPin
-    ? ["pin", "rename", "copy", "messaging", "archive", "delete"]
-    : ["rename", "copy", "messaging", "archive", "delete"];
+    ? ["pin", "rename", "messaging", "archive", "copy", "delete"]
+    : ["rename", "messaging", "archive", "copy", "delete"];
 }
 
 export interface SessionRowMenuItem {

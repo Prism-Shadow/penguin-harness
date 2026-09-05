@@ -831,7 +831,7 @@ export const zh = {
      */
     recommendedGroup: "官方推荐",
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% 优惠`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
     offPeakTitle: (pct: number): string =>
@@ -1665,7 +1665,7 @@ Benchmark：
     sessionStats: "统计",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
-    copySessionId: "复制 Session id",
+    copySessionId: "复制 Session ID",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",
@@ -2270,10 +2270,20 @@ Benchmark：
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `将删除本 Project 在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其余时间段的记录保留。`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `将删除本 Project 中 Agent「${agentId}」在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
+    /** The range half of the confirm: a quick preset by the name the picker gives it, a custom range by its two dates — each one adverbial the sentence below slots in. */
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "最近一小时内",
+        "1d": "最近一天内",
+        "7d": "近 7 天内",
+        "30d": "近 30 天内",
+        "90d": "近 90 天内",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `在 ${from} 至 ${to} 区间内`,
+    errorsClearScope: (count: number, range: string): string =>
+      `将删除本 Project ${range}的 ${count} 条错误记录，其余时间段的记录保留。`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `将删除本 Project 中 Agent「${agentId}」${range}的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
     errorsClearIrreversible: "此操作不可恢复。",
     errorsClearDone: (count: number): string => `已删除 ${count} 条错误记录`,
   },

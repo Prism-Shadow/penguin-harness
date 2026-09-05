@@ -249,8 +249,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /usage | 用量统计，查询参数 `from`、`to`、`fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需）、`groupBy`、`granularity`（时间序列精度 `minute` / `hour` / `day` / `week` / `month`，默认 `day`；范围 × 精度过大的组合会被拒绝）、`agentId`、`provider`、`modelId` |
-| GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `agentId` 过滤，另可选 `kind`（`unexpected` / `expected`）→ `{items, total}` |
-| DELETE | /usage/errors | 清空当前筛选下的异常明细：`from` / `to` / `agentId`，与读取所用的同一组（不接受 `kind`，面板没有该控件）→ `{deleted}`。仅 Project owner；无 Project 归属的异常不在任何一次清空范围内，管理员亦然 |
+| GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤，另可选 `kind`（`unexpected` / `expected`）→ `{items, total}` |
+| DELETE | /usage/errors | 清空当前筛选下的异常明细：`from` / `to` / `fromTs` / `toTs` / `agentId`，与读取所用的同一组（不接受 `kind`，面板没有该控件）→ `{deleted}`。此处 `from` 与 `to` 必填（缺一即 400）——开区间等于整段历史而非一次筛选。仅 Project owner；删除的触及范围与调用者的读取范围相同，故管理员的清空同时带走其读取所含的无归属异常，成员的清空从不涉及 |
 | GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
 | GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace 性能分析结果 |
