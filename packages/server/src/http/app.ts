@@ -115,10 +115,21 @@ export class HttpModule {
         });
         declinedRuntime = true;
       }
-      if (!gated && r.auth === "user") {
-        // Protected routes: cookie -> auth_session -> user.
-        app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
-        gated = true;
+      if (r.auth === "user") {
+        // Protected routes: cookie -> auth_session -> user. /api/* is gated once, ahead of
+        // the first protected group. A protected group under another prefix — the machine
+        // proxy at /server/ — is gated on its own prefix: the gate is what puts the user on
+        // the context, and a handler reading it behind an ungated prefix would throw.
+        if (!gated) {
+          app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
+          gated = true;
+        }
+        if (!r.prefix.startsWith("/api")) {
+          app.use(
+            `${r.prefix.replace(/\/$/, "")}/*`,
+            authMiddleware(this.auth, this.config.trustProxy),
+          );
+        }
       }
       app.route(r.prefix, r.app);
     }
