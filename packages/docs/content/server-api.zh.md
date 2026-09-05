@@ -234,6 +234,44 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 `provider` 要么成对给出、要么都不给；该二元组会在任务保存时以及调度器对账时对照 Project 模型表校验。
 
+### 组织（公司模式）
+
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写；删除组织仅 owner 可为。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；频道的读取与成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入（仅对携带本机 API token 的请求生效），员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限 |
+| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、告警）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone` 与阈值 / 删除（员工 Agent 与会话保留） |
+| GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
+| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?` |
+| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
+| GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
+| GET / PUT | /:orgId/handbook | 组织手册索引（`handbook/README.md`） |
+| GET | /:orgId/handbook/files | 知识库文件清单，索引在前 |
+| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
+| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项 |
+| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |
+| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（各节、进展、贡献会话、子工单、上卷成本）/ 更新头部字段与各节 |
+| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
+| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
+| POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}`——追加一条归属于调用方的进展 |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions` |
+| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
+| GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
+| GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
+| POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
+| DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
+| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员 |
+| POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
+| GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
+| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
+
+频道相关错误：`channel_not_found`（404，频道 id 不合法时同样如此）、`channel_exists`（409）、`channel_archived`（409，归档频道在取消归档前不接受写入）、`not_a_member`（403，无成员身份的读取、发言与邀请，以及员工尝试仅限人的操作）、`all_hands_immutable`（400，归档 `default_channel` 或编辑其成员）、`mention_not_member`（400，消息提及了不在该频道的对象，整条不写入）、`invalid_principal`（400）。
+
+`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_channel`（新消息，带 `channelId` 与 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
+
 ### Session 创建与目录浏览
 
 | 方法 | 路径 | 说明 |
@@ -265,7 +303,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
+| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含）。`orgId` 标出被公司模式缓存认领的会话——工位会话，或参与该组织某个工单的会话——普通会话没有这个字段；列表路由同样带上它 |
 | PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |

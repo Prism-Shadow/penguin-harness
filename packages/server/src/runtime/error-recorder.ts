@@ -58,6 +58,7 @@ import type { ErrorsRepo } from "../db/repos/errors.js";
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
   | "http"
+  | "organization"
   | "session"
   | "llm"
   | "environment"

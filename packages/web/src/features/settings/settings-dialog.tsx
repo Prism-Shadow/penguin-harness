@@ -19,12 +19,13 @@ import { useAuth } from "../../state/auth";
 import { PagedDialog } from "../../components/ui/paged-dialog";
 import type { PagedDialogGroup } from "../../components/ui/paged-dialog";
 import { Icon } from "../../components/ui/group-list";
-import { GEAR_ICON } from "../../components/ui/icons";
+import { COMPANY_MODE_ICON, GEAR_ICON } from "../../components/ui/icons";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
+import { CompanySection } from "./company-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -40,6 +41,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
+  /** The building the mode switch wears: company mode. */
+  company: COMPANY_MODE_ICON,
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -72,6 +75,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
+    company: S.settings.companyModeTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -83,6 +87,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+    company: S.settings.companyModeServerInfo,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -114,6 +119,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
+      {current === "company" && <CompanySection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );

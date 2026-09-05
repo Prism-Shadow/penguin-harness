@@ -55,6 +55,12 @@ interface AuthContextValue {
    * check and the server check can never disagree about what "too large" means.
    */
   uploadLimits: UploadLimits;
+  /**
+   * Whether company mode is enabled server-wide (the admin master switch in server settings,
+   * default on). Off hides the work-mode switch for everyone and 404s every organization
+   * route; the user's own preference (`UiPrefs.companyMode`) only hides the switch for them.
+   */
+  companyMode: boolean;
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Refetch /api/me (e.g. to refresh the passwordIsInitial flag after a password change). */
@@ -71,6 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
+  // Off until /api/me says otherwise: the mode switch must not flash for a server that has
+  // turned company mode off, and the default on the server side is on anyway.
+  const [companyMode, setCompanyMode] = useState(false);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
   // RequireAuth redirects back to the login page.
@@ -92,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
         setUploadLimits(res.uploadLimits);
+        setCompanyMode(res.companyMode);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -120,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
       setUploadLimits(me.uploadLimits);
+      setCompanyMode(me.companyMode);
     } catch {
       // Login itself succeeded; keep the optimistic default.
     }
@@ -140,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setDesktopMode(res.desktopMode);
     setSessionVia(res.sessionVia);
     setUploadLimits(res.uploadLimits);
+    setCompanyMode(res.companyMode);
   }, []);
 
   return (
@@ -150,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         desktopMode,
         sessionVia,
         uploadLimits,
+        companyMode,
         login,
         logout,
         refresh,

@@ -459,7 +459,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   skills: {
     eyebrow: "Built-in Skills",
     title: "The built-in Skill library at a glance",
-    subtitle: "Three Skill groups out of the box — agents can write and optimize their own, too.",
+    subtitle: "Four Skill groups out of the box — agents can write and optimize their own, too.",
     groups: [
       {
         title: "Office Productivity",
@@ -484,7 +484,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
+          "company-setup",
         ],
+      },
+      {
+        title: "Agent Company",
+        skills: ["company-employee", "company-ceo", "company-hr", "company-finance"],
       },
     ],
   },

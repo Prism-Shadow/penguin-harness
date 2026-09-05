@@ -234,6 +234,44 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 Schedule writes are owner-only. A task in new-Session mode carries `modelId` and `provider` together or not at all; the pair is checked against the Project's model table when the task is saved and again when the scheduler reconciles it.
 
+### Organizations (company mode)
+
+All paths below are under `/api/projects/:projectId/organizations`. Every route answers 404 while the admin's company-mode switch is off. Any Project member reads and writes; deleting an organization is owner-only. Write bodies may carry `sessionId` — the calling session, which the CLI fills from `PENGUIN_SESSION_ID` — so the file records the employee rather than the token's user; the channel reads and the member DELETE, which have no body, take the same session as `?sessionId=` (honoured only for a request carrying the local API token), which is how an employee is answered as itself instead of as the signed-in person. See [Company Mode](/company-mode) for the files behind these routes.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET / POST | / | List organizations / create one: `{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?}` → 201 with the organization detail (creation makes the CEO Agent and opens its desk with an initialization run; 409 when the id or the CEO's Agent id is taken). `ceoBudget` is the CEO's monthly USD budget, written as the `budget` of its `org_chart.yaml` entry — non-negative, omitted = 100; compared on the cumulative line, it is the whole company's cap |
+| GET / PATCH / DELETE | /:orgId | Overview (settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, alerts) / change name, mission, `status` (`active` / `paused`), `approvalMode`, `timezone`, thresholds / delete (the employee Agents and their sessions stay) |
+| GET | /:orgId/chart | The employee tree with live state, desk and period spend per employee |
+| POST | /:orgId/employees | Hire: `{agentId}` for an existing Agent or `{newAgent: {agentId, name?, description?, plugins?}}`, plus `title`, `reportsTo`, `workspace?`, `budget?`, `duties?`, `model?` |
+| PATCH / DELETE | /:orgId/employees/:agentId | Change title, manager, workspace, budget (`null` clears), duties, model / leave (subordinates move up to the manager; the CEO cannot leave) |
+| GET / POST | /:orgId/employees/:agentId/desk | The desk session (opened when missing) / a renewed desk session |
+| GET / PUT | /:orgId/handbook | The handbook index (`handbook/README.md`) |
+| GET | /:orgId/handbook/files | The knowledge-base files, the index first |
+| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | One document by relative path; the index cannot be deleted |
+| GET / POST | /:orgId/calendar | Every employee's events with their run state / create: `{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | One event |
+| GET / POST | /:orgId/tickets | The board by column (plus unparsable files) / create: `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |
+| GET / PUT | /:orgId/tickets/:ticketId | Ticket detail (sections, progress, contributing sessions, children, rolled-up cost) / update header fields and sections |
+| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}` — moving into `rejected` needs a reason |
+| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}` — `by` is a ticket id or a principal; the ticket stays in its column |
+| POST | /:orgId/tickets/:ticketId/unblock | Clears the block |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}` — appends a progress line attributed to the caller |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`: a ticket session of that employee, recorded in the ticket's `Sessions` |
+| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}` — records an existing session as contributing |
+| GET / POST | /:orgId/channels | Every channel the caller may see (people: all of them; an employee: the ones it is in), `default_channel` first / open one: `{channelId, name?, purpose?}` → 201, holding only its creator (409 when the id is taken) |
+| GET / PATCH | /:orgId/channels/:channelId | The channel and its members / rename, change `purpose`, set `archived` (people only, never on `default_channel`) |
+| POST | /:orgId/channels/:channelId/members | `{principal}` — any member invites an `agent:<id>` employee or a `user:<id>` Project member; a person may add itself, an employee may not. Adding an existing member is a no-op 201 |
+| DELETE | /:orgId/channels/:channelId/members/:principal | Remove a member: anyone removes itself, a person removes anyone, an employee only itself; removing a non-member is a no-op 204 |
+| GET / POST | /:orgId/channels/:channelId/messages | A day's messages (`?date=yyyy-mm-dd`, default today in the organization's timezone) with the caller's unread and mention counts / send `{text, refs?}`; mentions are resolved from the text and must all be members |
+| POST | /:orgId/channels/:channelId/read | `{upTo}` — the caller's read cursor in this channel |
+| GET | /:orgId/finance | Spend per employee (own and cumulative along the reporting line), per ticket (rolled up along `Parent`), daily trend, alerts; `?period=yyyy-mm` |
+| GET | /:orgId/sessions | The organization's desk sessions and ticket sessions grouped by ticket |
+
+Channel errors: `channel_not_found` (404 — also for an id no channel could carry), `channel_exists` (409), `channel_archived` (409 — an archived channel takes no writes until it is unarchived), `not_a_member` (403 — reading, posting or inviting without membership, and any people-only action attempted by an employee), `all_hands_immutable` (400 — archiving `default_channel` or editing its membership), `mention_not_member` (400 — the message names principals the channel does not hold; nothing is written), `invalid_principal` (400).
+
+User-level events on `GET /api/events`: `org_run` (a work run or ticket session started), `org_channel` (a new message, with its `channelId` and mentions), `org_ticket` (a ticket's status, owner, block or sessions changed), `org_budget` (warned / paused / resumed).
+
 ### Session Creation and Directory Browsing
 
 | Method | Path | Description |
@@ -265,7 +303,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
+| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it). `orgId` marks a Session the company-mode caches own — a desk session, or a session contributing to one of that organization's tickets — and is absent on every ordinary Session; the list route stamps it too |
 | PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |

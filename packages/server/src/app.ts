@@ -49,6 +49,7 @@ import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
+import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
@@ -78,6 +79,10 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
+import { OrgStore } from "./organization/store.js";
+import type { OrgDeps } from "./runtime/organization/deps.js";
+import { OrganizationScheduler } from "./runtime/organization/scheduler.js";
+import { OrganizationService } from "./runtime/organization/service.js";
 import { MessagingBridge } from "./runtime/messaging/bridge.js";
 import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
 import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
@@ -147,6 +152,7 @@ import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
+import { organizationRoutes } from "./http/routes/organizations.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import {
@@ -211,6 +217,10 @@ export interface AppDeps {
   /** WeChat scan-to-connect: the in-flight codes and the poll handles that never leave the server. */
   wechatScan: WeChatScanService;
   scheduler: Scheduler;
+  /** Company mode: the organization runtime (files are the truth; these serve and drive them). */
+  orgService: OrganizationService;
+  orgScheduler: OrganizationScheduler;
+  orgCacheRepo: OrgCacheRepo;
   channels: ChannelHub;
   manager: SessionManager;
   /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
@@ -820,6 +830,9 @@ export function buildAppDeps(
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const serverSettingsRepo = new ServerSettingsRepo(db);
+  // Company-mode caches: read at every command spawn below (which organization a session
+  // belongs to), so the repo exists before the control environment is defined.
+  const orgCacheRepo = new OrgCacheRepo(db);
   // Command-subprocess proxy policy for core, keyed on the
   // "agent environment uses the proxy" switch (the app switch only drives the server's
   // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
@@ -851,12 +864,16 @@ export function buildAppDeps(
   };
   const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
     const token = authService.localApiToken();
+    const orgId = orgCacheRepo.ownerOfSession(ctx.sessionId)?.orgId ?? null;
     return {
       PENGUIN_API_URL: canonicalApiUrl(),
       ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
       PENGUIN_PROJECT_ID: ctx.projectId,
       PENGUIN_AGENT_ID: ctx.agentId,
       PENGUIN_SESSION_ID: ctx.sessionId,
+      // A desk or ticket session also learns its organization, so `penguin org` needs no --org-id
+      // inside it. Looked up per spawn from the cache the ledger and the tickets project into.
+      ...(orgId !== null ? { PENGUIN_ORG_ID: orgId } : {}),
     };
   };
   const schedulesRepo = new SchedulesRepo(db);
@@ -961,6 +978,7 @@ export function buildAppDeps(
     usage: usageRepo,
     errors: errorsRepo,
     schedules: schedulesRepo,
+    orgCache: orgCacheRepo,
     projectConfig: projectConfigService,
     manager,
     traceIndex,
@@ -1049,6 +1067,13 @@ export function buildAppDeps(
         ? enabled.channel
         : null;
     },
+    // Company mode: which organization owns a Session, so development mode's list can hide
+    // organization sessions and the company sidebar can group its own. The caches are a
+    // projection of the organization's files, rebuilt every reconcile pass, so a row that
+    // has not been projected yet reads as an ordinary Session for one pass — never as the
+    // wrong organization.
+    orgIdOfSession: (sessionId) => orgCacheRepo.ownerOfSession(sessionId)?.orgId,
+    orgIdsOfProject: (projectId) => orgCacheRepo.orgIdsOfProject(projectId),
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
@@ -1066,6 +1091,40 @@ export function buildAppDeps(
     },
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
+
+  // Organization runtime (company mode): the same narrow seams as the schedule scheduler —
+  // the manager for run state and task start, SessionService for sessions, AgentService and
+  // AgentConfigService for hiring, UsageService for spend — started/stopped by platform.ts.
+  const orgDeps: OrgDeps = {
+    root: config.root,
+    store: new OrgStore(config.root),
+    cache: orgCacheRepo,
+    projects: projectsRepo,
+    members: membersRepo,
+    sessions: sessionsRepo,
+    runner: manager,
+    sessionCreator: sessionService,
+    agents: {
+      exists: async (projectId, agentId) =>
+        agentsRepo.exists(projectId, agentId) || agentConfigService.exists(projectId, agentId),
+      create: async (projectId, agentId, name, description, plugins) => {
+        await agentService.createAgent(projectId, agentId, name, description, plugins);
+      },
+      displayName: async (projectId, agentId) =>
+        (await agentConfigService.readCardMeta(projectId, agentId)).name ?? agentId,
+      writeAgentsMd: (projectId, agentId, content) =>
+        agentConfigService.updateConfig(projectId, agentId, { agentsMd: content }),
+    },
+    projectConfig: projectConfigService,
+    usage: usageService,
+    errors,
+    notifyProject: notifyProjectUsers,
+    companyModeEnabled: () => serverSettingsRepo.getCompanyMode(),
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    log,
+  };
+  const orgScheduler = new OrganizationScheduler(orgDeps);
+  const orgService = new OrganizationService(orgDeps, orgScheduler);
 
   return {
     config,
@@ -1098,6 +1157,9 @@ export function buildAppDeps(
     wechatScan,
     messaging,
     scheduler,
+    orgService,
+    orgScheduler,
+    orgCacheRepo,
     channels,
     manager,
     sessionSources,
@@ -1233,6 +1295,7 @@ export function createApp(
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
+  app.route("/api/projects/:projectId/organizations", organizationRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));

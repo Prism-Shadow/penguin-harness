@@ -183,4 +183,73 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   meta_read  INTEGER NOT NULL DEFAULT 0      -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session
 );
 CREATE INDEX IF NOT EXISTS idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
+CREATE TABLE IF NOT EXISTS org_sessions (      -- DERIVED CACHE (company mode): desk sessions, rebuilt from each organization's desks.toml (current + previous); trigger_hop is mention-chain accounting and reads 0 after a rebuild
+  session_id  TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  org_id      TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  current     INTEGER NOT NULL DEFAULT 1,
+  trigger_hop INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_org_sessions_org ON org_sessions(project_id, org_id);
+CREATE TABLE IF NOT EXISTS org_ticket_sessions ( -- DERIVED CACHE (company mode): ticket <-> contributing session, rebuilt from each ticket's Sessions header
+  project_id  TEXT NOT NULL,
+  org_id      TEXT NOT NULL,
+  ticket_id   TEXT NOT NULL,
+  session_id  TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  trigger_hop INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (project_id, org_id, ticket_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_org_ticket_sessions_session ON org_ticket_sessions(session_id);
+CREATE TABLE IF NOT EXISTS org_calendar_state ( -- calendar run state (company mode; the files are declarative intent), same rules as schedule_state
+  project_id     TEXT NOT NULL,
+  org_id         TEXT NOT NULL,
+  agent_id       TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  start_at_ms    INTEGER NOT NULL,
+  def_hash       TEXT NOT NULL,
+  last_slot_ms   INTEGER,
+  last_fired_at  TEXT,
+  fired_once     INTEGER NOT NULL DEFAULT 0,
+  missed         INTEGER NOT NULL DEFAULT 0,
+  invalid_reason TEXT,
+  last_outcome   TEXT,
+  PRIMARY KEY (project_id, org_id, agent_id, name)
+);
+CREATE TABLE IF NOT EXISTS org_ticket_state (   -- DERIVED CACHE (company mode): the last (status, owner, blocked) seen per ticket, so a change is notified once; rebuilt silently from the ticket files
+  project_id  TEXT NOT NULL,
+  org_id      TEXT NOT NULL,
+  ticket_id   TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  owner       TEXT NOT NULL DEFAULT '',
+  blocked     TEXT NOT NULL DEFAULT '',
+  blocked_by  TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (project_id, org_id, ticket_id)
+);
+CREATE TABLE IF NOT EXISTS org_channel_state ( -- DERIVED CACHE (company mode): tail-scan byte cursor per channel and day file
+  project_id   TEXT NOT NULL,
+  org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
+  date         TEXT NOT NULL,
+  offset_bytes INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (project_id, org_id, channel_id, date)
+);
+CREATE TABLE IF NOT EXISTS org_channel_reads ( -- user data (company mode): each user's read cursor in one channel
+  project_id   TEXT NOT NULL,
+  org_id       TEXT NOT NULL,
+  channel_id   TEXT NOT NULL,
+  user_id      TEXT NOT NULL,
+  last_read_id TEXT NOT NULL,
+  PRIMARY KEY (project_id, org_id, channel_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS org_budget_state (   -- DERIVED CACHE (company mode): warn / pause marks per employee and period, recomputed from usage and the chart's budgets
+  project_id TEXT NOT NULL,
+  org_id     TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  warned_at  TEXT,
+  paused_at  TEXT,
+  PRIMARY KEY (project_id, org_id, agent_id, period)
+);
 `;

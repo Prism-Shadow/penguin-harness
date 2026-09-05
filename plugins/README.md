@@ -11,10 +11,13 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 | Office Productivity | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `model-development`, `skill-porting`, `agent-tuning` |
+| Agent Company | `agent-company` |
 
-`humanizer`, `use-claude-code` and `continual-learning` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand. `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
+`humanizer`, `use-claude-code`, `continual-learning` and `agent-company` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand (`agent-company` by the organization itself, when it creates the CEO and hires employees). `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
+
+`agent-company` is the employee toolkit of company mode: `company-employee` is the protocol every desk and ticket session follows, and `company-ceo`, `company-hr` and `company-finance` are the playbooks of those titles. Company mode's other entry point is on the other side of the fence: `company-setup` ships with `agent-development`, which `default_agent` does carry, so the general agent can create an organization with a user who has never seen the company-mode UI — it asks one question at a time and ends at `penguin org create`, leaving hiring and tickets to the CEO.
 
 ## Documentation
 

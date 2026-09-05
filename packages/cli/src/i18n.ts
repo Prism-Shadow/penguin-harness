@@ -243,6 +243,244 @@ export interface Messages {
     colLastFired(): string;
     colStatus(): string;
   };
+  /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
+  org: {
+    desc: string;
+    lsDesc: string;
+    createDesc: string;
+    showDesc: string;
+    chartDesc: string;
+    hireDesc: string;
+    employeeDesc: string;
+    employeeSetDesc: string;
+    leaveDesc: string;
+    deskDesc: string;
+    deskShowDesc: string;
+    deskRenewDesc: string;
+    calendarDesc: string;
+    calendarLsDesc: string;
+    calendarAddDesc: string;
+    calendarUpdateDesc: string;
+    calendarRmDesc: string;
+    ticketDesc: string;
+    ticketLsDesc: string;
+    ticketShowDesc: string;
+    ticketCreateDesc: string;
+    ticketMoveDesc: string;
+    ticketAssignDesc: string;
+    ticketBlockDesc: string;
+    ticketUnblockDesc: string;
+    ticketProgressDesc: string;
+    ticketStartDesc: string;
+    ticketAttachDesc: string;
+    channelDesc: string;
+    channelLsDesc: string;
+    channelCreateDesc: string;
+    channelShowDesc: string;
+    channelInviteDesc: string;
+    channelJoinDesc: string;
+    channelLeaveDesc: string;
+    channelRemoveDesc: string;
+    channelArchiveDesc: string;
+    channelUnarchiveDesc: string;
+    channelTailDesc: string;
+    channelSendDesc: string;
+    handbookDesc: string;
+    handbookListDesc: string;
+    handbookShowDesc: string;
+    handbookWriteDesc: string;
+    handbookRmDesc: string;
+    financeDesc: string;
+    /** --org-id: the organization (defaults to PENGUIN_ORG_ID, the control environment of desk and ticket sessions). */
+    orgId: string;
+    /** create's --org-id: the id to create (never taken from the environment). */
+    newOrgId: string;
+    mission: string;
+    orgName: string;
+    /** hire's --agent-id: employ an existing Agent (XOR --new-agent). */
+    hireAgentId: string;
+    /** hire's --new-agent: create the Agent and employ it. */
+    newAgent: string;
+    newAgentName: string;
+    newAgentDescription: string;
+    /** --skills: the new Agent's library plugins, comma-separated (replaces the default pair). */
+    skills: string;
+    title: string;
+    reportsTo: string;
+    /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
+    employeeWorkspace: string;
+    /** --budget: monthly USD for the employee plus every subordinate. */
+    budget: string;
+    /** create's --ceo-budget: the CEO's monthly USD, which is the whole company's. */
+    ceoBudget: string;
+    duties: string;
+    /** calendar's --agent-id: the employee the event belongs to (defaults to PENGUIN_AGENT_ID); a filter on `ls`. */
+    calendarAgentId: string;
+    calendarTitle: string;
+    /** ticket ls filters. */
+    statusFilter: string;
+    ownerFilter: string;
+    blockedFilter: string;
+    ticketTitle: string;
+    goal: string;
+    criteria: string;
+    /** --body-file: the whole Markdown body from a file (XOR --goal). */
+    bodyFile: string;
+    owner: string;
+    parent: string;
+    /** --notify: principals told when the ticket ends, comma-separated. */
+    notify: string;
+    priority: string;
+    due: string;
+    /** move's --to: the target column. */
+    moveTo: string;
+    /** move's --reason: required when moving into rejected. */
+    moveReason: string;
+    blockReason: string;
+    /** block's --by: who or which ticket the ticket waits for. */
+    blockedBy: string;
+    progressText: string;
+    /** start's -m: a note appended to the ticket text the session opens with. */
+    startMessage: string;
+    /** start's --workspace: another directory inside the shared workspace (default: the employee's desk workspace). */
+    startWorkspace: string;
+    /** attach's --session: the session to attach (default: the calling session). */
+    attachSession: string;
+    /** tail / send's --channel: which channel to read or write in (default: the all-hands channel). */
+    channelOpt: string;
+    /** create's --name / --purpose. */
+    channelName: string;
+    channelPurpose: string;
+    channelDate: string;
+    channelCount: string;
+    channelText: string;
+    handbookPath: string;
+    handbookText: string;
+    handbookFile: string;
+    handbookOneSource: string;
+    refTicket: string;
+    refSession: string;
+    /** finance's --period: yyyy-mm (default: the current month). */
+    period: string;
+    /** No --org-id and no PENGUIN_ORG_ID: there is no default organization. */
+    orgIdMissing(): string;
+    /** hire: --agent-id XOR --new-agent. */
+    hireTargetConflict(): string;
+    /** hire: --name / --description / --skills describe the new Agent only. */
+    newAgentFieldsOnly(): string;
+    /** A non-numeric or negative budget on any of the budget flags (named, since there are several). */
+    budgetInvalid(flag: string, value: string): string;
+    /** employee set with no field to change. */
+    nothingToSet(): string;
+    /** A --status / --to value that is not a kanban column. */
+    statusInvalid(value: string): string;
+    priorityInvalid(value: string): string;
+    /** ticket create: --goal XOR --body-file. */
+    ticketBodyConflict(): string;
+    criteriaNeedsGoal(): string;
+    bodyFileUnreadable(file: string): string;
+    countInvalid(value: string): string;
+    /** An id or handbook path with a `.` / `..` segment: the URL would collapse onto another route. */
+    pathSegmentInvalid(value: string): string;
+    /** ticket attach outside a session and without --session. */
+    attachSessionMissing(): string;
+    /** Confirmations of the write commands. */
+    created(orgId: string, ceoDeskSessionId: string | undefined): string;
+    hired(agentId: string, title: string, reportsTo: string | null): string;
+    employeeUpdated(agentId: string): string;
+    left(agentId: string): string;
+    desk(
+      agentId: string,
+      sessionId: string,
+      workspace: string,
+      openedAt: string,
+      created: boolean,
+    ): string;
+    deskRenewed(agentId: string, sessionId: string): string;
+    calendarWritten(
+      agentId: string,
+      name: string,
+      enabledText: string,
+      nextFireAt: string | undefined,
+    ): string;
+    calendarRemoved(agentId: string, name: string): string;
+    ticketCreated(ticketId: string, status: string): string;
+    ticketMoved(ticketId: string, status: string): string;
+    ticketAssigned(ticketId: string, owner: string): string;
+    ticketBlocked(ticketId: string): string;
+    ticketUnblocked(ticketId: string): string;
+    progressRecorded(ticketId: string): string;
+    ticketAttached(ticketId: string, sessionId: string): string;
+    channelCreated(channelId: string): string;
+    channelInvited(channelId: string, principal: string): string;
+    channelJoined(channelId: string): string;
+    channelLeft(channelId: string): string;
+    channelMemberRemoved(channelId: string, principal: string): string;
+    channelArchived(channelId: string): string;
+    channelUnarchived(channelId: string): string;
+    messageSent(id: string): string;
+    handbookWritten(path: string): string;
+    handbookRemoved(path: string): string;
+    /** Empty states. */
+    empty(projectId: string): string;
+    calendarEmpty(): string;
+    ticketsEmpty(): string;
+    channelsEmpty(): string;
+    channelEmpty(channelId: string, date: string): string;
+    /** `show`: one line per fact. */
+    showHead(name: string, orgId: string, status: string): string;
+    showMission(mission: string): string;
+    showEmployees(count: number, running: number, paused: number): string;
+    showBoard(counts: string, blocked: number): string;
+    showSpend(period: string, spend: string): string;
+    showPending(mentions: number, review: number, blockedByMe: number): string;
+    /** An invalid organization / employee / ticket, with the reason (a line in `show`, a cell in tables). */
+    invalid(reason: string): string;
+    /** `ticket show`: the derived state above the file. */
+    ticketHead(
+      ticketId: string,
+      status: string,
+      running: boolean,
+      blocked: string | undefined,
+    ): string;
+    ticketFigures(cost: string, rolledUp: string, sessions: number, children: number): string;
+    /** The all-hands channel's label; its stored name is never shown. */
+    allHands(): string;
+    /** `channel tail` on any channel but the default one: a dim line naming it above the messages. */
+    channelHeader(channelId: string): string;
+    /** `channel show`: the head line, then the lines the channel actually has. */
+    channelHead(name: string, channelId: string, members: number, archived: boolean): string;
+    channelPurposeLine(purpose: string): string;
+    channelCreatedBy(principal: string, createdAt: string): string;
+    channelLastMessage(time: string): string;
+    financeTotal(period: string, total: string): string;
+    /** stderr note under `finance`: some usage had no pricing, so the total is a lower bound. */
+    unpriced(): string;
+    colEmployees(): string;
+    colRunning(): string;
+    colOpen(): string;
+    colBlocked(): string;
+    colSpend(): string;
+    colNote(): string;
+    /** Chart / finance: the employee's job title. */
+    colJobTitle(): string;
+    /** Tickets: the ticket title. */
+    colTitle(): string;
+    colState(): string;
+    colOwn(): string;
+    colCumulative(): string;
+    colBudget(): string;
+    colNext(): string;
+    colPriority(): string;
+    colOwner(): string;
+    colTicket(): string;
+    colRolledUp(): string;
+    colMembers(): string;
+    colArchived(): string;
+    colUnread(): string;
+    colMentions(): string;
+    colPrincipal(): string;
+  };
   /** Server-connection layer: resolution, auto-start, tokens, streams. */
   client: {
     invalidServerUrl(value: string): string;
@@ -772,6 +1010,222 @@ const en: Messages = {
     colLastFired: () => "LAST FIRED",
     colStatus: () => "STATUS",
   },
+  org: {
+    desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
+    lsDesc: "List the project's organizations",
+    createDesc:
+      "Create an organization: its CEO Agent, the CEO's desk session and the initialization run",
+    showDesc:
+      "Overview: employees and their states, board counts, spend against budget, pending items",
+    chartDesc: "The employee tree with titles, states, spend and budgets",
+    hireDesc:
+      "Employ an Agent: an existing one (--agent-id) or a new one (--new-agent), under --reports-to",
+    employeeDesc: "Manage employees",
+    employeeSetDesc: "Update an employee's entry in the tree (only the given fields change)",
+    leaveDesc: "Remove an employee from the organization (not the CEO); the Agent itself stays",
+    deskDesc: "Desk sessions (one standing session per employee)",
+    deskShowDesc: "The employee's desk session id and Workspace (opens the desk if it has none)",
+    deskRenewDesc: "Open a fresh desk session for the employee (resets its context)",
+    calendarDesc: "Calendar events (schedules that fire into the employee's desk session)",
+    calendarLsDesc: "List the organization's calendar events (one employee's with --agent-id)",
+    calendarAddDesc:
+      "Create a calendar event (writes the event file through the API; enabled by default — use --disabled to opt out)",
+    calendarUpdateDesc:
+      "Update a calendar event (read-modify-write: unspecified fields keep their stored values)",
+    calendarRmDesc: "Delete a calendar event (no prompt)",
+    ticketDesc: "Tickets on the kanban board",
+    ticketLsDesc: "List the board's tickets (filtered locally by --status / --owner / --blocked)",
+    ticketShowDesc: "Show a ticket: the derived figures, then the ticket file",
+    ticketCreateDesc: "Create a ticket in the proposed column",
+    ticketMoveDesc: "Move a ticket to another column (a reason is required for rejected)",
+    ticketAssignDesc: "Set a ticket's owner",
+    ticketBlockDesc: "Mark a ticket blocked (it stays in its column)",
+    ticketUnblockDesc: "Clear a ticket's blocked state",
+    ticketProgressDesc: "Append a progress entry (attributed to the calling session)",
+    ticketStartDesc:
+      "Open a ticket session that works on the ticket in the background; prints the session id",
+    ticketAttachDesc:
+      "Attach an existing session as a contributor (defaults to the calling session)",
+    channelDesc:
+      "The organization's channels (default_channel is the all-hands one everybody is in)",
+    channelLsDesc: "List the channels: every one of them for a person, its own for an employee",
+    channelCreateDesc:
+      "Open a channel; only its creator is in it, everyone else arrives by invitation",
+    channelShowDesc: "Show a channel and its members",
+    channelInviteDesc: "Invite principals into a channel (any member may)",
+    channelJoinDesc: "Join a channel yourself (people only; an employee waits to be invited)",
+    channelLeaveDesc: "Leave a channel",
+    channelRemoveDesc: "Remove another member from a channel (people only)",
+    channelArchiveDesc: "Archive a channel: read-only until it is unarchived (people only)",
+    channelUnarchiveDesc: "Unarchive a channel (people only)",
+    channelTailDesc: "Print a channel's last messages of a day (20 unless -n is given)",
+    channelSendDesc:
+      "Send a message to a channel (@agent:<id> / @all mention its members and trigger their desks)",
+    handbookDesc:
+      "The organization handbook: the knowledge base under handbook/, whose README.md is the index every run reads first",
+    handbookListDesc: "List the handbook files (path, size, updated), the index first",
+    handbookShowDesc: "Print a handbook document (the index when no path is given)",
+    handbookWriteDesc: "Create or replace a handbook document from -m or --file",
+    handbookRmDesc: "Delete a handbook document (the index cannot be deleted)",
+    financeDesc: "Spend per employee (along the reporting line) and per ticket, against budgets",
+    orgId:
+      "Organization id (defaults to PENGUIN_ORG_ID, set inside desk and ticket sessions; no other default)",
+    newOrgId:
+      "Id of the organization to create (letters, digits, underscores; also its directory name)",
+    mission: "The organization's mission",
+    orgName: "Display name (defaults to the id)",
+    hireAgentId: "Employ this existing Agent (mutually exclusive with --new-agent)",
+    newAgent: "Create an Agent with this id and employ it (mutually exclusive with --agent-id)",
+    newAgentName: "Display name of the new Agent",
+    newAgentDescription: "Description of the new Agent",
+    skills:
+      "Library plugins for the new Agent, comma-separated (replaces the default agent-company,agent-development)",
+    title: "Job title",
+    reportsTo: "Agent id of the manager",
+    employeeWorkspace:
+      "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
+    budget: "Monthly budget in USD for the employee plus everyone below it",
+    ceoBudget:
+      "The CEO's monthly budget in USD, which is the whole company's (budgets accumulate along the reporting line)",
+    duties: "Duties, in prose",
+    calendarAgentId:
+      "Employee the event belongs to (defaults to PENGUIN_AGENT_ID); on ls, list only this employee's events",
+    calendarTitle: "Event title",
+    statusFilter: "Only this column: proposed, in_progress, review, done or rejected",
+    ownerFilter: "Only tickets owned by this principal (agent:<id> / user:<id>)",
+    blockedFilter: "Only blocked tickets",
+    ticketTitle: "Ticket title",
+    goal: "The goal (mutually exclusive with --body-file)",
+    criteria: "Acceptance criteria (with --goal)",
+    bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
+    owner: "Owner principal (agent:<id> / user:<id>)",
+    parent: "Parent ticket id",
+    notify: "Principals notified when the ticket ends, comma-separated",
+    priority: "Priority: P0, P1 or P2",
+    due: "Due date (yyyy-mm-dd)",
+    moveTo: "Target column: proposed, in_progress, review, done or rejected",
+    moveReason: "Why (required when moving into rejected; recorded under Result)",
+    blockReason: "Why the ticket is blocked",
+    blockedBy: "Who or which ticket it waits for (a principal or a ticket id)",
+    progressText: "The progress entry",
+    startMessage: "A note appended to the ticket text the session opens with",
+    startWorkspace:
+      "Another directory inside the shared workspace (defaults to the employee's desk workspace)",
+    attachSession:
+      "The session to attach, full id or unique fragment (defaults to PENGUIN_SESSION_ID)",
+    channelOpt: "Channel to read or write in (default: default_channel, the all-hands channel)",
+    channelName: "Display name (defaults to the id)",
+    channelPurpose: "What the channel is for",
+    channelDate: "Day to read (yyyy-mm-dd in the organization's timezone; defaults to today)",
+    channelCount: "Number of messages to print (default 20)",
+    channelText: "Message text (@agent:<id> or @all to mention, inside the channel's membership)",
+    handbookPath:
+      "Path relative to handbook/ (plain segments, e.g. decisions/2026-09-02-hire-plan.md)",
+    handbookText: "Document text",
+    handbookFile: "Read the document text from a local file",
+    handbookOneSource: "Give exactly one of -m <text> or --file <file>.",
+    refTicket: "Ticket the message refers to",
+    refSession: "Session the message refers to",
+    period: "Month to report (yyyy-mm; defaults to the current month)",
+    orgIdMissing: () =>
+      "No organization given: pass --org-id <id>, or set PENGUIN_ORG_ID (desk and ticket sessions carry it in their environment).",
+    hireTargetConflict: () =>
+      "Pass exactly one of --agent-id (an existing Agent) and --new-agent (create one).",
+    newAgentFieldsOnly: () => "--name, --description and --skills describe --new-agent only.",
+    budgetInvalid: (flag, value) =>
+      `Invalid ${flag} value "${value}": expected a non-negative amount in USD.`,
+    nothingToSet: () => "Nothing to update: pass at least one field.",
+    statusInvalid: (value) =>
+      `Invalid column "${value}": expected proposed, in_progress, review, done or rejected.`,
+    priorityInvalid: (value) => `Invalid --priority value "${value}": expected P0, P1 or P2.`,
+    ticketBodyConflict: () => "Pass exactly one of --goal and --body-file.",
+    criteriaNeedsGoal: () => "--criteria goes with --goal.",
+    bodyFileUnreadable: (file) => `Cannot read --body-file ${file}.`,
+    countInvalid: (value) => `Invalid -n value "${value}": expected a positive integer.`,
+    pathSegmentInvalid: (value) =>
+      `Invalid name "${value}": "." and ".." are neither an id nor a handbook path.`,
+    attachSessionMissing: () =>
+      "No session to attach: pass --session <id>, or run inside a session (PENGUIN_SESSION_ID).",
+    created: (orgId, ceoDeskSessionId) =>
+      `Organization ${orgId} created${ceoDeskSessionId !== undefined ? ` (CEO desk session ${ceoDeskSessionId})` : ""}.`,
+    hired: (agentId, title, reportsTo) =>
+      `Employee ${agentId} hired as ${title}${reportsTo !== null ? `, reporting to ${reportsTo}` : ""}.`,
+    employeeUpdated: (agentId) => `Employee ${agentId} updated.`,
+    left: (agentId) => `Employee ${agentId} left the organization.`,
+    desk: (agentId, sessionId, workspace, openedAt, created) =>
+      `Desk of ${agentId}: session ${sessionId} (workspace ${workspace}, opened ${openedAt})${created ? " — opened just now" : ""}`,
+    deskRenewed: (agentId, sessionId) => `Desk of ${agentId} renewed: session ${sessionId}.`,
+    calendarWritten: (agentId, name, enabledText, nextFireAt) =>
+      `Calendar event ${agentId}/${name} written (${enabledText}${nextFireAt !== undefined ? `, next fire ${nextFireAt}` : ""}).`,
+    calendarRemoved: (agentId, name) => `Calendar event ${agentId}/${name} removed.`,
+    ticketCreated: (ticketId, status) => `Ticket ${ticketId} created (${status}).`,
+    ticketMoved: (ticketId, status) => `Ticket ${ticketId} moved to ${status}.`,
+    ticketAssigned: (ticketId, owner) => `Ticket ${ticketId} assigned to ${owner}.`,
+    ticketBlocked: (ticketId) => `Ticket ${ticketId} marked blocked.`,
+    ticketUnblocked: (ticketId) => `Ticket ${ticketId} unblocked.`,
+    progressRecorded: (ticketId) => `Progress recorded on ticket ${ticketId}.`,
+    ticketAttached: (ticketId, sessionId) => `Session ${sessionId} attached to ticket ${ticketId}.`,
+    channelCreated: (channelId) => `Channel ${channelId} created.`,
+    channelInvited: (channelId, principal) => `${principal} invited to ${channelId}.`,
+    channelJoined: (channelId) => `Joined ${channelId}.`,
+    channelLeft: (channelId) => `Left ${channelId}.`,
+    channelMemberRemoved: (channelId, principal) => `${principal} removed from ${channelId}.`,
+    channelArchived: (channelId) => `Channel ${channelId} archived.`,
+    channelUnarchived: (channelId) => `Channel ${channelId} unarchived.`,
+    messageSent: (id) => `Message ${id} sent.`,
+    handbookWritten: (path) => `Handbook document ${path} written.`,
+    handbookRemoved: (path) => `Handbook document ${path} removed.`,
+    empty: (projectId) => `No organizations in project ${projectId}.`,
+    calendarEmpty: () => "No calendar events.",
+    ticketsEmpty: () => "No tickets match.",
+    channelsEmpty: () => "No channels.",
+    channelEmpty: (channelId, date) => `No messages in ${channelId} on ${date}.`,
+    showHead: (name, orgId, status) => `${name} (${orgId}) — ${status}`,
+    showMission: (mission) => `Mission: ${mission}`,
+    showEmployees: (count, running, paused) =>
+      `Employees: ${count} (${running} running, ${paused} paused)`,
+    showBoard: (counts, blocked) => `Board: ${counts} (${blocked} blocked)`,
+    showSpend: (period, spend) => `Spend (${period}): ${spend}`,
+    showPending: (mentions, review, blockedByMe) =>
+      `Pending: ${mentions} mentions, ${review} tickets to review, ${blockedByMe} blocked by me`,
+    invalid: (reason) => `invalid: ${reason}`,
+    ticketHead: (ticketId, status, running, blocked) =>
+      `Ticket ${ticketId}: ${status}${running ? ", running" : ""}${blocked !== undefined ? `, blocked (${blocked})` : ""}`,
+    ticketFigures: (cost, rolledUp, sessions, children) =>
+      `Cost ${cost} (rolled up ${rolledUp}), ${sessions} sessions, ${children} child tickets`,
+    allHands: () => "All hands",
+    channelHeader: (channelId) => `[channel ${channelId}]`,
+    channelHead: (name, channelId, members, archived) =>
+      `${name} (${channelId}) — ${members} members${archived ? ", archived" : ""}`,
+    channelPurposeLine: (purpose) => `Purpose: ${purpose}`,
+    channelCreatedBy: (principal, createdAt) => `Created by ${principal} on ${createdAt}`,
+    channelLastMessage: (time) => `Last message: ${time}`,
+    financeTotal: (period, total) => `Total (${period}): ${total}`,
+    unpriced: () =>
+      "[unpriced] some usage ran on a model without pricing: the figures are a lower bound",
+    colEmployees: () => "EMPLOYEES",
+    colRunning: () => "RUNNING",
+    colOpen: () => "OPEN",
+    colBlocked: () => "BLOCKED",
+    colSpend: () => "SPEND",
+    colNote: () => "NOTE",
+    colJobTitle: () => "TITLE",
+    colTitle: () => "TITLE",
+    colState: () => "STATE",
+    colOwn: () => "OWN",
+    colCumulative: () => "CUMULATIVE",
+    colBudget: () => "BUDGET",
+    colNext: () => "NEXT",
+    colPriority: () => "PRIORITY",
+    colOwner: () => "OWNER",
+    colTicket: () => "TICKET",
+    colRolledUp: () => "ROLLED UP",
+    colMembers: () => "MEMBERS",
+    colArchived: () => "ARCHIVED",
+    colUnread: () => "UNREAD",
+    colMentions: () => "@ME",
+    colPrincipal: () => "PRINCIPAL",
+  },
   client: {
     invalidServerUrl: (value) => `Invalid server URL "${value}": expected http(s)://host[:port].`,
     remoteNeedsToken: (url) =>
@@ -1288,6 +1742,199 @@ const zh: Messages = {
     colTarget: () => "目标",
     colLastFired: () => "最近触发",
     colStatus: () => "状态",
+  },
+  org: {
+    desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
+    lsDesc: "列出 Project 的组织",
+    createDesc: "创建组织：生成 CEO Agent、开 CEO 的工位会话并发起初始化会话",
+    showDesc: "概览：员工与状态、看板计数、预算占用、待处理事项",
+    chartDesc: "员工树：头衔、状态、支出与预算",
+    hireDesc: "招募员工：既有 Agent（--agent-id）或新建 Agent（--new-agent），汇报给 --reports-to",
+    employeeDesc: "管理员工",
+    employeeSetDesc: "更新员工树条目（只改动给出的字段）",
+    leaveDesc: "将员工移出组织（CEO 不可）；Agent 本身保留",
+    deskDesc: "工位会话（每位员工一个常设会话）",
+    deskShowDesc: "员工的工位会话 id 与 Workspace（尚无工位时开一个）",
+    deskRenewDesc: "为员工换一个新的工位会话（重置上下文）",
+    calendarDesc: "日程项（定时发往员工工位会话的任务）",
+    calendarLsDesc: "列出组织的日程项（--agent-id 限定为某位员工）",
+    calendarAddDesc: "创建日程项（经 API 写入日程文件；缺省即启用——用 --disabled 关闭）",
+    calendarUpdateDesc: "更新日程项（读改写：未指定的字段保留存储值）",
+    calendarRmDesc: "删除日程项（不做确认）",
+    ticketDesc: "看板上的工单",
+    ticketLsDesc: "列出看板工单（--status / --owner / --blocked 在本地过滤）",
+    ticketShowDesc: "查看工单：先打印派生数据，再打印工单文件",
+    ticketCreateDesc: "在 proposed 列创建工单",
+    ticketMoveDesc: "把工单移到另一列（移入 rejected 须给 --reason）",
+    ticketAssignDesc: "设置工单负责人",
+    ticketBlockDesc: "标记工单为阻塞（留在所在列）",
+    ticketUnblockDesc: "清除工单的阻塞状态",
+    ticketProgressDesc: "追加一条进展（记为当前会话所写）",
+    ticketStartDesc: "新开一个在后台处理该工单的工单会话；打印会话 id",
+    ticketAttachDesc: "把既有会话挂为贡献会话（缺省当前会话）",
+    channelDesc: "组织的频道（default_channel 是全员频道，所有人都在其中）",
+    channelLsDesc: "列出频道：人看到全部频道，员工只看到自己所在的",
+    channelCreateDesc: "新建频道；初始成员只有创建者，其余人经邀请加入",
+    channelShowDesc: "查看频道及其成员",
+    channelInviteDesc: "邀请若干 principal 加入频道（任一成员均可）",
+    channelJoinDesc: "自行加入频道（仅限人；员工只能等成员邀请）",
+    channelLeaveDesc: "退出频道",
+    channelRemoveDesc: "把另一位成员移出频道（仅限人）",
+    channelArchiveDesc: "归档频道：在取消归档前只读（仅限人）",
+    channelUnarchiveDesc: "取消频道的归档（仅限人）",
+    channelTailDesc: "打印某个频道某一天的最后若干条消息（未给 -n 时 20 条）",
+    channelSendDesc: "向频道发送消息（@agent:<id> / @all 提及频道成员并触发其工位）",
+    handbookDesc: "组织手册：handbook/ 下的知识库，其 README.md 是每轮先读的索引",
+    handbookListDesc: "列出手册文件（路径、大小、更新时间），索引在前",
+    handbookShowDesc: "打印一份手册文档（不给路径时打印索引）",
+    handbookWriteDesc: "用 -m 或 --file 的内容创建或替换一份手册文档",
+    handbookRmDesc: "删除一份手册文档（索引不可删）",
+    financeDesc: "支出：按员工（沿汇报线累计）与按工单，对照预算",
+    orgId: "组织 id（缺省取 PENGUIN_ORG_ID，工位会话与工单会话内自带；此外没有缺省值）",
+    newOrgId: "要创建的组织 id（字母、数字、下划线；同时是目录名）",
+    mission: "组织的使命",
+    orgName: "显示名（缺省同 id）",
+    hireAgentId: "招募这个既有 Agent（与 --new-agent 互斥）",
+    newAgent: "以此 id 新建 Agent 并招募（与 --agent-id 互斥）",
+    newAgentName: "新 Agent 的显示名",
+    newAgentDescription: "新 Agent 的描述",
+    skills: "新 Agent 的插件库插件，逗号分隔（替换缺省的 agent-company,agent-development）",
+    title: "头衔",
+    reportsTo: "上级的 Agent id",
+    employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
+    budget: "月预算（美元），含该员工及其全部下属",
+    ceoBudget: "CEO 的月预算（美元）；预算沿汇报线累计，CEO 的预算就是整家公司的",
+    duties: "职责描述",
+    calendarAgentId: "日程项所属员工（缺省 PENGUIN_AGENT_ID）；ls 上只列该员工的日程项",
+    calendarTitle: "日程项标题",
+    statusFilter: "只看这一列：proposed、in_progress、review、done 或 rejected",
+    ownerFilter: "只看该负责人的工单（agent:<id> / user:<id>）",
+    blockedFilter: "只看被阻塞的工单",
+    ticketTitle: "工单标题",
+    goal: "目标（与 --body-file 互斥）",
+    criteria: "验收标准（与 --goal 配合）",
+    bodyFile: "从文件读取整个 Markdown 正文（头部仍由服务端生成）",
+    owner: "负责人（agent:<id> / user:<id>）",
+    parent: "父工单 id",
+    notify: "工单结束时通知的对象，逗号分隔",
+    priority: "优先级：P0、P1 或 P2",
+    due: "截止日期（yyyy-mm-dd）",
+    moveTo: "目标列：proposed、in_progress、review、done 或 rejected",
+    moveReason: "原因（移入 rejected 时必填；记入 Result）",
+    blockReason: "阻塞原因",
+    blockedBy: "在等谁或等哪个工单（principal 或工单 id）",
+    progressText: "进展内容",
+    startMessage: "附在工单正文之后、随会话首条输入发出的附言",
+    startWorkspace: "公共工作区内的另一个目录（缺省为该员工工位的 Workspace）",
+    attachSession: "要挂接的会话，完整 id 或唯一片段（缺省 PENGUIN_SESSION_ID）",
+    channelOpt: "要读取或写入的频道（缺省 default_channel，即全员频道）",
+    channelName: "显示名（缺省同 id）",
+    channelPurpose: "频道用途",
+    channelDate: "要读的日期（组织时区的 yyyy-mm-dd；缺省今天）",
+    channelCount: "打印的消息条数（缺省 20）",
+    channelText: "消息内容（@agent:<id> 或 @all 表示提及，只能提及频道内的成员）",
+    handbookPath: "相对 handbook/ 的路径（普通片段，如 decisions/2026-09-02-hire-plan.md）",
+    handbookText: "文档内容",
+    handbookFile: "从本地文件读取文档内容",
+    handbookOneSource: "-m <text> 与 --file <file> 只能给一个。",
+    refTicket: "消息关联的工单",
+    refSession: "消息关联的会话",
+    period: "统计月份（yyyy-mm；缺省当月）",
+    orgIdMissing: () =>
+      "未指定组织：请传 --org-id <id>，或设置 PENGUIN_ORG_ID（工位会话与工单会话的环境里自带）。",
+    hireTargetConflict: () =>
+      "--agent-id（既有 Agent）与 --new-agent（新建）二选一，且必须给一个。",
+    newAgentFieldsOnly: () => "--name、--description 与 --skills 只用于描述 --new-agent。",
+    budgetInvalid: (flag, value) => `${flag} 值「${value}」无效：应为非负的美元金额。`,
+    nothingToSet: () => "没有要更新的内容：至少给出一个字段。",
+    statusInvalid: (value) =>
+      `列名「${value}」无效：应为 proposed、in_progress、review、done 或 rejected。`,
+    priorityInvalid: (value) => `--priority 值「${value}」无效：应为 P0、P1 或 P2。`,
+    ticketBodyConflict: () => "--goal 与 --body-file 二选一，且必须给一个。",
+    criteriaNeedsGoal: () => "--criteria 须与 --goal 一起使用。",
+    bodyFileUnreadable: (file) => `无法读取 --body-file ${file}。`,
+    countInvalid: (value) => `-n 值「${value}」无效：应为正整数。`,
+    pathSegmentInvalid: (value) => `名称「${value}」无效：「.」与「..」既不是 id，也不是手册路径。`,
+    attachSessionMissing: () =>
+      "没有可挂接的会话：请传 --session <id>，或在会话内运行（PENGUIN_SESSION_ID）。",
+    created: (orgId, ceoDeskSessionId) =>
+      `已创建组织 ${orgId}${ceoDeskSessionId !== undefined ? `（CEO 工位会话 ${ceoDeskSessionId}）` : ""}。`,
+    hired: (agentId, title, reportsTo) =>
+      `已招募员工 ${agentId}，头衔 ${title}${reportsTo !== null ? `，汇报给 ${reportsTo}` : ""}。`,
+    employeeUpdated: (agentId) => `已更新员工 ${agentId}。`,
+    left: (agentId) => `员工 ${agentId} 已离开组织。`,
+    desk: (agentId, sessionId, workspace, openedAt, created) =>
+      `${agentId} 的工位：会话 ${sessionId}（Workspace ${workspace}，开于 ${openedAt}）${created ? "——刚刚新开" : ""}`,
+    deskRenewed: (agentId, sessionId) => `${agentId} 的工位已换新：会话 ${sessionId}。`,
+    calendarWritten: (agentId, name, enabledText, nextFireAt) =>
+      `日程项 ${agentId}/${name} 已写入（${enabledText}${nextFireAt !== undefined ? `，下次触发 ${nextFireAt}` : ""}）。`,
+    calendarRemoved: (agentId, name) => `日程项 ${agentId}/${name} 已删除。`,
+    ticketCreated: (ticketId, status) => `已创建工单 ${ticketId}（${status}）。`,
+    ticketMoved: (ticketId, status) => `工单 ${ticketId} 已移到 ${status}。`,
+    ticketAssigned: (ticketId, owner) => `工单 ${ticketId} 已指派给 ${owner}。`,
+    ticketBlocked: (ticketId) => `工单 ${ticketId} 已标记为阻塞。`,
+    ticketUnblocked: (ticketId) => `工单 ${ticketId} 已解除阻塞。`,
+    progressRecorded: (ticketId) => `已在工单 ${ticketId} 记录进展。`,
+    ticketAttached: (ticketId, sessionId) => `会话 ${sessionId} 已挂接到工单 ${ticketId}。`,
+    channelCreated: (channelId) => `已创建频道 ${channelId}。`,
+    channelInvited: (channelId, principal) => `已邀请 ${principal} 加入 ${channelId}。`,
+    channelJoined: (channelId) => `已加入 ${channelId}。`,
+    channelLeft: (channelId) => `已退出 ${channelId}。`,
+    channelMemberRemoved: (channelId, principal) => `已把 ${principal} 移出 ${channelId}。`,
+    channelArchived: (channelId) => `频道 ${channelId} 已归档。`,
+    channelUnarchived: (channelId) => `频道 ${channelId} 已取消归档。`,
+    messageSent: (id) => `消息 ${id} 已发送。`,
+    handbookWritten: (path) => `手册文档 ${path} 已写入。`,
+    handbookRemoved: (path) => `手册文档 ${path} 已删除。`,
+    empty: (projectId) => `Project ${projectId} 没有组织。`,
+    calendarEmpty: () => "没有日程项。",
+    ticketsEmpty: () => "没有匹配的工单。",
+    channelsEmpty: () => "没有频道。",
+    channelEmpty: (channelId, date) => `${channelId} 在 ${date} 没有消息。`,
+    showHead: (name, orgId, status) => `${name}（${orgId}）——${status}`,
+    showMission: (mission) => `使命：${mission}`,
+    showEmployees: (count, running, paused) =>
+      `员工：${count}（运行中 ${running}，已暂停 ${paused}）`,
+    showBoard: (counts, blocked) => `看板：${counts}（阻塞 ${blocked}）`,
+    showSpend: (period, spend) => `支出（${period}）：${spend}`,
+    showPending: (mentions, review, blockedByMe) =>
+      `待处理：@我 ${mentions} 条，待审核工单 ${review} 个，等我的阻塞 ${blockedByMe} 个`,
+    invalid: (reason) => `invalid: ${reason}`,
+    ticketHead: (ticketId, status, running, blocked) =>
+      `工单 ${ticketId}：${status}${running ? "，运行中" : ""}${blocked !== undefined ? `，已阻塞（${blocked}）` : ""}`,
+    ticketFigures: (cost, rolledUp, sessions, children) =>
+      `成本 ${cost}（含子工单 ${rolledUp}），贡献会话 ${sessions} 个，子工单 ${children} 个`,
+    allHands: () => "全员频道",
+    channelHeader: (channelId) => `[频道 ${channelId}]`,
+    channelHead: (name, channelId, members, archived) =>
+      `${name}（${channelId}）——成员 ${members}${archived ? "，已归档" : ""}`,
+    channelPurposeLine: (purpose) => `用途：${purpose}`,
+    channelCreatedBy: (principal, createdAt) => `由 ${principal} 创建于 ${createdAt}`,
+    channelLastMessage: (time) => `最后一条消息：${time}`,
+    financeTotal: (period, total) => `合计（${period}）：${total}`,
+    unpriced: () => "[unpriced] 部分用量所用模型未配置价格：以上数字是下限",
+    colEmployees: () => "员工数",
+    colRunning: () => "运行中",
+    colOpen: () => "未结",
+    colBlocked: () => "阻塞",
+    colSpend: () => "支出",
+    colNote: () => "备注",
+    colJobTitle: () => "头衔",
+    colTitle: () => "标题",
+    colState: () => "状态",
+    colOwn: () => "自身",
+    colCumulative: () => "累计",
+    colBudget: () => "预算",
+    colNext: () => "下次触发",
+    colPriority: () => "优先级",
+    colOwner: () => "负责人",
+    colTicket: () => "工单",
+    colRolledUp: () => "含子工单",
+    colMembers: () => "成员数",
+    colArchived: () => "归档",
+    colUnread: () => "未读",
+    colMentions: () => "@我",
+    colPrincipal: () => "主体",
   },
   client: {
     invalidServerUrl: (value) => `服务器地址「${value}」无效：应为 http(s)://host[:port]。`,

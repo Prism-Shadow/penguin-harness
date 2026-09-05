@@ -1,10 +1,10 @@
 /**
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
- * handler covering exactly the endpoints the server-backed commands touch (session
- * create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents, projects,
- * usage, schedules). Connection resolution is pinned via PENGUIN_API_URL (a loopback
- * URL, so no token gate) and PENGUIN_HOME points at a scratch directory so nothing of
- * the developer's real data root is read.
+ * handler covering exactly the endpoints the server-backed commands touch (the current
+ * user, session create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents,
+ * projects, usage, schedules, organizations and their channels). Connection resolution is pinned via PENGUIN_API_URL
+ * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
+ * nothing of the developer's real data root is read.
  *
  * The SSE stream is real: a ReadableStream whose frames follow the server's wire shape
  * (default-event OmniMessage frames, `event: server_event` control frames, incrementing
@@ -40,6 +40,67 @@ export interface FakeSessionState {
   aborts: number;
 }
 
+/**
+ * One channel of a fake organization: the `channel.toml` fields plus the day files, which
+ * the fake keeps as one flat list per channel. `everyone` is the all-hands channel's
+ * implicit membership — `members` is unused there and resolved from the employee tree and
+ * the Project's people, exactly as the server resolves it.
+ */
+export interface FakeChannelState {
+  channelId: string;
+  name: string;
+  purpose: string;
+  everyone: boolean;
+  archived: boolean;
+  createdBy: string;
+  createdAt: string;
+  members: string[];
+  messages: Json[];
+  /** What a person is told is unread here; an employee caller is always told 0, as on the server. */
+  unread: number;
+  mentionsMe: number;
+}
+
+/**
+ * One organization of the fake (company mode). Employees, calendar events, tickets and
+ * channels are kept in the DTO shapes the server projects from its files; a ticket
+ * record is the detail shape minus `body`, which is rendered on read the way the server
+ * serializes the file.
+ */
+export interface FakeOrgState {
+  orgId: string;
+  projectId: string;
+  name: string;
+  mission: string;
+  status: "active" | "paused";
+  createdBy: string;
+  timezone: string;
+  invalid?: string;
+  ceoAgentId: string;
+  ceoDeskSessionId?: string;
+  spend: { period: string; cost: number; budget?: number; ratio?: number };
+  employees: Json[];
+  /** Calendar events keyed `<agentId>/<name>`. */
+  calendar: Map<string, Json>;
+  calendarInvalidFiles: Json[];
+  /** Ticket records keyed by ticket id, in creation order. */
+  tickets: Map<string, Json>;
+  ticketInvalidFiles: Json[];
+  /** Channels keyed by id; the all-hands channel is seeded with the organization. */
+  channels: Map<string, FakeChannelState>;
+  /** Handbook files keyed by path relative to `handbook/` (the index is seeded). */
+  handbook: Map<string, string>;
+  /** Desk sessions keyed by employee. */
+  desks: Map<string, Json>;
+  /** The `unpriced` flag of the finance response. */
+  unpriced: boolean;
+}
+
+/** Who a fake request is attributed to, or the error response that settles it. */
+type FakeCaller =
+  | { ok: true; principal: string; agentId: string | null; sessionId?: string }
+  | { ok: false; res: Response };
+
 interface Subscriber {
   controller: ReadableStreamDefaultController<Uint8Array>;
   closed: boolean;
@@ -47,8 +108,58 @@ interface Subscriber {
 
 const encoder = new TextEncoder();
 
+/** The fake's fixed clock for company mode (the day file, the period, minted ids). */
+const ORG_NOW = "2026-09-02T10:00:00.000Z";
+const ORG_TODAY = "2026-09-02";
+const DEFAULT_CHANNEL_ID = "default_channel";
+/** The server's default for the CEO's monthly budget when creation names none. */
+const DEFAULT_CEO_BUDGET = 100;
+const ORG_PERIOD = "2026-09";
+const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
+const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
+/** The server's TICKET_ID_PATTERN. */
+const TICKET_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
+/** The server's CHANNEL_ID_PATTERN. */
+const CHANNEL_ID_RE = /^[a-z][a-z0-9_]{1,63}$/;
+/** `agent:<id>` / `user:<id>`, the only two principal kinds a channel holds. */
+const PRINCIPAL_RE = /^(agent|user):([A-Za-z0-9_-]+)$/;
+/** The keys of an OrgTicketItem (the list shape) within a ticket record. */
+const TICKET_ITEM_KEYS = [
+  "ticketId",
+  "title",
+  "status",
+  "initiator",
+  "owner",
+  "parent",
+  "notify",
+  "priority",
+  "due",
+  "blocked",
+  "blockedBy",
+  "sessions",
+  "running",
+  "cost",
+  "invalid",
+] as const;
+
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** The principals a chat text mentions (`@all`, `@agent:<id>`, `@user:<id>`). */
+function mentionsOf(text: string): string[] {
+  return [...text.matchAll(/@(all|agent:[A-Za-z0-9_]+|user:[A-Za-z0-9_]+)/g)].map((m) => m[1]!);
+}
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value !== "";
+
 export class FakeServer {
-  readonly requests: Array<{ method: string; path: string; body?: Json }> = [];
+  /** Every request, in order: the path without its query, the query on its own, and the parsed body. */
+  readonly requests: Array<{ method: string; path: string; search: string; body?: Json }> = [];
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -63,6 +174,8 @@ export class FakeServer {
   projects: Array<Json> = [
     { projectId: "default_project", name: "Default", role: "owner", ownerUserId: "admin" },
   ];
+  /** The signed-in user behind the API token: what GET /api/me reports and whom a body-less write is attributed to. */
+  userId = "admin";
   /** Messages a task emits between running and idle (default: one assistant echo). */
   onTask: (session: FakeSessionState, body: Json) => unknown[] = () => [];
   /** Messages GET /messages returns. */
@@ -92,6 +205,8 @@ export class FakeServer {
   schedules: Json = { schedules: [], invalidFiles: [] };
   /** Named schedule store behind add/update/rm: name -> the stored item (single-agent tests). */
   readonly scheduleItems = new Map<string, Json>();
+  /** Company mode: organizations keyed by org id. */
+  readonly orgs = new Map<string, FakeOrgState>();
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
@@ -141,6 +256,7 @@ export class FakeServer {
       "PENGUIN_SESSION_ID",
       "PENGUIN_PROJECT_ID",
       "PENGUIN_AGENT_ID",
+      "PENGUIN_ORG_ID",
     ]) {
       this.savedEnv.set(key, process.env[key]);
     }
@@ -151,6 +267,7 @@ export class FakeServer {
     delete process.env.PENGUIN_SESSION_ID;
     delete process.env.PENGUIN_PROJECT_ID;
     delete process.env.PENGUIN_AGENT_ID;
+    delete process.env.PENGUIN_ORG_ID;
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
       this.handle(input, init)) as typeof globalThis.fetch;
     return () => this.uninstall();
@@ -234,6 +351,1155 @@ export class FakeServer {
     return this.json({ error: { code, message } }, status);
   }
 
+  private badRequest(message: string): Response {
+    return this.error(400, "bad_request", message);
+  }
+
+  // ---- company mode: state ----
+
+  /** Adds an organization whose CEO (`ceoAgentId`, default `ceo`) is its first employee; `overrides` win. */
+  addOrg(overrides: Partial<FakeOrgState> & { orgId: string }): FakeOrgState {
+    const org: FakeOrgState = {
+      projectId: "default_project",
+      name: overrides.orgId,
+      mission: "",
+      status: "active",
+      createdBy: "user:admin",
+      timezone: "UTC",
+      ceoAgentId: "ceo",
+      spend: { period: ORG_PERIOD, cost: 0 },
+      employees: [],
+      calendar: new Map(),
+      calendarInvalidFiles: [],
+      tickets: new Map(),
+      ticketInvalidFiles: [],
+      channels: new Map(),
+      handbook: new Map([["README.md", `# ${overrides.name ?? "Org"} — organization handbook\n`]]),
+      desks: new Map(),
+      unpriced: false,
+      ...overrides,
+    };
+    this.orgs.set(org.orgId, org);
+    // The all-hands channel is created with the organization and holds everyone implicitly.
+    if (!org.channels.has(DEFAULT_CHANNEL_ID)) {
+      this.addChannel(org.orgId, DEFAULT_CHANNEL_ID, {
+        name: "All hands",
+        everyone: true,
+        createdBy: "system",
+      });
+    }
+    if (!org.employees.some((e) => e.agentId === org.ceoAgentId)) {
+      this.addEmployee(org.orgId, { agentId: org.ceoAgentId, title: "CEO", reportsTo: null });
+    }
+    return org;
+  }
+
+  /** Adds a channel (the `channel.toml` shape); the creator is its only member unless `members` says otherwise. */
+  addChannel(
+    orgId: string,
+    channelId: string,
+    overrides: Partial<FakeChannelState> = {},
+  ): FakeChannelState {
+    const org = this.orgs.get(orgId)!;
+    const channel: FakeChannelState = {
+      channelId,
+      name: channelId,
+      purpose: "",
+      everyone: false,
+      archived: false,
+      createdBy: "user:admin",
+      createdAt: ORG_NOW,
+      members: [],
+      messages: [],
+      unread: 0,
+      mentionsMe: 0,
+      ...overrides,
+    };
+    org.channels.set(channelId, channel);
+    return channel;
+  }
+
+  /**
+   * Adds an employee (OrgEmployeeItem shape; `reportsTo` defaults to the CEO). An employee
+   * is an Agent, so one is listed under /agents as well when it is not already.
+   */
+  addEmployee(orgId: string, item: Json & { agentId: string }): Json {
+    const org = this.orgs.get(orgId)!;
+    if (!this.agents.some((a) => a.agentId === item.agentId)) {
+      this.agents.push({
+        agentId: item.agentId,
+        name: String(item.name ?? item.agentId),
+        description: "",
+        sessionCount: 0,
+        activeSessionCount: 0,
+        sessionActivity: [],
+      });
+    }
+    const employee: Json = {
+      name: item.agentId,
+      title: "Employee",
+      reportsTo: item.agentId === org.ceoAgentId ? null : org.ceoAgentId,
+      workspace: ".",
+      resolvedWorkspace: `/shared/${item.agentId}`,
+      state: "idle",
+      spend: { own: 0, cumulative: 0 },
+      ...item,
+    };
+    org.employees.push(employee);
+    return employee;
+  }
+
+  /** Adds a ticket record (the detail shape minus `body`; a `rawBody` stands in for a body supplied whole). */
+  addTicket(orgId: string, item: Json & { ticketId: string }): Json {
+    const org = this.orgs.get(orgId)!;
+    const ticket: Json = {
+      title: item.ticketId,
+      status: "proposed",
+      initiator: "user:admin",
+      notify: ["user:admin"],
+      priority: "P1",
+      sessions: [],
+      running: false,
+      cost: 0,
+      goal: "",
+      acceptanceCriteria: "",
+      progress: [],
+      result: "",
+      rolledUpCost: 0,
+      ...item,
+    };
+    org.tickets.set(item.ticketId, ticket);
+    return ticket;
+  }
+
+  /** Appends a channel message (OrgChannelMessage shape) at the fake's clock unless `time` is given. */
+  addMessage(
+    orgId: string,
+    msg: Json & { sender: string; text: string },
+    channelId: string = DEFAULT_CHANNEL_ID,
+  ): Json {
+    const channel = this.orgs.get(orgId)!.channels.get(channelId)!;
+    const message: Json = {
+      id: `msg-2026-09-02-10-00-00-${(channel.messages.length + 1).toString(16).padStart(8, "0")}`,
+      time: ORG_NOW,
+      hop: 0,
+      mentions: mentionsOf(msg.text),
+      ...msg,
+    };
+    channel.messages.push(message);
+    return message;
+  }
+
+  private orgSummary(org: FakeOrgState): Json {
+    const tickets = [...org.tickets.values()];
+    const inState = (state: string): number =>
+      org.employees.filter((e) => e.state === state).length;
+    return {
+      projectId: org.projectId,
+      orgId: org.orgId,
+      name: org.name,
+      mission: org.mission,
+      status: org.status,
+      employeeCount: org.employees.length,
+      runningCount: inState("running"),
+      pausedCount: inState("paused"),
+      openTickets: tickets.filter((x) => OPEN_COLUMNS.includes(String(x.status))).length,
+      blockedTickets: tickets.filter((x) => isNonEmptyString(x.blocked)).length,
+      createdBy: org.createdBy,
+      spend: org.spend,
+      ...(org.invalid !== undefined ? { invalid: org.invalid } : {}),
+    };
+  }
+
+  private orgDetail(org: FakeOrgState): Json {
+    const tickets = [...org.tickets.values()];
+    return {
+      ...this.orgSummary(org),
+      settings: {
+        name: org.name,
+        mission: org.mission,
+        status: org.status,
+        timezone: org.timezone,
+        approvalMode: "allow-all",
+        mentionChainLimit: 3,
+        budgetWarnRatio: 0.8,
+        budgetPauseRatio: 1,
+        createdBy: org.createdBy,
+      },
+      board: Object.fromEntries(
+        TICKET_COLUMNS.map((column) => [column, tickets.filter((x) => x.status === column).length]),
+      ),
+      today: [],
+      pending: {
+        mentions: 0,
+        reviewTickets: tickets.filter((x) => x.status === "review").map((x) => this.ticketItem(x)),
+        blockedByMe: [],
+      },
+      recentMessages: (org.channels.get(DEFAULT_CHANNEL_ID)?.messages ?? []).slice(-5),
+      alerts: [],
+      ...(org.ceoDeskSessionId !== undefined ? { ceoDeskSessionId: org.ceoDeskSessionId } : {}),
+    };
+  }
+
+  private ticketItem(rec: Json): Json {
+    return Object.fromEntries(
+      TICKET_ITEM_KEYS.filter((key) => rec[key] !== undefined).map((key) => [key, rec[key]]),
+    );
+  }
+
+  private ticketDetail(org: FakeOrgState, rec: Json): Json {
+    return {
+      ...this.ticketItem(rec),
+      goal: rec.goal,
+      acceptanceCriteria: rec.acceptanceCriteria,
+      progress: rec.progress,
+      result: rec.result,
+      body: this.ticketBody(rec),
+      children: [...org.tickets.values()]
+        .filter((x) => x.parent === rec.ticketId)
+        .map((x) => x.ticketId),
+      rolledUpCost: rec.rolledUpCost,
+      sessionItems: (rec.sessions as string[]).map((sessionId) => {
+        const s = this.sessions.get(sessionId);
+        return { sessionId, agentId: s?.agentId ?? "", status: s?.status ?? "idle" };
+      }),
+    };
+  }
+
+  /** The ticket file as the server writes it: title line, header block, sections (or the supplied body under the generated header). */
+  private ticketBody(rec: Json): string {
+    const header = [
+      `Status: ${rec.status}`,
+      `Initiator: ${rec.initiator}`,
+      `Owner: ${rec.owner ?? ""}`,
+      ...(rec.parent !== undefined ? [`Parent: ${rec.parent}`] : []),
+      `Notify: ${(rec.notify as string[]).join(", ")}`,
+      `Priority: ${rec.priority}`,
+      ...(rec.due !== undefined ? [`Due: ${rec.due}`] : []),
+      ...(isNonEmptyString(rec.blocked) ? [`Blocked: ${rec.blocked}`] : []),
+      ...(isNonEmptyString(rec.blockedBy) ? [`Blocked-by: ${rec.blockedBy}`] : []),
+      `Sessions: ${(rec.sessions as string[]).join(", ")}`,
+    ].join("\n");
+    const sections =
+      typeof rec.rawBody === "string"
+        ? rec.rawBody.trimEnd()
+        : [
+            `## Goal\n${rec.goal}`,
+            `## Acceptance criteria\n${rec.acceptanceCriteria}`,
+            `## Progress\n${(rec.progress as Json[]).map((p) => `- ${p.time} ${p.by} ${p.text}`).join("\n")}`,
+            `## Result\n${rec.result}`,
+          ].join("\n\n");
+    return `# Ticket: ${rec.title}\n\n${header}\n\n${sections}\n`;
+  }
+
+  /**
+   * Who a write is attributed to: the calling session's Agent when the body names one (an
+   * unknown session is a 404, never a silent fallback), else the token's user.
+   */
+  private actorOf(body: Json | undefined): FakeCaller {
+    return this.callerOfSession(body?.sessionId);
+  }
+
+  /**
+   * The same claim on a read, where there is no body to carry it: `?sessionId=` is how a desk
+   * or ticket session asks "which channels am I in". The CLI appends it on every channel read
+   * and on the member DELETE.
+   */
+  private callerOfQuery(url: URL): FakeCaller {
+    return this.callerOfSession(url.searchParams.get("sessionId") ?? undefined);
+  }
+
+  /**
+   * Who a call is attributed to: the named session's Agent, else the token's user. An unknown
+   * session is a 404 here where the server would quietly fall back to the user — the fake is
+   * strict on purpose, so a test that mistypes a session id says so.
+   */
+  private callerOfSession(sessionId: unknown): FakeCaller {
+    const me = { ok: true, principal: `user:${this.userId}`, agentId: null } as const;
+    if (sessionId === undefined) return me;
+    if (!isNonEmptyString(sessionId))
+      return { ok: false, res: this.badRequest("sessionId must be a string.") };
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return {
+        ok: false,
+        res: this.error(404, "session_not_found", `Session does not exist: ${sessionId}`),
+      };
+    }
+    return {
+      ok: true,
+      principal: `agent:${session.agentId}`,
+      agentId: session.agentId,
+      sessionId,
+    };
+  }
+
+  /** A calendar body's validated fields (POST and PUT share them), or the 400. */
+  private calendarFields(
+    body: Json | undefined,
+  ): { ok: true; value: Json } | { ok: false; res: Response } {
+    if (typeof body?.enabled !== "boolean")
+      return { ok: false, res: this.badRequest("enabled must be a boolean.") };
+    if (!isNonEmptyString(body.prompt))
+      return { ok: false, res: this.badRequest("prompt is required.") };
+    if (!isNonEmptyString(body.startAt))
+      return { ok: false, res: this.badRequest("startAt is required.") };
+    const value: Json = { prompt: body.prompt, enabled: body.enabled, startAt: body.startAt };
+    for (const key of ["title", "period", "endAt"]) {
+      if (isNonEmptyString(body[key])) value[key] = body[key];
+    }
+    return { ok: true, value };
+  }
+
+  private openDesk(org: FakeOrgState, employee: Json, created: boolean): Json {
+    const s = this.addSession({ agentId: String(employee.agentId) });
+    const desk = {
+      sessionId: s.sessionId,
+      workspace: String(employee.resolvedWorkspace ?? "/shared"),
+      openedAt: ORG_NOW,
+    };
+    org.desks.set(String(employee.agentId), desk);
+    return { agentId: employee.agentId, ...desk, created };
+  }
+
+  // ---- company mode: routes (the contract of the server's organizations.ts) ----
+
+  private handleOrganizations(
+    method: string,
+    projectId: string,
+    rest: string,
+    url: URL,
+    body: Json | undefined,
+  ): Response {
+    if (rest === "") {
+      if (method === "POST") {
+        const orgId = body?.orgId;
+        if (!isNonEmptyString(orgId) || orgId.length < 2)
+          return this.badRequest("orgId is required.");
+        if (!isNonEmptyString(body?.mission)) return this.badRequest("mission is required.");
+        if (this.orgs.has(orgId)) {
+          return this.error(409, "org_exists", `Organization id is already taken: ${orgId}`);
+        }
+        const org = this.addOrg({
+          orgId,
+          projectId,
+          mission: body.mission,
+          ...(isNonEmptyString(body.name) ? { name: body.name } : {}),
+        });
+        // Creation opens the CEO's desk and starts the initialization run.
+        const ceo = org.employees.find((e) => e.agentId === org.ceoAgentId)!;
+        // The CEO's chart entry carries the whole company's budget: the request's value,
+        // or the server's default when the caller sent none.
+        if (body.ceoBudget !== undefined && typeof body.ceoBudget !== "number") {
+          return this.badRequest("ceoBudget must be a number.");
+        }
+        if (typeof body.ceoBudget === "number" && body.ceoBudget < 0) {
+          return this.badRequest("ceoBudget must not be negative.");
+        }
+        ceo.budget = typeof body.ceoBudget === "number" ? body.ceoBudget : DEFAULT_CEO_BUDGET;
+        org.ceoDeskSessionId = String(this.openDesk(org, ceo, true).sessionId);
+        return this.json(this.orgDetail(org), 201);
+      }
+      const organizations = [...this.orgs.values()]
+        .filter((o) => o.projectId === projectId)
+        .map((o) => this.orgSummary(o));
+      return this.json({ organizations });
+    }
+
+    const segments = rest.split("/").map(decodeURIComponent);
+    const orgId = segments[0]!;
+    const org = this.orgs.get(orgId);
+    if (!org || org.projectId !== projectId) {
+      return this.error(404, "org_not_found", `Organization does not exist: ${orgId}`);
+    }
+    const [, a, b, c] = segments;
+
+    if (a === undefined) {
+      if (method === "GET") return this.json(this.orgDetail(org));
+      if (method === "PATCH") {
+        for (const key of ["name", "mission", "timezone"] as const) {
+          if (isNonEmptyString(body?.[key])) org[key] = body[key];
+        }
+        if (body?.status === "active" || body?.status === "paused") org.status = body.status;
+        return this.json(this.orgDetail(org).settings);
+      }
+      if (method === "DELETE") {
+        this.orgs.delete(orgId);
+        return new Response(null, { status: 204 });
+      }
+    }
+
+    if (a === "chart" && b === undefined && method === "GET") {
+      return this.json({ ceoAgentId: org.ceoAgentId, employees: org.employees });
+    }
+
+    if (a === "employees") {
+      if (b === undefined) {
+        if (method !== "POST")
+          return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+        const agentId = body?.agentId;
+        const newAgent = body?.newAgent as Json | undefined;
+        if ((agentId === undefined) === (newAgent === undefined)) {
+          return this.badRequest("Pass exactly one of agentId and newAgent.");
+        }
+        if (!isNonEmptyString(body?.title)) return this.badRequest("title is required.");
+        if (!isNonEmptyString(body?.reportsTo)) return this.badRequest("reportsTo is required.");
+        const id = agentId !== undefined ? agentId : newAgent?.agentId;
+        if (!isNonEmptyString(id) || id.length < 2) return this.badRequest("agentId is required.");
+        if (org.employees.some((e) => e.agentId === id)) {
+          return this.error(409, "employee_exists", `${id} is already an employee.`);
+        }
+        if (agentId !== undefined && !this.agents.some((x) => x.agentId === id)) {
+          return this.error(404, "agent_not_found", `Agent does not exist: ${id}`);
+        }
+        if (!org.employees.some((e) => e.agentId === body?.reportsTo)) {
+          return this.badRequest(
+            `Invalid employee tree: ${String(body?.reportsTo)} is not an employee.`,
+          );
+        }
+        const employee = this.addEmployee(orgId, {
+          agentId: id,
+          ...(isNonEmptyString(newAgent?.name) ? { name: newAgent.name } : {}),
+          title: body.title,
+          reportsTo: body.reportsTo,
+          ...(isNonEmptyString(body.workspace) ? { workspace: body.workspace } : {}),
+          ...(typeof body.budget === "number" ? { budget: body.budget } : {}),
+          ...(typeof body.duties === "string" ? { duties: body.duties } : {}),
+          ...(body.model !== undefined && body.model !== null ? { model: body.model } : {}),
+        });
+        return this.json(employee, 201);
+      }
+      const employee = org.employees.find((e) => e.agentId === b);
+      if (!employee) return this.error(404, "employee_not_found", `${b} is not an employee.`);
+      if (c === undefined && method === "PATCH") {
+        for (const key of ["title", "reportsTo", "workspace", "duties"]) {
+          if (typeof body?.[key] === "string") employee[key] = body[key];
+        }
+        if (body?.budget === null) delete employee.budget;
+        else if (typeof body?.budget === "number") employee.budget = body.budget;
+        if (body?.model === null) delete employee.model;
+        else if (body?.model !== undefined) employee.model = body.model;
+        return this.json(employee);
+      }
+      if (c === undefined && method === "DELETE") {
+        if (b === org.ceoAgentId)
+          return this.error(409, "ceo_cannot_leave", "The CEO cannot leave.");
+        org.employees.splice(org.employees.indexOf(employee), 1);
+        return new Response(null, { status: 204 });
+      }
+      if (c === "desk" && method === "GET") {
+        const existing = org.desks.get(String(b));
+        if (existing) return this.json({ agentId: b, ...existing, created: false });
+        return this.json(this.openDesk(org, employee, true));
+      }
+      if (c === "desk" && method === "POST")
+        return this.json(this.openDesk(org, employee, true), 201);
+    }
+
+    if (a === "calendar") {
+      if (b === undefined) {
+        if (method === "POST") {
+          const agentId = body?.agentId;
+          const name = body?.name;
+          if (!isNonEmptyString(agentId) || !isNonEmptyString(name)) {
+            return this.badRequest("agentId and name are required.");
+          }
+          if (!org.employees.some((e) => e.agentId === agentId)) {
+            return this.error(404, "employee_not_found", `${agentId} is not an employee.`);
+          }
+          const fields = this.calendarFields(body);
+          if (!fields.ok) return fields.res;
+          const key = `${agentId}/${name}`;
+          if (org.calendar.has(key)) {
+            return this.error(
+              409,
+              "calendar_event_exists",
+              `Calendar event already exists: ${key}`,
+            );
+          }
+          const item = this.calendarItem(org, agentId, name, fields.value);
+          org.calendar.set(key, item);
+          return this.json(item, 201);
+        }
+        return this.json({
+          events: [...org.calendar.values()],
+          invalidFiles: org.calendarInvalidFiles,
+        });
+      }
+      if (c !== undefined) {
+        const key = `${b}/${c}`;
+        const stored = org.calendar.get(key);
+        if (!stored) {
+          return this.error(
+            404,
+            "calendar_event_not_found",
+            `Calendar event does not exist: ${key}`,
+          );
+        }
+        if (method === "GET") return this.json(stored);
+        if (method === "PUT") {
+          const fields = this.calendarFields(body);
+          if (!fields.ok) return fields.res;
+          const item = this.calendarItem(org, b!, c, fields.value);
+          org.calendar.set(key, item);
+          return this.json(item);
+        }
+        if (method === "DELETE") {
+          org.calendar.delete(key);
+          return new Response(null, { status: 204 });
+        }
+      }
+    }
+
+    if (a === "tickets") {
+      if (b === undefined) {
+        if (method === "POST") return this.createTicket(org, body ?? {});
+        const columns = Object.fromEntries(
+          TICKET_COLUMNS.map((column) => [
+            column,
+            [...org.tickets.values()]
+              .filter((x) => x.status === column)
+              .map((x) => this.ticketItem(x)),
+          ]),
+        );
+        return this.json({ columns, invalidFiles: org.ticketInvalidFiles });
+      }
+      if (!TICKET_ID_RE.test(b)) return this.badRequest("Invalid ticket id.");
+      const rec = org.tickets.get(b);
+      if (!rec) return this.error(404, "ticket_not_found", `Ticket does not exist: ${b}`);
+      if (c === undefined && method === "GET") return this.json(this.ticketDetail(org, rec));
+      if (c === undefined && method === "PUT") {
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        for (const key of ["title", "notify", "priority", "goal", "acceptanceCriteria", "result"]) {
+          if (body?.[key] !== undefined) rec[key] = body[key];
+        }
+        for (const key of ["owner", "parent", "due"]) {
+          if (body?.[key] === null) delete rec[key];
+          else if (typeof body?.[key] === "string") rec[key] = body[key];
+        }
+        return this.json(this.ticketDetail(org, rec));
+      }
+      if (c !== undefined && method === "POST") return this.ticketAction(org, rec, c, body);
+    }
+
+    if (a === "handbook" && b === "files") {
+      const rel = segments.slice(3).join("/");
+      if (rel === "") {
+        if (method !== "GET") return this.error(404, "not_found", "No such route.");
+        const files = [...org.handbook.entries()]
+          .map(([path, content]) => ({
+            path,
+            size: Buffer.byteLength(content),
+            updatedAt: "2026-09-02T10:00:00.000Z",
+          }))
+          .sort((x, y) =>
+            x.path === "README.md" ? -1 : y.path === "README.md" ? 1 : x.path.localeCompare(y.path),
+          );
+        return this.json({ files });
+      }
+      if (
+        !/^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/){0,7}[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(rel)
+      ) {
+        return this.badRequest(`${rel} is not a handbook path.`);
+      }
+      if (method === "GET") {
+        const content = org.handbook.get(rel);
+        if (content === undefined) {
+          return this.error(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+        }
+        return this.json({ path: rel, content });
+      }
+      if (method === "PUT") {
+        if (typeof body?.content !== "string") return this.badRequest("content is required.");
+        org.handbook.set(rel, body.content);
+        return this.json({ path: rel, content: body.content });
+      }
+      if (method === "DELETE") {
+        if (rel === "README.md") {
+          return this.error(
+            400,
+            "handbook_index_required",
+            "The handbook index (README.md) cannot be deleted.",
+          );
+        }
+        if (!org.handbook.has(rel)) {
+          return this.error(404, "handbook_file_not_found", `${rel} is not in the handbook.`);
+        }
+        org.handbook.delete(rel);
+        return new Response(null, { status: 204 });
+      }
+    }
+
+    if (a === "channels") return this.handleChannels(method, org, segments.slice(2), url, body);
+
+    if (a === "finance" && b === undefined && method === "GET") {
+      const period = url.searchParams.get("period") ?? ORG_PERIOD;
+      if (!/^\d{4}-\d{2}$/.test(period)) return this.badRequest("period must be yyyy-mm.");
+      const employees = org.employees.map((e) => {
+        const spend = e.spend as { own: number; cumulative: number; ratio?: number };
+        return {
+          agentId: e.agentId,
+          name: e.name,
+          title: e.title,
+          reportsTo: e.reportsTo,
+          own: spend.own,
+          cumulative: spend.cumulative,
+          ...(e.budget !== undefined ? { budget: e.budget } : {}),
+          ...(spend.ratio !== undefined ? { ratio: spend.ratio } : {}),
+          warned: false,
+          paused: e.state === "paused",
+        };
+      });
+      const tickets = [...org.tickets.values()].map((x) => ({
+        ticketId: x.ticketId,
+        title: x.title,
+        status: x.status,
+        ...(x.parent !== undefined ? { parent: x.parent } : {}),
+        cost: x.cost,
+        rolledUp: x.rolledUpCost,
+      }));
+      return this.json({
+        period,
+        currency: "USD",
+        employees,
+        tickets,
+        daily: [],
+        alerts: [],
+        total: employees.reduce((sum, e) => sum + e.own, 0),
+        unpriced: org.unpriced,
+      });
+    }
+
+    return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+  }
+
+  // ---- company mode: channels ----
+
+  /** The Project's people: its owner, the `user:` half of the all-hands channel. */
+  private projectUserIds(org: FakeOrgState): string[] {
+    const project = this.projects.find((p) => p.projectId === org.projectId);
+    return project === undefined ? [] : [String(project.ownerUserId)];
+  }
+
+  /** A channel's membership as principals: the all-hands channel resolves to everyone, the rest to their list. */
+  private channelMembers(org: FakeOrgState, channel: FakeChannelState): string[] {
+    if (!channel.everyone) return channel.members;
+    return [
+      ...org.employees.map((e) => `agent:${String(e.agentId)}`),
+      ...this.projectUserIds(org).map((id) => `user:${id}`),
+    ];
+  }
+
+  /** An employee's display name, a person's own id. */
+  private principalName(org: FakeOrgState, principal: string): string {
+    if (!principal.startsWith("agent:")) return principal.slice("user:".length);
+    const agentId = principal.slice("agent:".length);
+    return String(org.employees.find((e) => e.agentId === agentId)?.name ?? agentId);
+  }
+
+  private channelItem(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    caller: { principal: string; agentId: string | null },
+  ): Json {
+    const members = this.channelMembers(org, channel);
+    const last = channel.messages.at(-1);
+    return {
+      channelId: channel.channelId,
+      name: channel.name,
+      purpose: channel.purpose,
+      everyone: channel.everyone,
+      archived: channel.archived,
+      createdBy: channel.createdBy,
+      createdAt: channel.createdAt,
+      memberCount: members.length,
+      isMember: members.includes(caller.principal),
+      // Read cursors belong to people; an employee reads its channel through its trigger.
+      unread: caller.agentId === null ? channel.unread : 0,
+      mentionsMe: caller.agentId === null ? channel.mentionsMe : 0,
+      lastMessageAt: last !== undefined ? last.time : null,
+    };
+  }
+
+  private channelDetail(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    caller: { principal: string; agentId: string | null },
+  ): Json {
+    return {
+      ...this.channelItem(org, channel, caller),
+      members: this.channelMembers(org, channel).map((principal) => ({
+        principal,
+        name: this.principalName(org, principal),
+        kind: principal.startsWith("agent:") ? "agent" : "user",
+      })),
+    };
+  }
+
+  /** People read every channel; an employee only the ones it belongs to. */
+  private canRead(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    caller: { principal: string; agentId: string | null },
+  ): boolean {
+    return caller.agentId === null || this.channelMembers(org, channel).includes(caller.principal);
+  }
+
+  private notAMember(channelId: string, principal: string, why?: string): Response {
+    return this.error(
+      403,
+      "not_a_member",
+      why ?? `${principal} is not a member of the channel ${channelId}.`,
+    );
+  }
+
+  private channelArchived(channelId: string): Response {
+    return this.error(
+      409,
+      "channel_archived",
+      `Channel ${channelId} is archived: unarchive it before writing to it.`,
+    );
+  }
+
+  /** `agent:<id>` must be an employee and `user:<id>` a Project member — nobody else joins a channel. */
+  private resolveChannelPrincipal(org: FakeOrgState, raw: string): string | null {
+    const m = PRINCIPAL_RE.exec(raw);
+    if (m === null) return null;
+    const [, kind, id] = m as unknown as [string, string, string];
+    if (kind === "agent" && org.employees.some((e) => e.agentId === id)) return `agent:${id}`;
+    if (kind === "user" && this.projectUserIds(org).includes(id)) return `user:${id}`;
+    return null;
+  }
+
+  /**
+   * `…/channels` and everything under it: the membership contract of the server's channel
+   * routes, including which errors each rule answers with. `rest` is the path after
+   * `channels`: `[channelId?, "members" | "messages" | "read"?, principal?]`.
+   */
+  private handleChannels(
+    method: string,
+    org: FakeOrgState,
+    rest: Array<string | undefined>,
+    url: URL,
+    body: Json | undefined,
+  ): Response {
+    const [channelId, sub, principalArg] = rest;
+    if (channelId === undefined) {
+      if (method === "POST") return this.createChannel(org, body);
+      if (method !== "GET") return this.error(404, "not_found", "No such route.");
+      const caller = this.callerOfQuery(url);
+      if (!caller.ok) return caller.res;
+      const channels = [...org.channels.values()]
+        .map((channel) => this.channelItem(org, channel, caller))
+        .filter((item) => caller.agentId === null || item.isMember === true)
+        .sort((x, y) =>
+          x.channelId === DEFAULT_CHANNEL_ID
+            ? -1
+            : y.channelId === DEFAULT_CHANNEL_ID
+              ? 1
+              : String(x.name).localeCompare(String(y.name)) ||
+                String(x.channelId).localeCompare(String(y.channelId)),
+        );
+      return this.json({ channels });
+    }
+
+    // A malformed id names no channel, and neither does an id no channel has.
+    const channel = CHANNEL_ID_RE.test(channelId) ? org.channels.get(channelId) : undefined;
+    if (channel === undefined) {
+      return this.error(404, "channel_not_found", `Channel does not exist: ${channelId}`);
+    }
+
+    if (sub === undefined) {
+      if (method === "GET") {
+        const caller = this.callerOfQuery(url);
+        if (!caller.ok) return caller.res;
+        if (!this.canRead(org, channel, caller)) {
+          return this.notAMember(channelId, caller.principal);
+        }
+        return this.json(this.channelDetail(org, channel, caller));
+      }
+      if (method === "PATCH") return this.patchChannel(org, channel, body);
+    }
+
+    if (sub === "members") {
+      if (principalArg === undefined && method === "POST") {
+        return this.addChannelMember(org, channel, body);
+      }
+      if (principalArg !== undefined && method === "DELETE") {
+        return this.removeChannelMember(org, channel, principalArg, url);
+      }
+    }
+
+    if (sub === "messages") {
+      if (method === "GET") return this.channelMessages(org, channel, url);
+      if (method === "POST") return this.sendChannelMessage(org, channel, body);
+    }
+
+    if (sub === "read" && method === "POST") {
+      if (!isNonEmptyString(body?.upTo)) return this.badRequest("upTo is required.");
+      return new Response(null, { status: 204 });
+    }
+
+    return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+  }
+
+  /** A new channel holds exactly its creator; everyone else arrives by invitation. */
+  private createChannel(org: FakeOrgState, body: Json | undefined): Response {
+    const channelId = body?.channelId;
+    if (!isNonEmptyString(channelId) || channelId.length < 2 || channelId.length > 64) {
+      return this.badRequest("channelId is required.");
+    }
+    if (!CHANNEL_ID_RE.test(channelId)) return this.badRequest("Invalid channel id.");
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    if (org.channels.has(channelId)) {
+      return this.error(409, "channel_exists", `Channel id is already taken: ${channelId}`);
+    }
+    const channel = this.addChannel(org.orgId, channelId, {
+      name: isNonEmptyString(body?.name) ? body.name.trim() : channelId,
+      purpose: typeof body?.purpose === "string" ? body.purpose.trim() : "",
+      createdBy: actor.principal,
+      members: [actor.principal],
+    });
+    this.addMessage(
+      org.orgId,
+      { sender: "system", text: `${actor.principal} created the channel.` },
+      channelId,
+    );
+    return this.json(this.channelItem(org, channel, actor), 201);
+  }
+
+  /** Rename and change of purpose are any member's; archiving is a person's, and never of the all-hands channel. */
+  private patchChannel(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    body: Json | undefined,
+  ): Response {
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    const archived = body?.archived;
+    if (archived !== undefined) {
+      if (typeof archived !== "boolean") return this.badRequest("archived must be a boolean.");
+      if (channel.channelId === DEFAULT_CHANNEL_ID) {
+        return this.error(400, "all_hands_immutable", "The all-hands channel cannot be archived.");
+      }
+      if (actor.agentId !== null) {
+        return this.notAMember(
+          channel.channelId,
+          actor.principal,
+          "Only people archive a channel.",
+        );
+      }
+    }
+    // Everything but lifting the archive itself is refused while the channel is archived.
+    if (channel.archived && archived !== false) return this.channelArchived(channel.channelId);
+    if (body?.name !== undefined || body?.purpose !== undefined) {
+      if (!this.channelMembers(org, channel).includes(actor.principal)) {
+        return this.notAMember(channel.channelId, actor.principal);
+      }
+    }
+    if (body?.name !== undefined) {
+      if (!isNonEmptyString(body.name) || body.name.trim() === "") {
+        return this.badRequest("name must not be empty.");
+      }
+      channel.name = body.name.trim();
+    }
+    if (typeof body?.purpose === "string") channel.purpose = body.purpose.trim();
+    if (archived !== undefined && archived !== channel.archived) {
+      this.addMessage(
+        org.orgId,
+        {
+          sender: "system",
+          text: `${actor.principal} ${archived ? "archived" : "unarchived"} the channel.`,
+        },
+        channel.channelId,
+      );
+      channel.archived = archived;
+    }
+    return this.json(this.channelItem(org, channel, actor));
+  }
+
+  /** Any member invites; a person may also join by itself, an employee may not. */
+  private addChannelMember(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    body: Json | undefined,
+  ): Response {
+    const raw = body?.principal;
+    if (!isNonEmptyString(raw) || PRINCIPAL_RE.exec(raw) === null) {
+      return this.error(400, "invalid_principal", "principal must be agent:<id> or user:<id>.");
+    }
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    if (channel.channelId === DEFAULT_CHANNEL_ID) {
+      return this.error(
+        400,
+        "all_hands_immutable",
+        "Everyone is in the all-hands channel already.",
+      );
+    }
+    if (channel.archived) return this.channelArchived(channel.channelId);
+    const principal = this.resolveChannelPrincipal(org, raw);
+    if (principal === null) {
+      return this.error(
+        400,
+        "invalid_principal",
+        `Not an employee of ${org.orgId} or a member of this Project: ${raw}`,
+      );
+    }
+    if (principal === actor.principal) {
+      if (actor.agentId !== null) {
+        return this.notAMember(
+          channel.channelId,
+          actor.principal,
+          "An employee joins a channel only when a member invites it.",
+        );
+      }
+    } else if (!channel.members.includes(actor.principal)) {
+      return this.notAMember(channel.channelId, actor.principal);
+    }
+    // Adding an existing member changes nothing and still answers with the detail.
+    if (!channel.members.includes(principal)) {
+      channel.members.push(principal);
+      this.addMessage(
+        org.orgId,
+        {
+          sender: "system",
+          text:
+            principal === actor.principal
+              ? `${principal} joined the channel.`
+              : `${actor.principal} invited ${principal} to the channel.`,
+        },
+        channel.channelId,
+      );
+    }
+    return this.json(this.channelDetail(org, channel, actor), 201);
+  }
+
+  /** A member removes itself; a person may remove anyone. Removing a non-member changes nothing. */
+  private removeChannelMember(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    rawPrincipal: string,
+    url: URL,
+  ): Response {
+    if (PRINCIPAL_RE.exec(rawPrincipal) === null) {
+      return this.error(400, "invalid_principal", "principal must be agent:<id> or user:<id>.");
+    }
+    const caller = this.callerOfQuery(url);
+    if (!caller.ok) return caller.res;
+    if (channel.channelId === DEFAULT_CHANNEL_ID) {
+      return this.error(400, "all_hands_immutable", "Nobody leaves the all-hands channel.");
+    }
+    if (channel.archived) return this.channelArchived(channel.channelId);
+    if (caller.agentId !== null && rawPrincipal !== caller.principal) {
+      return this.notAMember(
+        channel.channelId,
+        caller.principal,
+        "An employee removes only itself from a channel.",
+      );
+    }
+    const at = channel.members.indexOf(rawPrincipal);
+    if (at >= 0) {
+      channel.members.splice(at, 1);
+      this.addMessage(
+        org.orgId,
+        {
+          sender: "system",
+          text:
+            rawPrincipal === caller.principal
+              ? `${rawPrincipal} left the channel.`
+              : `${caller.principal} removed ${rawPrincipal} from the channel.`,
+        },
+        channel.channelId,
+      );
+    }
+    return new Response(null, { status: 204 });
+  }
+
+  private channelMessages(org: FakeOrgState, channel: FakeChannelState, url: URL): Response {
+    const caller = this.callerOfQuery(url);
+    if (!caller.ok) return caller.res;
+    if (!this.canRead(org, channel, caller)) {
+      return this.notAMember(channel.channelId, caller.principal);
+    }
+    const date = url.searchParams.get("date") ?? ORG_TODAY;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return this.badRequest("date must be yyyy-mm-dd.");
+    const days = [...new Set(channel.messages.map((m) => String(m.time).slice(0, 10)))]
+      .sort()
+      .reverse();
+    return this.json({
+      channelId: channel.channelId,
+      date,
+      days,
+      messages: channel.messages.filter((m) => String(m.time).startsWith(date)),
+      unread: caller.agentId === null ? channel.unread : 0,
+      mentionsMe: caller.agentId === null ? channel.mentionsMe : 0,
+    });
+  }
+
+  /** Members post; a message naming a non-member is refused before anything is written. */
+  private sendChannelMessage(
+    org: FakeOrgState,
+    channel: FakeChannelState,
+    body: Json | undefined,
+  ): Response {
+    if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    if (channel.archived) return this.channelArchived(channel.channelId);
+    const members = this.channelMembers(org, channel);
+    if (!members.includes(actor.principal)) {
+      return this.notAMember(channel.channelId, actor.principal);
+    }
+    // `@all` is the channel's own membership, so only named principals can be outsiders.
+    const outsiders = mentionsOf(body.text).filter((m) => m !== "all" && !members.includes(m));
+    if (outsiders.length > 0) {
+      return this.error(
+        400,
+        "mention_not_member",
+        `Not a member of ${channel.channelId}: ${outsiders.join(", ")}. Invite them first, or write in a channel they are in.`,
+      );
+    }
+    const msg = this.addMessage(
+      org.orgId,
+      {
+        sender: actor.principal,
+        text: body.text,
+        ...(body.refs !== undefined ? { refs: body.refs } : {}),
+      },
+      channel.channelId,
+    );
+    return this.json(msg, 201);
+  }
+
+  private calendarItem(org: FakeOrgState, agentId: string, name: string, fields: Json): Json {
+    return {
+      agentId,
+      name,
+      ...fields,
+      status: fields.enabled === true ? "active" : "disabled",
+      paused: org.status === "paused",
+      ...(fields.enabled === true ? { nextFireAt: fields.startAt } : {}),
+    };
+  }
+
+  private createTicket(org: FakeOrgState, body: Json): Response {
+    if (!isNonEmptyString(body.title)) return this.badRequest("title is required.");
+    const actor = this.actorOf(body);
+    if (!actor.ok) return actor.res;
+    if (body.priority !== undefined && !["P0", "P1", "P2"].includes(String(body.priority))) {
+      return this.badRequest("priority must be P0, P1 or P2.");
+    }
+    if (body.parent !== undefined && !TICKET_ID_RE.test(String(body.parent))) {
+      return this.badRequest("parent must be a ticket id.");
+    }
+    const slug = typeof body.slug === "string" ? body.slug : slugify(body.title);
+    const ticketId = `${ORG_TODAY}-${slug || "ticket"}`;
+    if (org.tickets.has(ticketId))
+      return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
+    const rec = this.addTicket(org.orgId, {
+      ticketId,
+      title: body.title,
+      initiator: actor.principal,
+      notify: Array.isArray(body.notify) ? body.notify : [actor.principal],
+      ...(typeof body.owner === "string" ? { owner: body.owner } : {}),
+      ...(typeof body.parent === "string" ? { parent: body.parent } : {}),
+      ...(typeof body.priority === "string" ? { priority: body.priority } : {}),
+      ...(typeof body.due === "string" ? { due: body.due } : {}),
+      goal: typeof body.goal === "string" ? body.goal : "",
+      acceptanceCriteria:
+        typeof body.acceptanceCriteria === "string" ? body.acceptanceCriteria : "",
+      ...(typeof body.body === "string" ? { rawBody: body.body } : {}),
+    });
+    return this.json(this.ticketDetail(org, rec), 201);
+  }
+
+  /** POST …/tickets/:id/(move|block|unblock|progress|start|attach). */
+  private ticketAction(
+    org: FakeOrgState,
+    rec: Json,
+    action: string,
+    body: Json | undefined,
+  ): Response {
+    const sessions = rec.sessions as string[];
+    switch (action) {
+      case "move": {
+        const status = String(body?.status ?? "");
+        if (!(TICKET_COLUMNS as readonly string[]).includes(status)) {
+          return this.badRequest("status must be a column.");
+        }
+        if (status === "rejected" && !isNonEmptyString(body?.reason)) {
+          return this.badRequest("reason is required when moving into rejected.");
+        }
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        rec.status = status;
+        if (typeof body?.reason === "string") rec.result = body.reason;
+        return this.json(this.ticketDetail(org, rec));
+      }
+      case "block": {
+        if (!isNonEmptyString(body?.reason)) return this.badRequest("reason is required.");
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        rec.blocked = body.reason;
+        if (isNonEmptyString(body.by)) rec.blockedBy = body.by;
+        else delete rec.blockedBy;
+        return this.json(this.ticketDetail(org, rec));
+      }
+      case "unblock": {
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        delete rec.blocked;
+        delete rec.blockedBy;
+        return this.json(this.ticketDetail(org, rec));
+      }
+      case "progress": {
+        if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        (rec.progress as Json[]).push({
+          time: ORG_NOW,
+          by: actor.principal,
+          text: body.text,
+          ...(actor.sessionId !== undefined ? { sessionId: actor.sessionId } : {}),
+        });
+        return this.json(this.ticketDetail(org, rec));
+      }
+      case "start": {
+        const owner =
+          typeof rec.owner === "string" && rec.owner.startsWith("agent:")
+            ? rec.owner.slice(6)
+            : undefined;
+        const agentId = isNonEmptyString(body?.agentId) ? body.agentId : owner;
+        if (agentId === undefined)
+          return this.badRequest("The ticket has no employee owner; pass agentId.");
+        const employee = org.employees.find((e) => e.agentId === agentId);
+        if (!employee)
+          return this.error(404, "employee_not_found", `${agentId} is not an employee.`);
+        const s = this.addSession({
+          agentId,
+          workspace: isNonEmptyString(body?.workspace)
+            ? body.workspace
+            : String(employee.resolvedWorkspace ?? "/shared"),
+        });
+        sessions.push(s.sessionId);
+        rec.running = true;
+        return this.json({ sessionId: s.sessionId }, 202);
+      }
+      case "attach": {
+        if (!isNonEmptyString(body?.sessionId)) return this.badRequest("sessionId is required.");
+        const actor = this.actorOf(body);
+        if (!actor.ok) return actor.res;
+        if (!sessions.includes(body.sessionId)) sessions.push(body.sessionId);
+        return this.json(this.ticketDetail(org, rec));
+      }
+      default:
+        return this.error(404, "not_found", `No fake route for POST tickets/${action}`);
+    }
+  }
+
   private async handle(input: string | URL | Request, init?: RequestInit): Promise<Response> {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
@@ -244,7 +1510,12 @@ export class FakeServer {
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
     }
-    this.requests.push({ method, path: apiPath, ...(body !== undefined ? { body } : {}) });
+    this.requests.push({
+      method,
+      path: apiPath,
+      search: url.search,
+      ...(body !== undefined ? { body } : {}),
+    });
 
     // Session create
     let m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
@@ -292,6 +1563,23 @@ export class FakeServer {
 
     if (apiPath === "/api/projects" && method === "GET") {
       return this.json({ projects: this.projects });
+    }
+
+    // The signed-in user: how a command that has to name the caller as `user:<id>` learns it.
+    if (apiPath === "/api/me" && method === "GET") {
+      return this.json({
+        user: {
+          userId: this.userId,
+          isAdmin: true,
+          passwordIsInitial: false,
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+        previewIsolated: true,
+        desktopMode: false,
+        sessionVia: "token",
+        uploadLimits: {},
+        companyMode: true,
+      });
     }
 
     m = /^\/api\/projects\/([^/]+)\/usage$/.exec(apiPath);
@@ -343,6 +1631,11 @@ export class FakeServer {
         return new Response(null, { status: 204 });
       }
     }
+
+    // Company mode, nested under a Project
+    m = /^\/api\/projects\/([^/]+)\/organizations(?:\/(.*))?$/.exec(apiPath);
+    if (m)
+      return this.handleOrganizations(method, decodeURIComponent(m[1]!), m[2] ?? "", url, body);
 
     // Session-level endpoints
     m = /^\/api\/sessions\/([^/]+)(\/.*)?$/.exec(apiPath);

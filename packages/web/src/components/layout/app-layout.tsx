@@ -5,10 +5,10 @@
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
+import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { latestConversation } from "../../lib/session-grouping";
+import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -17,7 +17,17 @@ import { useCompletionNotifications } from "../../state/use-completion-notificat
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
 import { UpdateDot } from "../ui/update-dot";
-import { CloseIcon, NAV_ICONS } from "../ui/icons";
+import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
+import { useCompany } from "../../state/company";
+import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { ChannelRailRows, NewChannelButton } from "../../features/company/channel-sidebar";
+import { DeskRailRows } from "../../features/company/org-session-groups";
+import {
+  COMPANY_NAV_KEYS,
+  isOrgRoute,
+  orgPagePath,
+  parseOrgKey,
+} from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
@@ -61,12 +71,27 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
    * every other badge here rides on a page entry, which is where its trail continues.
    */
   const badges = useUpdateBadges();
+  const company = useCompany();
+  const location = useLocation();
+  /** Company mode: the organization's pages replace the development ones, and its channels follow them as rows. */
+  const inCompany = company.workMode === "company";
+  const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
+  /** Same two moves as the pinned sidebar's switch: company mode enters at /org; development mode only leaves an organization page. */
+  const toggleMode = () => {
+    const next = inCompany ? "dev" : "company";
+    company.setWorkMode(next);
+    if (next === "company") navigate("/org");
+    else if (isOrgRoute(location.pathname)) navigate("/chat");
+  };
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
-  const lastSession = useMemo(() => latestConversation(sessions), [sessions]);
+  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are not conversations of this list wherever company mode can list them as themselves. */
+  const lastSession = useMemo(
+    () => latestConversation(withoutOrgSessions(sessions, company.available)),
+    [sessions, company.available],
+  );
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {
@@ -86,13 +111,23 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
       switcher, which is the only place it happens. */
-  const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
-    { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
-    { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-    { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-    { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-  ];
+  const pages: ReadonlyArray<{ to: string; label: string; icon: string; note: string | null }> =
+    inCompany
+      ? navOrg === null
+        ? []
+        : COMPANY_NAV_KEYS.map((key) => ({
+            to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
+            label: S.nav.org[key],
+            icon: COMPANY_NAV_ICONS[key],
+            note: null,
+          }))
+      : [
+          { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
+          { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
+          { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
+          { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
+          { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
+        ].map((item) => ({ ...item, note: navNoteFor(badges, item.to) }));
 
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2.5">
@@ -105,6 +140,21 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       >
         <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
       </button>
+      {/* The work-mode toggle, the rail's compact form of the sidebar's 开发 | 公司 switch:
+          one building glyph, pressed while in company mode, the tooltip naming the move a
+          click makes. Same availability rule as the switch. */}
+      {company.available && (
+        <button
+          type="button"
+          title={inCompany ? S.company.switchToDev : S.company.switchToCompany}
+          aria-label={inCompany ? S.company.switchToDev : S.company.switchToCompany}
+          aria-pressed={inCompany}
+          onClick={toggleMode}
+          className={railItemClass(inCompany)}
+        >
+          <GlyphIcon d={COMPANY_MODE_ICON} size={18} />
+        </button>
+      )}
       {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
           keeps only the expand control and the account avatar at fixed height, so a window too
           short for the icons scrolls them here instead of pushing them out of the rail and
@@ -130,23 +180,31 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         >
           <GlyphIcon d={HISTORY_ICON} size={18} />
         </button>
-        {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
-        <button
-          type="button"
-          title={S.chat.newSessionMenu}
-          aria-label={S.chat.newSessionMenu}
-          onClick={newChat}
-          className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
-        >
-          <GlyphIcon d={NEW_CHAT_ICON} size={18} />
-        </button>
+        {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar
+            convention). Company mode makes a channel in this slot instead — the same swap the
+            pinned sidebar's own button makes. */}
+        {inCompany ? (
+          navOrg !== null && (
+            <NewChannelButton rail projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          )
+        ) : (
+          <button
+            type="button"
+            title={S.chat.newSessionMenu}
+            aria-label={S.chat.newSessionMenu}
+            onClick={newChat}
+            className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
+          >
+            <GlyphIcon d={NEW_CHAT_ICON} size={18} />
+          </button>
+        )}
         {/* 3-8. Page entries */}
         {pages.map((item) => {
           /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
              the Cost Center. The dot itself is decorative: the tooltip and the accessible name
              say what is waiting, and this rail's icons have no visible label, so they carry
              both the entry's name and that sentence. */
-          const note = navNoteFor(badges, item.to);
+          const note = item.note;
           return (
             <NavLink
               key={item.to}
@@ -160,6 +218,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </NavLink>
           );
         })}
+        {/* The organization's channels and then its desks, under the pages the way they sit
+            under the nav in the pinned sidebar. A hairline says where each run ends; a channel
+            row carries its own unread count and a desk its running dot, since a rail with no
+            labels must still say how much is waiting. */}
+        {inCompany && navOrg !== null && (
+          <>
+            <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+            <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+            <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+            <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          </>
+        )}
       </nav>
       <button
         type="button"
@@ -202,6 +272,11 @@ export function AppLayout() {
   // browser session, so a dot can be there on a fresh load instead of waiting for someone to
   // open the sidebar menu. Every other anchor reads the same caches passively.
   const badges = useUpdateBadges(true);
+  // The drawer holds the sidebar, so the hamburger is named after what the sidebar lists:
+  // conversations in development mode, channels in company mode.
+  const company = useCompany();
+  const drawerName =
+    company.workMode === "company" ? S.company.channels.drawerLabel : S.chat.sessionList;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
@@ -267,9 +342,7 @@ export function AppLayout() {
               row's update entry). */}
           <button
             type="button"
-            aria-label={
-              badges.note !== null ? `${S.chat.sessionList} · ${badges.note}` : S.chat.sessionList
-            }
+            aria-label={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
             {...(badges.note !== null ? { title: badges.note } : {})}
             onClick={() => setDrawerOpen(true)}
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"

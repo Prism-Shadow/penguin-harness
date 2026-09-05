@@ -22,7 +22,7 @@ plugins/<plugin>/
 | `description` / `description_zh` | 单行描述（英文必填） |
 | `short_description` / `short_description_zh` | 卡片短标签（可选；缺省显示完整描述） |
 | `version` | `YYYY-MM-DD.N`——日期加当日序号 |
-| `category` | `office-productivity`、`software-development`、`ai-app-development` 之一；缺失或未知归入「其他」 |
+| `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知归入「其他」 |
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各[钩子点](/agent-loop#stop-hook)的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径相对 `hooks/`，超时以秒计 |
 
@@ -102,10 +102,11 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 | | `continual-learning` | 单个任务结束时轮次超过 30，就把该任务的浓缩摘录交给一个后台子会话，由它把值得沉淀的发现写进 Agent 的 Skill（不预装） |
 | 软件开发 | `software-development` | 端到端的软件开发——两个 Skill：`software-engineering`（最小范围的调查、实现与验证）与 `web-design`（生成网页的 Penguin 视觉规范） |
 | | `use-claude-code` | 经 SSH 在远程主机上运行 Claude Code——持久 expect 会话、headless `-p`、tmux 驱动的交互式 TUI 与多轮延续（不预装：需要时从库安装） |
-| AI 应用开发 | `agent-development` | 基于 PenguinHarness 的智能体开发——四个 Skill：`penguin-sdk`（用 SDK 构建智能体/AI/RAG 应用）、`unified-llm-api`（经 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认模型与 Vault 机密）、`penguin-orchestration`（在 shell 里编排智能体、会话、成本与定时任务） |
+| AI 应用开发 | `agent-development` | 基于 PenguinHarness 的智能体开发——五个 Skill：`penguin-sdk`（用 SDK 构建智能体/AI/RAG 应用）、`unified-llm-api`（经 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认模型与 Vault 机密）、`penguin-orchestration`（在 shell 里编排智能体、会话、成本与定时任务）、`company-setup`（与用户一起创建[公司模式](/company-mode)的组织：一次只问一个问题，确认摘要后执行 `penguin org create`；它自己不招募、不建工单） |
 | | `model-development` | 在自己的硬件上做模型开发——三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）、`vllm`（以 OpenAI 兼容端点部署服务） |
 | | `skill-porting` | 从外部来源移植 Skill——插件市场、skills.sh 注册表、GitHub 仓库或本地目录——经审阅与规范化后装入 Agent |
 | | `agent-tuning` | 调优闭环的四个 Skill：`agent-initialization`（依据需求初始化 Agent）、`benchmark-design`（设计并校准能力 Benchmark）、`agent-evaluation`（隔离执行并评分单个 Case）、`agent-optimization`（根据测得结果改进 Agent） |
+| Agent 公司 | `agent-company` | 公司模式的员工工具箱——四个 Skill：`company-employee`（每个工位会话与工单会话都遵循的协议：触发块、工单看板、阻塞、频道礼仪、预算）、`company-ceo`（使命拆解为工单、招募、划分工作区、审核、向董事会汇报）、`company-hr`（保证日程有安排、招募与离任、评估）、`company-finance`（预算、每日巡检、告警与暂停处置）（不预装：组织创建 CEO 与招募员工时自行安装） |
 
 ## 编写与优化
 

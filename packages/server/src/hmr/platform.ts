@@ -214,6 +214,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
+      // Organization scheduler (company mode): same lifetime and the same startup rule
+      // (reconcile once, no backfill), only active while this App is.
+      await deps.orgScheduler.start();
       // Messaging bridge: connect every enabled Session binding (channel event
       // streams); only active while this App is, like the scheduler.
       await deps.messaging.start();
@@ -303,6 +306,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
+        business.orgScheduler.stop();
         business.messaging.stop();
         business.machines.stop();
         drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
