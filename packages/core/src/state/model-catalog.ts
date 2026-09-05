@@ -1948,9 +1948,13 @@ function hostMatches(host: string, domain: string): boolean {
  * - TokenDance (https://tokendance.space/docs/app-attribution): `X-App-URL` alone, and it
  *   takes priority over any App URL recorded on the API key — the same key may be in use by
  *   other tools, so the per-request value is the accurate one.
+ * - OpenCode Go / its mirrors (opencode.ai, freqtrade.1unlock.top/.../zen/go): a stable
+ *   `x-opencode-session` lets the gateway optimize its backend routing per conversation.
+ *   The value is the Session's id when available, else a generic "penguin-harness" fallback.
  */
 export function attributionHeaders(
   baseUrl: string | undefined,
+  sessionId?: string,
 ): Record<string, string> | undefined {
   const host = endpointHost(baseUrl);
   if (!host) return undefined;
@@ -1962,5 +1966,8 @@ export function attributionHeaders(
     };
   }
   if (hostMatches(host, "tokendance.space")) return { "X-App-URL": APP_URL };
+  if (hostMatches(host, "opencode.ai") || hostMatches(host, "freqtrade.1unlock.top")) {
+    return { "x-opencode-session": sessionId || "penguin-harness" };
+  }
   return undefined;
 }

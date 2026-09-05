@@ -185,6 +185,73 @@ describe("Environment.executeTool — basic file write", () => {
   });
 });
 
+describe("Environment.executeTool — exec_command `command` alias", () => {
+  it("executes when the model sends the legacy `command` parameter instead of `cmd`", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(),
+    });
+    const call = toolCall({
+      name: "exec_command",
+      arguments: JSON.stringify({ command: "printf 'via-alias' > note.txt" }),
+      toolCallId: "call_alias",
+    });
+
+    const messages = await collect(env.executeTool({ toolCall: call }));
+
+    const last = messages[messages.length - 1]!.payload as {
+      type: string;
+      stop_reason?: string;
+    };
+    expect(last.type).toBe("tool_call_output");
+    expect(last.stop_reason).toBe("completed");
+    const written = await readFileEventually(path.join(tmp, "note.txt"), "via-alias");
+    expect(written).toBe("via-alias");
+    env.dispose();
+  });
+
+  it("prefers `cmd` when both `cmd` and `command` are present", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(),
+    });
+    const call = toolCall({
+      name: "exec_command",
+      arguments: JSON.stringify({
+        cmd: "printf 'from-cmd' > note.txt",
+        command: "printf 'from-command' > note.txt",
+      }),
+      toolCallId: "call_both",
+    });
+
+    const messages = await collect(env.executeTool({ toolCall: call }));
+
+    const last = messages[messages.length - 1]!.payload as { stop_reason?: string };
+    expect(last.stop_reason).toBe("completed");
+    const written = await readFileEventually(path.join(tmp, "note.txt"), "from-cmd");
+    expect(written).toBe("from-cmd");
+    env.dispose();
+  });
+
+  it("still fails with a helpful message when neither `cmd` nor `command` is present", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(),
+    });
+    const call = toolCall({
+      name: "exec_command",
+      arguments: JSON.stringify({ description: "no shell command here" }),
+      toolCallId: "call_missing",
+    });
+
+    const messages = await collect(env.executeTool({ toolCall: call }));
+
+    const output = (messages[messages.length - 1]!.payload as { output?: string }).output ?? "";
+    expect(output).toContain('Missing required argument "cmd"');
+    env.dispose();
+  });
+});
+
 describe("Environment.executeTool — vault env injection", () => {
   it("injects vault entries into the command env; hardened entries are not overridable", async () => {
     const env = new Environment({
