@@ -1943,23 +1943,34 @@ export interface MessagesLiveTail {
 }
 
 /**
- * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
- * only; the parameterless full read never carries it). A window is a run of whole
- * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
- * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows. Besides the unit count, a window stops
- * before the unit that would take its serialized messages past 4 MiB, but always holds at
- * least one unit; such a window carries `before` like any other, with fewer units than
- * asked for.
+ * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `tail` / `before` /
+ * `after` requests; the parameterless full read never carries it). A window is a run of
+ * whole message-bearing units — one unit = one Task in the Web reducer's sense, opened by
+ * a main-session user prompt — cut so that no pairing (tool_call/output), compaction span
+ * or steering group ever splits across windows. Its size is asked for either in units
+ * (`limit`) or as a message budget (`messages`: the shortest run of whole units holding at
+ * least that many), and is a floor either way — except that a window also stops before
+ * the unit that would take its serialized messages (images by reference) past 4 MiB, but
+ * always holds at least one unit: the newest of a `tail` / `before` window, the one the
+ * cursor opens of an `after` window. Such a window carries its cursor (`before`, or
+ * `after`) like any other, with fewer units or messages than asked for.
  */
 export interface MessagesPageInfo {
   /**
    * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
-   * `before=` to fetch the previous window. Stable across requests and compaction —
-   * rotation opens a NEW shard and closed shards are immutable. Absent = this window
-   * reaches the very beginning of the transcript (no older history).
+   * `before=` to fetch the previous window, or as `after=` to fetch this one again from
+   * its start. Stable across requests and compaction — rotation opens a NEW shard and
+   * closed shards are immutable. Absent = this window reaches the very beginning of the
+   * transcript (no older history).
    */
   before?: string;
+  /**
+   * Cursor of the unit right after this window: pass it back as `after=` to fetch the
+   * next window. Present on `after` pages that were closed by their size, by the byte
+   * budget, or by `until` (then it equals `until`); absent = the window reaches the
+   * transcript's end.
+   */
+  after?: string;
   /**
    * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
    * window: the client offsets its global "round N" numbering by this, so a partial
@@ -2012,14 +2023,15 @@ export interface MessagesResponse {
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining
    * mid-stream can render the currently streaming message. Omitted when idle. On
-   * windowed requests it rides TAIL pages only — a `before` page is immutable history
-   * and never carries it.
+   * windowed requests it rides only pages that end at the live edge — a tail page, or an
+   * `after` page that ran out of history; a `before` page, or an `after` page closed by
+   * its size, the byte budget or `until`, is immutable history and never carries it.
    */
   live?: MessagesLiveTail;
   /**
-   * Present exactly on windowed requests (`tailLimit` / `before`): `messages` is then
-   * the requested window (subagent pointers inside it expanded as usual) rather than
-   * the full transcript. See MessagesPageInfo.
+   * Present exactly on windowed requests (`tailLimit` / `tail` / `before` / `after`):
+   * `messages` is then the requested window (subagent pointers inside it expanded as
+   * usual) rather than the full transcript. See MessagesPageInfo.
    */
   page?: MessagesPageInfo;
 }

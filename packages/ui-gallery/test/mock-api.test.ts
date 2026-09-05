@@ -141,7 +141,7 @@ describe("the mocked API", () => {
   it("serves a running Session's history with its live tail, and a finished one without", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const running = store.f.sessions.find((s) => s.status === "running")!;
-    const tail = await api.getMessages(running.sessionId, { kind: "tail", limit: 50 });
+    const tail = await api.getMessages(running.sessionId, { kind: "tail", messages: 50 });
     expect(tail.page).toEqual({
       earlierTurns: 0,
       prior: expect.objectContaining({ elapsedMs: 0 }),
@@ -156,9 +156,11 @@ describe("the mocked API", () => {
     const older = await api.getMessages(done.sessionId, {
       kind: "before",
       cursor: "1:0",
-      limit: 50,
+      messages: 50,
     });
     expect(older.messages).toEqual([]);
+    const later = await api.getMessages(done.sessionId, { kind: "after", cursor: "1:0" });
+    expect(later.messages).toEqual([]);
   });
 
   it("signs out on logout and back in on login, refusing the rest in between", async () => {

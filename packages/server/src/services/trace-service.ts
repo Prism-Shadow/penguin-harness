@@ -99,6 +99,11 @@ const IMPORT_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
  */
 export const MESSAGES_PAGE_MAX_BYTES = 4 * 1024 * 1024;
 
+/** One record's share of MESSAGES_PAGE_MAX_BYTES: its UTF-8 JSON as the route serves it, images by reference. */
+function servedBytes(sessionId: string, msg: HistoryMessage): number {
+  return Buffer.byteLength(JSON.stringify(withImagesByReference(sessionId, msg)), "utf8");
+}
+
 /** Recursion depth cap for sub-session expansion (run_subagent depth is already constrained by the SDK; this is just a defensive backstop against cycles). */
 const MAX_SUBAGENT_DEPTH = 4;
 
@@ -176,9 +181,26 @@ interface LocatedFile {
   sizeBytes: number;
 }
 
+/**
+ * How big a window is: `units` whole Tasks, or the shortest run of whole Tasks holding at
+ * least `messages` messages. Both cut at unit boundaries only — a message budget is what
+ * the Web client asks in (it sizes for a screen, and Tasks vary from three messages to
+ * three hundred), but a window never holds a partial Task, so the budget is a floor. Either
+ * size yields to MESSAGES_PAGE_MAX_BYTES: a window the byte budget closes holds fewer.
+ */
+export type WindowSize = { units: number } | { messages: number };
+
 /** A windowed history read's request shape (see readMessagesPage). */
 export type MessagesPageRequest =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number };
+  | { kind: "tail"; size: WindowSize }
+  | { kind: "before"; cursor: MessageCursor; size: WindowSize }
+  /**
+   * The window STARTING at `cursor` (a unit boundary a previous page named), running
+   * forward: `size` whole units, or — null — as far as the byte budget lets it. `until` is an exclusive
+   * bound the window never crosses (the Web client passes its live tail's start, so a
+   * forward page can never overlap what it already holds).
+   */
+  | { kind: "after"; cursor: MessageCursor; until: MessageCursor | null; size: WindowSize | null };
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
@@ -186,6 +208,8 @@ export interface MessagesPageResult {
   messages: OmniMessage[];
   /** Cursor of the window's first unit; absent = the window reaches the beginning. */
   before?: string;
+  /** Cursor of the unit right after the window; absent = the window reaches the end. */
+  after?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
   /**
@@ -194,6 +218,8 @@ export interface MessagesPageResult {
    * one does not hold that record. Absent for an empty transcript.
    */
   contextModel?: { provider: string; modelId: string };
+  /** The window ends at the transcript's live edge (a tail, or a forward page that ran out of history). */
+  reachesEnd: boolean;
 }
 
 export interface ForkTraceResult {
@@ -554,18 +580,20 @@ export class TraceService implements Traces {
   }
 
   /**
-   * Windowed history read (the `tailLimit` / `before` forms of GET /messages). The
-   * window is a run of whole units — cut points and unit semantics live in
+   * Windowed history read (the `tailLimit` / `before` / `after` forms of GET /messages).
+   * The window is a run of whole units — cut points and unit semantics live in
    * message-window.ts — assembled by reading ONLY the shards the window overlaps
    * (plus, once ever per old shard, the prefix-cache backfill above). Subagent
    * pointers are expanded exactly as the full path expands them, but only within the
    * window: children referenced by older windows load when those windows do.
    *
-   * Two limits bound a window: at most `limit` units, and at most
+   * Two limits bound a window: its size (WindowSize), and at most
    * MESSAGES_PAGE_MAX_BYTES of serialized messages, measured with images by reference
-   * (the route applies that rewrite after merging the held inputs). The newest unit
-   * always joins, however large; a window the budget cut short carries the cursor of its
-   * first unit like any other. A child's expanded size is not counted.
+   * (the route applies that rewrite after merging the held inputs). A backward window
+   * takes the span its size asks for, then keeps units newest first while they fit the
+   * budget; the newest unit always joins, however large, and a window the budget cut short
+   * carries the cursor of its first unit like any other. A forward window applies the same
+   * budget from its cursor end (readForwardPage). A child's expanded size is not counted.
    */
   async readMessagesPage(
     projectId: string,
@@ -577,6 +605,7 @@ export class TraceService implements Traces {
     const empty = (): MessagesPageResult => ({
       messages: [],
       prior: initialScanState().totals,
+      reachesEnd: true,
     });
     if (files.length === 0) return empty();
     const ctx: ExpandCtx = {
@@ -585,6 +614,9 @@ export class TraceService implements Traces {
       depth: 0,
       raw: new Map(),
     };
+    if (req.kind === "after") {
+      return this.readForwardPage(projectId, agentId, sessionId, files, req, ctx);
+    }
 
     // The window's exclusive end: the newest shard's end (tail), or the cursor (before).
     let endPos: number;
@@ -603,33 +635,68 @@ export class TraceService implements Traces {
     const prefixes = await this.prefixStates(projectId, agentId, sessionId, files, endPos - 1, ctx);
 
     // Walk backward from the end, scanning whole shards (each from its cached carry-in)
-    // until the window has more units than requested or the beginning is reached.
+    // until the window can be cut — one more unit than asked for, or a unit that puts at
+    // least the asked-for messages between itself and the end with a unit still before
+    // it — or the beginning is reached. `toEnd` is the message count from a boundary to
+    // the window's end, what a message-sized window is measured by.
     const shardMessages = new Map<number, OmniMessage[]>();
-    let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
+    let boundaries: Array<{
+      pos: number;
+      ordinal: number;
+      stats: WindowPriorStats;
+      toEnd: number;
+    }> = [];
+    let laterCount = 0; // messages of the shards already read, all of them AFTER the next one
     let startPos = endPos + 1;
-    while (boundaries.length <= req.limit && startPos > 0) {
+    const size = req.size;
+    const enough = (): boolean =>
+      "units" in size
+        ? boundaries.length > size.units
+        : boundaries.some((b, i) => i > 0 && b.toEnd >= size.messages);
+    while (!enough() && startPos > 0) {
       startPos -= 1;
       const messages = await this.readShard(files[startPos]!.path);
       shardMessages.set(startPos, messages);
       const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
-      const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
-      const to = startPos === endPos && endOrdinal !== null ? endOrdinal : messages.length;
+      const to =
+        startPos === endPos && endOrdinal !== null
+          ? Math.min(endOrdinal, messages.length)
+          : messages.length;
+      const shardBoundaries: typeof boundaries = [];
       await scanMessages(
         state,
         messages,
-        (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal, stats }),
+        (ordinal, stats) =>
+          shardBoundaries.push({ pos: startPos, ordinal, stats, toEnd: to - ordinal + laterCount }),
         (sid) => this.aggregateChild(projectId, sid, ctx),
         0,
-        Math.min(to, messages.length),
+        to,
       );
       boundaries = [...shardBoundaries, ...boundaries];
+      laterCount += to;
     }
 
-    // The widest window the unit count allows: the last `limit` units, or the very
-    // beginning (preamble included) when the whole remaining history holds no more.
+    // The widest window the size allows: from the cut unit, or the very beginning (preamble
+    // included) when the whole remaining history fits — then there is no `before` cursor. A
+    // message budget takes the NEWEST unit that satisfies it; the transcript's first unit
+    // ever is never a cut (nothing but the preamble precedes it), so it means the beginning
+    // too. The byte budget below may then start the window later than this.
+    let startIndex: number | null;
+    if ("units" in size) {
+      startIndex = boundaries.length > size.units ? boundaries.length - size.units : null;
+    } else {
+      let found = -1;
+      for (let i = boundaries.length - 1; i >= 0; i -= 1) {
+        if (boundaries[i]!.toEnd >= size.messages) {
+          found = i;
+          break;
+        }
+      }
+      startIndex = found > 0 ? found : null;
+    }
     type Boundary = (typeof boundaries)[number];
-    const reachesStart = boundaries.length <= req.limit;
-    const units = reachesStart ? boundaries : boundaries.slice(boundaries.length - req.limit);
+    const reachesStart = startIndex === null;
+    const units = startIndex === null ? boundaries : boundaries.slice(startIndex);
     const widest = reachesStart ? { pos: 0, ordinal: 0 } : units[0]!;
 
     const spanRaw: HistoryMessage[] = [];
@@ -669,10 +736,7 @@ export class TraceService implements Traces {
       const unitEnd = k + 1 < starts.length ? starts[k + 1]!.at : spanRaw.length;
       let unitBytes = 0;
       for (let i = starts[k]!.at; i < unitEnd; i++) {
-        unitBytes += Buffer.byteLength(
-          JSON.stringify(withImagesByReference(sessionId, spanRaw[i]!)),
-          "utf8",
-        );
+        unitBytes += servedBytes(sessionId, spanRaw[i]!);
       }
       if (k < starts.length - 1 && pageBytes + unitBytes > MESSAGES_PAGE_MAX_BYTES) break;
       pageBytes += unitBytes;
@@ -697,21 +761,247 @@ export class TraceService implements Traces {
     }
     const windowRaw = spanRaw.slice(starts[chosen]?.at ?? 0);
     const expanded = await this.expandMessages(projectId, windowRaw, ctx);
-    // The start shard was read for the window above, so its head is on hand.
-    const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
     return {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
       prior,
-      ...(startMeta
-        ? {
-            contextModel: {
-              provider: startMeta.payload.provider,
-              modelId: startMeta.payload.model_id,
-            },
-          }
-        : {}),
+      ...this.contextModelAt(shardMessages, start.pos),
+      reachesEnd: req.kind === "tail",
     };
+  }
+
+  /**
+   * The `after` form: the window starting AT the cursor, walking forward through whole
+   * units until it is big enough, hits `until`, or runs out of history. The cursor names
+   * a unit boundary a previous page produced, and that boundary's own prior stats are
+   * the window's prior — reproduced by scanning the cursor's shard up to and through it,
+   * so a forward page seeds the client's stats tracker exactly as the backward page
+   * whose start it is would have.
+   *
+   * The byte budget applies as it does backward, from the other end: the unit the cursor
+   * opens always joins, and the window closes before any later unit that would take it
+   * past MESSAGES_PAGE_MAX_BYTES. A window closed that way carries `after` (that unit's
+   * start) and does not reach the end, exactly like one closed by size.
+   */
+  private async readForwardPage(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    files: LocatedFile[],
+    req: Extract<MessagesPageRequest, { kind: "after" }>,
+    ctx: ExpandCtx,
+  ): Promise<MessagesPageResult> {
+    const startPos = files.findIndex((f) => f.index === req.cursor.fileIndex);
+    // Cursor shard gone (external deletion): nothing after a position that no longer
+    // exists can be named; end-of-history, like the backward form.
+    if (startPos < 0) return { messages: [], prior: initialScanState().totals, reachesEnd: true };
+    // `until` is a promise the window never crosses. At or before the cursor it leaves
+    // nothing to read — an EMPTY window that names the bound as its `after`, so a caller
+    // that asked for "up to the tail" from the tail's own start gets no messages rather
+    // than the tail itself. Only a bound whose shard is gone is no bound at all.
+    let until: { pos: number; ordinal: number } | null = null;
+    const bound = req.until;
+    if (bound !== null) {
+      const untilPos = files.findIndex((f) => f.index === bound.fileIndex);
+      if (untilPos >= 0) {
+        if (untilPos < startPos || (untilPos === startPos && bound.ordinal <= req.cursor.ordinal)) {
+          return {
+            messages: [],
+            before: encodeCursor(req.cursor),
+            after: encodeCursor(bound),
+            prior: initialScanState().totals,
+            reachesEnd: false,
+          };
+        }
+        until = { pos: untilPos, ordinal: bound.ordinal };
+      }
+    }
+    const expandChild = (sid: string) => this.aggregateChild(projectId, sid, ctx);
+    const prefixes = await this.prefixStates(
+      projectId,
+      agentId,
+      sessionId,
+      files,
+      startPos - 1,
+      ctx,
+    );
+    const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
+    const shardMessages = new Map<number, OmniMessage[]>();
+
+    // Up to the cursor, then through it: the boundary callback at the cursor's own
+    // ordinal carries the prior AT the cut (the previous Task settled, this unit not yet
+    // counted); a cursor that is not a boundary falls back to the totals before it.
+    const first = await this.readShard(files[startPos]!.path);
+    shardMessages.set(startPos, first);
+    const startOrdinal = Math.min(req.cursor.ordinal, first.length);
+    await scanMessages(state, first, () => {}, expandChild, 0, startOrdinal);
+    let prior: WindowPriorStats = { ...state.totals };
+    let count = 0; // messages in the window so far
+    let from = startOrdinal;
+    if (startOrdinal < first.length) {
+      await scanMessages(
+        state,
+        first,
+        (ordinal, stats) => {
+          if (ordinal === startOrdinal) prior = stats;
+        },
+        expandChild,
+        startOrdinal,
+        startOrdinal + 1,
+      );
+      count = 1;
+      from = startOrdinal + 1;
+    }
+
+    // Forward through the shards: every boundary is a candidate end; the first one that
+    // makes the window big enough closes it, and so does one whose next unit would pass
+    // the byte budget (then the window ends where that unit starts). `until` and the end
+    // of history close it too.
+    type Position = { pos: number; ordinal: number };
+    let unitsSeen = 1; // the unit the cursor opens
+    let pageBytes = 0; // the window's whole units so far, as served
+    let unitBytes = 0; // the open unit's records measured so far
+    let unitStart: Position = { pos: startPos, ordinal: startOrdinal };
+    /** The open unit just ended; false (and the window closes at its start) when the budget refuses it. */
+    const settleUnit = (): boolean => {
+      const firstUnit = unitStart.pos === startPos && unitStart.ordinal === startOrdinal;
+      if (!firstUnit && pageBytes + unitBytes > MESSAGES_PAGE_MAX_BYTES) return false;
+      pageBytes += unitBytes;
+      unitBytes = 0;
+      return true;
+    };
+    let end: Position | null = null;
+    let closedBy: "boundary" | "until" | "history" = "history";
+    for (let pos = startPos; pos < files.length && end === null; pos += 1) {
+      const messages = pos === startPos ? first : await this.readShard(files[pos]!.path);
+      shardMessages.set(pos, messages);
+      const shardFrom = pos === startPos ? from : 0;
+      const to =
+        until !== null && until.pos === pos
+          ? Math.min(until.ordinal, messages.length)
+          : messages.length;
+      let measured = pos === startPos ? startOrdinal : 0; // records of this shard already sized
+      const measureTo = (upTo: number): void => {
+        for (let i = measured; i < upTo; i += 1) {
+          unitBytes += servedBytes(sessionId, {
+            ...messages[i]!,
+            tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+          });
+        }
+        measured = Math.max(measured, upTo);
+      };
+      let cut = null as Position | null;
+      await scanMessages(
+        state,
+        messages,
+        (ordinal) => {
+          if (cut !== null) return;
+          measureTo(ordinal);
+          if (!settleUnit()) {
+            cut = unitStart;
+            return;
+          }
+          if (req.size !== null) {
+            const have = count + (ordinal - shardFrom);
+            const full =
+              "units" in req.size ? unitsSeen >= req.size.units : have >= req.size.messages;
+            if (full) {
+              cut = { pos, ordinal };
+              return;
+            }
+            unitsSeen += 1;
+          }
+          unitStart = { pos, ordinal };
+        },
+        expandChild,
+        shardFrom,
+        to,
+      );
+      if (cut !== null) {
+        end = cut;
+        closedBy = "boundary";
+      } else {
+        count += Math.max(0, to - shardFrom);
+        const last = until !== null && until.pos === pos;
+        if (last || pos === files.length - 1) {
+          // The open unit ends here too; the budget may still refuse it.
+          measureTo(to);
+          if (!settleUnit()) {
+            end = unitStart;
+            closedBy = "boundary";
+          } else if (last) {
+            end = { pos, ordinal: to };
+            closedBy = "until";
+          } else {
+            end = { pos, ordinal: messages.length };
+          }
+        } else {
+          measureTo(to);
+        }
+      }
+    }
+    if (end === null)
+      end = { pos: files.length - 1, ordinal: shardMessages.get(files.length - 1)!.length };
+
+    const windowRaw = await this.sliceShards(
+      files,
+      shardMessages,
+      { pos: startPos, ordinal: startOrdinal },
+      { pos: end.pos, ordinal: end.ordinal },
+    );
+    const expanded = await this.expandMessages(projectId, windowRaw, ctx);
+    const after =
+      closedBy === "history"
+        ? undefined
+        : encodeCursor({ fileIndex: files[end.pos]!.index, ordinal: end.ordinal });
+    return {
+      messages: expanded,
+      before: encodeCursor(req.cursor),
+      ...(after !== undefined ? { after } : {}),
+      prior,
+      ...this.contextModelAt(shardMessages, startPos),
+      reachesEnd: closedBy === "history",
+    };
+  }
+
+  /** The raw messages of [start, end) across shards, each stamped with its trace position; shards already read are not read again. */
+  private async sliceShards(
+    files: LocatedFile[],
+    shardMessages: Map<number, OmniMessage[]>,
+    start: { pos: number; ordinal: number },
+    end: { pos: number; ordinal: number | null },
+  ): Promise<HistoryMessage[]> {
+    const windowRaw: HistoryMessage[] = [];
+    for (let pos = start.pos; pos <= end.pos; pos += 1) {
+      const messages = shardMessages.get(pos) ?? (await this.readShard(files[pos]!.path));
+      const from = pos === start.pos ? start.ordinal : 0;
+      const to =
+        pos === end.pos && end.ordinal !== null
+          ? Math.min(end.ordinal, messages.length)
+          : messages.length;
+      for (let i = from; i < to; i += 1) {
+        windowRaw.push({
+          ...messages[i]!,
+          tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+        });
+      }
+    }
+    return windowRaw;
+  }
+
+  /**
+   * The model of the context a window starts in (MessagesPageResult.contextModel): the
+   * `session_meta` heading the shard its first unit lies in. That shard was read for the
+   * window, so its head is on hand.
+   */
+  private contextModelAt(
+    shardMessages: Map<number, OmniMessage[]>,
+    pos: number,
+  ): Pick<MessagesPageResult, "contextModel"> {
+    const meta = shardMessages.get(pos)?.find(isSessionMeta);
+    return meta
+      ? { contextModel: { provider: meta.payload.provider, modelId: meta.payload.model_id } }
+      : {};
   }
 
   /**

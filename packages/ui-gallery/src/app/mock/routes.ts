@@ -979,12 +979,14 @@ router
   .get("/api/sessions/:sessionId/messages", (ctx): MessagesResponse => {
     const transcript = transcriptOf(ctx);
     const live = ctx.store.liveTail(ctx.params.sessionId!);
-    const windowed = ctx.query.has("tailLimit") || ctx.query.has("before");
-    const before = ctx.query.get("before");
-    const messages = before === null ? transcript.history : [];
+    // A window request names its end: the tail, or a cursor to read before or after. The demo
+    // transcript is one window, so the tail is all of it and either side of a cursor is empty.
+    const windowed = ctx.query.has("tail") || ctx.query.has("before") || ctx.query.has("after");
+    const cursor = ctx.query.has("before") || ctx.query.has("after");
+    const messages = cursor ? [] : transcript.history;
     return {
       messages,
-      ...(live && before === null ? { live } : {}),
+      ...(live && !ctx.query.has("before") ? { live } : {}),
       ...(windowed
         ? {
             page: {
