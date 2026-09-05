@@ -114,6 +114,17 @@
         "renderer": {
           "builtin": "BenchmarkDetailPage"
         }
+      },
+      {
+        "id": "web.dashboard",
+        "key": "dashboard",
+        "path": "/dashboard",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "DashboardPage"
+        }
       }
     ]
   }

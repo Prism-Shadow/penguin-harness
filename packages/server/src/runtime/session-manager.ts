@@ -2259,6 +2259,7 @@ export abstract class SessionServiceIface extends Interface<
     | "hasTrace"
     | "listSessions"
     | "sessionStats"
+    | "sessionsOverview"
     | "createSession"
     | "latestTracePath"
     | "adoptUnmanagedTraceSessions"
