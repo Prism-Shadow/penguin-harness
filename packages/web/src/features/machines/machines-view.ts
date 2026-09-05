@@ -160,14 +160,6 @@ export function behindMachines(state: MachinesResponse): MachineInfo[] {
   return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
 }
 
-/**
- * The batch's selection when nobody has touched it: every machine in use. A person opening
- * the page to "make them all work" should find them all already ticked.
- */
-export function defaultSelection(state: MachinesResponse): Set<string> {
-  return new Set(installedMachines(state).map((machine) => machine.id));
-}
-
 /** Whether any job is still to come, which is when the page keeps polling. */
 export function anyJobPending(state: MachinesResponse): boolean {
   return state.jobs.some((job) => job.queued || job.running);

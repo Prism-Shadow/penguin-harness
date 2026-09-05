@@ -14,10 +14,10 @@
  * date, the server, the machine id, the job's output, the forced install — lives inside
  * the card and unfolds on the chevron, so the fleet at rest is names and dots.
  *
- * Selection is the card: clicking one toggles it, a selected card darkens its border, and
- * every machine in use starts selected. The verbs are plug and unplug icon buttons in a bar
- * that keeps a fixed slot between the title and the cards, so the cards never move when a
- * selection appears or goes. A queued or working card grows a stepper under its name, one
+ * Selection is the card: clicking one toggles it and a selected card darkens its border;
+ * nothing is selected until someone clicks. Select all, select none, plug and unplug are icon
+ * buttons in a bar that keeps a fixed slot between the title and the cards, so the cards
+ * never move when a selection appears or goes. A queued or working card grows a stepper under its name, one
  * segment per step of the pipeline, fed by the step the server says it is on.
  *
  * The page polls while a job is queued or running, and re-probes the servers on a widening
@@ -43,7 +43,6 @@ import {
   MACHINE_PHASES,
   anyJobPending,
   behindMachines,
-  defaultSelection,
   installedMachines,
   jobFor,
   localMachine,
@@ -52,7 +51,7 @@ import {
   wantsUse,
 } from "./machines-view";
 import type { MachineReading } from "./machines-view";
-import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machines-match";
+import { highlightSegments, matchMachines } from "./machines-match";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 
 /** How often the page re-reads the list while a job is queued or running. */
@@ -65,6 +64,10 @@ const POLL_MS = 1500;
  */
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
+
+/** Select all: a box with a check. Select none: the empty box. */
+const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
+const SELECT_NONE_PATH = "M4 5h16v14H4z";
 
 const MONO = "font-mono text-[13px] tabular-nums";
 
@@ -130,11 +133,8 @@ export function MachinesPage() {
   const [error, setError] = useState<string | null>(null);
   /** True while a POST has not come back yet. */
   const [posting, setPosting] = useState(false);
-  /**
-   * The batch selection. Null means "untouched": every machine in use, including ones added
-   * later. Becomes a real set the first time someone clicks a card.
-   */
-  const [picked, setPicked] = useState<Set<string> | null>(null);
+  /** The batch selection: nothing until someone clicks a card. */
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
   /** Cards unfolded to show their details. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
@@ -192,10 +192,7 @@ export function MachinesPage() {
   const local = useMemo(() => (state === null ? null : localMachine(state)), [state]);
   const jobs = useMemo(() => state?.jobs ?? [], [state]);
   const imageVersion = state?.imageVersion ?? null;
-  const selection = useMemo(
-    () => picked ?? (state === null ? new Set<string>() : defaultSelection(state)),
-    [picked, state],
-  );
+  const selection = picked;
   const inUseIds = useMemo(() => new Set(inUse.map((machine) => machine.id)), [inUse]);
   const selectedIds = useMemo(
     () => [...selection].filter((id) => inUseIds.has(id)),
@@ -210,8 +207,6 @@ export function MachinesPage() {
     [machines, inUseIds],
   );
   const matched = useMemo(() => matchMachines(addable, query), [addable, query]);
-  const visible = matched.slice(0, MAX_VISIBLE_MACHINES);
-  const hiddenCount = matched.length - visible.length;
 
   /**
    * Re-probe the servers in use on a widening schedule. Separate from the job poll above:
@@ -295,7 +290,7 @@ export function MachinesPage() {
     });
   const stopUsing = (ids: string[]) => post((project) => api.stopUsingMachines(project, ids));
 
-  const togglePicked = (id: string) => setPicked(toggled(picked ?? selection, id));
+  const togglePicked = (id: string) => setPicked((prev) => toggled(prev, id));
   const pickAll = () => setPicked(new Set(inUse.map((machine) => machine.id)));
   const pickNone = () => setPicked(new Set());
   const toggleExpanded = (id: string) => setExpanded((prev) => toggled(prev, id));
@@ -355,7 +350,7 @@ export function MachinesPage() {
                 aria-multiselectable="true"
                 className="max-h-64 overflow-y-auto py-1"
               >
-                {visible.map(({ machine, positions }) => {
+                {matched.map(({ machine, positions }) => {
                   const on = adding.has(machine.id);
                   return (
                     <li key={machine.id} role="option" aria-selected={on}>
@@ -397,35 +392,30 @@ export function MachinesPage() {
                     </li>
                   );
                 })}
-                {visible.length === 0 && (
+                {matched.length === 0 && (
                   <li className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
                     {addable.length === 0 ? S.machines.empty : S.machines.noMatch}
                   </li>
                 )}
-                {hiddenCount > 0 && (
-                  <li className="px-3.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500">
-                    {S.machines.more(hiddenCount)}
-                  </li>
-                )}
               </ul>
-              <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-3 py-2 dark:border-gray-800">
-                <span className="text-xs text-gray-500">
-                  {S.machines.selectedCount(adding.size)}
-                </span>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={adding.size === 0 || posting}
-                  onClick={() => {
-                    const ids = [...adding];
-                    setPickerOpen(false);
-                    void use(ids);
-                  }}
-                >
-                  <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-                  {S.machines.addSelected(adding.size)}
-                </Button>
-              </div>
+              {/* The confirm appears once something is picked; an empty footer says nothing. */}
+              {adding.size > 0 && (
+                <div className="flex justify-end border-t border-gray-200 px-3 py-2 dark:border-gray-800">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={posting}
+                    onClick={() => {
+                      const ids = [...adding];
+                      setPickerOpen(false);
+                      void use(ids);
+                    }}
+                  >
+                    <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
+                    {S.machines.addSelected(adding.size)}
+                  </Button>
+                </div>
+              )}
             </Dropdown>
           </div>
         </div>
@@ -442,30 +432,24 @@ export function MachinesPage() {
         )}
 
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
-            never move when a selection appears or goes. The count is the slot's label; the
-            verbs are dimmed until something is selected. */}
+            never move when a selection appears or goes. The count is the slot's label; on the
+            right, select all and none, then the two verbs, each dimmed when it would do nothing. */}
         <div className="mt-3 flex h-10 items-center gap-3 px-1 text-xs text-gray-500">
           <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
-          {inUse.length > 0 && (
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                onClick={pickAll}
-              >
-                {S.machines.pickAll}
-              </button>
-              ·
-              <button
-                type="button"
-                className="hover:text-gray-900 hover:underline dark:hover:text-gray-100"
-                onClick={pickNone}
-              >
-                {S.machines.pickNone}
-              </button>
-            </span>
-          )}
           <span className="ml-auto flex items-center gap-1">
+            <IconAction
+              label={S.machines.pickAll}
+              d={SELECT_ALL_PATH}
+              disabled={inUse.length === 0 || selectedIds.length === inUse.length}
+              onClick={pickAll}
+            />
+            <IconAction
+              label={S.machines.pickNone}
+              d={SELECT_NONE_PATH}
+              disabled={selectedIds.length === 0}
+              onClick={pickNone}
+            />
+            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
             <IconAction
               label={S.machines.use}
               d={PLUG_PATH}
