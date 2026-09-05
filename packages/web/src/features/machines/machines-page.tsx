@@ -70,6 +70,8 @@ const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17
 
 /** The + in the picker's foot: a new host for the ssh config. */
 const PLUS_PATH = "M12 5v14M5 12h14";
+/** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
+const CHEVRON_PATH = "M6 9l6 6 6-6";
 /** Select all: a box with a check. Select none: the empty box. */
 const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
 const SELECT_NONE_PATH = "M4 5h16v14H4z";
@@ -421,25 +423,22 @@ export function MachinesPage() {
               {/* The foot: the rest of the config folded behind a chevron — for when a search
                   is the wrong tool and a person wants to see the list — and, at the right, a
                   new host for the config. */}
-              <div className="flex items-center justify-between gap-2 border-t border-gray-200 py-1 pr-1.5 pl-1 dark:border-gray-800">
+              <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-2 py-1.5 dark:border-gray-800">
                 {hiddenCount > 0 || (showAll && matched.length > MAX_VISIBLE_MACHINES) ? (
-                  <button
-                    type="button"
-                    aria-expanded={showAll}
+                  <Verb
+                    label={showAll ? S.machines.fewer : S.machines.expand}
+                    title={showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
+                    d={CHEVRON_PATH}
+                    glyphClass={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                    ariaExpanded={showAll}
                     onClick={() => setShowAll((open) => !open)}
-                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                  >
-                    {showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
-                    <ChevronDown
-                      size={ICON_SIZE.chevronDense}
-                      className={`transition-transform ${showAll ? "rotate-180" : ""}`}
-                    />
-                  </button>
+                  />
                 ) : (
                   <span />
                 )}
-                <IconAction
-                  label={S.machines.host.addTitle}
+                <Verb
+                  label={S.machines.host.newVerb}
+                  title={S.machines.host.addTitle}
                   d={PLUS_PATH}
                   onClick={() => {
                     setPickerOpen(false);
@@ -498,26 +497,26 @@ export function MachinesPage() {
         <div className="mt-3 flex h-10 items-center gap-3 px-1 text-xs text-gray-500">
           <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
           <span className="ml-auto flex items-center gap-1">
-            <IconAction
+            <Verb
               label={S.machines.pickAll}
               d={SELECT_ALL_PATH}
               disabled={inUse.length === 0 || selectedIds.length === inUse.length}
               onClick={pickAll}
             />
-            <IconAction
+            <Verb
               label={S.machines.pickNone}
               d={SELECT_NONE_PATH}
               disabled={selectedIds.length === 0}
               onClick={pickNone}
             />
             <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
-            <IconAction
+            <Verb
               label={S.machines.use}
               d={PLUG_PATH}
               disabled={selectedIds.length === 0 || posting || noImage}
               onClick={() => void use(selectedIds)}
             />
-            <IconAction
+            <Verb
               label={S.machines.stopUsing}
               d={UNPLUG_PATH}
               disabled={selectedIds.length === 0 || posting}
@@ -568,38 +567,46 @@ export function MachinesPage() {
   );
 }
 
-/** An icon verb: plug (enable) and unplug (disable), for the bar and inside a card. */
-function IconAction({
+/**
+ * Every verb on the page, in one shape: a small secondary button carrying one glyph and one
+ * word — enable, disable, configure, new, expand, select all, select none. One shape so a
+ * person learns it once; the glyph says which verb, the word confirms it. The forced
+ * install alone keeps the danger variant, since it interrupts whoever is on the machine.
+ */
+function Verb({
   label,
   d,
   disabled = false,
   onClick,
-  emphasis = false,
+  variant = "secondary",
+  title,
+  glyphClass = "",
+  ariaExpanded,
 }: {
   label: string;
   d: string;
   disabled?: boolean;
   onClick: () => void;
-  emphasis?: boolean;
+  variant?: "secondary" | "danger";
+  title?: string;
+  glyphClass?: string;
+  ariaExpanded?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
+    <Button
+      size="sm"
+      variant={variant}
       disabled={disabled}
+      title={title ?? label}
+      aria-expanded={ariaExpanded}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
-      className={`rounded-md border p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        emphasis
-          ? "border-gray-300 text-gray-900 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800"
-          : "border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-900 dark:hover:border-gray-700 dark:hover:text-gray-100"
-      }`}
     >
-      <GlyphIcon d={d} size={ICON_SIZE.iconButton} />
-    </button>
+      <GlyphIcon d={d} size={ICON_SIZE.inlineGlyph} className={glyphClass} />
+      {label}
+    </Button>
   );
 }
 
@@ -763,13 +770,7 @@ function MachineCard({
           )}
         </div>
         {wantsUse(reading) && (
-          <IconAction
-            label={S.machines.use}
-            d={PLUG_PATH}
-            disabled={busy}
-            onClick={() => onUse(false)}
-            emphasis
-          />
+          <Verb label={S.machines.use} d={PLUG_PATH} disabled={busy} onClick={() => onUse(false)} />
         )}
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
@@ -781,28 +782,32 @@ function MachineCard({
         <Record machine={machine} locale={locale} />
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {reading.kind === "failed" && reading.canReplaceProgram && (
-            <Button
-              size="sm"
+            <Verb
+              label={S.machines.replaceProgram}
+              title={S.machines.replaceProgramWhy}
+              d={PLUG_PATH}
               variant="danger"
               disabled={busy}
-              title={S.machines.replaceProgramWhy}
               onClick={() => onUse(true)}
-            >
-              {S.machines.replaceProgram}
-            </Button>
+            />
           )}
           {wantsUse(reading) && (
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => onUse(false)}>
-              <GlyphIcon d={PLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-              {S.machines.use}
-            </Button>
+            <Verb
+              label={S.machines.use}
+              d={PLUG_PATH}
+              disabled={busy}
+              onClick={() => onUse(false)}
+            />
           )}
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onStopUsing}>
-            <GlyphIcon d={UNPLUG_PATH} size={ICON_SIZE.inlineGlyph} />
-            {S.machines.stopUsing}
-          </Button>
-          <IconAction
-            label={S.machines.host.configure}
+          <Verb
+            label={S.machines.stopUsing}
+            d={UNPLUG_PATH}
+            disabled={busy}
+            onClick={onStopUsing}
+          />
+          <Verb
+            label={S.machines.host.configureVerb}
+            title={S.machines.host.configure}
             d={GEAR_ICON}
             disabled={busy}
             onClick={onConfigure}
