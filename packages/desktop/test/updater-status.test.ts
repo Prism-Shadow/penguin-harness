@@ -17,6 +17,8 @@ import {
   nextUpdateStatus,
   parseUpdaterCommand,
   updaterStatusMessage,
+  parseShellCommand,
+  shellInfoMessage,
 } from "../src/updater-status.js";
 import type { UpdaterEvent } from "../src/updater-status.js";
 
@@ -211,5 +213,20 @@ describe("port frames", () => {
     ]) {
       expect(parseUpdaterCommand(data)).toBeNull();
     }
+  });
+});
+
+describe("the shell's native actions on the port", () => {
+  it("frames what the shell offers, and reads back only a well-formed ask", () => {
+    expect(shellInfoMessage({ cliInstall: false })).toEqual({
+      type: "desktop-shell-info",
+      info: { cliInstall: false },
+    });
+    expect(parseShellCommand({ type: "desktop-shell-command", action: "install-cli" })).toBe(
+      "install-cli",
+    );
+    expect(parseShellCommand({ type: "desktop-shell-command", action: "format-disk" })).toBeNull();
+    expect(parseShellCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
+    expect(parseShellCommand(null)).toBeNull();
   });
 });

@@ -141,6 +141,7 @@ import type {
   UpdateCheckResponse,
   UpdateJobStatus,
   RestartResponse,
+  DesktopShellInfoResponse,
   DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
@@ -1510,6 +1511,13 @@ export const restartServer = () =>
 // Desktop client update (desktop-shell sessions only) ----------------------------------
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+/** What the desktop shell offers the command palette (desktop mode, the shell's own window). */
+export const getDesktopShell = () => apiFetch<DesktopShellInfoResponse>("/api/desktop/shell");
+
+/** Asks the shell to install the bundled `penguin` command; it answers with its own dialog. */
+export const desktopInstallCli = () =>
+  apiFetch<void>("/api/desktop/shell/install-cli", { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });

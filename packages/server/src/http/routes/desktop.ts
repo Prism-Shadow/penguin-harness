@@ -1,6 +1,7 @@
 /**
- * Desktop-mode routes: POST /api/desktop/shutdown and the client-update relay under
- * /api/desktop/update, plus the shared desktop-mode guard that turns off multi-user
+ * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
+ * /api/desktop/update, the shell's native actions under /api/desktop/shell, plus the
+ * shared desktop-mode guard that turns off multi-user
  * surfaces (see rejectInDesktopMode).
  *
  * Platform code, all of it: what the shell's window may ask of the shell is policy. The
@@ -13,11 +14,12 @@
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { DesktopUpdateStatusResponse } from "../../api/types.js";
+import type { DesktopShellInfoResponse, DesktopUpdateStatusResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopApi } from "../../hmr/capabilities.js";
+import type { DesktopService } from "../../services/desktop-service.js";
 
 /** The shell's service as the platform sees it; null outside desktop mode. */
 export interface DesktopRouteDeps {
@@ -140,4 +142,47 @@ export class DesktopUpdateRoutes {
   setup() {
     this.routes = desktopUpdateRoutes({ desktop: this.desktop.current() });
   }
+}
+
+/**
+ * Native actions offered from the command palette (mounted INSIDE authMiddleware at
+ * /api/desktop/shell, desktop mode only, the shell's own window only — like the update
+ * relay). `GET /` says what the shell offers; `POST /install-cli` asks it to install the
+ * bundled `penguin` command, which it does through its own native dialog. These moved
+ * out of the application menu because the menu bar is hidden: a lone Alt used to pull it
+ * up and take the keyboard from the page.
+ */
+export function desktopShellRoutes(deps: { desktop: DesktopService | null }): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const shellOf = (c: Context<AppEnv>): DesktopService => {
+    const desktop = deps.desktop;
+    if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
+    if (c.var.sessionVia !== "desktop") {
+      throw new HttpError(
+        403,
+        "desktop_shell_only",
+        "This is managed from the desktop app's own window.",
+      );
+    }
+    return desktop;
+  };
+  app.get("/", (c) => {
+    const desktop = shellOf(c);
+    return c.json({ info: desktop.getShellInfo() } satisfies DesktopShellInfoResponse);
+  });
+  app.post("/install-cli", (c) => {
+    const desktop = shellOf(c);
+    if (!desktop.getShellInfo()?.cliInstall) {
+      throw new HttpError(
+        409,
+        "cli_install_unavailable",
+        "This install form has no command to install.",
+      );
+    }
+    if (!desktop.requestShellCommand("install-cli")) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
+  return app;
 }
