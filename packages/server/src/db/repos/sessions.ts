@@ -53,6 +53,12 @@ export interface SessionRow {
    */
   lastActiveAt: string;
   createdAt: string;
+  /**
+   * The Session's surface: the kind a plugin contributed (`sessions.surface`), or NULL for
+   * the built-in conversation. A surface Session carries no model reference (`provider` and
+   * `modelId` are empty strings) and is never driven by the SessionManager.
+   */
+  surface?: string | null;
 }
 
 function mapRow(r: Record<string, unknown>): SessionRow {
@@ -73,6 +79,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
     lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
+    surface: (r.surface as string | null) ?? null,
   };
 }
 
@@ -129,8 +136,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, surface)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -146,6 +153,7 @@ export class SessionsRepo implements SessionIndex {
         row.lastActiveAt ?? null,
         row.createdAt,
         row.createdAt,
+        row.surface ?? null,
       );
   }
 
