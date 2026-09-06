@@ -19,6 +19,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { sessionActivity } from "../../lib/session-activity";
 import { S } from "../../lib/strings";
 import { surfaceLabel, useContributions } from "../../state/contributions";
+import { machineForSession } from "../../lib/session-machines";
+import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import { useLocale } from "../../state/locale";
 import { useSessions } from "../../state/sessions";
 import {
@@ -75,6 +77,11 @@ export function SessionSurfaceView({ session }: { session: SessionInfo }) {
  * screen (while the server still holds it) and offers to open it again, and one the server
  * has already reaped is opened again on sight — there is nothing left to show of the old
  * run.
+ *
+ * A Session on a MACHINE opens its surface there — the surface routes follow the Session
+ * (lib/session-machines.ts) — so the pty is that machine's. Recording where it lives is what
+ * makes every later call about it, the byte stream included, address that machine rather
+ * than this server (lib/terminal-machines.ts).
  */
 function TerminalSurface({ session }: SurfaceRendererProps) {
   const [status, setStatus] = useState<TerminalStatus>("connecting");
@@ -87,6 +94,8 @@ function TerminalSurface({ session }: SurfaceRendererProps) {
     async (cols: number, rows: number): Promise<TerminalInfo> => {
       const attach = async (terminalId: unknown): Promise<TerminalInfo | null> => {
         if (typeof terminalId !== "string") throw new Error(S.chat.surface.noTerminal);
+        // Before the first call about it: the id alone is what every terminal path routes by.
+        rememberTerminalMachine(terminalId, machineForSession(sessionId));
         return probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(terminalId)}`);
       };
       const open = async () => {
