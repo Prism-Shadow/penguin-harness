@@ -21,15 +21,13 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type {
-  DesktopShellCommandMessage,
-  DesktopShellInfo,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
+  HostCommand,
 } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
-export type ShellCommand = DesktopShellCommandMessage["action"];
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -95,25 +93,25 @@ export class DesktopService {
     return true;
   }
 
-  // --- native actions offered from the page ------------------------------------
-  private shellInfo: DesktopShellInfo | null = null;
-  private shellCommandSender: ((action: ShellCommand) => void) | null = null;
+  // --- host commands offered to the page -------------------------------------
+  private commands: HostCommand[] = [];
+  private commandSender: ((command: HostCommand) => void) | null = null;
 
-  getShellInfo(): DesktopShellInfo | null {
-    return this.shellInfo;
+  getCommands(): HostCommand[] {
+    return this.commands;
   }
 
-  setShellInfo(info: DesktopShellInfo): void {
-    this.shellInfo = info;
+  setCommands(commands: HostCommand[]): void {
+    this.commands = commands;
   }
 
-  onShellCommand(sender: (action: ShellCommand) => void): void {
-    this.shellCommandSender = sender;
+  onCommand(sender: (command: HostCommand) => void): void {
+    this.commandSender = sender;
   }
 
-  requestShellCommand(action: ShellCommand): boolean {
-    if (!this.shellCommandSender) return false;
-    this.shellCommandSender(action);
+  requestCommand(command: HostCommand): boolean {
+    if (!this.commandSender) return false;
+    this.commandSender(command);
     return true;
   }
 }

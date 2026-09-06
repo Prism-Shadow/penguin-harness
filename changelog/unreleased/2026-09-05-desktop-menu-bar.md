@@ -11,6 +11,6 @@ On Windows and Linux the desktop app's menu bar was auto-hidden, so a lone press
 
 ## Details
 
-- The menu's own actions — **Install 'penguin' command…** and **Check for desktop updates…** — are offered from the command palette (Ctrl+P) when the page runs in the desktop app's own window. **Project on GitHub** is in the palette everywhere.
-- The palette reaches the shell through the server, over the same channel the update relay uses: `GET /api/desktop/shell` says what the shell offers, `POST /api/desktop/shell/install-cli` asks it to install the command. Both answer only the shell's own window, like the update routes.
+- The menu's own actions — **Install 'penguin' command…** and **Check for desktop updates…** — are offered from the command palette (Ctrl+P) to an admin, in any window signed into the desktop app's server. **Project on GitHub** is in the palette everywhere.
+- The palette reaches the shell through the server, over the same channel the update relay uses: `GET /api/command` lists the commands this host offers (none under a plain server), `POST /api/command/:command` runs one. Admin only; not limited to the shell's own window, since a command acts on the host, not on the window.
 - Preview windows opened from the app have their menu bar hidden the same way.
