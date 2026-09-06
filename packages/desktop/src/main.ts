@@ -62,8 +62,20 @@ import {
   trayStatusMessage,
   updateTrayPrefs,
 } from "./tray-prefs.js";
-import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  checkForUpdatesManually,
+  getUpdaterStatus,
+  handleUpdaterCommand,
+  initUpdater,
+  onUpdaterStatus,
+  updatesAvailableInThisForm,
+} from "./updater.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
+  parseUpdaterCommand,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   classifyWindowOpen,
   desktopLoginUrl,
@@ -117,6 +129,14 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — its accelerators keep working, and macOS keeps its
+ * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
+ * own actions are offered from the page's command palette (see http/routes/command.ts).
+ */
 function hideMenuBar(target: BrowserWindow): void {
   if (process.platform === "darwin") return;
   target.setMenuBarVisibility(false);
@@ -383,6 +403,16 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -396,6 +426,12 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */

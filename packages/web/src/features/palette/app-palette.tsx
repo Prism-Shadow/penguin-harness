@@ -4,14 +4,15 @@
  * An action opens an overlay over the current page rather than navigating — closing it
  * leaves the user exactly where they were.
  *
- * Under the desktop shell the palette also carries the shell's native actions — install
- * the bundled `penguin` command, check for a desktop update — which used to live only in
- * the application menu. The menu bar is hidden there (a lone Alt used to take the
- * keyboard), so the palette is where a person finds them. They exist only for the shell's
- * own window: a browser signed into the same server is not the machine they act on.
+ * The palette also carries the host's commands — what the process hosting the server can do
+ * on the page's behalf. Under the desktop shell that is installing the bundled `penguin`
+ * command and checking for a desktop update, which used to live only in the application
+ * menu; the menu bar is hidden there (a lone Alt used to take the keyboard), so the palette
+ * is where a person finds them. The server says which commands the host offers; a plain
+ * server offers none, and a non-admin is told nothing.
  */
 import { useEffect, useMemo, useState } from "react";
-import type { DesktopShellInfo } from "@prismshadow/penguin-server/api";
+import type { HostCommand } from "@prismshadow/penguin-server/api";
 import type { PaletteAction } from "../../lib/command-palette";
 import { S } from "../../lib/strings";
 import * as api from "../../api/endpoints";
@@ -23,60 +24,49 @@ import { CommandPalette } from "./command-palette";
 
 const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
 
+/** The palette action for each host command: its words, and what to say once it is handed over. */
+const HOST_ACTIONS: Record<
+  HostCommand,
+  { label: () => string; keywords: string[]; after?: () => string }
+> = {
+  "install-cli": {
+    label: () => S.commandPalette.installCli,
+    keywords: ["penguin", "cli", "command", "install", "path"],
+  },
+  "check-updates": {
+    label: () => S.commandPalette.checkUpdates,
+    keywords: ["update", "upgrade", "version", "desktop"],
+    after: () => S.commandPalette.checkingUpdates,
+  },
+};
+
 /**
  * `extra` is what the mount point adds ahead of the standing actions — the full-page
  * workflow route registers its way out here, which is why it exists at all on that route.
  */
 export function AppPalette({ extra = [] }: { extra?: readonly PaletteAction[] }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const { sessionVia } = useAuth();
-  const inShell = sessionVia === "desktop";
-  const [shell, setShell] = useState<DesktopShellInfo | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.isAdmin === true;
+  const [commands, setCommands] = useState<HostCommand[]>([]);
   useEffect(() => {
-    if (!inShell) return;
+    if (!isAdmin) return;
     let cancelled = false;
     void api
-      .getDesktopShell()
+      .getHostCommands()
       .then((res) => {
-        if (!cancelled) setShell(res.info);
+        if (!cancelled) setCommands(res.commands);
       })
       .catch(() => {
-        // A shell that has not pushed yet, or an older server: the actions simply stay out.
+        // An older server without the route: the host's commands simply stay out.
       });
     return () => {
       cancelled = true;
     };
-  }, [inShell]);
+  }, [isAdmin]);
 
-  const actions = useMemo<PaletteAction[]>(() => {
-    const desktop: PaletteAction[] = inShell
-      ? [
-          ...(shell?.cliInstall
-            ? [
-                {
-                  id: "desktop-install-cli",
-                  label: S.commandPalette.installCli,
-                  keywords: ["penguin", "cli", "command", "install", "path"],
-                  run: () => {
-                    void api.desktopInstallCli().catch((err) => toastError(apiErrorText(err)));
-                  },
-                },
-              ]
-            : []),
-          {
-            id: "desktop-check-updates",
-            label: S.commandPalette.checkUpdates,
-            keywords: ["update", "upgrade", "version", "desktop"],
-            run: () => {
-              void api
-                .desktopUpdateCheck()
-                .then(() => toastInfo(S.commandPalette.checkingUpdates))
-                .catch((err) => toastError(apiErrorText(err)));
-            },
-          },
-        ]
-      : [];
-    return [
+  const actions = useMemo<PaletteAction[]>(
+    () => [
       ...extra,
       {
         id: "harness-history",
@@ -84,7 +74,22 @@ export function AppPalette({ extra = [] }: { extra?: readonly PaletteAction[] })
         keywords: ["harness history", "version", "hmr", "ifaces"],
         run: () => setHistoryOpen(true),
       },
-      ...desktop,
+      ...commands.map((command): PaletteAction => {
+        const action = HOST_ACTIONS[command];
+        return {
+          id: `host-${command}`,
+          label: action.label(),
+          keywords: action.keywords,
+          run: () => {
+            void api
+              .runHostCommand(command)
+              .then(() => {
+                if (action.after) toastInfo(action.after());
+              })
+              .catch((err) => toastError(apiErrorText(err)));
+          },
+        };
+      }),
       {
         id: "project-on-github",
         label: S.commandPalette.projectOnGitHub,
@@ -93,8 +98,9 @@ export function AppPalette({ extra = [] }: { extra?: readonly PaletteAction[] })
           window.open(REPO_URL, "_blank", "noopener");
         },
       },
-    ];
-  }, [extra, inShell, shell]);
+    ],
+    [extra, commands],
+  );
 
   return (
     <>
