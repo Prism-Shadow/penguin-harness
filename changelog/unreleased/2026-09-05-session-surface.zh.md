@@ -3,6 +3,7 @@
 - **Date:** 2026-09-05
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `plugins`, `tooling`
+- **PR:** [#626](https://github.com/Prism-Shadow/penguin-harness/pull/626)
 
 [English](2026-09-05-session-surface.md)
 
