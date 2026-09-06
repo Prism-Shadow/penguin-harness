@@ -48,6 +48,7 @@ import {
 } from "../../plugin/install.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Machines } from "../../machines/service.js";
 
 export interface InstalledPluginsDeps {
   root: string;
@@ -62,6 +63,12 @@ export interface InstalledPluginsDeps {
    * the running tree is the new one; false when the runtime cannot re-assemble at all.
    */
   apply: () => Promise<boolean>;
+  /**
+   * Hands this Project's list to the machines it uses, strict parity. Not awaited: the
+   * person editing is not the one who should wait for a set of ssh tunnels — the same rule
+   * the model config changes under.
+   */
+  syncFleet: (projectId: string) => void;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -179,6 +186,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       });
     }
     await deps.apply();
+    deps.syncFleet(projectId);
     return c.json(await view(projectId));
   });
 
@@ -203,6 +211,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         throw err;
       }
     }
+    deps.syncFleet(projectId);
     return c.json(await view(projectId));
   });
 
@@ -246,6 +255,7 @@ export class InstalledPluginRoutes {
   @Use() private readonly reassembly!: Reassembly;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
+  @Use() private readonly machines!: Machines;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
@@ -261,6 +271,8 @@ export class InstalledPluginRoutes {
       projectConfig: this.projectConfig,
       access: this.access,
       apply: () => this.reassembly.reassemble(),
+      // The plugin list rides the same trip the model config takes to a Project's machines.
+      syncFleet: (projectId) => void this.machines.syncModelsEverywhere(projectId),
     });
   }
 }
