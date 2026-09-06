@@ -6,6 +6,7 @@ import type {
   SessionCategory,
   AgentTracesResponse,
   HistoryMessage,
+  OutlineIndexEntry,
   SessionContextParts,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -138,6 +139,11 @@ export abstract class Traces {
     sessionId: string,
     req: MessagesPageRequest,
   ): Promise<MessagesPageResult>;
+  abstract readOutline(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<OutlineIndexEntry[]>;
   abstract forkSessionTrace(
     projectId: string,
     agentId: string,
