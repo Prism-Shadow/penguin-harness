@@ -1,23 +1,29 @@
 /**
- * The plugins this deployment installs — what `<root>/plugins.json` lists, and which of them
- * the process actually holds:
+ * The plugins a PROJECT asks for, and which of them this process is actually running:
  *
- *   GET  /api/plugins/installed                 the list, joined with what loaded (any member)
- *   GET  /api/plugins/installed?shipped=1        …plus which plugins the build ships (a tag)
- *   POST /api/plugins/installed { specifier }   npm-install the package, then list it (admin)
- *   PUT  /api/plugins/installed { plugins }     rewrite the list itself (admin)
- *   DELETE /api/plugins/installed?specifier=…   drop it from the list and from disk (admin)
+ *   GET    /                      this Project's list, joined with what loaded (any member)
+ *   GET    /?shipped=1             …plus which plugins the build ships (a tag)
+ *   POST   / { specifier }        npm-install the package if the build does not ship it,
+ *                                 add it to this Project's list, and apply (admin)
+ *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
+ *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
  *
- * Installed and ACTIVE are different facts, reported separately. The list is a file the
- * platform reads and writes at any time; loading happens once per process, in the RUNTIME
- * (index.ts `loadPlugins`), so a specifier added here is inert until the server restarts and
- * one removed here keeps serving until then. Saying so is the point of the surface — the
- * alternative is a page that looks like it applied a change that has not happened.
+ * WHERE THE LIST LIVES. In the Project's own config (`plugins` in `.project_config.toml`),
+ * beside its models — because machines are lent to Projects, so a Project's list is what
+ * says which machines a plugin has to reach (PRFC-0010). The data root's old `plugins.json`
+ * is not read any more, deliberately without a migration: a deployment that had one starts
+ * with no plugins until each Project asks again.
  *
- * Which loaded module belongs to which plugin is answered from the FILES, not from the host:
- * a package declares its module names in its own package.json, and the host (built by the
- * runtime, possibly an older one) offers only the modules themselves. So a listed plugin is
- * active when the modules its package declares are all present.
+ * WHAT ACTUALLY RUNS is the CLOSURE — the union over this root's Projects — because loading
+ * is per process: there is one module tree. So a plugin any Project asks for is in the tree,
+ * and what it contributes is visible to all of them. A row here is therefore "this Project
+ * asked for it" joined with "the process has it", which are two different facts.
+ *
+ * APPLYING. A write re-reads the closure, rebuilds the plugin host, and asks the runtime to
+ * re-assemble the App from the same bundle — no process restart, ptys and connections
+ * delivered across it exactly as a push delivers them. A runtime too old to offer that
+ * (`hmr.reload` absent) leaves the list written and `restartPending` true, which is the
+ * behavior this route had before it could apply anything.
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -25,15 +31,14 @@ import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
-import { readJson } from "../validate.js";
+import { readJson, requireValidId } from "../validate.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
   PLUGINS_FILE,
   pluginBases,
+  readPluginClosure,
   readPluginDeclaration,
-  readPluginList,
-  writePluginList,
 } from "../../plugin/loader.js";
 import {
   installPluginPackage,
@@ -41,6 +46,10 @@ import {
   removePluginPackage,
 } from "../../plugin/install.js";
 import { pluginHostFrom } from "../../plugin/host.js";
+import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import { loadPlugins } from "../../plugin/loader.js";
+import { PluginHost, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 
 export interface InstalledPluginsDeps {
   root: string;
@@ -48,24 +57,42 @@ export interface InstalledPluginsDeps {
   assetsDir: () => string | null;
   /** Every module the process's plugin host holds, by name. */
   loadedModules: () => ReadonlySet<string>;
+  projectConfig: ProjectConfigStore;
+  access: Access;
+  /**
+   * Re-reads the closure into a fresh plugin host and re-assembles the App. Answers whether
+   * the running tree is the new one; false when the runtime cannot re-assemble at all.
+   */
+  apply: () => Promise<boolean>;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  const view = async (): Promise<InstalledPluginsResponse> => {
-    const listed = await readPluginList(deps.root).catch((err: unknown) => {
+  const scope = (c: {
+    req: { param(n: string): string | undefined };
+    var: AppEnv["Variables"];
+  }) => {
+    const projectId = requireValidId(c as never, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    return projectId;
+  };
+
+  const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
+    const listed = await deps.projectConfig.getPlugins(projectId).catch((err: unknown) => {
+      // A Project whose config will not parse cannot be answered for — its models are just
+      // as unreadable — and saying "no plugins" would read as a healthy empty deployment.
       throw new HttpError(
         400,
         "invalid_plugins_file",
-        err instanceof Error ? err.message : String(err),
+        `${projectId}: ${PLUGINS_FILE} could not be read: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
     const loaded = deps.loadedModules();
     const bases = pluginBases(deps.root, deps.assetsDir());
-    // Exactly what plugins.json lists: a plugin the build ships is not installed until an
-    // operator says so. `builtin` on a row is where the package CAME FROM, a tag, not a
-    // second way of being installed.
+    // Exactly what this Project lists: a plugin the build ships is not asked for until a
+    // Project says so. `builtin` on a row is where the package CAME FROM, a tag, not a
+    // second way of being asked for.
     const plugins: InstalledPlugin[] = [];
     for (const specifier of listed) {
       const declared = await readPluginDeclaration(specifier, bases);
@@ -84,7 +111,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       plugins.push({
         specifier,
         // A package that declares nothing cannot be shown as active by its modules; it is
-        // installed and contributes nothing, which is what the row then says.
+        // asked for and contributes nothing, which is what the row then says.
         active: names.length > 0 && names.every((n) => loaded.has(n)),
         builtin: declared.builtin,
         modules: declared.modules,
@@ -93,16 +120,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
     return {
       plugins,
-      // What the build ships, installed or not: the catalogue marks these rows "built in",
-      // and installing one is a list edit rather than a download.
+      // What the build ships, asked for or not: the catalogue marks these rows "built in",
+      // and asking for one is a list edit rather than a download.
       shipped: await discoverBuiltinPlugins(bases),
       file: PLUGINS_FILE,
-      // A listed plugin that is not active loads at the next start; nothing here can load it.
+      // A listed plugin that is not active and did not fail to resolve is waiting for a
+      // runtime that can re-assemble the App — otherwise applying already loaded it.
       restartPending: plugins.some((p) => !p.active && p.error === undefined),
     };
   };
 
-  app.get("/", async (c) => c.json(await view()));
+  app.get("/", async (c) => c.json(await view(scope(c))));
 
   const requireAdmin = (c: { var: AppEnv["Variables"] }) => {
     if (!c.var.user.isAdmin) {
@@ -121,8 +149,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 
   app.post("/", async (c) => {
     requireAdmin(c);
+    const projectId = scope(c);
     const specifier = specifierOf((await readJson(c)).specifier);
-    // A plugin the build ships is already on the machine: installing it is consent, not a
+    // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
     // a listed plugin that is not on disk is exactly the state this route exists to avoid,
     // and npm failing must leave the deployment unchanged.
@@ -141,37 +170,72 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // and a pinned range in it would be read as part of the package name at load time.
     const at = specifier.lastIndexOf("@");
     const name = at > 0 ? specifier.slice(0, at) : specifier;
-    const listed = await readPluginList(deps.root);
-    if (!listed.includes(name)) await writePluginList(deps.root, [...listed, name]);
-    return c.json(await view());
+    const listed = await deps.projectConfig.getPlugins(projectId);
+    if (!listed.includes(name)) await deps.projectConfig.setPlugins(projectId, [...listed, name]);
+    await deps.apply();
+    return c.json(await view(projectId));
   });
 
   app.delete("/", async (c) => {
     requireAdmin(c);
+    const projectId = scope(c);
     const specifier = specifierOf(c.req.query("specifier"));
-    const listed = await readPluginList(deps.root);
-    await writePluginList(
-      deps.root,
+    const listed = await deps.projectConfig.getPlugins(projectId);
+    await deps.projectConfig.setPlugins(
+      projectId,
       listed.filter((s) => s !== specifier),
     );
-    // The package goes too: leaving it on disk would keep a removed plugin loadable by a
-    // hand-edited list, and the prefix is the harness's to keep tidy.
-    await removePluginPackage(deps.root, specifier);
-    return c.json(await view());
+    await deps.apply();
+    // The package goes too — but only once NO Project asks for it. The prefix is the
+    // harness's to keep tidy; removing it while another Project still lists it would break
+    // that Project at the next load.
+    if (!(await readPluginClosure(deps.root)).includes(specifier)) {
+      await removePluginPackage(deps.root, specifier);
+    }
+    return c.json(await view(projectId));
   });
 
   app.put("/", async (c) => {
     requireAdmin(c);
+    const projectId = scope(c);
     const body = await readJson(c);
     const list = body.plugins;
     if (!Array.isArray(list) || list.some((s) => typeof s !== "string" || s.trim() === "")) {
       throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
     }
-    await writePluginList(deps.root, [...new Set((list as string[]).map((s) => s.trim()))]);
-    return c.json(await view());
+    await deps.projectConfig.setPlugins(projectId, [
+      ...new Set((list as string[]).map((s) => s.trim())),
+    ]);
+    await deps.apply();
+    return c.json(await view(projectId));
   });
 
   return app;
+}
+
+/**
+ * Re-reads the closure into a fresh plugin host and asks the runtime to re-assemble the App.
+ *
+ * Two halves, and both are needed: the host is what the next tree claims (plugin/host.ts), so
+ * it is rebuilt first and registered over the old one; the re-assembly is what makes a tree
+ * out of it. A runtime that cannot re-assemble answers false and the list simply waits for a
+ * restart, which is what every runtime did before this existed.
+ */
+export async function applyPluginClosure(root: string, hmr: Hmr): Promise<boolean> {
+  const host = new PluginHost();
+  const result = await loadPlugins(root);
+  for (const entry of result.loaded) {
+    try {
+      host.use(entry);
+    } catch (err) {
+      result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
+    }
+  }
+  for (const [specifier, reason] of result.failed) {
+    console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+  }
+  (hmr.resources as Resources).register(PLUGINS_RESOURCE_ID, host);
+  return (await hmr.reload?.()) ?? false;
 }
 
 @Component({
@@ -179,9 +243,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     "HttpModule.routes": [
       {
         id: "InstalledPluginRoutes.routes",
-        prefix: "/api/plugins/installed",
+        prefix: "/api/projects/:projectId/plugins/installed",
         auth: "user",
-        // Ahead of the catalogue group at /api/plugins, whose "/" would otherwise answer here.
+        // Ahead of the catalogue group, whose "/" would otherwise answer here.
         order: 60,
       },
     ],
@@ -190,11 +254,14 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 export class InstalledPluginRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly access!: Access;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
+    const root = this.config.root;
     this.routes = installedPluginRoutes({
-      root: this.config.root,
+      root,
       assetsDir: () => hmr.assetsDir(),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.
@@ -204,6 +271,9 @@ export class InstalledPluginRoutes {
             .modules()
             .map((m: ModuleDef) => m.manifest.name),
         ),
+      projectConfig: this.projectConfig,
+      access: this.access,
+      apply: () => applyPluginClosure(root, hmr),
     });
   }
 }

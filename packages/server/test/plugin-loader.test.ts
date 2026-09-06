@@ -14,7 +14,9 @@ import {
   discoverBuiltinPlugins,
   loadPlugins,
   pluginBases,
-  readPluginList,
+  readPluginClosure,
+  readProjectPluginList,
+  listProjectIds,
 } from "../src/plugin/loader.js";
 
 let root: string;
@@ -26,8 +28,16 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-async function writeConfig(value: unknown): Promise<void> {
-  await writeFile(path.join(root, PLUGINS_FILE), JSON.stringify(value), "utf8");
+/** A Project asking for these plugins: its config file is what the closure is read from. */
+async function writeConfig(value: unknown, projectId = "p1"): Promise<void> {
+  const list = (value as { plugins?: unknown }).plugins;
+  await writeProject(projectId, `plugins = ${JSON.stringify(list ?? [])}\nmodels = []\n`);
+}
+
+/** Raw config text, for the malformed cases. */
+async function writeProject(projectId: string, text: string): Promise<void> {
+  await mkdir(path.join(root, projectId), { recursive: true });
+  await writeFile(path.join(root, projectId, PLUGINS_FILE), text, "utf8");
 }
 
 /** A plugin module on disk, imported by absolute specifier (the dev-checkout path). */
@@ -40,35 +50,53 @@ async function writePluginModule(name: string, body: string): Promise<string> {
 }
 
 describe("plugin list", () => {
-  it("no config file means no plugins — the default deployment shape, not an error", async () => {
-    expect(await readPluginList(root)).toEqual([]);
+  it("no Project means no plugins — the default deployment shape, not an error", async () => {
+    expect(await readPluginClosure(root)).toEqual([]);
     expect(await loadPlugins(root)).toEqual({ loaded: [], failed: new Map() });
   });
 
   it("reads the configured specifiers in order", async () => {
     await writeConfig({ plugins: ["a", "b"] });
-    expect(await readPluginList(root)).toEqual(["a", "b"]);
+    expect(await readProjectPluginList(root, "p1")).toEqual(["a", "b"]);
+    expect(await readPluginClosure(root)).toEqual(["a", "b"]);
   });
 
-  it("a malformed config fails the load rather than presenting as empty", async () => {
-    await writeFile(path.join(root, PLUGINS_FILE), "{not json", "utf8");
-    await expect(readPluginList(root)).rejects.toThrow(/not valid JSON/);
-    // A CONFIG-level failure propagates: booting with an empty plugin set would present
-    // as healthy while silently dropping every capability the config asked for.
-    await expect(loadPlugins(root)).rejects.toThrow(/not valid JSON/);
+  it("the closure is the union over Projects, each specifier once", async () => {
+    // Loading is per process — one module tree — so what a deployment runs is what any of
+    // its Projects asked for, and a plugin two Projects both want is still one entry.
+    await writeConfig({ plugins: ["a", "shared"] }, "p1");
+    await writeConfig({ plugins: ["shared", "b"] }, "p2");
+    expect(await listProjectIds(root)).toEqual(["p1", "p2"]);
+    expect(await readPluginClosure(root)).toEqual(["a", "shared", "b"]);
+  });
+
+  it("a directory that is not a Project is not read as one", async () => {
+    await mkdir(path.join(root, "hmr"), { recursive: true });
+    await writeConfig({ plugins: ["a"] }, "p1");
+    expect(await listProjectIds(root)).toEqual(["p1"]);
+  });
+
+  it("a Project whose config will not parse is skipped, not fatal for the rest", async () => {
+    // Its models are just as unreadable; the deployment still has to come up for everyone else.
+    await writeProject("broken", "plugins = [oops\n");
+    await writeConfig({ plugins: ["a"] }, "p1");
+    expect(await readProjectPluginList(root, "broken")).toEqual([]);
+    expect(await readPluginClosure(root)).toEqual(["a"]);
   });
 
   it("a config that exists but cannot be read is an error, not 'no plugins'", async () => {
     // A directory in its place stands in for every non-ENOENT read failure (EACCES,
-    // EPERM, EISDIR, an I/O fault): something was configured and cannot be honored.
-    await mkdir(path.join(root, PLUGINS_FILE));
-    await expect(readPluginList(root)).rejects.toThrow(/exists but could not be read/);
-    await expect(loadPlugins(root)).rejects.toThrow(/exists but could not be read/);
+    // EPERM, EISDIR, an I/O fault): something was configured and cannot be honored, and
+    // a Project whose config cannot be READ AT ALL is not the same as one that parsed
+    // to nothing.
+    await mkdir(path.join(root, "p1", PLUGINS_FILE), { recursive: true });
+    await expect(readProjectPluginList(root, "p1")).rejects.toThrow(/could not be read/);
   });
 
-  it("a config with the wrong shape names the shape it wanted", async () => {
-    await writeConfig({ plugins: [1, 2] });
-    await expect(readPluginList(root)).rejects.toThrow(/package specifier/);
+  it("entries that are not package specifiers are dropped, not fatal", async () => {
+    // Leniency on purpose: a typo in this list must not take the Project's models with it.
+    await writeProject("p1", 'plugins = ["ok", "", 7]\nmodels = []\n');
+    expect(await readProjectPluginList(root, "p1")).toEqual(["ok"]);
   });
 });
 

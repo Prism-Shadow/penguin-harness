@@ -22,10 +22,13 @@ export function InstalledPluginsDialog({
   open,
   onClose,
   isAdmin,
+  projectId,
 }: {
   open: boolean;
   onClose: () => void;
   isAdmin: boolean;
+  /** Whose list this is: plugins are asked for per Project (see the server's route). */
+  projectId: string | null;
 }) {
   const [data, setData] = useState<InstalledPluginsResponse | null>(null);
   const [specifiers, setSpecifiers] = useState<string[]>([]);
@@ -43,7 +46,8 @@ export function InstalledPluginsDialog({
     setFailure(null);
     setAdding("");
     let cancelled = false;
-    api.getInstalledPlugins().then(
+    if (projectId === null) return;
+    api.getInstalledPlugins(projectId).then(
       (res) => {
         if (!cancelled) adopt(res);
       },
@@ -54,14 +58,15 @@ export function InstalledPluginsDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, projectId]);
 
   const save = async (next: string[]) => {
     if (busy) return;
     setBusy(true);
     setFailure(null);
     try {
-      adopt(await api.putInstalledPlugins(next));
+      if (projectId === null) return;
+      adopt(await api.putInstalledPlugins(projectId, next));
       toastSuccess(S.common.saved);
     } catch (e) {
       setFailure(apiErrorText(e));

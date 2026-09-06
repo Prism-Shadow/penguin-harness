@@ -1,8 +1,15 @@
 /**
  * Plugin loading: WHICH plugins a deployment runs is CONFIGURATION, not capability
- * baked into the platform. They do not ride the platform bundle and no hot push
- * delivers one — `<root>/plugins.json` lists them and each entry resolves against the
- * INSTALLATION, so installing or upgrading one is an install-side action.
+ * baked into the platform.
+ *
+ * The configuration is per PROJECT (`plugins` in `.project_config.toml`), because machines
+ * are lent to Projects and that is what says which machines a plugin has to reach. Loading
+ * is per PROCESS, though — there is one module tree — so what a deployment runs is the
+ * CLOSURE: the union over its Projects. A plugin any Project asks for is in the tree, and
+ * what it contributes is visible to all of them.
+ *
+ * The closure is read from the FILES, without the database: this runs at boot, before the
+ * platform exists, and a Project is a directory holding a `.project_config.toml`.
  *
  * Resolution is anchored at `process.argv[1]`, for the same reason the packaged
  * bundle's own resolver is: a bundle running from `hmr/store` has no node_modules of
@@ -14,6 +21,9 @@
  * carries the manifests, the default export the code, paired by name.
  */
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { parse as parseToml } from "smol-toml";
+import { parsePluginList, projectConfigPath } from "@prismshadow/penguin-core";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -24,8 +34,13 @@ import { readManifest } from "../hmr/manifest.js";
 import type { Plugin, PluginModule } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 
-/** The config file's name inside the data root. */
-export const PLUGINS_FILE = "plugins.json";
+/**
+ * Where a Project's list lives, for a surface that has to name the file. The data root's
+ * old `plugins.json` is NOT read any more: the list moved into Project config, deliberately
+ * without a migration (PRFC-0010), so a deployment that had one starts with no plugins
+ * until each Project asks again.
+ */
+export const PLUGINS_FILE = ".project_config.toml";
 
 export type { LoadedPlugin } from "./host.js";
 
@@ -34,36 +49,66 @@ export interface PluginLoadResult {
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
 }
-/**
- * An ABSENT file means "no plugins" — the default deployment shape, not an error. Any
- * other outcome is: a file that exists but cannot be read (a permission, a directory in
- * its place, an I/O fault) is indistinguishable from a malformed one for the operator's
- * purposes — something was configured and this process cannot honor it, so running
- * unconfigured would misrepresent what was asked for.
- */
-export async function readPluginList(root: string): Promise<string[]> {
+/** The Project ids of a data root: every directory holding a `.project_config.toml`. */
+export async function listProjectIds(root: string): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const ids: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    try {
+      await fs.access(projectConfigPath(root, entry.name));
+      ids.push(entry.name);
+    } catch {
+      // Not a Project directory: `hmr`, `store`, whatever else lives beside them.
+    }
+  }
+  return ids.sort();
+}
+
+/** One Project's list, in the order it wrote them; empty when it asks for none. */
+export async function readProjectPluginList(root: string, projectId: string): Promise<string[]> {
   let text: string;
   try {
-    text = await fs.readFile(path.join(root, PLUGINS_FILE), "utf8");
+    text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw new Error(
-      `${PLUGINS_FILE} exists but could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      `${projectId}: .project_config.toml could not be read: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseToml(text);
   } catch (err) {
-    throw new Error(
-      `${PLUGINS_FILE} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    // A Project whose config does not parse is a configuration fault, but not this one's
+    // to fail the boot over: its models are just as unreadable, and the deployment must
+    // still come up for every other Project.
+    console.warn(
+      `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return [];
   }
-  const list = (parsed as { plugins?: unknown }).plugins;
-  if (!Array.isArray(list) || list.some((entry) => typeof entry !== "string")) {
-    throw new Error(`${PLUGINS_FILE} must be { "plugins": ["<package specifier>", …] }`);
+  return parsePluginList((parsed as { plugins?: unknown }).plugins) ?? [];
+}
+
+/**
+ * The closure this deployment runs: the union over its Projects, first-asked order. One
+ * process, one module tree — so this is what `loadPlugins` loads, whoever asked for it.
+ */
+export async function readPluginClosure(root: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const projectId of await listProjectIds(root)) {
+    for (const specifier of await readProjectPluginList(root, projectId)) {
+      if (!out.includes(specifier)) out.push(specifier);
+    }
   }
-  return list as string[];
+  return out;
 }
 
 /**
@@ -209,13 +254,6 @@ export async function readPluginDeclaration(
   };
 }
 
-/** Rewrites the list of plugins this deployment installs; the loader reads it at the next boot. */
-export async function writePluginList(root: string, plugins: readonly string[]): Promise<void> {
-  const file = path.join(root, PLUGINS_FILE);
-  await fs.writeFile(`${file}.tmp`, `${JSON.stringify({ plugins }, null, 2)}\n`);
-  await fs.rename(`${file}.tmp`, file);
-}
-
 /**
  * The package's manifests (`package.json#penguin.modules`), found by walking up from the
  * resolved entry file. Each entry is one module's static half; its `name` is what the
@@ -297,10 +335,10 @@ function asPlugin(module: unknown): Plugin | null {
 export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const bases = pluginBases(root, await committedAssetsDir(root));
-  // What plugins.json lists, and nothing else. A plugin the BUILD ships is available without
-  // a download — that is what `builtin` means — but availability is not consent: it loads
-  // when an operator installs it, like every other plugin.
-  const specifiers = await readPluginList(root);
+  // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
+  // available without a download — that is what `builtin` means — but availability is not
+  // consent: it loads when a Project asks for it, like every other plugin.
+  const specifiers = await readPluginClosure(root);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     try {
