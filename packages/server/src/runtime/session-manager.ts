@@ -578,6 +578,8 @@ export class SessionManager {
   private readonly entries = new Map<string, RuntimeEntry>();
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** Surface Sessions' states, by id (see setSurfaceStatus). */
+  private readonly surfaceStatuses = new Map<string, SessionStatus>();
   private readonly log: (line: string) => void;
   /** Graceful-shutdown flag: once set, new Tasks/compactions are rejected (503). */
   private closed = false;
@@ -603,7 +605,23 @@ export class SessionManager {
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
 
   statusOf(sessionId: string): SessionStatus {
+    // A surface Session has no runtime entry; its surface reports its state here
+    // (setSurfaceStatus) so this stays the one place a Session's status is read.
+    const surface = this.surfaceStatuses.get(sessionId);
+    if (surface !== undefined) return surface;
     return this.entries.get(sessionId)?.status ?? "idle";
+  }
+
+  /**
+   * The state of a surface Session, pushed by the surface floor (runtime/session-surfaces.ts):
+   * set on a flip, cleared when the surface closes. Kept here so `statusOf` — and therefore
+   * every list row and DTO — answers for a surface Session without SessionService depending
+   * on the surfaces, which would close a module cycle (a surface plugin requires the terminal
+   * module, which is downstream of this one).
+   */
+  setSurfaceStatus(sessionId: string, status: SessionStatus | null): void {
+    if (status === null) this.surfaceStatuses.delete(sessionId);
+    else this.surfaceStatuses.set(sessionId, status);
   }
 
   pendingApprovalCount(sessionId: string): number {
@@ -1620,6 +1638,16 @@ export class SessionManager {
         "Session does not exist or you do not have access.",
       );
     }
+    // A surface Session has no model and no core Session: nothing here could drive it.
+    // Every run-shaped call (Task, compaction, steer, approval) lands here first, so one
+    // refusal covers them all.
+    if (row.surface != null) {
+      throw new HttpError(
+        409,
+        "surface_session",
+        "This Session is a surface (its plugin renders it) and takes no Tasks.",
+      );
+    }
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
@@ -2088,6 +2116,7 @@ export abstract class Sessions extends Interface<
   Pick<
     SessionManager,
     | "statusOf"
+    | "setSurfaceStatus"
     | "pendingApprovalCount"
     | "pendingApprovals"
     | "pendingFollowUpCount"
