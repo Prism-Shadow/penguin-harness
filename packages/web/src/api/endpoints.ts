@@ -1544,12 +1544,19 @@ export const installAgentPackage = (body: {
   agentId: string;
 }) => apiFetch<{ agentId: string }>("/api/agent-packages/install", { method: "POST", body });
 
-// ---- Plugins this deployment installs, and the confinement agent commands run under ----
-export const getInstalledPlugins = () =>
-  apiFetch<InstalledPluginsResponse>("/api/plugins/installed");
-/** Admin only; the list applies at the next server start (plugins load once per process). */
-export const putInstalledPlugins = (plugins: readonly string[]) =>
-  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+// ---- The plugins a Project asks for, and the confinement agent commands run under ----
+/**
+ * A Project's plugin list. Project-scoped because machines are lent to Projects, so this is
+ * what says which machines a plugin has to reach; what the process RUNS is the union over
+ * the Projects, since loading is per process (see the server's plugin/loader.ts).
+ */
+const pluginsPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
+export const getInstalledPlugins = (projectId: string) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId));
+/** Admin only; applied without a restart where the runtime can re-assemble the App. */
+export const putInstalledPlugins = (projectId: string, plugins: readonly string[]) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
     method: "PUT",
     body: { plugins },
   });
@@ -1558,15 +1565,15 @@ export const putInstalledPlugins = (plugins: readonly string[]) =>
  * registry fetch — and listing a package that is not on the machine means nothing, which is
  * why the two happen together.
  */
-export const installPlugin = (specifier: string) =>
-  apiFetch<InstalledPluginsResponse>("/api/plugins/installed", {
+export const installPlugin = (projectId: string, specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
     method: "POST",
     body: { specifier },
   });
-/** Admin only: drops it from the list and removes the package from the data root. */
-export const uninstallPlugin = (specifier: string) =>
+/** Admin only: drops it from this Project's list, and from disk once no Project asks for it. */
+export const uninstallPlugin = (projectId: string, specifier: string) =>
   apiFetch<InstalledPluginsResponse>(
-    `/api/plugins/installed?specifier=${encodeURIComponent(specifier)}`,
+    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
     { method: "DELETE" },
   );
 export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
