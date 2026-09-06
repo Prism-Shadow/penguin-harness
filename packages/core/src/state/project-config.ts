@@ -194,6 +194,15 @@ export interface ProjectConfig {
    * key, and dropping `enabled` falls back to on.
    */
   command_policy?: CommandPolicyConfig;
+  /**
+   * The plugin packages this Project asks its deployment to run (`plugins = [...]`).
+   *
+   * Project-scoped because machines are lent to Projects, so this is what says which
+   * machines a plugin has to reach. LOADING is per process, though — there is one module
+   * tree — so a deployment runs the CLOSURE: the union over its Projects. A plugin any
+   * Project asks for is in the tree, and what it contributes is visible to all of them.
+   */
+  plugins?: string[];
   models: ModelEntry[];
 }
 
@@ -309,6 +318,23 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
  * narrow the block differently.
  */
+/**
+ * Leniently parses `plugins`: package specifiers, in order, without duplicates. Anything
+ * that is not a non-empty string is dropped rather than failing the load — a config whose
+ * plugin list is malformed still has to open, or a typo there would take the Project's
+ * models with it.
+ */
+export function parsePluginList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const specifier = entry.trim();
+    if (specifier !== "" && !out.includes(specifier)) out.push(specifier);
+  }
+  return out;
+}
+
 export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const t = value as Record<string, unknown>;
@@ -353,12 +379,14 @@ export function projectConfigFromTable(
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
+  const plugins = parsePluginList(parsed.plugins);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
+    ...(plugins !== undefined ? { plugins } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }

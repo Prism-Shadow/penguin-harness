@@ -33,6 +33,7 @@ import {
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
+  parsePluginList,
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
@@ -536,6 +537,23 @@ export class ProjectConfigService implements ProjectConfigStore {
     }));
     await this.writeRaw(projectId, { ...raw, command_policy: block });
     return this.getCommandPolicy(projectId);
+  }
+
+  /** The plugin specifiers this Project asks for, in order; empty when it asks for none. */
+  async getPlugins(projectId: string): Promise<string[]> {
+    return parsePluginList((await this.readRaw(projectId)).plugins) ?? [];
+  }
+
+  /**
+   * Replaces this Project's plugin list (a declarative PUT, validated at the route).
+   * Read-modify-write like setCommandPolicy, so every other key survives. An empty list is
+   * written as an empty array rather than removed: "this Project asks for none" is a
+   * decision, and a reader cannot tell it from "never configured" if the key vanishes.
+   */
+  async setPlugins(projectId: string, plugins: readonly string[]): Promise<string[]> {
+    const raw = await this.readRaw(projectId);
+    await this.writeRaw(projectId, { ...raw, plugins: parsePluginList([...plugins]) ?? [] });
+    return this.getPlugins(projectId);
   }
 
   /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */
