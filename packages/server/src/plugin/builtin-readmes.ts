@@ -1,8 +1,8 @@
 /**
  * Long-form documentation for the builtin registry's entries, keyed by package specifier.
  *
- * Each backend owns its own README.md — the file its package directory shows and `files`
- * ships. This module inlines those four at build time, the way `builtin-index.json` beside
+ * Each plugin owns its own README.md — the file its package directory shows and `files`
+ * ships. This module inlines them at build time, the way `builtin-index.json` beside
  * it inlines the listing: the text becomes a string in the bundle, so the harness still
  * depends on no backend at runtime (see the sandbox plugins' own module docs) and no
  * second copy of the prose exists to drift from the first.
@@ -16,6 +16,7 @@
  * listing without a readme.
  */
 import bwrap from "../../../../plugins/sandbox-bwrap/README.md";
+import claudeCode from "../../../../plugins/claude-code/README.md";
 import dsh from "../../../../plugins/sandbox-dsh/README.md";
 import mxc from "../../../../plugins/sandbox-mxc/README.md";
 import seatbelt from "../../../../plugins/sandbox-seatbelt/README.md";
@@ -25,4 +26,5 @@ export const BUILTIN_READMES: Readonly<Record<string, string>> = {
   "@prismshadow/penguin-plugin-sandbox-seatbelt": seatbelt,
   "@prismshadow/penguin-plugin-sandbox-mxc": mxc,
   "@prismshadow/penguin-plugin-sandbox-dsh": dsh,
+  "@prismshadow/penguin-plugin-claude-code": claudeCode,
 };

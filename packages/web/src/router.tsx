@@ -10,7 +10,7 @@ import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { AppLayout } from "./components/layout/app-layout";
 import { LoginPage } from "./pages/login";
-import { ChatPage } from "./features/chat/chat-page";
+import { ChatRoute } from "./features/chat/chat-route";
 import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
@@ -22,15 +22,16 @@ import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
-import { PAGES } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
+import { ContributionsProvider, useContributions } from "./state/contributions";
 
 /**
  * The renderers the manifest may name. A page is a module.json entry plus one line here;
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
-  ChatPage,
+  // The chat route: a surface Session renders its surface's page, the rest the conversation.
+  ChatPage: ChatRoute,
   AgentsPage,
   AgentSettingsPage,
   PluginsPage,
@@ -89,9 +90,28 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
+/** The renderer names a contributed page may point at; pages naming another are not mounted. */
+const BUILTIN_PAGE_NAMES: ReadonlySet<string> = new Set(Object.keys(BUILTIN_PAGES));
+
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <ContributionsProvider builtinRenderers={BUILTIN_PAGE_NAMES}>
+        <RouteTree />
+      </ContributionsProvider>
+    </BrowserRouter>
+  );
+}
+
+/**
+ * The routes, from the page table: the local manifest plus what the server contributes
+ * (state/contributions.tsx) — so a page a plugin adds mounts once the contributions have
+ * loaded, and the local pages are there from the first render.
+ */
+function RouteTree() {
+  const { pages } = useContributions();
+  return (
+    <>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
         <Route
@@ -117,7 +137,7 @@ export function AppRouter() {
           {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
-          {PAGES.map((page) => (
+          {pages.map((page) => (
             <Route key={page.id} path={page.path} element={renderPage(page)} />
           ))}
           {/* System settings and user management live in the settings dialog now (see
@@ -125,6 +145,6 @@ export function AppRouter() {
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </>
   );
 }

@@ -14,7 +14,13 @@
  * added to session-manager's active table (state idle).
  */
 import fs from "node:fs/promises";
-import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  createAgent,
+  createTempWorkspace,
+  formatSessionId,
+  isSessionMeta,
+} from "@prismshadow/penguin-core";
 import type {
   AgentAssembly,
   ControlEnvContext,
@@ -28,6 +34,7 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
   SessionSource,
+  SessionStatus,
   ServerEvent,
   SessionActivityInfo,
 } from "../api/types.js";
@@ -143,7 +150,10 @@ export class SessionService {
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
       lastActiveAt: row.lastActiveAt,
+      // One status authority: the manager answers for a surface Session too (its surface
+      // pushes state in via setSurfaceStatus), so this reads the same for every Session.
       status: this.deps.manager.statusOf(row.sessionId),
+      ...(row.surface != null ? { surface: row.surface } : {}),
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
@@ -173,6 +183,8 @@ export class SessionService {
 
   /** Whether this Session already has a Trace record (a Task has been run): answered by the index (reconciled first). */
   async hasTrace(row: SessionRow): Promise<boolean> {
+    // A surface Session writes no Trace; "has run" is the flag its surface's flips set.
+    if (row.surface != null) return row.hasTrace === true;
     return (await this.discoverTraces(row.projectId, row.agentId)).has(row.sessionId);
   }
 
@@ -363,7 +375,15 @@ export class SessionService {
      * filter on it.
      */
     client?: "web" | "cli";
+    /**
+     * A surface Session (core plugin/surfaces.ts): the plugin-contributed kind, already
+     * checked against the loaded surfaces by the route. No model reference and no core
+     * Session — the SessionManager never drives it; its surface answers for it instead.
+     */
+    surface?: string;
   }): Promise<SessionInfo> {
+    if (args.surface !== undefined)
+      return this.createSurfaceSession({ ...args, surface: args.surface });
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
         "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
@@ -452,6 +472,48 @@ export class SessionService {
       agentId: args.agentId,
       sessionId: row.sessionId,
       ...(source ? { source } : {}),
+    });
+    return this.toInfo(row, false);
+  }
+
+  /**
+   * A surface Session: a row with an empty model reference, a Workspace (the given one, or a
+   * temporary one shaped like every other Session's) and the surface's kind. Nothing is
+   * created in core — there is no Trace to open and no model to run — so the row is the
+   * whole Session until its surface is opened (POST …/surface).
+   */
+  private async createSurfaceSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    approvalMode?: ApprovalMode;
+    client?: "web" | "cli";
+    surface: string;
+  }): Promise<SessionInfo> {
+    const workspace =
+      args.workspace ?? (await createTempWorkspace(this.deps.root, args.projectId, args.agentId));
+    const createdAt = new Date().toISOString();
+    const row: SessionRow = {
+      sessionId: formatSessionId(),
+      projectId: args.projectId,
+      agentId: args.agentId,
+      provider: "",
+      modelId: "",
+      workspace,
+      approvalMode: args.approvalMode ?? "allow-all",
+      title: null,
+      client: args.client ?? "web",
+      lastActiveAt: createdAt,
+      createdAt,
+      surface: args.surface,
+    };
+    this.deps.sessions.insert(row);
+    this.deps.sources.set(row.sessionId, null);
+    this.deps.notifyProjectUsers?.(args.projectId, {
+      type: "session_created",
+      projectId: args.projectId,
+      agentId: args.agentId,
+      sessionId: row.sessionId,
     });
     return this.toInfo(row, false);
   }

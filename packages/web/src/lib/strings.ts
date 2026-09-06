@@ -1566,6 +1566,18 @@ export const zh = {
   chat: {
     /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
     thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
+    /** A surface Session (a plugin renders it — see state/contributions.tsx): the draft page's open card and the page around the surface. */
+    surface: {
+      open: "打开",
+      opening: "正在打开…",
+      promptPlaceholder: "第一条提示",
+      exited: "程序已退出。",
+      restart: "重新打开",
+      close: "关闭",
+      unavailable: "渲染这个对话的插件没有加载。",
+      noRenderer: "这个构建没有画它的渲染器。",
+      noTerminal: "这个表面没有给出终端。",
+    },
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",

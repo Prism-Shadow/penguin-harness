@@ -1230,7 +1230,18 @@ export interface SessionInfo {
    * recent request timestamp, falling back to createdAt.
    */
   lastActiveAt: string;
+  /**
+   * For a surface Session, the surface's own answer; otherwise the run state. A surface
+   * Session never reports `compacting`.
+   */
   status: SessionStatus;
+  /**
+   * The Session's surface: the `kind` of a plugin-contributed surface (see
+   * `ContributionsResponse.sessionSurfaces`); absent for the built-in conversation. A
+   * surface Session carries no model reference (`provider` / `modelId` are empty) and takes
+   * no Tasks — the chat page renders the surface's renderer in place of the conversation.
+   */
+  surface?: string;
   /** Number of approvals awaiting human decision (a persisted count outside server events, for list badges). */
   pendingApprovalCount: number;
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start once the session is idle. */
@@ -1343,6 +1354,12 @@ export interface SessionCreateRequest {
    * serve every row regardless of client.
    */
   client?: "web" | "cli";
+  /**
+   * Create a surface Session of this kind (one of `ContributionsResponse.sessionSurfaces`;
+   * 400 `unknown_surface` otherwise). `modelId` / `provider` are ignored: a surface Session
+   * has no model. Open it afterwards with `POST /api/sessions/:sessionId/surface`.
+   */
+  surface?: string;
 }
 
 export interface SessionCreateResponse {
@@ -3722,10 +3739,46 @@ export interface WebContribution {
   [key: string]: unknown;
 }
 
+/** One session surface a plugin contributes: what "New chat" offers, and what draws a Session of that kind. */
+export interface SessionSurfaceSummary {
+  id: string;
+  /** The contributing module's name. */
+  from: string;
+  /** The surface's key: `SessionInfo.surface` on every Session of this kind. */
+  kind: string;
+  label: string;
+  labelZh?: string;
+  /** `iframe` here carries `src` only; `:sessionId` in it is replaced by the Session id. */
+  renderer: { builtin: string } | { iframe: { src: string } };
+}
+
 export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /** The surfaces this process's plugins contribute; empty without any. */
+  sessionSurfaces: SessionSurfaceSummary[];
+}
+
+/**
+ * GET / POST / DELETE /api/sessions/:sessionId/surface — a surface Session's surface. `opened`
+ * false = never opened in this process (nothing to attach to yet; POST opens it); `alive`
+ * false with `opened` true = it ran and ended (POST opens it again).
+ */
+export interface SessionSurfaceResponse {
+  kind: string;
+  status: SessionStatus;
+  opened: boolean;
+  alive: boolean;
+  /** Renderer-specific; `TerminalSurface` reads `{ terminalId }`. Absent when not opened. */
+  view?: Record<string, unknown>;
+}
+
+export interface SessionSurfaceOpenRequest {
+  /** A first prompt for the surface (the draft page's text); absent = just open it. */
+  prompt?: string;
+  cols?: number;
+  rows?: number;
 }
 
 /** GET /api/projects/:p/agents/:a/package — what publishing would send. */
