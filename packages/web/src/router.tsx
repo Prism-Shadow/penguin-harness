@@ -3,16 +3,14 @@
  * the RequireAuth guard (redirects to /login when not authenticated) and are wrapped in
  * ProjectProvider + AppLayout.
  */
-import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
-import { loadContributions, resetContributions, useContributions } from "./lib/contributions";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { AppLayout } from "./components/layout/app-layout";
 import { LoginPage } from "./pages/login";
-import { ChatPage } from "./features/chat/chat-page";
+import { ChatRoute } from "./features/chat/chat-route";
 import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
@@ -24,15 +22,16 @@ import { TerminalPage } from "./features/terminal/terminal-page";
 import { MachinesPage } from "./features/machines/machines-page";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
-import { PAGES, mergePages } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
+import { ContributionsProvider, useContributions } from "./state/contributions";
 
 /**
  * The renderers the manifest may name. A page is a module.json entry plus one line here;
  * a server-contributed page renders only when its `builtin` is in this registry.
  */
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
-  ChatPage,
+  // The chat route: a surface Session renders its surface's page, the rest the conversation.
+  ChatPage: ChatRoute,
   AgentsPage,
   AgentSettingsPage,
   PluginsPage,
@@ -43,19 +42,6 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   BenchmarkPage,
   DashboardPage,
 };
-
-const BUILTIN_RENDERERS: ReadonlySet<string> = new Set(Object.keys(BUILTIN_PAGES));
-
-/**
- * The pages this build mounts: the local manifest plus what the server contributed
- * (lib/contributions.ts), for the renderers the registry above carries.
- */
-function usePages(): readonly PageEntry[] {
-  const contributed = useContributions();
-  return contributed.pages.length === 0
-    ? PAGES
-    : mergePages(PAGES, contributed.pages, BUILTIN_RENDERERS);
-}
 
 function renderPage(page: PageEntry): React.ReactNode {
   if ("iframe" in page.renderer) {
@@ -70,12 +56,6 @@ function renderPage(page: PageEntry): React.ReactNode {
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
   const { user } = useAuth();
-  // Contributions are per sign-in: an admin may see pages a member does not, and a push
-  // between two sign-ins may have added some.
-  useEffect(() => {
-    if (user) void loadContributions(user.userId);
-    else if (user === null) resetContributions();
-  }, [user]);
   // Extension-contributed grammars, adopted once for the signed-in tree (see the hook). Called
   // before the early returns, because a hook cannot be conditional; it fetches nothing until
   // the effect runs, which is only after this component actually renders its tree.
@@ -110,10 +90,28 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
+/** The renderer names a contributed page may point at; pages naming another are not mounted. */
+const BUILTIN_PAGE_NAMES: ReadonlySet<string> = new Set(Object.keys(BUILTIN_PAGES));
+
 export function AppRouter() {
-  const pages = usePages();
   return (
     <BrowserRouter>
+      <ContributionsProvider builtinRenderers={BUILTIN_PAGE_NAMES}>
+        <RouteTree />
+      </ContributionsProvider>
+    </BrowserRouter>
+  );
+}
+
+/**
+ * The routes, from the page table: the local manifest plus what the server contributes
+ * (state/contributions.tsx) — so a page a plugin adds mounts once the contributions have
+ * loaded, and the local pages are there from the first render.
+ */
+function RouteTree() {
+  const { pages } = useContributions();
+  return (
+    <>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
         <Route
@@ -137,7 +135,7 @@ export function AppRouter() {
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
           {/* Every page is a module.json entry (lib/pages.ts), or one the server contributed
-              (lib/contributions.ts) for a renderer this build has. Admin-only ones are refused
+              (state/contributions.tsx) for a renderer this build has. Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
           {pages.map((page) => (
@@ -148,6 +146,6 @@ export function AppRouter() {
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </>
   );
 }
