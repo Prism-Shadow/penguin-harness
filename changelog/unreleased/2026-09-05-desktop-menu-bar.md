@@ -3,7 +3,7 @@
 - **Date:** 2026-09-05
 - **Type:** fix
 - **Scope:** `desktop`, `server`, `web`
-- **PR:** _pending_
+- **PR:** [#625](https://github.com/Prism-Shadow/penguin-harness/pull/625)
 
 [中文版](2026-09-05-desktop-menu-bar.zh.md)
 
