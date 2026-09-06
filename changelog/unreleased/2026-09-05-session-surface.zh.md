@@ -13,7 +13,7 @@
 
 插件经新增的 `SessionSurfacesModule.surfaces` 槽贡献一种表面：清单半（`kind`、标签、渲染器）就是 `GET /api/contributions` 现在以 `sessionSurfaces` 交给前端的东西，代码半是服务端打开、查询、关闭的 `SessionSurface`。同一 `kind` 出现两次是启动错误——`kind` 写在该种每个 Session 上。词汇是 `@prismshadow/penguin-core/plugin` 的纯类型；表面插件可以 require 的接口（`Terminals`）在 `@prismshadow/penguin-server/plugin` 面上。
 
-表面 Session 不带模型引用（`sessions.surface` 是新增列，对话为 `NULL`），也不建 core Session：SessionManager 从不驱动它，一切运行形态的调用（Task、压缩、steer、审批）一律 409 `surface_session`。它的状态是表面自己的，推入 SessionManager，`statusOf`——以及每个列表行——因此为它作答，并以运行翻转同样的 `session_state` 事件推送，侧栏的运行与未读圆点不变。`POST /api/sessions/:id/surface` 打开它（幂等，可带一句首提示），`GET` 查询，`DELETE` 关闭；删除 Session 也一并关闭。
+表面 Session 不带模型引用（`sessions.surface` 是新增列，对话为 `NULL`）（它如何抵达存量数据库，见[兼容性条目](2026-09-05-backward-compatibility.zh.md)），也不建 core Session：SessionManager 从不驱动它，一切运行形态的调用（Task、压缩、steer、审批）一律 409 `surface_session`。它的状态是表面自己的，推入 SessionManager，`statusOf`——以及每个列表行——因此为它作答，并以运行翻转同样的 `session_state` 事件推送，侧栏的运行与未读圆点不变。`POST /api/sessions/:id/surface` 打开它（幂等，可带一句首提示），`GET` 查询，`DELETE` 关闭；删除 Session 也一并关闭。
 
 ## 会话页开始消费贡献
 
