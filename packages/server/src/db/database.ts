@@ -67,6 +67,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "fork_count", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "thinking_level", "TEXT");
+  ensureColumn(db, "sessions", "surface", "TEXT");
   // A v0.2.0 web.db has auth_sessions without `via`; CREATE TABLE IF NOT EXISTS never adds a
   // column, so every INSERT would fail "no column named via" until this runs.
   ensureColumn(db, "auth_sessions", "via", "TEXT");

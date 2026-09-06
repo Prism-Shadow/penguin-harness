@@ -1589,6 +1589,17 @@ export const en: Strings = {
   chat: {
     thinkingLevelChangeNote:
       "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
+    surface: {
+      open: "Open",
+      opening: "Opening…",
+      promptPlaceholder: "First prompt",
+      exited: "The program has exited.",
+      restart: "Open again",
+      close: "Close",
+      unavailable: "The plugin that renders this conversation is not loaded.",
+      noRenderer: "This build has no renderer for it.",
+      noTerminal: "The surface offered no terminal.",
+    },
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
