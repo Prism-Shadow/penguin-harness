@@ -17,7 +17,7 @@
 
 ## 会话页开始消费贡献
 
-Web App 现在每个登录用户取一次 `GET /api/contributions`。其 `pages` 并入路由——推送上来的平台或插件贡献的页面，只要本构建有它的渲染器就能挂载——其 `sessionSurfaces` 在侧栏与折叠栏各成为一个「新建对话」入口。表面 Session 的会话路由渲染该表面的渲染器（`TerminalSurface` 挂上停靠栏同款终端视图；`iframe` 渲染器加载插件自己的页面），而不是消息流与输入框。
+Web App 现在每个登录用户取一次 `GET /api/contributions`。其 `pages` 并入路由——推送上来的平台或插件贡献的页面，只要本构建有它的渲染器就能挂载——其 `sessionSurfaces` 成为「新建对话」页上一个选择器的选项，与 Agent、Workspace 并列的第三颗药丸，因此表面总是在用户选定的 Workspace 里打开。只有当插件确实贡献了表面时，这颗药丸才出现。表面 Session 的会话路由渲染该表面的渲染器（`TerminalSurface` 挂上停靠栏同款终端视图；`iframe` 渲染器加载插件自己的页面），而不是消息流与输入框。
 
 终端现在能跑一个程序而不是一个 shell：`Terminals.create` 接受 `command`（argv，不加登录 shell）、`env` 与 `unsetEnv`，供表面使用，不经 HTTP 暴露。pty 也不再继承服务端的 `TMUX` / `TMUX_PANE`——它并不是启动服务端的那个复用器的一个 pane，而误以为自己在 tmux 里的程序会朝着并不存在的东西发送穿透序列。
 
