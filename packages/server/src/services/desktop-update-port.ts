@@ -7,10 +7,16 @@
  * check/download/install commands back. Under a plain `penguin server|web` run the port does not exist and this
  * module wires nothing; the update routes then answer 503 `shell_unreachable`.
  *
- * Wire shapes live in api/types.ts (DesktopUpdaterStatusMessage /
- * DesktopUpdaterCommandMessage) so the shell imports the same contract.
+ * The same port carries the shell's native actions for the command palette: one
+ * `desktop-shell-info` push saying what it offers, and `desktop-shell-command` frames back.
+ *
+ * Wire shapes live in api/types.ts (DesktopUpdaterStatusMessage / DesktopUpdaterCommandMessage /
+ * DesktopShellInfoMessage / DesktopShellCommandMessage) so the shell imports the same contract.
  */
 import type {
+  DesktopShellCommandMessage,
+  DesktopShellInfo,
+  DesktopShellInfoMessage,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
@@ -47,6 +53,17 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   return status as DesktopUpdateStatus;
 }
 
+/** Validates the shell's once-per-wiring push of what it can do for the page. */
+export function parseShellInfoMessage(data: unknown): DesktopShellInfo | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<DesktopShellInfoMessage>;
+  if (msg.type !== "desktop-shell-info") return null;
+  const info = msg.info as Partial<DesktopShellInfo> | undefined;
+  if (typeof info !== "object" || info === null) return null;
+  if (typeof info.cliInstall !== "boolean") return null;
+  return { cliInstall: info.cliInstall };
+}
+
 /** Reads Electron's injected port off `process`, absent under plain Node. */
 export function shellPortOf(proc: NodeJS.Process): ShellPort | null {
   const port = (proc as NodeJS.Process & { parentPort?: ShellPort }).parentPort;
@@ -60,11 +77,19 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
   port.on("message", (e) => {
     const status = parseUpdaterStatusMessage(e.data);
     if (status !== null) desktop.setUpdateStatus(status);
+    const info = parseShellInfoMessage(e.data);
+    if (info !== null) desktop.setShellInfo(info);
   });
   desktop.onUpdateCommand((action) => {
     port.postMessage({
       type: "desktop-updater-command",
       action,
     } satisfies DesktopUpdaterCommandMessage);
+  });
+  desktop.onShellCommand((action) => {
+    port.postMessage({
+      type: "desktop-shell-command",
+      action,
+    } satisfies DesktopShellCommandMessage);
   });
 }
