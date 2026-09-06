@@ -64,6 +64,7 @@ import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
 import { mintTokenOnRemote } from "./remote-token.js";
 import { syncModelsToMachine } from "./models-sync.js";
+import { syncPluginsToMachine } from "./plugins-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
@@ -1136,7 +1137,36 @@ export class MachinesService {
     for (const { projectId, detail } of outcome.refused) {
       say(`Models of ${projectId} not synced — ${detail}`);
     }
+    // Same session, same Projects: a plugin a Project asks for has to be loaded on the
+    // machine that will run its Sessions, and enabling it once per machine by hand is not
+    // a path this product has (PRFC-0010).
+    const plugins = await syncPluginsToMachine({
+      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
+      loadLocal: (projectId) => this.#localPlugins(projectId),
+      projects,
+    });
+    if (plugins.kind === "failed") {
+      say(`Plugins not synced — ${plugins.detail}`);
+      return;
+    }
+    if (plugins.added.length > 0) say(`Plugins added there: ${plugins.added.join(", ")}.`);
+    if (plugins.removed.length > 0) say(`Plugins removed there: ${plugins.removed.join(", ")}.`);
+    if (plugins.unresolved.length > 0) {
+      say(
+        `Listed there but not resolvable — that machine may need updating first: ${plugins.unresolved.join(", ")}.`,
+      );
+    }
+    if (plugins.restartPending) say(`That machine restarts to finish loading its plugins.`);
+    for (const { projectId, detail } of plugins.refused) {
+      say(`Plugins of ${projectId} not synced — ${detail}`);
+    }
     void address;
+  }
+
+  /** What a Project asks for; an unreadable config syncs nothing rather than emptying the machine. */
+  async #localPlugins(projectId: string): Promise<string[]> {
+    const config = await this.#effects.loadConfig(projectId);
+    return config.plugins ?? [];
   }
 
   /**
@@ -1406,6 +1436,11 @@ export class MachinesService {
    * machine that is busy and would silently drop the edit; a sync in flight is instead told
    * to run once more (#syncCoalesced), and an install in flight on the machine is not a
    * reason to lose a credential either — the two do not contend for the shell.
+   */
+  /**
+   * Both syncs travel together (see #syncModels), so this is also how a plugin change
+   * reaches the fleet. Named for the models because that is what it was, and renaming an
+   * interface member is a contract change a pushed platform pays for.
    */
   async syncModelsEverywhere(projectId: string): Promise<void> {
     const connected = this.list(projectId).filter(
