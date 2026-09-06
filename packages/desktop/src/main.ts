@@ -61,11 +61,18 @@ import {
   trayStatusMessage,
   updateTrayPrefs,
 } from "./tray-prefs.js";
-import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import {
-  parseShellCommand,
+  checkForUpdatesManually,
+  getUpdaterStatus,
+  handleUpdaterCommand,
+  initUpdater,
+  onUpdaterStatus,
+  updatesAvailableInThisForm,
+} from "./updater.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
   parseUpdaterCommand,
-  shellInfoMessage,
   updaterStatusMessage,
 } from "./updater-status.js";
 import {
@@ -123,7 +130,7 @@ function fatal(context: string, err: unknown): void {
  * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
  * the application menu still exists — its accelerators keep working, and macOS keeps its
  * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
- * own native actions are offered from the page's command palette (see desktopShellRoutes).
+ * own actions are offered from the page's command palette (see http/routes/command.ts).
  */
 function hideMenuBar(target: BrowserWindow): void {
   if (process.platform === "darwin") return;
@@ -338,9 +345,14 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
-    // The page's command palette asking for a native action — the same dialog the menu ran.
-    if (parseShellCommand(message) === "install-cli") {
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
       void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
       return;
     }
     const command = parseTrayCommand(message);
@@ -356,7 +368,12 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
-  child.postMessage(shellInfoMessage({ cliInstall: currentCliInstallKind() !== null }));
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */

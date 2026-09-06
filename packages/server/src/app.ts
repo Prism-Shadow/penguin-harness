@@ -100,7 +100,7 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { desktopShellRoutes } from "./http/routes/desktop.js";
+import { commandRoutes } from "./http/routes/command.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -467,12 +467,11 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // Every route but /api/hmr is the platform's, served through the seam above. What follows
   // is the layer's own tail: static hosting and the SPA fallback.
 
-  if (deps.desktop) {
-    // The shell's native actions for the command palette, gated the same way.
-    app.use("/api/desktop/shell", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/shell/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/shell", desktopShellRoutes(deps));
-  }
+  // Host commands for the command palette, mounted in every mode — a plain server answers
+  // with an empty list, so the page has one question to ask wherever it runs.
+  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.route("/api/command", commandRoutes(deps));
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

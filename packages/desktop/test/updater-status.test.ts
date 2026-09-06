@@ -17,8 +17,8 @@ import {
   nextUpdateStatus,
   parseUpdaterCommand,
   updaterStatusMessage,
-  parseShellCommand,
-  shellInfoMessage,
+  hostCommandsMessage,
+  parseHostCommand,
 } from "../src/updater-status.js";
 import type { UpdaterEvent } from "../src/updater-status.js";
 
@@ -216,17 +216,18 @@ describe("port frames", () => {
   });
 });
 
-describe("the shell's native actions on the port", () => {
-  it("frames what the shell offers, and reads back only a well-formed ask", () => {
-    expect(shellInfoMessage({ cliInstall: false })).toEqual({
-      type: "desktop-shell-info",
-      info: { cliInstall: false },
+describe("host commands on the port", () => {
+  it("frames what the host offers, and reads back only a well-formed ask", () => {
+    expect(hostCommandsMessage(["install-cli"])).toEqual({
+      type: "host-commands",
+      commands: ["install-cli"],
     });
-    expect(parseShellCommand({ type: "desktop-shell-command", action: "install-cli" })).toBe(
-      "install-cli",
+    expect(parseHostCommand({ type: "host-command", command: "install-cli" })).toBe("install-cli");
+    expect(parseHostCommand({ type: "host-command", command: "check-updates" })).toBe(
+      "check-updates",
     );
-    expect(parseShellCommand({ type: "desktop-shell-command", action: "format-disk" })).toBeNull();
-    expect(parseShellCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
-    expect(parseShellCommand(null)).toBeNull();
+    expect(parseHostCommand({ type: "host-command", command: "format-disk" })).toBeNull();
+    expect(parseHostCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
+    expect(parseHostCommand(null)).toBeNull();
   });
 });

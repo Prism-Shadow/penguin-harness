@@ -4,7 +4,7 @@
  * installing the bundled `penguin` command, and checking for desktop updates. On Windows
  * and Linux the menu bar itself stays hidden (main.ts) — the menu lives on for its
  * accelerators and for F10 — and the same actions are offered from the page's command
- * palette, over the server's /api/desktop/shell relay.
+ * palette, over the server's /api/command relay.
  *
  * Installing this build's server onto an SSH host used to live here too; it is now the
  * Machines page in the Web App, served by the server itself (packages/server/src/machines)
