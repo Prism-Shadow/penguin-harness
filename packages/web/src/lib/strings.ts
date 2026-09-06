@@ -1569,6 +1569,9 @@ export const zh = {
     thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     /** A surface Session (a plugin renders it — see state/contributions.tsx): the draft page's open card and the page around the surface. */
     surface: {
+      /** The kind picker on the New chat page: the built-in conversation. */
+      conversation: "对话",
+      chooseKind: "选择要打开什么",
       open: "打开",
       opening: "正在打开…",
       promptPlaceholder: "第一条提示",
