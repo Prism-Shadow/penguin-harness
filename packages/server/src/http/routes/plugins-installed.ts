@@ -226,9 +226,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
  * Re-reads the closure into a fresh plugin host and asks the runtime to re-assemble the App.
  *
  * Two halves, and both are needed: the host is what the next tree claims (plugin/host.ts), so
- * it is rebuilt first and registered over the old one; the re-assembly is what makes a tree
- * out of it. A runtime that cannot re-assemble answers false and the list simply waits for a
- * restart, which is what every runtime did before this existed.
+ * it is registered before the re-assembly, which is what makes a tree out of it.
+ *
+ * A RE-ASSEMBLY THAT DOES NOT HAPPEN PUTS THE HOST BACK. The host is also where every
+ * surface reads "which plugin modules does this process have" from, so leaving a rebuilt one
+ * in place after a failed (or unsupported) reload would report plugins as active that no
+ * running tree contains — the list would claim it applied and `restartPending` would say
+ * false, on a deployment that needs exactly that restart. Found on a live runtime too old to
+ * offer `reload`: the languages plugin read as active while the languages endpoint still
+ * served none.
  */
 export async function applyPluginClosure(root: string, hmr: Hmr): Promise<boolean> {
   const host = new PluginHost();
@@ -243,8 +249,12 @@ export async function applyPluginClosure(root: string, hmr: Hmr): Promise<boolea
   for (const [specifier, reason] of result.failed) {
     console.warn(`[plugins] skipped ${specifier}: ${reason}`);
   }
-  (hmr.resources as Resources).register(PLUGINS_RESOURCE_ID, host);
-  return (await hmr.reload?.()) ?? false;
+  const resources = hmr.resources as Resources;
+  const previous = pluginHostFrom(resources);
+  resources.register(PLUGINS_RESOURCE_ID, host);
+  const applied = (await hmr.reload?.()) ?? false;
+  if (!applied) resources.register(PLUGINS_RESOURCE_ID, previous);
+  return applied;
 }
 
 @Component({
