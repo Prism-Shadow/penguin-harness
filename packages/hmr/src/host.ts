@@ -350,6 +350,56 @@ export class HmrHost<Api extends Park = Park> {
     }
   }
 
+  /**
+   * Re-assembles the App from the SAME bundle — the swap a plugin change needs.
+   *
+   * Which plugins run is configuration, and configuration changes while the process runs.
+   * The plugin host lives in the resource registry, so re-reading it and building the tree
+   * again is all that "load a plugin" means; this is that second half. Nothing about the
+   * code changes: same impl, same iface, so the parked document reconciles against the
+   * version it came from and cannot be blocked by a schema it has never seen.
+   *
+   * Serialized on the op queue like an upgrade, so a reload and a push can never interleave,
+   * and requests are gated on the same freeze. Live resources — ptys, machine connections —
+   * are delivered to the successor exactly as a push delivers them.
+   *
+   * Answers whether the new tree is the one now running: a boot that fails is recovered onto
+   * the previous document (the same recovery a failed push gets) and reported as false, so a
+   * caller can say the change did not take rather than claim it did.
+   */
+  reload(): Promise<boolean> {
+    const run = this.opQueue.then(() => this.doReload());
+    this.opQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async doReload(): Promise<boolean> {
+    const current = await this.ensure();
+    const bundle = this.current;
+    const result = await upgrade({
+      current,
+      impl: bundle.impl,
+      iface: bundle.iface,
+      resources: this.resources,
+    });
+    if (result.status === "blocked") {
+      // Unreachable by construction (the iface is the running one), and reported rather
+      // than thrown: the old tree is still up in this branch, so nothing is broken.
+      this.warn(`plugin reload was blocked by its own parked document; the App is unchanged`);
+      return false;
+    }
+    if (result.status === "failed") {
+      await this.recoverPrevious(result.doc);
+      this.warn(`the App failed to boot after a plugin change; the previous one was restored`);
+      return false;
+    }
+    this.instance = result.instance as Instance<PlatformApi>;
+    return true;
+  }
+
   /** Strictly request-driven; serialized on the op queue (never auto-triggered). */
   upgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
     const run = this.opQueue.then(() => this.doUpgradeAll(target));

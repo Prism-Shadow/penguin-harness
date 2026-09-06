@@ -397,6 +397,17 @@ export abstract class Proxy extends Interface<{
 /** The hot-update host: the cross-generation resource registry and the current App. */
 export abstract class Hmr extends Interface<{
   resources: Resources;
+  /**
+   * Re-assembles the App from the running bundle, so a plugin change applies without a
+   * process restart. Answers whether the new tree is the one running.
+   *
+   * A FIELD holding a function, deliberately, not a method: the signature check tolerates an
+   * optional field the runtime does not declare, and refuses a platform whose required
+   * METHOD is missing (kernel sig.ts). A runtime older than this capability must keep taking
+   * pushes — `config.supervised` is what happens when it cannot — so the platform calls this
+   * as `hmr.reload?.()` and falls back to "restart to apply" when nobody answers.
+   */
+  reload?: () => Promise<boolean>;
   ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
   resolveWebSource(): Opaque<
     "WebSource",
