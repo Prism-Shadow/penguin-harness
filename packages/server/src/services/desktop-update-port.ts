@@ -7,20 +7,21 @@
  * check/download/install commands back. Under a plain `penguin server|web` run the port does not exist and this
  * module wires nothing; the update routes then answer 503 `shell_unreachable`.
  *
- * The same port carries the shell's native actions for the command palette: one
- * `desktop-shell-info` push saying what it offers, and `desktop-shell-command` frames back.
+ * The same port carries the host commands the page's command palette offers: one
+ * `host-commands` push saying what this host can do, and `host-command` frames back.
  *
  * Wire shapes live in api/types.ts (DesktopUpdaterStatusMessage / DesktopUpdaterCommandMessage /
- * DesktopShellInfoMessage / DesktopShellCommandMessage) so the shell imports the same contract.
+ * HostCommandsMessage / HostCommandMessage) so the shell imports the same contract.
  */
 import type {
-  DesktopShellCommandMessage,
-  DesktopShellInfo,
-  DesktopShellInfoMessage,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
+  HostCommand,
+  HostCommandMessage,
+  HostCommandsMessage,
 } from "../api/types.js";
+import { HOST_COMMANDS } from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
 
 /** The slice of Electron's ParentPort this relay uses (structural: the server must not depend on Electron types). */
@@ -53,15 +54,14 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   return status as DesktopUpdateStatus;
 }
 
-/** Validates the shell's once-per-wiring push of what it can do for the page. */
-export function parseShellInfoMessage(data: unknown): DesktopShellInfo | null {
+/** Validates the shell's once-per-wiring push of the commands it offers; unknown names are dropped, not stored. */
+export function parseHostCommandsMessage(data: unknown): HostCommand[] | null {
   if (typeof data !== "object" || data === null) return null;
-  const msg = data as Partial<DesktopShellInfoMessage>;
-  if (msg.type !== "desktop-shell-info") return null;
-  const info = msg.info as Partial<DesktopShellInfo> | undefined;
-  if (typeof info !== "object" || info === null) return null;
-  if (typeof info.cliInstall !== "boolean") return null;
-  return { cliInstall: info.cliInstall };
+  const msg = data as Partial<HostCommandsMessage>;
+  if (msg.type !== "host-commands" || !Array.isArray(msg.commands)) return null;
+  return msg.commands.filter((c): c is HostCommand =>
+    (HOST_COMMANDS as readonly string[]).includes(c),
+  );
 }
 
 /** Reads Electron's injected port off `process`, absent under plain Node. */
@@ -77,8 +77,8 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
   port.on("message", (e) => {
     const status = parseUpdaterStatusMessage(e.data);
     if (status !== null) desktop.setUpdateStatus(status);
-    const info = parseShellInfoMessage(e.data);
-    if (info !== null) desktop.setShellInfo(info);
+    const commands = parseHostCommandsMessage(e.data);
+    if (commands !== null) desktop.setCommands(commands);
   });
   desktop.onUpdateCommand((action) => {
     port.postMessage({
@@ -86,10 +86,7 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
       action,
     } satisfies DesktopUpdaterCommandMessage);
   });
-  desktop.onShellCommand((action) => {
-    port.postMessage({
-      type: "desktop-shell-command",
-      action,
-    } satisfies DesktopShellCommandMessage);
+  desktop.onCommand((command) => {
+    port.postMessage({ type: "host-command", command } satisfies HostCommandMessage);
   });
 }
