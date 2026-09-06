@@ -78,6 +78,8 @@ export interface CreateTerminalSessionOptions {
    * login flag are ignored). What a session surface uses to put one program in a pty.
    */
   command?: readonly string[];
+  /** Variables to remove from the inherited environment — the only way to express "unset". */
+  unsetEnv?: readonly string[];
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
@@ -115,6 +117,7 @@ export type TerminalTitleListener = (title: string | null) => void;
 function buildTerminalEnv(
   extra: Record<string, string> | undefined,
   cwd: string,
+  unset: readonly string[] | undefined,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -128,6 +131,15 @@ function buildTerminalEnv(
   // Inherited from the server process; a pty is not that server and these would point the
   // shell (and anything it starts) at the wrong runtime.
   delete env.NODE_OPTIONS;
+  // Same reason: this pty is not a pane of whatever tmux the server was started from. A
+  // program that believes it is inside tmux emits passthrough sequences for a multiplexer
+  // that is not there, and probes it for capabilities nothing answers.
+  delete env.TMUX;
+  delete env.TMUX_PANE;
+  // What the caller asks to be absent, applied last: a value cannot express "unset", and
+  // an inherited marker is exactly what a spawned program must not see (see the surface
+  // plugins, which scrub their own tool's session markers).
+  for (const name of unset ?? []) delete env[name];
   return env;
 }
 
@@ -186,7 +198,7 @@ export class TerminalSession {
       cols,
       rows,
       cwd: options.cwd,
-      env: buildTerminalEnv(options.env, options.cwd),
+      env: buildTerminalEnv(options.env, options.cwd, options.unsetEnv),
     });
 
     this.registerCapabilityResponders();

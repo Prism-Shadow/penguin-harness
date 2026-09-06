@@ -11,6 +11,7 @@ import plugin, {
   ACTIVITY_WINDOW_MS,
   ClaudeCode,
   ClaudeCodeSurface,
+  INHERITED_SESSION_MARKERS,
   claudeArgv,
   claudeBinary,
 } from "../src/index.js";
@@ -125,6 +126,13 @@ describe("the surface", () => {
       rows: 30,
     });
     expect(view).toEqual({ alive: true, view: { terminalId: "t1" } });
+    // A harness started from inside a Claude Code session must not hand its own session
+    // markers to the child: it would read them as "I am nested" and stop saving a transcript.
+    expect(created[0]!.request.unsetEnv).toEqual(INHERITED_SESSION_MARKERS);
+    expect(INHERITED_SESSION_MARKERS).toContain("CLAUDECODE");
+    expect(INHERITED_SESSION_MARKERS).toContain("CLAUDE_CODE_SESSION_ID");
+    // Configuration a deployment sets on purpose is inherited, not scrubbed.
+    expect(INHERITED_SESSION_MARKERS).not.toContain("CLAUDE_CODE_USE_BEDROCK");
     expect(surface.status("s1")).toBe("idle");
 
     const terminal = created[0]!.terminal;
