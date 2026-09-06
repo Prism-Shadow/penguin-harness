@@ -20,7 +20,7 @@ import type {
   SessionSurfaceResponse,
 } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { TerminalManager } from "../src/terminal/manager.js";
+import { TerminalManager, spawnFailureMessage } from "../src/terminal/manager.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 
 /** A surface whose state the test flips by hand; records what it was asked to open. */
@@ -290,6 +290,18 @@ describe("a terminal running a program", () => {
       delete process.env.TMUX;
       delete process.env.SURFACE_MARKER_PROBE;
     }
+  });
+
+  it("names the program it could not start, not 'a shell'", () => {
+    // What a surface hits when its tool is not installed on the machine: the reader must be
+    // pointed at the missing program. (Asserted on the message rather than a real spawn:
+    // Windows fails a missing program at spawn, POSIX only when the child exits.)
+    expect(spawnFailureMessage("claude", new Error("File not found: "), null)).toBe(
+      "Could not start claude: File not found: ",
+    );
+    expect(spawnFailureMessage(undefined, new Error("posix_spawnp failed."), "chmod +x it")).toBe(
+      "Could not start a shell: posix_spawnp failed. (chmod +x it)",
+    );
   });
 
   it("refuses an empty argv", async () => {
