@@ -51,6 +51,24 @@ export interface CreateTerminalRequest {
   unsetEnv?: readonly string[];
 }
 
+/**
+ * Why a pty could not start, in the reader's terms.
+ *
+ * Names what was actually being started: a surface runs a PROGRAM, and "could not start a
+ * shell: File not found" sends the reader to look at their shell when the missing thing is
+ * the program a plugin asked for. A bare "posix_spawnp failed." says nothing either, so
+ * node-pty's non-executable spawn-helper gets its file and its fix named (see spawnHelperHint).
+ */
+export function spawnFailureMessage(
+  program: string | undefined,
+  err: unknown,
+  hint: string | null,
+): string {
+  const what = program ?? "a shell";
+  const because = err instanceof Error ? err.message : String(err);
+  return `Could not start ${what}: ${because}` + (hint === null ? "" : ` (${hint})`);
+}
+
 export class TerminalManager {
   /**
    * The kernel's resource registry, threaded to every session it creates: a native module
@@ -130,14 +148,10 @@ export class TerminalManager {
     try {
       session = new TerminalSession(options);
     } catch (err) {
-      // A bare "posix_spawnp failed." says nothing; when the cause is node-pty's
-      // non-executable spawn-helper, name the file and the fix.
-      const hint = spawnHelperHint();
       throw new HttpError(
         500,
         "terminal_spawn_failed",
-        `Could not start a shell: ${err instanceof Error ? err.message : String(err)}` +
-          (hint === null ? "" : ` (${hint})`),
+        spawnFailureMessage(request.command?.[0], err, spawnHelperHint()),
       );
     }
 
