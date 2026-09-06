@@ -38,5 +38,15 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["linux", "macos", "windows", "dsh", "filesystem-only"],
     "categories": ["sandbox"]
+  },
+  {
+    "name": "@prismshadow/penguin-plugin-claude-code",
+    "version": "0.1.0",
+    "description": "Claude Code as a session surface for PenguinHarness: a New chat entry that opens the Claude Code TUI in the Session's Workspace.",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["claude-code", "terminal", "session-surface"],
+    "categories": ["surface"]
   }
 ]
