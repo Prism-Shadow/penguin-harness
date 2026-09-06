@@ -100,7 +100,8 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { desktopRoutes, desktopShellRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
+import { commandRoutes } from "./http/routes/command.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -411,11 +412,13 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
     app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-    // The shell's native actions for the command palette, gated the same way.
-    app.use("/api/desktop/shell", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/shell/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/shell", desktopShellRoutes(deps));
   }
+  // Host commands for the command palette: runtime-owned like /api/desktop (the service
+  // behind them is the shell relay), but mounted in every mode — a plain server answers
+  // with an empty list, so the page has one question to ask wherever it runs.
+  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.route("/api/command", commandRoutes(deps));
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
   // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
