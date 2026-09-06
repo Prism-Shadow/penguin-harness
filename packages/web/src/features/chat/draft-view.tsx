@@ -55,6 +55,8 @@ import { rememberSessionMachine } from "../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
+import { surfaceLabel, useContributions } from "../../state/contributions";
+import { SurfaceComposer } from "./surface-composer";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -274,7 +276,14 @@ export function DraftView({
     agentId?: string;
     workspace?: string;
     machineId?: string;
+    /** A surface Session to open (the sidebar's surface entries) instead of a conversation to compose. */
+    surface?: string;
   } | null;
+  const surfaceKind = routeState?.surface ?? null;
+  const { surfaces } = useContributions();
+  const surfaceEntry =
+    surfaceKind === null ? null : (surfaces.find((s) => s.kind === surfaceKind) ?? null);
+  const uiLocale = useLocale().locale;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
   /** One-shot marker for the project-default Agent (seeding precedence, see below). */
@@ -685,6 +694,37 @@ export function DraftView({
   // a racing navigation. A ref rather than state — the composer disables its own send button
   // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
+  const [openingSurface, setOpeningSurface] = useState(false);
+  /**
+   * Surface mode: create the Session OF that kind (no model, the chosen Agent and
+   * Workspace), open its surface with the prompt, and land on it. A surface that fails to
+   * open takes the empty Session with it, like a first message that fails to send.
+   */
+  const onOpenSurface = useCallback(
+    async (prompt: string): Promise<void> => {
+      if (!agentId || surfaceKind === null || sendingRef.current) return;
+      sendingRef.current = true;
+      setOpeningSurface(true);
+      let createdId: string | null = null;
+      try {
+        const body: SessionCreateRequest = { approvalMode, surface: surfaceKind };
+        if (workspace.trim()) body.workspace = workspace.trim();
+        const created = await api.createSession(projectId, agentId, body, workspaceMachine);
+        createdId = created.session.sessionId;
+        await api.openSessionSurface(createdId, prompt.trim() === "" ? {} : { prompt });
+        add(created.session);
+        adoptDockScope(createdId);
+        navigate(`/chat/${createdId}`, { replace: true });
+      } catch (e) {
+        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        toastError(apiErrorText(e));
+      } finally {
+        sendingRef.current = false;
+        setOpeningSurface(false);
+      }
+    },
+    [projectId, agentId, approvalMode, workspace, workspaceMachine, surfaceKind, add, navigate],
+  );
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
@@ -813,33 +853,42 @@ export function DraftView({
           <VersionLine />
         </div>
 
-        <ChatInput
-          status="idle"
-          controlRef={composerRef}
-          onSend={onSend}
-          onStop={async () => undefined}
-          onCompact={async () => undefined}
-          modelRef={modelRef}
-          models={models?.models ?? []}
-          onChangeModel={setModelRef}
-          thinkingLevel={thinkingLevel}
-          onChangeThinkingLevel={onChangeThinkingLevel}
-          {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
-          {...(contextWindow !== undefined ? { contextWindow } : {})}
-          contextNow={0}
-          vision={vision}
-          approvalMode={approvalMode}
-          onChangeApprovalMode={changeApprovalMode}
-          modeSaving={false}
-          autoFocus
-          agents={agents}
-          {...(agentId ? { currentAgentId: agentId } : {})}
-          skills={agentSkills}
-          {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
-          onSkillsChange={onSkillsChange}
-          initialText={cached.text ?? ""}
-          onTextChange={onTextChange}
-        />
+        {surfaceKind !== null ? (
+          <SurfaceComposer
+            label={surfaceEntry === null ? surfaceKind : surfaceLabel(surfaceEntry, uiLocale)}
+            unavailable={surfaceEntry === null}
+            busy={openingSurface}
+            onOpen={(prompt) => void onOpenSurface(prompt)}
+          />
+        ) : (
+          <ChatInput
+            status="idle"
+            controlRef={composerRef}
+            onSend={onSend}
+            onStop={async () => undefined}
+            onCompact={async () => undefined}
+            modelRef={modelRef}
+            models={models?.models ?? []}
+            onChangeModel={setModelRef}
+            thinkingLevel={thinkingLevel}
+            onChangeThinkingLevel={onChangeThinkingLevel}
+            {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+            {...(contextWindow !== undefined ? { contextWindow } : {})}
+            contextNow={0}
+            vision={vision}
+            approvalMode={approvalMode}
+            onChangeApprovalMode={changeApprovalMode}
+            modeSaving={false}
+            autoFocus
+            agents={agents}
+            {...(agentId ? { currentAgentId: agentId } : {})}
+            skills={agentSkills}
+            {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+            onSkillsChange={onSkillsChange}
+            initialText={cached.text ?? ""}
+            onTextChange={onTextChange}
+          />
+        )}
 
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">

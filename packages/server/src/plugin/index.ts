@@ -19,3 +19,4 @@ export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
+export type { SessionSurfaces, SessionSurfacesSlots } from "../runtime/session-surfaces.js";
