@@ -34,7 +34,7 @@ export interface HttpSlots {
 }
 
 /** Prefixes the HMR layer owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
-const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
+const HMR_LAYER_PREFIXES = ["/api/auth", "/api/command", "/api/desktop", "/api/hmr"];
 
 /**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every

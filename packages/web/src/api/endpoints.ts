@@ -138,7 +138,8 @@ import type {
   UpdateCheckResponse,
   UpdateJobStatus,
   RestartResponse,
-  DesktopShellInfoResponse,
+  HostCommand,
+  HostCommandsResponse,
   DesktopUpdateStatusResponse,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -1443,12 +1444,12 @@ export const restartServer = () =>
 
 export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
 
-/** What the desktop shell offers the command palette (desktop mode, the shell's own window). */
-export const getDesktopShell = () => apiFetch<DesktopShellInfoResponse>("/api/desktop/shell");
+/** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
+export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
 
-/** Asks the shell to install the bundled `penguin` command; it answers with its own dialog. */
-export const desktopInstallCli = () =>
-  apiFetch<void>("/api/desktop/shell/install-cli", { method: "POST", body: {} });
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). */
+export const runHostCommand = (command: HostCommand) =>
+  apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
   apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
