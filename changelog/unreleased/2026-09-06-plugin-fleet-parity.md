@@ -3,6 +3,7 @@
 - **Date:** 2026-09-06
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
+- **PR:** [#627](https://github.com/Prism-Shadow/penguin-harness/pull/627)
 - **Breaking:** the data root's `plugins.json` is no longer read
 
 [中文版](2026-09-06-plugin-fleet-parity.zh.md)
