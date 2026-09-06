@@ -16,7 +16,8 @@ import {
   requireValidId,
 } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Desktop, DesktopService } from "../../services/desktop-service.js";
+import type { DesktopService } from "../../services/desktop-service.js";
+import type { Desktop } from "../../hmr/capabilities.js";
 import { membersRoutes } from "./members.js";
 import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 
