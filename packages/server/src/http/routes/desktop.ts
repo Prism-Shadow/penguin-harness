@@ -1,6 +1,7 @@
 /**
  * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
- * /api/desktop/update, plus the shared desktop-mode guard that turns off multi-user
+ * /api/desktop/update, the shell's native actions under /api/desktop/shell, plus the
+ * shared desktop-mode guard that turns off multi-user
  * surfaces (see rejectInDesktopMode).
  *
  * The shutdown route is authenticated by the shell's Bearer token, not the cookie
@@ -12,7 +13,7 @@
  */
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
-import type { DesktopUpdateStatusResponse } from "../../api/types.js";
+import type { DesktopShellInfoResponse, DesktopUpdateStatusResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 
@@ -72,29 +73,30 @@ export function desktopRoutes(deps: DesktopRouteDeps): Hono {
  * fetches only the release the shell has offered, and `install` restarts only into what
  * its updater already downloaded and verified.
  */
+/** The shell's own window, or nothing: the gate every page→shell relay route stands behind. */
+function requireShellSession(deps: DesktopRouteDeps, c: Context<AppEnv>): DesktopService {
+  const desktop = deps.desktop;
+  if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
+  if (c.var.sessionVia !== "desktop") {
+    throw new HttpError(
+      403,
+      "desktop_shell_only",
+      "This is managed from the desktop app's own window.",
+    );
+  }
+  return desktop;
+}
+
 export function desktopUpdateRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  const requireShellSession = (c: Context<AppEnv>): DesktopService => {
-    const desktop = deps.desktop;
-    if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
-    if (c.var.sessionVia !== "desktop") {
-      throw new HttpError(
-        403,
-        "desktop_shell_only",
-        "Client updates are managed from the desktop app's own window.",
-      );
-    }
-    return desktop;
-  };
-
   app.get("/", (c) => {
-    const desktop = requireShellSession(c);
+    const desktop = requireShellSession(deps, c);
     return c.json({ status: desktop.getUpdateStatus() } satisfies DesktopUpdateStatusResponse);
   });
 
   app.post("/check", (c) => {
-    const desktop = requireShellSession(c);
+    const desktop = requireShellSession(deps, c);
     if (!desktop.requestUpdateCommand("check")) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
@@ -102,7 +104,7 @@ export function desktopUpdateRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   });
 
   app.post("/download", (c) => {
-    const desktop = requireShellSession(c);
+    const desktop = requireShellSession(deps, c);
     if (!desktop.requestUpdateCommand("download")) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
@@ -110,12 +112,43 @@ export function desktopUpdateRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   });
 
   app.post("/install", (c) => {
-    const desktop = requireShellSession(c);
+    const desktop = requireShellSession(deps, c);
     if (!desktop.requestUpdateCommand("install")) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
     return c.body(null, 202);
   });
 
+  return app;
+}
+
+/**
+ * Native actions offered from the command palette (mounted INSIDE authMiddleware at
+ * /api/desktop/shell, desktop mode only, the shell's own window only — like the update
+ * relay). `GET /` says what the shell offers; `POST /install-cli` asks it to install the
+ * bundled `penguin` command, which it does through its own native dialog. These moved
+ * out of the application menu because the menu bar is hidden: a lone Alt used to pull it
+ * up and take the keyboard from the page.
+ */
+export function desktopShellRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.get("/", (c) => {
+    const desktop = requireShellSession(deps, c);
+    return c.json({ info: desktop.getShellInfo() } satisfies DesktopShellInfoResponse);
+  });
+  app.post("/install-cli", (c) => {
+    const desktop = requireShellSession(deps, c);
+    if (!desktop.getShellInfo()?.cliInstall) {
+      throw new HttpError(
+        409,
+        "cli_install_unavailable",
+        "This install form has no command to install.",
+      );
+    }
+    if (!desktop.requestShellCommand("install-cli")) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
   return app;
 }
