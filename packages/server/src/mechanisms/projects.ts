@@ -102,6 +102,8 @@ export abstract class ProjectConfigStore extends Interface<{
   setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
   getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
+  getPlugins(projectId: string): Promise<string[]>;
+  setPlugins(projectId: string, plugins: readonly string[]): Promise<string[]>;
   getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
   setCommandPolicy(
     projectId: string,
