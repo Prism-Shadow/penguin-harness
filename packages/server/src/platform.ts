@@ -107,6 +107,11 @@ import { AdminSandboxRoutes } from "./http/routes/admin-sandbox.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
+import {
+  SessionSurfaces,
+  SessionSurfacesModule,
+  SurfaceRoutes,
+} from "./runtime/session-surfaces.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
 import {
@@ -278,8 +283,10 @@ export class ProjectsModule {}
     Scheduler,
     CoreSessionLoaders,
     DefaultTitleGenerators,
+    SessionSurfacesModule,
     SessionsModule,
     SessionApiRoutes,
+    SurfaceRoutes,
     SchedulerRoutes,
     EventsRoutes,
   ],
@@ -290,6 +297,7 @@ export class ProjectsModule {}
     Scheduling,
     Sessions,
     SessionServiceIface,
+    SessionSurfaces,
     SessionEnv,
     ScheduleTaskRunner,
     ScheduleSessionCreator,

@@ -5,7 +5,8 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { SessionSurfaces } from "../../runtime/session-surfaces.js";
 import type { ContributionsResponse, RendererRef, WebContribution } from "../../api/types.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 
@@ -40,6 +41,11 @@ export interface WebShellSlots {
   /** A tab beside a Session's chat (a workflow UI lives here). */
   sessionTabs: { key: string; renderer: RendererRef };
 }
+/*
+ * Session surfaces are not a slot here: they are `SessionSurfacesModule.surfaces`
+ * contributions (one registration, used by the routes and listed to the App from the same
+ * place); GET /api/contributions carries them as `sessionSurfaces`.
+ */
 
 @Module({
   contributes: {
@@ -54,6 +60,8 @@ export interface WebShellSlots {
   },
 })
 export class WebModule {
+  /** The surfaces plugins contribute: listed beside the slots, from the one place they are registered. */
+  @Use() private readonly surfaces!: SessionSurfaces;
   @Provide() web!: WebShell;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
@@ -65,6 +73,7 @@ export class WebModule {
       pages: collect("pages"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
+      sessionSurfaces: this.surfaces.list(),
     };
     const web: WebShell = { contributions: () => response };
     this.web = web;
