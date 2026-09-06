@@ -3427,30 +3427,28 @@ export interface DesktopUpdaterCommandMessage {
 }
 
 /**
- * What the shell can do on the page's behalf: the native actions that used to live only in
- * the application menu, offered from the command palette instead (the menu bar is hidden so
- * a lone Alt no longer takes the keyboard). Pushed once when the shell wires the port.
+ * A native action the host process can run on the page's behalf — what the desktop shell's
+ * application menu used to offer, reached from the command palette instead (the menu bar
+ * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
  */
-export interface DesktopShellInfo {
-  /** Whether this install form offers installing the bundled `penguin` command (false in a dev run). */
-  cliInstall: boolean;
+export const HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommand[];
 }
 
-/** Shell → server push over the utilityProcess message channel, once per wiring. */
-export interface DesktopShellInfoMessage {
-  type: "desktop-shell-info";
-  info: DesktopShellInfo;
+/** `GET /api/command` (admin): the commands the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  commands: HostCommand[];
 }
 
-/** `GET /api/desktop/shell` (desktop mode, the shell's own window only): null before the shell's push. */
-export interface DesktopShellInfoResponse {
-  info: DesktopShellInfo | null;
-}
-
-/** Server → shell: a native action the page asked for. `POST /api/desktop/shell/install-cli` sends `install-cli`. */
-export interface DesktopShellCommandMessage {
-  type: "desktop-shell-command";
-  action: "install-cli";
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: HostCommand;
 }
 
 /**
