@@ -46,6 +46,31 @@ import type { Terminals } from "@prismshadow/penguin-server/plugin";
 /** Output within this many milliseconds of now reads as "running"; silence past it as "idle". */
 export const ACTIVITY_WINDOW_MS = 1500;
 
+/**
+ * The parent's Claude Code SESSION markers, scrubbed from the pty's environment.
+ *
+ * A surface's pty inherits the server process's environment, and a harness started from
+ * inside a Claude Code session carries that session's markers — which a child `claude`
+ * reads as "I am nested": it turns transcript saving off and points its messaging at the
+ * parent's socket. The Session opened here is a top-level conversation of its own, so the
+ * markers go.
+ *
+ * Only the markers that IDENTIFY a running session are listed. Configuration a deployment
+ * sets on purpose — `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, the
+ * `ANTHROPIC_*` variables — is inherited untouched, which is how an operator configures
+ * the tool at all.
+ */
+export const INHERITED_SESSION_MARKERS: readonly string[] = [
+  "CLAUDECODE",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_BRIDGE_SESSION_ID",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_EXECPATH",
+];
+
 /** The program to run: an override for tests and off-PATH installs, else `claude`. */
 export function claudeBinary(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.PENGUIN_CLAUDE_BIN?.trim();
@@ -125,6 +150,7 @@ export class ClaudeCodeSurface implements SessionSurface {
       ownerUserId: session.ownerUserId,
       name: "claude",
       command: claudeArgv(options.prompt, this.env),
+      unsetEnv: INHERITED_SESSION_MARKERS,
       ...(options.cols !== undefined ? { cols: options.cols } : {}),
       ...(options.rows !== undefined ? { rows: options.rows } : {}),
     });

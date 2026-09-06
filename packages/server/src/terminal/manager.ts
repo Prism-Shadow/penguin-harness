@@ -47,6 +47,8 @@ export interface CreateTerminalRequest {
   command?: readonly string[];
   /** Extra environment for the pty, over the server's own. */
   env?: Record<string, string>;
+  /** Variables to remove from the inherited environment (see CreateTerminalSessionOptions). */
+  unsetEnv?: readonly string[];
 }
 
 export class TerminalManager {
@@ -121,6 +123,7 @@ export class TerminalManager {
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
       ...(request.command !== undefined ? { command: request.command } : {}),
       ...(request.env !== undefined ? { env: request.env } : {}),
+      ...(request.unsetEnv !== undefined ? { unsetEnv: request.unsetEnv } : {}),
     };
 
     let session: TerminalSession;
