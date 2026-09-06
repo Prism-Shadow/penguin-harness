@@ -43,6 +43,10 @@ export interface CreateTerminalRequest {
   cols?: number;
   rows?: number;
   shell?: string;
+  /** Run this program (argv) instead of a shell — see CreateTerminalSessionOptions.command. */
+  command?: readonly string[];
+  /** Extra environment for the pty, over the server's own. */
+  env?: Record<string, string>;
 }
 
 export class TerminalManager {
@@ -115,6 +119,8 @@ export class TerminalManager {
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
+      ...(request.command !== undefined ? { command: request.command } : {}),
+      ...(request.env !== undefined ? { env: request.env } : {}),
     };
 
     let session: TerminalSession;

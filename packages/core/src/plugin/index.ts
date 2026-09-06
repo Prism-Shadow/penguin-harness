@@ -31,6 +31,7 @@ import type { Json, ModuleCtx, ModuleInstance } from "../kernel/index.js";
 
 export type * from "./sandbox.js";
 export type * from "./languages.js";
+export type * from "./surfaces.js";
 
 /** One module's code half. Its manifest is the `package.json#penguin.modules` entry of the same name. */
 export interface PluginModule {
