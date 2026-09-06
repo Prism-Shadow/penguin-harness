@@ -157,3 +157,35 @@ test("opens on a window, backfills on scroll with the reader anchored, sheds the
   await expect(page.getByText(`第${EXCHANGES}问`)).toBeVisible();
   expect(await prompts(page).count()).toBeLessThan(EXCHANGES);
 });
+
+test("a live session whose tail outgrew the budget: scrolling up sheds it, the jump button brings it back", async ({
+  page,
+}) => {
+  // No reload: everything streamed since the open sits in the live tail, well past the
+  // budget on its own. Scrolling up sheds it at the first backfill; the jump must land
+  // on the newest exchange and stay there through the backfill that follows.
+  const sessionId = await setup(page);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  const ta = page.getByPlaceholder(/输入消息/);
+  await ta.waitFor();
+  const send = sender(page, ta);
+  for (let i = 1; i <= EXCHANGES; i += 1) await send(`第${i}问`, i);
+  await page.reload();
+  await expect(page.getByText(`第${EXCHANGES}问`)).toBeVisible();
+  for (let i = EXCHANGES + 1; i <= EXCHANGES + 14; i += 1) await send(`第${i}问`, i - EXCHANGES);
+  const el = scroller(page);
+  for (let i = 0; i < 6; i += 1) {
+    await el.evaluate((c) => {
+      c.scrollTop = 0;
+    });
+    await page.waitForTimeout(400);
+    if ((await page.locator("[data-stream-detached]").count()) > 0) break;
+  }
+  await expect(page.locator("[data-stream-detached]")).toHaveCount(1);
+  await page.getByRole("button", { name: "回到最新消息" }).click();
+  await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
+  await expect(page.getByText(`第${EXCHANGES + 14}问`)).toBeVisible();
+  await page.waitForTimeout(800); // the eager backfill above the tail lands meanwhile
+  await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
+  await expect(page.getByText(`第${EXCHANGES + 14}问`)).toBeVisible();
+});

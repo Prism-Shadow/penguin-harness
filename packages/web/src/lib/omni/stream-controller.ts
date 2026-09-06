@@ -613,7 +613,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onModelChange();
       // A fresh open shows one window and quietly fetches the one above it: about two
       // screens on a phone, without the first paint waiting for the second.
-      if (opts.eager === true && older.hasMore) void loadOlder();
+      if (opts.eager === true && older.hasMore) void loadOlder({ eager: true });
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
       failed = true;
@@ -628,7 +628,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * phase: a rebuild in flight owns the loading pipeline, and its epoch bump discards
    * any backfill that raced it.
    */
-  const loadOlder = async (): Promise<void> => {
+  const loadOlder = async (opts: { eager?: boolean } = {}): Promise<void> => {
     if (disposed || phase !== "live" || failed) return;
     const cursor = topCursor();
     if (older.loading || cursor === null) return;
@@ -646,7 +646,11 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         freezeWindow({ messages: res.messages, page: res.page }, res.page.before ?? null, cursor),
       );
       older.hasMore = res.page.before !== undefined;
-      shedFromBottom();
+      // An EAGER backfill (a fresh open, a jump back to the tail) lands with the reader at
+      // the bottom, on the tail they just asked for: shedding from the bottom would take
+      // it away again the moment a live tail alone outgrows the budget. Only a scroll-up
+      // backfill — the reader at the top — sheds.
+      if (opts.eager !== true) shedFromBottom();
       edgesVersion += 1;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
@@ -733,7 +737,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     older.error = null;
     edgesVersion += 1;
     deps.onModelChange();
-    if (older.hasMore) void loadOlder();
+    if (older.hasMore) void loadOlder({ eager: true });
   };
 
   return {
