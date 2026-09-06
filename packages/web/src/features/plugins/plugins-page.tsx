@@ -475,6 +475,7 @@ export function PluginsPage() {
             setInstalledTick((n) => n + 1);
           }}
           isAdmin={user?.isAdmin === true}
+          projectId={projectId}
         />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
@@ -612,7 +613,11 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
-      <RegistrySection isAdmin={user?.isAdmin === true} installedTick={installedTick} />
+      <RegistrySection
+        isAdmin={user?.isAdmin === true}
+        installedTick={installedTick}
+        projectId={projectId}
+      />
     </div>
   );
 }
@@ -937,20 +942,29 @@ function InstallRow({
  * that identifies a plugin is its package specifier — long, scoped and monospace, which
  * side-by-side columns would truncate exactly where an operator reads.
  *
- * Read-only discovery: installing an indexed plugin is an install-side operation
- * (plugins.json under the data root), not a Web App one.
+ * Asking for a plugin is a PROJECT's decision (its `plugins` list), so these rows act on the
+ * Project in view; what the process runs is the union over its Projects.
  */
-function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; installedTick: number }) {
+function RegistrySection({
+  isAdmin,
+  installedTick,
+  projectId,
+}: {
+  isAdmin: boolean;
+  installedTick: number;
+  projectId: string | null;
+}) {
   const [plugins, setPlugins] = useState<PluginIndexEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** What this deployment installs, so a catalogue row can say what it is for this server. */
+  /** What this Project asks for, so a catalogue row can say what it is here. */
   const [installed, setInstalled] = useState<InstalledPluginsResponse | null>(null);
   /** The row whose install or removal is running: npm is one at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
 
   const reloadInstalled = useCallback(() => {
-    api.getInstalledPlugins().then(setInstalled, () => setInstalled(null));
-  }, []);
+    if (projectId === null) return;
+    api.getInstalledPlugins(projectId).then(setInstalled, () => setInstalled(null));
+  }, [projectId]);
   useEffect(reloadInstalled, [reloadInstalled, installedTick]);
 
   /**
@@ -959,11 +973,13 @@ function RegistrySection({ isAdmin, installedTick }: { isAdmin: boolean; install
    * have to report as broken. The running process is untouched until it restarts.
    */
   const runInstall = async (specifier: string, install: boolean) => {
-    if (pendingSpecifier !== null) return;
+    if (pendingSpecifier !== null || projectId === null) return;
     setPendingSpecifier(specifier);
     try {
       setInstalled(
-        install ? await api.installPlugin(specifier) : await api.uninstallPlugin(specifier),
+        install
+          ? await api.installPlugin(projectId, specifier)
+          : await api.uninstallPlugin(projectId, specifier),
       );
       toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
     } catch (e) {
