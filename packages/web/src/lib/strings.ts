@@ -356,6 +356,11 @@ export const zh = {
     noResults: "没有匹配的命令",
     hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
     harnessHistory: "Harness 历史",
+    /** The desktop shell's native actions, offered here because its menu bar stays hidden. */
+    installCli: "安装 penguin 命令…",
+    checkUpdates: "检查桌面版更新…",
+    checkingUpdates: "正在检查更新…",
+    projectOnGitHub: "在 GitHub 上查看项目",
   },
   workflows: {
     tabsLabel: "聊天与工作流",
