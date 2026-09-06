@@ -259,7 +259,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, surface?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤。`surface` 创建该 kind 的**表面 Session**（插件贡献的一种，见 `GET /api/contributions`；否则 400 `unknown_surface`）：不带模型引用，由该表面而非对话渲染，用下方接口打开 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
 创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。
@@ -291,6 +291,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE 事件流（见下节） |
+| GET / POST / DELETE | /surface | **表面 Session**（以 `surface` 创建的 Session）的表面。`GET` 返回 `{kind, status, opened, alive, view?}`；`POST {prompt?, cols?, rows?}` 打开它（幂等——已打开则原样返回，`prompt` 仅在首次打开时送达）并返回同一结构；`DELETE` 关闭它。没有表面、或表面所属插件未加载的 Session 返回 404 `not_a_surface_session`。表面 Session 不接受 Task（409 `surface_session`） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环（Agent 未安装 `goal` 插件则 409 `goal_plugin_not_installed`）：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
