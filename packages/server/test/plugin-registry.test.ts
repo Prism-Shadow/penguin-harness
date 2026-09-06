@@ -66,7 +66,7 @@ describe("parsePluginIndex", () => {
 });
 
 describe("builtinPluginRegistry", () => {
-  it("serves the four sandbox backends, valid under the shared format", async () => {
+  it("serves the shipped plugins, valid under the shared format", async () => {
     const registry = builtinPluginRegistry();
     expect(registry.source).toBe(BUILTIN_REGISTRY_SOURCE);
     const entries = await registry.index();
@@ -75,9 +75,11 @@ describe("builtinPluginRegistry", () => {
       "@prismshadow/penguin-plugin-sandbox-seatbelt",
       "@prismshadow/penguin-plugin-sandbox-mxc",
       "@prismshadow/penguin-plugin-sandbox-dsh",
+      "@prismshadow/penguin-plugin-claude-code",
     ]);
     for (const entry of entries) {
-      expect(entry.categories).toEqual(["sandbox"]);
+      expect(entry.categories).toHaveLength(1);
+      expect(["sandbox", "surface"]).toContain(entry.categories![0]);
       expect(entry.license).toBe("Apache-2.0");
     }
   });
@@ -131,7 +133,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(4);
+    expect(body.plugins).toHaveLength(5);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });

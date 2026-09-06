@@ -51,6 +51,7 @@ import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
+import type { SessionSurfaces } from "../../runtime/session-surfaces.js";
 import { sseEndpoint } from "../sse.js";
 import {
   badRequest,
@@ -87,6 +88,7 @@ export interface SessionsRouteDeps {
   sessionService: SessionService;
   sessionSources: SessionOrigins;
   sessionsRepo: SessionIndex;
+  surfaces: SessionSurfaces;
   traceService: Traces;
   workspaceFiles: WorkspaceFiles;
 }
@@ -588,6 +590,16 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Creating-client hint stored on the row ("cli" from the CLI; default "web").
     // Informational provenance only — lists serve every row regardless.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
+    // A surface Session: the kind must be one this process's plugins contribute — a row
+    // written with a kind nobody serves would list as a conversation that opens to nothing.
+    const surface = optionalString(body, "surface", { minLen: 1, label: "surface" });
+    if (surface !== undefined && !deps.surfaces.has(surface)) {
+      throw new HttpError(
+        400,
+        "unknown_surface",
+        `No loaded plugin contributes a '${surface}' surface (see GET /api/contributions).`,
+      );
+    }
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -601,6 +613,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
       ...(client !== undefined ? { client } : {}),
+      ...(surface !== undefined ? { surface } : {}),
     });
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });
@@ -823,6 +836,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
           new Promise<void>((resolve) => setTimeout(resolve, 5000).unref?.()),
         ]);
       }
+      // A surface Session takes its surface with it (the pty behind a terminal surface).
+      deps.surfaces.close(row.sessionId);
       await deps.traceService.deleteSessionTraces(row.projectId, row.agentId, row.sessionId);
       // The session-level scratchpad (model temp files + input images saved to disk for image-unsupported models) is deleted along with the session.
       await fs.rm(
@@ -1638,6 +1653,7 @@ export class SessionApiRoutes {
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly modelOAuth!: ModelOAuth;
   @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly surfaces!: SessionSurfaces;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
   @Use() private readonly previewTokens!: PreviewTokens;
@@ -1671,6 +1687,7 @@ export class SessionApiRoutes {
       channels,
       config: this.config,
       manager,
+      surfaces: this.surfaces,
       messaging: this.messaging as MessagingBridge,
       previewTokens: this.previewTokens as PreviewTokenSigner,
       projectConfigService,
