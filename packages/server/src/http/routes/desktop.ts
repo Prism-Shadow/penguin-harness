@@ -1,7 +1,6 @@
 /**
  * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
- * /api/desktop/update, the shell's native actions under /api/desktop/shell, plus the
- * shared desktop-mode guard that turns off multi-user
+ * /api/desktop/update, plus the shared desktop-mode guard that turns off multi-user
  * surfaces (see rejectInDesktopMode).
  *
  * The shutdown route is authenticated by the shell's Bearer token, not the cookie
@@ -13,7 +12,7 @@
  */
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
-import type { DesktopShellInfoResponse, DesktopUpdateStatusResponse } from "../../api/types.js";
+import type { DesktopUpdateStatusResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 
@@ -119,36 +118,5 @@ export function desktopUpdateRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
     return c.body(null, 202);
   });
 
-  return app;
-}
-
-/**
- * Native actions offered from the command palette (mounted INSIDE authMiddleware at
- * /api/desktop/shell, desktop mode only, the shell's own window only — like the update
- * relay). `GET /` says what the shell offers; `POST /install-cli` asks it to install the
- * bundled `penguin` command, which it does through its own native dialog. These moved
- * out of the application menu because the menu bar is hidden: a lone Alt used to pull it
- * up and take the keyboard from the page.
- */
-export function desktopShellRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-  app.get("/", (c) => {
-    const desktop = requireShellSession(deps, c);
-    return c.json({ info: desktop.getShellInfo() } satisfies DesktopShellInfoResponse);
-  });
-  app.post("/install-cli", (c) => {
-    const desktop = requireShellSession(deps, c);
-    if (!desktop.getShellInfo()?.cliInstall) {
-      throw new HttpError(
-        409,
-        "cli_install_unavailable",
-        "This install form has no command to install.",
-      );
-    }
-    if (!desktop.requestShellCommand("install-cli")) {
-      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
-    }
-    return c.body(null, 202);
-  });
   return app;
 }
