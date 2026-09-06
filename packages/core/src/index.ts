@@ -66,7 +66,11 @@ export type { SessionTitleResult } from "./internal/session-title.js";
 // Session assembly likewise stays internal; only the attachment-line placement rule is
 // re-exported, because the server appends `[attached file: …]` lines for the composer's
 // uploads and both producers must place them identically (see the markers module).
-export { appendAttachmentLines } from "./internal/session-support.js";
+export {
+  appendAttachmentLines,
+  createTempWorkspace,
+  formatSessionId,
+} from "./internal/session-support.js";
 // Model-visible path spelling (forward slashes on Windows); the server uses it for its
 // [attached file: ...] lines so every path the model reads has one spelling per platform.
 export { modelVisiblePath } from "./internal/model-visible-path.js";

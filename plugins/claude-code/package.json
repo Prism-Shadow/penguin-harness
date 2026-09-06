@@ -1,0 +1,74 @@
+{
+  "name": "@prismshadow/penguin-plugin-claude-code",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Claude Code as a session surface for PenguinHarness: a New chat entry that opens the Claude Code TUI in the Session's Workspace.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/claude-code"
+  },
+  "homepage": "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins/claude-code",
+  "keywords": [
+    "penguin-harness-plugin",
+    "claude-code",
+    "session-surface",
+    "terminal"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-plugin-test": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "modules": [
+      {
+        "name": "ClaudeCode",
+        "requires": {
+          "terminals": {
+            "iface": "@prismshadow/penguin-server#Terminals",
+            "from": "TerminalModule"
+          }
+        },
+        "provides": {},
+        "contributes": {
+          "SessionSurfacesModule.surfaces": [
+            {
+              "id": "claude-code.surface",
+              "kind": "claude-code",
+              "label": "Claude Code",
+              "labelZh": "Claude Code",
+              "renderer": {
+                "builtin": "TerminalSurface"
+              }
+            }
+          ]
+        },
+        "context": {
+          "version": 1
+        },
+        "children": []
+      }
+    ]
+  }
+}

@@ -73,6 +73,11 @@ export interface CreateTerminalSessionOptions {
   seq?: number;
   name?: string;
   shell?: string;
+  /**
+   * A program to run INSTEAD of a shell: argv as given, nothing appended (`shell` and its
+   * login flag are ignored). What a session surface uses to put one program in a pty.
+   */
+  command?: readonly string[];
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
@@ -167,10 +172,16 @@ export class TerminalSession {
     });
 
     const shell = options.shell ?? defaultTerminalShell();
+    const command = options.command;
+    if (command !== undefined && command.length === 0) {
+      throw new Error("command must name a program");
+    }
+    const [file, args] =
+      command === undefined ? [shell, shellArgs(shell)] : [command[0]!, [...command.slice(1)]];
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
     ensureSpawnHelperExecutable();
-    this.ptyProcess = loadNodePty(options.assets).spawn(shell, shellArgs(shell), {
+    this.ptyProcess = loadNodePty(options.assets).spawn(file, args, {
       name: "xterm-256color",
       cols,
       rows,
