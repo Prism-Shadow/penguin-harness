@@ -31,10 +31,8 @@ import {
   orgPagePath,
   parseOrgKey,
 } from "../../features/company/company-nav";
-import { NEW_CHAT_ICON, SURFACE_ICON, Sidebar } from "./sidebar";
+import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
-import { surfaceLabel, useContributions } from "../../state/contributions";
-import { useLocale } from "../../state/locale";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
@@ -111,17 +109,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first, then opens a draft that names nothing but the surface, so it starts on the Project's new-chat defaults (new-chat.ts). */
-  const newChat = (surface?: string) => {
+  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults (new-chat.ts). */
+  const newChat = () => {
     if (user && currentProject) prepareNewChatDraft(user.userId, currentProject.projectId);
-    navigate(
-      `/chat/${DRAFT_SESSION_ID}`,
-      surface !== undefined ? { state: { surface } } : undefined,
-    );
+    navigate(`/chat/${DRAFT_SESSION_ID}`);
   };
-  /** The surfaces plugins contribute: one rail entry each, after "New chat" (state/contributions.tsx). */
-  const { surfaces } = useContributions();
-  const { locale } = useLocale();
 
   /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
@@ -262,18 +254,6 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </button>
           </Tooltip>
         )}
-        {surfaces.map((surface) => (
-          <Tooltip key={surface.kind} label={surfaceLabel(surface, locale)}>
-            <button
-              type="button"
-              aria-label={surfaceLabel(surface, locale)}
-              onClick={() => newChat(surface.kind)}
-              className={railItemClass(false)}
-            >
-              <GlyphIcon d={SURFACE_ICON} size={18} />
-            </button>
-          </Tooltip>
-        ))}
         {/* 3-8. Page entries */}
         {pages.map((item) => {
           /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
