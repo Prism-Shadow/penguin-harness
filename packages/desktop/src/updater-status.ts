@@ -28,6 +28,9 @@
  *   download runs. A different version, an up-to-date answer, or an error replace it.
  */
 import type {
+  DesktopShellCommandMessage,
+  DesktopShellInfo,
+  DesktopShellInfoMessage,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
@@ -108,4 +111,17 @@ export function parseUpdaterCommand(data: unknown): DesktopUpdaterCommandMessage
   return msg.action === "check" || msg.action === "download" || msg.action === "install"
     ? msg.action
     : null;
+}
+
+/** The shell's once-per-wiring push of what it can do for the page's command palette. */
+export function shellInfoMessage(info: DesktopShellInfo): DesktopShellInfoMessage {
+  return { type: "desktop-shell-info", info };
+}
+
+/** Validates one server-relayed native-action frame off the port. */
+export function parseShellCommand(data: unknown): DesktopShellCommandMessage["action"] | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<DesktopShellCommandMessage>;
+  if (msg.type !== "desktop-shell-command") return null;
+  return msg.action === "install-cli" ? msg.action : null;
 }

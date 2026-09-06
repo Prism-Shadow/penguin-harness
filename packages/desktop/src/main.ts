@@ -62,7 +62,12 @@ import {
   updateTrayPrefs,
 } from "./tray-prefs.js";
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  parseShellCommand,
+  parseUpdaterCommand,
+  shellInfoMessage,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   desktopLoginUrl,
   hidesOnClose,
@@ -112,6 +117,25 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — its accelerators keep working, and macOS keeps its
+ * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
+ * own native actions are offered from the page's command palette (see desktopShellRoutes).
+ */
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F10") return;
+    if (input.alt || input.control || input.meta || input.shift) return;
+    target.setMenuBarVisibility(!target.isMenuBarVisible());
+    event.preventDefault();
+  });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -120,7 +144,6 @@ function createWindow(url: string): void {
     width: 1280,
     height: 860,
     show: false,
-    autoHideMenuBar: true,
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
       // The window is a plain browser: no Node, no preload — the minimal attack surface.
@@ -129,6 +152,7 @@ function createWindow(url: string): void {
       sandbox: true,
     },
   });
+  hideMenuBar(win);
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
@@ -158,7 +182,6 @@ function createWindow(url: string): void {
         overrideBrowserWindowOptions: {
           width: 1100,
           height: 800,
-          autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: the preview is Agent-written, untrusted
           // HTML and must never get Node.
@@ -173,6 +196,7 @@ function createWindow(url: string): void {
   // within this instance's loopback surface, everything else to the system browser" —
   // the main window's stricter app-origin-only rule would bounce the preview itself out.
   win.webContents.on("did-create-window", (child) => {
+    hideMenuBar(child);
     child.webContents.setWindowOpenHandler(({ url: target }) => {
       if (isLocalSurfaceUrl(target, appOrigin)) return { action: "allow" };
       void shell.openExternal(target);
@@ -314,6 +338,11 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
+    // The page's command palette asking for a native action — the same dialog the menu ran.
+    if (parseShellCommand(message) === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -327,6 +356,7 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(shellInfoMessage({ cliInstall: currentCliInstallKind() !== null }));
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */
