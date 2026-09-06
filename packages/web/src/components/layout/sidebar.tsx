@@ -44,7 +44,6 @@ import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/sessio
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import { surfaceLabel, useContributions } from "../../state/contributions";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -170,8 +169,6 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-/** A surface entry under "New chat" (a program in a terminal): a framed prompt. */
-export const SURFACE_ICON = "M4 5h16v14H4zM7 9l3 3-3 3M12 15h5";
 
 /** The workspace group's overflow-menu trigger: three FILLED dots (the stroke version read too faint at this size). */
 function EllipsisGlyph({ size = 16 }: { size?: number }) {
@@ -1007,7 +1004,7 @@ export function Sidebar({
    * The workspace-mode group header's "+" additionally carries that group's Workspace path
    * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
-  const newChat = (agentId?: string, workspace?: string, machineId?: string, surface?: string) => {
+  const newChat = (agentId?: string, workspace?: string, machineId?: string) => {
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
     // so this click always lands on an empty composer and never silently shelves content.
@@ -1019,14 +1016,10 @@ export function Sidebar({
       // different directory on every machine, so handing the composer one without the other
       // is handing it a directory it cannot find.
       ...(workspace !== undefined ? { workspace, machineId } : {}),
-      // A surface Session (a plugin renders it): the draft page opens it instead of composing.
-      ...(surface !== undefined ? { surface } : {}),
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
   };
-  /** The surfaces plugins contribute: each is one more "New chat" entry (state/contributions.tsx). */
-  const { surfaces } = useContributions();
 
   /** Confirmed parked-draft deletion: drops the entry; a deleted draft that is open falls back to the plain new-chat page. */
   const confirmDeleteDraft = () => {
@@ -1580,22 +1573,6 @@ export function Sidebar({
           </span>
           {S.chat.newSessionMenu}
         </button>
-        {/* One entry per contributed surface, under "New chat" and styled like it: the same
-            draft page, opening that surface instead of composing a conversation. */}
-        {surfaces.map((surface) => (
-          <button
-            key={surface.kind}
-            type="button"
-            data-testid={`new-surface-${surface.kind}`}
-            onClick={() => newChat(defaultAgentId, undefined, undefined, surface.kind)}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-          >
-            <span className="text-gray-500 dark:text-gray-400">
-              <Icon d={SURFACE_ICON} />
-            </span>
-            {surfaceLabel(surface, locale)}
-          </button>
-        ))}
       </div>
 
       {/* Scroll area: the page nav and the session list scroll together, so the nav rides up
