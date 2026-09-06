@@ -117,6 +117,17 @@ function fatal(context: string, err: unknown): void {
   app.exit(1);
 }
 
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F10") return;
+    if (input.alt || input.control || input.meta || input.shift) return;
+    target.setMenuBarVisibility(!target.isMenuBarVisible());
+    event.preventDefault();
+  });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -174,6 +185,7 @@ function createWindow(url: string): void {
     }
     return openWindowFor(target, iconPath);
   });
+  hideMenuBar(win);
   win.webContents.on("did-create-window", (child, details) =>
     guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
   );
@@ -227,11 +239,13 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
  * opens one, so every window further down passes false.
  */
+
 function guardOpenedWindow(
   child: BrowserWindow,
   iconPath: string | null,
   authorizationBridge: boolean,
 ): void {
+  hideMenuBar(child);
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
   child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
   child.webContents.on("will-navigate", (event, target) => {
