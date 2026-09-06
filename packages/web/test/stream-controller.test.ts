@@ -739,6 +739,41 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     });
   });
 
+  it("a live tail past the budget on its own: jumpToLatest still lands on it, and so does a fresh open", async () => {
+    // The live model holds everything streamed since the open — a long working session
+    // outgrows the budget by itself. Shedding must then never take the tail away from a
+    // reader who just asked for it.
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(
+      bigTurn("tail", 70),
+      undefined,
+      null,
+      pageInfo({ before: "5:0", earlierTurns: 4 }),
+    );
+    await p;
+    // The open's eager backfill lands with the tail already over budget: the tail stays.
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.windowCount).toBe(1);
+
+    // Scrolling up sheds the tail (the reader left it); jumping back must re-attach it and
+    // keep it attached through the backfill that follows.
+    const b = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+    h.controller.jumpToLatest();
+    expect(h.controller.tailAttached).toBe(true);
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.newer.hasMore).toBe(false);
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+  });
+
   it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {
     const h = await withRun();
     const b = h.controller.loadOlder();
