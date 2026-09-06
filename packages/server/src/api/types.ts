@@ -3437,6 +3437,33 @@ export interface DesktopUpdaterCommandMessage {
 }
 
 /**
+ * What the shell can do on the page's behalf: the native actions that used to live only in
+ * the application menu, offered from the command palette instead (the menu bar is hidden so
+ * a lone Alt no longer takes the keyboard). Pushed once when the shell wires the port.
+ */
+export interface DesktopShellInfo {
+  /** Whether this install form offers installing the bundled `penguin` command (false in a dev run). */
+  cliInstall: boolean;
+}
+
+/** Shell → server push over the utilityProcess message channel, once per wiring. */
+export interface DesktopShellInfoMessage {
+  type: "desktop-shell-info";
+  info: DesktopShellInfo;
+}
+
+/** `GET /api/desktop/shell` (desktop mode, the shell's own window only): null before the shell's push. */
+export interface DesktopShellInfoResponse {
+  info: DesktopShellInfo | null;
+}
+
+/** Server → shell: a native action the page asked for. `POST /api/desktop/shell/install-cli` sends `install-cli`. */
+export interface DesktopShellCommandMessage {
+  type: "desktop-shell-command";
+  action: "install-cli";
+}
+
+/**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).

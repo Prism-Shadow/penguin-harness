@@ -20,11 +20,16 @@
  * capability flows through this HTTP surface, never a renderer IPC bridge.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { DesktopUpdateStatus, DesktopUpdaterCommandMessage } from "../api/types.js";
+import type {
+  DesktopShellCommandMessage,
+  DesktopShellInfo,
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+} from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
-import { Interface } from "@prismshadow/penguin-core/kernel";
+export type ShellCommand = DesktopShellCommandMessage["action"];
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -89,22 +94,26 @@ export class DesktopService {
     this.updateCommandSender(action);
     return true;
   }
-}
 
-export type DesktopApi = Pick<
-  DesktopService,
-  | "verifyToken"
-  | "redeemLoginToken"
-  | "onShutdownRequest"
-  | "requestShutdown"
-  | "getUpdateStatus"
-  | "setUpdateStatus"
-  | "onUpdateCommand"
-  | "requestUpdateCommand"
->;
+  // --- native actions offered from the page ------------------------------------
+  private shellInfo: DesktopShellInfo | null = null;
+  private shellCommandSender: ((action: ShellCommand) => void) | null = null;
 
-/** The desktop shell's service, or null when this server is not the shell's child. */
-@Interface()
-export abstract class Desktop {
-  abstract current(): DesktopApi | null;
+  getShellInfo(): DesktopShellInfo | null {
+    return this.shellInfo;
+  }
+
+  setShellInfo(info: DesktopShellInfo): void {
+    this.shellInfo = info;
+  }
+
+  onShellCommand(sender: (action: ShellCommand) => void): void {
+    this.shellCommandSender = sender;
+  }
+
+  requestShellCommand(action: ShellCommand): boolean {
+    if (!this.shellCommandSender) return false;
+    this.shellCommandSender(action);
+    return true;
+  }
 }
