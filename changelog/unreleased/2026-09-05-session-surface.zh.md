@@ -19,11 +19,11 @@
 
 Web App 现在每个登录用户取一次 `GET /api/contributions`。其 `pages` 并入路由——推送上来的平台或插件贡献的页面，只要本构建有它的渲染器就能挂载——其 `sessionSurfaces` 在侧栏与折叠栏各成为一个「新建对话」入口。表面 Session 的会话路由渲染该表面的渲染器（`TerminalSurface` 挂上停靠栏同款终端视图；`iframe` 渲染器加载插件自己的页面），而不是消息流与输入框。
 
-终端现在能跑一个程序而不是一个 shell：`Terminals.create` 接受 `command`（argv，不加登录 shell）与 `env`，供表面使用，不经 HTTP 暴露。
+终端现在能跑一个程序而不是一个 shell：`Terminals.create` 接受 `command`（argv，不加登录 shell）、`env` 与 `unsetEnv`，供表面使用，不经 HTTP 暴露。pty 也不再继承服务端的 `TMUX` / `TMUX_PANE`——它并不是启动服务端的那个复用器的一个 pane，而误以为自己在 tmux 里的程序会朝着并不存在的东西发送穿透序列。
 
 ## claude-code 插件
 
-`@prismshadow/penguin-plugin-claude-code`（`plugins/claude-code`）贡献 `claude-code` 表面：一个「新建对话」入口，在 Session 的 Workspace 里运行 `claude`（或 `PENGUIN_CLAUDE_BIN`），首提示作为它的首个参数与 Session 标题。状态是启发式——窗口内有输出即运行、静默即空闲、退出即空闲——因为 pty 报告不了「在思考」。它随每个构建分发、列入内置插件索引，但**默认不安装**：运营者像装任何插件一样装它。
+`@prismshadow/penguin-plugin-claude-code`（`plugins/claude-code`）贡献 `claude-code` 表面：一个「新建对话」入口，在 Session 的 Workspace 里运行 `claude`（或 `PENGUIN_CLAUDE_BIN`），首提示作为它的首个参数与 Session 标题。状态是启发式——窗口内有输出即运行、静默即空闲、退出即空闲——因为 pty 报告不了「在思考」。它会把上级的 Claude Code 会话标记（`CLAUDECODE`、`CLAUDE_CODE_SESSION_ID`、消息 socket 与 token 等）从 pty 环境里剔除：否则一个从 Claude Code 会话里启动的 harness 会把它们交给子进程，子进程据此认为自己是嵌套的，于是关掉 transcript 保存。部署有意设置的配置（如 `CLAUDE_CODE_USE_BEDROCK`）原样继承。它随每个构建分发、列入内置插件索引，但**默认不安装**：运营者像装任何插件一样装它。
 
 ## 插件集成测试框架
 
