@@ -47,6 +47,7 @@ import {
 } from "../../plugin/install.js";
 import { pluginHostFrom } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Machines } from "../../machines/service.js";
 import { loadPlugins } from "../../plugin/loader.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -64,6 +65,12 @@ export interface InstalledPluginsDeps {
    * the running tree is the new one; false when the runtime cannot re-assemble at all.
    */
   apply: () => Promise<boolean>;
+  /**
+   * Hands this Project's list to the machines it uses, strict parity. Not awaited: the
+   * person editing is not the one who should wait for a set of ssh tunnels — the same rule
+   * the model config changes under.
+   */
+  syncFleet: (projectId: string) => void;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -173,6 +180,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const listed = await deps.projectConfig.getPlugins(projectId);
     if (!listed.includes(name)) await deps.projectConfig.setPlugins(projectId, [...listed, name]);
     await deps.apply();
+    deps.syncFleet(projectId);
     return c.json(await view(projectId));
   });
 
@@ -186,6 +194,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       listed.filter((s) => s !== specifier),
     );
     await deps.apply();
+    deps.syncFleet(projectId);
     // The package goes too — but only once NO Project asks for it. The prefix is the
     // harness's to keep tidy; removing it while another Project still lists it would break
     // that Project at the next load.
@@ -256,6 +265,7 @@ export class InstalledPluginRoutes {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
+  @Use() private readonly machines!: Machines;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
@@ -274,6 +284,8 @@ export class InstalledPluginRoutes {
       projectConfig: this.projectConfig,
       access: this.access,
       apply: () => applyPluginClosure(root, hmr),
+      // The plugin list rides the same trip the model config takes to a Project's machines.
+      syncFleet: (projectId) => void this.machines.syncModelsEverywhere(projectId),
     });
   }
 }
