@@ -76,10 +76,11 @@ describe("builtinPluginRegistry", () => {
       "@prismshadow/penguin-plugin-sandbox-mxc",
       "@prismshadow/penguin-plugin-sandbox-dsh",
       "@prismshadow/penguin-plugin-claude-code",
+      "@prismshadow/penguin-plugin-discord-bot",
     ]);
     for (const entry of entries) {
       expect(entry.categories).toHaveLength(1);
-      expect(["sandbox", "surface"]).toContain(entry.categories![0]);
+      expect(["sandbox", "surface", "chat-bot"]).toContain(entry.categories![0]);
       expect(entry.license).toBe("Apache-2.0");
     }
   });
@@ -133,7 +134,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(5);
+    expect(body.plugins).toHaveLength(6);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });

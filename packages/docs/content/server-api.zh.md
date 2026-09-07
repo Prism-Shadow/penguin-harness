@@ -399,6 +399,18 @@ Session 可以接入消息软件机器人——目前的渠道是飞书、Telegr
 
 **扫码连接不会把机密交给浏览器。** 让这套流程安全的东西都留在服务端——解密 QQ App Secret 的 AES 密钥，以及换取微信 Bot Token 的轮询句柄——在服务端生成、持有、使用并丢弃；客户端只拿到任务句柄、待绘制的 URL 与状态。任务只存在于内存，归属发起它的 Session，按 Session 单独限量（一个调用方的扫码任务挤不掉另一个调用方的），并被「解决它的那一次轮询」认领掉，因此重放得到的是 404 而不是第二次绑定。对同一任务的并发轮询在 QQ 上同样是 404；在微信上返回 `pending`，因为上游是一次跨越客户端多个轮询间隔的长轮询。所有扫码路由都仅限 Project 所有者——无论调用方实际输入了多少内容，这个流程的终点都是一份存下来的凭据。
 
+### 聊天机器人（仅管理员）
+
+**聊天机器人**是从聊天里启动智能体的机器人账号——区别于消息绑定，后者把机器人绑到某个已在网页端打开的 Session 上。机器人由插件贡献（id、渠道与名字——第一个是 Discord 插件的 `discord`）；管理员给它一条凭据和目标 Project、Agent；此后每一个给它发消息的聊天（私聊、@ 它的频道、子区）都在该 Agent 下得到一个自己的 Session，在第一条消息时创建、之后复用。回复送回同一个聊天，渲染 Markdown 并按渠道上限分段。聊天里 `/new` 开一个新 Session，`/approve` 与 `/deny` 决定智能体正在等待的工具调用（有调用等待时机器人会说明），`/status` 报出该聊天的 Session。全部存在服务端设置里（`chatbot:<id>` 与旁边的聊天 → Session 表），重启不丢；插件可以预填配置（Discord 插件读取 `PENGUIN_DISCORD_BOT_TOKEN`、`PENGUIN_DISCORD_PROJECT`、`PENGUIN_DISCORD_AGENT`），已存的值优先于预填。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/chat-bots | 全部由插件贡献的机器人：`{bots: [{id, channel, label, labelZh?, projectId, agentId, config, configured, enabled, status, chats}]}`——`config` 是每个字符串都已掩码的凭据文档，`status` 是实时连接状态（`state`、`lastError?`、`lastInboundAt?`、`lastDeliveryError?`），`chats` 是当前持有 Session 的聊天数 |
+| GET | /api/chat-bots/:id | 同一形态的单个机器人（404 `chat_bot_not_found`） |
+| PUT | /api/chat-bots/:id | 保存 `{config?, projectId?, agentId?}`——`config` 按渠道连接器自己的形状（Discord 为 `{botToken}`），连接器读不懂时返回 400 `chat_bot_config_invalid`；回传掩码值保持已存值，空字符串删除该字段；`projectId` 与 `agentId` 须成对给出，目标不存在返回 404 `agent_not_found`。已启用的机器人用新值重启 |
+| POST | /api/chat-bots/:id/state | 连接开关 `{enabled}`（凭据与目标都保存之前返回 400 `chat_bot_config_required` / `chat_bot_target_required`） |
+| POST | /api/chat-bots/:id/test | 凭据探测：草稿 `{config}`，省略则探测已存值 → `{ok, latencyMs?, accountLabel?, error?}` |
+
 ### 独立源预览
 
 Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：

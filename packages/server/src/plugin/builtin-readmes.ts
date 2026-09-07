@@ -17,6 +17,7 @@
  */
 import bwrap from "../../../../plugins/sandbox-bwrap/README.md";
 import claudeCode from "../../../../plugins/claude-code/README.md";
+import discordBot from "../../../../plugins/discord-bot/README.md";
 import dsh from "../../../../plugins/sandbox-dsh/README.md";
 import mxc from "../../../../plugins/sandbox-mxc/README.md";
 import seatbelt from "../../../../plugins/sandbox-seatbelt/README.md";
@@ -27,4 +28,5 @@ export const BUILTIN_READMES: Readonly<Record<string, string>> = {
   "@prismshadow/penguin-plugin-sandbox-mxc": mxc,
   "@prismshadow/penguin-plugin-sandbox-dsh": dsh,
   "@prismshadow/penguin-plugin-claude-code": claudeCode,
+  "@prismshadow/penguin-plugin-discord-bot": discordBot,
 };
