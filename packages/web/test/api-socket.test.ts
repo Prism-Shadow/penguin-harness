@@ -177,8 +177,8 @@ describe("streams", () => {
       return { close: () => fallbackCloses.push(1) };
     });
     for (let i = 0; i < 3; i++) {
-      last().drop(); // closed before it ever opened
-      vi.advanceTimersByTime(30_000);
+      last().drop(); // closed before it ever opened: retried quickly, not on the drop backoff
+      vi.advanceTimersByTime(250);
     }
     expect(socket.isUnavailable()).toBe(true);
     expect(built).toBe(1);
