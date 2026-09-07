@@ -15,3 +15,5 @@ Two changes with one purpose: make it hard to put product behaviour where only a
 What stays with the server is its half of the layer: which capabilities a platform may claim, the upgrade endpoints, the HTTP seam, and the platform itself.
 
 Internal, and inlined into the server's bundle: a boundary in the source tree, not another package on npm.
+
+The tree's node names are **not** part of the rename, for the same reason the resource ids are not: an older runtime resolves nodes in a pushed platform by name, and a parked document is keyed by name. A push that renamed one would kill every older installation at boot.

@@ -5,15 +5,15 @@ import type { HmrCapabilities } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
-  HmrAuthState,
+  RuntimeAuthState,
   RuntimeChannels,
-  HmrLifecycle,
+  RuntimeLifecycle,
   RuntimeConfig,
   RuntimeDb,
-  HmrDesktop,
+  RuntimeDesktop,
   RuntimeHmr,
   RuntimeProxy,
-  HmrResourceGroups,
+  RuntimeResourceGroups,
   SystemClock,
   AuthState,
   Channels,
@@ -192,10 +192,10 @@ export class Startup {
     RuntimeChannels,
     RuntimeProxy,
     RuntimeHmr,
-    HmrDesktop,
-    HmrAuthState,
-    HmrLifecycle,
-    HmrResourceGroups,
+    RuntimeDesktop,
+    RuntimeAuthState,
+    RuntimeLifecycle,
+    RuntimeResourceGroups,
     ConsoleLog,
     SystemClock,
     ConfigPaths,
@@ -215,7 +215,13 @@ export class Startup {
     Paths,
   ],
 })
-export class HmrModule {}
+export class RuntimeModule {}
+// NOT renamed with the rest of the layer (#636): a tree node's NAME is a wire contract
+// across generations. The runtime resolves nodes by name — `tree.api("RuntimeModule",
+// "Log")` in app.ts — and a parked document is keyed by it, so a pushed platform that
+// renamed one would fail an older runtime's lookup at boot ("no api 'Log' on module
+// 'RuntimeModule'") and orphan whatever that node had parked. Same rule as the `runtime:`
+// resource ids: the name is history, the classification lives in words.
 
 @Module({
   children: [
@@ -356,7 +362,7 @@ export class ApiModule {}
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
-    HmrModule,
+    RuntimeModule,
     SettingsModule,
     IdentityModule,
     ProjectsModule,
@@ -392,10 +398,10 @@ export function platformDef(
     [RuntimeChannels, new RuntimeChannels(caps)],
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
-    [HmrDesktop, new HmrDesktop(caps)],
-    [HmrAuthState, new HmrAuthState(caps)],
-    [HmrLifecycle, new HmrLifecycle(caps)],
-    [HmrResourceGroups, new HmrResourceGroups(adoptable)],
+    [RuntimeDesktop, new RuntimeDesktop(caps)],
+    [RuntimeAuthState, new RuntimeAuthState(caps)],
+    [RuntimeLifecycle, new RuntimeLifecycle(caps)],
+    [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
   ]);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);
   return moduleDefOf(PlatformModule, {
