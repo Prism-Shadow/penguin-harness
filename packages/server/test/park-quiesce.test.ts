@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
-import { HotResources } from "../src/hmr/resources.js";
+import { HotResources } from "@prismshadow/penguin-hmr";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import type { PlatformApi } from "../src/hmr/platform.js";
 import type { Instance } from "@prismshadow/penguin-core/kernel";

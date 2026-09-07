@@ -32,7 +32,7 @@ import type {
   VersionResponse,
   VersionRollbackResponse,
 } from "../../api/types.js";
-import { diffIfaces } from "../../hmr/ifaces-diff.js";
+import { diffIfaces } from "@prismshadow/penguin-hmr";
 import type { HarnessHistoryIface } from "../../services/harness-history.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
