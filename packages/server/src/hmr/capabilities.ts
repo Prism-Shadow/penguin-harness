@@ -211,7 +211,7 @@ export const PARKED_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
  * Parked rather than kept by the platform because the host announces itself ONCE per wiring:
  * a platform holding the announcement in its own memory would lose it at the next push and
  * never be told again. Claimed optionally — an older runtime publishes no holder, and
- * HmrDesktop synthesizes one from that runtime's own service.
+ * RuntimeDesktop synthesizes one from that runtime's own service.
  */
 export const PARKED_SHELL_FRAMES_RESOURCE_ID = "runtime:shell-frames";
 export interface ShellFrames {
@@ -551,7 +551,7 @@ export class RuntimeHmr {
   }
 }
 @Module()
-export class HmrDesktop {
+export class RuntimeDesktop {
   @Provide() desktop!: Desktop;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
@@ -584,7 +584,7 @@ export class HmrDesktop {
   }
 }
 @Module()
-export class HmrAuthState {
+export class RuntimeAuthState {
   @Provide() authState!: AuthState;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
@@ -592,7 +592,7 @@ export class HmrAuthState {
   }
 }
 @Module()
-export class HmrResourceGroups {
+export class RuntimeResourceGroups {
   @Provide() resourceGroups!: ResourceGroups;
   constructor(private readonly adoptable: (group: string) => boolean) {}
   setup() {
