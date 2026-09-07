@@ -1,33 +1,28 @@
 /**
- * The bot's configuration: a `[discord_bot]` table in a Project's `.project_config.toml`,
- * beside the Project's models and its plugin list — the file is already where a Project
- * keeps the credentials its agents run with, and a bot answers FOR a Project, so the Project
- * is the bot's scope. One table, one bot; a deployment with several Projects may run several.
+ * The bot's configuration: the options this package declares in `package.json#penguin
+ * .configuration` and an admin fills in on the System settings dialog's Plugins page —
+ * the harness stores them and hands them to the module through its `PluginConfig`
+ * mechanism, merged onto the schema's defaults, and fires the module's watch on every save.
  *
- *   plugins = ["@prismshadow/penguin-plugin-discord-bot"]
+ *   bot_token   the Bot page of the Discord developer portal (a secret)
+ *   project     the Project every chat's Session is created under (a Project picker)
+ *   agent       the Agent in that Project that answers (default: default_agent)
+ *   enabled     off keeps the token and stops the bot (default: true)
  *
- *   [discord_bot]
- *   bot_token = "MTIz….GaBcDe.…"   # from the Bot page of the Discord developer portal
- *   agent = "default_agent"        # the Agent in this Project that answers (default: default_agent)
- *   enabled = true                 # default true; false keeps the token and stops the bot
- *
- * Nothing else configures it — no environment variable, no settings API. The file is
- * re-read on a short interval (and on every read of the status route), so an edit takes
- * effect without a restart; what an edit cannot do is leave a half-written table — a table
- * this cannot read is reported as the bot's error, with the file left alone.
+ * Nothing else configures it — no environment variable, no file to edit by hand.
  */
 import type { AgentIndex } from "@prismshadow/penguin-server/plugin";
 
-/** The table's key in the Project config. */
-export const CONFIG_TABLE = "discord_bot";
+/** The package name, which is what the harness keys this plugin's configuration by. */
+export const PACKAGE_NAME = "@prismshadow/penguin-plugin-discord-bot";
 
-/** The Agent a table that names none answers with: every Project has one. */
+/** The Agent a configuration that names none answers with: every Project has one. */
 export const DEFAULT_AGENT = "default_agent";
 
-/** One Project's bot, as its table configures it — or the reason the table is unusable. */
+/** The bot as the configuration describes it — or the reason the configuration is unusable. */
 export type BotConfig =
   | { ok: true; projectId: string; botToken: string; agentId: string; enabled: boolean }
-  | { ok: false; projectId: string; error: string };
+  | { ok: false; error: string };
 
 /**
  * The bot's user id a token encodes, or null when the token is malformed: three
@@ -44,40 +39,33 @@ export function botIdOf(botToken: string): string | null {
 }
 
 /**
- * Reads one Project's table out of its raw config. `null` when the Project has no table —
- * the ordinary case for a Project that does not run a bot — and a refusal, never a throw,
- * for a table that is there but wrong: the operator reads it off the status route.
+ * Reads the bot out of the stored values. `null` while nothing has been filled in — the
+ * ordinary state of a freshly installed plugin — and a refusal, never a throw, for values
+ * that are there but wrong: the operator reads it off the status route.
  */
 export function botConfigOf(
-  projectId: string,
-  raw: Record<string, unknown>,
+  values: Record<string, unknown>,
   agents: Pick<AgentIndex, "exists">,
 ): BotConfig | null {
-  const table = raw[CONFIG_TABLE];
-  if (table === undefined || table === null) return null;
-  if (typeof table !== "object" || Array.isArray(table)) {
-    return { ok: false, projectId, error: `[${CONFIG_TABLE}] must be a table` };
-  }
-  const t = table as Record<string, unknown>;
-  const token = typeof t.bot_token === "string" ? t.bot_token.trim() : "";
-  if (token === "")
-    return { ok: false, projectId, error: `[${CONFIG_TABLE}].bot_token is required` };
+  const token = typeof values.bot_token === "string" ? values.bot_token.trim() : "";
+  const projectId = typeof values.project === "string" ? values.project.trim() : "";
+  if (token === "" && projectId === "") return null;
+  if (token === "") return { ok: false, error: "the bot token is not set" };
   if (botIdOf(token) === null) {
     return {
       ok: false,
-      projectId,
-      error: `[${CONFIG_TABLE}].bot_token is not a Discord bot token (three dot-separated segments, the first naming the bot)`,
+      error:
+        "the bot token is not a Discord bot token (three dot-separated segments, the first naming the bot)",
     };
   }
+  if (projectId === "") return { ok: false, error: "no Project is chosen" };
   const agentId =
-    typeof t.agent === "string" && t.agent.trim() !== "" ? t.agent.trim() : DEFAULT_AGENT;
+    typeof values.agent === "string" && values.agent.trim() !== ""
+      ? values.agent.trim()
+      : DEFAULT_AGENT;
   if (!agents.exists(projectId, agentId)) {
-    return {
-      ok: false,
-      projectId,
-      error: `[${CONFIG_TABLE}].agent "${agentId}" does not exist in this Project`,
-    };
+    return { ok: false, error: `Agent "${agentId}" does not exist in Project "${projectId}"` };
   }
-  const enabled = t.enabled === undefined ? true : t.enabled === true;
+  const enabled = values.enabled === undefined ? true : values.enabled === true;
   return { ok: true, projectId, botToken: token.replace(/^Bot\s+/i, ""), agentId, enabled };
 }

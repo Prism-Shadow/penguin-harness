@@ -36,6 +36,7 @@ export type { ScheduleSessionCreator } from "../runtime/scheduler.js";
 export type { ChannelEvent } from "../runtime/channel.js";
 export type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
 export type { Settings } from "../mechanisms/settings.js";
+export type { PluginConfig, PluginConfiguration, PluginConfigField } from "./config.js";
 export type { SessionIndex } from "../mechanisms/sessions.js";
 export type { AgentIndex, Projects, ProjectConfigStore } from "../mechanisms/projects.js";
 export type { Errors } from "../mechanisms/observability.js";

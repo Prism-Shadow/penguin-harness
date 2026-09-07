@@ -59,6 +59,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "sharing",
       "sandbox",
+      "plugins",
       "users",
     ]);
   });
@@ -81,6 +82,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "sharing",
       "sandbox",
+      "plugins",
     ]);
   });
 
@@ -95,6 +97,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "sharing",
       "sandbox",
+      "plugins",
     ]);
   });
 });

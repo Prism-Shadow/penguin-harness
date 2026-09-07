@@ -1,9 +1,9 @@
 /**
  * The plugin on the real server: installed through a Project's config, loaded by the real
  * loader, its requirements resolved from the tree, its status route mounted behind the
- * cookie gate — and its bot read off the Project's own `.project_config.toml`, a table
- * edited on disk showing up on the next read. Nothing here connects to Discord: the table
- * is written with the bot switched off, and then with a token the plugin refuses.
+ * cookie gate — and its options declared to the harness, listed on the admin plugin-config
+ * API with the token masked, saved there, and read back by the bot. Nothing here connects
+ * to Discord: the bot is saved switched off, and then with a token the plugin refuses.
  *
  * Needs the server and this package built (see README).
  */
@@ -16,76 +16,107 @@ import {
   startHarness,
   type Harness,
   type HarnessApi,
+  type HarnessApiError,
 } from "@prismshadow/penguin-plugin-test";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const NAME = "@prismshadow/penguin-plugin-discord-bot";
 /** A token whose first segment decodes to a numeric bot id, as the developer portal issues them. */
 const TOKEN = `${Buffer.from("123456789012345678").toString("base64")}.GaBcDe.test-secret-AAAA`;
 
-interface Status {
-  bots: Array<{
-    projectId: string;
-    agentId: string;
-    botTokenMasked: string;
-    enabled: boolean;
-    status: { state: string };
-    chats: number;
+interface ConfigResponse {
+  plugins: Array<{
+    name: string;
+    configuration: { properties: Record<string, { type: string }> };
+    values: Record<string, unknown>;
   }>;
-  broken: Array<{ projectId: string; error: string }>;
+}
+interface Status {
+  bot: { projectId: string; agentId: string; botTokenMasked: string; enabled: boolean } | null;
+  error: string | null;
+  configured: boolean;
 }
 
 describe("the discord-bot plugin on a real server", () => {
   let harness: Harness;
   let api: HarnessApi;
-  let configFile: string;
 
   beforeAll(async () => {
     await fs.access(defaultServerEntry());
     harness = await startHarness({ plugins: [PLUGIN_DIR] });
     api = await harness.login();
-    configFile = path.join(harness.root, "default_project", ".project_config.toml");
   }, 90_000);
   afterAll(async () => {
     await harness?.stop();
   });
 
-  /** Appends a `[discord_bot]` table to the Project's config, replacing an earlier one. */
-  const configure = async (table: string) => {
-    const raw = await fs.readFile(configFile, "utf8");
-    const base = raw.split("\n[discord_bot]")[0]!;
-    await fs.writeFile(configFile, `${base.trimEnd()}\n\n[discord_bot]\n${table}\n`, "utf8");
-  };
-
-  it("is loaded, and lists no bot while no Project configures one", async () => {
+  it("is loaded, declares its options to the harness, and has no bot until they are filled in", async () => {
     const [row] = await harness.installedPlugins();
     expect(row).toMatchObject({ active: true, modules: ["DiscordBot"], replaces: [] });
-    expect(await api.get<Status>("/api/discord-bot")).toEqual({ bots: [], broken: [] });
+    const { plugins } = await api.get<ConfigResponse>("/api/admin/plugin-config");
+    const mine = plugins.find((p) => p.name === NAME);
+    expect(Object.keys(mine?.configuration.properties ?? {})).toEqual([
+      "bot_token",
+      "project",
+      "agent",
+      "enabled",
+    ]);
+    // Defaults arrive as values; nothing secret is stored yet.
+    expect(mine?.values).toEqual({ agent: "default_agent", enabled: true });
+    expect(await api.get<Status>("/api/discord-bot")).toEqual({
+      bot: null,
+      error: null,
+      configured: false,
+    });
   });
 
-  it("reads the bot off the Project's config file, masked, and refuses a token it cannot read", async () => {
-    await configure(`bot_token = "${TOKEN}"\nenabled = false`);
+  it("takes its values from the admin plugin-config API, masked on the way back, and refuses a bad token", async () => {
+    const saved = await api.put<ConfigResponse>("/api/admin/plugin-config", {
+      name: NAME,
+      values: { bot_token: TOKEN, project: "default_project", enabled: false },
+    });
+    const mine = saved.plugins.find((p) => p.name === NAME)!;
+    expect(mine.values.bot_token).toBe(`${TOKEN.slice(0, 4)}…${TOKEN.slice(-4)}`);
+    expect(JSON.stringify(saved)).not.toContain(TOKEN);
     const off = await api.get<Status>("/api/discord-bot");
-    expect(off.bots).toEqual([
-      {
-        projectId: "default_project",
-        agentId: "default_agent",
-        botTokenMasked: `${TOKEN.slice(0, 4)}…${TOKEN.slice(-4)}`,
-        enabled: false,
-        status: { state: "disconnected", changedAt: expect.any(String) },
-        chats: 0,
-      },
-    ]);
-    expect(JSON.stringify(off)).not.toContain(TOKEN);
+    expect(off.bot).toMatchObject({
+      projectId: "default_project",
+      agentId: "default_agent",
+      botTokenMasked: `${TOKEN.slice(0, 4)}…${TOKEN.slice(-4)}`,
+      enabled: false,
+    });
 
-    await configure(`bot_token = "not-a-token"`);
-    const broken = await api.get<Status>("/api/discord-bot");
-    expect(broken.bots).toEqual([]);
-    expect(broken.broken).toEqual([
-      { projectId: "default_project", error: expect.stringContaining("not a Discord bot token") },
-    ]);
-
-    await configure(`bot_token = "${TOKEN}"\nagent = "ghost"\nenabled = false`);
+    // The masked value sent back keeps the stored token; the bot is unchanged.
+    await api.put<ConfigResponse>("/api/admin/plugin-config", {
+      name: NAME,
+      values: { bot_token: mine.values.bot_token, agent: "ghost" },
+    });
     const ghost = await api.get<Status>("/api/discord-bot");
-    expect(ghost.broken[0]?.error).toContain('"ghost"');
+    expect(ghost.bot).toBeNull();
+    expect(ghost.error).toContain('"ghost"');
+
+    await api.put<ConfigResponse>("/api/admin/plugin-config", {
+      name: NAME,
+      values: { bot_token: "not-a-token", agent: null },
+    });
+    const bad = await api.get<Status>("/api/discord-bot");
+    expect(bad.bot).toBeNull();
+    expect(bad.error).toContain("not a Discord bot token");
+
+    // The harness's own validation: a field the schema has not got, and a required one emptied.
+    const unknown = await api
+      .put("/api/admin/plugin-config", { name: NAME, values: { colour: "red" } })
+      .then(
+        () => null,
+        (e: HarnessApiError) => e,
+      );
+    expect(unknown?.status).toBe(400);
+    const emptied = await api
+      .put("/api/admin/plugin-config", { name: NAME, values: { project: null } })
+      .then(
+        () => null,
+        (e: HarnessApiError) => e,
+      );
+    expect(emptied?.status).toBe(400);
   });
 });
