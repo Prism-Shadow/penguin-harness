@@ -212,38 +212,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 }
 
 /**
- * Re-reads the closure into a fresh plugin host and asks the runtime to re-assemble the App.
+ * Asks the runtime for the one thing only it can do: assemble the App again, from the same
+ * bundle. Everything else the apply used to do here is gone — the new create() reads the
+ * closure and imports what it names (plugin/loader.ts's loadPluginHost), so this function
+ * carries no plugin knowledge at all.
  *
- * Two halves, and both are needed: the host is what the next tree claims (plugin/host.ts), so
- * it is registered before the re-assembly, which is what makes a tree out of it.
- *
- * A RE-ASSEMBLY THAT DOES NOT HAPPEN PUTS THE HOST BACK. The host is also where every
- * surface reads "which plugin modules does this process have" from, so leaving a rebuilt one
- * in place after a failed (or unsupported) reload would report plugins as active that no
- * running tree contains — the list would claim it applied and `restartPending` would say
- * false, on a deployment that needs exactly that restart. Found on a live runtime too old to
- * offer `reload`: the languages plugin read as active while the languages endpoint still
- * served none.
+ * That is also what fixed the failure this comment used to describe. The old shape rebuilt a
+ * host, registered it, and asked for a reload — and a reload that did not happen (a runtime
+ * too old to offer one) left a host in the registry that no running tree contained, so the
+ * list reported plugins active while their endpoints served nothing. Now the registry is
+ * only ever written by a create() that succeeded, and a runtime that cannot re-assemble
+ * simply returns false: the list stays honest and says a restart is pending.
  */
-export async function applyPluginClosure(root: string, hmr: Hmr): Promise<boolean> {
-  const host = new PluginHost();
-  const result = await loadPlugins(root);
-  for (const entry of result.loaded) {
-    try {
-      host.use(entry);
-    } catch (err) {
-      result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
-    }
-  }
-  for (const [specifier, reason] of result.failed) {
-    console.warn(`[plugins] skipped ${specifier}: ${reason}`);
-  }
-  const resources = hmr.resources as Resources;
-  const previous = pluginHostFrom(resources);
-  resources.register(PLUGINS_RESOURCE_ID, host);
-  const applied = (await hmr.reload?.()) ?? false;
-  if (!applied) resources.register(PLUGINS_RESOURCE_ID, previous);
-  return applied;
+export async function applyPluginClosure(_root: string, hmr: Hmr): Promise<boolean> {
+  return (await hmr.reload?.()) ?? false;
 }
 
 @Component({
