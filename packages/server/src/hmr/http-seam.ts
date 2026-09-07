@@ -28,7 +28,7 @@
  * (`terminals()`, `attachStream()`) instead.
  */
 import type { MiddlewareHandler } from "hono";
-import type { HmrHost } from "./host.js";
+import type { ServerHmrHost } from "./platform.js";
 
 /** Prefix the runtime keeps for itself, whatever the platform says. */
 const RESERVED_PREFIX = "/api/hmr";
@@ -51,7 +51,7 @@ export interface PlatformHttp {
  * `hmr.ensure()` returns the already-booted instance after the first call, so this costs a
  * property read per request once the platform is up.
  */
-export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
+export function platformHttpSeam(hmr: ServerHmrHost): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
     // Wait out any in-flight swap FIRST, same as /api/hmr/*'s own gate (routes.ts): the

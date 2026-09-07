@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { HotResources } from "../src/hmr/resources.js";
+import { HotResources } from "@prismshadow/penguin-hmr";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
 import { loadPluginHost } from "../src/plugin/loader.js";
 import { applyPluginClosure } from "../src/http/routes/plugins-installed.js";

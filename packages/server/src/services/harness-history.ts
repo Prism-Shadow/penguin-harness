@@ -21,7 +21,7 @@ import table from "../ifaces.json" with { type: "json" };
 import { readHarnessInfo, readManifest } from "../hmr/manifest.js";
 import { readApiToken } from "../auth/api-token.js";
 import { loopbackHostRoles } from "./preview-token.js";
-import { summarizeTable } from "../hmr/ifaces-diff.js";
+import { summarizeTable } from "@prismshadow/penguin-hmr";
 import type { Clock, Config, Log, Paths } from "../hmr/capabilities.js";
 import type { HttpFetch } from "./update-check-service.js";
 
