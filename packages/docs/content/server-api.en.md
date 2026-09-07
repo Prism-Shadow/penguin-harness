@@ -400,18 +400,6 @@ Masked secrets are omitted from responses when none is stored (a cleared config)
 
 **Scan-to-connect never shows the browser the secret.** Whatever makes the flow safe stays on the server — the AES key that decrypts QQ's App Secret, and the poll handle that collects WeChat's bot token — generated, held, used and dropped there; the client is given only a task handle, a URL to draw, and a status. Tasks live in memory, are scoped to the Session that started them, are bounded per Session so one caller's scans cannot evict another's, and are claimed by the poll that resolves them, so a replay reads as 404 rather than as a second bind. On QQ a second concurrent poll of one task reads as 404 too; on WeChat it answers `pending`, because the upstream call is a long poll that spans several client intervals. Every scan route is owner-only, because the flow ends in a stored credential however little of it the caller types.
 
-### Chat Bots (admin only)
-
-A **chat bot** is a bot account that starts agents from a chat, as opposed to a messaging binding, which ties a bot to a Session someone opened in the Web App. A plugin contributes the bot (its id, channel and label — the first is the Discord plugin's `discord`); an admin gives it a credential and a target Project and Agent; from then on every chat that writes to it — a direct message, a channel it is @-mentioned in, a thread — gets a Session of its own under that Agent, opened on the first message and reused for the rest. Replies come back into the same chat, Markdown rendered and chunked under the channel's cap. In the chat, `/new` opens a fresh Session, `/approve` and `/deny` decide a tool call the Agent is waiting on (the bot says when one is), and `/status` names the chat's Session. Everything is stored in the server settings (`chatbot:<id>` and the chat → Session table beside it) and survives a restart; a plugin may seed the configuration (the Discord plugin reads `PENGUIN_DISCORD_BOT_TOKEN`, `PENGUIN_DISCORD_PROJECT`, `PENGUIN_DISCORD_AGENT`), and what is stored wins over the seed.
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | /api/chat-bots | Every contributed bot: `{bots: [{id, channel, label, labelZh?, projectId, agentId, config, configured, enabled, status, chats}]}` — `config` is the credential document with every string masked, `status` the live connection (`state`, `lastError?`, `lastInboundAt?`, `lastDeliveryError?`), `chats` how many chats currently hold a Session |
-| GET | /api/chat-bots/:id | One bot in the same shape (404 `chat_bot_not_found`) |
-| PUT | /api/chat-bots/:id | Save `{config?, projectId?, agentId?}` — `config` in the channel connector's own shape (Discord: `{botToken}`), refused with 400 `chat_bot_config_invalid` when the connector cannot read it; a masked value sent back keeps the stored one, an empty string drops the field; `projectId` and `agentId` together, 404 `agent_not_found` for a target that does not exist. An enabled bot restarts on the new values |
-| POST | /api/chat-bots/:id/state | The connection toggle `{enabled}` (400 `chat_bot_config_required` / `chat_bot_target_required` before both are saved) |
-| POST | /api/chat-bots/:id/test | Credential probe of the draft `{config}` or, omitted, the stored one → `{ok, latencyMs?, accountLabel?, error?}` |
-
 ### Preview on a separate origin
 
 Both the Files panel's rendered HTML view (an iframe) and "open in a new tab" go through `GET /files/preview-redirect?path=`, which authenticates the caller, then mints a short-lived HMAC token and 302s to a **different origin**:
