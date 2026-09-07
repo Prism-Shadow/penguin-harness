@@ -282,7 +282,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     const plugins =
       caps === null
         ? pluginHostFrom(ctx.resources)
-        : await loadPluginHost(ctx.resources, caps.config.root);
+        : await loadPluginHost(ctx.resources, caps.config.root, caps.hmr.assetsDir());
     // Plus whatever a test stood up in process, which no closure could name (see the id).
     const injected = ctx.resources.claim<PluginHost | null>(PARKED_TEST_PLUGINS_RESOURCE_ID);
     if (injected != null && typeof injected.entries === "function") {
