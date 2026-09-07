@@ -3500,6 +3500,15 @@ export interface MachineInfo {
    * since each probe is an ssh round trip while the list is only the config's text.
    */
   status: MachineServerStatus | null;
+  /**
+   * The data root the server there runs on (`PENGUIN_HOME`). This instance's PROFILE decides
+   * it — a dev instance names the machine's dev root and never the release one beside it
+   * (machines/layout.ts) — which is exactly what a reader looking at two instances of this
+   * page needs to tell them apart. Written in that machine's own spelling once its platform
+   * is known, and in the POSIX one before that; for `local` it is this process's own root,
+   * already resolved to an absolute path.
+   */
+  root: string;
 }
 
 /**
