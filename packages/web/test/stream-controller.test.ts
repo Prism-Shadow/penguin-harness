@@ -870,6 +870,40 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
   });
 
+  it("an open-at response that arrives after the run was replaced is dropped, and opening inside the tail is the tail", async () => {
+    const h = await withRun();
+    const b = h.controller.loadOlder();
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(false);
+
+    // Click a far turn, then jump back to the tail before its window arrives.
+    const open = h.controller.openAt("2:0");
+    h.controller.jumpToLatest();
+    expect(h.controller.tailAttached).toBe(true);
+    // The pending queue is FIFO: the open-at response first, then the jump's eager backfill.
+    h.resolveLoad(
+      bigTurn("C", 25),
+      undefined,
+      null,
+      pageInfo({ before: "2:0", after: "3:0", earlierTurns: 1 }),
+    );
+    expect(await open).toBe(false);
+    expect(h.controller.tailAttached).toBe(true);
+    expect(userTexts(h.controller.items)).toEqual(["question tail"]);
+    h.resolveLoad(bigTurn("A", 25), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
+    await flush();
+    expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
+
+    // A cursor at or past the tail's start names a turn the live model already holds:
+    // no fetch, the run is the tail again.
+    const calls = h.loadCalls();
+    expect(await h.controller.openAt("5:7")).toBe(true);
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.windowCount).toBe(0);
+    expect(h.loadCalls()).toBe(calls + 1); // only the eager backfill
+  });
+
   it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {
     const h = await withRun();
     const b = h.controller.loadOlder({ shed: true });
