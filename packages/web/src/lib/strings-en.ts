@@ -322,6 +322,7 @@ export const en: Strings = {
     installCli: "Install 'penguin' command…",
     checkUpdates: "Check for desktop updates…",
     checkingUpdates: "Checking for updates…",
+    openDevTools: "Open DevTools",
     projectOnGitHub: "Project on GitHub",
   },
   workflows: {
