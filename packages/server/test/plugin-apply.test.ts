@@ -39,8 +39,9 @@ function hmrWith(resources: HotResources, reload?: () => Promise<boolean>): Hmr 
 }
 
 /** An entry as an earlier App would have left it: one module, already imported. */
-const entry = (specifier: string, name: string): LoadedPlugin => ({
+const entry = (specifier: string, name: string, file?: string): LoadedPlugin => ({
   specifier,
+  ...(file === undefined ? {} : { file }),
   modules: [
     {
       manifest: { name, requires: {}, provides: {}, contributes: {}, children: [] },
@@ -84,6 +85,9 @@ describe("loadPluginHost", () => {
     try {
       const resources = new HotResources();
       const inherited = new PluginHost();
+      // Held from a file that no longer resolves (nothing installs @acme/kept here): the
+      // held file and the resolved one are both absent-or-different, so this is the case
+      // where an entry is NOT reused. Kept for the drop half of the assertion.
       const kept = entry("@acme/kept", "Kept");
       inherited.use(kept);
       inherited.use(entry("@acme/dropped", "Dropped"));
@@ -91,13 +95,57 @@ describe("loadPluginHost", () => {
 
       const host = await loadPluginHost(resources, root);
 
-      // Reused, not imported again — the objects keep their identity across the swap.
-      expect(host.entries().get("@acme/kept")).toBe(kept);
-      // And a plugin the closure no longer names is simply not in the new host.
-      expect([...host.entries().keys()]).toEqual(["@acme/kept"]);
+      // A plugin the closure no longer names is simply not in the new host.
+      expect([...host.entries().keys()]).toEqual([]);
       // Registering is the caller's, at its commit: a create() that throws must leave the
       // previous App's host in place.
       expect(pluginHostFrom(resources)).toBe(inherited);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses an entry only while the same file is behind the name", async () => {
+    // The push this rule exists for: a hot update writes the builtin plugins to a NEW assets
+    // directory, so an entry held by specifier alone would keep running the previous build's
+    // plugin code — the push would land everywhere except the plugins. Seen for real: a fixed
+    // claude-code plugin shipped to a machine and the old one kept spawning.
+    const root = await rootAsking(["@acme/real"]);
+    try {
+      const dir = path.join(root, "plugins", "node_modules", "@acme", "real");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({
+          name: "@acme/real",
+          main: "./index.js",
+          penguin: {
+            modules: [{ name: "AcmeReal", requires: {}, provides: {}, children: [] }],
+          },
+        }),
+      );
+      await writeFile(
+        path.join(dir, "index.js"),
+        "export default { modules: { AcmeReal: { create: () => ({ api: {} }) } } };\n",
+      );
+
+      const resources = new HotResources();
+      const first = await loadPluginHost(resources, root);
+      const held = first.entries().get("@acme/real");
+      expect(held?.file).toBe(path.join(dir, "index.js"));
+
+      // Same file behind the name: the same object, not a second import.
+      resources.register(PLUGINS_RESOURCE_ID, first);
+      const again = await loadPluginHost(resources, root);
+      expect(again.entries().get("@acme/real")).toBe(held);
+
+      // A different file behind it — what a push produces — is imported again.
+      const moved = new PluginHost();
+      moved.use({ ...held!, file: path.join(root, "old-assets", "index.js") });
+      resources.register(PLUGINS_RESOURCE_ID, moved);
+      const afterPush = await loadPluginHost(resources, root);
+      expect(afterPush.entries().get("@acme/real")).not.toBe(held);
+      expect(afterPush.entries().get("@acme/real")?.file).toBe(path.join(dir, "index.js"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
