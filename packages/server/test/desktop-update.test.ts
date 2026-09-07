@@ -44,7 +44,9 @@ describe("GET /api/desktop/update", () => {
       expect(before.status).toBe(200);
       expect((await before.json()) as DesktopUpdateStatusResponse).toEqual({ status: null });
 
-      t.deps.desktop!.setUpdateStatus(STATUS);
+      // The shell's own frame, where the shell would put it: the platform parses it on
+      // read, so what a frame means travels with the platform rather than the runtime.
+      t.deps.shellFrames.updaterStatus = { type: "desktop-updater-status", status: STATUS };
       const after = await t.app.request("/api/desktop/update", { headers: { cookie } });
       expect((await after.json()) as DesktopUpdateStatusResponse).toEqual({ status: STATUS });
     } finally {
@@ -85,8 +87,8 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
     const t = await createDesktopApp();
     try {
       const cookie = await desktopLoginCookie(t.app);
-      const actions: string[] = [];
-      t.deps.desktop!.onUpdateCommand((action) => actions.push(action));
+      const frames: unknown[] = [];
+      t.deps.shellFrames.post = (frame) => frames.push(frame);
 
       const check = await t.app.request("/api/desktop/update/check", {
         method: "POST",
@@ -106,7 +108,11 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
         body: "{}",
       });
       expect(install.status).toBe(202);
-      expect(actions).toEqual(["check", "download", "install"]);
+      expect(frames).toEqual([
+        { type: "desktop-updater-command", action: "check" },
+        { type: "desktop-updater-command", action: "download" },
+        { type: "desktop-updater-command", action: "install" },
+      ]);
     } finally {
       await t.cleanup();
     }
