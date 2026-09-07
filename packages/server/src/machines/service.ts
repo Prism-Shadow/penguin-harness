@@ -329,6 +329,7 @@ export class MachinesService {
       local: true,
       connection: null,
       api: null,
+      root: this.dataRoot,
       status: {
         state: "running",
         checkedAt: this.#effects.now().toISOString(),
@@ -352,6 +353,9 @@ export class MachinesService {
         local: false,
         connection: session === null ? null : { pid: session.pid },
         api: this.#apiSeen.get(id) ?? null,
+        // The layout's own spelling, in the shell that machine speaks. Unknown platform
+        // reads as POSIX: it is the majority, and an install corrects the record.
+        root: row?.platform === "win32" ? this.#layout.dataRoot.win : this.#layout.dataRoot.posix,
         status: this.#statuses.get(id) ?? null,
       };
     });

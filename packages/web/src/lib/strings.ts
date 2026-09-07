@@ -138,6 +138,7 @@ export const zh = {
     detailServer: "对端服务",
     detailChecked: "上次检查",
     detailMachineId: "机器 ID",
+    detailRoot: "服务端根目录",
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",

@@ -493,17 +493,20 @@ export function MachinesPage() {
 
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
             never move when a selection appears or goes. The count is the slot's label; on the
-            right, select all and none, then the two verbs, each dimmed when it would do nothing. */}
+            right, select all and none, then the two verbs — bare glyphs here (see Verb), each
+            dimmed when it would do nothing. */}
         <div className="mt-3 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2 px-1 text-xs text-gray-500">
           <span className="tabular-nums">{S.machines.selectedCount(selectedIds.length)}</span>
           <span className="ml-auto flex flex-wrap items-center gap-1">
             <Verb
+              wordless
               label={S.machines.pickAll}
               d={SELECT_ALL_PATH}
               disabled={inUse.length === 0 || selectedIds.length === inUse.length}
               onClick={pickAll}
             />
             <Verb
+              wordless
               label={S.machines.pickNone}
               d={SELECT_NONE_PATH}
               disabled={selectedIds.length === 0}
@@ -511,12 +514,14 @@ export function MachinesPage() {
             />
             <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
             <Verb
+              wordless
               label={S.machines.use}
               d={PLUG_PATH}
               disabled={selectedIds.length === 0 || posting || noImage}
               onClick={() => void use(selectedIds)}
             />
             <Verb
+              wordless
               label={S.machines.stopUsing}
               d={UNPLUG_PATH}
               disabled={selectedIds.length === 0 || posting}
@@ -568,10 +573,19 @@ export function MachinesPage() {
 }
 
 /**
- * Every verb on the page, in one shape: a small secondary button carrying one glyph and one
- * word — enable, disable, configure, new, expand, select all, select none. One shape so a
- * person learns it once; the glyph says which verb, the word confirms it. The forced
- * install alone keeps the danger variant, since it interrupts whoever is on the machine.
+ * Every verb on the page in one shape: a small secondary button carrying one glyph, and the
+ * word beside it — configure, new, force install. The glyph says which verb, the word
+ * confirms it. The forced install alone keeps the danger variant, since it interrupts
+ * whoever is on the machine.
+ *
+ * `wordless` is the SELECTION BAR alone, where four of these sit in a row over the cards.
+ * There the words read as a sentence nobody wrote, and each glyph is already the plainest
+ * thing about its button — the box, the empty box, the plug, the unplugged plug. The box
+ * around it goes with the word: a bordered button with nothing but a glyph in it draws a
+ * frame around something that was already legible, and four of those in a row are four
+ * frames. What is left is the glyph, with a hover the pointer can find; the word survives as
+ * the tooltip and as the accessible name, so nothing is lost to a screen reader or to a
+ * pointer that waits. Same shape as the chevron below, for the same reason.
  */
 function Verb({
   label,
@@ -582,6 +596,7 @@ function Verb({
   title,
   glyphClass = "",
   ariaExpanded,
+  wordless = false,
 }: {
   label: string;
   d: string;
@@ -591,7 +606,27 @@ function Verb({
   title?: string;
   glyphClass?: string;
   ariaExpanded?: boolean;
+  wordless?: boolean;
 }) {
+  const click = (event: { stopPropagation(): void }) => {
+    event.stopPropagation();
+    onClick();
+  };
+  if (wordless) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        title={title ?? label}
+        aria-label={label}
+        aria-expanded={ariaExpanded}
+        onClick={click}
+        className={`rounded-md p-1.5 text-gray-500 transition-colors enabled:hover:bg-gray-100 enabled:hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:enabled:hover:bg-gray-800 dark:enabled:hover:text-gray-200`}
+      >
+        <GlyphIcon d={d} size={ICON_SIZE.inlineGlyph} className={glyphClass} />
+      </button>
+    );
+  }
   return (
     <Button
       size="sm"
@@ -600,10 +635,7 @@ function Verb({
       title={title ?? label}
       aria-expanded={ariaExpanded}
       className="whitespace-nowrap"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
+      onClick={click}
     >
       <GlyphIcon d={d} size={ICON_SIZE.inlineGlyph} className={glyphClass} />
       {label}
@@ -853,6 +885,10 @@ function Record({ machine, locale }: { machine: MachineInfo; locale: "zh" | "en"
           <dd className={`${MONO} truncate`}>{machine.machineId}</dd>
         </>
       )}
+      {/* Which installation over there this row is about: a dev instance and a release one
+          reach the same machine and mean different roots. */}
+      <dt className="text-gray-500">{m.detailRoot}</dt>
+      <dd className={`${MONO} break-all`}>{machine.root}</dd>
     </dl>
   );
 }
