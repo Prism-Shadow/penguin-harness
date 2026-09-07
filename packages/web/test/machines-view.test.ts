@@ -106,6 +106,34 @@ describe("readMachine", () => {
     expect(readMachine(nas, failed, "9.9.9")).toEqual({ kind: "ready", port: 7364 });
   });
 
+  it("a held connection over a stopped server says so, and leaves `use` on offer", () => {
+    // The outage this came from: an ssh session was up while the far server could not bind
+    // its port. The card read "Connected" (the connection won outright), its own details
+    // said the server was stopped, and the one action that would start it again was
+    // withheld because the row looked ready — so the page hid both the fault and the fix.
+    const nas: MachineInfo = {
+      ...carrying("nas"),
+      connection: { pid: 1 },
+      status: { state: "stopped", checkedAt: INSTALLED.at },
+    };
+    const reading = readMachine(nas, null, "9.9.9");
+    expect(reading).toEqual({ kind: "linkedStopped" });
+    expect(readingTone(reading)).toBe("attention");
+    expect(wantsUse(reading)).toBe(true);
+  });
+
+  it("a held connection over an unreachable machine is unreachable, with its words", () => {
+    const nas: MachineInfo = {
+      ...carrying("nas"),
+      connection: { pid: 1 },
+      status: { state: "unreachable", checkedAt: INSTALLED.at, detail: "ssh: connect refused" },
+    };
+    expect(readMachine(nas, null, "9.9.9")).toEqual({
+      kind: "unreachable",
+      detail: "ssh: connect refused",
+    });
+  });
+
   it("a failed job keeps the failing step, the far side's words and the forced-install offer", () => {
     expect(readMachine(carrying("nas"), failed, "9.9.9")).toEqual({
       kind: "failed",

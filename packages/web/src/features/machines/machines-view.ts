@@ -26,6 +26,13 @@ export type MachineReading =
   | { kind: "failed"; step: string; message: string; canReplaceProgram: boolean }
   /** Connected and answering: agents can run there. */
   | { kind: "ready"; port: number | null }
+  /**
+   * A connection is held, but the last probe found no server running over there. Not a
+   * contradiction and not a corner case: the connection is an ssh process on THIS side and
+   * outlives the far server, so it says the tunnel has somewhere to go, never that anything
+   * answers. Its own reading because it needs its own action — `use` starts the server.
+   */
+  | { kind: "linkedStopped" }
   /** Installed, and that is as far as this server can take it (a Windows machine). */
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
@@ -74,9 +81,18 @@ export function readMachine(
   if (job?.queued) return { kind: "queued" };
   if (job?.running) return { kind: "working", step: job.log.at(-1) ?? null };
   if (machine.connection !== null) {
+    // A held connection is not liveness — the lesson of #561, read the other way round. It
+    // used to win outright here, so a machine whose server had stopped still read "Connected"
+    // while its own details said otherwise, and `use` (the thing that would start it again)
+    // was withheld because the row looked ready. What the last probe found now has the say.
+    const status = machine.status;
+    if (status !== null && status.state === "stopped") return { kind: "linkedStopped" };
+    if (status !== null && status.state === "unreachable") {
+      return { kind: "unreachable", detail: status.detail ?? null };
+    }
     return {
       kind: "ready",
-      port: machine.status?.state === "running" ? (machine.status.port ?? null) : null,
+      port: status?.state === "running" ? (status.port ?? null) : null,
     };
   }
   const result = job?.result ?? null;
@@ -112,6 +128,9 @@ export function readingTone(reading: MachineReading): Tone {
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.
       return "link";
+    case "linkedStopped":
+      // The link is up and nothing is serving: something for a person to do, not a failure.
+      return "attention";
     case "unknown":
       return "muted";
     default:
