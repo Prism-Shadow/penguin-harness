@@ -45,6 +45,9 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
+  // inlined here so this package's published dist stays self-contained.
+  noExternal: ["@prismshadow/penguin-hmr"],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
   // does; everything after is a `penguin` subcommand the machine already has). Each is

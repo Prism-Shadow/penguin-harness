@@ -12,7 +12,7 @@ import { bootAppDeps, createHmrApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
-import type { HmrHost } from "../src/hmr/host.js";
+import type { ServerHmrHost } from "../src/hmr/platform.js";
 import type { ChannelHub } from "../src/runtime/channel.js";
 import type { DesktopService } from "../src/services/desktop-service.js";
 import type { AuthService } from "../src/auth/service.js";
@@ -126,7 +126,7 @@ export function testConfig(root: string): ServerConfig {
 export interface TestDeps {
   config: ServerConfig;
   db: DatabaseSync;
-  hmr: HmrHost;
+  hmr: ServerHmrHost;
   channels: ChannelHub;
   desktop: DesktopService | null;
   tree: ModuleTree;

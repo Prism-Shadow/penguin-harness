@@ -39,7 +39,7 @@ import {
   bootModules,
   moduleDefOf,
 } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "./host.js";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
@@ -66,6 +66,13 @@ import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import { migrate } from "../db/migrations.js";
 import type { Auth } from "../mechanisms/identity.js";
+
+/**
+ * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
+ * expose. The mechanism is generic on purpose — it cannot name a route or a service — so the
+ * product supplies the type here, once, and everything that holds a host uses this alias.
+ */
+export type ServerHmrHost = HmrHost<PlatformApi>;
 
 export interface PlatformApi extends Park {
   info(): Json;
