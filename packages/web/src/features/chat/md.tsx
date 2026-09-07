@@ -12,15 +12,16 @@
  * re-render (new string instance, streaming=false) highlights each block exactly once.
  * Inline code keeps the default rendering (`.md-body code` styling).
  *
- * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage
- * out, so a formula shows its own TeX source until the message settles and is typeset once
- * (see NO_REHYPE_PLUGINS in lib/markdown-plugins.ts for the measurements).
+ * KaTeX is held back the same way, for the same reason: `streaming` keeps the rehype stage
+ * off, so a formula shows its own TeX source until the message settles and is typeset once
+ * (see NO_REHYPE_PLUGINS in lib/markdown-plugins.ts for the measurements). The stage itself
+ * is the shared Markdown component's business (components/ui/markdown.tsx) — it is loaded
+ * on demand, and this file only says whether the body has settled.
  */
 import { isValidElement, memo } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import type { Components, ExtraProps } from "react-markdown";
-import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
+import { Markdown } from "../../components/ui/markdown";
 import { CodeBlock } from "./code-block";
 
 /** Flatten a react-markdown code element's children to plain text (string or string array in practice). */
@@ -85,7 +86,7 @@ function MdLink({
  * streams, including for blocks that closed long ago. `streaming` is the only thing the adapter
  * closes over, so one frozen map per value is enough; the single flip between them happens on
  * the settle render, which re-parses the message anyway — the same render the rehype stage
- * flips on. The `a` adapter closes over nothing, so both maps share the one `MdLink` reference.
+ * comes on for. The `a` adapter closes over nothing, so both maps share the one `MdLink` reference.
  */
 const STREAMING_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming>{props.children}</MdPre>,
@@ -104,12 +105,10 @@ export const Md = memo(function Md({
   streaming?: boolean;
 }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS}
+    <Markdown
+      text={text}
+      streaming={streaming}
       components={streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS}
-    >
-      {text}
-    </ReactMarkdown>
+    />
   );
 });

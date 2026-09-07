@@ -15,9 +15,13 @@ import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/a
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
-
-const PROJECT_KEY = "penguin.lastProjectId";
-const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;
+import { takePrefetchedAgents, takePrefetchedProjects } from "../lib/boot-prefetch";
+import {
+  rememberAgentId,
+  rememberProjectId,
+  rememberedAgentId,
+  rememberedProjectId,
+} from "../lib/last-selection";
 
 interface ProjectContextValue {
   projects: ProjectSummary[];
@@ -74,8 +78,10 @@ function createProjectStore() {
     reloadProjects: async () => {
       set({ projectsLoading: true });
       try {
-        const res = await api.listProjects();
-        const wanted = get().currentProjectId ?? localStorage.getItem(PROJECT_KEY);
+        // The boot may have asked already (lib/boot-prefetch.ts): the first load takes that
+        // answer, every later reload goes to the network.
+        const res = await (takePrefetchedProjects() ?? api.listProjects());
+        const wanted = get().currentProjectId ?? rememberedProjectId();
         const found = res.projects.find((p) => p.projectId === wanted);
         set({
           projects: res.projects,
@@ -93,7 +99,7 @@ function createProjectStore() {
       // so the Agent list (and the Session list mounted under it) would disappear for good
       // (reproducible by clicking the already-current Project in the dropdown).
       if (projectId === get().currentProjectId) return;
-      localStorage.setItem(PROJECT_KEY, projectId);
+      rememberProjectId(projectId);
       // Clear the Agent list in sync: avoids a transient render with "new projectId + old
       // Project's agents" that would make downstream consumers (Sessions) fetch with the
       // wrong Agent set (which could create spurious Sessions under the new Project).
@@ -112,8 +118,9 @@ function createProjectStore() {
       if (!currentProjectId) return;
       set({ agentsLoading: true });
       try {
-        const res = await api.listAgents(currentProjectId);
-        const wanted = get().currentAgentId ?? localStorage.getItem(agentKey(currentProjectId));
+        const res = await (takePrefetchedAgents(currentProjectId) ??
+          api.listAgents(currentProjectId));
+        const wanted = get().currentAgentId ?? rememberedAgentId(currentProjectId);
         const found = res.agents.find((a) => a.agentId === wanted);
         // Default to conversing with default_agent.
         const fallback =
@@ -126,7 +133,7 @@ function createProjectStore() {
 
     setCurrentAgentId: (agentId) => {
       const currentProjectId = get().currentProjectId;
-      if (currentProjectId) localStorage.setItem(agentKey(currentProjectId), agentId);
+      if (currentProjectId) rememberAgentId(currentProjectId, agentId);
       set({ currentAgentId: agentId });
     },
   }));

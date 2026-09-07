@@ -7,9 +7,90 @@
     <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/penguin-logo.svg" />
     <title>PenguinHarness</title>
+    <!-- The theme, before anything paints: the same decision state/theme.tsx makes after the
+         mount (its stored mode, else the system's), made here so neither the boot frame below
+         nor the first React frame flashes the wrong scheme. -->
+    <script>
+      (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("penguin.theme");
+        } catch (e) {}
+        var dark =
+          mode === "dark" ||
+          (mode !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
+    <!-- The frame of the app, painted from this HTML alone while the bundle is still on its
+         way: a sidebar on wide screens, a top bar on narrow ones, nothing in either. React
+         replaces it with components/layout/boot-skeleton.tsx (the same frame) on mount and with
+         the real layout once the user is known; the three must agree on these dimensions. The
+         colours are Tailwind's gray-50/200/800/900/950 and white, as AppLayout uses them. -->
+    <style>
+      .boot {
+        display: flex;
+        height: 100vh;
+        height: 100dvh;
+        background: #fff;
+      }
+      .boot-aside {
+        display: none;
+        flex-shrink: 0;
+        width: 16rem;
+        border-right: 1px solid #e5e7eb;
+        background: #f9fafb;
+      }
+      .boot-aside.narrow {
+        width: 3rem;
+      }
+      .boot-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .boot-bar {
+        height: 3rem;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      @media (min-width: 768px) {
+        .boot-aside {
+          display: block;
+        }
+        .boot-bar {
+          display: none;
+        }
+      }
+      @media (min-width: 1024px) {
+        .boot-aside:not(.narrow) {
+          width: 18rem;
+        }
+      }
+      .dark .boot {
+        background: #030712;
+      }
+      .dark .boot-aside {
+        border-color: #1f2937;
+        background: #111827;
+      }
+      .dark .boot-bar {
+        border-color: #1f2937;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" aria-hidden="true">
+        <div class="boot-aside" id="boot-aside"></div>
+        <div class="boot-main"><div class="boot-bar"></div></div>
+      </div>
+    </div>
+    <script>
+      // The persisted sidebar collapse, so the frame is the width the layout will take.
+      try {
+        if (localStorage.getItem("penguin.sidebarCollapsed") === "1")
+          document.getElementById("boot-aside").className += " narrow";
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

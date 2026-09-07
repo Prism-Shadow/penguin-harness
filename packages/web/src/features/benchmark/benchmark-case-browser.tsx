@@ -5,9 +5,8 @@ import type {
   WorkspaceFileEntry,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
-import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
+import { Markdown } from "../../components/ui/markdown";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
@@ -455,13 +454,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
           ) : preview.kind === "md" ? (
             <>
               <div className="md-body text-sm text-gray-800 dark:text-gray-100">
-                <ReactMarkdown
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
-                  components={markdownComponents}
-                >
-                  {preview.content ?? ""}
-                </ReactMarkdown>
+                <Markdown text={preview.content ?? ""} components={markdownComponents} />
               </div>
               {preview.truncated && (
                 <p className="mt-2 text-xs text-gray-400">{S.files.previewTruncated}</p>

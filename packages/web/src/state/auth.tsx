@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
+import { takePrefetchedMe } from "../lib/boot-prefetch";
 
 /**
  * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
@@ -83,8 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getMe()
+    // The boot started this request before the tree mounted (lib/boot-prefetch.ts); the
+    // first mount takes that answer, any later one asks afresh.
+    (takePrefetchedMe() ?? api.getMe())
       .then((res) => {
         if (cancelled) return;
         setUser(res.user);

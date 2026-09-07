@@ -8,13 +8,14 @@
  * malformed formula does to the message around it, and that all five renderers still share one
  * plugin list.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../src/lib/markdown-plugins";
+import { REMARK_PLUGINS, loadKatexStage } from "../src/lib/markdown-plugins";
+import { REHYPE_PLUGINS } from "../src/lib/markdown-katex";
 import { Md } from "../src/features/chat/md";
 import { dropNonWoff2FontSources } from "../vite.config.js";
 
@@ -268,6 +269,10 @@ describe("input that arrives broken or half-written", () => {
 });
 
 describe("the chat renderer", () => {
+  // The math stage is loaded on demand in the app; a static render has no effects to ask for
+  // it, so the tests load it up front — what is under test is the settle/stream decision.
+  beforeAll(() => loadKatexStage());
+
   const renderMd = (text: string, streaming = false) =>
     renderToStaticMarkup(createElement(Md, { text, streaming }));
 
@@ -323,9 +328,11 @@ describe("the pipeline every renderer shares", () => {
     readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
   /**
-   * A renderer that quietly dropped the shared list would still render Markdown, so no behavioural
-   * test would fail — only its math and its URL boundaries would be wrong, on one surface. Hence a
-   * source scan: every `<ReactMarkdown` in the app has to carry both stages.
+   * A renderer that quietly dropped the shared pipeline would still render Markdown, so no
+   * behavioural test would fail — only its math and its URL boundaries would be wrong, on one
+   * surface. Hence a source scan: every surface renders through `<Markdown>`
+   * (components/ui/markdown.tsx), which is the one place `<ReactMarkdown` may appear, and the one
+   * place the on-demand math stage is asked for.
    */
   const RENDERERS = [
     "../src/features/chat/md.tsx",
@@ -333,33 +340,42 @@ describe("the pipeline every renderer shares", () => {
     "../src/features/benchmark/benchmark-case-browser.tsx",
     "../src/features/traces/trace-event-row.tsx",
   ];
+  const SHARED_RENDERER = "../src/components/ui/markdown.tsx";
 
-  /**
-   * Matched by the constant each prop names rather than by an exact string, because md.tsx picks
-   * its rehype stage by `streaming`. What is being guarded is that the name comes from the shared
-   * module, not the shape of the expression around it.
-   */
-  const SHARED = { remarkPlugins: "REMARK_PLUGINS", rehypePlugins: "REHYPE_PLUGINS" };
-
-  it("every ReactMarkdown in the app is given both shared plugin lists", () => {
+  it("every Markdown surface in the app renders through the shared component", () => {
     let total = 0;
     for (const relative of RENDERERS) {
       const source = read(relative);
-      const uses = source.split("<ReactMarkdown").length - 1;
+      expect(source, relative).not.toContain("<ReactMarkdown");
+      const uses = source.match(/<Markdown[\s/>]/g)?.length ?? 0; // the element, not a comment naming it
       expect(uses, relative).toBeGreaterThan(0);
       total += uses;
-      for (const [prop, constant] of Object.entries(SHARED)) {
-        const values = [...source.matchAll(new RegExp(`${prop}=\\{([^}]*)\\}`, "g"))];
-        expect(values.length, `${relative} ${prop}`).toBe(uses);
-        for (const [, value] of values) expect(value, `${relative} ${prop}`).toContain(constant);
-      }
-      expect(source, relative).toContain('from "../../lib/markdown-plugins"');
+      expect(source, relative).toContain('from "../../components/ui/markdown"');
     }
     expect(total).toBe(5); // md.tsx, workspace, benchmark, and two in trace-event-row
+    const shared = read(SHARED_RENDERER);
+    expect(shared.split("<ReactMarkdown").length - 1).toBe(1);
+    expect(shared).toContain("remarkPlugins={REMARK_PLUGINS}");
+    expect(shared).toContain("useRehypeStage(");
+  });
+
+  it("KaTeX reaches the entry through no static import", () => {
+    // The lazy module is the only importer of rehype-katex and the stylesheet; the shared
+    // pipeline reaches it by `import()` alone. A static import anywhere else puts the whole of
+    // KaTeX back into the entry bundle, which is what the split exists to prevent.
+    const pipeline = read("../src/lib/markdown-plugins.ts");
+    expect(pipeline).toContain('import("./markdown-katex")');
+    expect(pipeline).not.toMatch(/^import .*markdown-katex/m);
+    for (const relative of [...RENDERERS, SHARED_RENDERER, "../src/main.tsx"]) {
+      const source = read(relative);
+      expect(source, relative).not.toContain('"rehype-katex"');
+      expect(source, relative).not.toContain("katex/dist/katex.min.css");
+      expect(source, relative).not.toMatch(/^import .*markdown-katex/m);
+    }
   });
 
   it("no renderer assembles its own pipeline out of the underlying plugins", () => {
-    for (const relative of RENDERERS) {
+    for (const relative of [...RENDERERS, SHARED_RENDERER]) {
       const source = read(relative);
       // The quotes are the point: a renderer may name a plugin in a comment, not import one.
       for (const plugin of ["remark-gfm", "remark-math", "rehype-katex"]) {

@@ -14,8 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import ReactMarkdown from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
+import { Markdown } from "../../components/ui/markdown";
 import type { SessionInfo, WorkspaceFilesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -613,9 +612,8 @@ export function WorkspaceBrowser({
             // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
             <>
               <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
-                <ReactMarkdown
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
+                <Markdown
+                  text={preview.content ?? ""}
                   components={{
                     // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
                     // `v` is the read nonce, not a cache-buster for its own sake: a
@@ -664,9 +662,7 @@ export function WorkspaceBrowser({
                       );
                     },
                   }}
-                >
-                  {preview.content ?? ""}
-                </ReactMarkdown>
+                />
               </div>
               {preview.truncated && (
                 <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>

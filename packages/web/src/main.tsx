@@ -23,11 +23,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
-// KaTeX's stylesheet and its woff2 faces, resolved out of node_modules so Vite emits them as local
-// assets: the desktop app has to render math with no network, and a CDN <link> would leave every
-// formula as unstyled markup offline. Imported before styles.css so the app's own `.katex` rules
-// (CJK fallback, error state, wide-formula scrolling) come later in the cascade and win.
-import "katex/dist/katex.min.css";
+import { prefetchBoot } from "./lib/boot-prefetch";
+// KaTeX (and its stylesheet) is not imported here: lib/markdown-katex.ts is loaded on demand by
+// the first body that shows a formula, and stays out of the entry until then.
 import "./styles.css";
 
 const container = document.getElementById("root");
@@ -44,6 +42,11 @@ function mount(): void {
 // A second tab can recognise a replaced root while this one is open, leaving everything on
 // screen here pointing at a data root that is gone.
 watchInstallScope();
+
+// The first round trip — the user, the Project list, the remembered Project's Agents — leaves
+// with the install probe rather than one dependent hop at a time after the mount (see
+// lib/boot-prefetch.ts). A swept boot reloads and throws these away; that is the rare case.
+prefetchBoot({ signedOut: location.pathname === "/login" });
 
 // The rejection handler mounts too: bootInstallScope already swallows everything it can, and
 // the app must mount even if it somehow does not.
