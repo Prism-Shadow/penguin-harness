@@ -20,12 +20,12 @@
 import zlib from "node:zlib";
 import { Hono } from "hono";
 import type { ServerConfig } from "../config.js";
-import type { HmrHost } from "./host.js";
+import type { ServerHmrHost } from "./platform.js";
 import type { ChannelHub } from "../runtime/channel.js";
 
 /** What the hot-update routes reach: runtime capabilities and the current App's auth. */
 export interface HmrRouteDeps {
-  hmr: HmrHost;
+  hmr: ServerHmrHost;
   authService: Auth;
   config: ServerConfig;
   channels: ChannelHub;
