@@ -144,6 +144,8 @@ export const en: Strings = {
     status: {
       connecting: "connecting",
       ready: "ready",
+      /** The pty is fine; this page's socket dropped and is being reattached. */
+      reconnecting: "reconnecting",
       exited: "exited",
       error: "error",
     },
