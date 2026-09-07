@@ -30,7 +30,7 @@ function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?:
     restartPending: opts.restartPending === true,
   });
   const api: MachineApi = {
-    request: async (method, path, payload) => {
+    request: async (method: string, path: string, payload?: unknown) => {
       calls.push({ method, path, ...(payload === undefined ? {} : { body: payload }) });
       const projectId = decodeURIComponent(path.split("/")[3] ?? "");
       const has = state.get(projectId);
@@ -41,7 +41,7 @@ function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?:
       return { status: 200, text: JSON.stringify(body(state.get(projectId) ?? [])) };
     },
     postBytes: async () => ({ status: 500, text: "unused" }),
-  } as unknown as MachineApi;
+  };
   return { api, calls, state };
 }
 
