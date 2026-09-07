@@ -39,7 +39,7 @@ export interface HttpSlots {
  * command is and does is policy (hmr/README.md), so the platform serves it and the runtime
  * keeps a copy below the seam for a platform that still declines it.
  */
-const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
+const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
 /**
  * …and the paths inside those prefixes that the platform DOES serve. `/api/desktop` is the
@@ -124,7 +124,7 @@ export class HttpModule {
         app.use("*", async (c, next) => {
           const path = c.req.path;
           const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
-          if (!PLATFORM_PATHS.some(under) && RUNTIME_PREFIXES.some(under)) {
+          if (!PLATFORM_PATHS.some(under) && HMR_LAYER_PREFIXES.some(under)) {
             return declined();
           }
           await next();
