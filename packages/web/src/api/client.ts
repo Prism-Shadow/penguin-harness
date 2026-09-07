@@ -106,7 +106,10 @@ export async function apiFetchWithMeta<T>(
   // Over the socket when it is open, except what stays on HTTP by design: the auth routes
   // and `/api/me` are the runtime's (the socket answers them 421), and `/api/me` is also
   // where the cookie's own session facts come from — the socket knows only the user.
-  const overSocket = apiSocket.isOpen() && (target !== null || !httpOnly(path));
+  const wantsSocket = target !== null || !httpOnly(path);
+  // ready() waits for a handshake in progress, so the page's first calls ride the socket
+  // instead of racing it; false means HTTP for this call.
+  const overSocket = wantsSocket && (await apiSocket.ready());
   let answer = overSocket ? await callOverSocket(method, url, options.body) : null;
   if (answer === null || answer.status === 415 || answer.status === 421)
     answer = await callOverHttp(method, url, options.body);

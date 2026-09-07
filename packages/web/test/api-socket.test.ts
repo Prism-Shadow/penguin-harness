@@ -210,3 +210,25 @@ describe("streams", () => {
     expect(h.errors).toEqual([false]); // the stream is parked, not dropped
   });
 });
+
+describe("ready", () => {
+  it("opens the socket and waits for the handshake, then answers true", async () => {
+    const pending = socket.ready();
+    expect(FakeSocket.instances).toHaveLength(1); // ready() opened it
+    last().open();
+    await expect(pending).resolves.toBe(true);
+    await expect(socket.ready()).resolves.toBe(true); // already open: at once
+  });
+
+  it("answers false when the handshake fails, when nobody is signed in, and once given up", async () => {
+    const pending = socket.ready();
+    last().drop();
+    await expect(pending).resolves.toBe(false);
+    const unaddressed = new ApiSocket(() => null);
+    await expect(unaddressed.ready()).resolves.toBe(false);
+    vi.stubGlobal("WebSocket", undefined);
+    const noWs = new ApiSocket(() => "ws://test/socket");
+    await expect(noWs.ready()).resolves.toBe(false);
+    expect(noWs.isUnavailable()).toBe(true);
+  });
+});
