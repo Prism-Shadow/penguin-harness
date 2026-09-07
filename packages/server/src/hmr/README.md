@@ -11,7 +11,7 @@ everything else. Read this before changing anything here (or in
 | **runtime**  | `hmr/`, `packages/desktop/`, server transport   | Rebuild + redeploy every install  |
 | **platform** | `packages/server/src/hmr/platform.ts` + `app.ts` | One HTTP push, seconds, no restart|
 | **workflow** | An agent's own folder                           | Installed/reloaded per agent      |
-| **state**    | Parked context documents / runtime resources    | Rides across swaps, not restarts  |
+| **state**    | Parked context documents / the resource registry | Rides across swaps, not restarts  |
 
 ## The rule
 
@@ -31,6 +31,24 @@ not forget — the state layer, not a capability.
 Policy is everything a deployment might reasonably want to change: business APIs, what an agent
 sees, what a command does, how a capability behaves. Policy belongs in the **platform**, which is
 hot-swappable.
+
+### The registry is the state layer, not a runtime API
+
+Most of what the resource registry holds is the **platform's own state**, kept there for one
+reason: a swap must not lose it. The auth values, the plugin host's imported objects, the frames
+the shell last sent, the nodes a test stands in for — platform code writes them, platform code
+reads them, and their meaning changes by push.
+
+Their ids all begin `runtime:` and that is **history, not ownership**: an id is a wire contract
+between generations (an older runtime registers under the name it was built with; a newer
+platform claims it), so renaming one would make the two invisible to each other. Read the
+classification in `capabilities.ts` instead — capabilities are what only the process can provide
+(the config it started with, the open database, the channels, the hot host); everything else in
+there is parked state.
+
+Reading parked state as a runtime capability is how behavior ends up misfiled. Auth was there
+once. Plugin LOADING still is — `loadPlugins` runs in the runtime at process start, which is why
+a machine whose program predates a new loading rule cannot learn it from a push.
 
 ## Why this matters more than it looks
 
