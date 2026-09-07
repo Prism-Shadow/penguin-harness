@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp } from "../src/app.js";
+import { bootAppDeps, createHmrApp } from "../src/app.js";
 import type { ServerBoot } from "../src/app.js";
 import type { ModuleTree, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
@@ -350,7 +350,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
-  const app = createRuntimeApp(boot);
+  const app = createHmrApp(boot);
   return {
     app,
     deps,

@@ -56,7 +56,7 @@ import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
-  claimRuntimeCapabilities,
+  claimHmrCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
@@ -217,12 +217,12 @@ const DRAIN_GRACE_MS = 5000;
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
     // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
-    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
+    // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
     // The check sits HERE, in the bundle, because the runtime that needs it is by
     // definition too old to receive it; failing this early costs nothing — doUpgradeAll
     // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
     // would refuse (bootAppDeps treats a business-less platform as fatal too).
-    const claim = claimRuntimeCapabilities(ctx.resources);
+    const claim = claimHmrCapabilities(ctx.resources);
     if (claim.kind === "refused") {
       throw new Error(
         `this runtime publishes no business capabilities this platform can claim ` +

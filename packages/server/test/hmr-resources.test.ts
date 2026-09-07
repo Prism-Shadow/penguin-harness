@@ -22,16 +22,16 @@ import { DECLARED_RESOURCES as PARKED, packagedPlatform } from "../src/hmr/platf
 import {
   RESOURCE_IFACES_RESOURCE_ID,
   PENGUIN_FAMILY,
-  RUNTIME_INTERFACES,
-  RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
-  RUNTIME_CHANNELS_RESOURCE_ID,
-  RUNTIME_CONFIG_RESOURCE_ID,
-  RUNTIME_DB_RESOURCE_ID,
-  RUNTIME_HMR_RESOURCE_ID,
-  RUNTIME_PROXY_RESOURCE_ID,
+  HMR_INTERFACES,
+  HMR_INTERFACES_RESOURCE_ID,
+  HMR_LIFECYCLE_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
+  HMR_CONFIG_RESOURCE_ID,
+  HMR_DB_RESOURCE_ID,
+  HMR_HOST_RESOURCE_ID,
+  HMR_PROXY_RESOURCE_ID,
   PARKED_AUTH_STATE_RESOURCE_ID,
-  claimRuntimeCapabilities,
+  claimHmrCapabilities,
 } from "../src/hmr/capabilities.js";
 
 /**
@@ -41,7 +41,7 @@ import {
  * is refused, which is the rule the last describe in this file drives.
  */
 async function bootPlatform(r: HotResources, context?: { terminals?: string[] }) {
-  r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+  r.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     return await boot(
@@ -307,26 +307,26 @@ describe("the parked-pty declaration", () => {
 });
 
 describe("runtime capability handshake", () => {
-  /** Live objects that actually carry the members RUNTIME_INTERFACES names. */
+  /** Live objects that actually carry the members HMR_INTERFACES names. */
   function stubCaps(r: HotResources): void {
     const carrying = (name: string): Record<string, unknown> => {
-      const need = RUNTIME_INTERFACES[name];
+      const need = HMR_INTERFACES[name];
       const obj: Record<string, unknown> = {};
       if (Array.isArray(need)) for (const m of need) obj[m] = () => undefined;
       return obj;
     };
-    r.register(RUNTIME_CONFIG_RESOURCE_ID, carrying("config"));
-    r.register(RUNTIME_DB_RESOURCE_ID, carrying("db"));
-    r.register(RUNTIME_CHANNELS_RESOURCE_ID, carrying("channels"));
-    r.register(RUNTIME_PROXY_RESOURCE_ID, () => {});
-    r.register(RUNTIME_HMR_RESOURCE_ID, carrying("hmr"));
-    r.register(RUNTIME_LIFECYCLE_RESOURCE_ID, carrying("lifecycle"));
+    r.register(HMR_CONFIG_RESOURCE_ID, carrying("config"));
+    r.register(HMR_DB_RESOURCE_ID, carrying("db"));
+    r.register(HMR_CHANNELS_RESOURCE_ID, carrying("channels"));
+    r.register(HMR_PROXY_RESOURCE_ID, () => {});
+    r.register(HMR_HOST_RESOURCE_ID, carrying("hmr"));
+    r.register(HMR_LIFECYCLE_RESOURCE_ID, carrying("lifecycle"));
   }
 
   it("refuses when the runtime publishes no descriptor (a runtime older than the handshake)", () => {
     const r = new HotResources();
     stubCaps(r);
-    expect(claimRuntimeCapabilities(r)).toMatchObject({
+    expect(claimHmrCapabilities(r)).toMatchObject({
       kind: "refused",
       reason: expect.stringContaining("no interface descriptor") as unknown,
     });
@@ -336,31 +336,31 @@ describe("runtime capability handshake", () => {
     // Offering NOTHING, in the same document every host describes itself in, is the
     // honest statement "no business runtime stands behind me" — terminals-only is legal.
     const r = new HotResources();
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
-    expect(claimRuntimeCapabilities(r)).toEqual({ kind: "bare" });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    expect(claimHmrCapabilities(r)).toEqual({ kind: "bare" });
   });
 
   it("refuses when one interface is missing a member the claimer names", () => {
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, channels: ["nope"] });
-    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "refused" });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES, channels: ["nope"] });
+    expect(claimHmrCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
   it("claims on a matching descriptor", () => {
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "claimed" });
+    r.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+    expect(claimHmrCapabilities(r)).toMatchObject({ kind: "claimed" });
   });
 
   it("declines when the descriptor is honest but the live object is not", () => {
     // What a member set buys over a number: the declaration is verified, not trusted.
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_CHANNELS_RESOURCE_ID, { get: () => undefined }); // missing the rest
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-    expect(claimRuntimeCapabilities(r)).toMatchObject({
+    r.register(HMR_CHANNELS_RESOURCE_ID, { get: () => undefined }); // missing the rest
+    r.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+    expect(claimHmrCapabilities(r)).toMatchObject({
       kind: "refused",
       reason: expect.stringContaining("channels lacks") as unknown,
     });
@@ -372,8 +372,8 @@ describe("runtime capability handshake", () => {
     // values are claimed, and optionally.
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-    const claim = claimRuntimeCapabilities(r);
+    r.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+    const claim = claimHmrCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
     expect(claim.caps.authState).toEqual({ firstLoginToken: null, apiToken: null });
@@ -385,10 +385,10 @@ describe("runtime capability handshake", () => {
     // so a copy would strand the first-login link the App writes into it.
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
+    r.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
     const published = { firstLoginToken: "printed-by-the-old-runtime" };
     r.register(PARKED_AUTH_STATE_RESOURCE_ID, published);
-    const claim = claimRuntimeCapabilities(r);
+    const claim = claimHmrCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
     expect(claim.caps.authState).toBe(published);
@@ -401,17 +401,17 @@ describe("runtime capability handshake", () => {
   it("declines a different family outright — the names are not comparable", () => {
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, family: "acme" });
-    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "refused" });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES, family: "acme" });
+    expect(claimHmrCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
   it("an interface the claimer never names may differ freely", () => {
     // The whole point of per-interface versions: a bump the claimer never touches must
-    // not decline the claim. `extra` is not in RUNTIME_INTERFACES, so it is not required.
+    // not decline the claim. `extra` is not in HMR_INTERFACES, so it is not required.
     const r = new HotResources();
     stubCaps(r);
-    r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, extra: ["x"] });
-    expect(claimRuntimeCapabilities(r)).toMatchObject({ kind: "claimed" });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES, extra: ["x"] });
+    expect(claimHmrCapabilities(r)).toMatchObject({ kind: "claimed" });
   });
 });
 

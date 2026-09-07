@@ -1,7 +1,7 @@
 /**
  * App assembly, both halves of it.
  *
- * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
+ * The RUNTIME shell — `createHmrApp(deps)` — mounts the mechanism surface: the network
  * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
  * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
  * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
@@ -30,19 +30,19 @@ import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  RUNTIME_INTERFACES,
-  RUNTIME_INTERFACES_RESOURCE_ID,
+  HMR_INTERFACES,
+  HMR_INTERFACES_RESOURCE_ID,
   PARKED_AUTH_STATE_RESOURCE_ID,
-  RUNTIME_CHANNELS_RESOURCE_ID,
-  RUNTIME_CONFIG_RESOURCE_ID,
-  RUNTIME_DB_RESOURCE_ID,
-  RUNTIME_DESKTOP_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
-  RUNTIME_HMR_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
+  HMR_CONFIG_RESOURCE_ID,
+  HMR_DB_RESOURCE_ID,
+  HMR_DESKTOP_RESOURCE_ID,
+  HMR_LIFECYCLE_RESOURCE_ID,
+  HMR_HOST_RESOURCE_ID,
   PARKED_OVERRIDES_RESOURCE_ID,
   type Replacements,
-  RUNTIME_PROXY_RESOURCE_ID,
-  RuntimeCapabilities,
+  HMR_PROXY_RESOURCE_ID,
+  HmrCapabilities,
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
@@ -249,16 +249,16 @@ export async function bootAppDeps(
   // Two kinds go in, and the ids do not say which is which (they all read `runtime:`, which
   // is history — see the note above their definitions). CAPABILITIES are what only this
   // process can provide; PARKED state is the platform's own, put where a swap cannot lose it.
-  hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-  hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
-  hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
-  hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
-  hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
+  hmr.resources.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+  hmr.resources.register(HMR_CONFIG_RESOURCE_ID, config);
+  hmr.resources.register(HMR_DB_RESOURCE_ID, db);
+  hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
+  hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
+  hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
-  hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
   const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, lifecycle);
+  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // …and the parked half. The auth values and the nodes a test stands in for: platform
   // state, every one.
   hmr.resources.register(PARKED_AUTH_STATE_RESOURCE_ID, authState);
@@ -285,10 +285,10 @@ export async function bootAppDeps(
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
+export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
   const errors = tree.api<Errors>("ObservabilityModule", "Errors");
-  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
+  const log = tree.api<{ line(text: string): void }>("HmrModule", "Log");
   const settings = tree.api<Settings>("SettingsModule", "Settings");
   const access = tree.api<Access>("ProjectsModule", "Access");
   const authService = tree.api<Auth>("IdentityModule", "Auth");
