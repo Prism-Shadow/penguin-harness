@@ -303,7 +303,7 @@ export async function bootAppDeps(
 export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
   const errors = tree.api<Errors>("ObservabilityModule", "Errors");
-  const log = tree.api<{ line(text: string): void }>("HmrModule", "Log");
+  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
   const settings = tree.api<Settings>("SettingsModule", "Settings");
   const access = tree.api<Access>("ProjectsModule", "Access");
   const authService = tree.api<Auth>("IdentityModule", "Auth");
