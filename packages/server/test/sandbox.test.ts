@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
-import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
@@ -167,9 +167,9 @@ describe("sandbox settings ride the parked context across a swap", () => {
   async function bootObserved(doc: Json) {
     const resources = new HotResources();
     // A bare-kernel declaration — right family, no capabilities offered — is what makes a
-    // terminals-only boot legal (see capabilities.ts's RuntimeClaim). The sandbox floor is
+    // terminals-only boot legal (see capabilities.ts's HmrClaim). The sandbox floor is
     // business-independent, so this is all these tests need behind the platform.
-    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     // The observer is itself a plugin module requiring the sandbox — the surface an
     // actual consumer has.
     let seen: SandboxService | null = null;

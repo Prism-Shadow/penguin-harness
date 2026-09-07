@@ -1,7 +1,7 @@
 /**
  * HmrHost: the runtime side of the stop-the-world hot-update protocol.
  *
- * RUNTIME LAYER — MECHANISM ONLY. Nothing here may encode what the product
+ * HMR LAYER — MECHANISM ONLY. Nothing here may encode what the product
  * does; policy belongs in the platform, which ships by HTTP push in seconds
  * while every line in this file costs a rebuild and a redeploy of every
  * installation. Before adding anything, read ./README.md — in particular the
@@ -566,7 +566,7 @@ export class HmrHost {
 
   /**
    * Where the current version's native-module assets live, or null when none were
-   * pushed. A declared member of the hmr capability (see RUNTIME_INTERFACES), read by
+   * pushed. A declared member of the hmr capability (see HMR_INTERFACES), read by
    * the bundle's pty loader — not a registry key: the host is already the claimed
    * object, so its per-push state belongs on it.
    */
