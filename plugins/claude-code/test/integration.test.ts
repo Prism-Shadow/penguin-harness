@@ -1,5 +1,5 @@
 /**
- * The plugin on the real server: installed through plugins.json, loaded by the real
+ * The plugin on the real server: installed through a Project's config, loaded by the real
  * loader, its surface offered to the App, and a Session of its kind opened, driven and
  * closed — with a fake `claude` (fake-claude.mjs) standing in through PENGUIN_CLAUDE_BIN.
  *
