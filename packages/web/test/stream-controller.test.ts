@@ -854,7 +854,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
 
   it("an open-at response that arrives after the run was replaced is dropped, and opening inside the tail is the tail", async () => {
     const h = await withRun();
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
     expect(h.controller.tailAttached).toBe(false);
