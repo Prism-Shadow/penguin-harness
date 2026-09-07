@@ -76,20 +76,19 @@ import type {
   AnyIface,
   AnyImpl,
   Opaque,
+  Park,
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade, Interface } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
 import { MATERIALIZED } from "./manifest.js";
-import type { PlatformApi } from "./platform.js";
-import { packagedPlatform } from "./platform.js";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
  * initial context a fresh boot creates the tree with (see initialDoc): the runtime never
  * hardcodes a business value of its own, so this is where a business platform's own
- * starting state belongs (see platform/platform.ts's packagedPlatform).
+ * starting state belongs (the server's hmr/platform.ts calls its own `packagedPlatform`).
  */
 export interface PlatformBundle {
   id: string;
@@ -179,20 +178,20 @@ export type UpgradeOutcome =
  */
 const STORE_KEEP = 2;
 
-export class HmrHost {
+export class HmrHost<Api extends Park = Park> {
   readonly resources = new HotResources();
 
-  private instance: Instance<PlatformApi> | null = null;
+  private instance: Instance<Api> | null = null;
   /**
    * The bundle behind the RUNNING instance, held as the loaded object rather than a
    * pointer to re-read: it is what boot-failure recovery re-boots (see recoverPrevious).
    * A bundle's `id` cannot stand in for this — the packaged export IS what a push
-   * delivers (hmr/entry.ts re-exports `packagedPlatform` as `hotPlatform`), so every
+   * delivers (the server's hmr/entry.ts re-exports its packaged platform as `hotPlatform`), so every
    * pushed bundle carries the packaged id and comparing ids cannot tell a pushed version
    * from the compiled-in default. Nor can the manifest: a push whose disk commit failed
    * (`persisted: false`) is running a version harness.json does not name.
    */
-  private current: PlatformBundle = packagedPlatform;
+  private current: PlatformBundle;
   /** Current version's materialized native assets dir (see assetsDir()). */
   private assets: string | null = null;
   private readonly hmrDir: string;
@@ -204,11 +203,21 @@ export class HmrHost {
    * fallback can never run twice and race each other into assigning `this.instance` (a double
    * boot, or a restored version clobbered by a concurrently-booted packaged default).
    */
-  private initPromise: Promise<Instance<PlatformApi>> | null = null;
+  private initPromise: Promise<Instance<Api>> | null = null;
   /** The freeze, as a queue: everything the HTTP layer gates on chains here. */
   private opQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly root: string) {
+  /**
+   * `packaged` is the bundle compiled INTO the program — the starting state, and the
+   * fallback a failed restore lands on. Passed in rather than imported: this package is the
+   * mechanism, and it must not know what a platform is or what this product's default one
+   * contains. The server hands it its own (hmr/platform.ts's `packagedPlatform`).
+   */
+  constructor(
+    private readonly root: string,
+    private readonly packaged: PlatformBundle,
+  ) {
+    this.current = packaged;
     this.hmrDir = path.join(root, "hmr");
     this.storeDir = path.join(this.hmrDir, "store");
     this.manifestPath = path.join(this.hmrDir, "harness.json");
@@ -243,31 +252,31 @@ export class HmrHost {
    */
   /**
    * The App of THIS moment, or null before the first boot and after dispose. For the
-   * callers that outlive swaps — the runtime app, the process handlers — which must not
+   * callers that outlive swaps — the HMR app, the process handlers — which must not
    * hold a generation's objects across a push (see ServerBoot.tree).
    */
-  currentApp(): Instance<PlatformApi> | null {
+  currentApp(): Instance<Api> | null {
     return this.instance;
   }
 
-  ensure(): Promise<Instance<PlatformApi>> {
+  ensure(): Promise<Instance<Api>> {
     if (this.instance !== null) return Promise.resolve(this.instance);
     this.initPromise ??= this.initialize();
     return this.initPromise;
   }
 
   /** Runs exactly once per process (guarded by `initPromise` in ensure()). */
-  private async initialize(): Promise<Instance<PlatformApi>> {
+  private async initialize(): Promise<Instance<Api>> {
     try {
       await this.restore();
       if (this.instance === null) {
-        const bundle = packagedPlatform;
+        const bundle = this.packaged;
         this.instance = (await boot(
           bundle.impl,
           bundle.iface,
           initialDoc(bundle.iface, bundle.context),
           this.resources,
-        )) as Instance<PlatformApi>;
+        )) as Instance<Api>;
         this.current = bundle;
       }
       return this.instance;
@@ -346,7 +355,7 @@ export class HmrHost {
         bundle.iface,
         initialDoc(bundle.iface, bundle.context),
         this.resources,
-      )) as Instance<PlatformApi>;
+      )) as Instance<Api>;
       this.instance = instance;
       this.current = bundle;
       this.webMem = webMem;
@@ -404,7 +413,7 @@ export class HmrHost {
       this.warn(`the App failed to boot after a plugin change; the previous one was restored`);
       return false;
     }
-    this.instance = result.instance as Instance<PlatformApi>;
+    this.instance = result.instance as Instance<Api>;
     return true;
   }
 
@@ -487,7 +496,7 @@ export class HmrHost {
     // as one atomic version — never a platform that's newer (or older) than the
     // web or cli it's paired with. `result.doc` (the swap's parked+migrated state)
     // is never written to disk — see the module doc: code persists, state does not.
-    this.instance = result.instance as Instance<PlatformApi>;
+    this.instance = result.instance as Instance<Api>;
     this.current = bundle;
     this.webMem = webMem;
 
@@ -526,12 +535,7 @@ export class HmrHost {
   private async recoverPrevious(doc: Json): Promise<void> {
     try {
       const bundle = this.current;
-      this.instance = (await boot(
-        bundle.impl,
-        bundle.iface,
-        doc,
-        this.resources,
-      )) as Instance<PlatformApi>;
+      this.instance = (await boot(bundle.impl, bundle.iface, doc, this.resources)) as Instance<Api>;
       // `current` unchanged: the previous version is the running version again.
     } catch (err) {
       this.warn(

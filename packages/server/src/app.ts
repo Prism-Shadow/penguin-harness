@@ -121,7 +121,9 @@ import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HmrHost } from "./hmr/host.js";
+import { HmrHost } from "@prismshadow/penguin-hmr";
+import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
+import { packagedPlatform } from "./hmr/platform.js";
 import { hmrRoutes } from "./hmr/routes.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
@@ -189,7 +191,7 @@ export interface ServerBoot {
   config: ServerConfig;
   db: DatabaseSync;
   channels: ChannelHub;
-  hmr: HmrHost;
+  hmr: ServerHmrHost;
   desktop: DesktopService | null;
   /** The host's message port as state; index.ts fills it when a port exists. */
   shellFrames: ShellFrames;
@@ -231,7 +233,7 @@ export async function bootAppDeps(
 
   // Hoisted above the services so its registry can be populated before anything boots
   // against it.
-  const hmr = new HmrHost(config.root);
+  const hmr = new HmrHost<PlatformApi>(config.root, packagedPlatform);
 
   // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
   // business question: the App installs the answer itself via setActivityProbe at every

@@ -27,7 +27,7 @@ import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
 import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
-import type { HmrHost } from "./host.js";
+import type { HmrHost } from "@prismshadow/penguin-hmr";
 import type { DesktopService } from "../services/desktop-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
