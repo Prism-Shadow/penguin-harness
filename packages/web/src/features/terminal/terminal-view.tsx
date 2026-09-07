@@ -12,12 +12,16 @@
  * To restart with a different terminal, remount it (change the React `key`). On a touch
  * device the surface also carries the key bar (terminal-keybar.tsx), so both hosts get the
  * keys a soft keyboard lacks without either of them knowing about it.
+ *
+ * The socket itself is not managed here: terminal-connection.ts owns attaching, the
+ * heartbeat and reattaching after a link drops, so this file stays about xterm.
  */
 import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 // Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
-import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
+import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
@@ -53,7 +57,18 @@ export interface TerminalInfo {
   title?: string | null;
 }
 
-export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
+/**
+ * How long the container has to hold still before its size is passed on. Long enough to
+ * swallow a soft keyboard's animation, short enough that a deliberate drag lands promptly.
+ */
+const RESIZE_SETTLE_MS = 120;
+
+/**
+ * `reconnecting` is its own word on purpose: it is the state a mobile link spends most of
+ * its bad minutes in, and it means something the other three do not — the pty is fine, this
+ * page's socket is not, and it is being reattached (terminal-connection.ts).
+ */
+export type TerminalStatus = "connecting" | "ready" | "reconnecting" | "exited" | "error";
 
 /**
  * The screen's own palette, one per appearance. Two things matter here.
@@ -272,7 +287,6 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
-      let socket: WebSocket | null = null;
       let exited = false;
 
       const report = (status: TerminalStatus, detail = ""): void => {
@@ -461,18 +475,12 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
       // another window attaches this one could never win its geometry back.
       container.addEventListener(
         "focusin",
-        () => {
-          if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(encodeResize(term.cols, term.rows, "claim"));
-          }
-        },
+        () => connection.send(encodeResize(term.cols, term.rows, "claim")),
         { signal },
       );
 
       const send = (data: string): void => {
-        if (socket?.readyState === WebSocket.OPEN) {
-          socket.send(encodeFrame(TerminalOpcode.Input, data));
-        }
+        connection.send(encodeFrame(TerminalOpcode.Input, data));
       };
 
       term.onData((data) => {
@@ -494,56 +502,100 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         if (!disposed) callbacks.current.onTitle?.(title);
       });
 
-      void (async () => {
-        try {
+      /**
+       * One connection, however many sockets that takes (terminal-connection.ts): it owns
+       * the first attach, the heartbeat and every reattach. This view only says what a
+       * frame means and what a status looks like.
+       */
+      const connection = new TerminalConnection({
+        first: async () => {
           const terminal = await callbacks.current.ensure(term.cols, term.rows);
-          if (disposed) return;
           callbacks.current.onInfo?.(terminal);
-
-          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows, userId));
-          socket.binaryType = "arraybuffer";
-
-          socket.onopen = () => report("ready");
-          socket.onmessage = (event) => {
-            if (!(event.data instanceof ArrayBuffer)) return;
-            const frame = decodeFrame(event.data);
-            if (!frame) return;
-            switch (frame.opcode) {
-              // The restore stream is self-contained (reset + clear + repaint + cursor), so
-              // it is written like any other output; calling term.reset() here would race
-              // with xterm's parser instead.
-              case TerminalOpcode.Restore:
-              case TerminalOpcode.Output:
-                term.write(frame.text);
-                break;
-              case TerminalOpcode.Exit: {
-                const { exitCode } = JSON.parse(frame.text) as { exitCode: number };
-                exited = true;
-                report("exited", String(exitCode));
-                break;
-              }
-              default:
-                break;
+          return terminal.id;
+        },
+        // A reattach that finds no terminal has nothing to come back to: the shell exited
+        // and was reaped while this page was away.
+        recheck: async (id) =>
+          (await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`)) !== null,
+        open: (id, handlers) => {
+          const ws = new WebSocket(streamUrl(id, term.cols, term.rows, userId));
+          ws.binaryType = "arraybuffer";
+          ws.onopen = () => handlers.onOpen();
+          ws.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) handlers.onMessage(event.data);
+          };
+          // `error` is always followed by `close`; handling both would report twice.
+          ws.onclose = () => handlers.onClose();
+          return {
+            send: (bytes) => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(bytes);
+            },
+            close: () => ws.close(),
+          };
+        },
+        onFrame: (frame) => {
+          switch (frame.opcode) {
+            // The restore stream is self-contained (reset + clear + repaint + cursor), so
+            // it is written like any other output; calling term.reset() here would race
+            // with xterm's parser instead.
+            case TerminalOpcode.Restore:
+            case TerminalOpcode.Output:
+              term.write(frame.text);
+              break;
+            case TerminalOpcode.Exit: {
+              const { exitCode } = JSON.parse(frame.text) as { exitCode: number };
+              exited = true;
+              connection.stop(); // an exited pty is not something to reattach to
+              report("exited", String(exitCode));
+              break;
             }
-          };
-          socket.onerror = () => report("error", "stream error");
-          socket.onclose = () => {
-            if (!exited) report("error", "stream closed");
-          };
-        } catch (err) {
-          report("error", err instanceof Error ? err.message : String(err));
-        }
-      })();
+            default:
+              break;
+          }
+        },
+        onStatus: (status, detail) => {
+          if (exited) return; // the exit already said what happened to this terminal
+          report(status, detail);
+        },
+      });
+      connection.start();
+
+      // A network that comes back, or a tab that does, is a reason to reattach now instead
+      // of sitting out the backoff — on a phone both happen all day. Waking also probes a
+      // socket that merely LOOKS open, which is what a suspended tab usually comes back to.
+      window.addEventListener("online", () => connection.wake(), { signal });
+      document.addEventListener(
+        "visibilitychange",
+        () => {
+          if (!document.hidden) connection.wake();
+        },
+        { signal },
+      );
 
       // Geometry changes are `update`s: this connection claimed the size when it attached
       // (?cols/?rows on the stream URL, and again on focusin above); an update only
       // applies while this connection still holds ownership.
+      // Settled, not per pixel. A phone resizes this container constantly — the address bar
+      // collapses, the soft keyboard opens, the dock is dragged — and each size that reaches
+      // the pty costs a SIGWINCH and a full repaint from whatever is running, which on a slow
+      // link is the most expensive thing the terminal can do. So fit on the trailing edge,
+      // and only tell the server when the GRID actually changed; most pixel changes do not
+      // move it.
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+      let sentCols = term.cols;
+      let sentRows = term.rows;
       const observer = new ResizeObserver(() => {
         if (disposed) return;
-        fit.fit();
-        if (socket?.readyState === WebSocket.OPEN) {
-          socket.send(encodeResize(term.cols, term.rows, "update"));
-        }
+        if (resizeTimer !== null) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          if (disposed) return;
+          fit.fit();
+          if (term.cols === sentCols && term.rows === sentRows) return;
+          sentCols = term.cols;
+          sentRows = term.rows;
+          connection.send(encodeResize(term.cols, term.rows, "update"));
+        }, RESIZE_SETTLE_MS);
       });
       observer.observe(container);
       term.focus();
@@ -564,7 +616,8 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         control.current = null;
         listenerAbort.abort();
         observer.disconnect();
-        socket?.close();
+        if (resizeTimer !== null) clearTimeout(resizeTimer);
+        connection.stop();
         term.dispose();
       };
     }
