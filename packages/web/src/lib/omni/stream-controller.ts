@@ -187,6 +187,18 @@ export interface HistoryEdgeState {
 /** The top end's state (the name the consumers grew up with). */
 export type OlderHistoryState = HistoryEdgeState;
 
+/**
+ * What a frontier fetch is told about the reader's position. The budget is counted in
+ * messages but the reader lives in pixels: sixty one-line messages fit two screens, and
+ * shedding the far end of a run that short puts it within the OTHER frontier's trigger
+ * distance — each end's load then undoes the other's, for ever. So the far end is shed
+ * only when the renderer measured it to be far, and never on an eager backfill.
+ */
+export interface FrontierLoadOptions {
+  /** The run's far end lies well beyond the viewport: past the budget, whole windows may leave from it. */
+  shed?: boolean;
+}
+
 export interface StreamController {
   /** The current view model (a resync rebuild swaps in a new object): the LIVE tail window. */
   readonly model: StreamModel;
@@ -213,10 +225,15 @@ export interface StreamController {
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
-  /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
-  loadOlder: () => Promise<void>;
-  /** Append the next window below the run, re-attaching the live tail when the run reaches its start; no-op while attached. */
-  loadNewer: () => Promise<void>;
+  /**
+   * Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the
+   * beginning, or before the initial load settled. `shed` says the run's far end (its
+   * bottom) is far from the reader in PIXELS, so the budget may shed from it — the
+   * renderer's call, since only it can measure; without it the run only grows.
+   */
+  loadOlder: (opts?: FrontierLoadOptions) => Promise<void>;
+  /** Append the next window below the run, re-attaching the live tail when the run reaches its start; no-op while attached. `shed`: the run's top is far, the budget may shed from it. */
+  loadNewer: (opts?: FrontierLoadOptions) => Promise<void>;
   /** Drop the run and re-attach the live tail (the jump-to-latest button while detached); no-op while attached. */
   jumpToLatest: () => void;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
@@ -628,7 +645,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * phase: a rebuild in flight owns the loading pipeline, and its epoch bump discards
    * any backfill that raced it.
    */
-  const loadOlder = async (opts: { eager?: boolean } = {}): Promise<void> => {
+  const loadOlder = async (opts: FrontierLoadOptions & { eager?: boolean } = {}): Promise<void> => {
     if (disposed || phase !== "live" || failed) return;
     const cursor = topCursor();
     if (older.loading || cursor === null) return;
@@ -649,8 +666,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // An EAGER backfill (a fresh open, a jump back to the tail) lands with the reader at
       // the bottom, on the tail they just asked for: shedding from the bottom would take
       // it away again the moment a live tail alone outgrows the budget. Only a scroll-up
-      // backfill — the reader at the top — sheds.
-      if (opts.eager !== true) shedFromBottom();
+      // backfill whose far end the renderer measured to be far sheds (FrontierLoadOptions).
+      if (opts.eager !== true && opts.shed === true) shedFromBottom();
       edgesVersion += 1;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
@@ -669,7 +686,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * tail's start re-attaches the live model instead (it IS the next window), and the
    * run then sheds from the top if it grew past its budget.
    */
-  const loadNewer = async (): Promise<void> => {
+  const loadNewer = async (opts: FrontierLoadOptions = {}): Promise<void> => {
     if (disposed || phase !== "live" || failed || tailAttached) return;
     const last = windows[windows.length - 1];
     if (newer.loading || last === undefined) return;
@@ -679,7 +696,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       tailAttached = true;
       newer.hasMore = false;
       newer.error = null;
-      shedFromTop();
+      if (opts.shed === true) shedFromTop();
       edgesVersion += 1;
       deps.onModelChange();
       return;
@@ -708,7 +725,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         tailAttached = true;
         newer.hasMore = false;
       }
-      shedFromTop();
+      if (opts.shed === true) shedFromTop();
+      else older.hasMore = topCursor() !== null;
       edgesVersion += 1;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;

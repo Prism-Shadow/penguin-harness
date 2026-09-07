@@ -189,3 +189,61 @@ test("a live session whose tail outgrew the budget: scrolling up sheds it, the j
   await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
   await expect(page.getByText(`第${EXCHANGES + 14}问`)).toBeVisible();
 });
+
+test.describe("a tall viewport", () => {
+  // A viewport tall enough that a loaded run sits within both frontiers' trigger distance
+  // for most of its life: the shape in which the two ends used to undo each other — the
+  // top fetch shedding the tail, the bottom fetch bringing it back and shedding the top —
+  // without the reader touching anything. A run shorter than the viewport also raises no
+  // scroll event, so the frontier there has to fire on its own.
+  test.use({ viewport: { width: 1440, height: 2000 } });
+
+  test("the run fills the screen by itself, holds still when left alone, and the last message stays reachable", async ({
+    page,
+  }) => {
+    const sessionId = await setup(page);
+    await page.goto(`${BASE}/chat/${sessionId}`);
+    const ta = page.getByPlaceholder(/输入消息/);
+    await ta.waitFor();
+    const send = sender(page, ta);
+    for (let i = 1; i <= EXCHANGES; i += 1) await send(`第${i}问`, i);
+    await page.reload();
+    await expect(page.getByText(`第${EXCHANGES}问`)).toBeVisible();
+    const el = scroller(page);
+
+    /** The DOM must not change by itself: sample it for two seconds and expect one shape. */
+    const holdsStill = async () => {
+      const samples = new Set();
+      for (let i = 0; i < 8; i += 1) {
+        samples.add(
+          `${await prompts(page).count()}/${await page.locator("[data-stream-detached]").count()}`,
+        );
+        await page.waitForTimeout(250);
+      }
+      expect([...samples]).toHaveLength(1);
+    };
+
+    // Scroll to the top again and again until the beginning is loaded.
+    for (let i = 0; i < 10; i += 1) {
+      await el.evaluate((c) => {
+        c.scrollTop = 0;
+      });
+      await page.waitForTimeout(400);
+      if ((await page.getByText("第1问").count()) > 0) break;
+    }
+    await expect(page.getByText("第1问")).toBeVisible();
+    await holdsStill();
+
+    // Back down: the newest message is reachable by scrolling alone, and the DOM settles.
+    for (let i = 0; i < 10; i += 1) {
+      await el.evaluate((c) => {
+        c.scrollTop = c.scrollHeight;
+      });
+      await page.waitForTimeout(400);
+      if ((await page.getByText(`第${EXCHANGES}问`).count()) > 0) break;
+    }
+    await expect(page.getByText(`第${EXCHANGES}问`)).toBeVisible();
+    await expect(page.locator("[data-stream-detached]")).toHaveCount(0);
+    await holdsStill();
+  });
+});

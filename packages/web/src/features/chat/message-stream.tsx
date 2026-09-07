@@ -8,6 +8,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { S } from "../../lib/strings";
+import type { FrontierLoadOptions } from "../../lib/omni/stream-controller";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
@@ -192,7 +193,7 @@ export interface OlderHistoryControls {
    * re-anchors the reader on the node they were on, whatever moved around it.
    */
   edgesVersion: number;
-  onLoad: () => void;
+  onLoad: (opts?: FrontierLoadOptions) => void;
 }
 
 /** Scroll-down wiring while the run has shed the live tail (stream-controller's shedFromBottom): state + trigger for the bottom-of-stream affordance. */
@@ -201,7 +202,7 @@ export interface NewerHistoryControls {
   hasMore: boolean;
   loading: boolean;
   error: string | null;
-  onLoad: () => void;
+  onLoad: (opts?: FrontierLoadOptions) => void;
   onJump: () => void;
 }
 
@@ -209,6 +210,16 @@ export interface NewerHistoryControls {
 const OLDER_TRIGGER_PX = 300;
 /** Distance from the bottom (px) at which scrolling, while the tail is off screen, fetches the next window. */
 const NEWER_TRIGGER_PX = 300;
+/**
+ * How far (in viewports, with a floor in px) the run's OTHER end must lie beyond the
+ * viewport before a frontier fetch may shed from it. Sixty one-line messages fit two
+ * screens; shedding an end that close puts it inside the other frontier's trigger
+ * distance, and the two ends then undo each other for ever (see FrontierLoadOptions).
+ */
+const SHED_VIEWPORTS = 2;
+const SHED_MIN_PX = 1200;
+const shedDistance = (el: HTMLDivElement) =>
+  Math.max(SHED_MIN_PX, SHED_VIEWPORTS * el.clientHeight);
 
 export function MessageStream({
   items,
@@ -309,17 +320,37 @@ export function MessageStream({
     anchorRef.current = null;
   };
 
-  /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
-  const maybeLoadOlder = (el: HTMLDivElement) => {
-    const o = olderRef.current;
-    if (!o || !o.hasMore || o.loading || o.error !== null) return;
-    if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
+  /**
+   * The scroll position this component last set itself (re-anchoring, the stick snap).
+   * The scroll event it raises carries no reader intent, so it must not trigger a
+   * frontier fetch — a re-anchor after an eviction moves scrollTop UP, and read as a
+   * scroll-up it would fetch the window just shed. Recognised by VALUE rather than by a
+   * flag: scroll events coalesce, and a reader's flick landing in the same event as a
+   * snap must still count as theirs — it lands somewhere else.
+   */
+  const programmaticTopRef = useRef<number | null>(null);
+  const setScrollTop = (el: HTMLDivElement, top: number) => {
+    el.scrollTop = top;
+    programmaticTopRef.current = el.scrollTop;
   };
-  /** Near the bottom of the run while the tail is off screen: fetch the next window (same gating). */
-  const maybeLoadNewer = (el: HTMLDivElement) => {
+
+  /** Near the top of loaded history, scrolling UP: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
+  const maybeLoadOlder = (el: HTMLDivElement, movingUp: boolean) => {
+    const o = olderRef.current;
+    if (!o || !o.hasMore || o.loading || o.error !== null || !movingUp) return;
+    if (el.scrollTop < OLDER_TRIGGER_PX) {
+      // The bottom may be shed only when it is far below the viewport.
+      const below = el.scrollHeight - el.scrollTop - el.clientHeight;
+      o.onLoad({ shed: below > shedDistance(el) });
+    }
+  };
+  /** Near the bottom of the run while the tail is off screen, scrolling DOWN: fetch the next window (same gating). */
+  const maybeLoadNewer = (el: HTMLDivElement, movingDown: boolean) => {
     const n = newerRef.current;
-    if (!n || !n.hasMore || n.loading || n.error !== null) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < NEWER_TRIGGER_PX) n.onLoad();
+    if (!n || !n.hasMore || n.loading || n.error !== null || !movingDown) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < NEWER_TRIGGER_PX) {
+      n.onLoad({ shed: el.scrollTop > shedDistance(el) });
+    }
   };
 
   const onScroll = () => {
@@ -327,6 +358,7 @@ export function MessageStream({
     if (!el) return;
     const prevTop = lastTopRef.current;
     lastTopRef.current = el.scrollTop;
+    const programmatic = el.scrollTop === programmaticTopRef.current;
     // Scrollbar-drag / keyboard scroll upward during the return cancels it (wheel/touch cancel in their own handlers).
     if (returningRef.current && prevTop !== null && el.scrollTop < prevTop - 1) {
       cancelReturn();
@@ -336,8 +368,10 @@ export function MessageStream({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
-    maybeLoadOlder(el);
-    maybeLoadNewer(el);
+    if (!programmatic && prevTop !== null) {
+      maybeLoadOlder(el, el.scrollTop < prevTop);
+      maybeLoadNewer(el, el.scrollTop > prevTop);
+    }
     recordAnchor(el);
     syncJump();
   };
@@ -367,6 +401,7 @@ export function MessageStream({
         pendingStickRef.current = false;
         follow.resume();
         stickToBottom(el, follow);
+        programmaticTopRef.current = el.scrollTop;
       } else {
         // A stick judged against the run's old bottom does not survive the tail re-joining
         // below it: the reader was at the end of what was loaded, not of the conversation.
@@ -377,8 +412,8 @@ export function MessageStream({
             a === null
               ? null
               : el.querySelector<HTMLElement>(`[data-stream-node="${CSS.escape(a.key)}"]`);
-          if (a !== null && node !== null) el.scrollTop = node.offsetTop - a.top;
-          else el.scrollTop += el.scrollHeight - lastHeightRef.current;
+          if (a !== null && node !== null) setScrollTop(el, node.offsetTop - a.top);
+          else setScrollTop(el, el.scrollTop + el.scrollHeight - lastHeightRef.current);
         }
       }
     }
@@ -386,7 +421,34 @@ export function MessageStream({
     lastDetachedRef.current = detached;
     if (el) lastHeightRef.current = el.scrollHeight;
     // No snapping while the tail is off screen: the run's bottom is history, not the live edge.
-    if (el && follow.stick && !returningRef.current && !detached) stickToBottom(el, follow);
+    if (el && follow.stick && !returningRef.current && !detached) {
+      stickToBottom(el, follow);
+      programmaticTopRef.current = el.scrollTop;
+    }
+    // Two cases a scroll event never covers. A run shorter than the viewport raises no
+    // scroll event at all, so a frontier there would never fire: fill the screen the way
+    // an open does — without shedding — until it scrolls, or history ends. And a reader
+    // waiting AT a frontier (their scroll-up landed while a fetch was in flight and was
+    // gated by it; a window just landed and the top is still within reach) gets the next
+    // window without having to scroll again. Loading/error states gate both like the
+    // scroll triggers do; the initial open (no scroll yet) fires neither.
+    if (el) {
+      const o = olderRef.current;
+      const n = newerRef.current;
+      const ready = (x: OlderHistoryControls | NewerHistoryControls | undefined) =>
+        x !== undefined && x.hasMore && !x.loading && x.error === null;
+      const below = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (el.scrollHeight - el.clientHeight < OLDER_TRIGGER_PX) {
+        if (ready(n)) n!.onLoad({ shed: false });
+        else if (ready(o)) o!.onLoad({ shed: false });
+      } else if (lastTopRef.current !== null) {
+        if (el.scrollTop < OLDER_TRIGGER_PX && ready(o)) {
+          o!.onLoad({ shed: below > shedDistance(el) });
+        } else if (below < NEWER_TRIGGER_PX && ready(n)) {
+          n!.onLoad({ shed: el.scrollTop > shedDistance(el) });
+        }
+      }
+    }
     if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
@@ -514,7 +576,7 @@ export function MessageStream({
                 ) : older.error !== null ? (
                   <button
                     type="button"
-                    onClick={older.onLoad}
+                    onClick={() => older.onLoad()}
                     className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                   >
                     {S.chat.loadEarlierRetry}
@@ -545,7 +607,7 @@ export function MessageStream({
               ) : newer.error !== null ? (
                 <button
                   type="button"
-                  onClick={newer.onLoad}
+                  onClick={() => newer.onLoad()}
                   className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 >
                   {S.chat.loadLaterRetry}
