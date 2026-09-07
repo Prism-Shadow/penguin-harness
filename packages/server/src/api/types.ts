@@ -2336,6 +2336,77 @@ export interface MessagingTestMessageResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Chat bots (/api/chat-bots, admin only): a bot account that starts agents from a chat
+// ---------------------------------------------------------------------------
+
+/** One chat bot's live state (in memory, reset on every (re)connect). */
+export interface ChatBotStatus {
+  state: MessagingRuntimeState;
+  /** Failure detail; present only in the `error` state. */
+  lastError?: string;
+  changedAt?: string;
+  /** When an inbound message last arrived on this connection. */
+  lastInboundAt?: string;
+  /** The last failure after a message was accepted: its Task never started, or a reply never went out. */
+  lastDeliveryError?: MessagingDeliveryError;
+}
+
+/**
+ * One chat bot as the settings page reads it. `config` is the credential document with
+ * every string masked (plaintext never leaves the server); `configured` says whether one is
+ * stored at all. A bot that is not `enabled` holds no connection.
+ */
+export interface ChatBotInfo {
+  id: string;
+  channel: MessagingChannel;
+  label: string;
+  labelZh?: string;
+  /** The Project and Agent every chat's Session is created under; null until chosen. */
+  projectId: string | null;
+  agentId: string | null;
+  config: Record<string, string>;
+  configured: boolean;
+  enabled: boolean;
+  status: ChatBotStatus;
+  /** How many chats currently have a Session. */
+  chats: number;
+}
+
+export interface ChatBotsResponse {
+  bots: ChatBotInfo[];
+}
+
+/**
+ * PUT /api/chat-bots/:id — the credential document (in the channel's own shape; a masked
+ * value read back is kept as stored, an empty string drops the field) and the target. An
+ * enabled bot restarts on the new values. 400 `chat_bot_config_invalid` when the channel's
+ * connector cannot read the document, 404 `agent_not_found` for a target that does not exist.
+ */
+export interface ChatBotPutRequest {
+  config?: Record<string, unknown>;
+  projectId?: string;
+  agentId?: string;
+}
+
+/** POST /api/chat-bots/:id/state — the connection toggle (400 `chat_bot_config_required` / `chat_bot_target_required` before both are saved). */
+export interface ChatBotStateRequest {
+  enabled: boolean;
+}
+
+/** POST /api/chat-bots/:id/test — probes the draft `config`, or the stored one when omitted. */
+export interface ChatBotTestRequest {
+  config?: Record<string, unknown>;
+}
+
+export interface ChatBotTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  /** The account the credential signs in as, when the channel reports one (Discord: `@username`). */
+  accountLabel?: string;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
 
