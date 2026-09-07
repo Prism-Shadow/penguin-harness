@@ -186,7 +186,7 @@ describe("/api/command", () => {
       const { cookie } = await loginAdmin(plain.app);
       const listed = await plain.app.request("/api/command", { headers: { cookie } });
       expect(listed.status).toBe(200);
-      expect(await listed.json()).toEqual({ commands: [] });
+      expect(await listed.json()).toEqual({ commands: [], offers: [] });
       const run = await plain.app.request("/api/command/install-cli", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
@@ -201,11 +201,19 @@ describe("/api/command", () => {
     try {
       // Any admin session, not only the shell's own window: the command acts on the host.
       const { cookie } = await loginAdmin(t.app);
-      t.deps.desktop!.setCommands(["install-cli"]);
+      const installCli = { command: "install-cli", label: "Install it", labelZh: "装上它" };
+      // A command this build has no words for: offered, listed, runnable.
+      const revealLogs = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
+      t.deps.desktop!.setCommands([installCli, revealLogs]);
       const ran: string[] = [];
       t.deps.desktop!.onCommand((command) => ran.push(command));
       const listed = await t.app.request("/api/command", { headers: { cookie } });
-      expect(await listed.json()).toEqual({ commands: ["install-cli"] });
+      expect(await listed.json()).toEqual({
+        // The legacy field stays narrow — a page older than `offers` looks every id up in a
+        // table of its own and a miss there blanks it.
+        commands: ["install-cli"],
+        offers: [installCli, revealLogs],
+      });
       const run = await t.app.request("/api/command/install-cli", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
@@ -225,7 +233,15 @@ describe("/api/command", () => {
         headers: { cookie, "content-type": "application/json" },
         body: "{}",
       });
-      expect(unknown.status).toBe(404);
+      expect(unknown.status).toBe(409);
+      // An id this build never heard of, but the host did offer: forwarded, not judged.
+      const newer = await t.app.request("/api/command/reveal-logs", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(newer.status).toBe(202);
+      expect(ran).toEqual(["install-cli", "reveal-logs"]);
     } finally {
       await t.cleanup();
     }
@@ -283,10 +299,28 @@ describe("desktop-update-port", () => {
     expect(desktop.requestUpdateCommand("check")).toBe(true);
     expect(posted).toEqual([{ type: "desktop-updater-command", action: "check" }]);
 
-    // The host's commands ride the same port: its offer in, the page's ask out. Unknown
-    // names in an offer are dropped, not stored.
-    onMessage!({ data: { type: "host-commands", commands: ["install-cli", "format-disk"] } });
+    // The host's commands ride the same port: its offer in, the page's ask out. What the
+    // host names is stored as the host wrote it — an id this build never heard of included,
+    // since the host is the one that decides what it can do.
+    const offer = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
+    onMessage!({
+      data: {
+        type: "host-commands",
+        commands: [{ command: "install-cli", label: "Install it", labelZh: "装上它" }, offer],
+      },
+    });
+    expect(desktop.getCommandOffers()).toEqual([
+      { command: "install-cli", label: "Install it", labelZh: "装上它" },
+      offer,
+    ]);
+    // The legacy list stays narrow: only ids this build also has words for.
     expect(desktop.getCommands()).toEqual(["install-cli"]);
+    // A shell older than offers sends bare ids; they arrive as offers without words.
+    onMessage!({ data: { type: "host-commands", commands: ["install-cli"] } });
+    expect(desktop.getCommandOffers()).toEqual([
+      { command: "install-cli", label: "", labelZh: "" },
+    ]);
+    // Not a list at all: ignored, and what was stored stays.
     onMessage!({ data: { type: "host-commands", commands: "install-cli" } });
     expect(desktop.getCommands()).toEqual(["install-cli"]);
     expect(desktop.requestCommand("install-cli")).toBe(true);
