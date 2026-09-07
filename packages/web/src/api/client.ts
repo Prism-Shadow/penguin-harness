@@ -204,3 +204,31 @@ async function callOverHttp(method: string, url: string, body: unknown): Promise
   }
   return { status: response.status, body: parsed, date };
 }
+
+/**
+ * `fetch`, for the few callers that read the Response themselves (a status they act on, a
+ * body they parse): the same request over the socket when it is open, handed back as a
+ * Response, and a real fetch otherwise. Only the socket's own answers are carried — JSON
+ * or empty bodies, no request body; anything else stays a plain fetch. Same-origin
+ * credentials, as every API call here.
+ */
+export async function apiRequest(url: string, init: { method?: string } = {}): Promise<Response> {
+  const path = url.split("?")[0] ?? url;
+  const local = !url.startsWith("/server/");
+  const overSocket = !(local && httpOnly(path)) && (await apiSocket.ready());
+  if (overSocket) {
+    try {
+      const res = await apiSocket.call(init.method ?? "GET", url);
+      if (res.status !== 415 && res.status !== 421) {
+        const empty = res.body === null || res.status === 204 || res.status === 304;
+        return new Response(empty ? null : JSON.stringify(res.body), {
+          status: res.status,
+          headers: { "content-type": "application/json", ...res.headers },
+        });
+      }
+    } catch {
+      throw new TypeError("network error"); // what fetch throws when the connection is lost
+    }
+  }
+  return fetch(url, { ...init, credentials: "same-origin" });
+}
