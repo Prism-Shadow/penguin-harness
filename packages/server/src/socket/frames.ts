@@ -63,7 +63,16 @@ export interface EndFrame {
   reason?: string;
 }
 
-export type ServerFrame = ResponseFrame | StreamStartFrame | EventFrame | EndFrame;
+/**
+ * Server -> client: liveness the client can see. A browser cannot observe protocol pings, so
+ * the server also says "still here" as a frame on the same cadence; a client that hears
+ * nothing for two beats closes and reconnects instead of sitting on a half-dead connection.
+ */
+export interface HeartbeatFrame {
+  heartbeat: true;
+}
+
+export type ServerFrame = ResponseFrame | StreamStartFrame | EventFrame | EndFrame | HeartbeatFrame;
 
 /** Request headers a call may set; everything else in `headers` is dropped. */
 export const CALL_HEADERS: ReadonlySet<string> = new Set([

@@ -21,7 +21,15 @@ import { WebSocket } from "ws";
 import { ADMIN_USER_ID } from "../auth/service.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
 import { apiSocketPath } from "../socket/ref.js";
+import { HEARTBEAT_MS } from "../socket/serve.js";
 import { formatSseEvent } from "../socket/sse-text.js";
+
+/** The machine answered the handshake with a status: it is up, and has no socket to offer (or refused this user). */
+class HandshakeRefused extends Error {
+  constructor(readonly status: number) {
+    super(`machine answered ${status}`);
+  }
+}
 
 export interface MachineSocketTarget {
   agent: http.Agent;
@@ -48,7 +56,15 @@ class MachineSocket {
 
   private constructor(ws: WebSocket) {
     this.#ws = ws;
+    // Silence watchdog: the machine's socket sends a heartbeat frame every beat; nothing for
+    // two beats means the channel is dead under us (an ssh session gone quiet), and every
+    // stream on it must end so the browser re-issues — not sit on a socket that never speaks.
+    let watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
+    watchdog.unref?.();
     ws.on("message", (data, isBinary) => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => ws.terminate(), 2 * HEARTBEAT_MS);
+      watchdog.unref?.();
       if (isBinary) return;
       let frame: ServerFrame;
       try {
@@ -56,6 +72,7 @@ class MachineSocket {
       } catch {
         return;
       }
+      if ("heartbeat" in frame) return; // its arrival already re-armed the watchdog
       const sink = this.#calls.get(frame.id);
       if (sink === undefined) return;
       if ("event" in frame) sink.onEvent(frame);
@@ -69,6 +86,7 @@ class MachineSocket {
       }
     });
     const drop = () => {
+      clearTimeout(watchdog);
       this.#closed = true;
       const sinks = [...this.#calls.values()];
       this.#calls.clear();
@@ -92,7 +110,7 @@ class MachineSocket {
       ws.once("open", () => resolve(new MachineSocket(ws)));
       ws.once("unexpected-response", (_req, res) => {
         res.resume();
-        reject(new Error(`machine answered ${res.statusCode ?? "?"}`));
+        reject(new HandshakeRefused(res.statusCode ?? 0));
       });
       ws.once("error", (err) => reject(err));
     });
@@ -237,10 +255,19 @@ export class MachineSocketRelay {
         },
         (err: unknown) => {
           this.#sockets.delete(machineId);
-          this.#refusedUntil.set(machineId, Date.now() + REFUSED_FOR_MS);
-          this.log(
-            `[machines] no socket to ${machineId} (${err instanceof Error ? err.message : err}); streams go over HTTP for a while`,
-          );
+          // Only an ANSWERED refusal parks the machine on the HTTP path (its build has no
+          // socket); a dial that failed says nothing about the build, and the next stream
+          // tries the socket again — the ssh session may well be back by then.
+          if (err instanceof HandshakeRefused) {
+            this.#refusedUntil.set(machineId, Date.now() + REFUSED_FOR_MS);
+            this.log(
+              `[machines] no socket on ${machineId} (${err.message}); streams go over HTTP for a while`,
+            );
+          } else {
+            this.log(
+              `[machines] socket to ${machineId} failed: ${err instanceof Error ? err.message : err}`,
+            );
+          }
           throw err;
         },
       );
