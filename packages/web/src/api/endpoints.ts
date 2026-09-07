@@ -1447,8 +1447,8 @@ export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/ap
 /** The host commands this server's process offers the command palette; empty under a plain server. Admin only. */
 export const getHostCommands = () => apiFetch<HostCommandsResponse>("/api/command");
 
-/** Runs one host command; the host answers with its own UI (a dialog, the updater). */
-export const runHostCommand = (command: HostCommand) =>
+/** Runs one host command; the host answers with its own UI (a dialog, the updater). The id is the host's word — this build need not know it. */
+export const runHostCommand = (command: string) =>
   apiFetch<void>(`/api/command/${encodeURIComponent(command)}`, { method: "POST", body: {} });
 
 export const desktopUpdateCheck = () =>
