@@ -204,9 +204,14 @@ describe("/api/command", () => {
       const installCli = { command: "install-cli", label: "Install it", labelZh: "装上它" };
       // A command this build has no words for: offered, listed, runnable.
       const revealLogs = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
-      t.deps.desktop!.setCommands([installCli, revealLogs]);
-      const ran: string[] = [];
-      t.deps.desktop!.onCommand((command) => ran.push(command));
+      // The host's own frame, put where the host would put it: the platform reads THAT,
+      // never a list the runtime parsed for it.
+      t.deps.shellFrames.hostCommands = {
+        type: "host-commands",
+        commands: [installCli, revealLogs],
+      };
+      const ran: unknown[] = [];
+      t.deps.shellFrames.post = (frame) => ran.push(frame);
       const listed = await t.app.request("/api/command", { headers: { cookie } });
       expect(await listed.json()).toEqual({
         // The legacy field stays narrow — a page older than `offers` looks every id up in a
@@ -220,7 +225,7 @@ describe("/api/command", () => {
         body: "{}",
       });
       expect(run.status).toBe(202);
-      expect(ran).toEqual(["install-cli"]);
+      expect(ran).toEqual([{ type: "host-command", command: "install-cli" }]);
       // Known but not offered here, and not a command at all.
       const notOffered = await t.app.request("/api/command/check-updates", {
         method: "POST",
@@ -241,7 +246,10 @@ describe("/api/command", () => {
         body: "{}",
       });
       expect(newer.status).toBe(202);
-      expect(ran).toEqual(["install-cli", "reveal-logs"]);
+      expect(ran).toEqual([
+        { type: "host-command", command: "install-cli" },
+        { type: "host-command", command: "reveal-logs" },
+      ]);
     } finally {
       await t.cleanup();
     }

@@ -15,32 +15,26 @@
  * Admin only: a command acts on the machine the server runs on, which is an owner's call.
  * Any admin session will do — a browser signed into the same server is as entitled as the
  * shell's own window, since the action is the host's, not the window's.
+ *
+ * PLATFORM code, deliberately (hmr/README.md). What a host can do, what it is called and who
+ * may run it is policy, and this surface is what proved the point: while it was mounted above
+ * the hot seam, a change to its shape could not reach a running installation at all. What
+ * stays in the runtime is the port itself — transport — published as `runtime:shell-frames`,
+ * whose frames are interpreted HERE.
  */
 import { Hono } from "hono";
-import type { HostCommandOffer, HostCommandsResponse } from "../../api/types.js";
+import { Component, Bind, Use } from "@prismshadow/penguin-core/kernel";
+import type { HostCommand, HostCommandOffer, HostCommandsResponse } from "../../api/types.js";
+import { HOST_COMMANDS } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { DesktopService } from "../../services/desktop-service.js";
+import { Desktop } from "../../hmr/capabilities.js";
+import type { ShellFrames } from "../../hmr/capabilities.js";
+import { parseHostCommandsMessage } from "../../services/desktop-update-port.js";
 
-/** What this route group reaches. The service is null under a plain server. */
+/** What this route group reaches: the host's port as state, read fresh on every request. */
 export interface CommandRouteDeps {
-  desktop: DesktopService | null;
-}
-
-/**
- * What the host offers, asked of the service the RUNTIME owns.
- *
- * That service can be older than this platform — a hot push replaces the platform, not the
- * program — so the call is optional and an older one falls back to its ids alone. Nothing is
- * lost there: a runtime that old is paired with a shell that only offers commands this build
- * already has words for.
- */
-function offersOf(deps: CommandRouteDeps): HostCommandOffer[] {
-  const desktop = deps.desktop;
-  if (desktop === null) return [];
-  const offers = desktop.getCommandOffers?.();
-  if (offers !== undefined) return offers;
-  return (desktop.getCommands?.() ?? []).map((command) => ({ command, label: "", labelZh: "" }));
+  shell: () => ShellFrames;
 }
 
 export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
@@ -53,10 +47,18 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
     await next();
   });
 
+  /** What the host last announced, read here rather than stored: the frame is the state. */
+  const offers = (): HostCommandOffer[] =>
+    parseHostCommandsMessage(deps.shell().hostCommands) ?? [];
+
   app.get("/", (c) =>
     c.json({
-      commands: deps.desktop?.getCommands() ?? [],
-      offers: offersOf(deps),
+      commands: offers()
+        .map((offer) => offer.command)
+        .filter((command): command is HostCommand =>
+          (HOST_COMMANDS as readonly string[]).includes(command),
+        ),
+      offers: offers(),
     } satisfies HostCommandsResponse),
   );
 
@@ -67,15 +69,40 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
    */
   app.post("/:command", (c) => {
     const command = c.req.param("command");
-    const offered = offersOf(deps).map((offer) => offer.command);
-    if (!offered.includes(command)) {
+    const shell = deps.shell();
+    if (!offers().some((offer) => offer.command === command)) {
       throw new HttpError(409, "command_unavailable", "This host does not offer that command.");
     }
-    if (!deps.desktop!.requestCommand(command)) {
+    if (shell.post === null) {
       throw new HttpError(503, "shell_unreachable", "The host is not listening.");
     }
+    shell.post({ type: "host-command", command });
     return c.body(null, 202);
   });
 
   return app;
+}
+
+/**
+ * The platform's own copy, which is the one that serves. The runtime mounts these routes too,
+ * but below the seam — that copy answers only for a platform old enough to decline the prefix.
+ */
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "CommandRoutes.routes",
+        prefix: "/api/command",
+        auth: "user",
+        order: 10,
+      },
+    ],
+  },
+})
+export class CommandRoutes {
+  @Use() private readonly desktop!: Desktop;
+  @Bind("CommandRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = commandRoutes({ shell: () => this.desktop.shell() });
+  }
 }

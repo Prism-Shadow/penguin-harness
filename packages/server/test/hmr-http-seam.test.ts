@@ -73,6 +73,16 @@ describe("platform HTTP seam", () => {
     expect(await (await api.get("/api/version")).json()).toEqual({ version: "from-platform" });
   });
 
+  it("host commands ship by push: what /api/command answers is the platform's to change", async () => {
+    // The surface that proved the rule (hmr/README.md): while it was mounted above the seam,
+    // a change to its shape could not reach a running installation at all.
+    expect(await (await api.get("/api/command")).json()).toEqual({ commands: [], offers: [] });
+
+    await pushPlatform(t.app, cookie, bundle);
+
+    expect(await (await api.get("/api/command")).json()).toMatchObject({ from: "pushed-platform" });
+  });
+
   it("routes the platform declines still reach the runtime's own", async () => {
     await pushPlatform(t.app, cookie, bundle);
     // The runtime's own routes are the mechanism surface (auth, hmr, desktop, static):
