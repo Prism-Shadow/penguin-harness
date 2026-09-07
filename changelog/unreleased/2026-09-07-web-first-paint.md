@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#640](https://github.com/Prism-Shadow/penguin-harness/pull/640)
 
 [中文版](2026-09-07-web-first-paint.zh.md)
 
