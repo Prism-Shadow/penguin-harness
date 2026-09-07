@@ -2422,10 +2422,41 @@ Scenarios:
     ],
   },
 
+  /** Discord-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  discord: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "Once bound, direct messages to the Discord bot — and messages that @-mention it in a server channel or thread — flow into this conversation, and the AI's replies are sent back to the same channel. Create an application in the Discord developer portal, add a bot to it and paste its token — no public URL is needed.",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "Leave empty to keep the saved Bot Token",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "Clear stored Bot Token",
+    /** The Bot Token field's corner link: the developer portal's application list. */
+    openPortal: "Open developer portal",
+    invalidToken:
+      "The Bot Token looks like three dot-separated segments, as copied from the Bot page of the developer portal",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat:
+      "Message the bot once in Discord first, so it knows which channel to send to",
+    /**
+     * The rule that cannot wait for a collapsed fold: a server channel delivers only messages
+     * that @-mention the bot, so a user who writes without the mention sees nothing arrive.
+     */
+    mentionOnly:
+      "In a server channel or thread the bot reads only messages that @-mention it; direct messages reach it as they are.",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "Open the Discord developer portal, create an application, and on its Bot page reset the token and copy it into the form above",
+      "Under OAuth2 → URL Generator pick the bot scope with the Send Messages, Read Message History and Attach Files permissions, then open the generated link to add the bot to your server",
+      "@-mention the bot in a channel, or send it a direct message",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
    * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
-   * `qq`).
+   * `qq` / `wechat` / `discord`).
    */
   messaging: {
     panelTitle: "Remote control",
@@ -2439,6 +2470,7 @@ Scenarios:
       telegram: "Telegram",
       qq: "QQ",
       wechat: "WeChat",
+      discord: "Discord",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -2496,6 +2528,8 @@ Scenarios:
       "A reply's Markdown arrives as formatting instead of as `**characters**`. QQ shows headings, bold, italic, strikethrough, lists, quotes, rules and links; it has no code formatting and no tables, so a code block arrives as plain lines and a table as its rows. If QQ refuses the formatting, the reply is sent as plain text — which costs one more of the few replies QQ allows per message.",
     renderMarkdownHelpWeChat:
       "A reply's Markdown arrives as formatting instead of as `**characters**`. WeChat reads Markdown itself and shows the most of the four channels: headings, bold, strikethrough, lists, quotes, rules, links, inline code, code blocks and tables all render. What it cannot show keeps its words and loses its markers — headings past the fourth level, italics around Chinese text, and inline images, which become links.",
+    renderMarkdownHelpDiscord:
+      "A reply's Markdown arrives as formatting instead of as `**characters**`. Discord reads Markdown itself: headings up to the third level, bold, italic, strikethrough, lists, quotes, links, inline code and code blocks all render. It has no tables and no horizontal rules, so a table arrives as a code block and a rule as a short dash line; a heading past the third level becomes a bold line.",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "One message per line",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
@@ -2519,6 +2553,7 @@ Scenarios:
       telegram: "Telegram connection enabled",
       qq: "QQ connection enabled",
       wechat: "WeChat connection enabled",
+      discord: "Discord connection enabled",
     },
     /**
      * Delivery observability under the toggle: has anything arrived, and did the last one get
@@ -2555,6 +2590,12 @@ Scenarios:
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect:
       "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
+    /** Discord delivers a server-channel message only when it @-mentions the bot — the answer to "I wrote in the channel and nothing happened". */
+    troubleDiscordMention:
+      "The bot ignores what you write in a Discord server channel? It reads only messages that @-mention it there (this needs no privileged intent in the developer portal, so nothing has to be switched on). Start the message with @the-bot, or send it a direct message.",
+    /** Direct messages to a bot need a shared server and the user's own DM setting. */
+    troubleDiscordDm:
+      "A direct message to the bot never arrives, or the reply fails with “does not accept direct messages”? Discord only routes DMs between a bot and a user who share a server, and the user's privacy settings for that server must allow direct messages from its members.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
@@ -2806,6 +2847,12 @@ Scenarios:
       telegram_no_chat:
         "No Telegram message received yet — message the bot once in Telegram first.",
       telegram_send_failed: "Sending the Telegram message failed.",
+      discord_token_required: "Bot Token is required.",
+      discord_token_invalid:
+        "The Bot Token is malformed: it looks like three dot-separated segments, as copied from the developer portal.",
+      discord_not_bound: "This Session has no Discord binding yet.",
+      discord_no_chat: "No Discord message received yet — message the bot once in Discord first.",
+      discord_send_failed: "Sending the Discord message failed.",
       another_channel_enabled:
         "Another channel's connection is enabled on this conversation: disable it first.",
       // Deliberately names nothing about the other conversation: it may live in a Project

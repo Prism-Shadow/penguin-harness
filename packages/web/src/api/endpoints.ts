@@ -122,6 +122,10 @@ import type {
   WeChatScanPollResponse,
   WeChatScanStartResponse,
   WeChatTestResponse,
+  DiscordBindingPutRequest,
+  DiscordBindingResponse,
+  DiscordTestRequest,
+  DiscordTestResponse,
   RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
@@ -640,6 +644,13 @@ export const putQQBinding = (sessionId: string, body: QQBindingPutRequest) =>
     body,
   });
 
+/** Saves the Discord bot token only — the same save/enable split as the Telegram PUT. */
+export const putDiscordBinding = (sessionId: string, body: DiscordBindingPutRequest) =>
+  apiFetch<DiscordBindingResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/discord`,
+    { method: "PUT", body },
+  );
+
 /**
  * Saves the WeChat delivery preferences. No credential rides along: this channel's token
  * comes only from a scan, so a PUT before one answers 400 `wechat_token_required`.
@@ -656,15 +667,28 @@ export const setMessagingBindingState = (
   channel: MessagingChannel,
   enabled: boolean,
 ) =>
-  apiFetch<FeishuBindingResponse | TelegramBindingResponse | QQBindingResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`,
-    { method: "POST", body: { enabled } },
-  );
+  apiFetch<
+    | FeishuBindingResponse
+    | TelegramBindingResponse
+    | QQBindingResponse
+    | WeChatBindingResponse
+    | DiscordBindingResponse
+  >(`/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/state`, {
+    method: "POST",
+    body: { enabled },
+  });
 
 /** Feishu credential probe with the form's draft values; omitted fields fall back to the stored binding. */
 export const testFeishuBinding = (sessionId: string, body: FeishuTestRequest) =>
   apiFetch<FeishuTestResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/feishu/test`,
+    { method: "POST", body },
+  );
+
+/** Discord credential probe (`GET /users/@me`); success additionally names the bot's @username. */
+export const testDiscordBinding = (sessionId: string, body: DiscordTestRequest) =>
+  apiFetch<DiscordTestResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messaging/discord/test`,
     { method: "POST", body },
   );
 
@@ -751,7 +775,7 @@ export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
     body,
   });
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+/** Short fixed text to the binding's last known chat (409 `<channel>_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,

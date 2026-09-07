@@ -250,10 +250,11 @@ function closeCodeIsRoutine(code: number): boolean {
  * (closeCodeIsRoutine), and false where retrying repeats the same refusal or the session has
  * stopped for good.
  *
- * It lives beside the gateway rather than in a shared module because the gateway is the only
- * connection in this product that learns WHY it was closed: the Feishu long connection is the
- * vendor SDK's own reconnect loop and surfaces a plain failure, and Telegram's transport is a
- * long poll with no connection to close.
+ * It lives beside this gateway rather than in a shared module because a gateway is the only
+ * kind of connection in this product that learns WHY it was closed — the Discord gateway
+ * (discord-api.ts) raises the same class for the same reason — while the Feishu long
+ * connection is the vendor SDK's own reconnect loop and surfaces a plain failure, and
+ * Telegram's transport is a long poll with no connection to close.
  */
 export class MessagingConnectionClosedError extends Error {
   constructor(
