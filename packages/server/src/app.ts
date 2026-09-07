@@ -393,15 +393,6 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // session, so it mounts outside authMiddleware (and only in desktop mode).
   if (deps.desktop) {
     app.route("/api/desktop", desktopRoutes(deps));
-    // The client-update surface is runtime-owned like the rest of /api/desktop (the
-    // platform declines that whole prefix): it reads the updater snapshot the shell
-    // pushes over the parentPort this process wires at startup, and forwards
-    // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
-    // carries the auth middleware on its own subtree — the routes then gate on
-    // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
@@ -420,14 +411,23 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // served by the platform through the seam above (see app.ts). What
   // follows is the runtime's own tail: static hosting and the SPA fallback.
 
-  // …and one fallback. Host commands are the PLATFORM's (hmr/README.md: what a command
-  // does is policy, and this surface proved it — a change to its shape could not reach a
-  // running install), so they are served through the seam above. This copy answers only
-  // when the platform declines the prefix, which is what a platform older than that move
-  // does: a rollback keeps the palette's commands instead of losing them.
+  // …and two fallbacks. Host commands and the client-update relay are the PLATFORM's
+  // (hmr/README.md: what a command does, and who may install an update, is policy — and
+  // the first of them proved it, since a change to its shape could not reach a running
+  // install), so both are served through the seam above. These copies answer only when the
+  // platform declines the prefix, which is what a platform older than that move does: a
+  // rollback keeps the palette's commands and the update modal instead of losing them.
   app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
   app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
   app.route("/api/command", commandRoutes({ shell: () => deps.shellFrames }));
+  if (deps.desktop !== null) {
+    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.route(
+      "/api/desktop/update",
+      desktopUpdateRoutes({ desktop: () => deps.desktop, shell: () => deps.shellFrames }),
+    );
+  }
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

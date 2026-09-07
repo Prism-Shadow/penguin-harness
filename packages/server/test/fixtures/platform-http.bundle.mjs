@@ -74,6 +74,14 @@ const impl = {
             },
           );
         }
+        if (url.pathname === "/api/desktop/update") {
+          // The update relay is the platform's too; the rest of /api/desktop (the shell's
+          // one-shot login and its shutdown) stays the runtime's and is declined below.
+          return new Response(JSON.stringify({ status: null, from: "pushed-platform" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
         if (url.pathname === "/api/demo/boom") {
           throw new Error("deliberate platform failure");
         }

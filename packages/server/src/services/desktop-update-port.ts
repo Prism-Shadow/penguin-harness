@@ -120,7 +120,10 @@ export function wireShellUpdatePort(
   if (frames !== null) frames.post = (frame) => port.postMessage(frame);
   port.on("message", (e) => {
     const status = parseUpdaterStatusMessage(e.data);
-    if (status !== null) desktop.setUpdateStatus(status);
+    if (status !== null) {
+      if (frames !== null) frames.updaterStatus = e.data;
+      desktop.setUpdateStatus(status);
+    }
     const offers = parseHostCommandsMessage(e.data);
     if (offers !== null) {
       if (frames !== null) frames.hostCommands = e.data;
