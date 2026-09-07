@@ -1,24 +1,26 @@
 /**
  * One socket per machine (PRFC-0011): a machine's streaming endpoints, relayed over a single
- * `/api/socket` this server holds to that machine, instead of one SOCKS channel and one
+ * API socket this server holds to that machine, instead of one SOCKS channel and one
  * never-ending HTTP response per stream.
  *
  * The shape is the request proxy's, one level down: the socket is dialled through the
  * machine's ssh session (the same http.Agent the proxy uses) as that machine's admin (the
- * same minted cookie), and every stream a browser asks for becomes a `call` frame on it. What
- * comes back is turned into a `text/event-stream` Response for the proxy to return — so the
- * hop is invisible to the runtime transport above it, which re-frames that Response for the
- * browser exactly as it would any endpoint's.
+ * same minted cookie, on the admin's reserved id — socket/ref.ts), and every stream a browser
+ * asks for becomes a `call` frame on it. What comes back is turned into a `text/event-stream`
+ * Response for the proxy to return — so the hop is invisible to the socket serving the
+ * browser, which re-frames that Response exactly as it would any endpoint's.
  *
- * A machine running a build without `/api/socket` refuses the handshake; that is remembered
- * briefly and the proxy falls back to forwarding the stream over HTTP, so a fleet mid-upgrade
- * keeps working. When the machine socket closes (the ssh session dropped, the machine
- * restarted), every stream on it ends; the browser re-issues each with its last event id and
- * the machine's own buffer fills the gap, or says resync.
+ * A machine running a build without the API socket answers the handshake 404; that is
+ * remembered briefly and the proxy falls back to forwarding the stream over HTTP, so a fleet
+ * mid-upgrade keeps working. When the machine socket closes (the ssh session dropped, the
+ * machine restarted), every stream on it ends; the browser re-issues each with its last
+ * event id and the machine's own buffer fills the gap, or says resync.
  */
 import type http from "node:http";
 import { WebSocket } from "ws";
+import { ADMIN_USER_ID } from "../auth/service.js";
 import type { EventFrame, ServerFrame } from "../socket/frames.js";
+import { apiSocketPath } from "../socket/ref.js";
 import { formatSseEvent } from "../socket/sse-text.js";
 
 export interface MachineSocketTarget {
@@ -80,7 +82,9 @@ class MachineSocket {
   static open(target: MachineSocketTarget): Promise<MachineSocket> {
     return new Promise((resolve, reject) => {
       // No Origin: the machine's guard reads its absence as a non-browser client, which this is.
-      const ws = new WebSocket(`ws://127.0.0.1:${target.port}/api/socket`, {
+      // The admin's reserved id: the session minted over there is the admin's, and the
+      // machine's runtime holds the id's owner to it.
+      const ws = new WebSocket(`ws://127.0.0.1:${target.port}${apiSocketPath(ADMIN_USER_ID)}`, {
         agent: target.agent,
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
         perMessageDeflate: false,
