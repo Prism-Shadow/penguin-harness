@@ -186,7 +186,7 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
  *   code, its meaning changes by push, and the runtime neither interprets it nor depends on
  *   it. The registry is the state layer of the four (hmr/README.md), not a runtime API.
  *
- * The distinction is not cosmetic. Filing platform state as an HMR-layer capability is what
+ * The distinction is not cosmetic. Filing platform state as a runtime capability is what
  * makes a fix wait for a full reinstall — auth was there once, and plugin loading still is.
  * ---------------------------------------------------------------------------------------
  */
@@ -505,7 +505,7 @@ export class RuntimeHmr {
   }
 }
 @Module()
-export class HmrDesktop {
+export class RuntimeDesktop {
   @Provide() desktop!: Desktop;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
@@ -514,7 +514,7 @@ export class HmrDesktop {
   }
 }
 @Module()
-export class HmrLifecycle {
+export class RuntimeLifecycle {
   @Provide() lifecycle!: Lifecycle;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
@@ -522,7 +522,7 @@ export class HmrLifecycle {
   }
 }
 @Module()
-export class HmrAuthState {
+export class RuntimeAuthState {
   @Provide() authState!: AuthState;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
@@ -530,7 +530,7 @@ export class HmrAuthState {
   }
 }
 @Module()
-export class HmrResourceGroups {
+export class RuntimeResourceGroups {
   @Provide() resourceGroups!: ResourceGroups;
   constructor(private readonly adoptable: (group: string) => boolean) {}
   setup() {
