@@ -41,6 +41,7 @@ import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import { DiscordTransportProvider } from "./runtime/messaging/discord-connector.js";
+import { ChatBots, ChatBotsModule } from "./runtime/messaging/chat-bots.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -360,8 +361,9 @@ export class WorkspaceModule {}
     DefaultMessagingTuning,
     MessagingBindingsRepo,
     MessagingModule,
+    ChatBotsModule,
   ],
-  exports: [Messaging, QQScan, MessagingBindings],
+  exports: [Messaging, QQScan, MessagingBindings, ChatBots],
 })
 export class MessagingHubModule {}
 
