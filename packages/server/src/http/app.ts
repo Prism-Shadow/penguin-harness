@@ -158,17 +158,7 @@ export class HttpModule {
     });
     app.use("/api/*", jsonOnlyWrites);
 
-    const routes = [...(contributions.routes ?? [])]
-      .map((c) => ({
-        id: c.id,
-        prefix: c.data.prefix as string,
-        auth: c.data.auth as "user" | "none",
-        order: c.data.order as number,
-        app: c.code as Hono<AppEnv>,
-      }))
-      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-    // Protected routes: cookie -> auth_session -> user. Built once, mounted per group.
-    const gate = authMiddleware(this.auth, this.config.trustProxy);
+    let gated = false;
     let declinedRuntime = false;
     for (const r of routes) {
       // The terminal group (order 0) sits before the runtime-prefix decline, so a matched
@@ -184,14 +174,18 @@ export class HttpModule {
         });
         declinedRuntime = true;
       }
-      // The gate sits on each group that asked for it, not once on `/api/*` at the first
-      // such group: a contributor picks its own prefix and order, and `auth` has to mean
-      // the same thing wherever the group lands — a public group after a protected one
-      // stays public, a protected group outside /api is still protected.
       if (r.auth === "user") {
-        const base = r.prefix.replace(/\/$/, "");
-        app.use(base === "" ? "/" : base, gate);
-        app.use(`${base}/*`, gate);
+        // Protected routes: cookie -> auth_session -> user. /api/* is gated once, ahead of
+        // the first protected group. A protected group under another prefix — the machine
+        // proxy at /server/ — is gated on its own prefix: the gate is what puts the user on
+        // the context, and a handler reading it behind an ungated prefix would throw.
+        if (!gated) {
+          app.use("/api/*", gate);
+          gated = true;
+        }
+        if (!r.prefix.startsWith("/api")) {
+          app.use(`${r.prefix.replace(/\/$/, "")}/*`, gate);
+        }
       }
       app.route(r.prefix, r.app);
     }
