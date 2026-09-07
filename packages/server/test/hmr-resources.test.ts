@@ -30,7 +30,7 @@ import {
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_PROXY_RESOURCE_ID,
-  RUNTIME_AUTH_STATE_RESOURCE_ID,
+  PARKED_AUTH_STATE_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "../src/hmr/capabilities.js";
 
@@ -387,7 +387,7 @@ describe("runtime capability handshake", () => {
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
     const published = { firstLoginToken: "printed-by-the-old-runtime" };
-    r.register(RUNTIME_AUTH_STATE_RESOURCE_ID, published);
+    r.register(PARKED_AUTH_STATE_RESOURCE_ID, published);
     const claim = claimRuntimeCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
