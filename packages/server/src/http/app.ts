@@ -42,6 +42,14 @@ export interface HttpSlots {
 const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
 /**
+ * …and the paths inside those prefixes that the platform DOES serve. `/api/desktop` is the
+ * shell's own mechanism surface — a one-shot login token and a process shutdown — but the
+ * update relay under it is policy: who may see an update, what consent a download needs,
+ * what the page is shown. Checked before the prefixes, so the narrower rule wins.
+ */
+const PLATFORM_PATHS = ["/api/desktop/update"];
+
+/**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every
  * module that serves requests contributes its groups here as data (prefix, auth, order)
  * and binds the Hono app by id. Adding an endpoint is adding a line to a manifest.
@@ -114,7 +122,9 @@ export class HttpModule {
       // terminal route ends the chain first; everything after it declines /api/auth etc.
       if (!declinedRuntime && r.order > 0) {
         app.use("*", async (c, next) => {
-          if (HMR_LAYER_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
+          const path = c.req.path;
+          const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
+          if (!PLATFORM_PATHS.some(under) && HMR_LAYER_PREFIXES.some(under)) {
             return declined();
           }
           await next();

@@ -217,11 +217,13 @@ export const PARKED_SHELL_FRAMES_RESOURCE_ID = "runtime:shell-frames";
 export interface ShellFrames {
   /** The last `host-commands` frame, exactly as the host sent it. Unparsed on purpose. */
   hostCommands: unknown;
+  /** The last `desktop-updater-status` frame, likewise raw: what it means is the platform's. */
+  updaterStatus: unknown;
   /** Sends one frame to the host; null when this process has no host port. */
   post: ((frame: unknown) => void) | null;
 }
 export function newShellFrames(): ShellFrames {
-  return { hostCommands: null, post: null };
+  return { hostCommands: null, updaterStatus: null, post: null };
 }
 
 // --- capabilities, continued -------------------------------------------------------------
@@ -563,10 +565,18 @@ export class RuntimeDesktop {
         type: "host-commands",
         commands: (desktop as DesktopService | null)?.getCommands?.() ?? [],
       },
+      updaterStatus: {
+        type: "desktop-updater-status",
+        status: (desktop as DesktopService | null)?.getUpdateStatus?.() ?? null,
+      },
       post: (frame) => {
-        const ask = frame as { type?: string; command?: string };
+        const ask = frame as { type?: string; command?: string; action?: string };
+        const service = desktop as DesktopService | null;
         if (ask.type === "host-command" && typeof ask.command === "string") {
-          (desktop as DesktopService | null)?.requestCommand?.(ask.command);
+          service?.requestCommand?.(ask.command);
+        }
+        if (ask.type === "desktop-updater-command" && typeof ask.action === "string") {
+          service?.requestUpdateCommand?.(ask.action as "check" | "download" | "install");
         }
       },
     });
