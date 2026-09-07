@@ -83,6 +83,19 @@ describe("platform HTTP seam", () => {
     expect(await (await api.get("/api/command")).json()).toMatchObject({ from: "pushed-platform" });
   });
 
+  it("the update relay ships by push too, while the rest of /api/desktop stays the runtime's", async () => {
+    await pushPlatform(t.app, cookie, bundle);
+
+    // Served by the pushed platform…
+    const relay = await api.get("/api/desktop/update");
+    expect(await relay.json()).toMatchObject({ from: "pushed-platform" });
+    // …while the shell's own mechanism surface beside it is still the runtime's: the
+    // fixture never sees /api/desktop/shutdown, so this is the runtime's answer (404
+    // outside desktop mode), not the fixture's.
+    const shutdown = await t.app.request("/api/desktop/shutdown", { method: "POST" });
+    expect(shutdown.status).toBe(404);
+  });
+
   it("routes the platform declines still reach the runtime's own", async () => {
     await pushPlatform(t.app, cookie, bundle);
     // The runtime's own routes are the mechanism surface (auth, hmr, desktop, static):
