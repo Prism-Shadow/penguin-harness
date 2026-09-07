@@ -94,7 +94,7 @@ describe.skipIf(process.platform === "win32")("the claude-code plugin on a real 
       await fs.realpath(session.workspace),
     );
 
-    // The program got the prompt, and its first burst of output reads as running.
+    // The program got the prompt, and settles at a waiting prompt.
     const screen = await waitFor(
       terminal.capture,
       (lines) => lines.join("\n").includes("fake claude hello there"),
@@ -102,22 +102,21 @@ describe.skipIf(process.platform === "win32")("the claude-code plugin on a real 
     );
     expect(screen.join("\n")).toContain("fake claude hello there");
     const info = () => api.get<{ session: SessionInfo }>(`/api/sessions/${session.sessionId}`);
-    const running = await waitFor(info, (r) => r.session.status === "running", {
-      what: "running",
-    });
-    expect(running.session.hasTrace).toBe(true);
+    const waiting = await waitFor(info, (r) => r.session.status === "idle", { what: "idle" });
     // The prompt named the Session.
-    expect(running.session.title).toBe("hello there");
-
-    // …and the prompt's silence reads as idle.
-    await waitFor(info, (r) => r.session.status === "idle", { what: "idle" });
+    expect(waiting.session.title).toBe("hello there");
     await waitFor(terminal.capture, (lines) => lines.some((l) => l.startsWith(">")), {
       what: "the prompt",
     });
 
-    // Input wakes it: running again, then idle with its answer on screen.
+    // Input wakes it, and the state follows the program's own SPINNER LINE — `<glyph> Word…`
+    // while the turn is in flight, a past tense with no ellipsis when it ends — not the flow
+    // of bytes (the fake draws a different word each turn, as the real one does).
     await terminal.keys("do a thing\n", true);
-    await waitFor(info, (r) => r.session.status === "running", { what: "running again" });
+    const running = await waitFor(info, (r) => r.session.status === "running", {
+      what: "running",
+    });
+    expect(running.session.hasTrace).toBe(true);
     await waitFor(terminal.capture, (lines) => lines.join("\n").includes("done: do a thing"), {
       what: "the answer",
     });
