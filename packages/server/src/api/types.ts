@@ -3454,8 +3454,15 @@ export interface DesktopUpdaterCommandMessage {
  * A native action the host process can run on the page's behalf — what the desktop shell's
  * application menu used to offer, reached from the command palette instead (the menu bar
  * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ *
+ * `open-devtools` is the same story one step further: the shell's View menu still toggles
+ * DevTools, and its accelerator still works, but neither is visible with the menu bar
+ * hidden — so someone reading a console error has to be told a shortcut. Naming it here
+ * makes it findable. It stays a HOST command, run by the shell on its own window: the page
+ * is a plain browser environment with no bridge of its own, and adding one for this was
+ * rejected (packages/desktop/src/main.ts).
  */
-export const HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
 export type HostCommand = (typeof HOST_COMMANDS)[number];
 
 /** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
