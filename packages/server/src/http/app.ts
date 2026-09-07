@@ -32,8 +32,14 @@ export interface HttpSlots {
   >;
 }
 
-/** Prefixes the HMR layer owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
-const HMR_LAYER_PREFIXES = ["/api/auth", "/api/command", "/api/desktop", "/api/hmr"];
+/**
+ * Prefixes the runtime owns; the platform declines them before anything else runs — in
+ * particular before the auth gate, which would otherwise 401 an unauthenticated
+ * /api/auth/login. `/api/command` used to be on this list and is not any more: what a host
+ * command is and does is policy (hmr/README.md), so the platform serves it and the runtime
+ * keeps a copy below the seam for a platform that still declines it.
+ */
+const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
 /**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every

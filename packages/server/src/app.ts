@@ -33,6 +33,9 @@ import {
   HMR_INTERFACES,
   HMR_INTERFACES_RESOURCE_ID,
   PARKED_AUTH_STATE_RESOURCE_ID,
+  PARKED_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   HMR_CHANNELS_RESOURCE_ID,
   HMR_CONFIG_RESOURCE_ID,
   HMR_DB_RESOURCE_ID,
@@ -189,6 +192,8 @@ export interface ServerBoot {
   channels: ChannelHub;
   hmr: ServerHmrHost;
   desktop: DesktopService | null;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   tree: ModuleTree;
 }
 
@@ -264,10 +269,12 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  // …and the parked half. The auth values and the nodes a test stands in for: platform
-  // state, every one.
+  // …and the parked half. The auth values, the host's frames (unread — the platform
+  // interprets them), and the nodes a test stands in for: platform state, every one.
   hmr.resources.register(PARKED_AUTH_STATE_RESOURCE_ID, authState);
   hmr.resources.register(PARKED_OVERRIDES_RESOURCE_ID, replacements);
+  const shellFrames = newShellFrames();
+  hmr.resources.register(PARKED_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -289,7 +296,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, tree };
+  return { config, db, channels, hmr, desktop, shellFrames, tree };
 }
 
 /** Assembles the Hono app (does not listen on a port). */
@@ -303,6 +310,7 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     authService,
     hmr: boot.hmr,
     channels: boot.channels,
@@ -413,12 +421,6 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
-  // Host commands for the command palette: runtime-owned like /api/desktop (the service
-  // behind them is the shell relay), but mounted in every mode — a plain server answers
-  // with an empty list, so the page has one question to ask wherever it runs.
-  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.route("/api/command", commandRoutes(deps));
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
   // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
@@ -435,6 +437,15 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   // Every protected business route — /api/me through /api/sessions, and /preview — is
   // served by the platform through the seam above (see app.ts). What
   // follows is the runtime's own tail: static hosting and the SPA fallback.
+
+  // …and one fallback. Host commands are the PLATFORM's (hmr/README.md: what a command
+  // does is policy, and this surface proved it — a change to its shape could not reach a
+  // running install), so they are served through the seam above. This copy answers only
+  // when the platform declines the prefix, which is what a platform older than that move
+  // does: a rollback keeps the palette's commands instead of losing them.
+  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.route("/api/command", commandRoutes({ shell: () => deps.shellFrames }));
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

@@ -245,7 +245,9 @@ class PenguinServer {
     // `penguin server|web` run, or tests) wires nothing.
     if (this.deps.desktop !== null) {
       const shellPort = shellPortOf(process);
-      if (shellPort !== null) wireShellUpdatePort(this.deps.desktop, shellPort);
+      if (shellPort !== null) {
+        wireShellUpdatePort(this.deps.desktop, shellPort, this.deps.shellFrames);
+      }
     }
 
     // Process-level error fallback: once a background fire-and-forget promise (title
