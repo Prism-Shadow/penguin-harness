@@ -574,14 +574,14 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(h.controller.older.hasMore).toBe(false);
     expect(h.controller.windowCount).toBe(0);
     expect(h.controller.items).toBe(h.controller.model.items);
-    await h.controller.loadOlder();
+    await h.controller.loadOlder({ shed: true });
     expect(h.loadCalls()).toBe(1);
   });
 
   it("loadOlder before the initial load, and loadNewer while the tail is attached, are no-ops", async () => {
     const h = createHarness();
-    await h.controller.loadOlder(); // buffering phase: ignored
-    await h.controller.loadNewer();
+    await h.controller.loadOlder({ shed: true }); // buffering phase: ignored
+    await h.controller.loadNewer({ shed: true });
     expect(h.loadCalls()).toBe(0);
   });
 
@@ -595,7 +595,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     await flush();
     expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: "boom" });
     expect(h.controller.windowCount).toBe(0);
-    const again = h.controller.loadOlder();
+    const again = h.controller.loadOlder({ shed: true });
     h.resolveLoad(OLD_TURN, undefined, null, pageInfo());
     await again;
     expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
@@ -630,7 +630,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     const edgesBefore = h.controller.edgesVersion;
 
     // + window B → 75 loaded: the tail is shed (50 stay), the transcript is the run alone.
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     expect(h.pageArgs[2]).toEqual({ kind: "before", cursor: "4:0", messages: WINDOW_MESSAGES });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
@@ -642,7 +642,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(h.controller.edgesVersion).toBeGreaterThan(edgesBefore);
 
     // + window C → 75 again: the newest window (A) leaves, B and C stay around the reader.
-    const c = h.controller.loadOlder();
+    const c = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
     await c;
     expect(h.controller.windowCount).toBe(2);
@@ -657,7 +657,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     // Scrolling back down: the next window after B, bounded by the tail's start. It is
     // window A again, and its end IS the tail's start — so the tail re-attaches, and the
     // run sheds from the top down to the budget.
-    const n = h.controller.loadNewer();
+    const n = h.controller.loadNewer({ shed: true });
     expect(h.pageArgs[4]).toEqual({
       kind: "after",
       cursor: "4:0",
@@ -678,7 +678,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(userTexts(h.controller.items)).toEqual(["question A", "question tail", "live prompt"]);
     expect(h.controller.outlineOffset).toBe(3);
     expect(h.controller.older.hasMore).toBe(true);
-    await h.controller.loadNewer(); // attached: nothing to do
+    await h.controller.loadNewer({ shed: true }); // attached: nothing to do
     expect(h.loadCalls()).toBe(5);
   });
 
@@ -686,12 +686,12 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     const h = await withRun();
     // + window B → the tail is shed with A still right below the reader: the run's end
     // IS the tail's start.
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
     expect(h.controller.tailAttached).toBe(false);
     const calls = h.loadCalls();
-    await h.controller.loadNewer();
+    await h.controller.loadNewer({ shed: true });
     expect(h.loadCalls()).toBe(calls);
     expect(h.controller.tailAttached).toBe(true);
     expect(h.controller.newer.hasMore).toBe(false);
@@ -703,22 +703,22 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     const h = await withRun();
     // Two windows up: the tail is shed, then A — the run [C, B] ends a window short of
     // the tail, so walking down has something to fetch.
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
-    const c = h.controller.loadOlder();
+    const c = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("C", 25), undefined, null, pageInfo({ before: "2:0", earlierTurns: 1 }));
     await c;
     expect(h.controller.tailAttached).toBe(false);
     expect(userTexts(h.controller.items)).toEqual(["question C", "question B"]);
 
-    const failed = h.controller.loadNewer();
+    const failed = h.controller.loadNewer({ shed: true });
     h.rejectLoad(new Error("boom"));
     await failed;
     expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: "boom" });
 
     // A page closed by its size, not by `until`: appended, the tail still off screen.
-    const n = h.controller.loadNewer();
+    const n = h.controller.loadNewer({ shed: true });
     h.resolveLoad(
       bigTurn("A1", 5),
       undefined,
@@ -730,7 +730,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(h.controller.newer).toEqual({ hasMore: true, loading: false, error: null });
     expect(userTexts(h.controller.items)).toEqual(["question C", "question B", "question A1"]);
     // The next forward page continues from that window's end.
-    void h.controller.loadNewer();
+    void h.controller.loadNewer({ shed: true });
     expect(h.pageArgs[h.pageArgs.length - 1]).toEqual({
       kind: "after",
       cursor: "4:5",
@@ -761,7 +761,7 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
 
     // Scrolling up sheds the tail (the reader left it); jumping back must re-attach it and
     // keep it attached through the backfill that follows.
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
     expect(h.controller.tailAttached).toBe(false);
@@ -774,9 +774,25 @@ describe("windowed history: message windows, an eager backfill, a bounded run", 
     expect(userTexts(h.controller.items)).toEqual(["question A", "question tail"]);
   });
 
+  it("a scroll-up backfill whose far end is near does not shed: the run grows past the budget instead", async () => {
+    // The renderer measured the bottom to be close (a short run in pixels): shedding it
+    // would put it inside the bottom frontier's trigger distance, and the two ends would
+    // undo each other. The budget yields; the run stays whole.
+    const h = await withRun();
+    const b = h.controller.loadOlder({ shed: false });
+    h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
+    await b;
+    expect(h.controller.tailAttached).toBe(true);
+    expect(h.controller.windowCount).toBe(2);
+    expect(userTexts(h.controller.items)).toEqual(["question B", "question A", "question tail"]);
+    // Nothing to fetch below while attached, whatever the measurement says.
+    await h.controller.loadNewer({ shed: true });
+    expect(h.controller.windowCount).toBe(2);
+  });
+
   it("jumpToLatest drops the run, re-attaches the tail, and backfills one window again", async () => {
     const h = await withRun();
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(bigTurn("B", 25), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
     expect(h.controller.tailAttached).toBe(false);
@@ -905,7 +921,7 @@ describe("resync (windowed history)", () => {
     await p;
     h.resolveLoad(big("A"), undefined, null, pageInfo({ before: "4:0", earlierTurns: 3 }));
     await flush();
-    const b = h.controller.loadOlder();
+    const b = h.controller.loadOlder({ shed: true });
     h.resolveLoad(big("B"), undefined, null, pageInfo({ before: "3:0", earlierTurns: 2 }));
     await b;
     expect(h.controller.tailAttached).toBe(false);
