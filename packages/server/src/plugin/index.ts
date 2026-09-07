@@ -37,7 +37,7 @@ export type { ChannelEvent } from "../runtime/channel.js";
 export type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
 export type { Settings } from "../mechanisms/settings.js";
 export type { SessionIndex } from "../mechanisms/sessions.js";
-export type { AgentIndex } from "../mechanisms/projects.js";
+export type { AgentIndex, Projects, ProjectConfigStore } from "../mechanisms/projects.js";
 export type { Errors } from "../mechanisms/observability.js";
   ChatBots,
   ChatBotsSlots,

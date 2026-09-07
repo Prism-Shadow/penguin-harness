@@ -6,25 +6,23 @@
  * against the type-only `@prismshadow/penguin-core/plugin` and
  * `@prismshadow/penguin-server/plugin` surfaces; at runtime it imports the SDK the host
  * already has (`@prismshadow/penguin-core`, external in the bundle) and bundles its own
- * copy of Hono for the settings routes.
+ * copy of Hono for the status route.
  *
  * The harness has no notion of a chat bot. What it lends this package is what it already
  * has — the Discord messaging connector (credential shape, Gateway, sends, Markdown, the
- * 2000-character cap), Session creation, the task runner, the Session event channel and the
- * settings store — reached through the module's `requires`; everything that makes those a
- * bot lives in bot.ts: one Gateway connection, a Session per chat, replies relayed back,
- * `/new`, `/approve`, `/deny`, `/status`. routes.ts is the admin settings API at
- * `/api/discord-bot`, contributed through the `HttpModule.routes` slot.
+ * 2000-character cap), Session creation, the task runner, the Session event channel, the
+ * settings store and the Projects' config files — reached through the module's `requires`;
+ * everything that makes those a bot lives here: config.ts reads a Project's `[discord_bot]`
+ * table, manager.ts keeps one bot per such Project in line with the files, bot.ts is the
+ * bot (one Gateway connection, a Session per chat, replies relayed back, `/new`, `/approve`,
+ * `/deny`, `/status`), routes.ts the read-only status route at `/api/discord-bot`.
  *
- * A seed read from the server's environment configures a deployment without the API:
+ * Configuration is the Project's config file and nothing else:
  *
- *   PENGUIN_DISCORD_BOT_TOKEN   the bot token from the Discord developer portal
- *   PENGUIN_DISCORD_PROJECT     the Project every chat's Session is created under
- *   PENGUIN_DISCORD_AGENT       the Agent in that Project
- *
- * The seed applies only where nothing is stored yet: what an administrator saves through the
- * API wins, and a bot switched off there stays off. With all three variables set the bot
- * starts enabled; with the token alone it waits for a target.
+ *   [discord_bot]
+ *   bot_token = "…"          # the Bot page of the Discord developer portal
+ *   agent = "default_agent"  # optional
+ *   enabled = true           # optional
  */
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type {
@@ -35,76 +33,58 @@ import type {
   Messaging,
   MessagingTaskRunner,
   Paths,
+  ProjectConfigStore,
+  Projects,
   ScheduleSessionCreator,
   SessionIndex,
   Sessions,
   Settings,
 } from "@prismshadow/penguin-server/plugin";
-import { DiscordBot, type BotDefaults } from "./bot.js";
+import { DiscordBots } from "./manager.js";
 import { ROUTES_ID, discordBotRoutes } from "./routes.js";
 
 export {
   DiscordBot,
-  BotError,
   APPROVAL_NOTICE,
   NEW_NOTICE,
   NOTHING_PENDING_NOTICE,
-  NOT_CONFIGURED_NOTICE,
   UNSUPPORTED_NOTICE,
-  CONFIG_KEY,
-  CHATS_KEY,
   REPLY_CHUNK_CHARS,
-  botIdOf,
+  chatsKeyOf,
   chunkReply,
   mask,
   safeFileName,
   writeAttachment,
 } from "./bot.js";
-export type { BotDefaults, BotDeps, BotInfo, BotStatus, StoredConfig } from "./bot.js";
+export type { BotDeps, BotInfo, BotStatus, BotTarget } from "./bot.js";
+export { CONFIG_TABLE, DEFAULT_AGENT, botConfigOf, botIdOf } from "./config.js";
+export type { BotConfig } from "./config.js";
+export { DiscordBots, RECONCILE_INTERVAL_MS } from "./manager.js";
+export type { BrokenBotInfo, ManagerDeps } from "./manager.js";
 export { ROUTES_ID, discordBotRoutes } from "./routes.js";
-
-/** The seed read off the environment; absent or blank variables leave their field unset. */
-export function envDefaults(env: NodeJS.ProcessEnv = process.env): BotDefaults {
-  const pick = (name: string): string | undefined => {
-    const value = env[name]?.trim();
-    return value !== undefined && value !== "" ? value : undefined;
-  };
-  const botToken = pick("PENGUIN_DISCORD_BOT_TOKEN");
-  const projectId = pick("PENGUIN_DISCORD_PROJECT");
-  const agentId = pick("PENGUIN_DISCORD_AGENT");
-  return {
-    ...(botToken !== undefined ? { botToken } : {}),
-    ...(projectId !== undefined ? { projectId } : {}),
-    ...(agentId !== undefined ? { agentId } : {}),
-    // Enabled only when the seed is complete: a token with no target could connect and
-    // answer every message with "not configured", which is worse than staying dark.
-    ...(botToken !== undefined && projectId !== undefined && agentId !== undefined
-      ? { enabled: true }
-      : {}),
-  };
-}
 
 const plugin: Plugin = {
   modules: {
     DiscordBot: {
       async create({ use, effect }) {
-        const bot = new DiscordBot({
+        const bots = new DiscordBots({
           messaging: use.messaging as Messaging,
           runner: use.runner as MessagingTaskRunner,
           sessions: use.sessions as Sessions,
           sessionCreator: use.sessionCreator as ScheduleSessionCreator,
           sessionIndex: use.sessionIndex as SessionIndex,
           agents: use.agents as AgentIndex,
+          projects: use.projects as Projects,
+          configStore: use.configStore as ProjectConfigStore,
           settings: use.settings as Settings,
           channels: use.channels as Channels,
           errors: use.errors as Errors,
           paths: use.paths as Paths,
           log: use.log as Log,
-          defaults: envDefaults(),
         });
-        await bot.start();
-        effect(() => bot.stop());
-        return { api: {}, bind: { [ROUTES_ID]: discordBotRoutes(bot) } };
+        await bots.start();
+        effect(() => bots.stop());
+        return { api: {}, bind: { [ROUTES_ID]: discordBotRoutes(bots) } };
       },
     },
   },

@@ -25,41 +25,38 @@ plugins = ["@prismshadow/penguin-plugin-discord-bot"]
 
 ## Configure
 
-Either way below; what is saved through the API wins over the environment, and a bot switched off there stays off.
+The bot is configured in the Project's `.project_config.toml` and nowhere else — the same file that lists the Project's plugins and holds its model credentials. Add a `[discord_bot]` table:
 
-**Through the environment** of the server process — the bot starts enabled when all three are set:
+```toml
+plugins = ["@prismshadow/penguin-plugin-discord-bot"]
 
-```sh
-PENGUIN_DISCORD_BOT_TOKEN=MTIz….GaBcDe.…
-PENGUIN_DISCORD_PROJECT=birder-default_project
-PENGUIN_DISCORD_AGENT=default_agent
+[discord_bot]
+bot_token = "MTIz….GaBcDe.…"   # the Bot page of the Discord developer portal
+agent = "default_agent"        # optional: the Agent in this Project that answers (default: default_agent)
+enabled = true                 # optional: false keeps the token and stops the bot
 ```
 
-**Through the plugin's own API** (admin), `/api/discord-bot`:
+The file is re-read every few seconds, so an edit takes effect without a restart. A Project's table is that Project's bot: a deployment with several Projects may run several bots, each answering on its own Agent. A table the plugin cannot use — no token, a token that is not a Discord bot token, an Agent the Project does not have — is reported rather than guessed at.
+
+Status, for an admin (reading it also applies any edit at once):
 
 ```sh
-# save the token and the target
-curl -X PUT $BASE/api/discord-bot -H 'content-type: application/json' \
-  -d '{"botToken":"MTIz….GaBcDe.…","projectId":"birder-default_project","agentId":"default_agent"}'
-# probe the token (answers the bot's @username)
-curl -X POST $BASE/api/discord-bot/test -H 'content-type: application/json' -d '{}'
-# connect
-curl -X POST $BASE/api/discord-bot/state -H 'content-type: application/json' -d '{"enabled":true}'
-# status: the masked token, the target, the live connection and how many chats hold a Session
 curl $BASE/api/discord-bot
+# { "bots": [{ "projectId", "agentId", "botTokenMasked", "enabled", "status": { "state", "lastError"?, "lastInboundAt"?, "lastDeliveryError"? }, "chats" }],
+#   "broken": [{ "projectId", "error" }] }
 ```
 
-The token never comes back in the clear; a PUT with the masked value keeps the stored one, and `clearBotToken: true` drops it (once the bot is disabled). Everything is stored in the server settings under `discord-bot:` keys and survives a restart.
+The token never leaves the server in the clear. The chat → Session table is the bot's only state; it lives in the server settings under `discord-bot:chats:<projectId>` and survives a restart.
 
 ## What the plugin is made of
 
-The harness has no notion of a chat bot. This package composes what the harness already has — the Discord messaging connector (Gateway, sends, Markdown, the 2000-character cap), Session creation, the task runner, the Session event channel and the settings store — into one: a Gateway connection on the token, a Session per chat, replies relayed back, the commands, the settings routes. Replace "Discord" with another channel the harness has a connector for and the same package shape gives you a bot there.
+The harness has no notion of a chat bot. This package composes what the harness already has — the Discord messaging connector (Gateway, sends, Markdown, the 2000-character cap), Session creation, the task runner, the Session event channel, the settings store and the Projects' config files — into one: a Gateway connection on the token, a Session per chat, replies relayed back, the commands, the status route. Replace "Discord" with another channel the harness has a connector for and the same package shape gives you a bot there.
 
 ## Development
 
 ```sh
 pnpm --filter @prismshadow/penguin-plugin-discord-bot build   # dist/, the file the Project config points at
-pnpm --filter @prismshadow/penguin-plugin-discord-bot test    # the seed, and the integration test
+pnpm --filter @prismshadow/penguin-plugin-discord-bot test    # the bot over fakes, and the integration test
 ```
 
-The integration test starts a real server with this plugin through `@prismshadow/penguin-plugin-test` and drives the settings API; it never connects to Discord. It needs the server and this package built first.
+The integration test starts a real server with this plugin through `@prismshadow/penguin-plugin-test`, edits the Project's config file and reads the status route; it never connects to Discord. It needs the server and this package built first.

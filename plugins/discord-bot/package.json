@@ -2,7 +2,7 @@
   "name": "@prismshadow/penguin-plugin-discord-bot",
   "version": "0.1.0",
   "type": "module",
-  "description": "A Discord bot that starts PenguinHarness agents from chat: message the bot, and a Session opens on the configured Agent and answers in the same channel.",
+  "description": "A Discord bot that starts PenguinHarness agents from chat: configure it in a Project's .project_config.toml, message the bot, and a Session opens on that Project's Agent and answers in the same channel.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -88,6 +88,14 @@
           "log": {
             "iface": "@prismshadow/penguin-server#Log",
             "from": "RuntimeModule"
+          },
+          "projects": {
+            "iface": "@prismshadow/penguin-server#Projects",
+            "from": "ProjectsModule"
+          },
+          "configStore": {
+            "iface": "@prismshadow/penguin-server#ProjectConfigStore",
+            "from": "ProjectsModule"
           }
         },
         "provides": {},
