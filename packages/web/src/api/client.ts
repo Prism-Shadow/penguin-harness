@@ -127,8 +127,21 @@ export async function apiFetchWithMeta<T>(
     // as a local logout is how clicking a remote host in a picker bounced the window to the
     // login page of a server it was still perfectly signed in to.
     const fromThisServer = target === null;
-    if (answer.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
+    if (answer.status === 401 && fromThisServer && !isAuthEndpoint(path)) {
+      apiSocket.identityChanged();
+      onUnauthorized?.();
+    }
     throw new ApiError(answer.status, code, message);
+  }
+
+  // What passes through here tells the socket who the page is: a `/api/me` answer names the
+  // user, a sign-in or sign-out changes it. The socket never has to be told by anyone else.
+  if (target === null) {
+    if (path === "/api/me") {
+      apiSocket.identityIs((answer.body as { user?: { userId?: string } })?.user?.userId ?? null);
+    } else if (isAuthEndpoint(path)) {
+      apiSocket.identityChanged();
+    }
   }
 
   const headerDate = Date.parse(answer.date ?? "");

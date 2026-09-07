@@ -17,9 +17,16 @@
  * behind it going away), or an answer that was not a stream at all but may become one again
  * (a 503 while a machine reconnects). Fatal answers (401/403/404) stop the retries.
  *
+ * The socket is addressed by the signed-in user (the server's reserved terminal-stream id,
+ * `apiSocketPath`), and this module finds out who that is BY ITSELF — asking `/api/me` over
+ * HTTP once, or being told by the API client when a `/api/me` answer passes through it. No
+ * caller has to know the socket exists: `ready()` settles the identity, opens the socket and
+ * waits for the handshake, so the page's very first calls ride it rather than race it. A
+ * sign-in or sign-out passing through the API client resets the identity, which closes the
+ * socket; the next call opens the new user's.
+ *
  * Without a socket — the browser cannot open one, or the handshake keeps failing — streams
- * fall back to EventSource (the caller supplies the fallback) and calls fall back to fetch,
- * which is why `apiFetch` asks `isOpen()` first rather than waiting.
+ * fall back to EventSource (the caller supplies the fallback) and calls fall back to fetch.
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { apiSocketPath } from "@prismshadow/penguin-server/api";
@@ -31,7 +38,7 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 /** Consecutive handshakes that never opened before the page gives the socket up for EventSource and fetch. */
 const GIVE_UP_AFTER = 3;
-/** A handshake refused outright (a runtime without the socket, a session not yet signed in) is retried this soon — the backoff is for connections that were up and dropped. */
+/** A handshake refused outright (a runtime without the socket) is retried this soon — the backoff is for connections that were up and dropped. */
 const REFUSED_RETRY_MS = 250;
 /** A stream the server ended (or answered without streaming) is re-issued after this. */
 const REISSUE_MS = 1_000;
@@ -79,9 +86,18 @@ export class ApiSocket {
   #reconnect: ReturnType<typeof setTimeout> | null = null;
   /** Calls waiting on a handshake in progress (see ready()). */
   readonly #readyWaiters: ((open: boolean) => void)[] = [];
+  /** Who the page is signed in as, once settled (null = nobody); unset until asked. */
+  #identity: Promise<string | null> | null = null;
 
-  /** `url` answers null while nobody is signed in: the socket is addressed by user (see the module doc), so there is nothing to open yet. */
-  constructor(private readonly url: () => string | null) {}
+  /**
+   * `urlFor` spells the socket's address for a user; `whoAmI` finds out who is signed in
+   * (null when nobody is), and may reject when it cannot tell — the question is then asked
+   * again on the next call.
+   */
+  constructor(
+    private readonly urlFor: (userId: string) => string,
+    private readonly whoAmI: () => Promise<string | null>,
+  ) {}
 
   isOpen(): boolean {
     return this.#state === "open";
@@ -92,77 +108,54 @@ export class ApiSocket {
     return this.#state === "unavailable";
   }
 
+  /** The API client saw a `/api/me` answer: the identity is known without asking. */
+  identityIs(userId: string | null): void {
+    this.#identity = Promise.resolve(userId);
+  }
+
   /**
-   * The signed-in user changed (or signed out): the socket was that user's, so it closes;
-   * whatever streams are still wanted re-issue on the next user's socket. Called by the auth
-   * provider whenever it learns who the page is.
+   * A sign-in or sign-out went through, or the session was found expired: whoever the
+   * socket was for, it is not that any more. It closes; the next call settles the identity
+   * afresh and opens the right one.
    */
-  userChanged(): void {
+  identityChanged(): void {
+    this.#identity = null;
     if (this.#ws !== null) this.#ws.close();
   }
 
   /**
-   * Whether a call can go over the socket, waiting for a handshake in progress rather than
-   * deciding on the instant: true once open, false when the socket is not to be had right
-   * now (nobody signed in, given up, or the handshake just failed) — the caller then uses
-   * HTTP. Opens the socket if nothing has yet, so the page's first calls ride it instead of
-   * racing it.
+   * Whether a call can go over the socket — settling the identity and the handshake first
+   * rather than deciding on the instant. True once open; false when the socket is not to be
+   * had right now (nobody signed in, given up, or the handshake just failed), in which case
+   * the caller uses HTTP.
    */
-  ready(): Promise<boolean> {
-    if (this.#state === "open") return Promise.resolve(true);
-    if (this.#state === "unavailable") return Promise.resolve(false);
-    if (this.#state === "closed") this.ensureOpen();
-    if (this.#state !== "connecting") return Promise.resolve(false);
+  async ready(): Promise<boolean> {
+    if (this.#state === "open") return true;
+    if (this.#state === "unavailable") return false;
+    if (this.#state === "closed") {
+      let userId: string | null;
+      try {
+        userId = await (this.#identity ??= this.whoAmI());
+      } catch {
+        this.#identity = null; // could not tell: ask again next time
+        return false;
+      }
+      if (userId === null) return false;
+      this.#open(this.urlFor(userId));
+    }
+    const state = this.#stateNow(); // #open() moved it; read it afresh
+    if (state !== "connecting") return state === "open";
     return new Promise((resolve) => this.#readyWaiters.push(resolve));
+  }
+
+  /** The state through a call, which the type checker cannot narrow across #open()'s mutation. */
+  #stateNow(): State {
+    return this.#state;
   }
 
   #settleReady(open: boolean): void {
     const waiters = this.#readyWaiters.splice(0);
     for (const resolve of waiters) resolve(open);
-  }
-
-  /** Opens the socket if it is closed; streams and calls queue behind the handshake. */
-  ensureOpen(): void {
-    if (this.#state !== "closed") return;
-    if (typeof WebSocket === "undefined") {
-      this.#state = "unavailable";
-      return;
-    }
-    const url = this.url();
-    if (url === null) return; // nobody signed in yet: streams wait, calls use HTTP
-    this.#state = "connecting";
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch {
-      this.#state = "closed";
-      this.#dropped(false);
-      return;
-    }
-    this.#ws = ws;
-    ws.onopen = () => {
-      if (this.#ws !== ws) return;
-      this.#state = "open";
-      this.#attempts = 0;
-      this.#neverOpened = 0;
-      this.#settleReady(true);
-      for (const entry of [...this.#waiting]) this.#issue(entry);
-    };
-    ws.onmessage = (e: MessageEvent<string>) => {
-      if (this.#ws === ws) this.#frame(e.data);
-    };
-    ws.onclose = () => {
-      if (this.#ws !== ws) return;
-      const opened = this.#state === "open";
-      this.#ws = null;
-      this.#state = "closed";
-      if (!opened) this.#neverOpened += 1;
-      this.#settleReady(false);
-      this.#dropped(opened);
-    };
-    ws.onerror = () => {
-      // onclose follows; nothing to do here that it will not do.
-    };
   }
 
   /**
@@ -208,8 +201,8 @@ export class ApiSocket {
       entry.fallen = fallback();
     } else {
       this.#waiting.add(entry);
-      this.ensureOpen();
       if (this.#state === "open") this.#issue(entry);
+      else void this.ready();
     }
     return {
       close: () => {
@@ -225,6 +218,48 @@ export class ApiSocket {
           entry.id = null;
         }
       },
+    };
+  }
+
+  /** Opens the socket; streams and calls queue behind the handshake. Only from ready(). */
+  #open(url: string): void {
+    if (this.#state !== "closed") return;
+    if (typeof WebSocket === "undefined") {
+      this.#state = "unavailable";
+      return;
+    }
+    this.#state = "connecting";
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      this.#state = "closed";
+      this.#dropped(false);
+      return;
+    }
+    this.#ws = ws;
+    ws.onopen = () => {
+      if (this.#ws !== ws) return;
+      this.#state = "open";
+      this.#attempts = 0;
+      this.#neverOpened = 0;
+      this.#settleReady(true);
+      for (const entry of [...this.#waiting]) this.#issue(entry);
+    };
+    ws.onmessage = (e: MessageEvent<string>) => {
+      if (this.#ws === ws) this.#frame(e.data);
+    };
+    ws.onclose = () => {
+      if (this.#ws !== ws) return;
+      const opened = this.#state === "open";
+      this.#ws = null;
+      this.#state = "closed";
+      if (!opened) this.#neverOpened += 1;
+      this.#settleReady(false);
+      this.#dropped(opened);
+    };
+    ws.onerror = () => {
+      // onclose follows; nothing to do here that it will not do.
     };
   }
 
@@ -252,7 +287,7 @@ export class ApiSocket {
     entry.retry = setTimeout(() => {
       entry.retry = null;
       if (this.#state === "open") this.#issue(entry);
-      else this.ensureOpen();
+      else void this.ready();
     }, delayMs);
   }
 
@@ -334,7 +369,7 @@ export class ApiSocket {
     this.#reconnect = setTimeout(
       () => {
         this.#reconnect = null;
-        this.ensureOpen();
+        void this.ready();
       },
       wasOpen ? this.#backoff() : REFUSED_RETRY_MS,
     );
@@ -347,25 +382,17 @@ export class ApiSocket {
   }
 }
 
-/** Who the page is signed in as, told by the auth provider; the socket is addressed by it. */
-let socketUserId: string | null = null;
-
-/**
- * The auth provider's report of the signed-in user. A change closes the current socket
- * (it was the previous user's); the next stream or call opens the new user's.
- */
-export function setSocketUser(userId: string | null): void {
-  if (userId === socketUserId) return;
-  socketUserId = userId;
-  apiSocket.userChanged();
-  // Open at once: the page's first calls are about to be made, and ready() lets them wait
-  // for this handshake rather than fall to HTTP.
-  if (userId !== null) apiSocket.ensureOpen();
+/** Who the page is signed in as, asked of the server over HTTP; null when nobody. Rejects when it cannot tell. */
+async function whoAmI(): Promise<string | null> {
+  const res = await fetch("/api/me", { credentials: "same-origin" });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`/api/me answered ${res.status}`);
+  const body = (await res.json()) as { user?: { userId?: string } };
+  return body.user?.userId ?? null;
 }
 
 /** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
-export const apiSocket = new ApiSocket(() => {
-  if (socketUserId === null) return null;
+export const apiSocket = new ApiSocket((userId) => {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.host}${apiSocketPath(socketUserId)}`;
-});
+  return `${scheme}://${location.host}${apiSocketPath(userId)}`;
+}, whoAmI);
