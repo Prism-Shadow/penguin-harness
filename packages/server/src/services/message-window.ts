@@ -45,7 +45,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule — or the record's shape — changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 4;
+export const CACHE_VERSION = 5;
 
 /**
  * One turn of the conversation outline (the Web's quick-jump index), as the scanner sees
@@ -69,6 +69,31 @@ export const OUTLINE_QUESTION_CAP = 1000;
 export const OUTLINE_ANSWER_CAP = 500;
 
 /**
+ * The head of a prompt, cut at a LINE boundary: the protocol blocks the Web strips from a
+ * question (`[use_skills]`, `[attached file: …]` lines) are line-shaped, and a cut inside
+ * one would leave half a marker the stripper no longer recognises — cached for good.
+ */
+export function outlineQuestion(raw: string): string {
+  if (raw.length <= OUTLINE_QUESTION_CAP) return raw;
+  const head = raw.slice(0, OUTLINE_QUESTION_CAP);
+  const line = head.lastIndexOf("\n");
+  return line > 0 ? head.slice(0, line) : head;
+}
+
+/**
+ * What a shard's scan owes the turn that opened in the shard BEFORE it: a Task can span a
+ * rotation (compaction with carry-over), so its reply — or the text of an image-first
+ * prompt — can land in the next shard while the entry sits, immutable, in the previous
+ * shard's cached record. The reader of the index applies it to that entry.
+ */
+export interface OutlineCarry {
+  /** A question for the previous entry, if it had none. */
+  question: string | null;
+  /** Reply text to append to the previous entry (capped by the reader). */
+  answer: string;
+}
+
+/**
  * Receives the outline while a shard is scanned. `entry` fires when a turn opens (the
  * unit boundary that also counts), `adopt` when a later fragment of the same prompt
  * carries the text an image-first send lacked, `reply` for every non-blank assistant
@@ -90,33 +115,54 @@ interface TurnCollector {
 export function collectOutline(cursorOf: (ordinal: number) => string): {
   collector: OutlineCollector;
   entries: OutlineIndexEntry[];
+  carry: OutlineCarry;
 } {
   const entries: OutlineIndexEntry[] = [];
+  const carry: OutlineCarry = { question: null, answer: "" };
   const collector: OutlineCollector = {
     entry(ordinal, turn, question) {
       entries.push({
         turn,
         cursor: cursorOf(ordinal),
-        question: question.slice(0, OUTLINE_QUESTION_CAP),
+        question: outlineQuestion(question),
         answer: "",
       });
     },
     adopt(question) {
+      if (question === "") return;
       const last = entries[entries.length - 1];
-      if (last !== undefined && last.question === "" && question !== "") {
-        last.question = question.slice(0, OUTLINE_QUESTION_CAP);
+      if (last === undefined) {
+        // The prompt opened in the previous shard: owed to its entry there.
+        if (carry.question === null) carry.question = outlineQuestion(question);
+        return;
       }
+      if (last.question === "") last.question = outlineQuestion(question);
     },
     reply(text) {
       const last = entries[entries.length - 1];
-      if (last === undefined || last.answer.length >= OUTLINE_ANSWER_CAP) return;
-      last.answer = (last.answer === "" ? text : `${last.answer} ${text}`).slice(
-        0,
-        OUTLINE_ANSWER_CAP,
-      );
+      if (last === undefined) {
+        if (carry.answer.length < OUTLINE_ANSWER_CAP)
+          carry.answer = appendReply(carry.answer, text);
+        return;
+      }
+      if (last.answer.length < OUTLINE_ANSWER_CAP) last.answer = appendReply(last.answer, text);
     },
   };
-  return { collector, entries };
+  return { collector, entries, carry };
+}
+
+function appendReply(answer: string, text: string): string {
+  return (answer === "" ? text : `${answer} ${text}`).slice(0, OUTLINE_ANSWER_CAP);
+}
+
+/** Settles a shard's carry onto the entry that opened before it (the reader's side of OutlineCarry). */
+export function applyOutlineCarry(entries: OutlineIndexEntry[], carry: OutlineCarry): void {
+  const last = entries[entries.length - 1];
+  if (last === undefined) return;
+  if (last.question === "" && carry.question !== null) last.question = carry.question;
+  if (carry.answer !== "" && last.answer.length < OUTLINE_ANSWER_CAP) {
+    last.answer = appendReply(last.answer, carry.answer);
+  }
 }
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
@@ -561,16 +607,22 @@ export interface ShardPrefixRecord {
   v: number;
   state: ScanState;
   outline: OutlineIndexEntry[];
+  carry: OutlineCarry;
 }
 
-/** What one cached shard contributes: where the scan stands at its end, and the turns it opened. */
+/** What one cached shard contributes: where the scan stands at its end, the turns it opened, and what it owes the turn before it. */
 export interface ShardPrefix {
   state: ScanState;
   outline: OutlineIndexEntry[];
+  carry: OutlineCarry;
 }
 
-export function serializePrefix(state: ScanState, outline: OutlineIndexEntry[]): string {
-  return JSON.stringify({ v: CACHE_VERSION, state, outline } satisfies ShardPrefixRecord);
+export function serializePrefix(
+  state: ScanState,
+  outline: OutlineIndexEntry[],
+  carry: OutlineCarry,
+): string {
+  return JSON.stringify({ v: CACHE_VERSION, state, outline, carry } satisfies ShardPrefixRecord);
 }
 
 /** Parse a cached record; null when absent, unparseable, or from another CACHE_VERSION. */
@@ -582,11 +634,13 @@ export function deserializePrefix(raw: string | null): ShardPrefix | null {
       rec.v !== CACHE_VERSION ||
       typeof rec.state !== "object" ||
       rec.state === null ||
-      !Array.isArray(rec.outline)
+      !Array.isArray(rec.outline) ||
+      typeof rec.carry !== "object" ||
+      rec.carry === null
     ) {
       return null;
     }
-    return { state: rec.state, outline: rec.outline };
+    return { state: rec.state, outline: rec.outline, carry: rec.carry };
   } catch {
     return null;
   }
