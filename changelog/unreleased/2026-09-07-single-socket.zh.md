@@ -11,7 +11,8 @@
 
 ## 细节
 
-- `GET /api/socket`（Upgrade）是同一个 API 的第二种传输：每个文本帧是对既有端点的一次调用——方法、路径、白名单里的头（`last-event-id`、`accept`、`content-type`）、JSON 正文——经 HTTP 请求所走的同一入口分发，因而授权、校验与错误形状都是端点自己的。`text/event-stream` 响应以一帧 `stream` 开始、每条事件一帧、以 `end` 结束；`cancel` 帧释放它。握手以会话 Cookie 或本地 API token 加同源为门槛，之后每次调用都由应用从同样的头重新认证。套接字按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `lagging` 为由结束而不无界排队。`/api/hmr/*` 与套接字自身永不经此传输。
+- 套接字是同一个 API 的第二种传输：每个文本帧是对既有端点的一次调用——方法、路径、白名单里的头（`last-event-id`、`accept`、`content-type`）、JSON 正文——进入 HTTP 请求所进入的同一批路由，因而授权、校验与错误形状都是端点自己的。`text/event-stream` 响应以一帧 `stream` 开始、每条事件一帧、以 `end` 结束；`cancel` 帧释放它。套接字按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `lagging` 为由结束而不无界排队。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，改经 HTTP 发起。
+- 它在终端流的 upgrade 路径上打开，用一个以登录用户命名的保留 id：`GET /api/terminals/api-socket@<userId>/stream`，终端管理器的查找以一个引用作答，平台据此为它服务套接字协议。握手就是终端流的握手——会话 Cookie、同源、id 的 owner 必须是登录用户本人——之后平台以该用户身份进入自己的路由（`Http.fetchAs`）。一切都在平台层：已安装的壳在承载它的平台被推送后立即提供套接字，运行时无需改动。
 - 机器代理把流式请求（`accept: text/event-stream`）经它对该机器持有的一条套接字（经该机器的 ssh 会话、以其 admin 身份拨出）转发，再把帧还原为 `text/event-stream` 响应；构建里没有套接字的机器会被短暂记住，照旧走 HTTP 转发。
 - 前端的 `apiFetch` 在套接字打开时经套接字发出调用、否则用 fetch，两条路一个代码路径；套接字拒绝承载的响应（415 `unsupported_transport`）改用 fetch。流（`openUserEvents`、`openSessionStream`）是套接字上的调用，在每次中断后——重连、服务端结束、机器重连期间的 503——都带着最后的事件 id 重新发出；401/403/404 则停止。握手持续失败时页面回退到 `EventSource` 与 fetch。
 - 两个 SSE 端点与 `/server/<id>/api/…` 代理不变；CLI 继续经 HTTP 消费 SSE。

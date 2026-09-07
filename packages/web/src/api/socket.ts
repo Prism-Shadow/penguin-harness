@@ -22,10 +22,9 @@
  * which is why `apiFetch` asks `isOpen()` first rather than waiting.
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
+import { apiSocketPath } from "@prismshadow/penguin-server/api";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import type { StreamConnection, StreamHandlers } from "./sse";
-
-export const SOCKET_PATH = "/api/socket";
 
 /** Reconnect backoff, the ssh reconnect's shape: doubling from the floor to the ceiling. */
 const RECONNECT_MIN_MS = 1_000;
@@ -79,7 +78,8 @@ export class ApiSocket {
   #neverOpened = 0;
   #reconnect: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly url: () => string) {}
+  /** `url` answers null while nobody is signed in: the socket is addressed by user (see the module doc), so there is nothing to open yet. */
+  constructor(private readonly url: () => string | null) {}
 
   isOpen(): boolean {
     return this.#state === "open";
@@ -90,6 +90,15 @@ export class ApiSocket {
     return this.#state === "unavailable";
   }
 
+  /**
+   * The signed-in user changed (or signed out): the socket was that user's, so it closes;
+   * whatever streams are still wanted re-issue on the next user's socket. Called by the auth
+   * provider whenever it learns who the page is.
+   */
+  userChanged(): void {
+    if (this.#ws !== null) this.#ws.close();
+  }
+
   /** Opens the socket if it is closed; streams and calls queue behind the handshake. */
   ensureOpen(): void {
     if (this.#state !== "closed") return;
@@ -97,10 +106,12 @@ export class ApiSocket {
       this.#state = "unavailable";
       return;
     }
+    const url = this.url();
+    if (url === null) return; // nobody signed in yet: streams wait, calls use HTTP
     this.#state = "connecting";
     let ws: WebSocket;
     try {
-      ws = new WebSocket(this.url());
+      ws = new WebSocket(url);
     } catch {
       this.#state = "closed";
       this.#dropped(false);
@@ -312,8 +323,22 @@ export class ApiSocket {
   }
 }
 
-/** The page's socket: to this origin, same cookie the page holds. */
+/** Who the page is signed in as, told by the auth provider; the socket is addressed by it. */
+let socketUserId: string | null = null;
+
+/**
+ * The auth provider's report of the signed-in user. A change closes the current socket
+ * (it was the previous user's); the next stream or call opens the new user's.
+ */
+export function setSocketUser(userId: string | null): void {
+  if (userId === socketUserId) return;
+  socketUserId = userId;
+  apiSocket.userChanged();
+}
+
+/** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
 export const apiSocket = new ApiSocket(() => {
+  if (socketUserId === null) return null;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.host}${SOCKET_PATH}`;
+  return `${scheme}://${location.host}${apiSocketPath(socketUserId)}`;
 });
