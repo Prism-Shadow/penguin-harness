@@ -123,5 +123,9 @@ export function parseHostCommand(data: unknown): HostCommand | null {
   if (typeof data !== "object" || data === null) return null;
   const msg = data as Partial<HostCommandMessage>;
   if (msg.type !== "host-command") return null;
-  return msg.command === "install-cli" || msg.command === "check-updates" ? msg.command : null;
+  return msg.command === "install-cli" ||
+    msg.command === "check-updates" ||
+    msg.command === "open-devtools"
+    ? msg.command
+    : null;
 }

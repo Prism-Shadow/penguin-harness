@@ -7,7 +7,9 @@
  * through a new installer — so a capability that could instead be delivered
  * by a platform push must be. A rejected example: adding a preload bridge so
  * the web UI could open DevTools, when the shell's own View menu already
- * does it.
+ * does it. The page can still ask for DevTools — through the host-command
+ * relay every other shell action uses (`open-devtools`), which needs no
+ * bridge and no capability in the renderer.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
@@ -114,6 +116,21 @@ function hideMenuBar(target: BrowserWindow): void {
   });
 }
 
+/**
+ * Opens DevTools on the window, as its own window (`detach`) rather than a pane: a console
+ * error is usually being copied out to someone else, and a docked panel reflows the page
+ * under it while that happens.
+ *
+ * Already open is a focus, not a toggle. The palette entry says "open", and the View menu's
+ * accelerator (Ctrl+Shift+I, ⌥⌘I) is still the toggle for anyone who knows it.
+ */
+function openDevTools(): void {
+  if (win === null) return;
+  const contents = win.webContents;
+  if (contents.isDevToolsOpened()) contents.devToolsWebContents?.focus();
+  else contents.openDevTools({ mode: "detach" });
+}
+
 function createWindow(url: string): void {
   // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
   // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
@@ -199,6 +216,7 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
     const command = parseHostCommand(message);
     if (command === "install-cli") void installCliCommand(win);
     else if (command === "check-updates") void checkForUpdatesManually();
+    else if (command === "open-devtools") openDevTools();
   });
   const unsubscribe = onUpdaterStatus((status) => child.postMessage(updaterStatusMessage(status)));
   child.on("exit", () => unsubscribe());
@@ -207,6 +225,8 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
     hostCommandsMessage([
       ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
       ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+      // Unconditional: every Electron build has DevTools, packaged ones included.
+      "open-devtools",
     ]),
   );
 }
