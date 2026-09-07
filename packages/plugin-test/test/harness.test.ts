@@ -1,6 +1,6 @@
 /**
  * The harness against the real server: it starts on a scratch root, seeds the admin, lists
- * what plugins.json lists, and stops. A plugin directory whose entry is not built is
+ * what the Project it seeded asks for, and stops. A plugin directory whose entry is not built is
  * refused before anything starts, with the fix in the message.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -49,6 +49,7 @@ describe("startHarness", () => {
   it("answers as the seeded admin, and lists the plugin it was given", async () => {
     expect(harness.admin).toEqual({ userId: "admin", password: DEFAULT_ADMIN_PASSWORD });
     expect(harness.plugins).toEqual(["@someone/not-installed"]);
+    expect(harness.projectId).toBe("default_project");
     const api = await harness.login();
     const me = await api.get<{ user: { userId: string } }>("/api/me");
     expect(me.user.userId).toBe("admin");
