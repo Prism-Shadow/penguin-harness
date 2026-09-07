@@ -1552,6 +1552,7 @@ export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEn
   const proxy = machinesProxy(
     (machineId) => machines.proxyTarget(machineId),
     (machineId, outcome) => machines.noteApiSeen(machineId, outcome),
+    (line) => console.log(line),
   );
   app.all("*", async (c) => {
     if (!c.var.user.isAdmin) {

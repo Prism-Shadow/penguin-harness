@@ -15,7 +15,8 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import { isOwnOrigin, parseCookieHeader, sessionCookies } from "../auth/middleware.js";
+import { SESSION_COOKIE } from "../auth/middleware.js";
+import { isAllowedOrigin, readCookie, refuse } from "../http/ws-handshake.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -80,21 +81,4 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         refuse(socket, 500, "Internal Server Error");
       });
   });
-}
-
-/**
- * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
- * still rides along. Only a genuinely same-origin page may connect: host AND port must match
- * the Host the browser targeted. Cookies are port-agnostic, so anything looser (hostname-only,
- * or a blanket loopback allowance) would let a page served by any other local server ride the
- * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
- * browser's own Host survives the proxy and this comparison holds in development too.
- */
-function isAllowedOrigin(req: IncomingMessage): boolean {
-  return isOwnOrigin(req.headers.origin, req.headers.host);
-}
-
-function refuse(socket: Duplex, status: number, text: string): void {
-  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
-  socket.destroy();
 }
