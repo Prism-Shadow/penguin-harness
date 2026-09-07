@@ -16,6 +16,7 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import plugin, {
   MARKER_ROWS,
+  pickTranscript,
   readAiTitle,
   readsAsRunning,
   SCREEN_SETTLE_MS,
@@ -166,6 +167,46 @@ describe("the title", () => {
   });
 });
 
+describe("which transcript a Session follows", () => {
+  const t = (file: string, size: number) => ({ file, at: 0, size });
+  const base = (...pairs: [string, number][]) => new Map(pairs);
+
+  it("never takes one another Session is following", () => {
+    // Two surfaces can share a Workspace, and then they share this directory: "the newest
+    // file" is whichever program typed last, and both Sessions would take one title.
+    const found = [t("/d/b.jsonl", 20), t("/d/a.jsonl", 10)];
+    expect(pickTranscript(found, { file: null }, new Set())).toBe("/d/b.jsonl");
+    expect(pickTranscript(found, { file: null }, new Set(["/d/b.jsonl"]))).toBe("/d/a.jsonl");
+    // Nothing free: better to follow nothing than to read somebody else's session.
+    expect(pickTranscript(found, { file: null }, new Set(["/d/a.jsonl", "/d/b.jsonl"]))).toBeNull();
+  });
+
+  it("ignores what an earlier run left in the same Workspace, and takes what grows", () => {
+    const before = base(["/d/old.jsonl", 500]);
+    // Present when this Session started and never written since: not this program's.
+    expect(pickTranscript([t("/d/old.jsonl", 500)], { file: null }, new Set(), before)).toBeNull();
+    // Grown since: it is being written now.
+    expect(pickTranscript([t("/d/old.jsonl", 600)], { file: null }, new Set(), before)).toBe(
+      "/d/old.jsonl",
+    );
+    // A file that was not there at all is this program's by construction.
+    expect(pickTranscript([t("/d/new.jsonl", 10)], { file: null }, new Set(), before)).toBe(
+      "/d/new.jsonl",
+    );
+  });
+
+  it("keeps the one it claimed, whatever appears next to it", () => {
+    // From the outside, "my program resumed into another session" and "the Session next door
+    // just started" are the same event. Chasing the newer file renames somebody else.
+    const found = [t("/d/newer.jsonl", 90), t("/d/mine.jsonl", 10)];
+    expect(pickTranscript(found, { file: "/d/mine.jsonl" }, new Set())).toBe("/d/mine.jsonl");
+    // Only a file that is gone releases the claim.
+    expect(pickTranscript([t("/d/newer.jsonl", 90)], { file: "/d/mine.jsonl" }, new Set())).toBe(
+      "/d/newer.jsonl",
+    );
+  });
+});
+
 describe("the title, followed for real", () => {
   it("reports the ai-title the program writes, and each change of it", async () => {
     vi.useRealTimers();
@@ -201,12 +242,31 @@ describe("the title, followed for real", () => {
       await fs.appendFile(file, '{"type":"ai-title","aiTitle":"Counting the files"}\n');
       expect(await titles()).toEqual(["Counting the files"]);
 
-      // And again when it renames it — including into a transcript `/resume` switched to.
+      // And again when the program renames it, in the same transcript.
       reports.length = 0;
-      const resumed = path.join(dir, "sess-2.jsonl");
-      await fs.writeFile(resumed, '{"type":"ai-title","aiTitle":"Auditing the tree"}\n');
+      await fs.appendFile(file, '{"type":"ai-title","aiTitle":"Auditing the tree"}\n');
       expect(await titles()).toEqual(["Auditing the tree"]);
 
+      // A SECOND Session in the same Workspace — which the New chat page allows — must not
+      // read the first one's transcript, whichever of the two programs typed last.
+      const secondReports: (SurfaceState | SurfaceReport)[] = [];
+      await surface.open({ ...ref, sessionId: "s2", workspace: cwd }, {}, (r) =>
+        secondReports.push(r),
+      );
+      const third = path.join(dir, "sess-3.jsonl");
+      await fs.writeFile(third, '{"type":"ai-title","aiTitle":"Its own name"}\n');
+      for (let i = 0; i < 50 && secondReports.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(
+        secondReports.filter((r) => typeof r !== "string").map((r) => (r as SurfaceReport).title),
+      ).toEqual(["Its own name"]);
+      // …and the first Session kept its own.
+      reports.length = 0;
+      await new Promise((r) => setTimeout(r, 100));
+      expect(reports.filter((r) => typeof r !== "string" && r.title !== undefined)).toEqual([]);
+
+      surface.close("s2");
       surface.close(ref.sessionId);
     } finally {
       await fs.rm(home, { recursive: true, force: true });
