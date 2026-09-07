@@ -6,8 +6,8 @@
  *
  * The palette also carries the host's commands — what the process hosting the server can do
  * on the page's behalf. Under the desktop shell that is installing the bundled `penguin`
- * command and checking for a desktop update, which used to live only in the application
- * menu; the menu bar is hidden there (a lone Alt used to take the keyboard), so the palette
+ * command, checking for a desktop update, and opening DevTools — all of them application-menu
+ * items; the menu bar is hidden there (a lone Alt used to take the keyboard), so the palette
  * is where a person finds them. The server says which commands the host offers; a plain
  * server offers none, and a non-admin is told nothing.
  */
@@ -37,6 +37,11 @@ const HOST_ACTIONS: Record<
     label: () => S.commandPalette.checkUpdates,
     keywords: ["update", "upgrade", "version", "desktop"],
     after: () => S.commandPalette.checkingUpdates,
+  },
+  "open-devtools": {
+    label: () => S.commandPalette.openDevTools,
+    // English words for a person hunting an error message, whichever language the app is in.
+    keywords: ["devtools", "developer", "console", "inspect", "debug", "error"],
   },
 };
 
