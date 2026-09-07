@@ -1,0 +1,66 @@
+{
+  "name": "@prismshadow/penguin-plugin-discord-bot",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Discord bot that starts PenguinHarness agents from chat: message the bot, and a Session opens on the configured Agent and answers in the same channel.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/discord-bot"
+  },
+  "homepage": "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins/discord-bot",
+  "keywords": [
+    "penguin-harness-plugin",
+    "discord",
+    "chat-bot",
+    "messaging"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-plugin-test": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "modules": [
+      {
+        "name": "DiscordBot",
+        "requires": {},
+        "provides": {},
+        "contributes": {
+          "ChatBotsModule.bots": [
+            {
+              "id": "discord",
+              "channel": "discord",
+              "label": "Discord",
+              "labelZh": "Discord"
+            }
+          ]
+        },
+        "context": {
+          "version": 1
+        },
+        "children": []
+      }
+    ]
+  }
+}
