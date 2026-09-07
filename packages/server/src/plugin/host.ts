@@ -49,6 +49,11 @@ export class PluginHost {
     return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
   }
 
+  /** What is loaded, by specifier — how the next App reuses these objects instead of importing again. */
+  entries(): ReadonlyMap<string, LoadedPlugin> {
+    return new Map(this.plugins.map((e) => [e.specifier, e]));
+  }
+
   /** Nothing to release at process exit: modules dispose with the App that created them. */
   dispose(): void {}
 }
@@ -64,9 +69,8 @@ export class PluginHost {
  * is parked only because the imported objects must survive a swap — a re-import would give
  * the successor different module instances.
  *
- * That the runtime still LOADS it at process start (index.ts) is the misfiling this note
- * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
- * from a push, and had to be restarted to pick up a plugin list.
+ * The platform builds it, at its own boot (plugin/loader.ts's loadPluginHost). The runtime
+ * keeps a load of its own only as a shim for platforms older than that move.
  */
 export const PLUGINS_RESOURCE_ID = "runtime:plugins";
 
