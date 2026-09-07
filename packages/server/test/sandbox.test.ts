@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
-import { HotResources } from "../src/hmr/resources.js";
+import { HotResources } from "@prismshadow/penguin-hmr";
 import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
