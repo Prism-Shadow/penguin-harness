@@ -474,6 +474,9 @@ export class ClaudeCodeSurface implements SessionSurface {
         const title = readAiTitle(chunk);
         if (title === null || title === state.last) return;
         state.last = title;
+        // Logged once per change: a title that does not reach the Session list is otherwise
+        // indistinguishable from a program that never named itself.
+        console.log(`[claude-code] title: ${JSON.stringify(title)}`);
         tracked.report?.({ status: tracked.state, title });
       })();
     };

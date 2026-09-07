@@ -166,6 +166,55 @@ describe("the title", () => {
   });
 });
 
+describe("the title, followed for real", () => {
+  it("reports the ai-title the program writes, and each change of it", async () => {
+    vi.useRealTimers();
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "claude-follow-"));
+    try {
+      const cwd = path.join(home, "workspace");
+      await fs.mkdir(cwd, { recursive: true });
+      const dir = transcriptDir(cwd, { HOME: home });
+      await fs.mkdir(dir, { recursive: true });
+      const file = path.join(dir, "sess-1.jsonl");
+      await fs.writeFile(file, '{"type":"mode","mode":"normal"}\n');
+
+      const { terminals } = fakeTerminals();
+      const surface = new ClaudeCodeSurface(
+        terminals,
+        { PENGUIN_CLAUDE_BIN: "fake", HOME: home },
+        SCREEN_SETTLE_MS,
+        20,
+      );
+      const reports: (SurfaceState | SurfaceReport)[] = [];
+      await surface.open({ ...ref, workspace: cwd }, {}, (r) => reports.push(r));
+
+      const titles = async () => {
+        for (let i = 0; i < 50; i++) {
+          await new Promise((r) => setTimeout(r, 20));
+          const seen = reports.filter((r) => typeof r !== "string" && r.title !== undefined);
+          if (seen.length > 0) return seen.map((r) => (r as SurfaceReport).title);
+        }
+        return [];
+      };
+
+      // Appended as the program names the conversation.
+      await fs.appendFile(file, '{"type":"ai-title","aiTitle":"Counting the files"}\n');
+      expect(await titles()).toEqual(["Counting the files"]);
+
+      // And again when it renames it — including into a transcript `/resume` switched to.
+      reports.length = 0;
+      const resumed = path.join(dir, "sess-2.jsonl");
+      await fs.writeFile(resumed, '{"type":"ai-title","aiTitle":"Auditing the tree"}\n');
+      expect(await titles()).toEqual(["Auditing the tree"]);
+
+      surface.close(ref.sessionId);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+      vi.useFakeTimers();
+    }
+  }, 20_000);
+});
+
 describe("the program", () => {
   it("is claude from PATH unless PENGUIN_CLAUDE_BIN names another", () => {
     expect(claudeBinary({})).toBe("claude");
