@@ -1,6 +1,7 @@
 /**
  * The API socket client (api/socket.ts) against a scripted WebSocket: frames out, answers
- * in, streams that outlive the socket, and the fallback when no socket is to be had.
+ * in, streams that outlive the socket, the identity it settles by itself, and the fallback
+ * when no socket is to be had.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiSocket } from "../src/api/socket";
@@ -61,12 +62,24 @@ const handlers = (): StreamHandlers & {
   return h as typeof h & StreamHandlers;
 };
 
+/** The identity the scripted server reports; tests set it. */
+let whoAmI: () => Promise<string | null>;
+let asked = 0;
+
 let socket: ApiSocket;
 beforeEach(() => {
   FakeSocket.instances = [];
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.useFakeTimers();
-  socket = new ApiSocket(() => "ws://test/api/socket");
+  asked = 0;
+  whoAmI = async () => "admin";
+  socket = new ApiSocket(
+    (userId) => `ws://test/socket/${userId}`,
+    () => {
+      asked += 1;
+      return whoAmI();
+    },
+  );
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -75,13 +88,22 @@ afterEach(() => {
 
 const last = () => FakeSocket.instances[FakeSocket.instances.length - 1]!;
 
+/** Lets ready() settle the identity and open the scripted socket, then completes the handshake. */
+async function openViaReady(s: ApiSocket = socket): Promise<Promise<boolean>> {
+  const pending = s.ready();
+  await Promise.resolve(); // the identity promise
+  await Promise.resolve();
+  last().open();
+  return pending;
+}
+
 describe("calls", () => {
   it("is not open until the handshake completes, then frames a call and resolves its answer", async () => {
     expect(socket.isOpen()).toBe(false);
     await expect(socket.call("GET", "/api/me")).rejects.toThrow("socket_closed");
-    socket.ensureOpen();
-    last().open();
+    await expect(openViaReady()).resolves.toBe(true);
     expect(socket.isOpen()).toBe(true);
+    expect(last().url).toBe("ws://test/socket/admin"); // addressed by the identity it settled
     const answer = socket.call("POST", "/api/x?y=1", { body: { a: 1 } });
     const frame = last().frames()[0]!;
     expect(frame).toEqual({ id: 1, call: { method: "POST", path: "/api/x?y=1", body: { a: 1 } } });
@@ -99,8 +121,7 @@ describe("calls", () => {
   });
 
   it("rejects calls in flight when the socket drops", async () => {
-    socket.ensureOpen();
-    last().open();
+    await openViaReady();
     const answer = socket.call("GET", "/api/me");
     last().drop();
     await expect(answer).rejects.toThrow("socket_closed");
@@ -108,10 +129,53 @@ describe("calls", () => {
   });
 });
 
+describe("identity", () => {
+  it("asks who is signed in once, and never opens for nobody", async () => {
+    whoAmI = async () => null;
+    await expect(socket.ready()).resolves.toBe(false);
+    await expect(socket.ready()).resolves.toBe(false);
+    expect(asked).toBe(1); // remembered: nobody signed in
+    expect(FakeSocket.instances).toHaveLength(0);
+  });
+
+  it("asks again when it could not tell", async () => {
+    whoAmI = async () => {
+      throw new Error("network");
+    };
+    await expect(socket.ready()).resolves.toBe(false);
+    whoAmI = async () => "admin";
+    await expect(openViaReady()).resolves.toBe(true);
+    expect(asked).toBe(2);
+  });
+
+  it("takes the identity the API client saw, without asking", async () => {
+    socket.identityIs("alice");
+    await expect(openViaReady()).resolves.toBe(true);
+    expect(asked).toBe(0);
+    expect(last().url).toBe("ws://test/socket/alice");
+  });
+
+  it("closes on an identity change and opens the next user's on the next call", async () => {
+    await openViaReady();
+    const h = handlers();
+    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    socket.identityChanged();
+    expect(socket.isOpen()).toBe(false);
+    expect(h.errors).toEqual([false]); // the stream is parked, not dropped
+    whoAmI = async () => "bob";
+    vi.advanceTimersByTime(1_000); // the parked stream asks to reopen
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(last().url).toBe("ws://test/socket/bob");
+  });
+});
+
 describe("streams", () => {
-  it("issues the stream as a call, dispatches events by kind, and cancels on close", () => {
+  it("issues the stream as a call, dispatches events by kind, and cancels on close", async () => {
     const h = handlers();
     const conn = socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
     last().open();
     const [issued] = last().frames();
     expect(issued).toEqual({
@@ -128,15 +192,19 @@ describe("streams", () => {
     expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
   });
 
-  it("re-issues a stream after a drop with the last event id, on a fresh socket", () => {
+  it("re-issues a stream after a drop with the last event id, on a fresh socket", async () => {
     const h = handlers();
     socket.stream("/api/sessions/s1/stream", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
     last().open();
     last().receive({ id: 1, status: 200, stream: true, headers: {} });
     last().receive({ id: 1, event: "message", eventId: "7-41", data: "{}" });
     last().drop();
     expect(h.errors).toEqual([false]);
     vi.advanceTimersByTime(1_000); // first backoff step
+    await Promise.resolve();
+    await Promise.resolve();
     expect(FakeSocket.instances).toHaveLength(2);
     last().open();
     expect(last().frames()[0]).toEqual({
@@ -151,9 +219,11 @@ describe("streams", () => {
     expect(h.opens).toBe(2);
   });
 
-  it("re-issues a stream the server ended, and one answered 503, but not one refused", () => {
+  it("re-issues a stream the server ended, and one answered 503, but not one refused", async () => {
     const h = handlers();
     socket.stream("/server/m1/api/events", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
     last().open();
     last().receive({ id: 1, end: true, reason: "lagging" });
     vi.advanceTimersByTime(1_000);
@@ -169,7 +239,7 @@ describe("streams", () => {
     expect(last().frames()).toHaveLength(3); // fatal: no further attempt
   });
 
-  it("falls back to the caller's EventSource after the handshake keeps failing", () => {
+  it("falls back to the caller's EventSource after the handshake keeps failing", async () => {
     const fallbackCloses: number[] = [];
     let built = 0;
     const conn = socket.stream("/api/events", handlers(), () => {
@@ -177,6 +247,8 @@ describe("streams", () => {
       return { close: () => fallbackCloses.push(1) };
     });
     for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      await Promise.resolve();
       last().drop(); // closed before it ever opened: retried quickly, not on the drop backoff
       vi.advanceTimersByTime(250);
     }
@@ -189,45 +261,36 @@ describe("streams", () => {
     });
     expect(built).toBe(2);
     expect(socket.isOpen()).toBe(false);
+    await expect(socket.ready()).resolves.toBe(false);
     conn.close();
     expect(fallbackCloses).toEqual([1]);
-  });
-
-  it("waits for a signed-in user before opening, and closes when the user changes", () => {
-    let user: string | null = null;
-    const addressed = new ApiSocket(() => (user === null ? null : `ws://test/socket/${user}`));
-    const h = handlers();
-    addressed.stream("/api/events", h, () => ({ close: () => undefined }));
-    expect(FakeSocket.instances).toHaveLength(0); // nobody signed in: nothing to open
-    user = "alice";
-    addressed.ensureOpen();
-    expect(last().url).toBe("ws://test/socket/alice");
-    last().open();
-    expect(addressed.isOpen()).toBe(true);
-    expect(last().frames()).toHaveLength(1); // the waiting stream was issued on open
-    addressed.userChanged();
-    expect(addressed.isOpen()).toBe(false);
-    expect(h.errors).toEqual([false]); // the stream is parked, not dropped
   });
 });
 
 describe("ready", () => {
-  it("opens the socket and waits for the handshake, then answers true", async () => {
-    const pending = socket.ready();
-    expect(FakeSocket.instances).toHaveLength(1); // ready() opened it
+  it("waits for a handshake in progress and answers true once it completes", async () => {
+    const first = socket.ready();
+    await Promise.resolve();
+    await Promise.resolve();
+    const second = socket.ready(); // joins the same handshake
+    expect(FakeSocket.instances).toHaveLength(1);
     last().open();
-    await expect(pending).resolves.toBe(true);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
     await expect(socket.ready()).resolves.toBe(true); // already open: at once
   });
 
-  it("answers false when the handshake fails, when nobody is signed in, and once given up", async () => {
+  it("answers false when the handshake fails, and without WebSocket support", async () => {
     const pending = socket.ready();
+    await Promise.resolve();
+    await Promise.resolve();
     last().drop();
     await expect(pending).resolves.toBe(false);
-    const unaddressed = new ApiSocket(() => null);
-    await expect(unaddressed.ready()).resolves.toBe(false);
     vi.stubGlobal("WebSocket", undefined);
-    const noWs = new ApiSocket(() => "ws://test/socket");
+    const noWs = new ApiSocket(
+      () => "ws://test/socket",
+      async () => "admin",
+    );
     await expect(noWs.ready()).resolves.toBe(false);
     expect(noWs.isUnavailable()).toBe(true);
   });
