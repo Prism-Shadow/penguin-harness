@@ -24,11 +24,15 @@ import { CommandPalette } from "./command-palette";
 
 const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
 
-/** The palette action for each host command: its words, and what to say once it is handed over. */
-const HOST_ACTIONS: Record<
-  HostCommand,
-  { label: () => string; keywords: string[]; after?: () => string }
-> = {
+/** One host command's words, and what to say once it is handed over. */
+interface HostAction {
+  label: () => string;
+  keywords: string[];
+  after?: () => string;
+}
+
+/** The palette action for each host command. */
+const HOST_ACTIONS: Record<HostCommand, HostAction> = {
   "install-cli": {
     label: () => S.commandPalette.installCli,
     keywords: ["penguin", "cli", "command", "install", "path"],
@@ -44,6 +48,23 @@ const HOST_ACTIONS: Record<
     keywords: ["devtools", "developer", "console", "inspect", "debug", "error"],
   },
 };
+
+/**
+ * The commands to offer, paired with their words. A command this build has no words for is
+ * SKIPPED — the host is a separate program on its own schedule (it reaches users through an
+ * installer, the page through a hot push), so a shell newer than the page it serves is
+ * ordinary, and `open-devtools` made it real. Reading its words unchecked was not ordinary:
+ * the actions are built in a `useMemo`, and a throw there takes the whole App down to a
+ * blank page — which is what a shell carrying this command did to a page that predated it.
+ */
+export function knownHostActions(
+  commands: readonly HostCommand[],
+): { command: HostCommand; action: HostAction }[] {
+  return commands.flatMap((command) => {
+    const action: HostAction | undefined = HOST_ACTIONS[command];
+    return action === undefined ? [] : [{ command, action }];
+  });
+}
 
 /**
  * `extra` is what the mount point adds ahead of the standing actions — the full-page
@@ -79,8 +100,7 @@ export function AppPalette({ extra = [] }: { extra?: readonly PaletteAction[] })
         keywords: ["harness history", "version", "hmr", "ifaces"],
         run: () => setHistoryOpen(true),
       },
-      ...commands.map((command): PaletteAction => {
-        const action = HOST_ACTIONS[command];
+      ...knownHostActions(commands).map(({ command, action }): PaletteAction => {
         return {
           id: `host-${command}`,
           label: action.label(),
