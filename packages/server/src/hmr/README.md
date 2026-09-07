@@ -47,8 +47,10 @@ classification in `capabilities.ts` instead — capabilities are what only the p
 there is parked state.
 
 Reading parked state as a runtime capability is how behavior ends up misfiled. Auth was there
-once. Plugin LOADING still is — `loadPlugins` runs in the runtime at process start, which is why
-a machine whose program predates a new loading rule cannot learn it from a push.
+once, and so was plugin loading: `loadPlugins` ran in the runtime at process start, so a machine
+whose program predated a new loading rule could not learn it from a push — it had been handed a
+plugin list it was unable to act on until someone restarted it. The platform reads the closure
+itself now; what stays parked is the imported objects, which a swap must not lose.
 
 ## Why this matters more than it looks
 

@@ -127,9 +127,12 @@ class PenguinServer {
 
   /**
    * Plugins are configuration, and reading configuration is the runtime's job: take the
-   * specifiers plugins.json names, import them, and register each into this process's one
-   * PluginHost. Once per process — a hot swap re-delivers the hooks to these same plugin
-   * objects, which is the host's job, but must never import them again.
+   * A SHIM, since the platform loads its own (plugin/loader.ts's loadPluginHost, called from
+   * the platform's create()). Which plugins a deployment runs, and how that list is read, is
+   * policy — it ships by push, and a machine whose program predates a new rule must still
+   * learn it. What this keeps working is one case: a platform OLDER than that move, pushed
+   * onto this runtime, which claims the host and never builds one. It goes when no such
+   * platform is worth rolling back to.
    *
    * A plugin that fails to load is skipped with a warning instead of taking the server
    * down: the capability it would have provided stays unavailable, which a deployment can

@@ -57,10 +57,13 @@ import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
+  PARKED_TEST_PLUGINS_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import { pluginHostFrom } from "../plugin/host.js";
+import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
+import type { PluginHost } from "../plugin/host.js";
+import { loadPluginHost } from "../plugin/loader.js";
 import { migrate } from "../db/migrations.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -265,9 +268,19 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       .map(([group]) => group);
     const adoptable = (group: string) => !doomedGroups.includes(group);
 
-    // Plugins are modules (see ../plugin/): the host is CLAIMED from the registry,
-    // never imported (see pluginHostFrom), and its modules join the tree below.
-    const plugins = pluginHostFrom(ctx.resources);
+    // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
+    // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed
+    // over by the runtime, so the rule for reading it ships by push like every other policy.
+    // A bare kernel has no root to read and keeps whatever was already imported.
+    const plugins =
+      caps === null
+        ? pluginHostFrom(ctx.resources)
+        : await loadPluginHost(ctx.resources, caps.config.root);
+    // Plus whatever a test stood up in process, which no closure could name (see the id).
+    const injected = ctx.resources.claim<PluginHost | null>(PARKED_TEST_PLUGINS_RESOURCE_ID);
+    if (injected != null && typeof injected.entries === "function") {
+      for (const entry of injected.entries().values()) plugins.use(entry);
+    }
 
     let tree: ModuleTree;
     let business: ModuleTree | null = null;
@@ -364,6 +377,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // doc) so the NEXT App reads this build's.
     for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
     ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+    // The imported plugin objects, handed to whoever boots next — parked state, registered
+    // at the commit so a create() that threw leaves the previous App's host in place.
+    ctx.resources.register(PLUGINS_RESOURCE_ID, plugins);
 
     const httpApi = business?.api<{ fetch(request: Request): Promise<Response> }>(
       "HttpModule",
