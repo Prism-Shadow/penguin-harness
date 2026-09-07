@@ -17,11 +17,10 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
-  HostCommand,
   HostCommandMessage,
+  HostCommandOffer,
   HostCommandsMessage,
 } from "../api/types.js";
-import { HOST_COMMANDS } from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
 
 /** The slice of Electron's ParentPort this relay uses (structural: the server must not depend on Electron types). */
@@ -54,14 +53,44 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   return status as DesktopUpdateStatus;
 }
 
-/** Validates the shell's once-per-wiring push of the commands it offers; unknown names are dropped, not stored. */
-export function parseHostCommandsMessage(data: unknown): HostCommand[] | null {
+/** What a host may announce at once, and how long an id and a label may be. Bounds, not policy: the frame comes from the process that spawned this one. */
+const MAX_OFFERS = 32;
+const MAX_ID = 64;
+const MAX_LABEL = 120;
+
+/**
+ * Validates the shell's once-per-wiring push of what it offers.
+ *
+ * Nothing is checked against a list of known commands: the host decides what it can do, and
+ * a server that dropped what it had not heard of would make a newer shell's commands
+ * unreachable through an older server — which is the whole reason the words travel with the
+ * command now. What is checked is the shape and some bounds.
+ *
+ * A bare string is accepted as an id with no words: that is what a shell older than
+ * `HostCommandOffer` sends, and the page has its own words for everything such a shell can
+ * offer.
+ */
+export function parseHostCommandsMessage(data: unknown): HostCommandOffer[] | null {
   if (typeof data !== "object" || data === null) return null;
   const msg = data as Partial<HostCommandsMessage>;
   if (msg.type !== "host-commands" || !Array.isArray(msg.commands)) return null;
-  return msg.commands.filter((c): c is HostCommand =>
-    (HOST_COMMANDS as readonly string[]).includes(c),
-  );
+  const offers: HostCommandOffer[] = [];
+  for (const entry of (msg.commands as unknown[]).slice(0, MAX_OFFERS)) {
+    if (typeof entry === "string") {
+      if (entry !== "" && entry.length <= MAX_ID) {
+        offers.push({ command: entry, label: "", labelZh: "" });
+      }
+      continue;
+    }
+    if (typeof entry !== "object" || entry === null) continue;
+    const offer = entry as Partial<HostCommandOffer>;
+    if (typeof offer.command !== "string" || offer.command === "") continue;
+    if (offer.command.length > MAX_ID) continue;
+    const label = typeof offer.label === "string" ? offer.label.slice(0, MAX_LABEL) : "";
+    const labelZh = typeof offer.labelZh === "string" ? offer.labelZh.slice(0, MAX_LABEL) : "";
+    offers.push({ command: offer.command, label, labelZh });
+  }
+  return offers;
 }
 
 /** Reads Electron's injected port off `process`, absent under plain Node. */
@@ -77,8 +106,8 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
   port.on("message", (e) => {
     const status = parseUpdaterStatusMessage(e.data);
     if (status !== null) desktop.setUpdateStatus(status);
-    const commands = parseHostCommandsMessage(e.data);
-    if (commands !== null) desktop.setCommands(commands);
+    const offers = parseHostCommandsMessage(e.data);
+    if (offers !== null) desktop.setCommands(offers);
   });
   desktop.onUpdateCommand((action) => {
     port.postMessage({

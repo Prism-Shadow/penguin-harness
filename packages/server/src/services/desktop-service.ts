@@ -24,7 +24,9 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   HostCommand,
+  HostCommandOffer,
 } from "../api/types.js";
+import { HOST_COMMANDS } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
@@ -94,22 +96,40 @@ export class DesktopService {
   }
 
   // --- host commands offered to the page -------------------------------------
-  private commands: HostCommand[] = [];
-  private commandSender: ((command: HostCommand) => void) | null = null;
+  //
+  // The host's list, as the host wrote it: ids this server does not interpret, each with the
+  // words to show. Judging them against a list of its own would put this server between a
+  // shell and a page that both understand a command it does not.
+  private offers: HostCommandOffer[] = [];
+  private commandSender: ((command: string) => void) | null = null;
 
+  /** Everything the host offers, in the host's words. */
+  getCommandOffers(): HostCommandOffer[] {
+    return this.offers;
+  }
+
+  /**
+   * The offered ids this BUILD also has words for — what a page older than `offers` is given,
+   * since such a page looks every id up in a table of its own and throws on a miss.
+   */
   getCommands(): HostCommand[] {
-    return this.commands;
+    return this.offers
+      .map((offer) => offer.command)
+      .filter((command): command is HostCommand =>
+        (HOST_COMMANDS as readonly string[]).includes(command),
+      );
   }
 
-  setCommands(commands: HostCommand[]): void {
-    this.commands = commands;
+  setCommands(offers: HostCommandOffer[]): void {
+    this.offers = offers;
   }
 
-  onCommand(sender: (command: HostCommand) => void): void {
+  onCommand(sender: (command: string) => void): void {
     this.commandSender = sender;
   }
 
-  requestCommand(command: HostCommand): boolean {
+  /** True once handed to the host. Whether the id is one to run is the caller's check: it is the host's word (`getCommandOffers`), not this service's. */
+  requestCommand(command: string): boolean {
     if (!this.commandSender) return false;
     this.commandSender(command);
     return true;
