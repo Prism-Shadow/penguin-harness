@@ -17,6 +17,13 @@ export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {
+  ChatBots,
+  ChatBotsSlots,
+  ChatBotContribution,
+  ChatBotBinding,
+  ChatBotDefaults,
+} from "../runtime/messaging/chat-bots.js";
+export type {
   PluginConfig,
   PluginConfigField,
   PluginConfiguration,
