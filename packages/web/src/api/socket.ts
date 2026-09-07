@@ -32,6 +32,8 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 /** Consecutive handshakes that never opened before the page gives the socket up for EventSource and fetch. */
 const GIVE_UP_AFTER = 3;
+/** A handshake refused outright (a runtime without the socket, a session not yet signed in) is retried this soon — the backoff is for connections that were up and dropped. */
+const REFUSED_RETRY_MS = 250;
 /** A stream the server ended (or answered without streaming) is re-issued after this. */
 const REISSUE_MS = 1_000;
 
@@ -101,7 +103,7 @@ export class ApiSocket {
       ws = new WebSocket(this.url());
     } catch {
       this.#state = "closed";
-      this.#dropped();
+      this.#dropped(false);
       return;
     }
     this.#ws = ws;
@@ -121,7 +123,7 @@ export class ApiSocket {
       this.#ws = null;
       this.#state = "closed";
       if (!opened) this.#neverOpened += 1;
-      this.#dropped();
+      this.#dropped(opened);
     };
     ws.onerror = () => {
       // onclose follows; nothing to do here that it will not do.
@@ -273,7 +275,7 @@ export class ApiSocket {
   }
 
   /** The socket is gone: fail the calls, park the streams, and decide whether to come back. */
-  #dropped(): void {
+  #dropped(wasOpen: boolean): void {
     for (const pending of this.#calls.values()) pending.reject(new Error("socket_closed"));
     this.#calls.clear();
     for (const entry of this.#streams.values()) {
@@ -294,10 +296,13 @@ export class ApiSocket {
     }
     if (this.#waiting.size === 0) return; // nothing to carry: reopen lazily on the next ask
     if (this.#reconnect !== null) return;
-    this.#reconnect = setTimeout(() => {
-      this.#reconnect = null;
-      this.ensureOpen();
-    }, this.#backoff());
+    this.#reconnect = setTimeout(
+      () => {
+        this.#reconnect = null;
+        this.ensureOpen();
+      },
+      wasOpen ? this.#backoff() : REFUSED_RETRY_MS,
+    );
   }
 
   #backoff(): number {
