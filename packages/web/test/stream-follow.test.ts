@@ -258,8 +258,18 @@ describe("hold", () => {
     );
     expect(stream).toContain("const menuOpen = selectionMenu.open;");
     expect(stream).toContain("follow.hold(menuOpen);");
-    const snaps = stream.match(/if \(([^)]*?)\) stickToBottom\(el, follow\);/g) ?? [];
+    // Every snap the stream makes asks `snaps`, whatever shape the guard takes: the windowed
+    // run puts statements beside some of them, so the guard is not always one line. The guard
+    // is the `if` the snap sits under — the text between it and the snap carries no other one.
+    const snaps = [...stream.matchAll(/stickToBottom\(el, follow\)/g)];
     expect(snaps.length).toBeGreaterThanOrEqual(3);
-    for (const snap of snaps) expect(snap).toContain("follow.snaps");
+    for (const snap of snaps) {
+      const guard = stream.slice(0, snap.index);
+      const since = guard.slice(guard.lastIndexOf("if ("));
+      // The one snap that does not ask: the reader pressed "jump to latest", which resumes
+      // following first — an explicit request is not held by anything.
+      if (since.includes("follow.resume()")) continue;
+      expect(since).toContain("follow.snaps");
+    }
   });
 });
