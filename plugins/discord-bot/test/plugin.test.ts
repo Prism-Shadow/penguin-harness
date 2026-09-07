@@ -28,6 +28,7 @@ import plugin, {
   DiscordBots,
   NEW_NOTICE,
   NOTHING_PENDING_NOTICE,
+  PACKAGE_NAME,
   ROUTES_ID,
   botConfigOf,
   botIdOf,
@@ -152,8 +153,9 @@ class World {
   readonly decisions: Array<[string, string, string]> = [];
   readonly errors: Array<{ code?: string }> = [];
   readonly rows = new Set<string>();
-  /** Each Project's raw config, as its `.project_config.toml` would parse. */
-  readonly configs = new Map<string, Record<string, unknown>>();
+  /** What the harness holds for this package, as the Plugins page saved it. */
+  config: Record<string, unknown> = {};
+  readonly watchers = new Set<(values: Record<string, unknown>) => void>();
   readonly agents = new Set<string>(["proj/agent", "proj/default_agent", "other/default_agent"]);
   root = "";
   private nextSession = 0;
@@ -204,13 +206,22 @@ class World {
   managerDeps(): ManagerDeps {
     return {
       ...this.deps(),
-      projects: {
-        listAll: () => [...this.configs.keys()].map((projectId) => ({ projectId }) as never),
+      pluginConfig: {
+        get: (name: string) => (name === PACKAGE_NAME ? this.config : {}),
+        watch: (_name: string, cb: (values: Record<string, unknown>) => void) => {
+          this.watchers.add(cb);
+          return () => void this.watchers.delete(cb);
+        },
       },
-      configStore: { readRaw: async (projectId: string) => this.configs.get(projectId) ?? {} },
       agents: { exists: (p: string, a: string) => this.agents.has(`${p}/${a}`) },
-      reconcileIntervalMs: 0,
     };
+  }
+
+  /** What the Plugins page's Save does: store, then fire the watch. */
+  async saveConfig(values: Record<string, unknown>): Promise<void> {
+    this.config = values;
+    await Promise.all([...this.watchers].map((cb) => Promise.resolve(cb(values))));
+    await settle();
   }
 
   /** What a Session says as it runs: the state edges and the completed assistant messages. */
@@ -238,7 +249,9 @@ async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
 describe("the manifest, the config table and the helpers", () => {
   it("contributes the routes its manifest declares", () => {
     const pkg = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "package.json"), "utf8")) as {
+      name: string;
       penguin: {
+        configuration: { properties: Record<string, { type: string }> };
         modules: Array<{
           name: string;
           requires: Record<string, { from: string }>;
@@ -249,16 +262,26 @@ describe("the manifest, the config table and the helpers", () => {
     const [manifest] = pkg.penguin.modules;
     expect(manifest?.name).toBe("DiscordBot");
     expect(manifest?.contributes["HttpModule.routes"]?.[0]?.id).toBe(ROUTES_ID);
-    expect(manifest?.requires.configStore?.from).toBe("ProjectsModule");
+    expect(manifest?.requires.pluginConfig?.from).toBe("PluginConfigModule");
+    expect(pkg.name).toBe(PACKAGE_NAME);
+    expect(Object.keys(pkg.penguin.configuration.properties)).toEqual([
+      "bot_token",
+      "project",
+      "agent",
+      "enabled",
+    ]);
+    expect(pkg.penguin.configuration.properties.bot_token?.type).toBe("secret");
+    expect(pkg.penguin.configuration.properties.project?.type).toBe("project");
     expect(Object.keys(plugin.modules ?? {})).toEqual(["DiscordBot"]);
   });
 
-  it("reads a Project's [discord_bot] table, defaulting the Agent and the switch", () => {
+  it("reads the bot out of the stored values, defaulting the Agent and the switch", () => {
     const agents = {
       exists: (p: string, a: string) => p === "proj" && (a === "agent" || a === "default_agent"),
     };
-    expect(botConfigOf("proj", {}, agents)).toBeNull();
-    expect(botConfigOf("proj", { discord_bot: { bot_token: TOKEN } }, agents)).toEqual({
+    expect(botConfigOf({}, agents)).toBeNull();
+    expect(botConfigOf({ agent: "x", enabled: true }, agents)).toBeNull();
+    expect(botConfigOf({ bot_token: TOKEN, project: "proj" }, agents)).toEqual({
       ok: true,
       projectId: "proj",
       botToken: TOKEN,
@@ -267,26 +290,25 @@ describe("the manifest, the config table and the helpers", () => {
     });
     expect(
       botConfigOf(
-        "proj",
-        { discord_bot: { bot_token: `Bot ${TOKEN}`, agent: "agent", enabled: false } },
+        { bot_token: `Bot ${TOKEN}`, project: "proj", agent: "agent", enabled: false },
         agents,
       ),
     ).toEqual({ ok: true, projectId: "proj", botToken: TOKEN, agentId: "agent", enabled: false });
-    // Each way the table can be wrong names itself rather than throwing.
-    expect(botConfigOf("proj", { discord_bot: "x" }, agents)).toMatchObject({
+    // Each way the values can be wrong names itself rather than throwing.
+    expect(botConfigOf({ project: "proj" }, agents)).toMatchObject({
       ok: false,
-      error: expect.stringContaining("table"),
+      error: expect.stringContaining("token is not set"),
     });
-    expect(botConfigOf("proj", { discord_bot: {} }, agents)).toMatchObject({
-      ok: false,
-      error: expect.stringContaining("bot_token"),
-    });
-    expect(botConfigOf("proj", { discord_bot: { bot_token: "nope" } }, agents)).toMatchObject({
+    expect(botConfigOf({ bot_token: "nope", project: "proj" }, agents)).toMatchObject({
       ok: false,
       error: expect.stringContaining("not a Discord bot token"),
     });
+    expect(botConfigOf({ bot_token: TOKEN }, agents)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("no Project"),
+    });
     expect(
-      botConfigOf("proj", { discord_bot: { bot_token: TOKEN, agent: "ghost" } }, agents),
+      botConfigOf({ bot_token: TOKEN, project: "proj", agent: "ghost" }, agents),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining('"ghost"'),
@@ -307,7 +329,7 @@ describe("the manifest, the config table and the helpers", () => {
   });
 });
 
-describe("the manager over the Projects' config files", () => {
+describe("the manager over the plugin's configuration", () => {
   let w: World;
   let bots: DiscordBots;
 
@@ -320,46 +342,52 @@ describe("the manager over the Projects' config files", () => {
     await fs.rm(w.root, { recursive: true, force: true });
   });
 
-  it("runs one bot per Project with a table, lists the rest as broken, and follows edits", async () => {
-    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "agent" } });
-    w.configs.set("other", { discord_bot: { bot_token: "nope" } });
-    w.configs.set("plain", { models: [] });
+  it("runs the bot the values describe, reports why there is none, and follows every save", async () => {
     bots = new DiscordBots(w.managerDeps());
     await bots.start();
-    expect(
-      bots.list().bots.map((b) => [b.projectId, b.agentId, b.enabled, b.status.state]),
-    ).toEqual([["proj", "agent", true, "connected"]]);
-    expect(bots.list().bots[0]!.botTokenMasked).toBe("MTIz…AAAA");
-    expect(bots.list().broken).toEqual([
-      { projectId: "other", error: expect.stringContaining("bot_token") },
-    ]);
+    expect(bots.status()).toEqual({ bot: null, error: null, configured: false });
+    expect(w.connector.connections).toHaveLength(0);
+
+    await w.saveConfig({ bot_token: "nope", project: "proj" });
+    expect(bots.status()).toMatchObject({
+      bot: null,
+      configured: true,
+      error: expect.stringContaining("bot token"),
+    });
+
+    await w.saveConfig({ bot_token: TOKEN, project: "proj", agent: "agent", enabled: true });
+    expect(bots.status().error).toBeNull();
+    expect(bots.status().bot).toMatchObject({
+      projectId: "proj",
+      agentId: "agent",
+      enabled: true,
+      status: { state: "connected" },
+    });
+    expect(bots.status().bot!.botTokenMasked).toBe("MTIz…AAAA");
     expect(w.connector.open()).toHaveLength(1);
 
-    // An unchanged table restarts nothing; a changed one restarts the bot on the new values.
-    await bots.reconcile();
+    // The same values again restart nothing; changed ones restart the bot on the new values.
+    await w.saveConfig({ bot_token: TOKEN, project: "proj", agent: "agent", enabled: true });
     expect(w.connector.connections).toHaveLength(1);
-    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "default_agent" } });
-    await bots.reconcile();
+    await w.saveConfig({
+      bot_token: TOKEN,
+      project: "proj",
+      agent: "default_agent",
+      enabled: true,
+    });
     expect(w.connector.connections).toHaveLength(2);
     expect(w.connector.open()).toHaveLength(1);
-    expect(bots.list().bots[0]!.agentId).toBe("default_agent");
+    expect(bots.status().bot!.agentId).toBe("default_agent");
 
-    // The switch keeps the bot listed and its connection closed; a removed table stops it.
-    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, enabled: false } });
-    await bots.reconcile();
-    expect(bots.list().bots[0]).toMatchObject({
-      enabled: false,
-      status: { state: "disconnected" },
-    });
+    // The switch keeps the bot and closes its connection; cleared values stop it.
+    await w.saveConfig({ bot_token: TOKEN, project: "proj", enabled: false });
+    expect(bots.status().bot).toMatchObject({ enabled: false, status: { state: "disconnected" } });
     expect(w.connector.open()).toHaveLength(0);
-    w.configs.set("other", { discord_bot: { bot_token: TOKEN } });
-    w.configs.delete("proj");
-    await bots.reconcile();
-    expect(bots.list().bots.map((b) => b.projectId)).toEqual(["other"]);
-    expect(bots.list().broken).toEqual([]);
+    await w.saveConfig({});
+    expect(bots.status()).toEqual({ bot: null, error: null, configured: false });
   });
 
-  it("serves its status to admins only, running a pass first so an edit shows up at once", async () => {
+  it("serves its status to admins only, running a pass first", async () => {
     bots = new DiscordBots(w.managerDeps());
     await bots.start();
     const appFor = (isAdmin: boolean) => {
@@ -372,12 +400,12 @@ describe("the manager over the Projects' config files", () => {
       return outer;
     };
     expect((await appFor(false).request("/api/discord-bot")).status).toBe(403);
-    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "agent" } });
+    w.config = { bot_token: TOKEN, project: "proj", agent: "agent" };
     const res = await appFor(true).request("/api/discord-bot");
     expect(res.status).toBe(200);
-    expect(
-      ((await res.json()) as { bots: Array<{ projectId: string }> }).bots.map((b) => b.projectId),
-    ).toEqual(["proj"]);
+    expect(((await res.json()) as { bot: { projectId: string } | null }).bot?.projectId).toBe(
+      "proj",
+    );
   });
 });
 

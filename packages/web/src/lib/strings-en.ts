@@ -244,6 +244,16 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
+    pluginsTitle: "Plugins",
+    pluginsInfo:
+      "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
+    pluginsNone: "No loaded plugin declares any options.",
+    /** A secret field with a stored value: submitting it empty keeps the stored one. */
+    pluginSecretKeepHint: "Leave empty to keep the saved value",
+    pluginSecretClear: "Clear stored value",
+    /** The Project picker's empty choice. */
+    pluginProjectNone: "Choose a Project",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "Sharing",
     sandboxTitle: "Sandbox",

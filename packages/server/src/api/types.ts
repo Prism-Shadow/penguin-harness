@@ -3945,6 +3945,59 @@ export interface AgentPackagePreviewResponse {
   suggestedId: string;
 }
 
+/**
+ * One field of a plugin's declared configuration (`package.json#penguin.configuration
+ * .properties.<name>`): what the System settings dialog draws for it. `project` is a
+ * Project picker whose value is the Project's id; `secret` is drawn as a password field and
+ * masked on the way out.
+ */
+export interface PluginConfigField {
+  type: "string" | "secret" | "boolean" | "number" | "project";
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  placeholder?: string;
+  /** The value a package with nothing stored reads; also what an empty field falls back to. */
+  default?: string | number | boolean;
+  /** A save that would leave this field empty is refused. */
+  required?: boolean;
+}
+
+/** A plugin package's declared configuration: a titled group of fields, in declaration order. */
+export interface PluginConfiguration {
+  title?: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  properties: Record<string, PluginConfigField>;
+}
+
+/** One configurable loaded plugin (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
+export interface PluginConfigEntry {
+  /** The package name (`@scope/name`), which is also the store key. */
+  name: string;
+  configuration: PluginConfiguration;
+  /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
+  values: Record<string, unknown>;
+}
+
+export interface PluginConfigResponse {
+  plugins: PluginConfigEntry[];
+}
+
+/**
+ * PUT /api/admin/plugin-config — one package's update. Every named field is validated
+ * against its type; an omitted field keeps its stored value; a secret sent as the masked
+ * value keeps the stored one, and `null` or `""` clears any field. 400 `plugin_config_invalid`
+ * (with `field`) on a value that does not fit or a required field left empty; 404
+ * `plugin_config_unknown` for a package that is not loaded or declares no configuration.
+ */
+export interface PluginConfigUpdateRequest {
+  name: string;
+  values: Record<string, unknown>;
+}
+
 /** One plugin `<root>/plugins.json` lists (GET /api/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
