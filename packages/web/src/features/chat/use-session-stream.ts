@@ -27,6 +27,7 @@ import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
 import { createStreamController } from "../../lib/omni/stream-controller";
 import type {
+  FrontierLoadOptions,
   HistoryEdgeState,
   PendingApproval,
   StreamController,
@@ -36,6 +37,7 @@ import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
 export type {
+  FrontierLoadOptions,
   HistoryEdgeState,
   OlderHistoryState,
   PendingApproval,
@@ -67,10 +69,10 @@ export interface SessionStreamState {
   newer: HistoryEdgeState;
   /** Bumped whenever the run changes shape at either end (the stream re-anchors the reader). */
   edgesVersion: number;
-  /** Prepend the previous history window (triggered near the top of the loaded transcript). */
-  loadOlder: () => void;
-  /** Append the next window, re-attaching the live tail once reached (triggered near the bottom while detached). */
-  loadNewer: () => void;
+  /** Prepend the previous history window (triggered near the top of the loaded transcript); `shed` when the run's bottom is far (see FrontierLoadOptions). */
+  loadOlder: (opts?: FrontierLoadOptions) => void;
+  /** Append the next window, re-attaching the live tail once reached (triggered near the bottom while detached); `shed` when the run's top is far. */
+  loadNewer: (opts?: FrontierLoadOptions) => void;
   /** Drop the run and re-attach the live tail (the jump button while detached). */
   jumpToLatest: () => void;
   version: number;
@@ -316,11 +318,11 @@ export function useSessionStream(
     void controllerRef.current?.retry();
   }, []);
 
-  const loadOlder = useCallback(() => {
-    void controllerRef.current?.loadOlder();
+  const loadOlder = useCallback((opts?: FrontierLoadOptions) => {
+    void controllerRef.current?.loadOlder(opts);
   }, []);
-  const loadNewer = useCallback(() => {
-    void controllerRef.current?.loadNewer();
+  const loadNewer = useCallback((opts?: FrontierLoadOptions) => {
+    void controllerRef.current?.loadNewer(opts);
   }, []);
   const jumpToLatest = useCallback(() => {
     controllerRef.current?.jumpToLatest();
