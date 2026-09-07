@@ -1,7 +1,7 @@
 /**
  * @prismshadow/penguin-plugin-claude-code — Claude Code as a session surface.
  *
- * A PLUGIN PACKAGE, not part of the harness: a deployment lists it in plugins.json and the
+ * A PLUGIN PACKAGE, not part of the harness: a Project lists it in its config and the
  * harness resolves it from the installation (see the server's plugin/loader.ts). It
  * compiles against the type-only `@prismshadow/penguin-core/plugin` and
  * `@prismshadow/penguin-server/plugin` surfaces and carries no runtime dependency on either.
