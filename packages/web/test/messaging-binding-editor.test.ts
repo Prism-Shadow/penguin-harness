@@ -48,6 +48,7 @@ function credentialAnchor(channel: MessagingChannel): string {
   if (channel === "telegram") return S.telegram.botToken;
   if (channel === "qq") return S.qq.appId;
   if (channel === "wechat") return S.wechat.scanStart;
+  if (channel === "discord") return S.discord.botToken;
   return S.feishu.appId;
 }
 
@@ -63,7 +64,7 @@ function stateOf(
     form: emptyMessagingForm(channel),
     patchForm: () => {},
     selectChannel: () => {},
-    channels: { feishu: DARK, telegram: DARK, qq: DARK, wechat: DARK, ...facts },
+    channels: { feishu: DARK, telegram: DARK, qq: DARK, wechat: DARK, discord: DARK, ...facts },
     fieldErrors: {},
     dirty: false,
     busy: false,
@@ -190,7 +191,7 @@ describe("MessagingBindingBody", () => {
   });
 
   it('closes the form with the delivery options, each explanation behind its label\'s "?"', () => {
-    for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+    for (const channel of ["feishu", "telegram", "qq", "wechat", "discord"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
       // Every channel carries both: they are delivery preferences, not credentials.
       expect(html).toContain(S.messaging.linePerMessage);
@@ -238,8 +239,9 @@ describe("MessagingBindingBody", () => {
       telegram: S.messaging.renderMarkdownHelpTelegram,
       qq: S.messaging.renderMarkdownHelpQQ,
       wechat: S.messaging.renderMarkdownHelpWeChat,
+      discord: S.messaging.renderMarkdownHelpDiscord,
     } as const;
-    for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+    for (const channel of ["feishu", "telegram", "qq", "wechat", "discord"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
       expect(html).toContain(S.messaging.renderMarkdown);
       // Semantics disclose — the sentence is in the popover panel, which renders collapsed.
@@ -247,7 +249,7 @@ describe("MessagingBindingBody", () => {
       expect(html).not.toContain(help[channel]);
       // One sentence per channel: what a channel can show is the whole of what the reader
       // needs here, and a shared line would have to say "depending on the channel".
-      for (const other of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+      for (const other of ["feishu", "telegram", "qq", "wechat", "discord"] as MessagingChannel[]) {
         if (other !== channel) expect(html).not.toContain(help[other]);
       }
       // After the credential fields, like the other delivery preference.
@@ -269,19 +271,38 @@ describe("MessagingBindingBody", () => {
     expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly);
   });
 
-  it("offers all four channels in the selector", () => {
+  it("offers all five channels in the selector", () => {
     const html = render(stateOf("qq"));
     for (const name of [
       S.messaging.channelName.feishu,
       S.messaging.channelName.telegram,
       S.messaging.channelName.qq,
       S.messaging.channelName.wechat,
+      S.messaging.channelName.discord,
     ]) {
       expect(html).toContain(`>${name}</button>`);
     }
     // The grid's column count is spelled out in the component rather than interpolated, so
-    // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-4");
+    // a fifth channel that did not widen it would silently wrap onto a second row.
+    expect(html).toContain("grid-cols-5");
+  });
+
+  it("states Discord's @-mention rule on screen, and carries its own troubleshooting entries", () => {
+    // The same shape as QQ's replies-only line: a server channel delivers only messages that
+    // @-mention the bot, and a user who writes without it would read the binding as broken.
+    const html = render(stateOf("discord"));
+    expect(html).toContain(S.discord.mentionOnly);
+    expect(html.indexOf(S.discord.mentionOnly)).toBeGreaterThan(html.indexOf(S.discord.botToken));
+    expect(render(stateOf("telegram"))).not.toContain(S.discord.mentionOnly);
+    // The token's corner link opens the developer portal, where the token is issued.
+    expect(html).toContain('href="https://discord.com/developers/applications"');
+    const help = renderToStaticMarkup(
+      createElement(MessagingBindingHelp, { channel: "discord" as MessagingChannel }),
+    );
+    expect(help).toContain(S.messaging.troubleDiscordMention);
+    expect(help).toContain(S.messaging.troubleDiscordDm);
+    expect(help).not.toContain(S.messaging.troubleGroupPrivacy);
+    expect(help).toContain(S.discord.setupSteps[0]);
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {
