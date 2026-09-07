@@ -1,28 +1,33 @@
-# The runtime layer — mechanism only
+# The HMR layer — mechanism only
 
-This directory is the heart of the **runtime**: the layer that boots, transports and hot-swaps
-everything else. Read this before changing anything here (or in
-`packages/desktop/`, or in core's environment tooling — the other runtime homes).
+This directory is the heart of the **HMR layer**: the layer that boots, transports and
+hot-swaps everything else. Read this before changing anything here (or in
+`packages/desktop/`, or in core's environment tooling — the other homes of this layer).
+
+It used to be called "the runtime", and that name is why this file has to keep saying what
+belongs here: *runtime* also means "the program that is running", so everything the process
+did sounded like it belonged to the layer, and behaviour kept landing here that ships only by
+reinstalling every installation. The layer is named after the one thing it does.
 
 ## The four layers
 
 | Layer        | Lives in                                        | How it ships                      |
 | ------------ | ----------------------------------------------- | --------------------------------- |
-| **runtime**  | `hmr/`, `packages/desktop/`, server transport   | Rebuild + redeploy every install  |
+| **hmr**      | `hmr/`, `packages/desktop/`, server transport   | Rebuild + redeploy every install  |
 | **platform** | `packages/server/src/hmr/platform.ts` + `app.ts` | One HTTP push, seconds, no restart|
 | **workflow** | An agent's own folder                           | Installed/reloaded per agent      |
 | **state**    | Parked context documents / the resource registry | Rides across swaps, not restarts  |
 
 ## The rule
 
-**The runtime carries mechanism. It must not carry policy.**
+**The HMR layer carries mechanism. It must not carry policy.**
 
 Mechanism is the machinery that is the same no matter what the product does: HTTP transport,
 SSE channels, the network gate, the kernel's park → migrate → boot swap, the resource registry,
 artifact storage and the atomic `harness.json` commit.
 
 Authentication is NOT on that list, and used to be. Who may set a password, how long a session
-lasts, how logins are throttled — that is policy, and a runtime that owned it made every auth
+lasts, how logins are throttled — that is policy, and an HMR layer that owned it made every auth
 fix wait for a full reinstall: a platform naming a member an older runtime's AuthService lacked
 was refused at the handshake. The App builds its own AuthService now (the `auth` module under src/modules).
 What the runtime still publishes is `runtime:auth-state`, the process-scoped values a push must
@@ -32,7 +37,7 @@ Policy is everything a deployment might reasonably want to change: business APIs
 sees, what a command does, how a capability behaves. Policy belongs in the **platform**, which is
 hot-swappable.
 
-### The registry is the state layer, not a runtime API
+### The registry is the state layer, not an HMR-layer API
 
 Most of what the resource registry holds is the **platform's own state**, kept there for one
 reason: a swap must not lose it. The auth values, the plugin host's imported objects, the frames
@@ -46,7 +51,7 @@ classification in `capabilities.ts` instead — capabilities are what only the p
 (the config it started with, the open database, the channels, the hot host); everything else in
 there is parked state.
 
-Reading parked state as a runtime capability is how behavior ends up misfiled. Auth was there
+Reading parked state as an HMR-layer capability is how behavior ends up misfiled. Auth was there
 once, and so was plugin loading: `loadPlugins` ran in the runtime at process start, so a machine
 whose program predated a new loading rule could not learn it from a push — it had been handed a
 plugin list it was unable to act on until someone restarted it. The platform reads the closure
@@ -54,12 +59,12 @@ itself now; what stays parked is the imported objects, which a swap must not los
 
 ## Why this matters more than it looks
 
-A runtime change costs a full artifact rebuild and a redeploy of **every installation** — and
+A change here costs a full artifact rebuild and a redeploy of **every installation** — and
 until that redeploy lands, the fix does not exist for users. A platform change is one HTTP push
-that takes seconds and needs no restart. Every behavior misfiled into the runtime is a fix that
+that takes seconds and needs no restart. Every behavior misfiled into this layer is a fix that
 arrives weeks late.
 
-## The test to apply BEFORE editing runtime code
+## The test to apply BEFORE editing HMR-layer code
 
 1. Which layer owns this **behavior** in the four-layer model?
 2. Can it be delivered by a platform push instead? If yes, it must be.
@@ -69,7 +74,7 @@ arrives weeks late.
 ### The trap: "fix where the code is"
 
 The single most common way this rule gets broken is finding the line that misbehaves and editing
-it there. Today most behavior still physically lives in runtime files, so "fix at the fault site"
+it there. Today much behavior still physically lives in this layer's files, so "fix at the fault site"
 lands in the runtime almost every time. **The fault site is not the owner.** Decide the layer
 first, then choose the edit site — not the reverse.
 

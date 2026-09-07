@@ -1,18 +1,18 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
-import type { RuntimeCapabilities } from "./hmr/capabilities.js";
+import type { HmrCapabilities } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
-  RuntimeAuthState,
+  HmrAuthState,
   RuntimeChannels,
   RuntimeConfig,
   RuntimeDb,
-  RuntimeDesktop,
+  HmrDesktop,
   RuntimeHmr,
   RuntimeProxy,
-  RuntimeResourceGroups,
+  HmrResourceGroups,
   SystemClock,
   AuthState,
   Channels,
@@ -213,9 +213,9 @@ export class Startup {
     RuntimeChannels,
     RuntimeProxy,
     RuntimeHmr,
-    RuntimeDesktop,
-    RuntimeAuthState,
-    RuntimeResourceGroups,
+    HmrDesktop,
+    HmrAuthState,
+    HmrResourceGroups,
     ConsoleLog,
     SystemClock,
     ConfigPaths,
@@ -234,7 +234,7 @@ export class Startup {
     Paths,
   ],
 })
-export class RuntimeModule {}
+export class HmrModule {}
 
 @Module({
   children: [
@@ -400,7 +400,7 @@ export class PackagesModule {}
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
-    RuntimeModule,
+    HmrModule,
     SettingsModule,
     IdentityModule,
     ProjectsModule,
@@ -428,7 +428,7 @@ export class PlatformModule {}
  * plugin modules appended under the root.
  */
 export function platformDef(
-  caps: RuntimeCapabilities,
+  caps: HmrCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),
@@ -439,9 +439,9 @@ export function platformDef(
     [RuntimeChannels, new RuntimeChannels(caps)],
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
-    [RuntimeDesktop, new RuntimeDesktop(caps)],
-    [RuntimeAuthState, new RuntimeAuthState(caps)],
-    [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
+    [HmrDesktop, new HmrDesktop(caps)],
+    [HmrAuthState, new HmrAuthState(caps)],
+    [HmrResourceGroups, new HmrResourceGroups(adoptable)],
   ]);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);
   return moduleDefOf(PlatformModule, {
