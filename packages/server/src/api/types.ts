@@ -1743,7 +1743,7 @@ export interface SessionProcessesResponse {
 // ---------------------------------------------------------------------------
 
 /** Messaging channels a Session can bind to. */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
+export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat" | "discord";
 
 /** Event-connection runtime state of one binding (kept in memory, not persisted). */
 export type MessagingRuntimeState = "disconnected" | "connecting" | "connected" | "error";
@@ -1950,9 +1950,28 @@ export interface WeChatBindingInfo extends MessagingBindingCommon {
   botTokenMasked?: string;
 }
 
+/**
+ * The stored Discord config, token masked (plaintext never leaves the server).
+ *
+ * No preference field is re-declared: the three delivery preferences cost what they cost on
+ * Telegram here — no reply budget, no expiring window. The one thing the channel charges
+ * differently for is size, and that is the connector's, not a preference's.
+ */
+export interface DiscordBindingInfo extends MessagingBindingCommon {
+  channel: "discord";
+  /** The bot's user id, decoded from the token's first segment — the channel-scoped account identity, never secret. */
+  botId: string;
+  /**
+   * Masked bot token (site-wide mask rule: `***`, or `first4…last4` for long values);
+   * absent when no token is stored (cleared) — the binding cannot be enabled until one
+   * is saved.
+   */
+  botTokenMasked?: string;
+}
+
 /** A Session's saved config for one messaging channel (`channel` is the discriminant). */
 export type MessagingBindingInfo =
-  FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo | WeChatBindingInfo;
+  FeishuBindingInfo | TelegramBindingInfo | QQBindingInfo | WeChatBindingInfo | DiscordBindingInfo;
 
 /** One saved channel config with its event-connection runtime status. */
 export interface MessagingChannelState {
@@ -1991,6 +2010,12 @@ export interface QQBindingResponse {
 /** GET / PUT …/messaging/wechat response (the WeChat narrowing of the same envelope). */
 export interface WeChatBindingResponse {
   binding: WeChatBindingInfo | null;
+  status: MessagingRuntimeStatus;
+}
+
+/** GET / PUT …/messaging/discord response (the Discord narrowing of the same envelope). */
+export interface DiscordBindingResponse {
+  binding: DiscordBindingInfo | null;
   status: MessagingRuntimeStatus;
 }
 
@@ -2060,6 +2085,23 @@ export interface QQBindingPutRequest extends MessagingDeliveryPatch {
    * it). Refused with 409 `messaging_disable_before_clear` while the binding is enabled.
    */
   clearAppSecret?: boolean;
+}
+
+/**
+ * PUT …/messaging/discord — saves the credential ONLY, the Telegram contract exactly: the
+ * whole credential is the one bot token from the developer portal, whose first segment
+ * names the bot (400 `discord_token_invalid` when it cannot be read); an enabled binding's
+ * connector restarts with the new token; the connection toggle is POST …/state.
+ */
+export interface DiscordBindingPutRequest extends MessagingDeliveryPatch {
+  /** Omitted or blank keeps the stored token (the masked value never round-trips). */
+  botToken?: string;
+  /**
+   * Drops the STORED token (the models-page clear idiom; a typed `botToken` wins over
+   * it — and the row keeps its bot identity). Refused with 409
+   * `messaging_disable_before_clear` while the binding is enabled.
+   */
+  clearBotToken?: boolean;
 }
 
 /**
@@ -2194,6 +2236,20 @@ export interface WeChatTestResponse {
   error?: string;
 }
 
+/** POST …/messaging/discord/test — the draft token; omitted, the stored one is probed. */
+export interface DiscordTestRequest {
+  botToken?: string;
+}
+
+/** Discord credential-test outcome: success additionally names the bot the token signs in as. */
+export interface DiscordTestResponse {
+  ok: boolean;
+  latencyMs?: number;
+  /** The bot's `@username`, as `GET /users/@me` reports it. */
+  botUsername?: string;
+  error?: string;
+}
+
 /**
  * POST …/messaging/wechat/scan — starts a scan-to-connect flow, which on this channel is the
  * ONLY way to bind: the bot token has no console to be copied out of.
@@ -2270,7 +2326,8 @@ export interface WeChatScanVerifyRequest {
 
 /**
  * POST …/messaging/<channel>/test-message — sent to the last known chat (409
- * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists). On QQ this can
+ * `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` / `wechat_no_chat` / `discord_no_chat`
+ * before one exists). On QQ this can
  * still fail with 502 afterwards: the platform accepts only replies to a message sent from
  * QQ minutes earlier, so a known chat does not mean a deliverable one.
  */

@@ -3,8 +3,8 @@
  * editor's and the Messaging dock panel's shared surface. A Session keeps at most one
  * saved config PER channel (all of them may sit saved side by side); the channel-agnostic
  * GET returns them all, and each channel owns a subtree with its own config shape —
- * /feishu, /telegram, /qq and /wechat carry the same verb set, and a further channel adds
- * its own.
+ * /feishu, /telegram, /qq, /wechat and /discord carry the same verb set, and a further
+ * channel adds its own.
  *
  * ENABLING the connection IS the binding, and disabling it is the unbind. Saving
  * credentials therefore never conflicts across Sessions — any number of Sessions may keep
@@ -49,6 +49,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
+  DiscordBindingResponse,
+  DiscordTestResponse,
   FeishuBindingInfo,
   FeishuBindingResponse,
   FeishuTestResponse,
@@ -79,6 +81,7 @@ import type {
 import type { SessionRow, SessionsRepo } from "../../db/repos/sessions.js";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "../../runtime/messaging/feishu-connector.js";
 import { telegramBotIdOf } from "../../runtime/messaging/telegram-connector.js";
+import { discordBotIdOf } from "../../runtime/messaging/discord-connector.js";
 import { maskApiKey } from "../../services/project-config-service.js";
 import { HttpError } from "../errors.js";
 import {
@@ -133,6 +136,12 @@ function telegramFieldsOf(row: MessagingBindingRow): { botToken: string } {
   return { botToken: typeof botToken === "string" ? botToken : "" };
 }
 
+/** The stored discord config, tolerated loosely (a malformed document reads as blank). */
+function discordFieldsOf(row: MessagingBindingRow): { botToken: string } {
+  const { botToken } = row.config;
+  return { botToken: typeof botToken === "string" ? botToken : "" };
+}
+
 /** The stored qq config, tolerated loosely (a malformed document reads as blanks). */
 function qqFieldsOf(row: MessagingBindingRow): { appId: string; appSecret: string } {
   const { appId, appSecret } = row.config;
@@ -158,7 +167,7 @@ function wechatFieldsOf(row: MessagingBindingRow): { botId: string; botToken: st
 }
 
 /**
- * The four channels, each saying only what it does not share (see messaging-channels.ts).
+ * The five channels, each saying only what it does not share (see messaging-channels.ts).
  * Everything written against this table — the read, the state toggle, the delete, the test
  * message, the enable gate's credential check — is written once.
  *
@@ -228,6 +237,20 @@ const CHANNEL_SPECS: Readonly<Record<MessagingChannel, MessagingChannelSpec>> = 
         ...maskedSecretField("botTokenMasked", fields.botToken),
       };
     },
+  },
+  discord: {
+    channel: "discord",
+    label: "Discord",
+    storedSecret: (row) => discordFieldsOf(row).botToken,
+    secretRequiredCode: "discord_token_required",
+    toInfo: (row) => ({
+      channel: "discord",
+      ...commonBindingFields(row),
+      // The row's account identity, as on Telegram: decoded from the token when it was saved,
+      // and kept through a cleared token.
+      botId: row.accountId,
+      ...maskedSecretField("botTokenMasked", discordFieldsOf(row).botToken),
+    }),
   },
 };
 
@@ -306,6 +329,8 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
     bindingResponse(sessionId, CHANNEL_SPECS.qq) as QQBindingResponse;
   const wechatResponse = (sessionId: string): WeChatBindingResponse =>
     bindingResponse(sessionId, CHANNEL_SPECS.wechat) as WeChatBindingResponse;
+  const discordResponse = (sessionId: string): DiscordBindingResponse =>
+    bindingResponse(sessionId, CHANNEL_SPECS.discord) as DiscordBindingResponse;
 
   /**
    * The one-connection-per-account rule, on its own because two paths need it: the enable,
@@ -628,6 +653,75 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
         : {}),
       ...(result.error !== undefined ? { error: result.error } : {}),
     } satisfies TelegramTestResponse);
+  });
+
+  // —— Discord ———————————————————————————————————————————————————————————————
+  //
+  // The Telegram shape, token for token: one credential, whose first segment names the bot.
+
+  app.put("/:sessionId/messaging/discord", async (c) => {
+    const row = resolveSession(c);
+    deps.access.requireProjectOwner(c.var.user.userId, row.projectId);
+    const body = await readJson(c);
+    const existing = deps.messagingRepo.find(row.sessionId, "discord");
+    const { secret: botToken, fromRequest } = resolveSecret({
+      typed: optionalString(body, "botToken", { maxLen: 200 })?.trim(),
+      clear: (body as { clearBotToken?: unknown }).clearBotToken === true,
+      existing,
+      stored: existing !== null ? discordFieldsOf(existing).botToken : "",
+      requiredCode: "discord_token_required",
+      requiredMessage: "botToken is required to bind.",
+    });
+    // The account identity comes out of the credential (see discordBotIdOf), re-derived
+    // exactly when a new token arrives; every other branch keeps the row's, so a cleared
+    // config still knows which bot it was.
+    let botId: string;
+    if (fromRequest) {
+      const id = discordBotIdOf(botToken);
+      if (id === null) {
+        throw new HttpError(
+          400,
+          "discord_token_invalid",
+          "botToken must be a Discord bot token as issued in the developer portal (three dot-separated segments, the first naming the bot).",
+        );
+      }
+      botId = id;
+    } else {
+      botId = existing!.accountId;
+    }
+    // Same reason as the Telegram PUT: a token swap on an enabled binding would carry the
+    // live connection onto another bot without passing the enable gate.
+    if (existing !== null && existing.enabled) guardAccountFree(row.sessionId, "discord", botId);
+    const saved = deps.messagingRepo.upsert({
+      sessionId: row.sessionId,
+      channel: "discord",
+      accountId: botId,
+      config: { botToken },
+      ...deliveryPatchOf(body),
+    });
+    if (saved.enabled) await deps.messaging.sync(row.sessionId);
+    return c.json(discordResponse(row.sessionId));
+  });
+
+  // Credential test: the draft token, falling back to the stored one — and the success
+  // feedback names the bot (`GET /users/@me`), which the user can check against the portal.
+  app.post("/:sessionId/messaging/discord/test", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const stored = deps.messagingRepo.find(row.sessionId, "discord");
+    const botToken =
+      optionalString(body, "botToken", { maxLen: 200 })?.trim() ||
+      (stored !== null ? discordFieldsOf(stored).botToken || undefined : undefined);
+    if (botToken === undefined || botToken === "") {
+      throw new HttpError(400, "discord_token_required", "botToken is required to test.");
+    }
+    const result = await deps.messaging.testCredentials("discord", { botToken });
+    return c.json({
+      ok: result.ok,
+      ...(result.latencyMs !== undefined ? { latencyMs: result.latencyMs } : {}),
+      ...(result.accountLabel !== undefined ? { botUsername: result.accountLabel } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    } satisfies DiscordTestResponse);
   });
 
   app.put("/:sessionId/messaging/qq", async (c) => {

@@ -2235,7 +2235,9 @@ export class SessionsModule {
         return enabled !== null &&
           (enabled.channel === "feishu" ||
             enabled.channel === "telegram" ||
-            enabled.channel === "qq")
+            enabled.channel === "qq" ||
+            enabled.channel === "wechat" ||
+            enabled.channel === "discord")
           ? enabled.channel
           : null;
       },

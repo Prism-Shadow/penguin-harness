@@ -1,6 +1,6 @@
 /**
  * Messaging bridge: a Web server runtime component connecting Sessions to external chat
- * platforms through channel connectors (Feishu, Telegram, QQ and WeChat today — see
+ * platforms through channel connectors (Feishu, Telegram, QQ, WeChat and Discord today — see
  * feishu-connector.ts / telegram-connector.ts / qq-connector.ts). Started by the platform next to the
  * Scheduler, stopped when the
  * App is disposed — a hot swap hard-stops it like the scheduler. A Session may keep a
@@ -105,6 +105,7 @@ import { FeishuMessaging } from "./feishu-connector.js";
 import { TelegramMessaging } from "./telegram-connector.js";
 import { QqMessaging } from "./qq-connector.js";
 import { WechatMessaging } from "./wechat-connector.js";
+import { DiscordMessaging } from "./discord-connector.js";
 import { WeChatScanService } from "./wechat-scan.js";
 import type { WeChatScanTransportHandle } from "./wechat-scan.js";
 import { sessionMessagingRoutes } from "../../http/routes/messaging.js";
@@ -1641,8 +1642,13 @@ export class MessagingBridge {
       inboundMessageId: liveInboundMessageId,
     };
     const markdown = row.renderMarkdown;
+    // The shared size, or the channel's own where that is tighter (see textChunkChars).
+    const chunkChars = Math.min(
+      MESSAGING_TEXT_CHUNK_CHARS,
+      entry.connector.textChunkChars ?? MESSAGING_TEXT_CHUNK_CHARS,
+    );
     const chunkBody = (body: string): string[] =>
-      markdown ? chunkMarkdown(body, MESSAGING_TEXT_CHUNK_CHARS) : chunkMessagingText(body);
+      markdown ? chunkMarkdown(body, chunkChars) : chunkMessagingText(body, chunkChars);
     // One body per outbound message: the whole reply, or one per non-blank line when the
     // binding asked for that. Everything below is untouched by the choice.
     const bodies = row.linePerMessage
@@ -1888,7 +1894,10 @@ export abstract class QQScan extends Interface<
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
-  connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
+  connectors: Slot<
+    { channel: "feishu" | "telegram" | "qq" | "wechat" | "discord" },
+    MessagingChannelConnector
+  >;
 }
 
 @Module({
@@ -1902,7 +1911,7 @@ export interface MessagingSlots {
       },
     ],
   },
-  children: [FeishuMessaging, TelegramMessaging, QqMessaging, WechatMessaging],
+  children: [FeishuMessaging, TelegramMessaging, QqMessaging, WechatMessaging, DiscordMessaging],
 })
 export class MessagingModule {
   @Use() private readonly paths!: Paths;

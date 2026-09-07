@@ -40,6 +40,7 @@ import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
 import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
+import { DiscordTransportProvider } from "./runtime/messaging/discord-connector.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -355,6 +356,7 @@ export class WorkspaceModule {}
     QQScanTransportProvider,
     WeChatTransportProvider,
     WeChatScanTransportProvider,
+    DiscordTransportProvider,
     DefaultMessagingTuning,
     MessagingBindingsRepo,
     MessagingModule,
