@@ -504,7 +504,9 @@ The order the bundled Web App uses:
 
 ## The API socket (WebSocket)
 
-`GET /api/socket` (Upgrade) is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket dispatch through the same entry, so a call is authorized, validated and answered exactly as its HTTP twin. The handshake requires the session cookie or the local API token (Bearer) and a same-origin `Origin` (or none); `/api/hmr/*` and the socket itself never ride it.
+The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
+
+It is opened on the terminal-stream upgrade path under a reserved id naming the signed-in user: `GET /api/terminals/api-socket@<userId>/stream` (Upgrade; `apiSocketPath(userId)` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie, a same-origin `Origin` (or none), and the id's owner held to the signed-in user, so admin's cookie cannot open `api-socket@alice` — and the socket then serves calls as that user. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
 
 Frames are JSON text frames, ids are the client's and unique for the socket's life:
 

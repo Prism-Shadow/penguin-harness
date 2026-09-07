@@ -45,6 +45,8 @@ import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
+import { isApiSocketRef } from "../socket/ref.js";
+import { serveApiSocket } from "../socket/serve.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import type { SessionManager } from "../runtime/session-manager.js";
@@ -388,10 +390,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // at the commit so a create() that threw leaves the previous App's host in place.
     ctx.resources.register(PLUGINS_RESOURCE_ID, plugins);
 
-    const httpApi = business?.api<{ fetch(request: Request): Promise<Response> }>(
-      "HttpModule",
-      "http",
-    );
+    const httpApi = business?.api<{
+      fetch(request: Request): Promise<Response>;
+      fetchAs(userId: string, request: Request): Promise<Response>;
+    }>("HttpModule", "http");
     const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
 
     return {
@@ -421,8 +423,19 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       http,
       terminals: () => terminals,
       attachStream: (ws, session, url, log) => {
-        // The runtime handed the socket over exactly as for a local pty; the relay takes it
-        // when the session is a reference to a machine's pty, and declines a local one.
+        // The runtime handed the socket over exactly as for a local pty, owner checked. Three
+        // things it can be: the API socket (its reserved id — served as the owner the runtime
+        // just held it to), a reference to a machine's pty (the relay takes it), or a local pty.
+        if (isApiSocketRef(session)) {
+          if (httpApi === undefined) return ws.close(1013, "no business surface");
+          const userId = session.ownerUserId;
+          serveApiSocket(ws, {
+            fetch: (request) => httpApi.fetchAs(userId, request),
+            origin: `${url.protocol}//${url.host}`,
+            log,
+          });
+          return;
+        }
         if (remote?.attach(ws, session, url, log) === true) return;
         bindTerminalStream(ws, session, url, log);
       },
