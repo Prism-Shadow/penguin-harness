@@ -16,8 +16,29 @@ export type { Sessions, SessionServiceIface } from "../runtime/session-manager.j
 export type { HostAssembly, HostAssemblySlots } from "../services/host-assembly.js";
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
-export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {
+  Messaging,
+  MessagingSlots,
+  MessagingTaskRunner,
+} from "../runtime/messaging/bridge.js";
+export type {
+  MessagingChannel,
+  MessagingChannelConnector,
+  MessagingClient,
+  MessagingConnection,
+  MessagingConnectorHandlers,
+  MessagingInboundFile,
+  MessagingInboundImage,
+  MessagingInboundMessage,
+  MessagingSendOptions,
+} from "../runtime/messaging/connector.js";
+export type { ScheduleSessionCreator } from "../runtime/scheduler.js";
+export type { ChannelEvent } from "../runtime/channel.js";
+export type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
+export type { Settings } from "../mechanisms/settings.js";
+export type { SessionIndex } from "../mechanisms/sessions.js";
+export type { AgentIndex } from "../mechanisms/projects.js";
+export type { Errors } from "../mechanisms/observability.js";
   ChatBots,
   ChatBotsSlots,
   ChatBotContribution,

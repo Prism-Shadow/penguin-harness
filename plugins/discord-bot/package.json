@@ -44,15 +44,60 @@
     "modules": [
       {
         "name": "DiscordBot",
-        "requires": {},
+        "requires": {
+          "messaging": {
+            "iface": "@prismshadow/penguin-server#Messaging",
+            "from": "MessagingHubModule"
+          },
+          "runner": {
+            "iface": "@prismshadow/penguin-server#MessagingTaskRunner",
+            "from": "SessionRuntimeModule"
+          },
+          "sessions": {
+            "iface": "@prismshadow/penguin-server#Sessions",
+            "from": "SessionRuntimeModule"
+          },
+          "sessionCreator": {
+            "iface": "@prismshadow/penguin-server#ScheduleSessionCreator",
+            "from": "SessionRuntimeModule"
+          },
+          "sessionIndex": {
+            "iface": "@prismshadow/penguin-server#SessionIndex",
+            "from": "SessionRuntimeModule"
+          },
+          "agents": {
+            "iface": "@prismshadow/penguin-server#AgentIndex",
+            "from": "ProjectsModule"
+          },
+          "settings": {
+            "iface": "@prismshadow/penguin-server#Settings",
+            "from": "SettingsModule"
+          },
+          "channels": {
+            "iface": "@prismshadow/penguin-server#Channels",
+            "from": "RuntimeModule"
+          },
+          "errors": {
+            "iface": "@prismshadow/penguin-server#Errors",
+            "from": "ObservabilityModule"
+          },
+          "paths": {
+            "iface": "@prismshadow/penguin-server#Paths",
+            "from": "RuntimeModule"
+          },
+          "log": {
+            "iface": "@prismshadow/penguin-server#Log",
+            "from": "RuntimeModule"
+          }
+        },
         "provides": {},
         "contributes": {
-          "ChatBotsModule.bots": [
+          "HttpModule.routes": [
             {
-              "id": "discord",
-              "channel": "discord",
-              "label": "Discord",
-              "labelZh": "Discord"
+              "id": "discord-bot.routes",
+              "prefix": "/api/discord-bot",
+              "auth": "user",
+              "order": 286
             }
           ]
         },
@@ -62,5 +107,8 @@
         "children": []
       }
     ]
+  },
+  "dependencies": {
+    "hono": "^4.12.34"
   }
 }

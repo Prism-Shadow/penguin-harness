@@ -378,9 +378,8 @@ export class WorkspaceModule {}
     DefaultMessagingTuning,
     MessagingBindingsRepo,
     MessagingModule,
-    ChatBotsModule,
   ],
-  exports: [Messaging, QQScan, MessagingBindings, ChatBots],
+  exports: [Messaging, QQScan, MessagingBindings],
 })
 export class MessagingHubModule {}
 
