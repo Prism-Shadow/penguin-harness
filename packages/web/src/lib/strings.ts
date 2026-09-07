@@ -349,6 +349,7 @@ export const zh = {
     installCli: "安装 penguin 命令…",
     checkUpdates: "检查桌面版更新…",
     checkingUpdates: "正在检查更新…",
+    openDevTools: "打开开发者工具",
     projectOnGitHub: "在 GitHub 上查看项目",
   },
   workflows: {
