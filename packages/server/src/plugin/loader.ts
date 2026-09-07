@@ -336,6 +336,17 @@ function asPlugin(module: unknown): Plugin | null {
 export async function loadPlugins(
   root: string,
   /**
+   * The assets of the version being booted, or undefined to read the COMMITTED one.
+   *
+   * The distinction is the difference between loading this push's plugins and the previous
+   * one's. A hot upgrade materializes its assets and publishes them BEFORE the new platform's
+   * create() runs, but commits `harness.json` only after that boot succeeds — so a create()
+   * that reads the committed pointer is reading the version it is replacing, and every push
+   * would ship plugins one version stale. Seen exactly that way: a corrected plugin arrived
+   * on a machine and the previous build's copy kept running until the NEXT push.
+   */
+  assetsDir?: string | null,
+  /**
    * Entries an earlier App already imported, by specifier. Reused when the specifier still
    * resolves to the FILE that entry came from — the objects then keep their identity across a
    * swap, which is what the plugin host is parked for. A different file means different code
@@ -344,7 +355,10 @@ export async function loadPlugins(
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
-  const bases = pluginBases(root, await committedAssetsDir(root));
+  const bases = pluginBases(
+    root,
+    assetsDir === undefined ? await committedAssetsDir(root) : assetsDir,
+  );
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
@@ -461,13 +475,18 @@ export async function loadPlugins(
  * commit: state, not a capability. An entry the closure no longer asks for is simply not in
  * the new host; its modules leave the tree with the App that had them.
  */
-export async function loadPluginHost(resources: Resources, root: string): Promise<PluginHost> {
+export async function loadPluginHost(
+  resources: Resources,
+  root: string,
+  /** The booting version's assets (hmr.assetsDir()), not the committed ones — see loadPlugins. */
+  assetsDir?: string | null,
+): Promise<PluginHost> {
   const inherited = pluginHostFrom(resources);
   // An older generation's host may predate `entries()`; then nothing is reused and every
   // specifier is imported again, which the ESM cache makes cheap.
   const reuse =
     typeof inherited.entries === "function" ? inherited.entries() : new Map<string, LoadedPlugin>();
-  const result = await loadPlugins(root, reuse);
+  const result = await loadPlugins(root, assetsDir, reuse);
   const host = new PluginHost();
   for (const entry of result.loaded) {
     // A module name clash is a LOAD failure, isolated per entry like an import failure.
