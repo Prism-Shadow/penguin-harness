@@ -1,0 +1,41 @@
+{
+  "name": "@prismshadow/penguin-hmr",
+  "version": "0.2.9",
+  "private": true,
+  "type": "module",
+  "description": "The hot-update mechanism: the version store, the atomic commit, the resource registry and the park → boot → swap. Mechanism only.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/hmr"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}

@@ -13,7 +13,9 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import { HmrHost } from "../src/hmr/host.js";
+import { HmrHost } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "../src/hmr/platform.js";
+import { packagedPlatform } from "../src/hmr/platform.js";
 import { readHarnessInfo } from "../src/hmr/manifest.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -187,7 +189,7 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
       warnings.push(String(chunk));
       return true;
     }) as typeof process.stderr.write);
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       // Restore refused, the host goes on to boot the packaged default — which this bare
       // host cannot (it publishes no runtime resources). That rejection is the fixture's,
@@ -218,7 +220,7 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
     t = undefined; // already torn down by hand; skip the normal cleanup() (it would rm(root))
 
     // A brand-new HmrHost over the SAME root: nothing has called ensure() yet.
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const [a, b, c] = await Promise.all([fresh.ensure(), fresh.ensure(), fresh.ensure()]);
       // Same object: only one restore()/boot ever ran.
@@ -283,7 +285,7 @@ describe("HmrHost: code persists across a restart, state does not", () => {
     t.deps.db.close();
     t = undefined; // torn down by hand; skip cleanup() (it would rm(root))
 
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const instance = await fresh.ensure();
       const restored = (instance.api as unknown as { info(): { impl: string; n: number } }).info();
@@ -964,7 +966,7 @@ describe("double fault: the upgrade channel survives a failed push whose recover
     // A real restart is a fresh process, so the bundle's module state starts over.
     faultGlobals.__doubleFaultBoots = 0;
 
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const instance = await fresh.ensure();
       expect((instance.api as unknown as { info(): { impl: string } }).info().impl).toBe("brittle");
