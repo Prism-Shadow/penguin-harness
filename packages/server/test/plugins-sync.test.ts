@@ -32,6 +32,12 @@ function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?:
   const api: MachineApi = {
     request: async (method: string, path: string, payload?: unknown) => {
       calls.push({ method, path, ...(payload === undefined ? {} : { body: payload }) });
+      if (path === "/api/projects") {
+        return {
+          status: 200,
+          text: JSON.stringify({ projects: [...state.keys()].map((projectId) => ({ projectId })) }),
+        };
+      }
       const projectId = decodeURIComponent(path.split("/")[3] ?? "");
       const has = state.get(projectId);
       if (has === undefined) return { status: 404, text: "no such Project" };
@@ -112,6 +118,34 @@ describe("syncPluginsToMachine", () => {
       { projectId: "p1", detail: "that machine has no such Project" },
     ]);
     expect(m.calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("tells a machine that lacks the ROUTE from one that lacks the Project", async () => {
+    // The same 404 means two opposite things, and the operator reads the difference. A
+    // machine on an older build listed the Project it was refused for, in the line right
+    // after the models sync had written that very Project.
+    const older = fakeMachine({});
+    older.api.request = async (method, path) => {
+      if (path === "/api/projects") {
+        return { status: 200, text: JSON.stringify({ projects: [{ projectId: "p1" }] }) };
+      }
+      return {
+        status: 404,
+        text: '{"error":{"code":"not_found","message":"Endpoint does not exist."}}',
+      };
+    };
+    const out = await syncPluginsToMachine({
+      api: older.api,
+      loadLocal: local({ p1: ["@acme/one"] }),
+      projects: ["p1"],
+    });
+    expect(out.kind === "synced" && out.refused).toEqual([
+      {
+        projectId: "p1",
+        detail:
+          "that machine's build is older than the Project plugin list — update it, then sync again",
+      },
+    ]);
   });
 
   it("carries on to the next Project when one is refused", async () => {
