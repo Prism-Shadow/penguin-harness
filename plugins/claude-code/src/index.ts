@@ -14,11 +14,31 @@
  *
  * ## State
  *
- * A pty has no notion of "thinking", so this surface's state is a heuristic: output within
- * the last {@link ACTIVITY_WINDOW_MS} means running, silence past it means idle, exit means
- * idle. Claude Code redraws continuously while it works (its spinner) and not at all while
- * it waits for input, which is what makes the rule hold in practice. The window is this
- * plugin's judgement, not the platform's.
+ * READ OFF THE SCREEN, not off the flow of bytes. Claude Code says what it is doing on its
+ * own spinner line, and stops saying it when the turn ends:
+ *
+ *     ✻ Working… (3s · ↑ 1.2k tokens · esc to interrupt)   ← running
+ *     ✻ Worked for 2s · done 1:31 AM                        ← idle
+ *
+ * The word is picked from a long list and the glyph animates, so {@link RUNNING_LINE} matches
+ * the SHAPE — a symbol, one word, an ellipsis — and never a particular word.
+ *
+ * This used to be "output means running, silence past a window means idle", which is a
+ * different question with a similar answer: it called a redraw work (a resize, a paste
+ * echoing) and it called a long tool call idle the moment the spinner paused. The marker is
+ * the program's own statement, so it is what this reads — from the LAST rows only
+ * ({@link MARKER_ROWS}), since a transcript above can say anything.
+ *
+ * ## The title
+ *
+ * Claude Code names its own conversation: it writes `{"type":"ai-title","aiTitle":"…"}` into
+ * its transcript once it knows what the session is about, and again when that changes. This
+ * surface follows that file and reports each new title, so a Session in the list stops being
+ * called by whatever its first prompt happened to say.
+ *
+ * The file is CHOSEN EVERY POLL — the newest transcript for the Workspace — rather than
+ * pinned at spawn: `/resume` inside the TUI moves the program to another session, and a
+ * pinned file would name the one it started with.
  *
  * ## The program
  *
@@ -35,6 +55,7 @@
  * back from the manager by id — one that is gone reads as never opened.
  */
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Json, ModuleCtx } from "@prismshadow/penguin-core/kernel";
 import type {
@@ -42,13 +63,49 @@ import type {
   SessionSurface,
   SurfaceOpenOptions,
   SurfaceSessionRef,
+  SurfaceReport,
   SurfaceState,
   SurfaceView,
 } from "@prismshadow/penguin-core/plugin";
 import type { Terminals } from "@prismshadow/penguin-server/plugin";
 
-/** Output within this many milliseconds of now reads as "running"; silence past it as "idle". */
-export const ACTIVITY_WINDOW_MS = 1500;
+/**
+ * The screen is re-read this long after a burst of output settles — the TUI redraws its bar
+ * many times a second while working, and each redraw would otherwise cost a screen scan.
+ */
+export const SCREEN_SETTLE_MS = 120;
+
+/** How many rows of the tail carry the hint bar. Enough for the bar and its neighbours, not the transcript. */
+export const MARKER_ROWS = 6;
+
+/**
+ * The line Claude Code draws while a turn is in flight: a spinner frame, a word, an ellipsis.
+ *
+ *     ✻ Working… (3s · ↑ 1.2k tokens · esc to interrupt)
+ *     ✽ Herding… (12s · ↓ 400 tokens)
+ *
+ * THE WORD VARIES — the program picks from a long list of gerunds (Working, Wrangling,
+ * Herding, Baking, …) and animates the glyph through several frames, so neither is matched.
+ * What is matched is the shape: a symbol, a single word, and the ellipsis that says the word
+ * is a present participle. That is also what separates it from the line left behind when the
+ * turn ENDS, which is the same glyph and a past tense with no ellipsis:
+ *
+ *     ✻ Worked for 2s · done 1:31 AM
+ */
+export const RUNNING_LINE = /^\s*[^\p{L}\p{N}\s]\s+\p{L}[\p{L}'’-]*(?:…|\.\.\.)/u;
+
+/**
+ * Whether the screen says a turn is in flight: the spinner line, among the last rows that
+ * carry anything.
+ *
+ * Blank rows are dropped before the tail is taken — a capture is the whole buffer including
+ * the empty rows below the cursor, so counting from the bottom without this reads six blanks
+ * and concludes nothing is happening.
+ */
+export function readsAsRunning(lines: readonly string[]): boolean {
+  const written = lines.filter((line) => line.trim() !== "");
+  return written.slice(-MARKER_ROWS).some((line) => RUNNING_LINE.test(line));
+}
 
 /**
  * The parent's Claude Code SESSION markers, scrubbed from the pty's environment.
@@ -190,15 +247,96 @@ export function claudeArgv(
   return argv;
 }
 
+/** How often the transcript directory is re-read for a title. Cheap: a readdir and the new bytes of one file. */
+export const TITLE_POLL_MS = 4000;
+
+/**
+ * Claude Code's transcript directory for a working directory.
+ *
+ * It keeps one directory per cwd under `~/.claude/projects`, named after the path with every
+ * character that is not a letter, a digit or a dash replaced by one — `/home/k/.penguin/x`
+ * becomes `-home-k--penguin-x`. `CLAUDE_CONFIG_DIR` moves the root, as it does for the tool.
+ */
+export function transcriptDir(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  const root =
+    env.CLAUDE_CONFIG_DIR?.trim() || path.join(env.HOME ?? env.USERPROFILE ?? "", ".claude");
+  return path.join(root, "projects", cwd.replace(/[^A-Za-z0-9-]/g, "-"));
+}
+
+/**
+ * The title Claude Code gave the session, from a chunk of its transcript.
+ *
+ * It writes `{"type":"ai-title","aiTitle":"…"}` when it has named the conversation, and again
+ * whenever the name changes; the last one in the chunk is the current one. Parsed line by
+ * line rather than with one regex over the whole text, so a title that merely MENTIONS the
+ * shape cannot be read out of somebody's message.
+ */
+export function readAiTitle(chunk: string): string | null {
+  let title: string | null = null;
+  for (const line of chunk.split("\n")) {
+    if (!line.startsWith('{"type":"ai-title"')) continue;
+    try {
+      const parsed = JSON.parse(line) as { type?: unknown; aiTitle?: unknown };
+      if (
+        parsed.type === "ai-title" &&
+        typeof parsed.aiTitle === "string" &&
+        parsed.aiTitle !== ""
+      ) {
+        title = parsed.aiTitle;
+      }
+    } catch {
+      // A half-written last line: the next poll reads it whole.
+    }
+  }
+  return title;
+}
+
+/**
+ * The transcript this Session is writing, right now.
+ *
+ * The newest `.jsonl` in the directory, and re-read every poll rather than pinned once: a
+ * person can `/resume` inside the TUI, which switches the program to ANOTHER session id and
+ * therefore another file. Pinning one (with `--session-id`) would name the file we started
+ * with, and stop being the truth the moment they did that.
+ */
+async function newestTranscript(dir: string): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(dir);
+  } catch {
+    return null; // No transcript yet, or none for this directory at all.
+  }
+  let newest: { file: string; at: number } | null = null;
+  for (const name of entries) {
+    if (!name.endsWith(".jsonl")) continue;
+    const file = path.join(dir, name);
+    try {
+      const stat = await fsp.stat(file);
+      if (newest === null || stat.mtimeMs > newest.at) newest = { file, at: stat.mtimeMs };
+    } catch {
+      // Gone between readdir and stat: not the newest, then.
+    }
+  }
+  return newest?.file ?? null;
+}
+
 /** What the pty manager gives back; the members this surface reads of a terminal. */
 type TerminalHandle = NonNullable<ReturnType<Terminals["get"]>>;
 
 interface Tracked {
   terminal: TerminalHandle;
   state: SurfaceState;
-  report: ((state: SurfaceState) => void) | null;
+  report: ((state: SurfaceState | SurfaceReport) => void) | null;
   quiet: ReturnType<typeof setTimeout> | null;
   unsubscribe: () => void;
+  /** Where this Session's transcripts are, and how far one has been read. */
+  titles: {
+    dir: string;
+    file: string | null;
+    offset: number;
+    last: string | null;
+    timer: ReturnType<typeof setInterval> | null;
+  } | null;
 }
 
 /** The parked document: which terminal each Session's surface is. */
@@ -216,7 +354,8 @@ export class ClaudeCodeSurface implements SessionSurface {
   constructor(
     private readonly terminals: Terminals,
     private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly windowMs: number = ACTIVITY_WINDOW_MS,
+    private readonly settleMs: number = SCREEN_SETTLE_MS,
+    private readonly titlePollMs: number = TITLE_POLL_MS,
   ) {}
 
   /** Claims back the terminals a previous App parked; a terminal that is gone is forgotten. */
@@ -238,12 +377,14 @@ export class ClaudeCodeSurface implements SessionSurface {
   async open(
     session: SurfaceSessionRef,
     options: SurfaceOpenOptions,
-    report: (state: SurfaceState) => void,
+    report: (state: SurfaceState | SurfaceReport) => void,
   ): Promise<SurfaceView> {
     const existing = this.tracked.get(session.sessionId);
     if (existing !== undefined && existing.terminal.alive) {
-      // Idempotent: the same program, and the reporter of THIS App from now on.
+      // Idempotent: the same program, and the reporter of THIS App from now on. A terminal
+      // claimed back after a swap has no follower yet — this is where it gets one.
       existing.report = report;
+      if (existing.titles === null) this.followTitle(existing, session.workspace);
       return this.viewOf(existing);
     }
     if (existing !== undefined) this.untrack(session.sessionId);
@@ -267,6 +408,7 @@ export class ClaudeCodeSurface implements SessionSurface {
     });
     const tracked = this.track(session.sessionId, terminal);
     tracked.report = report;
+    this.followTitle(tracked, session.workspace);
     return this.viewOf(tracked);
   }
 
@@ -290,6 +432,57 @@ export class ClaudeCodeSurface implements SessionSurface {
     return { alive: tracked.terminal.alive, view: { terminalId: tracked.terminal.id } };
   }
 
+  /**
+   * Follows the title Claude Code gives this Session, and reports each new one.
+   *
+   * Polled rather than watched: a transcript is an append-only file in a directory the tool
+   * owns, `fs.watch` is unreliable across platforms and mounted filesystems, and the read is
+   * a readdir plus the bytes appended since the last look. The file is re-chosen every poll
+   * because `/resume` moves the program to another session — and therefore another file.
+   */
+  private followTitle(tracked: Tracked, cwd: string): void {
+    const dir = transcriptDir(cwd, this.env);
+    tracked.titles = { dir, file: null, offset: 0, last: null, timer: null };
+    const look = () => {
+      void (async () => {
+        const state = tracked.titles;
+        if (state === null) return;
+        const file = await newestTranscript(state.dir);
+        if (file === null) return;
+        if (file !== state.file) {
+          // A different transcript (the first one, or one `/resume` moved to): read it whole.
+          state.file = file;
+          state.offset = 0;
+        }
+        let chunk: string;
+        try {
+          const handle = await fsp.open(file, "r");
+          try {
+            const { size } = await handle.stat();
+            if (size < state.offset) state.offset = 0; // Truncated or replaced under the name.
+            if (size === state.offset) return;
+            const buffer = Buffer.alloc(size - state.offset);
+            await handle.read(buffer, 0, buffer.length, state.offset);
+            state.offset = size;
+            chunk = buffer.toString("utf8");
+          } finally {
+            await handle.close();
+          }
+        } catch {
+          return; // Being written, or gone: the next poll tries again.
+        }
+        const title = readAiTitle(chunk);
+        if (title === null || title === state.last) return;
+        state.last = title;
+        tracked.report?.({ status: tracked.state, title });
+      })();
+    };
+    const timer = setInterval(look, this.titlePollMs);
+    timer.unref?.();
+    tracked.titles.timer = timer;
+    look();
+  }
+
   private track(sessionId: string, terminal: TerminalHandle): Tracked {
     const tracked: Tracked = {
       terminal,
@@ -297,14 +490,16 @@ export class ClaudeCodeSurface implements SessionSurface {
       report: null,
       quiet: null,
       unsubscribe: () => {},
+      titles: null,
     };
+    // Output is the CUE to look, never the answer: the screen is what says whether a turn is
+    // in flight. Coalesced, because the bar redraws many times a second while it works.
     const offOutput = terminal.onOutput(() => {
-      this.flip(tracked, "running");
-      if (tracked.quiet !== null) clearTimeout(tracked.quiet);
+      if (tracked.quiet !== null) return;
       tracked.quiet = setTimeout(() => {
         tracked.quiet = null;
-        this.flip(tracked, "idle");
-      }, this.windowMs);
+        this.readScreen(tracked);
+      }, this.settleMs);
       tracked.quiet.unref?.();
     });
     const offExit = terminal.onExit(() => {
@@ -323,9 +518,24 @@ export class ClaudeCodeSurface implements SessionSurface {
   private untrack(sessionId: string): void {
     const tracked = this.tracked.get(sessionId);
     if (tracked === undefined) return;
+    if (tracked.titles?.timer != null) clearInterval(tracked.titles.timer);
+    tracked.titles = null;
     if (tracked.quiet !== null) clearTimeout(tracked.quiet);
     tracked.unsubscribe();
     this.tracked.delete(sessionId);
+  }
+
+  /** One look at the screen, and a report when it changed the answer. */
+  private readScreen(tracked: Tracked): void {
+    if (!tracked.terminal.alive) return this.flip(tracked, "idle");
+    let lines: readonly string[];
+    try {
+      lines = tracked.terminal.capture().lines;
+    } catch {
+      // A terminal that cannot be read says nothing about the turn; the last answer stands.
+      return;
+    }
+    this.flip(tracked, readsAsRunning(lines) ? "running" : "idle");
   }
 
   private flip(tracked: Tracked, state: SurfaceState): void {
