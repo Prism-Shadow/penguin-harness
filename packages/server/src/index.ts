@@ -29,7 +29,6 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { attachApiSocket } from "./socket/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -226,7 +225,6 @@ class PenguinServer {
       (info) => this.onListening(info.port),
     );
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachApiSocket(this.httpServer as unknown as HttpServer, this.apiSocketDeps());
   }
 
   /**
@@ -374,23 +372,9 @@ class PenguinServer {
     // handler — it has to be bound on each Node listener, this one included, or the
     // terminal only works on whichever address the browser happened to resolve.
     attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-    attachApiSocket(loopback as unknown as HttpServer, this.apiSocketDeps());
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
-  /**
-   * The API socket (socket/ws.ts) dispatches every call through `this.app.fetch` — the
-   * runtime app HTTP requests enter by, seam included — so a socket call and its HTTP twin
-   * are one code path from the auth guard down.
-   */
-  private apiSocketDeps() {
-    return {
-      fetch: async (request: Request) => this.app.fetch(request),
-      authService: this.auth(),
-      log: (line: string) => console.log(line),
-    };
-  }
-
   private terminalWebSocketDeps() {
     return {
       hmr: this.deps.hmr,

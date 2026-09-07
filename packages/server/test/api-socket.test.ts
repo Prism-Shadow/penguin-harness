@@ -1,9 +1,11 @@
 /**
- * The API socket transport (socket/ws.ts), over a real listening server — an Upgrade is
- * nothing app.request() can exercise. What is pinned: the handshake's gate (cookie, Bearer,
- * origin), that a call answers exactly as its HTTP twin, which paths never ride the socket,
- * that a stream endpoint arrives as frames and a cancel releases it, and that a malformed
- * frame closes the socket rather than being guessed at.
+ * The API socket (socket/serve.ts), over a real listening server — an Upgrade is nothing
+ * app.request() can exercise. It arrives through the runtime's terminal-stream seam under
+ * its reserved id (socket/ref.ts), so the seam is attached exactly as index.ts attaches it.
+ * What is pinned: the handshake's gate (cookie, origin, the id's owner), that a call answers
+ * exactly as its HTTP twin, which paths never ride the socket, that a stream endpoint arrives
+ * as frames and a cancel releases it, and that a malformed frame closes the socket rather
+ * than being guessed at.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";
@@ -11,8 +13,8 @@ import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
 import { createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-import { attachApiSocket } from "../src/socket/ws.js";
-import { readApiToken } from "../src/auth/api-token.js";
+import { attachTerminalWebSocket } from "../src/terminal/ws.js";
+import { apiSocketPath } from "../src/socket/ref.js";
 
 let t: TestApp;
 let port: number;
@@ -28,8 +30,8 @@ beforeAll(async () => {
       resolve();
     });
   });
-  attachApiSocket(server as unknown as HttpServer, {
-    fetch: async (request) => t.app.fetch(request),
+  attachTerminalWebSocket(server as unknown as HttpServer, {
+    hmr: t.deps.hmr,
     authService: t.deps.authService,
     log: () => undefined,
   });
@@ -44,7 +46,10 @@ afterAll(async () => {
 type Frame = Record<string, unknown>;
 
 /** An open socket with a frame queue, or the HTTP status the handshake was refused with. */
-async function open(headers: Record<string, string>): Promise<
+async function open(
+  headers: Record<string, string>,
+  path: string = apiSocketPath("admin"),
+): Promise<
   | {
       ws: WebSocket;
       next: () => Promise<Frame>;
@@ -54,7 +59,7 @@ async function open(headers: Record<string, string>): Promise<
 > {
   // Canonical App host, as a browser targets it: 127.0.0.1 is the preview host, where /api
   // answers 401 over HTTP and therefore over the socket too.
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/api/socket`, {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, {
     headers: { host: `localhost:${port}`, ...headers },
   });
   const queue: Frame[] = [];
@@ -117,12 +122,11 @@ describe("handshake", () => {
     if ("ws" in s) s.ws.close();
   });
 
-  it("accepts the local API token as Bearer", async () => {
-    const token = readApiToken(t.root);
-    expect(token).not.toBeNull();
-    const s = await open({ authorization: `Bearer ${token}` });
-    expect("ws" in s).toBe(true);
-    if ("ws" in s) s.ws.close();
+  it("holds the reserved id's owner to the signed-in user", async () => {
+    // The runtime's owner check: admin's cookie cannot open someone else's socket.
+    expect(await open({ cookie }, apiSocketPath("someone-else"))).toEqual({ refused: 404 });
+    // And an id that is not the reserved form names no terminal either.
+    expect(await open({ cookie }, "/api/terminals/api-socket/stream")).toEqual({ refused: 404 });
   });
 });
 
@@ -151,24 +155,18 @@ describe("calls", () => {
     s.ws.close();
   });
 
-  it("re-authenticates every call: an expired session answers 401, not a dead socket", async () => {
-    const other = await loginAdmin(t.app);
-    const s = await open({ cookie: other.cookie });
-    if (!("ws" in s)) throw new Error("handshake refused");
-    await t.app.request("/api/auth/logout", { method: "POST", headers: { cookie: other.cookie } });
-    send(s.ws, { id: 2, call: { method: "GET", path: "/api/me" } });
-    expect((await s.next()).status).toBe(401);
-    s.ws.close();
-  });
-
-  it("never carries the rescue channel or itself", async () => {
+  it("answers runtime-owned paths 421 — those are made over HTTP — and non-API paths 404", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
     send(s.ws, { id: 1, call: { method: "GET", path: "/api/hmr/status" } });
+    const hmr = await s.next();
+    expect(hmr.status).toBe(421);
+    expect((hmr.body as { error: { code: string } }).error.code).toBe("not_on_socket");
+    send(s.ws, { id: 2, call: { method: "POST", path: "/api/auth/logout", body: {} } });
+    expect((await s.next()).status).toBe(421);
+    send(s.ws, { id: 3, call: { method: "GET", path: apiSocketPath("admin") } });
     expect((await s.next()).status).toBe(404);
-    send(s.ws, { id: 2, call: { method: "GET", path: "/api/socket" } });
-    expect((await s.next()).status).toBe(404);
-    send(s.ws, { id: 3, call: { method: "GET", path: "/penguin-logo.svg" } });
+    send(s.ws, { id: 4, call: { method: "GET", path: "/penguin-logo.svg" } });
     expect((await s.next()).status).toBe(404);
     s.ws.close();
   });
