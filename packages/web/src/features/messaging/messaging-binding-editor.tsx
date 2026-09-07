@@ -42,6 +42,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  DiscordTestResponse,
   MessagingBindingInfo,
   MessagingBindingsResponse,
   MessagingChannel,
@@ -120,6 +121,14 @@ const CHANNEL_LINKS = {
     credentialSource: "https://q.qq.com/qqbot/dashboard/",
   },
   wechat: null,
+  discord: {
+    // The portal's own walkthrough: creating an application, adding the bot user, and the
+    // page its token is reset and copied on — which is this fold's steps, one level deeper.
+    tutorial: "https://discord.com/developers/docs/quick-start/getting-started",
+    // Where the credential is actually issued: the application list, each entry's Bot page
+    // holding the "Reset Token" that reveals one.
+    credentialSource: "https://discord.com/developers/applications",
+  },
 } as const satisfies Record<
   MessagingChannel,
   { tutorial: string; credentialSource: string } | null
@@ -132,10 +141,15 @@ const STATUS_TONE: Record<MessagingRuntimeStatus["state"], Tone> = {
   error: "danger",
 };
 
-function errorText(code: MessagingFormErrors[keyof MessagingFormErrors]): string | undefined {
+function errorText(
+  code: MessagingFormErrors[keyof MessagingFormErrors],
+  channel: MessagingChannel,
+): string | undefined {
   if (code === undefined) return undefined;
   if (code === "required") return S.common.requiredField;
-  if (code === "token_invalid") return S.telegram.invalidToken;
+  if (code === "token_invalid") {
+    return channel === "discord" ? S.discord.invalidToken : S.telegram.invalidToken;
+  }
   return S.feishu.invalidDomain;
 }
 
@@ -165,11 +179,11 @@ function factsOf(
   status: MessagingRuntimeStatus,
 ): MessagingChannelFacts {
   if (binding === null) return { ...EMPTY_FACTS, status };
-  // The two token channels name the field `botTokenMasked`; the two App-Secret ones name it
-  // `appSecretMasked`. Both are the same fact — a credential is stored — under the name its
-  // own channel gives it.
+  // The three token channels name the field `botTokenMasked`; the two App-Secret ones name
+  // it `appSecretMasked`. Both are the same fact — a credential is stored — under the name
+  // its own channel gives it.
   const masked =
-    binding.channel === "telegram" || binding.channel === "wechat"
+    binding.channel === "telegram" || binding.channel === "wechat" || binding.channel === "discord"
       ? binding.botTokenMasked
       : binding.appSecretMasked;
   return {
@@ -187,6 +201,7 @@ function factsFromList(res: MessagingBindingsResponse): ChannelFactsMap {
     telegram: EMPTY_FACTS,
     qq: EMPTY_FACTS,
     wechat: EMPTY_FACTS,
+    discord: EMPTY_FACTS,
   };
   for (const entry of res.bindings) {
     map[entry.binding.channel] = factsOf(entry.binding, entry.status);
@@ -247,6 +262,27 @@ export interface MessagingTestNotice {
  * only, and it is the one thing a user cannot discover by testing, since a bot that cannot
  * hear a group produces silence and never an error.
  */
+/**
+ * The notices one Discord credential-test response turns into: the Telegram shape minus the
+ * privacy line — Discord has no account-wide setting that silently mutes a bot in a server;
+ * what it has instead (a message must @-mention the bot) is stated on the form itself.
+ */
+export function discordTestNotices(res: DiscordTestResponse): MessagingTestNotice[] {
+  if (!res.ok) {
+    return [{ tone: "error", text: S.messaging.testFail(res.error ?? S.common.unknownError) }];
+  }
+  const ms = res.latencyMs ?? 0;
+  return [
+    {
+      tone: "success",
+      text:
+        res.botUsername !== undefined
+          ? S.messaging.testOkAs(res.botUsername, ms)
+          : S.messaging.testOk(ms),
+    },
+  ];
+}
+
 export function telegramTestNotices(res: TelegramTestResponse): MessagingTestNotice[] {
   if (!res.ok) {
     return [{ tone: "error", text: S.messaging.testFail(res.error ?? S.common.unknownError) }];
@@ -287,6 +323,7 @@ export function useMessagingBinding(
     telegram: EMPTY_FACTS,
     qq: EMPTY_FACTS,
     wechat: EMPTY_FACTS,
+    discord: EMPTY_FACTS,
   });
   const [fieldErrors, setFieldErrors] = useState<MessagingFormErrors>({});
   const [busy, setBusy] = useState(false);
@@ -363,7 +400,9 @@ export function useMessagingBinding(
         ? "qq"
         : channels.wechat.enabled
           ? "wechat"
-          : null;
+          : channels.discord.enabled
+            ? "discord"
+            : null;
   const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
 
@@ -383,7 +422,9 @@ export function useMessagingBinding(
             ? { qq: fresh.qq }
             : channel === "wechat"
               ? { wechat: fresh.wechat }
-              : { telegram: fresh.telegram };
+              : channel === "discord"
+                ? { discord: fresh.discord }
+                : { telegram: fresh.telegram };
       setForm((prev) => (prev ? { ...prev, ...sub } : prev));
       setBaseline((prev) => (prev ? { ...prev, ...sub } : prev));
     }
@@ -410,6 +451,12 @@ export function useMessagingBinding(
         const res = await api.testWeChatBinding(sessionId);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
         else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+      } else if (draft.channel === "discord") {
+        const res = await api.testDiscordBinding(sessionId, draft.body);
+        for (const notice of discordTestNotices(res)) {
+          if (notice.tone === "error") toastError(notice.text);
+          else toastSuccess(notice.text);
+        }
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
@@ -451,7 +498,9 @@ export function useMessagingBinding(
             ? await api.putQQBinding(sessionId, built.body)
             : built.channel === "wechat"
               ? await api.putWeChatBinding(sessionId, built.body)
-              : await api.putFeishuBinding(sessionId, built.body);
+              : built.channel === "discord"
+                ? await api.putDiscordBinding(sessionId, built.body)
+                : await api.putFeishuBinding(sessionId, built.body);
       applyChannel(built.channel, res.binding, res.status);
       toastSuccess(S.common.saved);
     } catch (e) {
@@ -659,7 +708,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         ? form.qq
         : channel === "wechat"
           ? form.wechat
-          : form.feishu;
+          : channel === "discord"
+            ? form.discord
+            : form.feishu;
   const patchDelivery = (patch: Partial<MessagingDeliveryFields>) =>
     b.patchForm(
       channel === "telegram"
@@ -668,7 +719,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           ? { qq: { ...form.qq, ...patch } }
           : channel === "wechat"
             ? { wechat: { ...form.wechat, ...patch } }
-            : { feishu: { ...form.feishu, ...patch } },
+            : channel === "discord"
+              ? { discord: { ...form.discord, ...patch } }
+              : { feishu: { ...form.feishu, ...patch } },
     );
   return (
     <div className="space-y-3">
@@ -676,12 +729,13 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           switches forms rather than locking (the mcp transport idiom). */}
       <div role="group" aria-label={S.messaging.channelLabel}>
         <Segmented
-          cols={4}
+          cols={5}
           options={[
             { value: "feishu" as MessagingChannel, label: S.messaging.channelName.feishu },
             { value: "telegram" as MessagingChannel, label: S.messaging.channelName.telegram },
             { value: "qq" as MessagingChannel, label: S.messaging.channelName.qq },
             { value: "wechat" as MessagingChannel, label: S.messaging.channelName.wechat },
+            { value: "discord" as MessagingChannel, label: S.messaging.channelName.discord },
           ]}
           value={channel}
           onChange={(v) => b.selectChannel(v)}
@@ -809,7 +863,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
                       ? S.qq.testMessageNoChat
                       : channel === "wechat"
                         ? S.wechat.testMessageNoChat
-                        : S.feishu.testMessageNoChat,
+                        : channel === "discord"
+                          ? S.discord.testMessageNoChat
+                          : S.feishu.testMessageNoChat,
               }
             : {})}
           onClick={() => void b.sendTestMessage()}
@@ -846,7 +902,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               size="sm"
               aria-label={S.telegram.botToken}
               {...(facts.secretConfigured ? { placeholder: S.telegram.botTokenKeepHint } : {})}
-              error={errorText(b.fieldErrors.botToken)}
+              error={errorText(b.fieldErrors.botToken, channel)}
               value={form.telegram.botToken}
               onChange={(e) =>
                 b.patchForm({
@@ -889,7 +945,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             <Input
               size="sm"
               aria-label={S.qq.appId}
-              error={errorText(b.fieldErrors.appId)}
+              error={errorText(b.fieldErrors.appId, channel)}
               value={form.qq.appId}
               onChange={(e) => b.patchForm({ qq: { ...form.qq, appId: e.target.value } })}
               className="font-mono"
@@ -903,7 +959,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             {...(facts.secretConfigured
               ? { placeholder: S.qq.appSecretKeepHint }
               : { required: true })}
-            error={errorText(b.fieldErrors.appSecret)}
+            error={errorText(b.fieldErrors.appSecret, channel)}
             value={form.qq.appSecret}
             onChange={(e) =>
               b.patchForm({ qq: { ...form.qq, appSecret: e.target.value, clearSecret: false } })
@@ -925,6 +981,49 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               this channel's fields rather than above them, which keeps the controls at the
               same height across channels. */}
           <p className="text-xs text-gray-500 dark:text-gray-400">{S.qq.repliesOnly}</p>
+        </>
+      ) : channel === "discord" ? (
+        <>
+          <CornerLinkedField
+            label={S.discord.botToken}
+            required={!facts.secretConfigured}
+            link={
+              <ExternalLink
+                href={CHANNEL_LINKS.discord.credentialSource}
+                label={S.discord.openPortal}
+              />
+            }
+          >
+            <PasswordInput
+              size="sm"
+              aria-label={S.discord.botToken}
+              {...(facts.secretConfigured ? { placeholder: S.discord.botTokenKeepHint } : {})}
+              error={errorText(b.fieldErrors.botToken, channel)}
+              value={form.discord.botToken}
+              onChange={(e) =>
+                b.patchForm({
+                  discord: { ...form.discord, botToken: e.target.value, clearToken: false },
+                })
+              }
+              autoComplete="off"
+            />
+          </CornerLinkedField>
+          {facts.secretMasked !== null && form.discord.botToken === "" && (
+            <StoredSecretRow
+              masked={facts.secretMasked}
+              clearLabel={S.discord.clearToken}
+              checked={form.discord.clearToken}
+              enabled={facts.enabled}
+              onChange={(checked) =>
+                b.patchForm({ discord: { ...form.discord, clearToken: checked } })
+              }
+            />
+          )}
+          {/* This channel's rule that cannot wait for a collapsed fold: in a server channel
+              the bot hears only messages that @-mention it, so a user who binds it and then
+              writes in a channel without the mention sees nothing arrive and concludes the
+              binding is broken. */}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.discord.mentionOnly}</p>
         </>
       ) : channel === "wechat" ? (
         <>
@@ -967,7 +1066,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             <Input
               size="sm"
               aria-label={S.feishu.appId}
-              error={errorText(b.fieldErrors.appId)}
+              error={errorText(b.fieldErrors.appId, channel)}
               value={form.feishu.appId}
               onChange={(e) => b.patchForm({ feishu: { ...form.feishu, appId: e.target.value } })}
               className="font-mono"
@@ -981,7 +1080,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             {...(facts.secretConfigured
               ? { placeholder: S.feishu.appSecretKeepHint }
               : { required: true })}
-            error={errorText(b.fieldErrors.appSecret)}
+            error={errorText(b.fieldErrors.appSecret, channel)}
             value={form.feishu.appSecret}
             onChange={(e) =>
               b.patchForm({
@@ -1005,7 +1104,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             size="sm"
             label={S.feishu.baseDomain}
             hint={S.feishu.baseDomainHint}
-            error={errorText(b.fieldErrors.baseDomain)}
+            error={errorText(b.fieldErrors.baseDomain, channel)}
             value={form.feishu.baseDomain}
             onChange={(e) =>
               b.patchForm({ feishu: { ...form.feishu, baseDomain: e.target.value } })
@@ -1062,7 +1161,9 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
               ? S.messaging.renderMarkdownHelpQQ
               : channel === "wechat"
                 ? S.messaging.renderMarkdownHelpWeChat
-                : S.messaging.renderMarkdownHelpFeishu
+                : channel === "discord"
+                  ? S.messaging.renderMarkdownHelpDiscord
+                  : S.messaging.renderMarkdownHelpFeishu
         }
         checked={delivery.renderMarkdown}
         onChange={(v) => patchDelivery({ renderMarkdown: v })}
@@ -1085,7 +1186,9 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
         ? S.qq
         : channel === "wechat"
           ? S.wechat
-          : S.feishu;
+          : channel === "discord"
+            ? S.discord
+            : S.feishu;
   const links = CHANNEL_LINKS[channel];
   return (
     <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
@@ -1129,6 +1232,8 @@ export function MessagingBindingHelp({ channel }: { channel: MessagingChannel })
           {channel === "telegram" && <li>{S.messaging.troubleGroupPrivacy}</li>}
           {channel === "qq" && <li>{S.messaging.troubleQQPassive}</li>}
           {channel === "wechat" && <li>{S.messaging.troubleWeChatDirect}</li>}
+          {channel === "discord" && <li>{S.messaging.troubleDiscordMention}</li>}
+          {channel === "discord" && <li>{S.messaging.troubleDiscordDm}</li>}
           {channel === "telegram" && <li>{S.messaging.troubleNoGroupInbound}</li>}
         </ul>
       </HelpFold>

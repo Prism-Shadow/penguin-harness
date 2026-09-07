@@ -1,5 +1,5 @@
 /**
- * Repo for Session ↔ messaging-channel bot bindings (Feishu, Telegram, QQ and WeChat today).
+ * Repo for Session ↔ messaging-channel bot bindings (Feishu, Telegram, QQ, WeChat and Discord today).
  *
  * A Session keeps at most one saved config PER channel — the `(session_id, channel)`
  * primary key — and both channels' credentials may sit saved side by side. Which of them
@@ -33,11 +33,11 @@ import type { MessagingBindings } from "../../mechanisms/messaging.js";
 
 export interface MessagingBindingRow {
   sessionId: string;
-  /** Messaging channel discriminator (`feishu` | `telegram` | `qq` | `wechat`). */
+  /** Messaging channel discriminator (`feishu` | `telegram` | `qq` | `wechat` | `discord`). */
   channel: string;
-  /** Channel-scoped bot/app identity (feishu: the app_id; telegram: the bot token's numeric id; qq: the App ID; wechat: the scanned bot id); never secret. */
+  /** Channel-scoped bot/app identity (feishu: the app_id; telegram: the bot token's numeric id; qq: the App ID; wechat: the scanned bot id; discord: the bot user id the token encodes); never secret. */
   accountId: string;
-  /** Channel-specific config document (feishu: appId/appSecret/baseDomain; telegram: botToken; qq: appId/appSecret; wechat: botId/botToken/baseUrl/userId). */
+  /** Channel-specific config document (feishu: appId/appSecret/baseDomain; telegram: botToken; qq: appId/appSecret; wechat: botId/botToken/baseUrl/userId; discord: botToken). */
   config: Record<string, unknown>;
   /**
    * INTENT state: whether the binding should hold a live connection (the connection's
