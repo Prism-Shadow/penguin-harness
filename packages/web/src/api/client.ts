@@ -1,7 +1,13 @@
 /**
- * fetch wrapper: JSON request/response, unified errors -> ApiError,
+ * API client: JSON request/response, unified errors -> ApiError,
  * same-origin cookie auth (credentials: same-origin; CSRF relies on SameSite=Lax + JSON
  * Content-Type, see server README).
+ *
+ * Two transports of the same API (PRFC-0011): while the page's socket is open, a call is a
+ * frame on it and the answer is the endpoint's own response, framed; otherwise it is a fetch.
+ * The two are handled by one code path below — status, error body, the 401 rule — so a caller
+ * cannot tell which carried its request, and an answer the socket declines to carry (a
+ * download: 415 `unsupported_transport`) is simply fetched.
  *
  * When the session becomes invalid (server 401, e.g. database rebuilt, cookie expired),
  * notifies AuthProvider to clear the current user, letting the route guard redirect to the
@@ -10,6 +16,7 @@
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
 import { machineForPath } from "../lib/session-machines";
+import { apiSocket } from "./socket";
 
 /** Unified API error: carries the HTTP status code and server error code (server error body {error:{code,message}}). */
 export class ApiError extends Error {
@@ -90,46 +97,76 @@ export async function apiFetchWithMeta<T>(
     if (qs) url += `?${qs}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: options.method ?? "GET",
-      credentials: "same-origin",
-      ...(options.body !== undefined
-        ? {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(options.body),
-          }
-        : {}),
-    });
-  } catch {
-    throw new ApiError(0, "network_error", S.errors.networkError);
-  }
+  const method = options.method ?? "GET";
+  let answer = apiSocket.isOpen() ? await callOverSocket(method, url, options.body) : null;
+  if (answer === null || answer.status === 415)
+    answer = await callOverHttp(method, url, options.body);
 
-  if (!response.ok) {
+  if (answer.status < 200 || answer.status >= 300) {
     let code = "http_error";
     let message: string = S.common.unknownError;
-    try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
+    const body = answer.body as { error?: { code?: string; message?: string } } | null;
+    if (body !== null && typeof body === "object") {
       if (body.error?.code) code = body.error.code;
       if (body.error?.message) message = body.error.message;
-    } catch {
-      // Non-JSON error body: fall back to the default message.
     }
     // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
     // are not signed in over there, which says nothing about the session here. Treating it
     // as a local logout is how clicking a remote host in a picker bounced the window to the
     // login page of a server it was still perfectly signed in to.
     const fromThisServer = target === null;
-    if (response.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
-    throw new ApiError(response.status, code, message);
+    if (answer.status === 401 && fromThisServer && !isAuthEndpoint(path)) onUnauthorized?.();
+    throw new ApiError(answer.status, code, message);
   }
 
-  const headerDate = Date.parse(response.headers.get("date") ?? "");
+  const headerDate = Date.parse(answer.date ?? "");
   const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+  return { data: (answer.status === 204 ? undefined : answer.body) as T, serverNowMs };
+}
 
-  if (response.status === 204) return { data: undefined as T, serverNowMs };
+/** What either transport reduces a response to: the status, the parsed body (null when empty), the Date header. */
+interface Answer {
+  status: number;
+  body: unknown;
+  date: string | null;
+}
+
+/** The socket transport; null when the socket dropped before answering (the caller then fetches). */
+async function callOverSocket(method: string, url: string, body: unknown): Promise<Answer | null> {
+  try {
+    const res = await apiSocket.call(method, url, body !== undefined ? { body } : {});
+    return { status: res.status, body: res.body ?? null, date: res.headers.date ?? null };
+  } catch {
+    // The socket closed under the call. A lost answer is a lost answer whichever transport
+    // lost it, so this is not retried blindly: the HTTP fallback is only for calls that never
+    // left (the socket rejects before sending when it is not open), which is the isOpen()
+    // check above. Here the frame may have been delivered — report it as a network error.
+    throw new ApiError(0, "network_error", S.errors.networkError);
+  }
+}
+
+async function callOverHttp(method: string, url: string, body: unknown): Promise<Answer> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      credentials: "same-origin",
+      ...(body !== undefined
+        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+        : {}),
+    });
+  } catch {
+    throw new ApiError(0, "network_error", S.errors.networkError);
+  }
+  const date = response.headers.get("date");
+  if (response.status === 204) return { status: 204, body: null, date };
   const text = await response.text();
-  if (!text) return { data: undefined as T, serverNowMs };
-  return { data: JSON.parse(text) as T, serverNowMs };
+  if (!text) return { status: response.status, body: null, date };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null; // Non-JSON body (an error page): the default message applies.
+  }
+  return { status: response.status, body: parsed, date };
 }
