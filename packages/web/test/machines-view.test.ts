@@ -30,6 +30,7 @@ const fresh = (alias: string): MachineInfo => ({
   local: false,
   connection: null,
   api: null,
+  root: "$HOME/.penguin/data",
   status: null,
 });
 const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: INSTALLED });
@@ -42,6 +43,7 @@ const here = (): MachineInfo => ({
   local: true,
   connection: null,
   api: null,
+  root: "/home/someone/.penguin/data",
   status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
 });
 
