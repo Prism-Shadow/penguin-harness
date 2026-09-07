@@ -27,7 +27,7 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -35,6 +35,7 @@ import { readJson, requireValidId } from "../validate.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
+  loadPlugins,
   PLUGINS_FILE,
   pluginBases,
   readPluginClosure,
@@ -45,12 +46,9 @@ import {
   PluginInstallError,
   removePluginPackage,
 } from "../../plugin/install.js";
-import { pluginHostFrom } from "../../plugin/host.js";
+import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
-import { loadPlugins } from "../../plugin/loader.js";
-import { PluginHost, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
 
 export interface InstalledPluginsDeps {
   root: string;
