@@ -57,6 +57,7 @@ import { formatLocalDate } from "../internal/dates.js";
 import {
   cloneScanState,
   deserializePrefix,
+  applyOutlineCarry,
   collectOutline,
   encodeCursor,
   finalizeScan,
@@ -500,7 +501,7 @@ export class TraceService implements Traces {
       const messages = await this.readShard(file.path);
       // The outline rides the same pass: the turns this shard opens are cached with it,
       // so the index of a long session costs one read per old shard, ever.
-      const { collector, entries } = collectOutline((ordinal) =>
+      const { collector, entries, carry } = collectOutline((ordinal) =>
         encodeCursor({ fileIndex: file.index, ordinal }),
       );
       await scanMessages(
@@ -518,9 +519,9 @@ export class TraceService implements Traces {
         sessionId,
         file.index,
         file.sizeBytes,
-        serializePrefix(state, entries),
+        serializePrefix(state, entries, carry),
       );
-      prefixes.push({ state, outline: entries });
+      prefixes.push({ state, outline: entries, carry });
     }
     return prefixes;
   }
@@ -546,15 +547,25 @@ export class TraceService implements Traces {
     };
     const last = files.length - 1;
     const prefixes = await this.prefixStates(projectId, agentId, sessionId, files, last - 1, ctx);
-    const entries = prefixes.flatMap((p) => p.outline);
+    // Each shard's carry settles onto the turn the shard before it opened (a Task that
+    // spans a rotation), so the entries are copied before they are amended — the cached
+    // records stay as written.
+    const entries: OutlineIndexEntry[] = [];
+    for (const prefix of prefixes) {
+      applyOutlineCarry(entries, prefix.carry);
+      entries.push(...prefix.outline.map((e) => ({ ...e })));
+    }
     const newest = files[last]!;
     const state = cloneScanState(last === 0 ? initialScanState() : prefixes[last - 1]!.state);
     const messages = await this.readShard(newest.path);
-    const { collector, entries: tail } = collectOutline((ordinal) =>
-      encodeCursor({ fileIndex: newest.index, ordinal }),
-    );
+    const {
+      collector,
+      entries: tail,
+      carry,
+    } = collectOutline((ordinal) => encodeCursor({ fileIndex: newest.index, ordinal }));
     // No child expansion: the outline needs neither subagent totals nor timestamps.
     await scanMessages(state, messages, () => {}, null, 0, messages.length, collector);
+    applyOutlineCarry(entries, carry);
     return [...entries, ...tail];
   }
 
@@ -753,7 +764,20 @@ export class TraceService implements Traces {
     const first = await this.readShard(files[startPos]!.path);
     shardMessages.set(startPos, first);
     const startOrdinal = Math.min(req.cursor.ordinal, first.length);
-    await scanMessages(state, first, () => {}, expandChild, 0, startOrdinal);
+    let unitBefore = startPos > 0; // an earlier shard holds units (a shard never holds only a preamble)
+    await scanMessages(
+      state,
+      first,
+      () => {
+        unitBefore = true;
+      },
+      expandChild,
+      0,
+      startOrdinal,
+    );
+    // The transcript's first unit is never a cut: a window opened at it is the beginning —
+    // preamble included, no `before` — exactly the window the backward chain ends on.
+    const atBeginning = !unitBefore;
     let prior: WindowPriorStats = { ...state.totals };
     let count = 0; // messages in the window so far
     let from = startOrdinal;
@@ -820,7 +844,7 @@ export class TraceService implements Traces {
     const windowRaw = await this.sliceShards(
       files,
       shardMessages,
-      { pos: startPos, ordinal: startOrdinal },
+      { pos: startPos, ordinal: atBeginning ? 0 : startOrdinal },
       { pos: end.pos, ordinal: end.ordinal },
     );
     const expanded = await this.expandMessages(projectId, windowRaw, ctx);
@@ -830,7 +854,7 @@ export class TraceService implements Traces {
         : encodeCursor({ fileIndex: files[end.pos]!.index, ordinal: end.ordinal });
     return {
       messages: expanded,
-      before: encodeCursor(req.cursor),
+      ...(atBeginning ? {} : { before: encodeCursor(req.cursor) }),
       ...(after !== undefined ? { after } : {}),
       prior,
       reachesEnd: closedBy === "history",

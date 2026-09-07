@@ -476,16 +476,20 @@ export function ChatPage() {
   // the rail lists every turn whatever the run holds, and a click on an unloaded one can
   // open the run there (see mergeOutline / useOutlineJump).
   const outlineIndex = useOutlineIndex(selected?.sessionId ?? null, stream.taskState);
-  const outline = useMemo(
+  // The index's raw questions are stripped once per index, not once per streamed token:
+  // the merge below re-runs on every version bump.
+  const strippedIndex = useMemo(
     () =>
-      mergeOutline(
-        outlineIndex,
-        buildOutline(allItems),
-        stream.outlineOffset,
-        (raw) => parseUserMessageBody(raw)?.body ?? "",
-      ),
+      outlineIndex.map((entry) => ({
+        ...entry,
+        question: parseUserMessageBody(entry.question)?.body ?? "",
+      })),
+    [outlineIndex],
+  );
+  const outline = useMemo(
+    () => mergeOutline(strippedIndex, buildOutline(allItems), stream.outlineOffset),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, stream.edgesVersion, routeSessionId, outlineIndex],
+    [stream.version, stream.edgesVersion, routeSessionId, strippedIndex],
   );
   // The subagents panel's model view: the live model, with backfilled windows' items and
   // nested subagent models merged in — a chip clicked on a backfilled turn must still
