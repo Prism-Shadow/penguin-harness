@@ -8,6 +8,15 @@ import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 /** One loaded plugin: the package, and its modules with manifests paired to code. */
 export interface LoadedPlugin {
   specifier: string;
+  /**
+   * The entry file this was imported from, when there was one to resolve. It is what makes a
+   * REUSE safe: the specifier alone does not say which bytes are behind it, and a hot push
+   * moves the builtin plugins to a new assets directory — so an entry held from before the
+   * push resolves to a different file, and must be imported again rather than kept. Absent on
+   * an entry from a generation older than this field (re-imported, which is correct for it)
+   * and on a bare specifier the installation itself resolves.
+   */
+  file?: string | null;
   /** Nodes the plugin adds under the root. */
   modules: ModuleDef[];
   /** Nodes the plugin stands in for, by the replaced node's name. */
