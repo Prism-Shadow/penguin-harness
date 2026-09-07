@@ -15,7 +15,7 @@ import {
   KEEP_VERSIONS,
 } from "../src/services/harness-history.js";
 import zlib from "node:zlib";
-import { diffIfaces } from "../src/hmr/ifaces-diff.js";
+import { diffIfaces } from "@prismshadow/penguin-hmr";
 import type { VersionHistoryDiffResponse, VersionHistoryResponse } from "../src/api/types.js";
 import {
   apiClient,
