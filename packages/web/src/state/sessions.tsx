@@ -1020,8 +1020,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   // One more stream per connected machine: a Session there changes state on that machine's
   // server, and this server never hears of it. Keyed on the held set, so a machine that
-  // drops out has its stream closed and one that comes up gets one. EventSource reconnects
-  // on its own while the connection behind the proxy is briefly down.
+  // drops out has its stream closed and one that comes up gets one. Each is a call on the
+  // page's one socket (api/socket.ts), re-issued on its own while the connection behind the
+  // proxy is briefly down.
   const heldKey = machineIds.join(",");
   useEffect(() => {
     const ids = heldKey === "" ? [] : heldKey.split(",");
