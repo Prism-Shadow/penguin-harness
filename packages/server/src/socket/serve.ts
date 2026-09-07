@@ -1,105 +1,76 @@
 /**
- * The API socket transport: `GET /api/socket` (Upgrade) — PRFC-0011.
+ * The API socket protocol (PRFC-0011), served by the platform over a socket the runtime's
+ * terminal-stream seam handed over (socket/ref.ts says how it gets here).
  *
- * Runtime, and only the transport. Every `call` frame becomes a Request and goes through the
- * SAME entry the HTTP listener uses (the runtime app's fetch: auth guards, runtime routes,
- * the platform seam), and the Response comes back as frames. So this module knows no
- * endpoint: authorization, validation and error shapes are the endpoint's own, byte for byte
- * what HTTP answers, and a platform push that adds or changes a route needs nothing here.
+ * The socket is a second TRANSPORT of the same API: every `call` frame becomes a Request
+ * and goes through the platform app's own routes — the same ones the HTTP seam dispatches
+ * into — and the Response comes back as frames. So this module knows no endpoint:
+ * authorization, validation and error shapes are the endpoint's own, byte for byte what
+ * HTTP answers, and a pushed route needs nothing here.
  *
- * Credentials: the handshake is gated on the session cookie or a Bearer token — a socket a
- * stranger cannot open — and the SAME headers are copied onto every in-process Request, so
- * each call is authenticated by the app exactly as an HTTP request would be (a session that
- * expires mid-socket starts answering 401, as it would over HTTP). Frames cannot carry
- * credentials; CALL_HEADERS is the whole allowance.
+ * Identity is settled before this runs: the runtime authenticated the handshake cookie and
+ * held the reserved id's owner to it, so the `fetch` handed in is already bound to that user
+ * (Http.fetchAs) — no credential travels with a frame, and there is nothing in a frame to
+ * forge.
  *
  * A `text/event-stream` Response is read to its end and re-framed per event (the SSE
  * heartbeat comments are dropped — the socket pings on its own); a cancel frame, the socket
  * closing, or the client lagging past HIGH_WATER aborts the Request, which is how the
- * endpoint's own subscription is released. Everything else is a one-shot frame.
+ * endpoint's own subscription is released. Everything else is a one-shot frame. A request
+ * the platform declines (a runtime-owned path such as /api/auth) answers 421: the client
+ * makes that call over HTTP instead.
  */
-import type { IncomingMessage, Server as HttpServer } from "node:http";
-import type { Duplex } from "node:stream";
 import type { WebSocket } from "ws";
-import { WebSocketServer } from "ws";
-import { SESSION_COOKIE } from "../auth/middleware.js";
-import { isAllowedOrigin, readBearer, readCookie, refuse } from "../http/ws-handshake.js";
-import type { Auth } from "../mechanisms/identity.js";
+import { declined } from "../hmr/hono-seam.js";
 import { CALL_HEADERS, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
 import { SseParser } from "./sse-text.js";
-
-export const SOCKET_PATH = "/api/socket";
 
 /** Same cadence as the SSE heartbeat: a peer that answers no ping within two beats is gone. */
 export const HEARTBEAT_MS = 20_000;
 /** A client this far behind on a stream is fast-forwarded (its stream ends with reason "lagging") rather than buffered without bound. */
 export const HIGH_WATER_BYTES = 4 * 1024 * 1024;
 
-/** Prefixes a call may address. `/api/hmr` is the rescue channel and never rides the socket; the socket itself is not an endpoint. */
+/** The decline marker the platform app answers runtime-owned paths with, read off one such answer. */
+const DECLINE: [string, string] = (() => {
+  const probe = declined();
+  for (const [name, value] of probe.headers) return [name, value];
+  return ["", ""];
+})();
+
+const isDeclined = (res: Response): boolean =>
+  DECLINE[0] !== "" && res.headers.get(DECLINE[0]) === DECLINE[1];
+
+/** Prefixes a call may address. The terminal streams (the socket's own path among them) are upgrades, not calls. */
 function callable(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
-  if (pathname === SOCKET_PATH) return false;
-  if (pathname === "/api/hmr" || pathname.startsWith("/api/hmr/")) return false;
+  if (/^\/api\/terminals\/[^/]+\/stream$/.test(pathname)) return false;
   return pathname.startsWith("/api/") || pathname.startsWith("/server/");
 }
 
 export interface ApiSocketDeps {
-  /** The runtime app's fetch — the one entry HTTP requests take. */
+  /** The platform's routes, entered as the socket's user (Http.fetchAs). */
   fetch: (request: Request) => Promise<Response>;
-  authService: Auth;
+  /** The origin in-process requests are addressed to (the canonical App host, as HTTP requests carry it). */
+  origin: string;
   log: (line: string) => void;
+}
+
+function nowHeaders(): Record<string, string> {
+  return { date: new Date().toUTCString() };
 }
 
 /** Headers of a response worth carrying back: the client reads `date` for server time. */
 function responseHeaders(res: Response): Record<string, string> {
-  const out: Record<string, string> = { date: new Date().toUTCString() };
+  const out = nowHeaders();
   const type = res.headers.get("content-type");
   if (type !== null) out["content-type"] = type;
   return out;
 }
 
-export function attachApiSocket(server: HttpServer, deps: ApiSocketDeps): void {
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    if (url.pathname !== SOCKET_PATH) return; // not ours: another upgrade handler may claim it
-    if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
-
-    // Gate: the same two credentials the auth middleware honours, in the same order (an
-    // explicit Bearer outranks the ambient cookie). Only the gate — each call is
-    // re-authenticated by the app from the copied headers.
-    const bearer = readBearer(req.headers.authorization);
-    const cookie = readCookie(req.headers.cookie, SESSION_COOKIE);
-    const authed =
-      bearer !== null
-        ? deps.authService.authenticateApiToken(bearer)
-        : cookie !== null
-          ? deps.authService.authenticateWithMeta(cookie)
-          : null;
-    if (!authed) return refuse(socket, 401, "Unauthorized");
-
-    const credentials: Record<string, string> = {};
-    if (req.headers.authorization !== undefined)
-      credentials.authorization = req.headers.authorization;
-    if (req.headers.cookie !== undefined) credentials.cookie = req.headers.cookie;
-    // The canonical-host guard reads the Host the browser targeted; in-process requests
-    // carry the same one so a socket call is judged exactly as its HTTP twin.
-    const origin = `http://${req.headers.host ?? "localhost"}`;
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      serve(ws, { origin, credentials }, deps);
-    });
-  });
-}
-
-interface SocketContext {
-  origin: string;
-  credentials: Record<string, string>;
-}
-
-function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
+export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   /** In-flight calls by id; a streaming call stays here until its end. */
   const inflight = new Map<number, AbortController>();
   let alive = true;
@@ -123,11 +94,9 @@ function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
   ws.on("pong", () => {
     alive = true;
   });
-  ws.on("message", () => {
-    alive = true; // traffic is proof of life too
-  });
 
   ws.on("message", (data, isBinary) => {
+    alive = true; // traffic is proof of life too
     if (isBinary) return ws.close(1003, "binary frames are reserved");
     const parsed = parseClientFrame(data.toString());
     if ("error" in parsed) return ws.close(1002, parsed.error);
@@ -155,12 +124,12 @@ function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
       send({
         id,
         status: 404,
-        headers: { date: new Date().toUTCString() },
-        body: { error: { code: "not_found", message: "Endpoint does not exist." } },
+        headers: nowHeaders(),
+        body: errorBody("not_found", "Endpoint does not exist."),
       });
       return;
     }
-    const headers: Record<string, string> = { ...ctx.credentials };
+    const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(call.headers ?? {}))
       if (CALL_HEADERS.has(k)) headers[k] = v;
     let body: string | undefined;
@@ -172,7 +141,7 @@ function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
     let res: Response;
     try {
       res = await deps.fetch(
-        new Request(new URL(call.path, ctx.origin), {
+        new Request(new URL(call.path, deps.origin), {
           method: call.method,
           headers,
           ...(body !== undefined ? { body } : {}),
@@ -185,13 +154,23 @@ function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
       send({
         id,
         status: 500,
-        headers: { date: new Date().toUTCString() },
-        body: { error: { code: "internal", message: "Internal server error." } },
+        headers: nowHeaders(),
+        body: errorBody("internal", "Internal server error."),
       });
       return;
     }
     if (controller.signal.aborted) {
       await res.body?.cancel().catch(() => undefined);
+      return;
+    }
+    if (isDeclined(res)) {
+      // Runtime-owned (auth, hmr, desktop): not this transport's to carry.
+      send({
+        id,
+        status: 421,
+        headers: nowHeaders(),
+        body: errorBody("not_on_socket", "This endpoint is served over HTTP only."),
+      });
       return;
     }
 
@@ -215,13 +194,11 @@ function serve(ws: WebSocket, ctx: SocketContext, deps: ApiSocketDeps): void {
         send({
           id,
           status: 415,
-          headers: { date: new Date().toUTCString() },
-          body: {
-            error: {
-              code: "unsupported_transport",
-              message: "This response does not ride the socket; use HTTP.",
-            },
-          },
+          headers: nowHeaders(),
+          body: errorBody(
+            "unsupported_transport",
+            "This response does not ride the socket; use HTTP.",
+          ),
         });
         return;
       }
