@@ -35,21 +35,25 @@ PENGUIN_DISCORD_PROJECT=birder-default_project
 PENGUIN_DISCORD_AGENT=default_agent
 ```
 
-**Through the settings API** (admin), which the Web App's chat-bot settings also use:
+**Through the plugin's own API** (admin), `/api/discord-bot`:
 
 ```sh
-# save the credential and the target
-curl -X PUT $BASE/api/chat-bots/discord -H 'content-type: application/json' \
-  -d '{"config":{"botToken":"MTIz….GaBcDe.…"},"projectId":"birder-default_project","agentId":"default_agent"}'
+# save the token and the target
+curl -X PUT $BASE/api/discord-bot -H 'content-type: application/json' \
+  -d '{"botToken":"MTIz….GaBcDe.…","projectId":"birder-default_project","agentId":"default_agent"}'
 # probe the token (answers the bot's @username)
-curl -X POST $BASE/api/chat-bots/discord/test -H 'content-type: application/json' -d '{}'
+curl -X POST $BASE/api/discord-bot/test -H 'content-type: application/json' -d '{}'
 # connect
-curl -X POST $BASE/api/chat-bots/discord/state -H 'content-type: application/json' -d '{"enabled":true}'
-# status
-curl $BASE/api/chat-bots/discord
+curl -X POST $BASE/api/discord-bot/state -H 'content-type: application/json' -d '{"enabled":true}'
+# status: the masked token, the target, the live connection and how many chats hold a Session
+curl $BASE/api/discord-bot
 ```
 
-`GET /api/chat-bots` lists every bot a plugin contributed, masked credential and live status included.
+The token never comes back in the clear; a PUT with the masked value keeps the stored one, and `clearBotToken: true` drops it (once the bot is disabled). Everything is stored in the server settings under `discord-bot:` keys and survives a restart.
+
+## What the plugin is made of
+
+The harness has no notion of a chat bot. This package composes what the harness already has — the Discord messaging connector (Gateway, sends, Markdown, the 2000-character cap), Session creation, the task runner, the Session event channel and the settings store — into one: a Gateway connection on the token, a Session per chat, replies relayed back, the commands, the settings routes. Replace "Discord" with another channel the harness has a connector for and the same package shape gives you a bot there.
 
 ## Development
 

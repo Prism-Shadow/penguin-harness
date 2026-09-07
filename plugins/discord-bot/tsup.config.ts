@@ -7,4 +7,7 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
+  // The SDK is the host's: the plugin compiles against its types and calls its helpers at
+  // runtime, and must never carry a second copy (the production pack marks it external too).
+  external: ["@prismshadow/penguin-core", /^@prismshadow\/penguin-core\//],
 });
