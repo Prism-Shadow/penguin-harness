@@ -237,9 +237,11 @@ export interface StreamController {
   /**
    * Open the run at a unit cursor (the outline's jump to a turn that is not loaded): the
    * window starting there replaces the run, detached unless it reaches the live tail.
-   * Rejects when the window could not be fetched; the run is then left as it was.
+   * Resolves true once the run holds that position, false when nothing was done (not
+   * live yet, or superseded by a later run change); rejects when the window could not be
+   * fetched — the run is then left as it was.
    */
-  openAt: (cursor: string) => Promise<void>;
+  openAt: (cursor: string) => Promise<boolean>;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
   /** SSE server-event entry point (`eventId`: same as handleOmni). */
@@ -252,6 +254,13 @@ export interface StreamController {
 }
 
 const NO_ITEMS: readonly ChatItem[] = [];
+
+/** Whether cursor `a` names a position strictly before `b` (cursors are `<shard>:<ordinal>` on immutable storage). */
+function cursorBefore(a: string, b: string): boolean {
+  const [as, ao] = a.split(":").map(Number);
+  const [bs, bo] = b.split(":").map(Number);
+  return as !== bs ? (as ?? 0) < (bs ?? 0) : (ao ?? 0) < (bo ?? 0);
+}
 
 export function createStreamController(deps: StreamControllerDeps): StreamController {
   const now = deps.now ?? (() => Date.now());
@@ -779,20 +788,26 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * tail's own start is the tail itself. The run is replaced only once the window is in
    * hand, so a failed fetch leaves the reader where they were.
    */
-  const openAt = async (cursor: string): Promise<void> => {
-    if (disposed || phase !== "live" || failed) return;
-    if (cursor === tailStart) {
+  const openAt = async (cursor: string): Promise<boolean> => {
+    if (disposed || phase !== "live" || failed) return false;
+    // A position at or past the tail's start IS the tail: the live model already holds
+    // it, so the run becomes the tail (attached, one window backfilled above) and the
+    // caller finds its anchor there.
+    if (tailStart === null || !cursorBefore(cursor, tailStart)) {
       resetToTail();
-      return;
+      return true;
     }
     const currentEpoch = epoch;
+    const currentRun = runGeneration;
     const res = await deps.loadMessages({
       kind: "after",
       cursor,
-      ...(tailStart !== null ? { until: tailStart } : {}),
+      until: tailStart,
       messages: WINDOW_MESSAGES,
     });
-    if (disposed || currentEpoch !== epoch) return;
+    // Superseded — a rebuild, or a run change since (a jump, a later open-at): this
+    // window must not replace what the reader moved on to.
+    if (disposed || currentEpoch !== epoch || currentRun !== runGeneration) return false;
     if (res.page === undefined) throw new Error("windowed history not supported");
     const after = res.page.after ?? null;
     const reachedTail = after === null || after === tailStart;
@@ -816,6 +831,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     newer.error = null;
     edgesVersion += 1;
     deps.onModelChange();
+    return true;
   };
 
   return {
