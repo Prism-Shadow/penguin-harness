@@ -27,12 +27,13 @@ import { parsePluginList, projectConfigPath } from "@prismshadow/penguin-core";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin, PluginModule } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
+import { PluginHost, pluginHostFrom } from "./host.js";
 
 /**
  * Where a Project's list lives, for a surface that has to name the file. The data root's
@@ -332,7 +333,16 @@ function asPlugin(module: unknown): Plugin | null {
  * with an empty plugin set would present as a healthy server that silently dropped every
  * capability the config asked for.
  */
-export async function loadPlugins(root: string): Promise<PluginLoadResult> {
+export async function loadPlugins(
+  root: string,
+  /**
+   * Entries an earlier App already imported, by specifier. Reused rather than imported
+   * again — the objects then keep their identity across a swap, which is what the plugin
+   * host is parked for. (Correctness does not hang on it: an ESM specifier imports once per
+   * process, so a second import would hand back the same module either way.)
+   */
+  reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
+): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const bases = pluginBases(root, await committedAssetsDir(root));
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
@@ -341,6 +351,11 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   const specifiers = await readPluginClosure(root);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
+    const held = reuse.get(specifier);
+    if (held !== undefined) {
+      loaded.push(held);
+      continue;
+    }
     try {
       const { module, file } = await importPlugin(specifier, bases);
       const read = await readPackageManifests(file);
@@ -389,4 +404,39 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
     }
   }
   return { loaded, failed };
+}
+
+/**
+ * The plugin host THIS App runs — built by the PLATFORM, at its own boot (hmr/platform.ts).
+ *
+ * This is the point of the whole file living below the seam: which plugins a deployment runs
+ * is configuration, and how that configuration is read is policy. Both therefore travel by
+ * push. A machine whose program predates a new rule — the Project closure replacing the data
+ * root's plugins.json, say — learns it from the pushed platform, instead of being unable to
+ * act on a list it has already been given until someone restarts it.
+ *
+ * What the registry keeps is the imported objects, claimed here and handed back at the
+ * commit: state, not a capability. An entry the closure no longer asks for is simply not in
+ * the new host; its modules leave the tree with the App that had them.
+ */
+export async function loadPluginHost(resources: Resources, root: string): Promise<PluginHost> {
+  const inherited = pluginHostFrom(resources);
+  // An older generation's host may predate `entries()`; then nothing is reused and every
+  // specifier is imported again, which the ESM cache makes cheap.
+  const reuse =
+    typeof inherited.entries === "function" ? inherited.entries() : new Map<string, LoadedPlugin>();
+  const result = await loadPlugins(root, reuse);
+  const host = new PluginHost();
+  for (const entry of result.loaded) {
+    // A module name clash is a LOAD failure, isolated per entry like an import failure.
+    try {
+      host.use(entry);
+    } catch (err) {
+      result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
+    }
+  }
+  for (const [specifier, reason] of result.failed) {
+    console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+  }
+  return host;
 }
