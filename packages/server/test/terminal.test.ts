@@ -17,6 +17,15 @@ import { expandHomePath } from "../src/terminal/session.js";
 import { repairSpawnHelpers } from "../src/terminal/spawn-helper.js";
 import { TerminalInputModeTracker } from "../src/terminal/input-mode.js";
 import { TerminalOutputCoalescer } from "../src/terminal/output-coalescer.js";
+import {
+  MAX_COALESCE_WINDOW_MS,
+  MAX_HIGH_WATER_BYTES,
+  MIN_COALESCE_WINDOW_MS,
+  MIN_HIGH_WATER_BYTES,
+  RoundTripEstimator,
+  SocketDrainMeter,
+  coalesceWindowFor,
+} from "../src/terminal/link-quality.js";
 import { applyTerminalSize, releaseTerminalSize } from "../src/terminal/size-ownership.js";
 import { captureLines, renderRestoreAnsi } from "../src/terminal/snapshot.js";
 import { resolveKeys } from "../src/terminal/routes.js";
@@ -253,6 +262,25 @@ describe("output coalescer", () => {
     expect(flushed).toEqual(["a", "bc"]);
   });
 
+  it("reads its window per burst, so a link that slows down widens it", () => {
+    vi.useFakeTimers();
+    const flushed: string[] = [];
+    let window = 5;
+    const coalescer = new TerminalOutputCoalescer(
+      (data) => flushed.push(data),
+      () => window,
+    );
+
+    coalescer.push("a"); // leading edge
+    window = 40; // the round trip grew between bursts
+    coalescer.push("b");
+    vi.advanceTimersByTime(5);
+    expect(flushed).toEqual(["a"]); // still merging: the window is 40ms now
+    vi.advanceTimersByTime(35);
+
+    expect(flushed).toEqual(["a", "b"]);
+  });
+
   it("flushes pending output on demand so ordering is preserved", () => {
     vi.useFakeTimers();
     const flushed: string[] = [];
@@ -263,6 +291,73 @@ describe("output coalescer", () => {
     coalescer.flush();
 
     expect(flushed).toEqual(["a", "b"]);
+  });
+});
+
+describe("link quality", () => {
+  it("keeps the LAN window until a round trip is measured", () => {
+    expect(coalesceWindowFor(null)).toBe(MIN_COALESCE_WINDOW_MS);
+    expect(coalesceWindowFor(8)).toBe(MIN_COALESCE_WINDOW_MS);
+  });
+
+  it("widens the window with the round trip, up to the ceiling", () => {
+    expect(coalesceWindowFor(80)).toBe(20);
+    expect(coalesceWindowFor(200)).toBe(50);
+    expect(coalesceWindowFor(2000)).toBe(MAX_COALESCE_WINDOW_MS);
+  });
+
+  it("smooths the round trip so one stalled reply cannot swing the window", () => {
+    const rtt = new RoundTripEstimator();
+    rtt.sample(200);
+    rtt.sample(2000); // one reply behind a garbage-collecting tab
+
+    expect(rtt.roundTripMs).toBeLessThan(700);
+    expect(rtt.windowMs()).toBeLessThanOrEqual(MAX_COALESCE_WINDOW_MS);
+  });
+
+  it("ignores a round trip a clock change made negative", () => {
+    const rtt = new RoundTripEstimator();
+    rtt.sample(-5);
+
+    expect(rtt.roundTripMs).toBeNull();
+  });
+
+  it("allows the full byte budget while the stream never waits on the socket", () => {
+    let now = 0;
+    const meter = new SocketDrainMeter(() => now);
+    for (let i = 0; i < 10; i++) {
+      now += 300;
+      meter.note(1000, 0); // delivered, with nothing waiting behind it
+    }
+
+    expect(meter.bytesPerSecond).toBeNull();
+    expect(meter.highWaterBytes()).toBe(MAX_HIGH_WATER_BYTES);
+  });
+
+  it("turns a slow delivery rate into a smaller allowance", () => {
+    let now = 0;
+    const meter = new SocketDrainMeter(() => now);
+    // 25kB leaves every 500ms with a backlog behind it throughout: a 50kB/s link.
+    for (let i = 0; i < 40; i++) {
+      now += 500;
+      meter.note(25_000, 400_000);
+    }
+
+    expect(meter.bytesPerSecond).toBeGreaterThan(40_000);
+    expect(meter.bytesPerSecond).toBeLessThan(60_000);
+    // A LAG bound now: well under the megabyte, which on this link would be twenty seconds.
+    expect(meter.highWaterBytes()).toBe(MIN_HIGH_WATER_BYTES);
+  });
+
+  it("never drops the allowance below the floor the low-water mark needs", () => {
+    let now = 0;
+    const meter = new SocketDrainMeter(() => now);
+    for (let i = 0; i < 20; i++) {
+      now += 500;
+      meter.note(10, 400_000); // a trickle, with the viewer far behind
+    }
+
+    expect(meter.highWaterBytes()).toBe(MIN_HIGH_WATER_BYTES);
   });
 });
 

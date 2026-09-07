@@ -211,7 +211,7 @@ export function TerminalPage() {
           className={`flex min-w-0 max-w-[50%] items-center gap-1 ${
             status === "ready"
               ? chrome.success
-              : status === "connecting"
+              : status === "connecting" || status === "reconnecting"
                 ? chrome.attention
                 : chrome.danger
           }`}
