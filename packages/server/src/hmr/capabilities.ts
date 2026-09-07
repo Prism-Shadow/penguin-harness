@@ -173,6 +173,28 @@ export const RUNTIME_DB_RESOURCE_ID = "runtime:db";
  * first-login link and nothing else.
  */
 export const RUNTIME_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
+/**
+ * The shell's message port, as STATE rather than a capability: the last frame the host sent
+ * and a way to send one back. What a frame MEANS — which commands exist, what they are
+ * called, who may run one — is policy and belongs to the platform (hmr/README.md), so the
+ * runtime carries the transport and not a line of the interpretation.
+ *
+ * It has to be published rather than held by the platform because the host announces itself
+ * ONCE per wiring: a platform that kept the announcement in its own memory would lose it at
+ * the next push and never be told again. Claimed optionally — an older runtime publishes no
+ * holder, and RuntimeDesktop then synthesizes one from that runtime's own service.
+ */
+export const RUNTIME_SHELL_FRAMES_RESOURCE_ID = "runtime:shell-frames";
+export interface ShellFrames {
+  /** The last `host-commands` frame, exactly as the host sent it. Unparsed on purpose. */
+  hostCommands: unknown;
+  /** Sends one frame to the host; null when this process has no host port. */
+  post: ((frame: unknown) => void) | null;
+}
+export function newShellFrames(): ShellFrames {
+  return { hostCommands: null, post: null };
+}
+
 export const RUNTIME_CHANNELS_RESOURCE_ID = "runtime:channels";
 export const RUNTIME_PROXY_RESOURCE_ID = "runtime:proxy-control";
 export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
@@ -225,6 +247,8 @@ export interface RuntimeCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
+  /** The host's port as state; null from a runtime that predates the holder. */
+  shellFrames: ShellFrames | null;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -289,6 +313,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   // than this platform may also publish a holder missing the fields added since; they are
   // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
   // a copy would strand every write the App makes to it.
+  const shellFrames = resources.claim<ShellFrames>(RUNTIME_SHELL_FRAMES_RESOURCE_ID) ?? null;
   const authState =
     resources.claim<AuthRuntimeState>(RUNTIME_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
   authState.firstLoginToken ??= null;
@@ -314,7 +339,17 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, replacements },
+    caps: {
+      config,
+      db,
+      authState,
+      channels,
+      proxyControl,
+      hmr,
+      desktop,
+      shellFrames,
+      replacements,
+    },
   };
 }
 
@@ -393,6 +428,8 @@ export type DesktopApi = Pick<
 /** The desktop shell's service, or null when this server is not the shell's child. */
 export abstract class Desktop extends Interface<{
   current(): DesktopApi | null;
+  /** The host's message port as state: the last frame in, a way to send one out. */
+  shell(): ShellFrames;
 }>() {}
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
@@ -475,8 +512,24 @@ export class RuntimeDesktop {
   @Provide() desktop!: Desktop;
   constructor(private readonly caps: RuntimeCapabilities) {}
   setup() {
-    const { desktop } = this.caps;
-    this.desktop = { current: () => desktop };
+    const { desktop, shellFrames } = this.caps;
+    // A runtime older than `runtime:shell-frames` published no holder. Its service parsed
+    // the host's frame itself and kept the result, so the same facts are read back out of it
+    // — the shim for that runtime is HERE, in the pushable half, where it can be deleted
+    // when no such runtime is left.
+    const legacy = (): ShellFrames => ({
+      hostCommands: {
+        type: "host-commands",
+        commands: (desktop as DesktopService | null)?.getCommands?.() ?? [],
+      },
+      post: (frame) => {
+        const ask = frame as { type?: string; command?: string };
+        if (ask.type === "host-command" && typeof ask.command === "string") {
+          (desktop as DesktopService | null)?.requestCommand?.(ask.command);
+        }
+      },
+    });
+    this.desktop = { current: () => desktop, shell: () => shellFrames ?? legacy() };
   }
 }
 @Module()
