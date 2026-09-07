@@ -91,6 +91,7 @@ export const en: Strings = {
       notConnected: "Offline",
       unreachable: "Unreachable",
       stopped: "Stopped",
+      linkedStopped: "Connected, not serving",
       unknown: "Unchecked",
     },
     phase: {
