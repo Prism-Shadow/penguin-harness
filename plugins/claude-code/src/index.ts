@@ -291,33 +291,72 @@ export function readAiTitle(chunk: string): string | null {
   return title;
 }
 
-/**
- * The transcript this Session is writing, right now.
- *
- * The newest `.jsonl` in the directory, and re-read every poll rather than pinned once: a
- * person can `/resume` inside the TUI, which switches the program to ANOTHER session id and
- * therefore another file. Pinning one (with `--session-id`) would name the file we started
- * with, and stop being the truth the moment they did that.
- */
-async function newestTranscript(dir: string): Promise<string | null> {
+/** One transcript in a Workspace's directory: when it was last written, and how much of it there is. */
+interface Transcript {
+  file: string;
+  at: number;
+  /** Bytes. A transcript is append-only, so this is what says it grew — see pickTranscript. */
+  size: number;
+}
+
+/** Every transcript in the directory, newest first. */
+async function transcripts(dir: string): Promise<Transcript[]> {
   let entries: string[];
   try {
     entries = await fsp.readdir(dir);
   } catch {
-    return null; // No transcript yet, or none for this directory at all.
+    return []; // No transcript yet, or none for this directory at all.
   }
-  let newest: { file: string; at: number } | null = null;
+  const found: Transcript[] = [];
   for (const name of entries) {
     if (!name.endsWith(".jsonl")) continue;
     const file = path.join(dir, name);
     try {
       const stat = await fsp.stat(file);
-      if (newest === null || stat.mtimeMs > newest.at) newest = { file, at: stat.mtimeMs };
+      found.push({ file, at: stat.mtimeMs, size: stat.size });
     } catch {
-      // Gone between readdir and stat: not the newest, then.
+      // Gone between readdir and stat.
     }
   }
-  return newest?.file ?? null;
+  return found.sort((a, b) => b.at - a.at);
+}
+
+/**
+ * Which transcript a Session follows: the one its own program wrote, claimed once and kept.
+ *
+ * ONE TRANSCRIPT, ONE SESSION. Two surfaces can share a Workspace — the New chat page lets a
+ * person pick one — and then they share this directory. "The newest file" is then whichever
+ * of the two programs typed last, so both Sessions would take one title and rename each
+ * other; that is the bug this exists for. A file another Session follows is never taken.
+ *
+ * `baseline` is the SIZE of everything the directory held when this Session began following
+ * it. A file is this program's only when it is new or has GROWN since — a leftover from an
+ * earlier run in the same Workspace never grows again, and naming a Session after a
+ * conversation it never had is worse than not naming it.
+ *
+ * Size rather than mtime, because mtime cannot tell: a filesystem stamps it from a coarse
+ * clock (a few milliseconds per tick here), so two appends moments apart carry the SAME
+ * timestamp — measured, while writing this. A transcript is append-only, so its length is the
+ * exact statement that something was written.
+ *
+ * KEPT, not re-chosen. A `/resume` inside the TUI moves the program to another session and
+ * therefore another file, and this follower does not follow it there: from the outside, "my
+ * program resumed elsewhere" and "the Session next door just started" look the same, and
+ * guessing wrong renames somebody else's Session. The cost is a title that stops updating
+ * after a resume until the surface is opened again; the alternative was the bug.
+ */
+export function pickTranscript(
+  found: readonly Transcript[],
+  current: { file: string | null },
+  takenByOthers: ReadonlySet<string>,
+  baseline: ReadonlyMap<string, number> = new Map(),
+): string | null {
+  if (current.file !== null && found.some((t) => t.file === current.file)) return current.file;
+  const live = (t: Transcript) => {
+    const was = baseline.get(t.file);
+    return was === undefined || t.size > was;
+  };
+  return found.find((t) => !takenByOthers.has(t.file) && live(t))?.file ?? null;
 }
 
 /** What the pty manager gives back; the members this surface reads of a terminal. */
@@ -333,6 +372,12 @@ interface Tracked {
   titles: {
     dir: string;
     file: string | null;
+    /**
+     * What the directory held when this Session started following it, by SIZE — everything
+     * an earlier run left behind. A file that has not grown since is not this program's
+     * (see pickTranscript).
+     */
+    baseline: Map<string, number>;
     offset: number;
     last: string | null;
     timer: ReturnType<typeof setInterval> | null;
@@ -384,7 +429,8 @@ export class ClaudeCodeSurface implements SessionSurface {
       // Idempotent: the same program, and the reporter of THIS App from now on. A terminal
       // claimed back after a swap has no follower yet — this is where it gets one.
       existing.report = report;
-      if (existing.titles === null) this.followTitle(existing, session.workspace);
+      if (existing.titles === null)
+        await this.followTitle(session.sessionId, existing, session.workspace);
       return this.viewOf(existing);
     }
     if (existing !== undefined) this.untrack(session.sessionId);
@@ -408,7 +454,7 @@ export class ClaudeCodeSurface implements SessionSurface {
     });
     const tracked = this.track(session.sessionId, terminal);
     tracked.report = report;
-    this.followTitle(tracked, session.workspace);
+    await this.followTitle(session.sessionId, tracked, session.workspace);
     return this.viewOf(tracked);
   }
 
@@ -440,19 +486,38 @@ export class ClaudeCodeSurface implements SessionSurface {
    * a readdir plus the bytes appended since the last look. The file is re-chosen every poll
    * because `/resume` moves the program to another session — and therefore another file.
    */
-  private followTitle(tracked: Tracked, cwd: string): void {
+  private async followTitle(sessionId: string, tracked: Tracked, cwd: string): Promise<void> {
     const dir = transcriptDir(cwd, this.env);
-    tracked.titles = { dir, file: null, offset: 0, last: null, timer: null };
+    // The baseline is taken BEFORE the first look, and awaited: everything already in the
+    // directory belongs to earlier runs in this Workspace, and this program's own transcript
+    // does not exist yet. Taken later, a transcript written in the meantime would be read as
+    // one of those leftovers and never followed.
+    tracked.titles = {
+      dir,
+      file: null,
+      baseline: new Map((await transcripts(dir)).map((t) => [t.file, t.size])),
+      offset: 0,
+      last: null,
+      timer: null,
+    };
     const look = () => {
       void (async () => {
         const state = tracked.titles;
         if (state === null) return;
-        const file = await newestTranscript(state.dir);
+        const found = await transcripts(state.dir);
+        // What every OTHER Session of this surface is following: a shared Workspace means a
+        // shared directory, and two Sessions must never read one program's transcript.
+        const takenByOthers = new Set<string>();
+        for (const [id, other] of this.tracked) {
+          if (id !== sessionId && other.titles?.file != null) takenByOthers.add(other.titles.file);
+        }
+        const file = pickTranscript(found, { file: state.file }, takenByOthers, state.baseline);
         if (file === null) return;
         if (file !== state.file) {
           // A different transcript (the first one, or one `/resume` moved to): read it whole.
           state.file = file;
           state.offset = 0;
+          state.last = null;
         }
         let chunk: string;
         try {
