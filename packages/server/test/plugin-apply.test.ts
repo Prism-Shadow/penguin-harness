@@ -151,6 +151,52 @@ describe("loadPluginHost", () => {
     }
   });
 
+  it("loads the assets it is BOOTING with, not the ones already committed", async () => {
+    // A hot upgrade materializes the new assets and publishes them before create() runs, but
+    // commits harness.json only after that boot succeeds. A loader reading the committed
+    // pointer therefore reads the version it is replacing — and every push would ship plugins
+    // one version stale. Seen exactly that way on a machine: a corrected plugin arrived and
+    // the previous build's copy kept running until the next push.
+    const root = await rootAsking(["@acme/shipped"]);
+    try {
+      const build = async (dir: string, marker: string) => {
+        const pkg = path.join(dir, "plugins", "node_modules", "@acme", "shipped");
+        await mkdir(pkg, { recursive: true });
+        await writeFile(
+          path.join(pkg, "package.json"),
+          JSON.stringify({
+            name: "@acme/shipped",
+            main: "./index.js",
+            penguin: { modules: [{ name: marker, requires: {}, provides: {}, children: [] }] },
+          }),
+        );
+        await writeFile(
+          path.join(pkg, "index.js"),
+          `export default { modules: { ${marker}: { create: () => ({ api: {} }) } } };\n`,
+        );
+      };
+      const committed = path.join(root, "hmr", "store", "assets", "old");
+      const booting = path.join(root, "hmr", "store", "assets", "new");
+      await build(committed, "Old");
+      await build(booting, "New");
+      await mkdir(path.join(root, "hmr"), { recursive: true });
+      await writeFile(
+        path.join(root, "hmr", "harness.json"),
+        JSON.stringify({ assets: { dir: "store/assets/old" } }),
+      );
+
+      // What harness.json names, when nobody says otherwise.
+      const committedHost = await loadPluginHost(new HotResources(), root);
+      expect(committedHost.modules().map((m) => m.manifest.name)).toEqual(["Old"]);
+
+      // What the booting version carries, when the host says which assets those are.
+      const bootingHost = await loadPluginHost(new HotResources(), root, booting);
+      expect(bootingHost.modules().map((m) => m.manifest.name)).toEqual(["New"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("skips a specifier it cannot import instead of failing the boot", async () => {
     const root = await rootAsking(["@acme/not-installed"]);
     try {
