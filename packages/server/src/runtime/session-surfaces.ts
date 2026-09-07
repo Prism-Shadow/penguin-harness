@@ -34,6 +34,7 @@ import type {
   SessionSurfaceContribution,
   SurfaceOpenOptions,
   SurfaceSessionRef,
+  SurfaceReport,
   SurfaceState,
   SurfaceView,
 } from "@prismshadow/penguin-core/plugin";
@@ -73,10 +74,18 @@ export interface SessionSurfaceServiceDeps {
   now: () => Date;
 }
 
+/** What this floor remembers about a Session it opened, including the last title it wrote. */
+interface Opened {
+  kind: string;
+  projectId: string;
+  /** The last title THIS floor set, or absent — what tells a program's rename from a person's. */
+  titleWritten?: string;
+}
+
 export class SessionSurfaceService {
   private readonly kinds = new Map<string, Registered>();
   /** Which Sessions were opened through this service, so a flip can be attributed to a row. */
-  private readonly opened = new Map<string, { kind: string; projectId: string }>();
+  private readonly opened = new Map<string, Opened>();
   private readonly states = new Map<string, SurfaceState>();
 
   constructor(
@@ -171,7 +180,12 @@ export class SessionSurfaceService {
     // the first prompt's first line is the title — once, and only where nothing named it yet.
     const firstLine = options.prompt?.split(/\r?\n/, 1)[0]?.trim() ?? "";
     if (firstLine !== "" && row.title === null) {
-      this.deps.sessions.updateTitleIfNull(row.sessionId, firstLine.slice(0, SURFACE_TITLE_MAX));
+      const written = firstLine.slice(0, SURFACE_TITLE_MAX);
+      this.deps.sessions.updateTitleIfNull(row.sessionId, written);
+      // Remembered as OURS, so a program that later names the session may improve on it
+      // (see applyTitle) while a person's rename ends the matter.
+      const opened = this.opened.get(row.sessionId);
+      if (opened !== undefined) opened.titleWritten = written;
     }
     return {
       kind,
@@ -193,13 +207,48 @@ export class SessionSurfaceService {
   }
 
   /**
+   * The program's own name for a Session, taken only while nobody better has named it.
+   *
+   * "Nobody better" is decided by comparison, not by a flag: this floor remembers the last
+   * title it wrote, and writes again only when the row still carries it. So a program may
+   * improve on the first prompt's line (Claude Code names a session once it knows what it is
+   * about, and renames it as the work turns), and a person's rename ends the matter — the row
+   * no longer says what this floor last wrote, so nothing here touches it again.
+   */
+  private applyTitle(sessionId: string, entry: Opened, title: string | undefined): void {
+    const next = title?.split(/\r?\n/, 1)[0]?.trim().slice(0, SURFACE_TITLE_MAX) ?? "";
+    if (next === "" || next === entry.titleWritten) return;
+    let current: string | null;
+    try {
+      current = this.deps.sessions.findById(sessionId)?.title ?? null;
+    } catch {
+      return;
+    }
+    if (current !== null && current !== entry.titleWritten) return;
+    try {
+      this.deps.sessions.updateTitle(sessionId, next);
+    } catch {
+      // A row deleted under a still-running pty: a title is never worth a throw.
+      return;
+    }
+    entry.titleWritten = next;
+    this.deps.notifyProjectUsers(entry.projectId, {
+      type: "session_title",
+      sessionId,
+      title: next,
+    });
+  }
+
+  /**
    * A state flip, as the SessionManager publishes a run's: stamp the row (the unread glyph
    * compares `lastActiveAt` against the reader's marker; `hasTrace` is what separates
    * "finished" from "never ran"), then tell every viewer of the Project.
    */
-  private report(sessionId: string, state: SurfaceState): void {
+  private report(sessionId: string, incoming: SurfaceState | SurfaceReport): void {
     const entry = this.opened.get(sessionId);
     if (entry === undefined) return;
+    const state = typeof incoming === "string" ? incoming : incoming.status;
+    if (typeof incoming !== "string") this.applyTitle(sessionId, entry, incoming.title);
     if (this.states.get(sessionId) === state) return;
     this.states.set(sessionId, state);
     // The SessionManager is where a Session's status is read (statusOf); a surface has no

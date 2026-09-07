@@ -62,6 +62,21 @@ export interface SurfaceView {
 export type SurfaceState = "idle" | "running";
 
 /**
+ * What a surface tells the harness about a Session between calls.
+ *
+ * A bare {@link SurfaceState} is the older, shorter form and stays valid — a surface that
+ * only knows whether work is in flight says exactly that. `title` is for a program that
+ * names its own session (Claude Code writes an AI-generated title into its transcript): the
+ * harness shows it in the Session list, which otherwise carries whatever the first prompt
+ * said forever.
+ */
+export interface SurfaceReport {
+  status: SurfaceState;
+  /** The program's name for this session, when it has one. Empty or absent changes nothing. */
+  title?: string;
+}
+
+/**
  * The code half: one object per contribution, bound by its id. `open` is idempotent — a
  * Session whose surface is already live gets that same view back — and `report` is how the
  * surface tells the harness its state flipped; the harness publishes the flip to every
@@ -71,7 +86,7 @@ export interface SessionSurface {
   open(
     session: SurfaceSessionRef,
     options: SurfaceOpenOptions,
-    report: (state: SurfaceState) => void,
+    report: (state: SurfaceState | SurfaceReport) => void,
   ): Promise<SurfaceView>;
   /** The current view, or null when this Session's surface was never opened (or is gone). */
   view(sessionId: string): SurfaceView | null;
