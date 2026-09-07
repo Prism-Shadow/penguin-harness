@@ -16,6 +16,7 @@ import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { SESSION_COOKIE } from "../auth/middleware.js";
+import { isAllowedOrigin, readCookie, refuse } from "../http/ws-handshake.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -78,47 +79,4 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         refuse(socket, 500, "Internal Server Error");
       });
   });
-}
-
-/**
- * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
- * still rides along. Only a genuinely same-origin page may connect: host AND port must match
- * the Host the browser targeted. Cookies are port-agnostic, so anything looser (hostname-only,
- * or a blanket loopback allowance) would let a page served by any other local server ride the
- * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
- * browser's own Host survives the proxy and this comparison holds in development too.
- */
-function isAllowedOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
-  let parsed: URL;
-  try {
-    parsed = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  return parsed.host === (req.headers.host ?? "");
-}
-
-function readCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    try {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    } catch {
-      // A malformed percent escape is an invalid credential, not a server error — this
-      // runs in the `upgrade` handler, where a throw would take the whole process down.
-      return null;
-    }
-  }
-  return null;
-}
-
-function refuse(socket: Duplex, status: number, text: string): void {
-  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
-  socket.destroy();
 }

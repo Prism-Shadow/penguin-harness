@@ -275,9 +275,10 @@ export function useSessionStream(
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
       onOpen: hydrateGoal,
-      // EventSource can't read the status code: when the connection is judged a fatal error and
-      // closes, probe once with GET /api/me; if the session has expired (401), the client's
-      // global handler clears the user and redirects to the login page.
+      // A stream refused for good (401/403/404 — or, on the EventSource fallback, a handshake
+      // the browser gave up on) is reported as closed: probe once with GET /api/me; if the
+      // session has expired (401), the client's global handler clears the user and redirects
+      // to the login page.
       onError: (closed) => {
         if (closed) void getMe().catch(() => undefined);
       },

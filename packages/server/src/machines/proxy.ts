@@ -14,6 +14,7 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { MachineSocketRelay } from "./socket-relay.js";
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
@@ -157,9 +158,12 @@ export function machinesProxy(
     machineId: string,
   ) => Promise<{ agent: http.Agent; port: number; cookie: string } | null>,
   report?: ProxyReport,
+  log: (line: string) => void = () => undefined,
 ): (request: Request) => Promise<Response | null> {
+  const relay = new MachineSocketRelay(log);
   return async (request) => {
-    const path = parseProxyPath(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const path = parseProxyPath(url.pathname);
     if (path === null) return null;
     const target = await resolve(path.machineId);
     if (target === null) {
@@ -172,6 +176,21 @@ export function machinesProxy(
         },
         { status: 503 },
       );
+    }
+    // A stream rides the one socket held to the machine (PRFC-0011) rather than a channel of
+    // its own; a machine without a socket (an older build) still gets the HTTP forward.
+    const wantsStream =
+      request.method === "GET" &&
+      (request.headers.get("accept") ?? "").includes("text/event-stream");
+    if (wantsStream) {
+      const relayed = await relay.stream(path.machineId, target, {
+        path: `${path.remotePath}${url.search}`,
+        lastEventId: request.headers.get("last-event-id"),
+      });
+      if (relayed !== null) {
+        report?.(path.machineId, { ok: true });
+        return relayed;
+      }
     }
     return proxyThroughSession(request, path, target.agent, target.port, target.cookie, report);
   };
