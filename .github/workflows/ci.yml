@@ -64,7 +64,7 @@ jobs:
       # files read skills' emitted types, for one.
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web..."
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web...,@prismshadow/penguin-plugin-claude-code..."
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
@@ -147,7 +147,7 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
@@ -194,7 +194,7 @@ jobs:
             build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
     steps:
