@@ -9,6 +9,14 @@ belongs here: *runtime* also means "the program that is running", so everything 
 did sounded like it belonged to the layer, and behaviour kept landing here that ships only by
 reinstalling every installation. The layer is named after the one thing it does.
 
+The **mechanism itself** — the version store, the atomic `harness.json` commit, the resource
+registry and the park → boot → swap — is a package of its own now: `packages/hmr`
+(`@prismshadow/penguin-hmr`), which may not be changed without asking, and cannot name a route
+or a service even by accident (the packaged platform is a constructor argument to `HmrHost`
+and the api it exposes is a type parameter). What stays in THIS directory is the server's half
+of the layer: which capabilities a platform may claim (`capabilities.ts`), the upgrade
+endpoints (`routes.ts`), the seam (`http-seam.ts`), and the platform itself.
+
 ## The four layers
 
 | Layer        | Lives in                                        | How it ships                      |
