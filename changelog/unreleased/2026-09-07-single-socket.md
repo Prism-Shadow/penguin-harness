@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#642](https://github.com/Prism-Shadow/penguin-harness/pull/642)
 
 [中文版](2026-09-07-single-socket.zh.md)
 
