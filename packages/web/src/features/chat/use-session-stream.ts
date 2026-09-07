@@ -75,8 +75,8 @@ export interface SessionStreamState {
   loadNewer: (opts?: FrontierLoadOptions) => void;
   /** Drop the run and re-attach the live tail (the jump button while detached). */
   jumpToLatest: () => void;
-  /** Open the run at a unit cursor (the outline's jump to an unloaded turn); rejects when the window could not be fetched. */
-  openAt: (cursor: string) => Promise<void>;
+  /** Open the run at a unit cursor (the outline's jump to an unloaded turn): true once the run holds it, false when nothing was done; rejects when the window could not be fetched. */
+  openAt: (cursor: string) => Promise<boolean>;
   version: number;
   /** True until history finishes loading. */
   loading: boolean;
@@ -330,7 +330,7 @@ export function useSessionStream(
     controllerRef.current?.jumpToLatest();
   }, []);
   const openAt = useCallback(
-    (cursor: string) => controllerRef.current?.openAt(cursor) ?? Promise.resolve(),
+    (cursor: string) => controllerRef.current?.openAt(cursor) ?? Promise.resolve(false),
     [],
   );
 
