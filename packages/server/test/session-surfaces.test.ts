@@ -10,6 +10,7 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type {
   SessionSurface,
+  SurfaceReport,
   SurfaceSessionRef,
   SurfaceState,
 } from "@prismshadow/penguin-core/plugin";
@@ -26,7 +27,7 @@ import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js
 /** A surface whose state the test flips by hand; records what it was asked to open. */
 function fakeSurface() {
   const opened = new Map<string, { ref: SurfaceSessionRef; prompt?: string; alive: boolean }>();
-  const reporters = new Map<string, (state: SurfaceState) => void>();
+  const reporters = new Map<string, (state: SurfaceState | SurfaceReport) => void>();
   const states = new Map<string, SurfaceState>();
   const surface: SessionSurface = {
     async open(ref, options, report) {
@@ -58,7 +59,11 @@ function fakeSurface() {
     states.set(sessionId, state);
     reporters.get(sessionId)?.(state);
   };
-  return { surface, opened, flip };
+  /** What a surface does when the program names its own session (see SurfaceReport). */
+  const rename = (sessionId: string, title: string) => {
+    reporters.get(sessionId)?.({ status: states.get(sessionId) ?? "idle", title });
+  };
+  return { surface, opened, flip, rename };
 }
 
 function surfacePlugin(kind: string, surface: SessionSurface, label = "Fake"): ModuleDef {
@@ -176,6 +181,30 @@ describe("session surfaces", () => {
     const closed = await api.delete(`/api/sessions/${session.sessionId}/surface`);
     expect(closed.status).toBe(204);
     expect(fake.opened.get(session.sessionId)!.alive).toBe(false);
+  });
+
+  it("takes the title the program gives it, until a person names the Session", async () => {
+    const { session } = (await (
+      await api.post(SESSIONS, { surface: "fake" })
+    ).json()) as SessionCreateResponse;
+    const sessionId = session.sessionId;
+    await api.post(`/api/sessions/${sessionId}/surface`, { prompt: "count the files" });
+    const title = async () =>
+      ((await (await api.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse).session
+        .title;
+    // The first prompt names it while nothing else has.
+    expect(await title()).toBe("count the files");
+
+    // The program's own name replaces that, and again when it changes.
+    fake.rename(sessionId, "Counting the files");
+    expect(await title()).toBe("Counting the files");
+    fake.rename(sessionId, "Auditing the tree");
+    expect(await title()).toBe("Auditing the tree");
+
+    // A person's rename ends it: the row no longer says what this floor last wrote.
+    await api.patch(`/api/sessions/${sessionId}`, { title: "mine" });
+    fake.rename(sessionId, "Something else entirely");
+    expect(await title()).toBe("mine");
   });
 
   it("deleting a surface Session closes its surface", async () => {

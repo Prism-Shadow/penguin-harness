@@ -224,7 +224,10 @@ export class SessionSurfaceService {
     } catch {
       return;
     }
-    if (current !== null && current !== entry.titleWritten) return;
+    if (current !== null && current !== entry.titleWritten) {
+      // Somebody named it since; the program does not get to take the name back.
+      return;
+    }
     try {
       this.deps.sessions.updateTitle(sessionId, next);
     } catch {
