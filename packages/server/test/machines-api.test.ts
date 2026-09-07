@@ -184,6 +184,9 @@ describe("machines API", () => {
         id: "local",
         local: true,
         status: { state: "running" },
+        // This process's own root, resolved — not the layout's template, which names
+        // where a server would run on some OTHER machine.
+        root: machinesRoot,
       });
       expect(body.machines[0]?.installed).not.toBeNull();
       expect(body.machines.slice(1)).toEqual([
@@ -195,6 +198,9 @@ describe("machines API", () => {
           local: false,
           connection: null,
           api: null,
+          // The release profile's root over there, in the shell a machine of unknown
+          // platform is assumed to speak.
+          root: "$HOME/.penguin/data",
           status: null,
         },
         {
@@ -205,6 +211,9 @@ describe("machines API", () => {
           local: false,
           connection: null,
           api: null,
+          // The release profile's root over there, in the shell a machine of unknown
+          // platform is assumed to speak.
+          root: "$HOME/.penguin/data",
           status: null,
         },
       ]);
