@@ -43,9 +43,18 @@ function isAuthEndpoint(path: string): boolean {
   return path.startsWith("/api/auth/");
 }
 
-/** Paths of this server that never ride the socket (see apiFetchWithMeta). */
+/**
+ * Paths of this server that never ride the socket (see apiFetchWithMeta): the runtime's own
+ * routes — auth, the install-id probe, the hot channel — which the socket would only answer
+ * 421 for, and `/api/me`, which is where the cookie's own session facts come from.
+ */
 function httpOnly(path: string): boolean {
-  return path === "/api/me" || isAuthEndpoint(path);
+  return (
+    path === "/api/me" ||
+    path === "/api/install" ||
+    path.startsWith("/api/hmr/") ||
+    isAuthEndpoint(path)
+  );
 }
 
 export interface ApiFetchOptions {
