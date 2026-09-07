@@ -295,3 +295,70 @@ describe("ready", () => {
     expect(noWs.isUnavailable()).toBe(true);
   });
 });
+
+describe("robustness", () => {
+  it("closes a socket that has gone silent for two beats and brings the streams back", async () => {
+    const h = handlers();
+    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().receive({ heartbeat: true }); // a heartbeat re-arms the watchdog and is otherwise ignored
+    expect(h.errors).toEqual([]);
+    vi.advanceTimersByTime(39_000);
+    expect(socket.isOpen()).toBe(true);
+    vi.advanceTimersByTime(2_000); // two beats of silence
+    expect(socket.isOpen()).toBe(false);
+    expect(h.errors).toEqual([false]); // parked, will be re-issued
+    vi.advanceTimersByTime(1_000); // the reconnect backoff
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(socket.isUnavailable()).toBe(false); // a watchdog close is never a refusal
+  });
+
+  it("keeps trying a server that is down instead of giving the socket up", async () => {
+    socket.stream("/api/events", handlers(), () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().drop(); // the server went away
+    whoAmI = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    // The first retry still tries the handshake on the remembered identity and fails; from
+    // then on the server is probed over HTTP first, and no handshake is attempted while it
+    // cannot be reached — however long that lasts.
+    vi.advanceTimersByTime(1_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeSocket.instances).toHaveLength(2);
+    last().drop();
+    for (let i = 0; i < 6; i++) {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(socket.isUnavailable()).toBe(false);
+    whoAmI = async () => "admin"; // the server is back
+    vi.advanceTimersByTime(30_000);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeSocket.instances).toHaveLength(3);
+    last().open();
+    expect(socket.isOpen()).toBe(true);
+  });
+
+  it("closes a socket that turns out to be another user's", async () => {
+    await openViaReady();
+    expect(last().url).toBe("ws://test/socket/admin");
+    socket.identityIs("admin"); // same user: nothing happens
+    expect(socket.isOpen()).toBe(true);
+    socket.identityIs("alice"); // the cookie changed under the tab
+    expect(socket.isOpen()).toBe(false);
+    expect(socket.isUnavailable()).toBe(false);
+  });
+});
