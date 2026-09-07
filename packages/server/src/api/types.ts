@@ -3461,25 +3461,58 @@ export interface DesktopUpdaterCommandMessage {
  * It stays a HOST command, run by the shell on its own window: the page is a plain browser
  * environment with no bridge of its own, and adding one for this was rejected
  * (packages/desktop/src/main.ts).
+ *
+ * This list is NOT the set of runnable commands — {@link HostCommandOffer} is, and the host
+ * writes it. What this list holds is the ids this build has its OWN words for, so the page
+ * can show a better label than the host sent (translated, with search terms). An id absent
+ * here is still offered, still runnable, and shown in the host's words.
  */
 export const HOST_COMMANDS = ["install-cli", "check-updates", "open-devtools"] as const;
 export type HostCommand = (typeof HOST_COMMANDS)[number];
 
+/**
+ * One command the host offers, carrying the words to show for it.
+ *
+ * The words travel WITH the command because the three programs involved ship apart: the
+ * shell reaches users through an installer, the server and the page through a hot push. A
+ * page that could only render commands it already had words for made the offer list pointless
+ * — a host could never offer anything new — and reading words it did not have blanked it.
+ *
+ * `command` is opaque to both server and page: the host decides what it means and the host
+ * runs it. Neither side validates it against a list of its own; the only question either asks
+ * is whether the host offered it.
+ */
+export interface HostCommandOffer {
+  command: string;
+  label: string;
+  /** The same words in Chinese. A host with only one language sends it in both. */
+  labelZh: string;
+}
+
 /** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
 export interface HostCommandsMessage {
   type: "host-commands";
-  commands: HostCommand[];
+  commands: HostCommandOffer[];
 }
 
-/** `GET /api/command` (admin): the commands the host offers — empty under a plain server, or before the shell's push. */
+/** `GET /api/command` (admin): what the host offers — empty under a plain server, or before the shell's push. */
 export interface HostCommandsResponse {
+  /**
+   * The offered ids this build also has words for, and nothing else.
+   *
+   * For pages older than `offers`, which look up every id in a table of their own: an id
+   * they have never heard of throws while they build the palette, and a throw there blanks
+   * the App. So this field stays conservative and the new field carries everything.
+   */
   commands: HostCommand[];
+  /** Everything the host offers, in the host's words. What a current page renders. */
+  offers: HostCommandOffer[];
 }
 
 /** Server → shell: run one. `POST /api/command/:command` sends it. */
 export interface HostCommandMessage {
   type: "host-command";
-  command: HostCommand;
+  command: string;
 }
 
 /**
