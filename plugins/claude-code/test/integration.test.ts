@@ -88,7 +88,11 @@ describe.skipIf(process.platform === "win32")("the claude-code plugin on a real 
     const terminalId = opened.view?.terminalId;
     expect(typeof terminalId).toBe("string");
     const terminal = api.terminal(terminalId!);
-    expect((await terminal.info()).cwd).toBe(session.workspace);
+    // Compared as real paths: macOS hands a pty the resolved `/private/var/...` while the
+    // Session names the `/var/...` symlink it was given.
+    expect(await fs.realpath((await terminal.info()).cwd)).toBe(
+      await fs.realpath(session.workspace),
+    );
 
     // The program got the prompt, and its first burst of output reads as running.
     const screen = await waitFor(

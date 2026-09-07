@@ -247,50 +247,59 @@ describe("a terminal running a program", () => {
     );
   }
 
-  it("spawns the argv as given, with no shell and no login flag", async () => {
-    const terminals = manager();
-    try {
-      const session = await terminals.create({
-        cwd: os.tmpdir(),
-        ownerUserId: "u1",
-        command: ["/bin/sh", "-c", "printf surface-%s ok; exit 7"],
-      });
-      const deadline = Date.now() + 10_000;
-      while (session.alive && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 20));
+  // The two cases below drive a real pty through `/bin/sh`, which Windows has not got. What
+  // they pin — an argv spawned as given, an environment the caller pruned — is not
+  // platform-specific, and a cmd.exe transliteration would pin the transliteration instead.
+  it.skipIf(process.platform === "win32")(
+    "spawns the argv as given, with no shell and no login flag",
+    async () => {
+      const terminals = manager();
+      try {
+        const session = await terminals.create({
+          cwd: os.tmpdir(),
+          ownerUserId: "u1",
+          command: ["/bin/sh", "-c", "printf surface-%s ok; exit 7"],
+        });
+        const deadline = Date.now() + 10_000;
+        while (session.alive && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        expect(session.alive).toBe(false);
+        expect(session.info().exit?.exitCode).toBe(7);
+        expect(session.capture().lines.join("\n")).toContain("surface-ok");
+      } finally {
+        terminals.disposeAll();
       }
-      expect(session.alive).toBe(false);
-      expect(session.info().exit?.exitCode).toBe(7);
-      expect(session.capture().lines.join("\n")).toContain("surface-ok");
-    } finally {
-      terminals.disposeAll();
-    }
-  });
+    },
+  );
 
-  it("does not hand the pty the server's own tmux pane or a caller's named variables", async () => {
-    // The pty is not a pane of whatever tmux started the server, and a marker the caller
-    // names must be absent rather than merely overwritten — a value cannot say "unset".
-    process.env.TMUX = "/tmp/tmux-1000/default,123,0";
-    process.env.SURFACE_MARKER_PROBE = "inherited";
-    const terminals = manager();
-    try {
-      const session = await terminals.create({
-        cwd: os.tmpdir(),
-        ownerUserId: "u1",
-        command: ["/bin/sh", "-c", 'echo "tmux=[${TMUX:-}] marker=[${SURFACE_MARKER_PROBE:-}]"'],
-        unsetEnv: ["SURFACE_MARKER_PROBE"],
-      });
-      const deadline = Date.now() + 10_000;
-      while (session.alive && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 20));
+  it.skipIf(process.platform === "win32")(
+    "does not hand the pty the server's own tmux pane or a caller's named variables",
+    async () => {
+      // The pty is not a pane of whatever tmux started the server, and a marker the caller
+      // names must be absent rather than merely overwritten — a value cannot say "unset".
+      process.env.TMUX = "/tmp/tmux-1000/default,123,0";
+      process.env.SURFACE_MARKER_PROBE = "inherited";
+      const terminals = manager();
+      try {
+        const session = await terminals.create({
+          cwd: os.tmpdir(),
+          ownerUserId: "u1",
+          command: ["/bin/sh", "-c", 'echo "tmux=[${TMUX:-}] marker=[${SURFACE_MARKER_PROBE:-}]"'],
+          unsetEnv: ["SURFACE_MARKER_PROBE"],
+        });
+        const deadline = Date.now() + 10_000;
+        while (session.alive && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        expect(session.capture().lines.join("\n")).toContain("tmux=[] marker=[]");
+      } finally {
+        terminals.disposeAll();
+        delete process.env.TMUX;
+        delete process.env.SURFACE_MARKER_PROBE;
       }
-      expect(session.capture().lines.join("\n")).toContain("tmux=[] marker=[]");
-    } finally {
-      terminals.disposeAll();
-      delete process.env.TMUX;
-      delete process.env.SURFACE_MARKER_PROBE;
-    }
-  });
+    },
+  );
 
   it("names the program it could not start, not 'a shell'", () => {
     // What a surface hits when its tool is not installed on the machine: the reader must be
