@@ -32,8 +32,8 @@ import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_AUTH_STATE_RESOURCE_ID,
-  RUNTIME_SHELL_FRAMES_RESOURCE_ID,
+  PARKED_AUTH_STATE_RESOURCE_ID,
+  PARKED_SHELL_FRAMES_RESOURCE_ID,
   newShellFrames,
   type ShellFrames,
   RUNTIME_CHANNELS_RESOURCE_ID,
@@ -41,7 +41,7 @@ import {
   RUNTIME_DB_RESOURCE_ID,
   RUNTIME_DESKTOP_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
-  RUNTIME_OVERRIDES_RESOURCE_ID,
+  PARKED_OVERRIDES_RESOURCE_ID,
   type Replacements,
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
@@ -252,22 +252,27 @@ export async function bootAppDeps(
   // when it cannot be persisted: the browser then simply never sweeps.
   ensureInstallId(config.root);
 
-  // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
-  // entry must be in place before ensure() below performs the first boot. The interface
-  // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
+  // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
+  // ensure() below performs the first boot. The interface descriptor leads: it is what a
+  // bundle's handshake reads before trusting any of the rest.
+  //
+  // Two kinds go in, and the ids do not say which is which (they all read `runtime:`, which
+  // is history — see the note above their definitions). CAPABILITIES are what only this
+  // process can provide; PARKED state is the platform's own, put where a swap cannot lose it.
   hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_AUTH_STATE_RESOURCE_ID, authState);
   hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
-  hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
-  // The host's frames, unread: the platform interprets them (see the resource's own note).
+  // …and the parked half. The auth values, the host's frames (unread — the platform
+  // interprets them), and the nodes a test stands in for: platform state, every one.
+  hmr.resources.register(PARKED_AUTH_STATE_RESOURCE_ID, authState);
+  hmr.resources.register(PARKED_OVERRIDES_RESOURCE_ID, replacements);
   const shellFrames = newShellFrames();
-  hmr.resources.register(RUNTIME_SHELL_FRAMES_RESOURCE_ID, shellFrames);
+  hmr.resources.register(PARKED_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
