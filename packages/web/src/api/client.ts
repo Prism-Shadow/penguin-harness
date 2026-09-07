@@ -43,6 +43,11 @@ function isAuthEndpoint(path: string): boolean {
   return path.startsWith("/api/auth/");
 }
 
+/** Paths of this server that never ride the socket (see apiFetchWithMeta). */
+function httpOnly(path: string): boolean {
+  return path === "/api/me" || isAuthEndpoint(path);
+}
+
 export interface ApiFetchOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON request body (auto-serialized with Content-Type: application/json). */
@@ -98,8 +103,12 @@ export async function apiFetchWithMeta<T>(
   }
 
   const method = options.method ?? "GET";
-  let answer = apiSocket.isOpen() ? await callOverSocket(method, url, options.body) : null;
-  if (answer === null || answer.status === 415)
+  // Over the socket when it is open, except what stays on HTTP by design: the auth routes
+  // and `/api/me` are the runtime's (the socket answers them 421), and `/api/me` is also
+  // where the cookie's own session facts come from — the socket knows only the user.
+  const overSocket = apiSocket.isOpen() && (target !== null || !httpOnly(path));
+  let answer = overSocket ? await callOverSocket(method, url, options.body) : null;
+  if (answer === null || answer.status === 415 || answer.status === 421)
     answer = await callOverHttp(method, url, options.body);
 
   if (answer.status < 200 || answer.status >= 300) {
