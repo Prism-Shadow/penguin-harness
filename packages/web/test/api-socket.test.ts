@@ -192,4 +192,21 @@ describe("streams", () => {
     conn.close();
     expect(fallbackCloses).toEqual([1]);
   });
+
+  it("waits for a signed-in user before opening, and closes when the user changes", () => {
+    let user: string | null = null;
+    const addressed = new ApiSocket(() => (user === null ? null : `ws://test/socket/${user}`));
+    const h = handlers();
+    addressed.stream("/api/events", h, () => ({ close: () => undefined }));
+    expect(FakeSocket.instances).toHaveLength(0); // nobody signed in: nothing to open
+    user = "alice";
+    addressed.ensureOpen();
+    expect(last().url).toBe("ws://test/socket/alice");
+    last().open();
+    expect(addressed.isOpen()).toBe(true);
+    expect(last().frames()).toHaveLength(1); // the waiting stream was issued on open
+    addressed.userChanged();
+    expect(addressed.isOpen()).toBe(false);
+    expect(h.errors).toEqual([false]); // the stream is parked, not dropped
+  });
 });

@@ -34,7 +34,6 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { attachApiSocket } from "./socket/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -231,7 +230,6 @@ class PenguinServer {
     for (const listener of [this.httpServer, this.ipv6Loopback]) {
       if (listener === null) continue;
       attachTerminalWebSocket(listener as unknown as HttpServer, this.terminalWebSocketDeps());
-      attachApiSocket(listener as unknown as HttpServer, this.apiSocketDeps());
     }
   }
 
@@ -444,29 +442,15 @@ class PenguinServer {
         `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
       );
     });
-    // The terminal stream and the API socket are bound on every listener in buildApp(),
-    // this one included, or they only work on whichever address the browser happened to
-    // resolve; a loopback opened after buildApp() (never in practice) gets them here.
+    // The terminal stream is bound on every listener in buildApp(), this one included, or
+    // the terminal only works on whichever address the browser happened to resolve; a
+    // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
-      attachApiSocket(loopback as unknown as HttpServer, this.apiSocketDeps());
     }
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
-  /**
-   * The API socket (socket/ws.ts) dispatches every call through `this.app.fetch` — the
-   * runtime app HTTP requests enter by, seam included — so a socket call and its HTTP twin
-   * are one code path from the auth guard down.
-   */
-  private apiSocketDeps() {
-    return {
-      fetch: async (request: Request) => this.app.fetch(request),
-      authService: this.auth(),
-      log: (line: string) => console.log(line),
-    };
-  }
-
   private terminalWebSocketDeps() {
     const auth = () => this.auth();
     return {
