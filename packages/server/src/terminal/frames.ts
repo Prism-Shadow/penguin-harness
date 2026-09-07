@@ -11,6 +11,12 @@
  *   byte 1  slot     (stream index within one socket)
  *   byte 2+ payload  (raw UTF-8 terminal bytes, or JSON for the control opcodes)
  *
+ * Ping/Pong are symmetric on purpose: each end probes for itself. A mobile link drops a
+ * socket without closing it (a radio hand-off, a carrier NAT reaping an idle flow), and a
+ * peer that only answers probes never finds out. The payload is the prober's own clock
+ * reading, echoed verbatim, so the round trip falls out of the reply — that measurement is
+ * what sizes the output merge window (link-quality.ts).
+ *
  * `slot` is always 0 today — this server opens one socket per terminal. It is in the wire
  * format from the start because the alternative (adding it later) is a protocol break, and
  * because multiplexing every terminal of a page onto one socket is the obvious next step.
@@ -27,6 +33,10 @@ export const TerminalStreamOpcode = {
   Restore: 0x05,
   /** Server -> client: the pty exited, JSON `{exitCode, signal}`. */
   Exit: 0x06,
+  /** Either direction: liveness probe. The peer echoes the payload back as Pong. */
+  Ping: 0x07,
+  /** Either direction: the echo of a Ping's payload, unchanged. */
+  Pong: 0x08,
 } as const;
 
 export type TerminalStreamOpcode = (typeof TerminalStreamOpcode)[keyof typeof TerminalStreamOpcode];
