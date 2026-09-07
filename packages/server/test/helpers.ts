@@ -74,6 +74,8 @@ import type { QQTransport } from "../src/runtime/messaging/qq-api.js";
 import { QQScanTransportProvider } from "../src/runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "../src/runtime/messaging/wechat-connector.js";
 import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
+import { DiscordTransportProvider } from "../src/runtime/messaging/discord-connector.js";
+import type { DiscordTransport } from "../src/runtime/messaging/discord-api.js";
 import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
 import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
@@ -272,6 +274,8 @@ export interface TestAppOptions {
   wechatScanTransport?: WeChatScanTransport;
   /** Test hook: the WeChat poll loop's backoff (tests collapse it to zero). */
   wechatRetryDelayMs?: (failures: number) => number;
+  /** Test double: the Discord connector's REST + gateway transport. */
+  discordTransport?: DiscordTransport;
   /** Test double: machines service whose ssh effects are faked. */
   machines?: MachinesService;
   /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
@@ -330,6 +334,8 @@ export function replacementsFor(o: TestAppOptions): Replacements {
     out.push([QQScanTransportProvider, { qqScanTransport: { transport: o.qqScanTransport } }]);
   if (o.wechatTransport)
     out.push([WeChatTransportProvider, { wechatTransport: { transport: o.wechatTransport } }]);
+  if (o.discordTransport)
+    out.push([DiscordTransportProvider, { discordTransport: { transport: o.discordTransport } }]);
   if (o.wechatScanTransport)
     out.push([
       WeChatScanTransportProvider,
