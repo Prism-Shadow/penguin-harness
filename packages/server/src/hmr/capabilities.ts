@@ -237,6 +237,16 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
 /** PARKED PLATFORM STATE, test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
 export const PARKED_OVERRIDES_RESOURCE_ID = "runtime:overrides";
+/**
+ * PARKED PLATFORM STATE, test-only: plugin entries a test stands up in process, unioned into
+ * the host the platform builds from the closure.
+ *
+ * Its own id rather than the host's, and this is the point: the closure is read from disk, so
+ * a plugin that exists only as an object in a test has no specifier anyone could import. The
+ * production path stays exactly "what the Projects ask for, imported" — a test's fakes cannot
+ * arrive down it by accident, and cannot be mistaken for a deployment's list.
+ */
+export const PARKED_TEST_PLUGINS_RESOURCE_ID = "runtime:plugins-injected";
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
