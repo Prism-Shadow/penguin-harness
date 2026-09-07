@@ -44,6 +44,7 @@ import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
+import { isDevToolsKey, isMenuBarKey } from "./shortcuts.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import {
@@ -101,34 +102,49 @@ function fatal(context: string, err: unknown): void {
  * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
  * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
  * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
- * the application menu still exists — its accelerators keep working, and macOS keeps its
- * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
- * own actions are offered from the page's command palette (see http/routes/command.ts).
+ * the application menu still exists — macOS keeps its system menu bar — and F10 brings the
+ * bar up for the rare time it is wanted. The menu's own actions are offered from the page's
+ * command palette (see http/routes/command.ts).
+ *
+ * The menu's ACCELERATORS are not something to rely on here. Chromium offers a key to the
+ * page before it fires one, so anything the page consumes never reaches the menu — the
+ * terminal alone claims Ctrl+Shift+C, Ctrl+Shift+V and Shift+Insert — and with the bar
+ * hidden there is nothing on screen to reveal the binding either. A shortcut this shell
+ * means to guarantee is bound here instead, on `before-input-event`, which runs BEFORE the
+ * page sees the key.
  */
 function hideMenuBar(target: BrowserWindow): void {
   if (process.platform === "darwin") return;
   target.setMenuBarVisibility(false);
   target.webContents.on("before-input-event", (event, input) => {
-    if (input.type !== "keyDown" || input.key !== "F10") return;
-    if (input.alt || input.control || input.meta || input.shift) return;
-    target.setMenuBarVisibility(!target.isMenuBarVisible());
-    event.preventDefault();
+    if (isMenuBarKey(input)) {
+      target.setMenuBarVisibility(!target.isMenuBarVisible());
+      event.preventDefault();
+    } else if (isDevToolsKey(input)) {
+      toggleDevTools();
+      event.preventDefault();
+    }
   });
 }
 
 /**
- * Opens DevTools on the window, as its own window (`detach`) rather than a pane: a console
- * error is usually being copied out to someone else, and a docked panel reflows the page
- * under it while that happens.
+ * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
+ * copied out to someone else, and a docked panel reflows the page under it while that happens.
  *
- * Already open is a focus, not a toggle. The palette entry says "open", and the View menu's
- * accelerator (Ctrl+Shift+I, ⌥⌘I) is still the toggle for anyone who knows it.
+ * `openDevTools` is what the palette's command runs — it says "open", so an open window is
+ * focused rather than closed. A key that people press twice toggles.
  */
 function openDevTools(): void {
   if (win === null) return;
   const contents = win.webContents;
   if (contents.isDevToolsOpened()) contents.devToolsWebContents?.focus();
   else contents.openDevTools({ mode: "detach" });
+}
+
+function toggleDevTools(): void {
+  if (win === null) return;
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+  else win.webContents.openDevTools({ mode: "detach" });
 }
 
 function createWindow(url: string): void {
