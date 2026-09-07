@@ -42,6 +42,7 @@ import {
   RUNTIME_DESKTOP_RESOURCE_ID,
   RUNTIME_HMR_RESOURCE_ID,
   PARKED_OVERRIDES_RESOURCE_ID,
+  PARKED_TEST_PLUGINS_RESOURCE_ID,
   type Replacements,
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
@@ -199,15 +200,22 @@ export interface ServerBoot {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  *
- * `plugins` is the host index.ts's loadPlugins step filled from plugins.json — handed in
- * rather than registered by the caller because the platform boots inside this function,
- * and everything it claims has to be in the registry first. Absent (tests), the platform
- * falls back to an empty host (see plugin/index.ts's pluginHostFrom).
+ * `plugins` is what index.ts's loadPlugins shim imported — handed in rather than registered
+ * by the caller because the platform boots inside this function, and everything it claims has
+ * to be in the registry first. The platform builds its own host from the Projects' closure
+ * either way (plugin/loader.ts); this only lets it reuse objects already imported, and lets a
+ * platform older than that move find a host at all.
+ *
+ * `testPlugins` is the other half of that: entries a TEST stands up in process, which no
+ * closure could name because they were never on disk. Kept apart from the line above so the
+ * production path stays "what the Projects ask for, imported", with no way for a fake to
+ * enter it.
  */
 export async function bootAppDeps(
   config: ServerConfig,
   replacements: Replacements = [],
   plugins?: PluginHost,
+  testPlugins?: PluginHost,
 ): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
 
@@ -270,6 +278,9 @@ export async function bootAppDeps(
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
   if (plugins !== undefined) {
     hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
+  }
+  if (testPlugins !== undefined) {
+    hmr.resources.register(PARKED_TEST_PLUGINS_RESOURCE_ID, testPlugins);
   }
 
   // Boot the platform now rather than on the first request: the business surface —
