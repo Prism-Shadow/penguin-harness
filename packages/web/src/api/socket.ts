@@ -42,6 +42,8 @@ const GIVE_UP_AFTER = 3;
 const REFUSED_RETRY_MS = 250;
 /** A stream the server ended (or answered without streaming) is re-issued after this. */
 const REISSUE_MS = 1_000;
+/** The server's heartbeat cadence (socket/serve.ts); a socket silent for two beats is dead and is closed to reconnect. */
+const HEARTBEAT_MS = 20_000;
 
 export interface SocketCallResult {
   status: number;
@@ -88,6 +90,19 @@ export class ApiSocket {
   readonly #readyWaiters: ((open: boolean) => void)[] = [];
   /** Who the page is signed in as, once settled (null = nobody); unset until asked. */
   #identity: Promise<string | null> | null = null;
+  /** The user the current socket was opened for. */
+  #openedFor: string | null = null;
+  /**
+   * Whether the identity behind the current handshake was just asked of the server over
+   * HTTP: then the server is reachable, and a handshake that still fails is a refusal worth
+   * counting towards giving up. A failure without that proof is a server that is down or
+   * a network that is gone, and is only retried.
+   */
+  #freshProbe = false;
+  /** This client is closing the socket itself (identity changed, watchdog): not a refusal. */
+  #closingOnPurpose = false;
+  /** Fires when the server has said nothing for two beats. */
+  #watchdog: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * `urlFor` spells the socket's address for a user; `whoAmI` finds out who is signed in
@@ -108,9 +123,13 @@ export class ApiSocket {
     return this.#state === "unavailable";
   }
 
-  /** The API client saw a `/api/me` answer: the identity is known without asking. */
+  /**
+   * The API client saw a `/api/me` answer: the identity is known without asking. A socket
+   * open for someone else (the cookie was replaced under this tab) is closed.
+   */
   identityIs(userId: string | null): void {
     this.#identity = Promise.resolve(userId);
+    if (this.#ws !== null && this.#openedFor !== userId) this.#closeOnPurpose();
   }
 
   /**
@@ -120,7 +139,13 @@ export class ApiSocket {
    */
   identityChanged(): void {
     this.#identity = null;
-    if (this.#ws !== null) this.#ws.close();
+    this.#closeOnPurpose();
+  }
+
+  #closeOnPurpose(): void {
+    if (this.#ws === null) return;
+    this.#closingOnPurpose = true;
+    this.#ws.close();
   }
 
   /**
@@ -134,14 +159,16 @@ export class ApiSocket {
     if (this.#state === "unavailable") return false;
     if (this.#state === "closed") {
       let userId: string | null;
+      const fresh = this.#identity === null;
       try {
         userId = await (this.#identity ??= this.whoAmI());
       } catch {
-        this.#identity = null; // could not tell: ask again next time
+        this.#identity = null; // could not tell (the server is unreachable): ask again next time
         return false;
       }
       if (userId === null) return false;
-      this.#open(this.urlFor(userId));
+      this.#freshProbe = fresh;
+      this.#open(this.urlFor(userId), userId);
     }
     const state = this.#stateNow(); // #open() moved it; read it afresh
     if (state !== "connecting") return state === "open";
@@ -156,6 +183,20 @@ export class ApiSocket {
   #settleReady(open: boolean): void {
     const waiters = this.#readyWaiters.splice(0);
     for (const resolve of waiters) resolve(open);
+  }
+
+  /**
+   * Re-arms on every frame (the server's heartbeat among them). Silence for two beats is a
+   * half-dead connection — a network that went away under the tab, a laptop back from
+   * sleep — which the browser may take minutes to notice on its own; this closes it now, and
+   * the ordinary reconnect brings the streams back with their last event ids.
+   */
+  #armWatchdog(): void {
+    if (this.#watchdog !== null) clearTimeout(this.#watchdog);
+    this.#watchdog = setTimeout(() => {
+      this.#watchdog = null;
+      this.#closeOnPurpose();
+    }, 2 * HEARTBEAT_MS);
   }
 
   /**
@@ -222,7 +263,7 @@ export class ApiSocket {
   }
 
   /** Opens the socket; streams and calls queue behind the handshake. Only from ready(). */
-  #open(url: string): void {
+  #open(url: string, userId: string): void {
     if (this.#state !== "closed") return;
     if (typeof WebSocket === "undefined") {
       this.#state = "unavailable";
@@ -238,25 +279,41 @@ export class ApiSocket {
       return;
     }
     this.#ws = ws;
+    this.#openedFor = userId;
     ws.onopen = () => {
       if (this.#ws !== ws) return;
       this.#state = "open";
       this.#attempts = 0;
       this.#neverOpened = 0;
+      this.#armWatchdog();
       this.#settleReady(true);
       for (const entry of [...this.#waiting]) this.#issue(entry);
     };
     ws.onmessage = (e: MessageEvent<string>) => {
-      if (this.#ws === ws) this.#frame(e.data);
+      if (this.#ws !== ws) return;
+      this.#armWatchdog();
+      this.#frame(e.data);
     };
     ws.onclose = () => {
       if (this.#ws !== ws) return;
       const opened = this.#state === "open";
+      const onPurpose = this.#closingOnPurpose;
+      this.#closingOnPurpose = false;
       this.#ws = null;
+      this.#openedFor = null;
       this.#state = "closed";
-      if (!opened) this.#neverOpened += 1;
+      if (this.#watchdog !== null) clearTimeout(this.#watchdog);
+      this.#watchdog = null;
+      if (!opened && !onPurpose) {
+        // A handshake that never opened. Counted towards giving up only when the server was
+        // just shown reachable (the identity was probed for this very attempt); otherwise
+        // the identity is forgotten so the next attempt probes first — a server that is
+        // down must not read as a server without a socket.
+        if (this.#freshProbe) this.#neverOpened += 1;
+        this.#identity = null;
+      }
       this.#settleReady(false);
-      this.#dropped(opened);
+      this.#dropped(opened || onPurpose);
     };
     ws.onerror = () => {
       // onclose follows; nothing to do here that it will not do.
@@ -298,7 +355,8 @@ export class ApiSocket {
     } catch {
       return;
     }
-    const id = frame.id as number;
+    if (typeof frame.id !== "number") return; // a heartbeat: its arrival already re-armed the watchdog
+    const id = frame.id;
     const stream = this.#streams.get(id);
     if (stream !== undefined) {
       if ("event" in frame) {
@@ -365,14 +423,25 @@ export class ApiSocket {
       return;
     }
     if (this.#waiting.size === 0) return; // nothing to carry: reopen lazily on the next ask
+    // A refusal from a reachable server is retried at once (it is cheap and answers fast);
+    // a dropped connection, or a server that could not be reached, on the backoff.
+    this.#scheduleReconnect(wasOpen || !this.#freshProbe ? this.#backoff() : REFUSED_RETRY_MS);
+  }
+
+  /**
+   * Comes back for the parked streams. One attempt per timer; an attempt that could not
+   * even reach the server (ready() false without a handshake) books the next one itself,
+   * so a server that is down keeps being tried on the backoff until it is back.
+   */
+  #scheduleReconnect(delayMs: number): void {
     if (this.#reconnect !== null) return;
-    this.#reconnect = setTimeout(
-      () => {
-        this.#reconnect = null;
-        void this.ready();
-      },
-      wasOpen ? this.#backoff() : REFUSED_RETRY_MS,
-    );
+    this.#reconnect = setTimeout(() => {
+      this.#reconnect = null;
+      void this.ready().then((open) => {
+        if (open || this.#state !== "closed" || this.#waiting.size === 0) return;
+        this.#scheduleReconnect(this.#backoff());
+      });
+    }, delayMs);
   }
 
   #backoff(): number {

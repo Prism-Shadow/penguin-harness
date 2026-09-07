@@ -79,9 +79,10 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
 
-  // Liveness: ping on the SSE cadence; a peer silent for two beats is terminated, which
-  // releases every subscription it held — the half-dead connection that used to hold an
-  // SSE slot forever is exactly what this exists for.
+  // Liveness, both ways, on the SSE cadence. A protocol ping: a peer that answers none for
+  // two beats is terminated, which releases every subscription it held — the half-dead
+  // connection that used to hold an SSE slot forever is exactly what this exists for. And a
+  // heartbeat FRAME: a browser cannot see pings, so this is what its own watchdog hears.
   const heartbeat = setInterval(() => {
     if (!alive) {
       ws.terminate();
@@ -89,6 +90,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     }
     alive = false;
     ws.ping();
+    send({ heartbeat: true });
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
   ws.on("pong", () => {
