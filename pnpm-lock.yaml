@@ -598,6 +598,10 @@ importers:
   plugins/data-analysis: {}
 
   plugins/discord-bot:
+    dependencies:
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
