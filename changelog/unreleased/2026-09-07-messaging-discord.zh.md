@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#641](https://github.com/Prism-Shadow/penguin-harness/pull/641)
 
 [English](2026-09-07-messaging-discord.md)
 
