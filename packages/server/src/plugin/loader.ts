@@ -336,10 +336,10 @@ function asPlugin(module: unknown): Plugin | null {
 export async function loadPlugins(
   root: string,
   /**
-   * Entries an earlier App already imported, by specifier. Reused rather than imported
-   * again — the objects then keep their identity across a swap, which is what the plugin
-   * host is parked for. (Correctness does not hang on it: an ESM specifier imports once per
-   * process, so a second import would hand back the same module either way.)
+   * Entries an earlier App already imported, by specifier. Reused when the specifier still
+   * resolves to the FILE that entry came from — the objects then keep their identity across a
+   * swap, which is what the plugin host is parked for. A different file means different code
+   * (a push moves the builtin plugins to a new assets directory), and that is imported.
    */
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
 ): Promise<PluginLoadResult> {
@@ -351,8 +351,16 @@ export async function loadPlugins(
   const specifiers = await readPluginClosure(root);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
+    // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
+    // a new assets directory, so keeping an entry by specifier alone would run the previous
+    // build's plugin code forever — the push would land everywhere except the plugins.
     const held = reuse.get(specifier);
-    if (held !== undefined) {
+    const heldFile = held?.file;
+    if (
+      held !== undefined &&
+      heldFile != null &&
+      heldFile === resolvePlugin(specifier, bases)?.file
+    ) {
       loaded.push(held);
       continue;
     }
@@ -432,7 +440,7 @@ export async function loadPlugins(
       };
       const modules = nest(pair(read.manifests, plugin.modules, "modules"));
       const replaces = nest(pair(read.replaces, plugin.replaces, "replaces"));
-      loaded.push({ specifier, modules, replaces });
+      loaded.push({ specifier, file, modules, replaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }
