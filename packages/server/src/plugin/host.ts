@@ -58,7 +58,21 @@ export class PluginHost {
   dispose(): void {}
 }
 
-/** Registry key the runtime publishes its loaded host under. */
+/**
+ * Registry key for the loaded plugin host — PARKED PLATFORM STATE, whatever the `runtime:`
+ * in the id says (that prefix is a wire contract with older generations, not ownership; see
+ * the note over the ids in hmr/capabilities.ts).
+ *
+ * Nothing about the host is the runtime's business: which plugins a deployment runs is
+ * configuration the platform reads, the modules go into the platform's tree, and a platform
+ * route writes this very entry when the list changes (http/routes/plugins-installed.ts). It
+ * is parked only because the imported objects must survive a swap — a re-import would give
+ * the successor different module instances.
+ *
+ * That the runtime still LOADS it at process start (index.ts) is the misfiling this note
+ * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
+ * from a push, and had to be restarted to pick up a plugin list.
+ */
 export const PLUGINS_RESOURCE_ID = "runtime:plugins";
 
 /**

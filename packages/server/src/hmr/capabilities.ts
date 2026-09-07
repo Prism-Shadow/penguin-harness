@@ -163,16 +163,68 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
   return need.filter((m) => (value as Record<string, unknown>)[m] === undefined);
 }
 
+/*
+ * ---------------------------------------------------------------------------------------
+ * The registry holds TWO kinds of thing, and telling them apart is the whole point of this
+ * block. Every id below begins `runtime:` — that prefix is HISTORY, not ownership. An id is
+ * a wire contract between generations (an older runtime registers under the name it was
+ * built with, a newer platform claims it), so renaming one would make the two invisible to
+ * each other; the classification lives here in words instead.
+ *
+ *   CAPABILITIES — what only this process can provide, borrowed by whoever is booted into
+ *   it: the config it was started with, the open database, the channel hub, the proxy
+ *   control, the hot host itself, the shell's token service. The platform never builds
+ *   these; it asks for them, and the interface check refuses a platform that needs a member
+ *   the runtime has not got.
+ *
+ *   PARKED PLATFORM STATE — the platform's OWN, kept in the registry only because a swap
+ *   must not lose it. Nothing about it is the runtime's: it is written and read by platform
+ *   code, its meaning changes by push, and the runtime neither interprets it nor depends on
+ *   it. The registry is the state layer of the four (hmr/README.md), not a runtime API.
+ *
+ * The distinction is not cosmetic. Filing platform state as a runtime capability is what
+ * makes a fix wait for a full reinstall — auth was there once, and plugin loading still is.
+ * ---------------------------------------------------------------------------------------
+ */
+
+// --- capabilities ------------------------------------------------------------------------
+
 export const RUNTIME_CONFIG_RESOURCE_ID = "runtime:config";
 export const RUNTIME_DB_RESOURCE_ID = "runtime:db";
+
+// --- parked platform state ---------------------------------------------------------------
+
 /**
- * Process-scoped auth STATE (auth/runtime-state.ts), not an auth service: authentication is
- * business behaviour the platform builds for itself, so it ships by push. Only the values that
- * must ride across a swap and die at a restart live here. Claimed optionally — a runtime older
- * than this resource simply gives the platform a fresh holder, which costs one reprint of the
- * first-login link and nothing else.
+ * PARKED PLATFORM STATE. Process-scoped auth values (auth/runtime-state.ts), not an auth
+ * service: authentication is business behaviour the platform builds for itself, so it ships
+ * by push. Only what must ride across a swap and die at a restart lives here. Claimed
+ * optionally — a runtime older than this id simply gives the platform a fresh holder, which
+ * costs one reprint of the first-login link and nothing else.
  */
-export const RUNTIME_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
+export const PARKED_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
+/**
+ * PARKED PLATFORM STATE. The frames the host sent, unread, and a way to send one back. What
+ * a frame MEANS — which commands exist, what they are called, who may run one — is policy
+ * and belongs to the platform (http/routes/command.ts); the runtime carries the port and not
+ * a line of the interpretation.
+ *
+ * Parked rather than kept by the platform because the host announces itself ONCE per wiring:
+ * a platform holding the announcement in its own memory would lose it at the next push and
+ * never be told again. Claimed optionally — an older runtime publishes no holder, and
+ * RuntimeDesktop synthesizes one from that runtime's own service.
+ */
+  /** The last `host-commands` frame, exactly as the host sent it. Unparsed on purpose. */
+  hostCommands: unknown;
+  /** The last `desktop-updater-status` frame, likewise raw: what it means is the platform's. */
+  updaterStatus: unknown;
+  /** Sends one frame to the host; null when this process has no host port. */
+  post: ((frame: unknown) => void) | null;
+}
+  return { hostCommands: null, updaterStatus: null, post: null };
+}
+
+// --- capabilities, continued -------------------------------------------------------------
+
 export const RUNTIME_CHANNELS_RESOURCE_ID = "runtime:channels";
 export const RUNTIME_PROXY_RESOURCE_ID = "runtime:proxy-control";
 export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
@@ -183,8 +235,8 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
  * admin surfaces), so the claim must distinguish "not desktop" from "not published".
  */
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
-/** Test-only: the node Replacements published by bootAppDeps for the platform boot to claim. */
-export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
+/** PARKED PLATFORM STATE, test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
+export const PARKED_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
@@ -280,7 +332,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
   // The slot's older occupant is the overrides bag ({}), not a list: a platform pushed onto
   // an older runtime reads that as "no replacements" rather than tripping over it.
-  const claimedReplacements = resources.claim<unknown>(RUNTIME_OVERRIDES_RESOURCE_ID);
+  const claimedReplacements = resources.claim<unknown>(PARKED_OVERRIDES_RESOURCE_ID);
   const replacements: Replacements = Array.isArray(claimedReplacements)
     ? (claimedReplacements as Replacements)
     : [];
@@ -290,7 +342,7 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
   // a copy would strand every write the App makes to it.
   const authState =
-    resources.claim<AuthRuntimeState>(RUNTIME_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
+    resources.claim<AuthRuntimeState>(PARKED_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
   authState.firstLoginToken ??= null;
   authState.apiToken ??= null;
   // …then the objects themselves. A descriptor is a claim about what is there; this is
