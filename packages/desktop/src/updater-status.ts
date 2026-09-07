@@ -114,8 +114,26 @@ export function parseUpdaterCommand(data: unknown): DesktopUpdaterCommandMessage
 }
 
 /** The shell's once-per-wiring push of the host commands it offers the page's command palette. */
+/**
+ * The words for each command this shell can offer, in both languages the App speaks.
+ *
+ * They are the SHELL's to write, and they travel with the offer: the page renders what it is
+ * given rather than looking the id up in a table of its own, so a shell can offer something
+ * the page it is serving has never heard of — which is the ordinary case, since a shell
+ * reaches users through an installer and the page through a hot push. A page that does know
+ * the id may still prefer its own words; these are the floor, not an instruction.
+ */
+const HOST_COMMAND_WORDS: Record<HostCommand, { label: string; labelZh: string }> = {
+  "install-cli": { label: "Install 'penguin' command…", labelZh: "安装 penguin 命令…" },
+  "check-updates": { label: "Check for desktop updates…", labelZh: "检查桌面版更新…" },
+  "open-devtools": { label: "Open DevTools", labelZh: "打开开发者工具" },
+};
+
 export function hostCommandsMessage(commands: HostCommand[]): HostCommandsMessage {
-  return { type: "host-commands", commands };
+  return {
+    type: "host-commands",
+    commands: commands.map((command) => ({ command, ...HOST_COMMAND_WORDS[command] })),
+  };
 }
 
 /** Validates one server-relayed host-command frame off the port. Spelled here rather than imported: the shell takes the server's api as types only. */
@@ -123,6 +141,8 @@ export function parseHostCommand(data: unknown): HostCommand | null {
   if (typeof data !== "object" || data === null) return null;
   const msg = data as Partial<HostCommandMessage>;
   if (msg.type !== "host-command") return null;
+  // A closed set HERE, and deliberately: the server relays whatever the page asks for, so
+  // this shell is the one place that decides which asks it will act on.
   return msg.command === "install-cli" ||
     msg.command === "check-updates" ||
     msg.command === "open-devtools"
