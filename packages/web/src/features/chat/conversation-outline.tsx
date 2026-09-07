@@ -220,7 +220,7 @@ function hiddenBefore(entries: readonly OutlineTurn[]): number {
 function useOutlineJump(
   entries: readonly OutlineTurn[],
   scrollRef: RefObject<HTMLDivElement | null>,
-  onOpenAt: (cursor: string) => Promise<void>,
+  onOpenAt: (cursor: string) => Promise<boolean>,
 ): (entry: OutlineTurn) => void {
   const pendingRef = useRef<number | null>(null);
   useEffect(() => {
@@ -240,10 +240,17 @@ function useOutlineJump(
       }
       if (entry.cursor === null) return;
       pendingRef.current = entry.turn;
-      void onOpenAt(entry.cursor).catch(() => {
-        if (pendingRef.current === entry.turn) pendingRef.current = null;
-        toastError(S.chat.outlineOpenFailed);
-      });
+      void onOpenAt(entry.cursor).then(
+        (opened) => {
+          // Nothing opened (not live yet, or a later run change won): the turn must not
+          // stay armed and fire a jump minutes later when a scroll happens to load it.
+          if (!opened && pendingRef.current === entry.turn) pendingRef.current = null;
+        },
+        () => {
+          if (pendingRef.current === entry.turn) pendingRef.current = null;
+          toastError(S.chat.outlineOpenFailed);
+        },
+      );
     },
     [scrollRef, onOpenAt],
   );
@@ -268,7 +275,7 @@ export function ConversationOutline({
   /** The page-owned rail-fit measurement (shared with the toolbar fallback's visibility). */
   fit: OutlineRailFit;
   /** Opens the run at a turn's cursor (a click on a turn that is not loaded). */
-  onOpenAt: (cursor: string) => Promise<void>;
+  onOpenAt: (cursor: string) => Promise<boolean>;
 }) {
   const [activeId, setActiveId] = useState<number | null>(null);
   /** Hovered/focused tick: which turn to preview, and the tick's center Y within the overlay (the card anchors there). */
@@ -323,7 +330,9 @@ export function ConversationOutline({
   const half = railWindowHalf(fit.height);
   const { start, end } = windowOutline(
     entries.length,
-    entries.findIndex((en) => en.anchorId === activeId),
+    // No active anchor (first paint, or nothing above the reading line) must park the
+    // window at the END, not on the first unloaded turn — whose anchorId is null too.
+    activeId === null ? -1 : entries.findIndex((en) => en.anchorId === activeId),
     half,
     half,
   );
@@ -444,7 +453,7 @@ export function OutlineMenuButton({
   scrollRef: RefObject<HTMLDivElement | null>;
   running: boolean;
   /** Opens the run at a turn's cursor (a tap on a turn that is not loaded). */
-  onOpenAt: (cursor: string) => Promise<void>;
+  onOpenAt: (cursor: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);

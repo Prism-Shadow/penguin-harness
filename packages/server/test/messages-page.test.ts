@@ -811,9 +811,11 @@ describe("messages windowed reads", () => {
     ]);
 
     const entries = await service.readOutline(P, A, S);
+    // The banner's reply rides on turn 2 — a banner opens no entry, so its reply belongs to
+    // the entry before it, across the rotation exactly as buildOutline does within one run.
     expect(entries.map((e) => [e.turn, e.cursor, e.question, e.answer])).toEqual([
       [1, "1:1", "q1", "a1"],
-      [2, "1:6", "what is in the picture", "a cat on a mat"],
+      [2, "1:6", "what is in the picture", "a cat on a mat banner reply"],
       [3, "2:3", "q3", "a3"],
     ]);
     // Cursors are unit boundaries: a window opened at one starts with that very prompt.
@@ -833,6 +835,58 @@ describe("messages windowed reads", () => {
     expect(await service.readOutline(P, A, S)).toEqual(entries);
     expect(harness.shardReads).toHaveLength(1);
     expect(harness.shardReads[0]).toContain(`${S}_002.jsonl`);
+  });
+
+  it("outline index: a Task spanning a rotation keeps its reply and its question; a prompt is cut at a line", async () => {
+    // Shard 1 ends inside turn 2 — an image-first prompt whose text and reply only land
+    // in shard 2 after the rotation.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at("2026-07-20T10:01:00.000Z", imageUrlMessage("data:image/png;base64,AAAA")),
+    ]);
+    const longPrompt = `${"x".repeat(990)}\n[attached file: /tmp/very/long/path/that/would/be/cut.txt]`;
+    await writeTraceFile(root, P, A, "2026-07-21", S, 2, [
+      sessionMeta(metaPayload()),
+      at("2026-07-21T10:01:00.500Z", userText("what is in the picture")),
+      at("2026-07-21T10:01:02.000Z", assistantText("a cat")),
+      at("2026-07-21T10:01:03.500Z", tokenUsage(counts(2000), counts(100))),
+      at("2026-07-21T10:02:00.000Z", userText(longPrompt)),
+      at("2026-07-21T10:02:02.000Z", assistantText("noted")),
+    ]);
+    const entries = await service.readOutline(P, A, S);
+    expect(entries.map((e) => [e.turn, e.cursor, e.question, e.answer])).toEqual([
+      [1, "1:1", "q1", "a1"],
+      [2, "1:6", "what is in the picture", "a cat"],
+      [3, "2:4", "x".repeat(990), "noted"],
+    ]);
+    // The carry is what the cache holds, so a second read (shard 1 from its record) agrees.
+    expect(await service.readOutline(P, A, S)).toEqual(entries);
+  });
+
+  it("after: a window opened at the transcript's first unit is the beginning — preamble in, no `before`", async () => {
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+    ]);
+    const first = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 1 },
+      until: null,
+      size: { units: 1 },
+    });
+    expect(first.messages[0]!.type).toBe("session_meta");
+    expect(userTexts(first.messages)).toEqual(["q1"]);
+    expect(first.before).toBeUndefined();
+    expect(first.after).toBe("1:6");
+    const second = await service.readMessagesPage(P, A, S, {
+      kind: "after",
+      cursor: { fileIndex: 1, ordinal: 6 },
+      until: null,
+      size: { units: 1 },
+    });
+    expect(second.before).toBe("1:6");
   });
 
   it("tail covering the whole transcript returns everything with no cursor and equals the full read", async () => {
