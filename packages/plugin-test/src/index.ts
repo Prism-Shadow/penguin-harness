@@ -4,20 +4,24 @@
  * The idea is `@vscode/test-electron`'s: start the REAL host with the plugin under
  * development installed, and run the tests against that. Here the host is the server —
  * `@prismshadow/penguin-server`'s built entry, started as a child process on a scratch data
- * root whose `plugins.json` lists the plugin — so what a test exercises is the same path a
+ * root whose Project asks for the plugin — so what a test exercises is the same path a
  * deployment takes: the loader resolves the package, reads its manifests, pairs them with
  * its code, and boots its modules into the platform tree. Nothing is assembled in-process
  * and nothing is mocked in the host.
  *
  *   const harness = await startHarness({ plugins: [pluginDir] });
  *   const api = await harness.login();
- *   const { plugins } = await api.get("/api/plugins/installed");
+ *   const { plugins } = await api.get(`/api/projects/${harness.projectId}/plugins/installed`);
  *   …
  *   await harness.stop();
  *
- * A plugin is named by its package directory (its `main` must be built) or by a specifier
+ A plugin is named by its package directory (its `main` must be built) or by a specifier
  * the server can resolve on its own. The listing writes the entry file's absolute path,
  * which the loader imports directly and walks up from to find `package.json#penguin`.
+ *
+ * The list is CONFIGURATION OF A PROJECT (`plugins` in its `.project_config.toml`), which is
+ * what a process loads the closure of; the harness seeds that file for the one Project the
+ * server will adopt, before the server starts, so the plugin is in the tree from boot.
  *
  * A development dependency: it ships with no build of the harness.
  */
@@ -35,6 +39,11 @@ export interface StartHarnessOptions {
    * listed; build the package first) or package specifiers the server resolves itself.
    */
   plugins: readonly string[];
+  /**
+   * The Project whose config asks for them — the one the server adopts on a fresh root,
+   * unless a test seeds another.
+   */
+  projectId?: string;
   /** The data root; default a fresh temporary directory, removed by `stop()`. */
   root?: string;
   /** Environment for the server process, over this process's own (`PENGUIN_CLAUDE_BIN`, proxies, …). */
@@ -56,6 +65,9 @@ export interface StartHarnessOptions {
 }
 
 export const DEFAULT_ADMIN_PASSWORD = "penguin-plugin-test";
+
+/** The Project the server adopts on a fresh root — spelled here rather than imported, so this stays a server-free package. */
+export const DEFAULT_PROJECT_ID = "default_project";
 const READY_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
 
@@ -154,7 +166,7 @@ export class HarnessApi {
   }
 }
 
-/** What `GET /api/plugins/installed` lists for one plugin, as far as a test reads it. */
+/** What the installed-plugins route lists for one plugin, as far as a test reads it. */
 export interface InstalledPluginRow {
   specifier: string;
   active: boolean;
@@ -170,13 +182,15 @@ export interface Harness {
   /** The data root the server runs on. */
   readonly root: string;
   readonly admin: { userId: string; password: string };
-  /** The plugin specifiers as `plugins.json` lists them (entry paths for directory plugins). */
+  /** The plugin specifiers as the Project's config lists them (entry paths for directory plugins). */
   readonly plugins: readonly string[];
+  /** The Project that asks for them; the prefix of every Project-scoped route a test calls. */
+  readonly projectId: string;
   /** A client signed in as the seeded admin. */
   login(): Promise<HarnessApi>;
   /** A client signed in as this user (the caller created them, or it is the admin). */
   loginAs(userId: string, password: string): Promise<HarnessApi>;
-  /** `GET /api/plugins/installed`, as the admin. */
+  /** `GET /api/projects/:projectId/plugins/installed`, as the admin. */
   installedPlugins(): Promise<InstalledPluginRow[]>;
   /** The server's output so far, line by line. */
   output(): readonly string[];
@@ -184,7 +198,7 @@ export interface Harness {
   stop(): Promise<void>;
 }
 
-/** Resolves a plugin option to what `plugins.json` should list. */
+/** Resolves a plugin option to what the Project's config should list. */
 export async function resolvePluginEntry(plugin: string): Promise<string> {
   if (!path.isAbsolute(plugin)) return plugin;
   const manifestFile = path.join(plugin, "package.json");
@@ -284,10 +298,13 @@ export async function startHarness(options: StartHarnessOptions): Promise<Harnes
   }
   const temporary = options.root === undefined;
   const root = options.root ?? (await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-test-")));
-  await fs.mkdir(root, { recursive: true });
+  const projectId = options.projectId ?? DEFAULT_PROJECT_ID;
+  await fs.mkdir(path.join(root, projectId), { recursive: true });
+  // Only `plugins`: the rest of a Project's config is the server's to write when it adopts
+  // the directory, and its adoption preserves what is already in the file.
   await fs.writeFile(
-    path.join(root, "plugins.json"),
-    `${JSON.stringify({ plugins }, null, 2)}\n`,
+    path.join(root, projectId, ".project_config.toml"),
+    `plugins = [\n${plugins.map((s) => `  ${JSON.stringify(s)},\n`).join("")}]\n`,
     "utf8",
   );
   const port = options.port ?? (await freePort());
@@ -361,13 +378,16 @@ export async function startHarness(options: StartHarnessOptions): Promise<Harnes
     root,
     admin,
     plugins,
+    projectId,
     login: () => loginAs(admin.userId, admin.password),
     loginAs,
     installedPlugins: async () =>
       (
         await (
           await loginAs(admin.userId, admin.password)
-        ).get<{ plugins: InstalledPluginRow[] }>("/api/plugins/installed")
+        ).get<{ plugins: InstalledPluginRow[] }>(
+          `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`,
+        )
       ).plugins,
     output: () => output,
     stop: async () => {
