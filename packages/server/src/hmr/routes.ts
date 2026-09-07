@@ -7,7 +7,7 @@
  * not the freeze. The routes are runtime code: they orchestrate through the
  * platform api, so they survive impl swaps unchanged.
  *
- * RUNTIME LAYER — MECHANISM ONLY (see ./README.md). A new business API must NOT
+ * HMR LAYER — MECHANISM ONLY (see ./README.md). A new business API must NOT
  * become a route here. It is served by the platform itself, through the HTTP
  * seam (../hmr/http-seam.ts) that offers every request to the booted platform
  * before the runtime's own routes see it — a real route with its own path,
