@@ -17,10 +17,10 @@ A Claude Code Session has no model of its own and takes no Tasks; it is Claude C
 
 ## Install
 
-The plugin ships with every PenguinHarness build but is not installed by default. On the Plugins page, add it to the deployment's installed plugins (it is tagged *built in* there — nothing is downloaded), then restart the server. Or list it by hand in `<data root>/plugins.json`:
+The plugin ships with every PenguinHarness build but is not installed by default. On a Project's Plugins page, add it to that Project's plugins (it is tagged *built in* there — nothing is downloaded); it is loaded without a restart. Or list it by hand in that Project's `.project_config.toml`:
 
-```json
-{ "plugins": ["@prismshadow/penguin-plugin-claude-code"] }
+```toml
+plugins = ["@prismshadow/penguin-plugin-claude-code"]
 ```
 
 ## How the state is read
