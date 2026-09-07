@@ -1,7 +1,7 @@
 /**
  * Desktop shell main process.
  *
- * RUNTIME LAYER — MECHANISM ONLY (see packages/server/src/hmr/README.md). The
+ * HMR LAYER — MECHANISM ONLY (see packages/server/src/hmr/README.md). The
  * shell boots and hosts; it does not implement product behavior. It is also
  * the least updatable code in the system — a change here reaches users only
  * through a new installer — so a capability that could instead be delivered
