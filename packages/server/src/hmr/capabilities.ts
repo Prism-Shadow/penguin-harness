@@ -195,6 +195,23 @@ export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
 export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
 
 /**
+ * The frames the desktop shell sent, unread, and a way to send one back. What a frame means —
+ * which commands exist, what they are called, who may run one — is the platform's
+ * (http/routes/command.ts). Parked because the shell announces itself once per wiring: a
+ * platform holding the announcement in its own memory would lose it at the next push.
+ */
+export const HMR_SHELL_FRAMES_RESOURCE_ID = "platform.shellFrames";
+export interface ShellFrames {
+  /** The last `host-commands` frame, exactly as the shell sent it. Unparsed on purpose. */
+  hostCommands: unknown;
+  /** Sends one frame to the shell; null when this process has no shell port. */
+  post: ((frame: unknown) => void) | null;
+}
+export function newShellFrames(): ShellFrames {
+  return { hostCommands: null, post: null };
+}
+
+/**
  * Test-only: plugin entries a test stands up in process, unioned into the host the platform
  * builds from the closure. Its own id, not the host's: the closure is read from disk, so a
  * plugin that exists only as an object in a test has no specifier anyone could import.
@@ -240,6 +257,8 @@ export interface HmrCapabilities {
   hmrControl: HmrControlApi;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
+  /** The host's port as state; null from a runtime that predates the holder. */
+  shellFrames: ShellFrames | null;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -305,6 +324,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   // than this platform may also publish a holder missing the fields added since; they are
   // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
   // a copy would strand every write the App makes to it.
+  const shellFrames = resources.claim<ShellFrames>(HMR_SHELL_FRAMES_RESOURCE_ID) ?? null;
   const authState =
     resources.claim<AuthRuntimeState>(HMR_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
   authState.firstLoginToken ??= null;
@@ -340,6 +360,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
       hmr,
       hmrControl,
       desktop,
+      shellFrames,
       replacements,
     },
   };
@@ -421,6 +442,8 @@ export type DesktopApi = Pick<
 /** The desktop shell's service, or null when this server is not the shell's child. */
 export abstract class Desktop extends Interface<{
   current(): DesktopApi | null;
+  /** The host's message port as state: the last frame in, a way to send one out. */
+  shell(): ShellFrames;
 }>() {}
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
@@ -530,8 +553,24 @@ export class RuntimeDesktop {
   @Provide() desktop!: Desktop;
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
-    const { desktop } = this.caps;
-    this.desktop = { current: () => desktop };
+    const { desktop, shellFrames } = this.caps;
+    // A runtime older than `platform.shellFrames` published no holder. Its service parsed
+    // the host's frame itself and kept the result, so the same facts are read back out of it
+    // — the shim for that runtime is HERE, in the pushable half, where it can be deleted
+    // when no such runtime is left.
+    const legacy = (): ShellFrames => ({
+      hostCommands: {
+        type: "host-commands",
+        commands: (desktop as DesktopService | null)?.getCommands?.() ?? [],
+      },
+      post: (frame) => {
+        const ask = frame as { type?: string; command?: string };
+        if (ask.type === "host-command" && typeof ask.command === "string") {
+          (desktop as DesktopService | null)?.requestCommand?.(ask.command);
+        }
+      },
+    });
+    this.desktop = { current: () => desktop, shell: () => shellFrames ?? legacy() };
   }
 }
 @Module()
