@@ -1,11 +1,13 @@
 /**
- * The bot on its own, over fake harness mechanisms and a fake Discord connector: seeded from
- * the environment, configured and toggled through its API, opening a Session per chat on the
- * first message and reusing it, `/new` opening another, replies relayed into the chat
- * (threaded in a server channel), `/approve` deciding a waiting tool call, a redelivered
- * message running once, the chat table surviving a restart — and the manifest agreeing with
- * the code half. No test opens real network, and no real Session runs: the task runner is a
- * recorder and replies are published onto the Session's channel by hand.
+ * The plugin on its own, over fake harness mechanisms and a fake Discord connector: a
+ * Project's `[discord_bot]` table read and validated; the manager building one bot per
+ * Project, restarting on a changed table and stopping on a removed one; the bot opening a
+ * Session per chat on the first message and reusing it, `/new` opening another, replies
+ * relayed into the chat (threaded in a server channel), `/approve` deciding a waiting tool
+ * call, a redelivered message running once, the chat table surviving a restart — and the
+ * manifest agreeing with the code half. No test opens real network, and no real Session
+ * runs: the task runner is a recorder and replies are published onto the Session's channel
+ * by hand.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -22,26 +24,25 @@ import type {
 } from "@prismshadow/penguin-server/plugin";
 import plugin, {
   APPROVAL_NOTICE,
-  BotError,
-  CHATS_KEY,
-  CONFIG_KEY,
   DiscordBot,
+  DiscordBots,
   NEW_NOTICE,
   NOTHING_PENDING_NOTICE,
-  NOT_CONFIGURED_NOTICE,
   ROUTES_ID,
+  botConfigOf,
   botIdOf,
+  chatsKeyOf,
   chunkReply,
   discordBotRoutes,
-  envDefaults,
   safeFileName,
 } from "../src/index.js";
-import type { BotDeps } from "../src/index.js";
+import type { BotDeps, BotTarget, ManagerDeps } from "../src/index.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.test-secret-AAAA";
 const DM = "900000000000000001";
 const CHANNEL = "900000000000000002";
+const TARGET: BotTarget = { projectId: "proj", botToken: TOKEN, agentId: "agent", enabled: true };
 
 // ---------------------------------------------------------------------------
 // Fakes: the connector seam as the harness would hand it over, and a tiny channel hub
@@ -63,14 +64,8 @@ class FakeConnector implements MessagingChannelConnector {
     handlers: MessagingConnectorHandlers;
     closed: boolean;
   }> = [];
-  /** A config the connector refuses (the real one refuses a token it cannot read). */
-  refuse: string | null = null;
   async createClient(config: Record<string, unknown>) {
-    if (
-      typeof config.botToken !== "string" ||
-      config.botToken === "" ||
-      config.botToken === this.refuse
-    ) {
+    if (typeof config.botToken !== "string" || config.botToken === "") {
       throw new Error("malformed discord binding config (botToken)");
     }
     return {
@@ -100,6 +95,9 @@ class FakeConnector implements MessagingChannelConnector {
     const c = this.connections.at(-1);
     if (!c) throw new Error("no connection opened");
     return c;
+  }
+  open() {
+    return this.connections.filter((c) => !c.closed);
   }
   fire(msg: MessagingInboundMessage): Promise<void> {
     return Promise.resolve(this.last().handlers.onMessage(msg));
@@ -154,18 +152,19 @@ class World {
   readonly decisions: Array<[string, string, string]> = [];
   readonly errors: Array<{ code?: string }> = [];
   readonly rows = new Set<string>();
+  /** Each Project's raw config, as its `.project_config.toml` would parse. */
+  readonly configs = new Map<string, Record<string, unknown>>();
+  readonly agents = new Set<string>(["proj/agent", "proj/default_agent", "other/default_agent"]);
   root = "";
   private nextSession = 0;
 
-  deps(defaults?: BotDeps["defaults"]): BotDeps {
+  deps(): BotDeps {
     return {
       messaging: {
-        connectorFor: (channel: string) =>
-          channel === "discord"
-            ? this.connector
-            : (() => {
-                throw new Error(channel);
-              })(),
+        connectorFor: (channel: string) => {
+          if (channel !== "discord") throw new Error(channel);
+          return this.connector;
+        },
       },
       runner: {
         startTask: async (sessionId: string, input: OmniMessage[]) => {
@@ -190,7 +189,6 @@ class World {
       sessionIndex: {
         findById: (id: string) => (this.rows.has(id) ? ({ sessionId: id } as never) : null),
       },
-      agents: { exists: (p: string, a: string) => p === "proj" && a === "agent" },
       settings: {
         get: (key: string) => this.store.get(key) ?? null,
         set: (key: string, value: string) => void this.store.set(key, value),
@@ -200,7 +198,18 @@ class World {
       errors: { record: (args: { code?: string }) => void this.errors.push(args) } as never,
       paths: { root: this.root },
       log: { line: () => {} },
-      ...(defaults !== undefined ? { defaults } : {}),
+    };
+  }
+
+  managerDeps(): ManagerDeps {
+    return {
+      ...this.deps(),
+      projects: {
+        listAll: () => [...this.configs.keys()].map((projectId) => ({ projectId }) as never),
+      },
+      configStore: { readRaw: async (projectId: string) => this.configs.get(projectId) ?? {} },
+      agents: { exists: (p: string, a: string) => this.agents.has(`${p}/${a}`) },
+      reconcileIntervalMs: 0,
     };
   }
 
@@ -217,7 +226,6 @@ class World {
   }
 }
 
-const SEED = { botToken: TOKEN, projectId: "proj", agentId: "agent", enabled: true };
 const settle = () => new Promise((r) => setTimeout(r, 10));
 async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
   const until = Date.now() + ms;
@@ -227,35 +235,67 @@ async function waitFor(check: () => boolean, ms = 2000): Promise<void> {
   }
 }
 
-describe("the manifest and the seed", () => {
-  it("contributes the routes its manifest declares", async () => {
+describe("the manifest, the config table and the helpers", () => {
+  it("contributes the routes its manifest declares", () => {
     const pkg = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "package.json"), "utf8")) as {
       penguin: {
-        modules: Array<{ name: string; contributes: Record<string, Array<{ id: string }>> }>;
+        modules: Array<{
+          name: string;
+          requires: Record<string, { from: string }>;
+          contributes: Record<string, Array<{ id: string }>>;
+        }>;
       };
     };
     const [manifest] = pkg.penguin.modules;
     expect(manifest?.name).toBe("DiscordBot");
     expect(manifest?.contributes["HttpModule.routes"]?.[0]?.id).toBe(ROUTES_ID);
+    expect(manifest?.requires.configStore?.from).toBe("ProjectsModule");
     expect(Object.keys(plugin.modules ?? {})).toEqual(["DiscordBot"]);
   });
 
-  it("seeds the bot from the environment, enabled only when the seed is complete", () => {
-    expect(envDefaults({})).toEqual({});
-    expect(envDefaults({ PENGUIN_DISCORD_BOT_TOKEN: " tok " })).toEqual({ botToken: "tok" });
-    expect(
-      envDefaults({
-        PENGUIN_DISCORD_BOT_TOKEN: "tok",
-        PENGUIN_DISCORD_PROJECT: "p",
-        PENGUIN_DISCORD_AGENT: "a",
-      }),
-    ).toEqual({ botToken: "tok", projectId: "p", agentId: "a", enabled: true });
-    expect(envDefaults({ PENGUIN_DISCORD_PROJECT: "", PENGUIN_DISCORD_AGENT: "a" })).toEqual({
-      agentId: "a",
+  it("reads a Project's [discord_bot] table, defaulting the Agent and the switch", () => {
+    const agents = {
+      exists: (p: string, a: string) => p === "proj" && (a === "agent" || a === "default_agent"),
+    };
+    expect(botConfigOf("proj", {}, agents)).toBeNull();
+    expect(botConfigOf("proj", { discord_bot: { bot_token: TOKEN } }, agents)).toEqual({
+      ok: true,
+      projectId: "proj",
+      botToken: TOKEN,
+      agentId: "default_agent",
+      enabled: true,
     });
+    expect(
+      botConfigOf(
+        "proj",
+        { discord_bot: { bot_token: `Bot ${TOKEN}`, agent: "agent", enabled: false } },
+        agents,
+      ),
+    ).toEqual({ ok: true, projectId: "proj", botToken: TOKEN, agentId: "agent", enabled: false });
+    // Each way the table can be wrong names itself rather than throwing.
+    expect(botConfigOf("proj", { discord_bot: "x" }, agents)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("table"),
+    });
+    expect(botConfigOf("proj", { discord_bot: {} }, agents)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("bot_token"),
+    });
+    expect(botConfigOf("proj", { discord_bot: { bot_token: "nope" } }, agents)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("not a Discord bot token"),
+    });
+    expect(
+      botConfigOf("proj", { discord_bot: { bot_token: TOKEN, agent: "ghost" } }, agents),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('"ghost"'),
+    });
+    expect(botIdOf(TOKEN)).toBe("123456789012345678");
+    expect(botIdOf("not-a-token")).toBeNull();
   });
 
-  it("cuts a reply at paragraphs, then lines, then hard", () => {
+  it("cuts a reply at paragraphs, then lines, then hard, and keeps file names to one segment", () => {
     const paras = ["a".repeat(600), "b".repeat(600), "c".repeat(600)].join("\n\n");
     expect(chunkReply(paras, 1300)).toEqual([
       "a".repeat(600) + "\n\n" + "b".repeat(600),
@@ -264,9 +304,80 @@ describe("the manifest and the seed", () => {
     expect(chunkReply("x".repeat(2500), 1000).map((s) => s.length)).toEqual([1000, 1000, 500]);
     expect(safeFileName("../../etc/passwd")).toBe(".._.._etc_passwd");
     expect(safeFileName("")).toBe("file");
-    expect(botIdOf(TOKEN)).toBe("123456789012345678");
-    expect(botIdOf("Bot " + TOKEN)).toBe("123456789012345678");
-    expect(botIdOf("not-a-token")).toBeNull();
+  });
+});
+
+describe("the manager over the Projects' config files", () => {
+  let w: World;
+  let bots: DiscordBots;
+
+  beforeEach(async () => {
+    w = new World();
+    w.root = await fs.mkdtemp(path.join(os.tmpdir(), "discord-bot-"));
+  });
+  afterEach(async () => {
+    bots?.stop();
+    await fs.rm(w.root, { recursive: true, force: true });
+  });
+
+  it("runs one bot per Project with a table, lists the rest as broken, and follows edits", async () => {
+    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "agent" } });
+    w.configs.set("other", { discord_bot: { bot_token: "nope" } });
+    w.configs.set("plain", { models: [] });
+    bots = new DiscordBots(w.managerDeps());
+    await bots.start();
+    expect(
+      bots.list().bots.map((b) => [b.projectId, b.agentId, b.enabled, b.status.state]),
+    ).toEqual([["proj", "agent", true, "connected"]]);
+    expect(bots.list().bots[0]!.botTokenMasked).toBe("MTIz…AAAA");
+    expect(bots.list().broken).toEqual([
+      { projectId: "other", error: expect.stringContaining("bot_token") },
+    ]);
+    expect(w.connector.open()).toHaveLength(1);
+
+    // An unchanged table restarts nothing; a changed one restarts the bot on the new values.
+    await bots.reconcile();
+    expect(w.connector.connections).toHaveLength(1);
+    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "default_agent" } });
+    await bots.reconcile();
+    expect(w.connector.connections).toHaveLength(2);
+    expect(w.connector.open()).toHaveLength(1);
+    expect(bots.list().bots[0]!.agentId).toBe("default_agent");
+
+    // The switch keeps the bot listed and its connection closed; a removed table stops it.
+    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, enabled: false } });
+    await bots.reconcile();
+    expect(bots.list().bots[0]).toMatchObject({
+      enabled: false,
+      status: { state: "disconnected" },
+    });
+    expect(w.connector.open()).toHaveLength(0);
+    w.configs.set("other", { discord_bot: { bot_token: TOKEN } });
+    w.configs.delete("proj");
+    await bots.reconcile();
+    expect(bots.list().bots.map((b) => b.projectId)).toEqual(["other"]);
+    expect(bots.list().broken).toEqual([]);
+  });
+
+  it("serves its status to admins only, running a pass first so an edit shows up at once", async () => {
+    bots = new DiscordBots(w.managerDeps());
+    await bots.start();
+    const appFor = (isAdmin: boolean) => {
+      const outer = new Hono();
+      outer.use("*", async (c, next) => {
+        c.set("user" as never, { isAdmin } as never);
+        await next();
+      });
+      outer.route("/api/discord-bot", discordBotRoutes(bots));
+      return outer;
+    };
+    expect((await appFor(false).request("/api/discord-bot")).status).toBe(403);
+    w.configs.set("proj", { discord_bot: { bot_token: TOKEN, agent: "agent" } });
+    const res = await appFor(true).request("/api/discord-bot");
+    expect(res.status).toBe(200);
+    expect(
+      ((await res.json()) as { bots: Array<{ projectId: string }> }).bots.map((b) => b.projectId),
+    ).toEqual(["proj"]);
   });
 });
 
@@ -283,63 +394,10 @@ describe("the Discord bot", () => {
     await fs.rm(w.root, { recursive: true, force: true });
   });
 
-  it("starts from the seed, lists itself masked, and never re-enables a bot switched off", async () => {
-    bot = new DiscordBot(w.deps(SEED));
-    await bot.start();
-    expect(bot.info()).toMatchObject({
-      configured: true,
-      projectId: "proj",
-      agentId: "agent",
-      enabled: true,
-      chats: 0,
-    });
-    expect(bot.info().botTokenMasked).toBe("MTIz…AAAA");
-    expect(bot.statusOf().state).toBe("connected");
-    expect(w.connector.last().config).toEqual({ botToken: TOKEN });
-    bot.stop();
-
-    w.store.set(
-      CONFIG_KEY,
-      JSON.stringify({ botToken: TOKEN, projectId: "proj", agentId: "agent", enabled: false }),
-    );
-    bot = new DiscordBot(w.deps(SEED));
-    await bot.start();
-    expect(w.connector.connections).toHaveLength(1);
-    expect(bot.info().enabled).toBe(false);
-  });
-
-  it("saves a token the connector can read, refuses one it cannot, and gates the toggle", async () => {
-    bot = new DiscordBot(w.deps());
-    await bot.start();
-    await expect(bot.setEnabled(true)).rejects.toMatchObject({ code: "discord_token_required" });
-    await expect(bot.save({ botToken: "bad-token" })).rejects.toMatchObject({
-      code: "discord_token_invalid",
-    });
-    w.connector.refuse = TOKEN.replace("AAAA", "BBBB");
-    await expect(bot.save({ botToken: TOKEN.replace("AAAA", "BBBB") })).rejects.toMatchObject({
-      code: "discord_token_invalid",
-    });
-    await expect(bot.save({ projectId: "proj", agentId: "nope" })).rejects.toMatchObject({
-      code: "agent_not_found",
-    });
-    const saved = await bot.save({ botToken: TOKEN });
-    expect(saved.configured).toBe(true);
-    await expect(bot.setEnabled(true)).rejects.toMatchObject({ code: "target_required" });
-    await bot.save({ projectId: "proj", agentId: "agent" });
-    // The masked value read back and sent again keeps the stored token.
-    await bot.save({ botToken: saved.botTokenMasked! });
-    expect(JSON.parse(w.store.get(CONFIG_KEY)!).botToken).toBe(TOKEN);
-    expect((await bot.setEnabled(true)).enabled).toBe(true);
-    expect(bot.statusOf().state).toBe("connected");
-    await expect(bot.save({ clearBotToken: true })).rejects.toBeInstanceOf(BotError);
-    expect((await bot.setEnabled(false)).status.state).toBe("disconnected");
-    expect(w.connector.last().closed).toBe(true);
-    expect((await bot.test(TOKEN)).botUsername).toBe("@penguin_test");
-  });
-
   it("opens a Session on a chat's first message, reuses it, and relays the reply", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
+    expect(w.connector.last().config).toEqual({ botToken: TOKEN });
     await w.connector.fire(dm("hello"));
     expect(w.created).toEqual([{ projectId: "proj", agentId: "agent" }]);
     const sessionId = w.runs[0]!.sessionId;
@@ -356,7 +414,7 @@ describe("the Discord bot", () => {
   });
 
   it("/new opens a fresh Session, with or without a message behind it", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     await w.connector.fire(dm("first"));
     await w.connector.fire(dm("/new start over"));
@@ -371,7 +429,7 @@ describe("the Discord bot", () => {
   });
 
   it("threads a run's first reply onto the inbound message in a server channel, then sends plainly", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     const asked = inChannel("what now?");
     await w.connector.fire(asked);
@@ -384,7 +442,7 @@ describe("the Discord bot", () => {
   });
 
   it("tells the chat about a waiting tool call and decides it on /approve or /deny", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     await w.connector.fire(dm("run it"));
     const sessionId = w.runs[0]!.sessionId;
@@ -402,28 +460,17 @@ describe("the Discord bot", () => {
     expect(w.runs).toHaveLength(1);
   });
 
-  it("runs a redelivered message once, and answers without a target with the setup notice", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+  it("runs a redelivered message once", async () => {
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     const once = dm("only once");
     await w.connector.fire(once);
     await w.connector.fire(once);
     expect(w.runs).toHaveLength(1);
-    bot.stop();
-
-    w.store.set(
-      CONFIG_KEY,
-      JSON.stringify({ botToken: TOKEN, projectId: null, agentId: null, enabled: true }),
-    );
-    bot = new DiscordBot(w.deps());
-    await bot.start();
-    await w.connector.fire(dm("anyone?"));
-    expect(w.connector.sends.at(-1)?.text).toBe(NOT_CONFIGURED_NOTICE);
-    expect(w.created).toHaveLength(1);
   });
 
   it("writes an attached file into the Session scratchpad and names it on the message", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     const bytes = Buffer.from("quarterly revenue: 42\n");
     await w.connector.fire(
@@ -438,60 +485,22 @@ describe("the Discord bot", () => {
   });
 
   it("keeps the chat table across a restart, and drops a chat whose Session was deleted", async () => {
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     await w.connector.fire(dm("remember me"));
     const sessionId = w.runs[0]!.sessionId;
     bot.stop();
 
-    bot = new DiscordBot(w.deps(SEED));
+    bot = new DiscordBot(TARGET, w.deps());
     await bot.start();
     expect(bot.info().chats).toBe(1);
     w.publishRun(sessionId, ["still here"]);
     await waitFor(() => w.connector.sends.some((s) => s.text === "still here"));
     await w.connector.fire(dm("more"));
     expect(w.runs[1]!.sessionId).toBe(sessionId);
-    expect(JSON.parse(w.store.get(CHATS_KEY)!)[DM].sessionId).toBe(sessionId);
+    expect(JSON.parse(w.store.get(chatsKeyOf("proj"))!)[DM].sessionId).toBe(sessionId);
 
     w.rows.delete(sessionId);
     expect(bot.info().chats).toBe(0);
-  });
-
-  it("serves its settings API to admins only", async () => {
-    bot = new DiscordBot(w.deps());
-    await bot.start();
-    // The harness sets the signed-in user on the context before the sub-app's handlers run;
-    // a wrapper app stands in for that gate here.
-    const appFor = (isAdmin: boolean) => {
-      const outer = new Hono();
-      outer.use("*", async (c, next) => {
-        c.set("user" as never, { isAdmin } as never);
-        await next();
-      });
-      outer.route("/api/discord-bot", discordBotRoutes(bot));
-      return outer;
-    };
-    expect((await appFor(false).request("/api/discord-bot")).status).toBe(403);
-    const admin = appFor(true);
-    const json = (body: unknown, method = "PUT") => ({
-      method,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    expect((await admin.request("/api/discord-bot")).status).toBe(200);
-    expect((await admin.request("/api/discord-bot", json({ botToken: "bad" }))).status).toBe(400);
-    expect(
-      (
-        await admin.request(
-          "/api/discord-bot",
-          json({ botToken: TOKEN, projectId: "proj", agentId: "agent" }),
-        )
-      ).status,
-    ).toBe(200);
-    const probe = await admin.request("/api/discord-bot/test", json({}, "POST"));
-    expect(await probe.json()).toMatchObject({ ok: true, botUsername: "@penguin_test" });
-    const on = await admin.request("/api/discord-bot/state", json({ enabled: true }, "POST"));
-    expect(((await on.json()) as { enabled: boolean }).enabled).toBe(true);
-    expect(bot.statusOf().state).toBe("connected");
   });
 });

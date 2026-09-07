@@ -1,5 +1,5 @@
 /**
- * The bot itself: one Discord account that starts agents from chat.
+ * The bot itself: one Discord account, answering for one Project.
  *
  * Everything here is the plugin's own. The harness lends it the pieces it already has —
  * the Discord messaging connector (credential shape, Gateway, sends, Markdown, the 2000
@@ -9,11 +9,11 @@
  * on the first message and reused for the rest, replies relayed back into the same chat,
  * and a few slash-style commands (`/new`, `/approve`, `/deny`, `/status`).
  *
- * Configuration — the token, the target Project and Agent, the enabled flag — and the
- * chat → Session table live in the server settings store under `discord-bot:` keys, so both
- * survive a restart and a hot swap. A seed read from the environment applies where nothing
- * is stored yet (see index.ts); what an administrator saved wins, and a bot switched off
- * stays off.
+ * The token and the Agent come from the Project's config (see config.ts); the manager
+ * (manager.ts) builds one of these per Project that has a table and rebuilds it when the
+ * table changes. The chat → Session table is the bot's only state and lives in the server
+ * settings store under `discord-bot:chats:<projectId>`, so it survives a restart and a hot
+ * swap.
  *
  * What the per-Session messaging binding has and this does not: delivery preferences, the
  * files a reply names sent after it, a rolling image budget. The per-image ceiling and the
@@ -30,7 +30,6 @@ import {
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
-  AgentIndex,
   ChannelEvent,
   Channels,
   Errors,
@@ -50,9 +49,10 @@ import type {
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 
-/** The settings-store keys this bot owns. */
-export const CONFIG_KEY = "discord-bot:config";
-export const CHATS_KEY = "discord-bot:chats";
+/** Where one Project's chat → Session table lives in the settings store. */
+export function chatsKeyOf(projectId: string): string {
+  return `discord-bot:chats:${projectId}`;
+}
 
 /**
  * Where a reply is cut before it reaches the connector. Discord caps a message at 2000
@@ -76,8 +76,6 @@ export const APPROVAL_NOTICE =
   "A tool call is waiting for approval: reply /approve to allow it or /deny to refuse. 有工具调用等待审批：回复 /approve 允许，或 /deny 拒绝。";
 export const NOTHING_PENDING_NOTICE =
   "Nothing is waiting for approval. 当前没有等待审批的工具调用。";
-export const NOT_CONFIGURED_NOTICE =
-  "This bot has no target Agent yet: an administrator has to finish its setup. 这个机器人尚未配置目标 Agent，请管理员完成设置。";
 export const UNSUPPORTED_NOTICE =
   "Only text, pictures and files can be read here. 这里只能读取文本、图片与文件。";
 export const IMAGE_FAILED_NOTICE = (reason: string): string =>
@@ -85,28 +83,12 @@ export const IMAGE_FAILED_NOTICE = (reason: string): string =>
 export const FILE_FAILED_NOTICE = (fileName: string, reason: string): string =>
   `"${fileName}" could not be downloaded (${reason}), so the message was not run. 文件「${fileName}」下载失败（${reason}），消息未执行。`;
 
-/** What is stored under CONFIG_KEY. */
-export interface StoredConfig {
-  botToken: string | null;
-  projectId: string | null;
-  agentId: string | null;
-  enabled: boolean;
-}
-
-/** One chat's Session, stored under CHATS_KEY. */
+/** One chat's Session, as stored. */
 interface StoredChat {
   sessionId: string;
   isDirect: boolean;
   /** The last inbound message this chat finished with — the redelivery watermark. */
   lastMessageId: string | null;
-}
-
-/** What the environment (or a test) may seed the bot with; a stored config wins. */
-export interface BotDefaults {
-  botToken?: string;
-  projectId?: string;
-  agentId?: string;
-  enabled?: boolean;
 }
 
 export interface BotStatus {
@@ -117,28 +99,15 @@ export interface BotStatus {
   lastDeliveryError?: { at: string; stage: "inbound" | "send"; detail: string };
 }
 
-/** The bot as the settings API reads it: token masked, plus its live status. */
+/** The bot as the status route reads it: token masked, plus its live status. */
 export interface BotInfo {
-  configured: boolean;
-  botTokenMasked?: string;
-  projectId: string | null;
-  agentId: string | null;
+  projectId: string;
+  agentId: string;
+  botTokenMasked: string;
   enabled: boolean;
   status: BotStatus;
   /** How many chats currently hold a Session. */
   chats: number;
-}
-
-/** A refusal the routes answer with, carrying the status and code a client branches on. */
-export class BotError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "BotError";
-  }
 }
 
 /** A chat's live state, beside the stored one. */
@@ -164,14 +133,20 @@ export interface BotDeps {
   sessions: Pick<Sessions, "decideApproval">;
   sessionCreator: Pick<ScheduleSessionCreator, "createSession">;
   sessionIndex: Pick<SessionIndex, "findById">;
-  agents: Pick<AgentIndex, "exists">;
   settings: Pick<Settings, "get" | "set" | "getAttachmentLimitsMb">;
   channels: Pick<Channels, "get">;
   errors: Pick<Errors, "record">;
   paths: Pick<Paths, "root">;
   log: Pick<Log, "line">;
-  defaults?: BotDefaults;
   now?: () => number;
+}
+
+/** What the Project's table decided (see config.ts botConfigOf). */
+export interface BotTarget {
+  projectId: string;
+  botToken: string;
+  agentId: string;
+  enabled: boolean;
 }
 
 export class DiscordBot {
@@ -187,121 +162,24 @@ export class DiscordBot {
   private started = false;
   private readonly now: () => number;
 
-  constructor(private readonly deps: BotDeps) {
+  constructor(
+    readonly target: BotTarget,
+    private readonly deps: BotDeps,
+  ) {
     this.now = deps.now ?? (() => Date.now());
   }
 
-  // —— Configuration ——————————————————————————————————————————————————————————
+  // —— Reading ————————————————————————————————————————————————————————————————
 
   info(): BotInfo {
-    const stored = this.stored();
     return {
-      configured: stored.botToken !== null,
-      ...(stored.botToken !== null ? { botTokenMasked: mask(stored.botToken) } : {}),
-      projectId: stored.projectId,
-      agentId: stored.agentId,
-      enabled: stored.enabled,
+      projectId: this.target.projectId,
+      agentId: this.target.agentId,
+      botTokenMasked: mask(this.target.botToken),
+      enabled: this.target.enabled,
       status: this.status,
       chats: this.storedChats().size,
     };
-  }
-
-  /**
-   * Saves the token and the target. A save never flips the connection — except that an
-   * ENABLED bot restarts on the new values, so what is stored and what is live never diverge.
-   */
-  async save(patch: {
-    botToken?: string;
-    clearBotToken?: boolean;
-    projectId?: string;
-    agentId?: string;
-  }): Promise<BotInfo> {
-    const stored = this.stored();
-    if (patch.projectId !== undefined || patch.agentId !== undefined) {
-      const projectId = patch.projectId ?? stored.projectId;
-      const agentId = patch.agentId ?? stored.agentId;
-      if (projectId === null || agentId === null) {
-        throw new BotError(400, "bad_request", "projectId and agentId must be given together.");
-      }
-      if (!this.deps.agents.exists(projectId, agentId)) {
-        throw new BotError(404, "agent_not_found", "Agent does not exist.");
-      }
-      stored.projectId = projectId;
-      stored.agentId = agentId;
-    }
-    const typed = patch.botToken?.trim();
-    if (typed !== undefined && typed !== "" && typed !== mask(stored.botToken ?? "")) {
-      // Refused here rather than at the next connect: the token's first segment must decode
-      // to the bot's user id (see botIdOf), and the connector must read the document.
-      if (botIdOf(typed) === null) {
-        throw new BotError(
-          400,
-          "discord_token_invalid",
-          "botToken must be a Discord bot token as issued in the developer portal (three dot-separated segments, the first naming the bot).",
-        );
-      }
-      try {
-        await this.deps.messaging.connectorFor("discord").createClient({ botToken: typed });
-      } catch (err) {
-        throw new BotError(
-          400,
-          "discord_token_invalid",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      stored.botToken = typed;
-    } else if (patch.clearBotToken === true) {
-      if (stored.enabled) {
-        throw new BotError(
-          409,
-          "disable_before_clear",
-          "Disable the bot before clearing its token.",
-        );
-      }
-      stored.botToken = null;
-    }
-    this.writeStored(stored);
-    if (stored.enabled) await this.sync();
-    return this.info();
-  }
-
-  /** The connection toggle: enabling connects on the stored values, disabling closes. */
-  async setEnabled(enabled: boolean): Promise<BotInfo> {
-    const stored = this.stored();
-    if (enabled && stored.botToken === null) {
-      throw new BotError(400, "discord_token_required", "Save the bot token first.");
-    }
-    if (enabled && (stored.projectId === null || stored.agentId === null)) {
-      throw new BotError(400, "target_required", "Choose the Project and Agent first.");
-    }
-    stored.enabled = enabled;
-    this.writeStored(stored);
-    await this.sync();
-    return this.info();
-  }
-
-  /** Credential probe on a draft token, or the stored one. */
-  async test(
-    botToken?: string,
-  ): Promise<{ ok: boolean; latencyMs?: number; botUsername?: string; error?: string }> {
-    const token = botToken?.trim() || this.stored().botToken;
-    if (token === null || token === undefined || token === "") {
-      throw new BotError(400, "discord_token_required", "botToken is required to test.");
-    }
-    const startedAt = this.now();
-    try {
-      const client = await this.deps.messaging
-        .connectorFor("discord")
-        .createClient({ botToken: token });
-      const account = await client.checkCredentials();
-      return {
-        ok: true,
-        latencyMs: this.now() - startedAt,
-        ...(account?.accountLabel !== undefined ? { botUsername: account.accountLabel } : {}),
-      };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
   }
 
   statusOf(): BotStatus {
@@ -320,13 +198,12 @@ export class DiscordBot {
     this.disconnect();
   }
 
-  /** Brings the live state in line with the stored intent. */
+  /** Brings the live state in line with the table's intent. */
   async sync(): Promise<void> {
     this.disconnect();
-    const stored = this.stored();
-    if (!this.started || !stored.enabled || stored.botToken === null) return;
+    if (!this.started || !this.target.enabled) return;
     const generation = ++this.generation;
-    const config = { botToken: stored.botToken };
+    const config = { botToken: this.target.botToken };
     this.status = { state: "connecting", changedAt: this.nowIso() };
     try {
       const connector = this.deps.messaging.connectorFor("discord");
@@ -390,11 +267,6 @@ export class DiscordBot {
     if (this.isRedelivery(msg)) return;
     this.status = { ...this.status, lastInboundAt: this.nowIso() };
     try {
-      const stored = this.stored();
-      if (stored.projectId === null || stored.agentId === null) {
-        await this.replyInbound(msg, NOT_CONFIGURED_NOTICE);
-        return;
-      }
       const isDirect = msg.chatKind === "direct";
       let text = msg.text !== null && msg.text.trim() !== "" ? msg.text.trim() : null;
       const command = text !== null ? COMMAND.exec(text) : null;
@@ -422,10 +294,9 @@ export class DiscordBot {
         if (verb === "new") this.markWatermark(msg);
         return;
       }
-      if (chat === null)
-        chat = await this.openChat(stored.projectId, stored.agentId, msg.chatId, isDirect);
+      if (chat === null) chat = await this.openChat(msg.chatId, isDirect);
       chat.lastInboundMessageId = isDirect ? null : msg.messageId;
-      const notice = await this.startTask(chat, stored, text, images, files);
+      const notice = await this.startTask(chat, text, images, files);
       if (notice !== null) await this.replyInbound(msg, notice);
       this.markWatermark(msg);
     } catch (err) {
@@ -464,12 +335,8 @@ export class DiscordBot {
   }
 
   /** A new Session for a chat that has none, stored before anything can go wrong with it. */
-  private async openChat(
-    projectId: string,
-    agentId: string,
-    chatId: string,
-    isDirect: boolean,
-  ): Promise<ChatState> {
+  private async openChat(chatId: string, isDirect: boolean): Promise<ChatState> {
+    const { projectId, agentId } = this.target;
     const { sessionId } = await this.deps.sessionCreator.createSession({ projectId, agentId });
     const stored: StoredChat = { sessionId, isDirect, lastMessageId: null };
     const chats = this.storedChats();
@@ -519,7 +386,6 @@ export class DiscordBot {
    */
   private async startTask(
     chat: ChatState,
-    stored: StoredConfig,
     text: string | null,
     images: readonly MessagingInboundImage[],
     files: readonly MessagingInboundFile[],
@@ -539,7 +405,7 @@ export class DiscordBot {
       const maxBytes = limits.attachmentMaxMb * 1024 * 1024;
       let remaining = limits.attachmentTotalMb * 1024 * 1024;
       const dir = path.join(
-        scratchpadDir(this.deps.paths.root, stored.projectId!, stored.agentId!),
+        scratchpadDir(this.deps.paths.root, this.target.projectId, this.target.agentId),
         chat.sessionId,
       );
       for (const file of files) {
@@ -676,36 +542,8 @@ export class DiscordBot {
 
   // —— Bookkeeping ————————————————————————————————————————————————————————————
 
-  private stored(): StoredConfig {
-    const raw = this.deps.settings.get(CONFIG_KEY);
-    if (raw !== null) {
-      try {
-        const doc = JSON.parse(raw) as Partial<StoredConfig>;
-        return {
-          botToken: typeof doc.botToken === "string" && doc.botToken !== "" ? doc.botToken : null,
-          projectId: typeof doc.projectId === "string" ? doc.projectId : null,
-          agentId: typeof doc.agentId === "string" ? doc.agentId : null,
-          enabled: doc.enabled === true,
-        };
-      } catch {
-        // A document this build cannot read is treated as absent: the seed applies again.
-      }
-    }
-    const d = this.deps.defaults ?? {};
-    return {
-      botToken: d.botToken ?? null,
-      projectId: d.projectId ?? null,
-      agentId: d.agentId ?? null,
-      enabled: d.enabled === true && d.botToken !== undefined,
-    };
-  }
-
-  private writeStored(stored: StoredConfig): void {
-    this.deps.settings.set(CONFIG_KEY, JSON.stringify(stored));
-  }
-
   private storedChats(): Map<string, StoredChat> {
-    const raw = this.deps.settings.get(CHATS_KEY);
+    const raw = this.deps.settings.get(chatsKeyOf(this.target.projectId));
     const out = new Map<string, StoredChat>();
     if (raw === null) return out;
     try {
@@ -727,7 +565,10 @@ export class DiscordBot {
   }
 
   private writeChats(chats: Map<string, StoredChat>): void {
-    this.deps.settings.set(CHATS_KEY, JSON.stringify(Object.fromEntries(chats)));
+    this.deps.settings.set(
+      chatsKeyOf(this.target.projectId),
+      JSON.stringify(Object.fromEntries(chats)),
+    );
   }
 
   private noteSendFailure(sessionId: string | null, err: unknown): void {
@@ -740,7 +581,6 @@ export class DiscordBot {
   }
 
   private recordError(sessionId: string | null, err: unknown, code: string): void {
-    const stored = this.stored();
     // A close the connector itself recovers from (the platform cycling a socket) is filed as
     // routine, the way the messaging bridge files it; everything else needs a look.
     const routine = (err as { recovers?: unknown } | null)?.recovers === true;
@@ -751,8 +591,8 @@ export class DiscordBot {
       kind: routine ? "expected" : "unexpected",
       ctx: {
         ...(sessionId !== null ? { sessionId } : {}),
-        ...(stored.projectId !== null ? { projectId: stored.projectId } : {}),
-        ...(stored.agentId !== null ? { agentId: stored.agentId } : {}),
+        projectId: this.target.projectId,
+        agentId: this.target.agentId,
       },
     });
   }
@@ -760,20 +600,6 @@ export class DiscordBot {
   private nowIso(): string {
     return new Date(this.now()).toISOString();
   }
-}
-
-/**
- * The bot's user id a token encodes, or null when the token is malformed: three dot-separated
- * segments, the first the id in base64 — the same rule the harness's Discord connector applies
- * to a per-Session binding. A pasted `Bot ` prefix is tolerated.
- */
-export function botIdOf(botToken: string): string | null {
-  const bare = botToken.trim().replace(/^Bot\s+/i, "");
-  const [head, ...rest] = bare.split(".");
-  if (head === undefined || head === "" || rest.length !== 2 || rest.some((s) => s === ""))
-    return null;
-  const decoded = Buffer.from(head, "base64").toString("utf8");
-  return /^\d{15,22}$/.test(decoded) ? decoded : null;
 }
 
 /** The site-wide mask rule: `first4…last4` for a long value, `***` otherwise. */
