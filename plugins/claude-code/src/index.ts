@@ -22,9 +22,11 @@
  *
  * ## The program
  *
- * `claude` from PATH, or whatever `PENGUIN_CLAUDE_BIN` names — the seam a deployment uses
- * for a Claude Code that is not on the server's PATH, and the one the integration test uses
- * to stand in a fake. A first prompt from the draft page becomes the program's first argument.
+ * `claude` — resolved through PATH and then the places its installer puts it, since a
+ * machine's server is started over a non-interactive ssh whose PATH has none of them — or
+ * whatever `PENGUIN_CLAUDE_BIN` names, which is the seam for an install neither finds and the
+ * one the integration test uses to stand in a fake. A first prompt from the draft page
+ * becomes the program's first argument.
  *
  * ## Hot swaps
  *
@@ -32,6 +34,8 @@
  * The Session → terminal map is parked and, at the next create, each terminal is claimed
  * back from the manager by id — one that is gone reads as never opened.
  */
+import fs from "node:fs";
+import path from "node:path";
 import type { Json, ModuleCtx } from "@prismshadow/penguin-core/kernel";
 import type {
   Plugin,
@@ -71,10 +75,108 @@ export const INHERITED_SESSION_MARKERS: readonly string[] = [
   "CLAUDE_CODE_EXECPATH",
 ];
 
-/** The program to run: an override for tests and off-PATH installs, else `claude`. */
+/**
+ * Where Claude Code puts itself, relative to `$HOME`, when it is not on the server's PATH.
+ *
+ * This exists because of how a server is usually started, not because of anything odd about
+ * the tool: a machine's server is launched over a NON-INTERACTIVE ssh, whose PATH is
+ * `/usr/local/bin:/usr/bin:/bin` and nothing else — no profile is read, so `~/.local/bin`,
+ * where the official installer puts `claude`, is not on it. The pty inherits that PATH and
+ * `execvp` answers "No such file or directory" about a program that is plainly installed.
+ *
+ * Order is install-recency: the current installer's location first, then the older local
+ * install, then the two package managers people run it under.
+ */
+const CLAUDE_HOME_PATHS: readonly string[] = [
+  ".local/bin/claude",
+  ".claude/local/claude",
+  ".bun/bin/claude",
+  ".npm-global/bin/claude",
+];
+
+/** Windows equivalents, under `%USERPROFILE%` / `%APPDATA%` (the latter as an absolute env read). */
+const CLAUDE_HOME_PATHS_WIN: readonly string[] = [
+  ".local/bin/claude.exe",
+  ".local/bin/claude.cmd",
+  "AppData/Roaming/npm/claude.cmd",
+  ".bun/bin/claude.exe",
+];
+
+/** True when `file` is there and this process may execute it. */
+function runnable(file: string): boolean {
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `name` as PATH would resolve it, or null — the same search `execvp` performs, done in advance so a miss can be explained. */
+function onPath(name: string, env: NodeJS.ProcessEnv): string | null {
+  const dirs = (env.PATH ?? "").split(path.delimiter).filter((d) => d !== "");
+  const names =
+    process.platform === "win32"
+      ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+          .split(";")
+          .map((ext) => `${name}${ext.toLowerCase()}`)
+      : [name];
+  for (const dir of dirs) {
+    for (const candidate of names) {
+      const file = path.join(dir, candidate);
+      if (runnable(file)) return file;
+    }
+  }
+  return null;
+}
+
+/**
+ * The program to run: the operator's override, else `claude` wherever it actually is.
+ *
+ * Resolved rather than handed to the pty as a bare name, because the bare name is what fails
+ * on a machine (see CLAUDE_HOME_PATHS) — and fails as `execvp(3) failed.: No such file or
+ * directory`, which says nothing about which program or why. `PENGUIN_CLAUDE_BIN` is taken as
+ * given: an operator naming a path means that path, and a test standing in a fake means the
+ * fake.
+ */
 export function claudeBinary(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.PENGUIN_CLAUDE_BIN?.trim();
-  return explicit ? explicit : "claude";
+  if (explicit) return explicit;
+  const found = onPath("claude", env);
+  if (found !== null) return found;
+  const home = env.HOME ?? env.USERPROFILE ?? "";
+  if (home !== "") {
+    const relative = process.platform === "win32" ? CLAUDE_HOME_PATHS_WIN : CLAUDE_HOME_PATHS;
+    for (const rel of relative) {
+      const file = path.join(home, ...rel.split("/"));
+      if (runnable(file)) return file;
+    }
+  }
+  // Nothing found: hand the bare name over anyway. The spawn then fails with the plugin's
+  // own message (the harness names the program it could not start), which is a better place
+  // to explain it than here — this function has one job and no way to report.
+  return "claude";
+}
+
+/**
+ * Whether the search came up empty.
+ *
+ * Reads the resolution rather than repeating it: an unresolved `claude` is the ONE case where
+ * the bare name comes back, since anything found comes back as a path and an override comes
+ * back as the operator wrote it.
+ */
+export function claudeMissing(env: NodeJS.ProcessEnv = process.env): boolean {
+  return claudeBinary(env) === "claude";
+}
+
+/** Where a missing `claude` was looked for, for the message that says it is not installed. */
+export function claudeSearchedIn(env: NodeJS.ProcessEnv = process.env): string[] {
+  const home = env.HOME ?? env.USERPROFILE ?? "";
+  const relative = process.platform === "win32" ? CLAUDE_HOME_PATHS_WIN : CLAUDE_HOME_PATHS;
+  return [
+    `PATH (${env.PATH ?? ""})`,
+    ...(home === "" ? [] : relative.map((rel) => path.join(home, ...rel.split("/")))),
+  ];
 }
 
 /** The argv for one Session: the program, then the first prompt when there is one. */
@@ -145,6 +247,15 @@ export class ClaudeCodeSurface implements SessionSurface {
       return this.viewOf(existing);
     }
     if (existing !== undefined) this.untrack(session.sessionId);
+    // Refused here rather than at the pty, which can only say `execvp(3) failed.: No such
+    // file or directory` — true, and useless about which program or where it was sought.
+    if (claudeMissing(this.env)) {
+      throw new Error(
+        `Claude Code is not installed where this server can see it. Looked in ` +
+          `${claudeSearchedIn(this.env).join(", ")}. Install it there, or set ` +
+          `PENGUIN_CLAUDE_BIN to the path of the \`claude\` executable.`,
+      );
+    }
     const terminal = await this.terminals.create({
       cwd: session.workspace,
       ownerUserId: session.ownerUserId,
