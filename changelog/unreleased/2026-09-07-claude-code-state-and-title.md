@@ -26,3 +26,9 @@ Claude Code names its own conversation and writes that name into its transcript 
 The transcript is **chosen on every poll** — the newest one for the Workspace — rather than pinned when the program starts: `/resume` inside the TUI moves it to another session, and a pinned file would name the one it began with.
 
 A surface may now report `{ status, title }` where it used to report only the status; the older, bare form still works. A title is taken only while nobody better has named the Session: the floor remembers what it last wrote, so a program may improve on the first prompt's line, and a person's rename ends the matter.
+
+## …and a push ships its own plugins, not the previous push's
+
+Found while verifying the title on a machine: the corrected plugin arrived and the previous build's copy kept running. A hot upgrade materializes the new assets and publishes them **before** the new platform boots, but commits `harness.json` only **after** that boot succeeds — so a platform reading the committed pointer at boot reads the version it is replacing. Every push shipped plugins one version stale, and the fix appeared to work only on the push after it.
+
+The platform now loads the plugins of the version it is booting with.
