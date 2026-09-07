@@ -77,6 +77,8 @@ export class ApiSocket {
   #attempts = 0;
   #neverOpened = 0;
   #reconnect: ReturnType<typeof setTimeout> | null = null;
+  /** Calls waiting on a handshake in progress (see ready()). */
+  readonly #readyWaiters: ((open: boolean) => void)[] = [];
 
   /** `url` answers null while nobody is signed in: the socket is addressed by user (see the module doc), so there is nothing to open yet. */
   constructor(private readonly url: () => string | null) {}
@@ -97,6 +99,26 @@ export class ApiSocket {
    */
   userChanged(): void {
     if (this.#ws !== null) this.#ws.close();
+  }
+
+  /**
+   * Whether a call can go over the socket, waiting for a handshake in progress rather than
+   * deciding on the instant: true once open, false when the socket is not to be had right
+   * now (nobody signed in, given up, or the handshake just failed) — the caller then uses
+   * HTTP. Opens the socket if nothing has yet, so the page's first calls ride it instead of
+   * racing it.
+   */
+  ready(): Promise<boolean> {
+    if (this.#state === "open") return Promise.resolve(true);
+    if (this.#state === "unavailable") return Promise.resolve(false);
+    if (this.#state === "closed") this.ensureOpen();
+    if (this.#state !== "connecting") return Promise.resolve(false);
+    return new Promise((resolve) => this.#readyWaiters.push(resolve));
+  }
+
+  #settleReady(open: boolean): void {
+    const waiters = this.#readyWaiters.splice(0);
+    for (const resolve of waiters) resolve(open);
   }
 
   /** Opens the socket if it is closed; streams and calls queue behind the handshake. */
@@ -123,6 +145,7 @@ export class ApiSocket {
       this.#state = "open";
       this.#attempts = 0;
       this.#neverOpened = 0;
+      this.#settleReady(true);
       for (const entry of [...this.#waiting]) this.#issue(entry);
     };
     ws.onmessage = (e: MessageEvent<string>) => {
@@ -134,6 +157,7 @@ export class ApiSocket {
       this.#ws = null;
       this.#state = "closed";
       if (!opened) this.#neverOpened += 1;
+      this.#settleReady(false);
       this.#dropped(opened);
     };
     ws.onerror = () => {
@@ -334,6 +358,9 @@ export function setSocketUser(userId: string | null): void {
   if (userId === socketUserId) return;
   socketUserId = userId;
   apiSocket.userChanged();
+  // Open at once: the page's first calls are about to be made, and ready() lets them wait
+  // for this handshake rather than fall to HTTP.
+  if (userId !== null) apiSocket.ensureOpen();
 }
 
 /** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
