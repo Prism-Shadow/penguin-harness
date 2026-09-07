@@ -33,6 +33,9 @@ import {
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
   RUNTIME_AUTH_STATE_RESOURCE_ID,
+  RUNTIME_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
   RUNTIME_DB_RESOURCE_ID,
@@ -187,6 +190,8 @@ export interface ServerBoot {
   channels: ChannelHub;
   hmr: HmrHost;
   desktop: DesktopService | null;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   /**
    * The CURRENT App's module tree — read it on every use, never hold what it returns
    * across an await: a push replaces the App, disposes the old tree, and this resolves
@@ -260,6 +265,9 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  // The host's frames, unread: the platform interprets them (see the resource's own note).
+  const shellFrames = newShellFrames();
+  hmr.resources.register(RUNTIME_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -285,6 +293,7 @@ export async function bootAppDeps(
     channels,
     hmr,
     desktop,
+    shellFrames,
     get tree() {
       // A pushed platform may carry no business surface (a bare kernel, a test's stand-in):
       // then the last tree that was current stays the answer.
@@ -341,6 +350,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     get authService() {
       return liveApi<Auth>(boot, "IdentityModule", "Auth");
     },
@@ -462,12 +472,6 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
     app.use("/api/desktop/update/*", updateGate);
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
   }
-  // Host commands for the command palette: runtime-owned like /api/desktop (the service
-  // behind them is the shell relay), but mounted in every mode — a plain server answers
-  // with an empty list, so the page has one question to ask wherever it runs.
-  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.route("/api/command", commandRoutes(deps));
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
   // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
@@ -484,6 +488,15 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // Every protected business route — /api/me through /api/sessions, and /preview — is
   // served by the platform through the seam above (see app.ts). What
   // follows is the runtime's own tail: static hosting and the SPA fallback.
+
+  // …and one fallback. Host commands are the PLATFORM's (hmr/README.md: what a command
+  // does is policy, and this surface proved it — a change to its shape could not reach a
+  // running install), so they are served through the seam above. This copy answers only
+  // when the platform declines the prefix, which is what a platform older than that move
+  // does: a rollback keeps the palette's commands instead of losing them.
+  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
+  app.route("/api/command", commandRoutes({ shell: () => deps.shellFrames }));
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a
