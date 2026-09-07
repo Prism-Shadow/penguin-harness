@@ -12,4 +12,8 @@ The View menu has always carried DevTools, but the menu bar is hidden on Windows
 
 It opens as a separate window rather than a docked pane, so the page underneath is not reflowed while its errors are being read, and asking again focuses the window that is already open.
 
+A command the page has no words for is now skipped rather than read: the shell reaches users through an installer and the page through a hot push, so a shell newer than the page it serves is ordinary — and this is the first command to prove it, by blanking a page that predated it.
+
+A command the page has no words for is now skipped rather than read: the shell reaches users through an installer and the page through a hot push, so a shell newer than the page it serves is ordinary — and this is the first command to prove it, by blanking a page that predated it.
+
 The entry appears only under the desktop shell: it is the host that opens DevTools, over the same `/api/command` relay the other shell actions use, and a plain server offers no host commands at all. In a browser, the browser's own DevTools are the answer.
