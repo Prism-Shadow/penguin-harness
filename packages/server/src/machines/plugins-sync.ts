@@ -62,6 +62,30 @@ function pluginsPath(projectId: string): string {
 }
 
 /**
+ * Why that machine answered 404 — the route is not there, or the Project is not there.
+ *
+ * The two are indistinguishable in the status alone and lead to opposite conclusions, so
+ * this asks the one question every build can answer: does it list the Project? Saying "that
+ * machine has no such Project" about a Project the models sync had just written, in the line
+ * above, sends an operator hunting a fault that does not exist — which is exactly what it did.
+ */
+async function refusal404(api: MachineApi, projectId: string): Promise<string> {
+  const listed = await api.request("GET", "/api/projects");
+  if (listed.status === 200) {
+    try {
+      const projects = (JSON.parse(listed.text) as { projects?: { projectId?: string }[] })
+        .projects;
+      if (projects?.some((p) => p.projectId === projectId) === true) {
+        return "that machine's build is older than the Project plugin list — update it, then sync again";
+      }
+    } catch {
+      // Unreadable list: fall through to the plainer answer below.
+    }
+  }
+  return "that machine has no such Project";
+}
+
+/**
  * Writes each Project's list to that machine and reports what changed.
  *
  * A Project the machine does not have is not created here — creating a Project to hold a
@@ -89,7 +113,7 @@ export async function syncPluginsToMachine(opts: SyncPluginsOptions): Promise<Pl
     // a machine already in parity would still be written to on every connect.
     const before = await opts.api.request("GET", pluginsPath(projectId));
     if (before.status === 404) {
-      refused.push({ projectId, detail: "that machine has no such Project" });
+      refused.push({ projectId, detail: await refusal404(opts.api, projectId) });
       continue;
     }
     if (before.status !== 200) {

@@ -106,6 +106,7 @@ export const zh = {
       notConnected: "未连接",
       unreachable: "连不上",
       stopped: "未运行",
+      linkedStopped: "已连接，未在提供服务",
       unknown: "未检查",
     },
     /** The stepper's steps, in pipeline order, as the caption under a working row. */
