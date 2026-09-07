@@ -118,6 +118,7 @@ export const en: Strings = {
     detailServer: "Server",
     detailChecked: "Checked",
     detailMachineId: "Machine id",
+    detailRoot: "Server root",
     serverUpOn: (port: number) => `up on port ${port}`,
     output: "Output",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
