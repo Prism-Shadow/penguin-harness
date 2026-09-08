@@ -1,17 +1,20 @@
 /**
  * The overview page's shaping (pure, unit tested): the employee counts, the board as a
  * segmented bar, today's calendar as an ordered timeline with each instance's outcome, the
- * spend against the budget, the "for me" rows, and whether an organization is still fresh
- * enough that a three-step guide serves it better than an empty dashboard.
+ * spend against the budget, the inbox — everything that needs the reader, newest first — and
+ * whether an organization is still fresh enough that a three-step guide serves it better than
+ * an empty dashboard.
  */
 import type {
   OrgCalendarItem,
   OrgCalendarOutcome,
+  OrgChannelMessage,
   OrgEmployeeItem,
   OrgTicketItem,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
 import type { Tone } from "../../lib/tone";
+import { DEFAULT_CHANNEL_ID } from "./channel-list";
 import { TICKET_COLUMNS } from "./ticket-board";
 
 export interface EmployeeCounts {
@@ -164,22 +167,198 @@ export function spendSummary(spend: {
   };
 }
 
-/** One actionable row of the "for me" section, in the order the section lists them. */
-export type PendingRow =
-  | { kind: "mentions"; count: number }
-  | { kind: "review"; ticket: OrgTicketItem }
-  | { kind: "blocked"; ticket: OrgTicketItem };
+/**
+ * How many rows the inbox holds. Past this the reader is better served by the channel and the
+ * board themselves, and the section stops being something a person can scan.
+ */
+export const INBOX_ROWS = 40;
 
-export function pendingRows(pending: {
-  mentions: number;
-  reviewTickets: readonly OrgTicketItem[];
-  blockedByMe: readonly OrgTicketItem[];
-}): PendingRow[] {
-  const rows: PendingRow[] = [];
-  if (pending.mentions > 0) rows.push({ kind: "mentions", count: pending.mentions });
-  for (const ticket of pending.reviewTickets) rows.push({ kind: "review", ticket });
-  for (const ticket of pending.blockedByMe) rows.push({ kind: "blocked", ticket });
-  return rows;
+/** What an inbox row is about. The order is also how rows of the same instant are ranked. */
+export type InboxCategory = "mention" | "review" | "blocked" | "message";
+
+const CATEGORY_ORDER: Record<InboxCategory, number> = {
+  mention: 0,
+  review: 1,
+  blocked: 2,
+  message: 3,
+};
+
+/** Where a row leads: the channel it was said in, or the ticket it is about. */
+export type InboxTarget =
+  { kind: "channel"; channelId: string } | { kind: "ticket"; ticketId: string };
+
+export interface InboxRow {
+  key: string;
+  category: InboxCategory;
+  title: string;
+  /** The aside after the title: who said it, who owns it, what it waits for. */
+  detail?: string;
+  /** ISO 8601, or null when the source carries no time at all. */
+  time: string | null;
+  tone: Tone;
+  target: InboxTarget;
+}
+
+export interface InboxInput {
+  pending: {
+    mentions: number;
+    reviewTickets: readonly OrgTicketItem[];
+    blockedByMe: readonly OrgTicketItem[];
+  };
+  /** The all-hands channel's last messages, as the organization detail sends them. */
+  recentMessages: readonly OrgChannelMessage[];
+  /** The reader's own principal (`user:<id>`): what "addressed to me" means. */
+  me: string;
+  /**
+   * A principal's display name. A function rather than a map because `all` and `system` have
+   * localized names: the page passes its own `principalLabel` bound to the employee names.
+   */
+  names: (principal: string) => string;
+  /** The mentions row's sentence — the wording is the dictionary's, the count is this model's. */
+  mentionsTitle: (count: number) => string;
+}
+
+/** Whether a message is addressed to the reader: it names them, or it names everyone. */
+function addressedTo(message: OrgChannelMessage, me: string): boolean {
+  return message.mentions.includes(me) || message.mentions.includes("all");
+}
+
+/** The first line of a message that carries anything; "" when the whole text is blank. */
+function firstLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed !== "") return trimmed;
+  }
+  return "";
+}
+
+/**
+ * A ticket's own time. Ticket ids are `yyyy-mm-dd-<slug>` and the board item carries no
+ * timestamp, so the day it was filed is the only time the inbox can rank it by; null for an
+ * id that does not start with a date.
+ */
+function ticketTime(ticketId: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(ticketId);
+  if (m === null) return null;
+  const iso = `${m[1]}T00:00:00.000Z`;
+  return Number.isNaN(Date.parse(iso)) ? null : iso;
+}
+
+/**
+ * Everything that needs the reader as one list, newest first: the waiting @mentions, the
+ * tickets in review, the tickets blocked on them, and the all-hands channel's recent messages.
+ * Rows without a time sort last (a ticket whose id carries no date, a mention count with no
+ * message to date it), ties fall back to the category order and then the key, and the list is
+ * capped at `INBOX_ROWS`.
+ */
+export function inboxRows(input: InboxInput): InboxRow[] {
+  const rows: InboxRow[] = [];
+
+  if (input.pending.mentions > 0) {
+    // The count is a live unread number rather than a message, so the newest recent message
+    // that names the reader is the closest thing it has to a time.
+    let newest: { iso: string; ms: number } | null = null;
+    for (const message of input.recentMessages) {
+      if (!addressedTo(message, input.me)) continue;
+      const ms = parse(message.time);
+      if (ms !== null && (newest === null || ms > newest.ms)) newest = { iso: message.time, ms };
+    }
+    rows.push({
+      key: "mention",
+      category: "mention",
+      title: input.mentionsTitle(input.pending.mentions),
+      time: newest?.iso ?? null,
+      tone: "attention",
+      target: { kind: "channel", channelId: DEFAULT_CHANNEL_ID },
+    });
+  }
+
+  for (const ticket of input.pending.reviewTickets) {
+    rows.push({
+      key: `review/${ticket.ticketId}`,
+      category: "review",
+      title: ticket.title,
+      ...(ticket.owner !== undefined ? { detail: input.names(ticket.owner) } : {}),
+      time: ticketTime(ticket.ticketId),
+      tone: "attention",
+      target: { kind: "ticket", ticketId: ticket.ticketId },
+    });
+  }
+
+  for (const ticket of input.pending.blockedByMe) {
+    // `blockedBy` is the reader themselves on every row here, so naming them says nothing:
+    // the aside that helps is what the ticket is waiting for.
+    const reason = ticket.blocked ?? "";
+    rows.push({
+      key: `blocked/${ticket.ticketId}`,
+      category: "blocked",
+      title: ticket.title,
+      ...(reason !== "" ? { detail: reason } : {}),
+      time: ticketTime(ticket.ticketId),
+      tone: "attention",
+      target: { kind: "ticket", ticketId: ticket.ticketId },
+    });
+  }
+
+  for (const message of input.recentMessages) {
+    rows.push({
+      key: `message/${message.id}`,
+      category: "message",
+      title: firstLine(message.text),
+      detail: input.names(message.sender),
+      time: message.time,
+      tone: addressedTo(message, input.me) ? "attention" : "muted",
+      target: { kind: "channel", channelId: DEFAULT_CHANNEL_ID },
+    });
+  }
+
+  return rows
+    .map((row) => ({ row, ms: row.time === null ? null : parse(row.time) }))
+    .sort((a, b) => {
+      if (a.ms === null || b.ms === null) {
+        if (a.ms !== b.ms) return a.ms === null ? 1 : -1;
+      } else if (a.ms !== b.ms) return b.ms - a.ms;
+      return (
+        CATEGORY_ORDER[a.row.category] - CATEGORY_ORDER[b.row.category] ||
+        a.row.key.localeCompare(b.row.key)
+      );
+    })
+    .slice(0, INBOX_ROWS)
+    .map((entry) => entry.row);
+}
+
+/** The inbox's filter chips, in rendered order. */
+export type InboxFilter = "all" | "mention" | "ticket" | "message";
+export const INBOX_FILTERS: readonly InboxFilter[] = ["all", "mention", "ticket", "message"];
+
+/** Whether a chip admits a row: the ticket chip covers both ticket categories, "all" everything. */
+export function inboxMatches(row: InboxRow, filter: InboxFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "mention":
+      return row.category === "mention";
+    case "ticket":
+      return row.category === "review" || row.category === "blocked";
+    case "message":
+      return row.category === "message";
+  }
+}
+
+/** How many rows each chip would show. */
+export function inboxCounts(rows: readonly InboxRow[]): Record<InboxFilter, number> {
+  const counts: Record<InboxFilter, number> = {
+    all: rows.length,
+    mention: 0,
+    ticket: 0,
+    message: 0,
+  };
+  for (const row of rows) {
+    for (const filter of INBOX_FILTERS) {
+      if (filter !== "all" && inboxMatches(row, filter)) counts[filter] += 1;
+    }
+  }
+  return counts;
 }
 
 /** The three steps a new organization walks: talk to the CEO, hire, schedule. */
@@ -216,7 +395,15 @@ export function firstSteps(input: {
   return { fresh, done, next };
 }
 
-/** The last `n` messages, oldest first (the section reads top to bottom). */
-export function messageTail<T>(messages: readonly T[], n: number): T[] {
-  return n <= 0 ? [] : messages.slice(-n);
+/** Characters of a mission the hero's single clamped line holds, near enough to guess by. */
+const MISSION_ONE_LINE = 48;
+
+/**
+ * Whether the hero's mission fold should offer its toggle before the browser has measured
+ * anything: a mission that carries a line break, or one longer than a line holds. The page
+ * corrects this from the element's own overflow once it has laid out, so the guess only has to
+ * be right often enough that the toggle does not flicker in on the first paint.
+ */
+export function missionClampedGuess(mission: string): boolean {
+  return mission.includes("\n") || mission.trim().length > MISSION_ONE_LINE;
 }

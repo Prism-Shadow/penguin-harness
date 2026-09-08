@@ -2491,18 +2491,10 @@ Benchmark：
       today: "今日日程",
       todayEmpty: "今天没有日程",
       spend: "本周期支出",
-      pending: "待我处理",
-      pendingInfo:
-        "频道里 @我 的未读消息、等你审核的工单，以及等你解开的被阻塞工单——组织里需要人来拍板的事都在这里。",
       mentions: (n: number): string => `${n} 条 @我 的消息`,
       reviewTickets: "审核中的工单",
-      blockedByMe: "等我解开的工单",
-      pendingEmpty: "暂时没有需要你处理的事",
-      recentMessages: "全员频道最新",
-      recentMessagesEmpty: "全员频道里还没有消息",
       alerts: "告警",
       alertsEmpty: "本周期没有预算告警",
-      openAllHands: "打开全员频道",
       /** A fresh organization: point the user at the CEO. */
       firstStep: "组织刚建立：先打开 CEO 的工位会话，确认使命、招募员工并安排日程。",
       /** The hero: who made it, how big it is, which period the spend counts. */
@@ -2511,6 +2503,10 @@ Benchmark：
       period: (period: string): string => `${period} 周期`,
       openCeoDesk: "打开 CEO 工位",
       refreshFailed: "刷新失败，显示的是上次读取的数据",
+      /** The hero's mission, clamped to one line until the toggle opens it. */
+      mission: "使命",
+      expand: "展开",
+      collapse: "收起",
       /** The KPI strip. */
       openTickets: "未完结工单",
       boardTotal: (n: number): string => `共 ${n} 张`,
@@ -2519,6 +2515,11 @@ Benchmark：
       failed: "未按时",
       budgetLeft: (amount: string): string => `剩余 ${amount}`,
       overBudget: (amount: string): string => `超支 ${amount}`,
+      /** The corner button of a KPI cell and of the hero's spend block: where it jumps to. */
+      openChart: "打开组织图",
+      openBoard: "打开工单看板",
+      openCalendar: "打开日历",
+      openFinance: "打开财务",
       /** The three first steps of a new organization (replaces the empty sections). */
       firstStepsTitle: "三步上手",
       firstStepsInfo:
@@ -2532,10 +2533,14 @@ Benchmark：
       stepDone: "已完成",
       goToChart: "去组织图",
       goToCalendar: "去日历",
-      /** "For me" rows. */
-      openMentions: "去频道查看",
-      reviewHint: "审核通过拖到「已完成」，否则拒绝并写明理由",
-      blockedHint: "在工单详情里解除阻塞",
+      /** The inbox: everything that needs the reader, newest first. */
+      inbox: "收件箱",
+      inboxInfo: "按时间倒序列出需要你看的一切：@我、审核中与被阻塞的工单、全员频道的最新消息。",
+      inboxEmpty: "收件箱是空的",
+      /** The filter chips over the rows, each with its own count. */
+      inboxFilters: { all: "全部", mention: "@我", ticket: "工单", message: "消息" },
+      /** The chip that leads a row, naming what the row is. */
+      inboxCategories: { mention: "@我", review: "审核", blocked: "阻塞", message: "消息" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
       viewAll: "查看全部",
