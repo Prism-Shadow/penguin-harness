@@ -522,8 +522,9 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
           // left to cancel; this is for the device that reports a fine pointer and is one
           // anyway, where the page would otherwise scroll out from under the gesture.
           if (event.cancelable) event.preventDefault();
-          for (let i = Math.abs(lines); i > 0; i--)
+          for (let i = Math.abs(lines); i > 0; i--) {
             wheelLine(touch.clientX, touch.clientY, lines > 0);
+          }
         },
         { signal, passive: false },
       );
