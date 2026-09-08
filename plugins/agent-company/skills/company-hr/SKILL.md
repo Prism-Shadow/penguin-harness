@@ -45,9 +45,9 @@ penguin org hire --agent-id existing_agent --title "Reviewer" --reports-to <org_
 ```
 
 1. Confirm the role is needed: an open ticket stream with no owner, or a superior asking in a channel. Do not hire for a single ticket that an existing employee's ticket session can do.
-2. Make sure the workspace sub-directory exists first — the CEO partitions `workspace/`; ask in the all-hands channel when the partition is missing, or create it with file tools where the handbook lets HR do so.
+2. Name the workspace partition. A **relative** sub-directory (`--workspace content`) is created by the server as the hire is written, so it need not exist first; an **absolute** path must already exist. Which partition a role gets is the CEO's call — ask in the all-hands channel when the handbook does not say.
 3. `--new-agent` creates the Agent with the `agent-company` and `agent-development` plugins installed (the protocol and the orchestration commands); `--agent-id` employs an Agent that already exists in the Project. Ids match `^[a-z][a-z0-9_]{1,63}$`, prefixed `<org_id>_`.
-4. Write the brief: `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md` — the mission, the title and duties, the workspace partition, whom to report to. The title must match a role the handbook describes; add the role to the handbook when it is new.
+4. Write the brief: `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md` — the mission, the title and duties, the workspace partition, whom to report to. Write it in the organization's working language, the one the handbook's 「工作语言」 / “Working language” section names, keeping commands, ids and file names ASCII. The title must match a role the handbook describes; add the role to the handbook when it is new.
 5. Schedule the newcomer at once (the audit above), then invite it into the channels of the streams it will work in — an employee reaches a channel only by invitation and reads nothing of it before that:
 
 ```bash

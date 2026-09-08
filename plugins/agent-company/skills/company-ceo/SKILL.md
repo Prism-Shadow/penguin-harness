@@ -44,7 +44,7 @@ penguin org hire --new-agent <org_id>_dev --name "Developer" --title "Developer"
 ```
 
 - `--new-agent` creates the Agent in the Project with the `agent-company` and `agent-development` plugins installed by default — the protocol, and the `penguin` orchestration commands every employee needs; `--skills` adds library skills on top. `--agent-id` employs an Agent that already exists. Ids match `^[a-z][a-z0-9_]{1,63}$`; prefix them with `<org_id>_`.
-- `--workspace` names a sub-directory of the shared workspace that already exists (see partitioning); `--reports-to` names an employee. Everyone reports to exactly one superior and the tree must not loop.
+- `--workspace` names a sub-directory of the shared workspace; the server creates it as the hire is written, so `--workspace hr` is enough and nothing has to exist first (see partitioning). `--reports-to` names an employee. Everyone reports to exactly one superior and the tree must not loop.
 - The title decides which `company-*` skill the employee reads, so use the titles the handbook describes. Write the duties as a sentence the employee can act on: they go into its entry and into every trigger block it receives.
 - Give the newcomer its brief in `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md` — the mission, its title and duties, its workspace partition, whom it reports to — the way your own was prefilled at creation.
 - Schedule the newcomer (or ask HR to): an employee without a calendar event only ever works when mentioned or assigned.
@@ -55,9 +55,8 @@ penguin org hire --new-agent <org_id>_dev --name "Developer" --title "Developer"
 
 The shared workspace is `<app_data_dir>/organizations/<org_id>/workspace/`; your desk works on all of it (`workspace: .`). Every other desk gets a sub-directory, so two employees never edit the same tree:
 
-1. Create the directory with your file tools — `mkdir -p <app_data_dir>/organizations/<org_id>/workspace/site`. The server refuses a workspace that does not exist.
-2. Assign it: `penguin org employee set <org_id>_dev --workspace site`, or pass `--workspace site` at `hire` time.
-3. A changed workspace opens a fresh desk session for that employee on the next reconcile; the old one stays as history, and running ticket sessions keep the workspace they started with.
+1. Assign it: `penguin org employee set <org_id>_dev --workspace site`, or pass `--workspace site` at `hire` time. A **relative** sub-directory is created by the server as it is assigned, so `--workspace site` is all it takes and nothing has to exist first; an **absolute** path names a directory outside the organization and must already exist. Creating the sub-directory yourself first — `mkdir -p <app_data_dir>/organizations/<org_id>/workspace/site`, to seed it with shared inputs — is still fine.
+2. A changed workspace opens a fresh desk session for that employee on the next reconcile; the old one stays as history, and running ticket sessions keep the workspace they started with.
 
 Shared inputs — specs, brand assets, data — live at the workspace root where everyone can read them. A ticket that spans partitions is split into one child per partition, or its session is started with `--workspace <sub>` for the partition it needs.
 
@@ -137,9 +136,9 @@ One message: what finished, what is blocked and on whom, spend against budget, t
 
 A `kind: init` trigger is the first message of a new organization's CEO; its body is the mission and the initialization tasks. In order:
 
-1. **Read the handbook**, then write ONE proposal to the board in the all-hands channel: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. **Name your own budget in that proposal** — the `budget:` line of the trigger block is what the board gave you (100 USD per month unless creation said otherwise), and since budgets accumulate along the reporting line it is the whole company's cap: every salary you propose has to fit inside it. If the plan does not fit, say so and ask for the number you need instead of proposing hires that will pause the company. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer.
+1. **Read the handbook**, then write ONE proposal to the board in the all-hands channel: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. **Name your own budget in that proposal** — the `budget:` line of the trigger block is what the board gave you (100 USD per month unless creation said otherwise), and since budgets accumulate along the reporting line it is the whole company's cap: every salary you propose has to fit inside it. If the plan does not fit, say so and ask for the number you need instead of proposing hires that will pause the company. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer. Write it in the organization's working language, the one the handbook's 「工作语言」 / “Working language” section names — as you write every message, ticket, document and brief from here on; commands, ids, file names and field names stay ASCII.
 2. **When the board confirms** (a mention or a message in your desk conversation), hire HR and finance, then the confirmed roles (`penguin org hire --new-agent <org_id>_<role> …`, default plugins).
-3. **Partition the shared workspace** as confirmed: create the sub-directories with your file tools, then `penguin org employee set <agent_id> --workspace <sub-directory>`.
+3. **Partition the shared workspace** as confirmed: `penguin org employee set <agent_id> --workspace <sub-directory>` — a relative sub-directory is created as it is assigned, so it need not exist first.
 4. **Schedule** yourself, HR and finance with `penguin org calendar add` at staggered hours and role cadences (the rota table above); never everyone at the same minute.
 5. **File the confirmed tickets**: the parent per goal and the first children per stream, owners assigned, accepted into `in_progress` only for what the board confirmed.
 6. **Open one channel per stream** (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.

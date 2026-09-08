@@ -297,6 +297,8 @@ export interface Messages {
     newOrgId: string;
     mission: string;
     orgName: string;
+    /** create's --language: the organization's working language (default: detected from the mission). */
+    orgLanguageOption: string;
     /** hire's --agent-id: employ an existing Agent (XOR --new-agent). */
     hireAgentId: string;
     /** hire's --new-agent: create the Agent and employ it. */
@@ -372,6 +374,8 @@ export interface Messages {
     budgetInvalid(flag: string, value: string): string;
     /** employee set with no field to change. */
     nothingToSet(): string;
+    /** A --language value that is neither zh nor en. */
+    languageInvalid(value: string): string;
     /** A --status / --to value that is not a kanban column. */
     statusInvalid(value: string): string;
     priorityInvalid(value: string): string;
@@ -430,6 +434,7 @@ export interface Messages {
     /** `show`: one line per fact. */
     showHead(name: string, orgId: string, status: string): string;
     showMission(mission: string): string;
+    showLanguage(language: string): string;
     showEmployees(count: number, running: number, paused: number): string;
     showBoard(counts: string, blocked: number): string;
     showSpend(period: string, spend: string): string;
@@ -1065,6 +1070,8 @@ const en: Messages = {
       "Id of the organization to create (letters, digits, underscores; also its directory name)",
     mission: "The organization's mission",
     orgName: "Display name (defaults to the id)",
+    orgLanguageOption:
+      "Working language of everything the organization writes: zh or en (defaults to the mission's own language)",
     hireAgentId: "Employ this existing Agent (mutually exclusive with --new-agent)",
     newAgent: "Create an Agent with this id and employ it (mutually exclusive with --agent-id)",
     newAgentName: "Display name of the new Agent",
@@ -1126,6 +1133,7 @@ const en: Messages = {
     budgetInvalid: (flag, value) =>
       `Invalid ${flag} value "${value}": expected a non-negative amount in USD.`,
     nothingToSet: () => "Nothing to update: pass at least one field.",
+    languageInvalid: (value) => `Invalid --language value "${value}": expected zh or en.`,
     statusInvalid: (value) =>
       `Invalid column "${value}": expected proposed, in_progress, review, done or rejected.`,
     priorityInvalid: (value) => `Invalid --priority value "${value}": expected P0, P1 or P2.`,
@@ -1173,6 +1181,7 @@ const en: Messages = {
     channelEmpty: (channelId, date) => `No messages in ${channelId} on ${date}.`,
     showHead: (name, orgId, status) => `${name} (${orgId}) — ${status}`,
     showMission: (mission) => `Mission: ${mission}`,
+    showLanguage: (language) => `Working language: ${language}`,
     showEmployees: (count, running, paused) =>
       `Employees: ${count} (${running} running, ${paused} paused)`,
     showBoard: (counts, blocked) => `Board: ${counts} (${blocked} blocked)`,
@@ -1779,6 +1788,7 @@ const zh: Messages = {
     newOrgId: "要创建的组织 id（字母、数字、下划线；同时是目录名）",
     mission: "组织的使命",
     orgName: "显示名（缺省同 id）",
+    orgLanguageOption: "组织书写一切内容所用的工作语言：zh 或 en（缺省取使命本身的语言）",
     hireAgentId: "招募这个既有 Agent（与 --new-agent 互斥）",
     newAgent: "以此 id 新建 Agent 并招募（与 --agent-id 互斥）",
     newAgentName: "新 Agent 的显示名",
@@ -1832,6 +1842,7 @@ const zh: Messages = {
     newAgentFieldsOnly: () => "--name、--description 与 --skills 只用于描述 --new-agent。",
     budgetInvalid: (flag, value) => `${flag} 值「${value}」无效：应为非负的美元金额。`,
     nothingToSet: () => "没有要更新的内容：至少给出一个字段。",
+    languageInvalid: (value) => `--language 值「${value}」无效：应为 zh 或 en。`,
     statusInvalid: (value) =>
       `列名「${value}」无效：应为 proposed、in_progress、review、done 或 rejected。`,
     priorityInvalid: (value) => `--priority 值「${value}」无效：应为 P0、P1 或 P2。`,
@@ -1878,6 +1889,7 @@ const zh: Messages = {
     channelEmpty: (channelId, date) => `${channelId} 在 ${date} 没有消息。`,
     showHead: (name, orgId, status) => `${name}（${orgId}）——${status}`,
     showMission: (mission) => `使命：${mission}`,
+    showLanguage: (language) => `工作语言：${language}`,
     showEmployees: (count, running, paused) =>
       `员工：${count}（运行中 ${running}，已暂停 ${paused}）`,
     showBoard: (counts, blocked) => `看板：${counts}（阻塞 ${blocked}）`,

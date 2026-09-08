@@ -14,6 +14,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   OrgApprovalMode,
   OrgChannelMessage,
+  OrgLanguage,
   OrgStatus,
   OrgTicketPriority,
   OrgTicketProgressEntry,
@@ -48,6 +49,27 @@ export interface OrgConfig {
   workspace?: string;
   /** The model desks and ticket sessions run on when the employee entry names none; absent = the Project default. */
   model?: { provider: string; modelId: string };
+  /** The working language everything the organization produces is written in; absent = detected from the mission ({@link orgLanguage}). */
+  language?: OrgLanguage;
+}
+
+/**
+ * The language of a piece of text as the organization uses it: one Han character anywhere
+ * makes it Chinese, everything else is English. Deliberately coarse — a mission is one or
+ * two sentences, and the question it answers is which of the two sets of templates the
+ * company writes in, not what locale it is in.
+ */
+export function detectLanguage(text: string): OrgLanguage {
+  return /\p{Script=Han}/u.test(text) ? "zh" : "en";
+}
+
+/**
+ * The organization's effective working language: the field when it is set, else the
+ * language of the mission. An organization written before the field existed therefore
+ * needs no migration — it reads as whatever its mission is written in.
+ */
+export function orgLanguage(config: OrgConfig): OrgLanguage {
+  return config.language ?? detectLanguage(config.mission);
 }
 
 export const ORG_CONFIG_DEFAULTS = {
@@ -116,6 +138,10 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
   if (workspace !== undefined && (typeof workspace !== "string" || !path.isAbsolute(workspace))) {
     return fail("workspace must be an absolute path");
   }
+  const language = table["language"];
+  if (language !== undefined && language !== "zh" && language !== "en") {
+    return fail("language must be zh or en");
+  }
   let model: { provider: string; modelId: string } | undefined;
   if (table["model"] !== undefined) {
     const m = table["model"];
@@ -146,6 +172,7 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
       createdBy,
       ...(typeof workspace === "string" ? { workspace } : {}),
       ...(model !== undefined ? { model } : {}),
+      ...(language !== undefined ? { language } : {}),
     },
   };
 }
@@ -161,6 +188,7 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     budget_warn_ratio: cfg.budgetWarnRatio,
     budget_pause_ratio: cfg.budgetPauseRatio,
     created_by: cfg.createdBy,
+    ...(cfg.language !== undefined ? { language: cfg.language } : {}),
     ...(cfg.workspace !== undefined ? { workspace: cfg.workspace } : {}),
     ...(cfg.model !== undefined
       ? { model: { provider: cfg.model.provider, model_id: cfg.model.modelId } }
@@ -170,6 +198,7 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
     "# org_config.toml — organization settings (the id is the directory name and never changes).",
     "# status: active | paused (paused stops every automatic trigger; people can still talk to any desk).",
     "# approval_mode: allow-all | read-only | deny-all for desk and ticket sessions.",
+    "# language: zh | en — the working language of everything the organization writes (optional; detected from the mission when absent).",
     "# workspace: an absolute directory used as the shared workspace instead of ./workspace (optional).",
     "# [model]: provider + model_id for desks and ticket sessions when the employee names none (optional).",
     stringifyToml(table),

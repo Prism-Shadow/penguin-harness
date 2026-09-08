@@ -202,6 +202,47 @@ describe("organization routes", () => {
     });
   });
 
+  it("validates an id proposal and carries the organization's language both ways", async () => {
+    const base = `/api/projects/${ownerProject}/organizations`;
+    // The proposal needs no organization, only the Project — and a kind the server knows.
+    expect((await owner.post(`${base}/suggest-id`, { kind: "org" })).status).toBe(400);
+    expect((await owner.post(`${base}/suggest-id`, { name: "科研公司" })).status).toBe(400);
+    expect(
+      (await owner.post(`${base}/suggest-id`, { name: "科研公司", kind: "team" })).status,
+    ).toBe(400);
+    expect(calls).toEqual([]);
+    expect(
+      (
+        await owner.post(`${base}/suggest-id`, {
+          name: "科研公司",
+          kind: "org",
+          taken: ["research_lab"],
+        })
+      ).status,
+    ).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "suggestId",
+      args: [ownerProject, { name: "科研公司", kind: "org", taken: ["research_lab"] }],
+    });
+
+    expect((await owner.post(base, { orgId: "acme", mission: "x", language: "fr" })).status).toBe(
+      400,
+    );
+    expect(
+      (await owner.post(base, { orgId: "acme", mission: "做一个市场", language: "zh" })).status,
+    ).toBe(201);
+    expect(calls.at(-1)).toMatchObject({
+      method: "create",
+      args: [ownerProject, { orgId: "acme", mission: "做一个市场", language: "zh" }, "olivia"],
+    });
+    expect((await owner.patch(`${base}/acme`, { language: "de" })).status).toBe(400);
+    expect((await owner.patch(`${base}/acme`, { language: "en" })).status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "patch",
+      args: [ownerProject, "acme", { language: "en" }],
+    });
+  });
+
   it("routes handbook documents by their relative path and keeps the index", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/handbook`;
     expect((await owner.get(`${base}/files`)).status).toBe(200);

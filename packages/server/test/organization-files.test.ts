@@ -6,7 +6,9 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  detectLanguage,
   extractMentionTokens,
+  orgLanguage,
   parseCalendarEvent,
   parseChannelConfig,
   parseChannelMessageLine,
@@ -38,6 +40,7 @@ import {
   channelConfigPath,
   channelDayPath,
   isChannelId,
+  normalizeWorkspaceSpec,
   ticketMonth,
   ticketPath,
 } from "../src/organization/paths.js";
@@ -85,6 +88,14 @@ describe("org_config.toml", () => {
     expect(minimal.ok && minimal.value.timezone).toBe("UTC");
   });
 
+  it("round-trips the working language and rejects anything but zh or en", () => {
+    const zh = parseOrgConfig(serializeOrgConfig({ ...config, language: "zh" }));
+    expect(zh).toEqual({ ok: true, value: { ...config, language: "zh" } });
+    expect(
+      parseOrgConfig('name = "A"\nmission = "x"\ncreated_by = "u"\nlanguage = "fr"\n').ok,
+    ).toBe(false);
+  });
+
   it("rejects a bad status, timezone or ratio", () => {
     expect(parseOrgConfig('name = "A"\nmission = ""\ncreated_by = "u"\nstatus = "off"\n').ok).toBe(
       false,
@@ -96,6 +107,24 @@ describe("org_config.toml", () => {
       parseOrgConfig('name = "A"\nmission = ""\ncreated_by = "u"\nbudget_warn_ratio = 0\n').ok,
     ).toBe(false);
     expect(parseOrgConfig("name = [\n").ok).toBe(false);
+  });
+});
+
+describe("the working language", () => {
+  it("reads zh from one Han character anywhere and en from everything else", () => {
+    expect(detectLanguage("做一个插件 Marketplace")).toBe("zh");
+    expect(detectLanguage("Build a marketplace")).toBe("en");
+    expect(detectLanguage("Marketplace（插件）")).toBe("zh");
+    expect(detectLanguage("")).toBe("en");
+    // Kana alone is not Han: only Chinese has a template here.
+    expect(detectLanguage("マーケット")).toBe("en");
+  });
+
+  it("falls back to the mission, so an organization written without the field still has one", () => {
+    expect(orgLanguage({ ...config, mission: "做一个插件市场" })).toBe("zh");
+    expect(orgLanguage({ ...config, mission: "Build a marketplace" })).toBe("en");
+    // The field wins over the mission: a Chinese mission may still be run in English.
+    expect(orgLanguage({ ...config, mission: "做一个插件市场", language: "en" })).toBe("en");
   });
 });
 
@@ -369,6 +398,20 @@ describe("channel files", () => {
     expect(channelDayPath("/org", DEFAULT_CHANNEL_ID, "2026-09-03")).toBe(
       path.join("/org", "channels", "default_channel", "2026-09-03.jsonl"),
     );
+  });
+});
+
+describe("workspace specs", () => {
+  it("spells one partition one way, and leaves an absolute path alone", () => {
+    expect(normalizeWorkspaceSpec("./hr")).toBe("hr");
+    expect(normalizeWorkspaceSpec("hr/")).toBe("hr");
+    expect(normalizeWorkspaceSpec(".//hr//people/")).toBe("hr/people");
+    expect(normalizeWorkspaceSpec("  hr  ")).toBe("hr");
+    expect(normalizeWorkspaceSpec(".")).toBe(".");
+    expect(normalizeWorkspaceSpec("./")).toBe(".");
+    expect(normalizeWorkspaceSpec("")).toBe(".");
+    // Not ours to rewrite, and still refused later if it does not exist.
+    expect(normalizeWorkspaceSpec("../outside")).toBe("../outside");
   });
 });
 

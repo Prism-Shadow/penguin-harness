@@ -40,6 +40,7 @@ import type {
   OrganizationPatchRequest,
   OrganizationSettings,
   OrganizationSummary,
+  OrgLanguage,
   ScheduleStatus,
   OrgHandbookFileResponse,
   OrgHandbookFilesResponse,
@@ -51,7 +52,9 @@ import {
   DEFAULT_CEO_BUDGET,
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
+  detectLanguage,
   extractMentionTokens,
+  orgLanguage,
   parseCalendarEvent,
   parseOrgChart,
   parseProgressLine,
@@ -68,6 +71,7 @@ import {
   isChannelId,
   isHandbookFilePath,
   isTicketColumn,
+  normalizeWorkspaceSpec,
 } from "../../organization/paths.js";
 import {
   agentPrincipal,
@@ -76,7 +80,7 @@ import {
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
-import { fallbackSemanticId } from "../../organization/semantic-id.js";
+import { fallbackSemanticId, sanitizeSuggestedId } from "../../organization/semantic-id.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
@@ -141,14 +145,23 @@ export class OrganizationService {
 
   /**
    * A semantic id for a display name (the organization and channel dialogs name the thing
-   * first and derive the id). The ASCII fallback alone for now: a name with nothing ASCII in
-   * it (a Chinese name) is a 422 until the model-backed path lands.
+   * first and derive the id). The Project's default model translates the name into one
+   * snake_case English identifier — the common case is a Chinese name, which nothing
+   * mechanical can transliterate — and the ASCII slug of the name answers whenever the model
+   * is unavailable, refuses or answers with something no id can be built from. A name that
+   * neither path can name is a 422: the dialog then asks for an id by hand.
    */
   async suggestId(
-    _projectId: string,
+    projectId: string,
     req: SemanticIdSuggestRequest,
   ): Promise<SemanticIdSuggestResponse> {
-    const id = fallbackSemanticId(req.name, req.kind, req.taken ?? []);
+    const taken = req.taken ?? [];
+    if (this.deps.completeOnce !== undefined) {
+      const answer = await this.deps.completeOnce(projectId, semanticIdPrompt(req));
+      const id = answer === null ? null : sanitizeSuggestedId(answer, req.kind, taken);
+      if (id !== null) return { id, source: "model" };
+    }
+    const id = fallbackSemanticId(req.name, req.kind, taken);
     if (id === null) {
       throw new HttpError(
         422,
@@ -259,6 +272,9 @@ export class OrganizationService {
       budgetWarnRatio: org.config.budgetWarnRatio,
       budgetPauseRatio: org.config.budgetPauseRatio,
       createdBy: org.config.createdBy,
+      // Always the effective language, never the raw field: an organization written before
+      // the field existed still has one, read from its mission.
+      language: orgLanguage(org.config),
       ...(org.config.workspace !== undefined ? { workspace: org.config.workspace } : {}),
       ...(org.config.model !== undefined ? { model: org.config.model } : {}),
     };
@@ -382,11 +398,15 @@ export class OrganizationService {
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
     const workspace =
       req.workspace !== undefined ? await this.requireWorkspaceDir(req.workspace) : undefined;
+    // The mission decides the working language unless the request names one: a company given
+    // a Chinese mission writes in Chinese, without anyone having to ask for it.
+    const language = req.language ?? detectLanguage(mission);
     const config: OrgConfig = {
       name,
       mission,
       status: "active",
       timezone,
+      language,
       approvalMode: ORG_CONFIG_DEFAULTS.approvalMode,
       mentionChainLimit: ORG_CONFIG_DEFAULTS.mentionChainLimit,
       budgetWarnRatio: ORG_CONFIG_DEFAULTS.budgetWarnRatio,
@@ -406,7 +426,9 @@ export class OrganizationService {
             title: "CEO",
             reportsTo: null,
             duties:
-              "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
+              language === "zh"
+                ? "把使命拆成工单、招募、划分公共工作区、审核工单、向董事会汇报"
+                : "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
             workspace: ".",
             // Compared on the cumulative line, so this one number is the whole company's cap.
             budget: req.ceoBudget ?? DEFAULT_CEO_BUDGET,
@@ -415,7 +437,7 @@ export class OrganizationService {
       });
       await this.deps.store.writeHandbook(
         dir,
-        renderHandbook({ orgId, name, mission, ceoAgentId: ceo, createdBy: userId }),
+        renderHandbook({ orgId, name, mission, ceoAgentId: ceo, createdBy: userId, language }),
       );
       await this.deps.agents.create(
         projectId,
@@ -427,7 +449,15 @@ export class OrganizationService {
       await this.deps.agents.writeAgentsMd(
         projectId,
         ceo,
-        employeeBrief({ orgId, name, mission, agentId: ceo, title: "CEO", reportsTo: null }),
+        employeeBrief({
+          orgId,
+          name,
+          mission,
+          agentId: ceo,
+          title: "CEO",
+          reportsTo: null,
+          language,
+        }),
       );
     } catch (err) {
       await this.deps.store.remove(dir);
@@ -465,6 +495,7 @@ export class OrganizationService {
         if (!isValidTimeZone(req.timezone)) throw badRequest(`Unknown timezone: ${req.timezone}`);
         next.timezone = req.timezone;
       }
+      if (req.language !== undefined) next.language = req.language;
       if (req.mentionChainLimit !== undefined) next.mentionChainLimit = req.mentionChainLimit;
       if (req.budgetWarnRatio !== undefined) next.budgetWarnRatio = req.budgetWarnRatio;
       if (req.budgetPauseRatio !== undefined) next.budgetPauseRatio = req.budgetPauseRatio;
@@ -505,14 +536,24 @@ export class OrganizationService {
   private async employeeItems(org: LoadedOrg, spend: OrgSpend): Promise<OrgEmployeeItem[]> {
     const paused = pausedEmployees(this.deps, org, spend.period);
     const out: OrgEmployeeItem[] = [];
+    const shared = sharedWorkspace(org);
     for (const e of org.chart.employees) {
       const exists = await this.deps.agents.exists(org.projectId, e.agentId);
-      const workspace = await this.deps.store.resolveWorkspace(sharedWorkspace(org), e.workspace);
+      // A relative sub-directory that is not there yet is not a broken entry: it is created
+      // when the employee is first put to work. Only a spec that leaves the shared workspace,
+      // or an absolute directory nobody created, makes the entry unusable.
+      const workspace = this.deps.store.workspaceTarget(shared, e.workspace);
+      const absentAbsolute =
+        workspace !== null &&
+        path.isAbsolute(e.workspace) &&
+        (await this.deps.store.resolveWorkspace(shared, e.workspace)) === null;
       const invalid = !exists
         ? `Agent ${e.agentId} does not exist`
         : workspace === null
-          ? `workspace directory does not exist: ${e.workspace}`
-          : undefined;
+          ? `workspace leaves the shared workspace: ${e.workspace}`
+          : absentAbsolute
+            ? `workspace directory does not exist: ${e.workspace}`
+            : undefined;
       const own = spend.own.get(e.agentId) ?? 0;
       const cumulative = spend.cumulative.get(e.agentId) ?? 0;
       const desk = org.desks[e.agentId];
@@ -565,6 +606,35 @@ export class OrganizationService {
       );
   }
 
+  /**
+   * The workspace spec to store for an employee, with its directory ready: `./hr`, `hr/` and
+   * `hr` all become `hr`, a relative partition is created under the shared workspace, and an
+   * absolute path must already exist because it is a directory of the user's, not ours to
+   * make. A spec that climbs out of the shared workspace is refused outright.
+   */
+  private async requireEmployeeWorkspace(
+    org: LoadedOrg,
+    spec: string | undefined,
+  ): Promise<string> {
+    const normalized = normalizeWorkspaceSpec(spec ?? ".");
+    const shared = sharedWorkspace(org);
+    if (this.deps.store.workspaceTarget(shared, normalized) === null) {
+      throw new HttpError(
+        400,
+        "invalid_workspace",
+        `workspace must stay inside the shared workspace: ${normalized}`,
+      );
+    }
+    if ((await this.deps.store.ensureWorkspace(shared, normalized)) === null) {
+      throw new HttpError(
+        400,
+        "invalid_workspace",
+        `workspace directory does not exist: ${normalized}`,
+      );
+    }
+    return normalized;
+  }
+
   /** Writes a chart after re-validating it through the parser: the API never persists what a hand edit would be refused for. */
   private async writeChart(org: LoadedOrg, employees: OrgEmployee[]): Promise<void> {
     const raw = serializeOrgChart({ employees });
@@ -588,6 +658,10 @@ export class OrganizationService {
         );
       }
       if (req.model !== undefined) await this.validateModel(projectId, req.model);
+      // Before the Agent and the chart entry: the partition an employee is hired into exists
+      // from the moment the employee does, and a spec that leaves the shared workspace is
+      // refused rather than written and found broken on the first trigger.
+      const workspace = await this.requireEmployeeWorkspace(org, req.workspace);
       let agentId: string;
       if (req.newAgent !== undefined) {
         agentId = req.newAgent.agentId;
@@ -612,6 +686,7 @@ export class OrganizationService {
             agentId,
             title,
             reportsTo: req.reportsTo,
+            language: orgLanguage(org.config),
             ...(req.duties !== undefined ? { duties: req.duties } : {}),
           }),
         );
@@ -630,7 +705,7 @@ export class OrganizationService {
         ...(req.duties !== undefined && req.duties.trim() !== ""
           ? { duties: req.duties.trim() }
           : {}),
-        workspace: req.workspace?.trim() || ".",
+        workspace,
         ...(req.budget !== undefined ? { budget: req.budget } : {}),
         ...(req.model !== undefined ? { model: req.model } : {}),
       };
@@ -669,7 +744,11 @@ export class OrganizationService {
         ...current,
         ...(req.title !== undefined ? { title: req.title.trim() } : {}),
         ...(req.reportsTo !== undefined ? { reportsTo: req.reportsTo } : {}),
-        ...(req.workspace !== undefined ? { workspace: req.workspace.trim() || "." } : {}),
+        // A reassigned partition is created here, so the desk the next reconcile renews has
+        // its directory waiting for it.
+        ...(req.workspace !== undefined
+          ? { workspace: await this.requireEmployeeWorkspace(org, req.workspace) }
+          : {}),
         ...(req.duties !== undefined ? { duties: req.duties.trim() } : {}),
       };
       if (req.budget === null) delete next.budget;
@@ -2002,6 +2081,25 @@ function requireHandbookPath(rel: string): void {
     );
 }
 
+/**
+ * The prompt behind a model-backed semantic id: the model translates a display name into
+ * one snake_case English identifier. Examples in both scripts, the taken ids named so the
+ * answer does not collide, and no room for prose — whatever comes back still passes through
+ * `sanitizeSuggestedId`, and anything that does not survive it falls back to the ASCII slug.
+ */
+function semanticIdPrompt(req: SemanticIdSuggestRequest): string {
+  const taken = (req.taken ?? []).join(", ");
+  return [
+    "You produce identifiers. Given a display name, answer with ONE snake_case ASCII identifier:",
+    "lowercase letters, digits and underscores, starting with a letter, 2–40 characters, made of",
+    "English words that carry the name's meaning (translate a non-English name), no explanation,",
+    "nothing else. Examples: Plugin Marketplace → plugin_marketplace; 科研论文公司 →",
+    "research_paper_lab; 市场推广 → marketing; Site → site.",
+    ...(taken !== "" ? [`Do not answer any of: ${taken}.`] : []),
+    `Name: ${req.name}`,
+  ].join(" ");
+}
+
 /** The AGENTS.md written for an Agent created as an employee: who it is in this organization and where the handbook is. */
 export function employeeBrief(input: {
   orgId: string;
@@ -2010,31 +2108,60 @@ export function employeeBrief(input: {
   agentId: string;
   title: string;
   reportsTo: string | null;
+  language: OrgLanguage;
   duties?: string;
 }): string {
+  if (input.language === "zh") {
+    return `# 员工简介
+
+你是 \`${input.agentId}\`，组织 **${input.name}**（\`${input.orgId}\`）的${input.title}，向${input.reportsTo === null ? "董事会" : `\`${input.reportsTo}\``}汇报。
+
+使命：${input.mission}
+${input.duties !== undefined ? `\n职责：${input.duties}\n` : ""}
+本组织的工作语言是中文：频道消息、工单、手册文档与汇报都用中文书写，命令、文件名、id 与字段名保持 ASCII。
+
+你的组织目录是 \`<app_data_dir>/organizations/${input.orgId}/\`。每轮工作开始时先读 \`handbook/README.md\`（组织手册的索引；这个目录是公司的知识库），然后按 \`company-employee\` Skill 行事；头衔属于哪个角色，就再用 \`company-ceo\`、\`company-hr\` 或 \`company-finance\`。在你的会话里，\`penguin org\` 命令已经从环境中知道你的组织、Project、Agent 与当前会话。
+`;
+  }
   return `# Employee brief
 
 You are \`${input.agentId}\`, ${input.title} of the organization **${input.name}** (\`${input.orgId}\`), reporting to ${input.reportsTo === null ? "the board" : `\`${input.reportsTo}\``}.
 
 Mission: ${input.mission}
 ${input.duties !== undefined ? `\nDuties: ${input.duties}\n` : ""}
+This organization works in English: channel messages, tickets, handbook documents and reports are written in it; commands, file names, ids and field names stay ASCII.
+
 Your organization directory is \`<app_data_dir>/organizations/${input.orgId}/\`. At the start of every work run read \`handbook/README.md\` (the handbook index; the directory is the company's knowledge base), then follow the \`company-employee\` skill; use \`company-ceo\`, \`company-hr\` or \`company-finance\` when your title is that role. Inside your sessions the \`penguin org\` commands already know your organization, Project, Agent and session from the environment.
 `;
 }
 
-/** The body of the CEO's initialization work run. */
+/** The body of the CEO's initialization work run, in the organization's working language. */
 function initBody(org: LoadedOrg): string {
   const board = userPrincipal(org.config.createdBy);
+  const ceo = ceoAgentId(org.orgId);
+  if (orgLanguage(org.config) === "zh") {
+    return [
+      `使命：${org.config.mission}`,
+      "",
+      "你是一家全新组织的 CEO，这是它的初始化运行。重要的事由董事会拍板，你负责提案。按顺序完成下面几件事：",
+      `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算与 Model，以及公共工作区怎么划分。以明确的问题结尾，然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
+      `2. 答复会以提及或本会话消息的形式到来。董事会确认后，先招人事与财务——\`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\`，\`${org.orgId}_finance\` 同理——再招确认过的其他角色。`,
+      "3. 按确认的方案划分公共工作区：把子目录分配下去（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
+      "4. 把你自己、人事与财务排进日历（`penguin org calendar add …`），做成轮值表而不是广播：你每天 09:00，人事每三天 10:00，财务每周 16:00（组织时区，写成带偏移量的 ISO 时刻，绝不用 `--start-at now`），此后每招一人就给它一个各自不同的时点。",
+      '5. 把确认过的工单开进 `proposed`（`penguin org ticket create …`）：一个项目级目标一张父工单，每条工作线一张子工单。随后，每接受一张工单进入 `in_progress`，就为它发起一个工单会话（`penguin org ticket start <id> -m "…"`）——工位只负责调度与跟踪，绝不在工位上做工单本身的活。',
+      "6. 每条工作线开一个频道（`penguin org channel create <id> --name …`）并邀请它的负责人（`penguin org channel invite <id> agent:<agent_id>`），免得一条线索淹没全员频道。",
+      `7. 在全员频道里向董事会汇报并 @${board}，如果还需要拍板，就点明下一个决定。`,
+    ].join("\n");
+  }
   return [
     `Mission: ${org.config.mission}`,
     "",
     "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
     `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
-    "2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — `penguin org hire --new-agent " +
-      `${org.orgId}_hr --title HR --reports-to ${ceoAgentId(org.orgId)} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
-    "3. Partition the shared workspace as confirmed: create sub-directories with your file tools and assign them (`penguin org employee set <agent_id> --workspace <sub-directory>`).",
+    `2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
+    "3. Partition the shared workspace as confirmed: assign the sub-directories (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
-    "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream.",
+    '5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream. Then, for every ticket you accept into `in_progress`, START a ticket session for it (`penguin org ticket start <id> -m "…"`) — the desk schedules and tracks, and never does the ticket work itself.',
     "6. Open one channel per stream (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
     `7. Report to the board in the all-hands channel, mentioning @${board}, and name the next decision you need, if any.`,
   ].join("\n");

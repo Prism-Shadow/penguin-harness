@@ -135,6 +135,20 @@ export function workspaceDir(dir: string): string {
   return path.join(dir, "workspace");
 }
 
+/**
+ * The canonical form of an employee's workspace spec, so `./hr`, `hr/` and `hr` are one
+ * partition in the chart rather than three spellings of it: a leading `./` and trailing
+ * slashes go, repeated slashes collapse, and `.` (the whole shared workspace) stays `.`.
+ * An absolute path keeps its shape — it is a user's directory, not ours to rewrite.
+ */
+export function normalizeWorkspaceSpec(spec: string): string {
+  let out = spec.trim().replace(/\/{2,}/g, "/");
+  if (path.isAbsolute(out)) return out.length > 1 ? out.replace(/\/+$/, "") : out;
+  while (out.startsWith("./")) out = out.slice(2);
+  out = out.replace(/\/+$/, "");
+  return out === "" ? "." : out;
+}
+
 /** The CEO's Agent id is fixed by the organization id, so creation can check it is free before writing anything. */
 export function ceoAgentId(orgId: string): string {
   return `${orgId}_ceo`;
