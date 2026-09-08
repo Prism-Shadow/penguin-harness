@@ -15,15 +15,21 @@ import { ApiError } from "../src/api/client";
 type Answer = SessionsResponse | Error;
 /** What each (machine, agent) answers; a missing entry throws like an unreachable server. */
 const answers = new Map<string, Answer>();
+/** Which servers were asked, and for which Workspace group — what the fan-out tests read. */
+const asked: { machineId: string | null; workspaceGroup?: string }[] = [];
 const key = (machineId: string | null, agentId: string) => `${machineId ?? ""}|${agentId}`;
 
 vi.mock("../src/api/endpoints", () => ({
   listSessions: async (
     _projectId: string,
     agentId: string,
-    _opts: unknown,
+    opts: { workspaceGroup?: string } | undefined,
     machineId?: string | null,
   ) => {
+    asked.push({
+      machineId: machineId ?? null,
+      ...(opts?.workspaceGroup === undefined ? {} : { workspaceGroup: opts.workspaceGroup }),
+    });
     const answer = answers.get(key(machineId ?? null, agentId));
     if (answer === undefined) throw new ApiError(0, "network_error", "no answer");
     if (answer instanceof Error) throw answer;
@@ -47,10 +53,15 @@ const row = (sessionId: string, createdAt: string, agentId = "a1"): SessionInfo 
     hasTrace: false,
   }) as SessionInfo;
 
-const page = (sessions: SessionInfo[], active: number): SessionsResponse =>
+const page = (
+  sessions: SessionInfo[],
+  active: number,
+  workspaceCounts?: Record<string, { active: number }>,
+): SessionsResponse =>
   ({
     sessions,
     counts: { active, subagent: 0, schedule: 0, archived: 0 },
+    ...(workspaceCounts === undefined ? {} : { workspaceCounts }),
   }) as SessionsResponse;
 
 function memoryStorage(): Storage {
@@ -71,6 +82,7 @@ describe("the list across machines", () => {
   const originalStorage = (globalThis as { localStorage?: Storage }).localStorage;
   beforeEach(() => {
     answers.clear();
+    asked.length = 0;
     (globalThis as { localStorage?: Storage }).localStorage = memoryStorage();
   });
   afterEach(() => {
@@ -137,6 +149,42 @@ describe("the list across machines", () => {
     await store.getState().reload();
     expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["here"]);
     expect(store.getState().loading).toBe(false);
+  });
+
+  it("keeps two machines' counts for one path apart — a badge is about a directory, not a string", async () => {
+    // `/w` on this server and `/w` on M1 are two different directories, and each folder's
+    // badge has to match the rows under it. Summed onto one key, both folders claimed 7.
+    answers.set(
+      key(null, "a1"),
+      page([row("here", "2026-01-02T00:00:00Z")], 1, { "/w": { active: 2 } }),
+    );
+    answers.set(
+      key("M1", "a1"),
+      page([row("there", "2026-01-03T00:00:00Z")], 1, { "/w": { active: 5 } }),
+    );
+    const store = boot(["M1"]);
+    await store.getState().reload();
+    const byGroup = store.getState().workspaceCountsByAgent.get("a1");
+    expect(byGroup?.["/w"]?.active).toBe(2);
+    expect(byGroup?.[`M1\u0000/w`]?.active).toBe(5);
+  });
+
+  it("a group's page is asked only of the machine that group is on, by path", async () => {
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), page([row("there", "2026-01-03T00:00:00Z")], 1));
+    const store = boot(["M1"]);
+    await store.getState().reload();
+
+    asked.length = 0;
+    await store.getState().loadMoreFor(["a1"], "active", `M1\u0000/w`);
+    // `/w` exists on this server too: asking it would page another directory's rows into
+    // this group, and leave the group's "load more" waiting on a machine it is not on. The
+    // machine half never travels in the query — the request already goes to that machine.
+    expect(asked).toEqual([{ machineId: "M1", workspaceGroup: "/w" }]);
+
+    asked.length = 0;
+    await store.getState().loadMoreFor(["a1"], "active", "/w");
+    expect(asked).toEqual([{ machineId: null, workspaceGroup: "/w" }]);
   });
 
   it("a refresh over rows already on screen does not raise loading", async () => {
