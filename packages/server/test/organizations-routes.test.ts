@@ -202,6 +202,32 @@ describe("organization routes", () => {
     });
   });
 
+  it("carries a ticket initiator through to the service, and validates it first", async () => {
+    const base = `/api/projects/${ownerProject}/organizations/acme`;
+    const created = await owner.post(`${base}/tickets`, {
+      title: "Audit the calendar",
+      goal: "One event per employee",
+      initiator: "agent:acme_hr",
+    });
+    expect(created.status).toBe(201);
+    expect(calls.at(-1)).toMatchObject({
+      method: "createTicket",
+      args: [
+        ownerProject,
+        "acme",
+        { title: "Audit the calendar", goal: "One event per employee", initiator: "agent:acme_hr" },
+        { userId: "olivia" },
+      ],
+    });
+    // An empty or oversized initiator is no principal, so it never reaches the service.
+    calls.length = 0;
+    expect((await owner.post(`${base}/tickets`, { title: "T", initiator: "" })).status).toBe(400);
+    expect(
+      (await owner.post(`${base}/tickets`, { title: "T", initiator: "a".repeat(101) })).status,
+    ).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
   it("routes handbook documents by their relative path and keeps the index", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme/handbook`;
     expect((await owner.get(`${base}/files`)).status).toBe(200);

@@ -515,6 +515,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const title = requireString(body, "title", { minLen: 1, maxLen: 200 });
+    const initiator = optionalString(body, "initiator", { minLen: 1, maxLen: 100 });
     const slug = optionalString(body, "slug", { minLen: 1, maxLen: 64 });
     const goal = optionalString(body, "goal", { maxLen: 100_000 });
     const acceptanceCriteria = optionalString(body, "acceptanceCriteria", { maxLen: 100_000 });
@@ -529,6 +530,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       orgId,
       {
         title,
+        ...(initiator !== undefined ? { initiator } : {}),
         ...(slug !== undefined ? { slug } : {}),
         ...(goal !== undefined ? { goal } : {}),
         ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),

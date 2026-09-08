@@ -337,7 +337,9 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       `agent:${DEV}`,
     ]);
     expect(siteDetail.progress.at(-1)?.sessionId).toBe(siteWork);
-    expect(siteDetail.sessions).toEqual([siteWork]);
+    // The CEO's desk accepted the ticket from inside its own session, so it is booked as a
+    // contributing session too: every session that wrote to the ticket pays for part of it.
+    expect(siteDetail.sessions).toEqual([ceoDesk, siteWork]);
 
     // 8. The CEO reviews and closes it: the developer is told, and the marketer learns its blocker closed.
     h.started.length = 0;

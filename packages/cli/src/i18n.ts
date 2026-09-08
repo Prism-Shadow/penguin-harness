@@ -1,3 +1,5 @@
+import type { OrgChannelNoticeKind } from "@prismshadow/penguin-server/api";
+
 /**
  * CLI text internationalization (i18n).
  *
@@ -322,6 +324,8 @@ export interface Messages {
     ownerFilter: string;
     blockedFilter: string;
     ticketTitle: string;
+    /** create's --initiator: file the ticket in another principal's name. */
+    ticketInitiator: string;
     goal: string;
     criteria: string;
     /** --body-file: the whole Markdown body from a file (XOR --goal). */
@@ -403,6 +407,8 @@ export interface Messages {
       enabledText: string,
       nextFireAt: string | undefined,
     ): string;
+    /** One advisory rota line the server answered a calendar write with (its text stays English). */
+    calendarWarning(warning: string): string;
     calendarRemoved(agentId: string, name: string): string;
     ticketCreated(ticketId: string, status: string): string;
     ticketMoved(ticketId: string, status: string): string;
@@ -444,6 +450,11 @@ export interface Messages {
       blocked: string | undefined,
     ): string;
     ticketFigures(cost: string, rolledUp: string, sessions: number, children: number): string;
+    /**
+     * A `system` line rendered from its structured notice, in the reader's language; a kind
+     * this build does not know falls back to the message's English `text`.
+     */
+    notices: Record<OrgChannelNoticeKind, (p: Record<string, string>) => string>;
     /** The all-hands channel's label; its stored name is never shown. */
     allHands(): string;
     /** `channel tail` on any channel but the default one: a dim line naming it above the messages. */
@@ -1086,8 +1097,9 @@ const en: Messages = {
     ownerFilter: "Only tickets owned by this principal (agent:<id> / user:<id>)",
     blockedFilter: "Only blocked tickets",
     ticketTitle: "Ticket title",
-    goal: "The goal (mutually exclusive with --body-file)",
-    criteria: "Acceptance criteria (with --goal)",
+    ticketInitiator: "File the ticket as this employee (an Agent id, or an agent:/user: principal)",
+    goal: "The goal, naming every input it relies on by full path (mutually exclusive with --body-file)",
+    criteria: "Acceptance criteria, naming the expected deliverables by full path (with --goal)",
     bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
     owner: "Owner principal (agent:<id> / user:<id>)",
     parent: "Parent ticket id",
@@ -1098,7 +1110,7 @@ const en: Messages = {
     moveReason: "Why (required when moving into rejected; recorded under Result)",
     blockReason: "Why the ticket is blocked",
     blockedBy: "Who or which ticket it waits for (a principal or a ticket id)",
-    progressText: "The progress entry",
+    progressText: "The progress entry, naming the files it refers to by full path",
     startMessage: "A note appended to the ticket text the session opens with",
     startWorkspace:
       "Another directory inside the shared workspace (defaults to the employee's desk workspace)",
@@ -1148,6 +1160,7 @@ const en: Messages = {
     deskRenewed: (agentId, sessionId) => `Desk of ${agentId} renewed: session ${sessionId}.`,
     calendarWritten: (agentId, name, enabledText, nextFireAt) =>
       `Calendar event ${agentId}/${name} written (${enabledText}${nextFireAt !== undefined ? `, next fire ${nextFireAt}` : ""}).`,
+    calendarWarning: (warning) => `Rota notice: ${warning}`,
     calendarRemoved: (agentId, name) => `Calendar event ${agentId}/${name} removed.`,
     ticketCreated: (ticketId, status) => `Ticket ${ticketId} created (${status}).`,
     ticketMoved: (ticketId, status) => `Ticket ${ticketId} moved to ${status}.`,
@@ -1184,6 +1197,24 @@ const en: Messages = {
       `Ticket ${ticketId}: ${status}${running ? ", running" : ""}${blocked !== undefined ? `, blocked (${blocked})` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `Cost ${cost} (rolled up ${rolledUp}), ${sessions} sessions, ${children} child tickets`,
+    notices: {
+      employee_joined: (p) => `${p.agent} joined as ${p.title}, reporting to ${p.reportsTo}.`,
+      employee_left: (p) => `${p.agent} left the organization; reports now go to ${p.reportsTo}.`,
+      channel_created: (p) => `${p.by} created the channel.`,
+      channel_archived: (p) => `${p.by} archived the channel.`,
+      channel_unarchived: (p) => `${p.by} unarchived the channel.`,
+      channel_joined: (p) => `${p.principal} joined the channel.`,
+      channel_invited: (p) => `${p.by} invited ${p.principal} to the channel.`,
+      channel_left: (p) => `${p.principal} left the channel.`,
+      channel_removed: (p) => `${p.by} removed ${p.principal} from the channel.`,
+      budget_warned: (p) =>
+        `Budget warning: ${p.agent} has used ${p.percent}% of its ${p.period} budget (${p.cost} / ${p.budget} USD).`,
+      budget_paused: (p) =>
+        `Budget pause: ${p.agent} reached ${p.percent}% of its ${p.period} budget (${p.cost} / ${p.budget} USD); its calendar and its subordinates' are paused.`,
+      ticket_blocked: (p) => `Ticket ${p.ticket} (${p.title}) is now blocked.`,
+      ticket_done: (p) => `Ticket ${p.ticket} (${p.title}) is now done.`,
+      ticket_rejected: (p) => `Ticket ${p.ticket} (${p.title}) is now rejected.`,
+    },
     allHands: () => "All hands",
     channelHeader: (channelId) => `[channel ${channelId}]`,
     channelHead: (name, channelId, members, archived) =>
@@ -1796,8 +1827,9 @@ const zh: Messages = {
     ownerFilter: "只看该负责人的工单（agent:<id> / user:<id>）",
     blockedFilter: "只看被阻塞的工单",
     ticketTitle: "工单标题",
-    goal: "目标（与 --body-file 互斥）",
-    criteria: "验收标准（与 --goal 配合）",
+    ticketInitiator: "以该员工（Agent id 或 agent:/user: 主体）名义创建工单",
+    goal: "目标，所依赖的输入一律写完整路径（与 --body-file 互斥）",
+    criteria: "验收标准，预期交付物一律写完整路径（与 --goal 配合）",
     bodyFile: "从文件读取整个 Markdown 正文（头部仍由服务端生成）",
     owner: "负责人（agent:<id> / user:<id>）",
     parent: "父工单 id",
@@ -1808,7 +1840,7 @@ const zh: Messages = {
     moveReason: "原因（移入 rejected 时必填；记入 Result）",
     blockReason: "阻塞原因",
     blockedBy: "在等谁或等哪个工单（principal 或工单 id）",
-    progressText: "进展内容",
+    progressText: "进展内容，涉及的文件一律写完整路径",
     startMessage: "附在工单正文之后、随会话首条输入发出的附言",
     startWorkspace: "公共工作区内的另一个目录（缺省为该员工工位的 Workspace）",
     attachSession: "要挂接的会话，完整 id 或唯一片段（缺省 PENGUIN_SESSION_ID）",
@@ -1853,6 +1885,7 @@ const zh: Messages = {
     deskRenewed: (agentId, sessionId) => `${agentId} 的工位已换新：会话 ${sessionId}。`,
     calendarWritten: (agentId, name, enabledText, nextFireAt) =>
       `日程项 ${agentId}/${name} 已写入（${enabledText}${nextFireAt !== undefined ? `，下次触发 ${nextFireAt}` : ""}）。`,
+    calendarWarning: (warning) => `排班提醒：${warning}`,
     calendarRemoved: (agentId, name) => `日程项 ${agentId}/${name} 已删除。`,
     ticketCreated: (ticketId, status) => `已创建工单 ${ticketId}（${status}）。`,
     ticketMoved: (ticketId, status) => `工单 ${ticketId} 已移到 ${status}。`,
@@ -1889,6 +1922,24 @@ const zh: Messages = {
       `工单 ${ticketId}：${status}${running ? "，运行中" : ""}${blocked !== undefined ? `，已阻塞（${blocked}）` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `成本 ${cost}（含子工单 ${rolledUp}），贡献会话 ${sessions} 个，子工单 ${children} 个`,
+    notices: {
+      employee_joined: (p) => `${p.agent} 加入，职位 ${p.title}，汇报给 ${p.reportsTo}。`,
+      employee_left: (p) => `${p.agent} 已离开组织，其汇报关系转由 ${p.reportsTo} 承接。`,
+      channel_created: (p) => `${p.by} 创建了该频道。`,
+      channel_archived: (p) => `${p.by} 归档了该频道。`,
+      channel_unarchived: (p) => `${p.by} 取消归档了该频道。`,
+      channel_joined: (p) => `${p.principal} 加入了该频道。`,
+      channel_invited: (p) => `${p.by} 邀请 ${p.principal} 加入该频道。`,
+      channel_left: (p) => `${p.principal} 退出了该频道。`,
+      channel_removed: (p) => `${p.by} 将 ${p.principal} 移出该频道。`,
+      budget_warned: (p) =>
+        `预算预警：${p.agent} 已用掉 ${p.period} 预算的 ${p.percent}%（${p.cost} / ${p.budget} USD）。`,
+      budget_paused: (p) =>
+        `预算暂停：${p.agent} 达到 ${p.period} 预算的 ${p.percent}%（${p.cost} / ${p.budget} USD），其本人与下属的日程已暂停。`,
+      ticket_blocked: (p) => `工单 ${p.ticket}（${p.title}）已被阻塞。`,
+      ticket_done: (p) => `工单 ${p.ticket}（${p.title}）已完成。`,
+      ticket_rejected: (p) => `工单 ${p.ticket}（${p.title}）已被否决。`,
+    },
     allHands: () => "全员频道",
     channelHeader: (channelId) => `[频道 ${channelId}]`,
     channelHead: (name, channelId, members, archived) =>

@@ -49,6 +49,7 @@ import type {
   MeResponse,
   OrgCalendarItem,
   OrgCalendarResponse,
+  OrgCalendarWriteResponse,
   OrgChartResponse,
   OrgChannelDetail,
   OrgChannelItem,
@@ -419,9 +420,22 @@ function renderFinance(res: OrgFinanceResponse, t: Messages): string {
   return `${employees}${tickets}\n${t.org.financeTotal(res.period, usd(res.total))}\n`;
 }
 
-/** One channel message per line: `time  sender  text` (a multi-line text keeps its lines). */
-function messageLine(m: OrgChannelMessage): string {
-  return `${m.time}  ${m.sender}  ${m.text}`;
+/**
+ * One channel message per line: `time  sender  text` (a multi-line text keeps its lines).
+ * A `system` line the server wrote with a structured notice is rendered in the reader's
+ * language from that notice; a kind this build does not know falls back to the English text.
+ */
+function messageLine(m: OrgChannelMessage, t: Messages): string {
+  return `${m.time}  ${m.sender}  ${noticeText(m, t)}`;
+}
+
+/** The notice's sentence in the reader's language, or the message's own text. */
+function noticeText(m: OrgChannelMessage, t: Messages): string {
+  const notice = m.notice;
+  if (notice === undefined) return m.text;
+  // Not every kind is one this build knows: a line a newer server wrote keeps its English.
+  const render = t.org.notices[notice.kind] as ((p: Record<string, string>) => string) | undefined;
+  return render === undefined ? m.text : render(notice.params);
 }
 
 /** A channel's display name: the all-hands channel is labelled here, its stored name never shown. */
@@ -808,19 +822,23 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const agentId = resolveAgentId(opts.agentId);
-    const item = await scope.client.request<OrgCalendarItem>("POST", `${scope.base}/calendar`, {
-      agentId,
-      name,
-      ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
-      prompt: String(opts.prompt),
-      // As `schedule add`: an event added through the CLI is meant to fire; --disabled opts out.
-      enabled: opts.disabled !== true,
-      startAt: resolveStartAt(String(opts.startAt)),
-      ...(opts.period !== undefined ? { period: String(opts.period) } : {}),
-      ...(opts.endAt !== undefined ? { endAt: String(opts.endAt) } : {}),
-    });
+    const item = await scope.client.request<OrgCalendarWriteResponse>(
+      "POST",
+      `${scope.base}/calendar`,
+      {
+        agentId,
+        name,
+        ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
+        prompt: String(opts.prompt),
+        // As `schedule add`: an event added through the CLI is meant to fire; --disabled opts out.
+        enabled: opts.disabled !== true,
+        startAt: resolveStartAt(String(opts.startAt)),
+        ...(opts.period !== undefined ? { period: String(opts.period) } : {}),
+        ...(opts.endAt !== undefined ? { endAt: String(opts.endAt) } : {}),
+      },
+    );
     if (opts.json === true) printJson(item);
-    else printLine(calendarWrittenLine(t, item));
+    else printCalendarWrite(t, item);
   });
 
   scoped(
@@ -858,9 +876,9 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (period !== undefined) body.period = period;
     const endAt = opts.endAt !== undefined ? String(opts.endAt) : stored.endAt;
     if (endAt !== undefined) body.endAt = endAt;
-    const item = await scope.client.request<OrgCalendarItem>("PUT", target, body);
+    const item = await scope.client.request<OrgCalendarWriteResponse>("PUT", target, body);
     if (opts.json === true) printJson(item);
-    else printLine(calendarWrittenLine(t, item));
+    else printCalendarWrite(t, item);
   });
 
   scoped(
@@ -955,6 +973,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .command("create")
       .description(t.org.ticketCreateDesc)
       .requiredOption("--title <title>", t.org.ticketTitle)
+      .option("--initiator <principal>", t.org.ticketInitiator)
       .option("--goal <text>", t.org.goal)
       .option("--criteria <text>", t.org.criteria)
       .option("--body-file <path>", t.org.bodyFile)
@@ -991,6 +1010,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const notify = commaList(opts.notify);
     const detail = await scope.client.request<OrgTicketDetail>("POST", `${scope.base}/tickets`, {
       title: String(opts.title),
+      ...(opts.initiator !== undefined ? { initiator: String(opts.initiator) } : {}),
       ...(opts.goal !== undefined ? { goal: String(opts.goal) } : {}),
       ...(opts.criteria !== undefined ? { acceptanceCriteria: String(opts.criteria) } : {}),
       ...(body !== undefined ? { body } : {}),
@@ -1351,7 +1371,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     // Message lines carry the sender, never the channel; name it above them whenever the
     // reader did not get the default one.
     if (res.channelId !== DEFAULT_CHANNEL_ID) printLine(dim(t.org.channelHeader(res.channelId)));
-    process.stdout.write(`${messages.map(messageLine).join("\n")}\n`);
+    process.stdout.write(`${messages.map((m) => messageLine(m, t)).join("\n")}\n`);
   });
 
   scoped(
@@ -1488,12 +1508,20 @@ export function registerOrgCommand(program: Command, t: Messages): void {
   });
 }
 
-/** One line confirming a written calendar event (employee, name, enabled state, next fire when known). */
-function calendarWrittenLine(t: Messages, item: OrgCalendarItem): string {
-  return t.org.calendarWritten(
-    item.agentId,
-    item.name,
-    item.enabled ? t.schedule.enabled() : t.schedule.disabled(),
-    item.nextFireAt,
+/**
+ * A written calendar event: the confirmation line, then the rota advice the server answered
+ * with — one line each, so a desk that now shares a minute with another is visible at the
+ * moment the event is written rather than at the month's bill. The warnings stay in the
+ * server's English; only the label is localized.
+ */
+function printCalendarWrite(t: Messages, item: OrgCalendarWriteResponse): void {
+  printLine(
+    t.org.calendarWritten(
+      item.agentId,
+      item.name,
+      item.enabled ? t.schedule.enabled() : t.schedule.disabled(),
+      item.nextFireAt,
+    ),
   );
+  for (const warning of item.warnings ?? []) printLine(t.org.calendarWarning(warning));
 }

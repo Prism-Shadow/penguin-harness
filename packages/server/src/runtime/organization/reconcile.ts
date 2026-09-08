@@ -24,6 +24,8 @@ import type { OrgSpend, TicketForSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
+import { budgetPaused, budgetWarned, systemMessage, ticketState } from "./notices.js";
+import type { SystemLine, TicketNoticeKind } from "./notices.js";
 import { dispatchToDesk, ensureDesk, syncDeskCache } from "./triggers.js";
 
 export interface LoadedTicket extends TicketForSpend {
@@ -221,8 +223,24 @@ async function reconcileCalendar(
 // Tickets
 // ---------------------------------------------------------------------------
 
-/** A ticket notice's body: the header as filed plus the Result section (the parts a desk needs to decide). */
-function ticketNoticeBody(t: LoadedTicket): string {
+/**
+ * What a desk is told to do next about the ticket. A notice is delivery, not an order, but
+ * the two changes that have exactly one right next step say it as the command to run: work
+ * on a ticket belongs in a ticket session, never at the desk that received the notice.
+ */
+function ticketNoticeNextStep(t: LoadedTicket, change: OrgTicketChange): string | null {
+  switch (change) {
+    case "assigned":
+      return `Start a ticket session for it now: \`penguin org ticket start ${t.ticketId} -m "…"\` — do not do the work at your desk.`;
+    case "blocker_closed":
+      return `Verify, then \`penguin org ticket unblock ${t.ticketId}\` and start a ticket session.`;
+    default:
+      return null;
+  }
+}
+
+/** A ticket notice's body: the header as filed, the Result section, then the next step this change calls for. */
+function ticketNoticeBody(t: LoadedTicket, change: OrgTicketChange): string {
   const d = t.doc;
   const lines = [
     `# Ticket: ${d.title}`,
@@ -239,8 +257,17 @@ function ticketNoticeBody(t: LoadedTicket): string {
   ];
   if (d.result.trim() !== "")
     lines.push("", "## Result", d.result.split("\n").slice(0, 20).join("\n"));
+  const next = ticketNoticeNextStep(t, change);
+  if (next !== null) lines.push("", next);
   return lines.join("\n");
 }
+
+/** The ticket changes that also write a `system` line; the rest only reach desks. */
+const TICKET_NOTICE_KIND: Partial<Record<OrgTicketChange, TicketNoticeKind>> = {
+  blocked: "ticket_blocked",
+  done: "ticket_done",
+  rejected: "ticket_rejected",
+};
 
 async function notifyTicket(
   deps: OrgDeps,
@@ -252,18 +279,19 @@ async function notifyTicket(
   userIds: Iterable<string>,
   triggers: boolean,
 ): Promise<void> {
-  const body = ticketNoticeBody(t);
+  const body = ticketNoticeBody(t, change);
   const users = [...new Set(userIds)];
-  if (users.length > 0) {
+  const kind = TICKET_NOTICE_KIND[change];
+  // A closing status is the board's news whether or not anyone asked to be @-mentioned, so
+  // the line lands either way; `blocked` is written only when it is addressed to a person.
+  if (kind !== undefined && (users.length > 0 || change !== "blocked")) {
+    const mentions = users.map(userPrincipal);
     await appendSystemMessage(
       deps,
       org,
       DEFAULT_CHANNEL_ID,
-      `Ticket ${t.ticketId} (${t.doc.title}) is now ${change === "blocked" ? "blocked" : t.doc.status}: ${users
-        .map(userPrincipal)
-        .map((u) => `@${u}`)
-        .join(" ")}`,
-      users.map(userPrincipal),
+      ticketState(kind, t.ticketId, t.doc.title, mentions),
+      mentions,
       { ticket: t.ticketId },
     );
   }
@@ -341,12 +369,18 @@ async function reconcileTickets(
       await notifyTicket(deps, org, spend, t, "blocked", agents, users, triggers);
     }
     if (prev.status !== cur.status && (cur.status === "done" || cur.status === "rejected")) {
+      // An employee initiator hears about its own ticket at its desk; a person does not get
+      // an @-mention for filing one — a mention badge per closed ticket is noise, and the
+      // sweep report carries completions. A person who wants to be told lists itself in Notify.
       const agents: string[] = [];
-      const users: string[] = [];
       for (const p of new Set([...t.doc.notify, t.doc.initiator])) {
         const parsed = parsePrincipal(p);
         if (parsed?.kind === "agent") agents.push(parsed.id);
-        else if (parsed?.kind === "user") users.push(parsed.id);
+      }
+      const users: string[] = [];
+      for (const p of new Set(t.doc.notify)) {
+        const parsed = parsePrincipal(p);
+        if (parsed?.kind === "user") users.push(parsed.id);
       }
       await notifyTicket(deps, org, spend, t, cur.status, agents, users, triggers);
       // Tickets waiting on this one: their owners learn the blocker closed and decide whether to unblock.
@@ -426,20 +460,19 @@ export async function appendChannelMessage(
 /**
  * A `system` line. Organization-wide notices (budgets, ticket notices addressed to people,
  * hires and departures) go to the all-hands channel; a membership notice goes to the
- * channel it concerns.
+ * channel it concerns. The line arrives as its builder made it — the English sentence and
+ * the structured notice beside it — so a client can render it in the reader's language.
  */
 export async function appendSystemMessage(
   deps: OrgDeps,
   org: LoadedOrg,
   channelId: string,
-  text: string,
+  line: SystemLine,
   mentions: string[],
   refs?: OrgChannelMessage["refs"],
 ): Promise<OrgChannelMessage> {
   return appendChannelMessage(deps, org, channelId, {
-    sender: "system",
-    hop: 0,
-    text,
+    ...systemMessage(line),
     mentions,
     ...(refs !== undefined ? { refs } : {}),
   });
@@ -595,7 +628,13 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
           deps,
           org,
           DEFAULT_CHANNEL_ID,
-          `Budget pause: ${agentPrincipal(e.agentId)} reached ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
+          budgetPaused({
+            agent: agentPrincipal(e.agentId),
+            period: spend.period,
+            percent: pct,
+            cost,
+            budget: e.budget,
+          }),
           [],
         );
         notify("paused");
@@ -615,7 +654,13 @@ async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend):
         deps,
         org,
         DEFAULT_CHANNEL_ID,
-        `Budget warning: ${agentPrincipal(e.agentId)} has used ${pct}% of its ${spend.period} budget (${cost.toFixed(2)} / ${e.budget.toFixed(2)} USD).`,
+        budgetWarned({
+          agent: agentPrincipal(e.agentId),
+          period: spend.period,
+          percent: pct,
+          cost,
+          budget: e.budget,
+        }),
         [],
       );
       notify("warned");

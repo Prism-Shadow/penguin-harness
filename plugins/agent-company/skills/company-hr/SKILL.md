@@ -33,6 +33,7 @@ penguin org calendar update daily-sweep --agent-id <org_id>_dev --enable      # 
 - The prompt is the employee's standing order, not a reminder. Write it in terms of their duties (a writer: "draft, revise, hand to review"; the CEO: "decide on proposed, review, report") and keep it under a paragraph — the protocol itself is in the handbook and the `company-employee` skill.
 - `--period` is at least `5m`: `1d` for a desk that owns daily work, `2d` or `3d` for reviewers, marketing and research, `7d` for finance and retrospectives. Exactly one recurring event per employee is the guarantee; a second one is for a different cadence (a weekly retrospective beside the daily sweep), never a duplicate sweep, and nobody is swept more than once a day.
 - Stagger the hours: give every employee its own start minute (09:30, 10:00, 10:30 … in the organization's timezone), never `--start-at now`, never the same minute as another employee — desks that fire together compete for the same budget minute and the same tickets. Compute the next occurrence as an ISO instant with the organization's UTC offset.
+- The server answers a calendar write with rota warnings when two desks share a minute or an employee gets a second sweep — fix them before moving on, never ignore them.
 - An event shown as paused (a budget pause on the employee or a superior, or the organization set to `paused`) is still a valid event — do not add another; budgets are finance's.
 - Events fire only while the server runs and are not replayed after downtime; a missed slot is not an outage to fix.
 
@@ -70,7 +71,7 @@ Announce it in the all-hands channel, @-mentioning the former superior. Deleting
 
 ## Evaluating and improving employees
 
-Evaluate on what shipped: tickets moved to `done` versus `rejected` and why, progress lines that hold up under verification, blocks raised with a reason versus tickets that idled, cost per finished ticket (`penguin org finance`). Read the transcripts of the worst and the best sessions (`penguin logs <session_id> --tail 80`; the ids are on each ticket's `Sessions` line) before judging.
+Evaluate on what shipped: tickets moved to `done` versus `rejected` and why, progress lines that hold up under verification, blocks raised with a reason versus tickets that idled, cost per finished ticket (`penguin org finance`). A desk that does ticket work itself — tickets closed with no ticket session on their `Sessions` line — is a defect in that employee's brief, and fixing the brief is the first repair. Read the transcripts of the worst and the best sessions (`penguin logs <session_id> --tail 80`; the ids are on each ticket's `Sessions` line) before judging.
 
 Fixes, cheapest first:
 

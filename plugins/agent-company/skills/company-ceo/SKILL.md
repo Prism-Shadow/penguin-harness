@@ -15,7 +15,8 @@ If the message only names this skill without a concrete request, ask what the CE
 
 A ticket is the organization's unit of collective work; the mission becomes a tree of tickets, and the tree is what the board reads.
 
-- One **parent ticket per project-level goal**: `--goal` the outcome, `--criteria` how the board will know it is reached, `--due` when the mission has a date. Its owner is you or the employee who leads that stream.
+- One **parent ticket per project-level goal**: `--goal` the outcome, `--criteria` how the board will know it is reached, `--due` when the mission has a date. Its owner is you or the employee who leads that stream. `--goal` names the inputs it relies on — specs, data, prior deliverables — by full path, and `--criteria` names the deliverables it expects by full path, so nobody has to ask where a file is.
+- Filing on behalf of the board or of an employee: pass `--initiator <principal>` (an Agent id, or `agent:`/`user:` for the principal it is filed for), so the ticket records who asked for it rather than who typed the command.
 - **Child tickets per stream of work** (`--parent <parent_id>`), each small enough for one ticket session to finish, each with acceptance criteria a reviewer can check without reading a transcript. `--priority P0` for what blocks everything else; `P2` is the default.
 - New tickets land in `proposed`. Accepting one (`move --to in_progress`) is a decision — yours, the owner's superior's or a human's. Assign the owner when you accept: their desk gets an `assigned` notice and picks the ticket up on its next sweep.
 - Anyone may propose. Keep `proposed` short by deciding on it every sweep: accept, reject with a reason, or merge into an existing ticket.
@@ -91,6 +92,8 @@ The calendar is the only recurring driver. Schedule yourself, HR and finance at 
 
 Rules that follow from the table: never `--start-at now` for a recurring event (it pins everyone to the same minute); compute the next occurrence of the role's hour as an ISO instant with the organization's UTC offset; one recurring event per employee (a second one only for a different cadence, such as a weekly retrospective beside a daily sweep); no two employees on the same start minute; leave weekends to the weekly and 3-day cadences rather than adding events.
 
+- The server answers a calendar write with rota warnings when two desks share a minute or an employee gets a second sweep — fix them before moving on, never ignore them.
+
 ```bash
 # Tomorrow 09:00 in Asia/Shanghai (UTC+8): write the instant with its offset.
 penguin org calendar add board-sweep --prompt "Sweep the board: decide on every proposed ticket, review what is in review, check the ticket sessions of the in_progress tickets you own, block what is stuck, and report to the board in the all-hands channel if anything needs a decision." --start-at 2026-09-03T09:00:00+08:00 --period 1d
@@ -106,7 +109,8 @@ penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Ru
 
 - `penguin org ticket move <id> --to done` when the criteria hold — the `Notify` list and the initiator hear about it;
 - `penguin org ticket move <id> --to rejected --reason "<what is missing>"` when they do not; the reason lands in `## Result`. Work worth retrying gets a new child ticket, or the owner writes a progress line and moves the ticket back to `in_progress`;
-- a ticket that has sat `in_progress` without a progress line for days is either blocked (ask the owner to `block` it with a reason) or abandoned (reassign it).
+- a ticket that has sat `in_progress` without a progress line for days is either blocked (ask the owner to `block` it with a reason) or abandoned (reassign it);
+- a ticket moved to `review` with an empty `Sessions` line was done at somebody's desk: send it back with a progress line asking for a ticket session, because no work belongs at a desk.
 
 Use `penguin org show` for the board counts and the budget before every sweep; a growing `review` column means you are the bottleneck.
 
@@ -131,7 +135,7 @@ The board is the humans of the Project. Report in the all-hands channel, @-menti
 penguin org channel send -m "@user:alice Site launch: content done, build in review, domain blocked on you (2026-09-01-domain). Budget 41%. Decision needed: launch date." --ref-ticket 2026-09-01-launch-the-marketing-site
 ```
 
-One message: what finished, what is blocked and on whom, spend against budget, the decision you need. Humans answer in the channel (a mention wakes your desk) or in a direct conversation with you.
+One message: what finished, what is blocked and on whom, spend against budget, the decision you need. Completions are not reported one by one — the sweep report carries them. Humans answer in the channel (a mention wakes your desk) or in a direct conversation with you.
 
 ## The init work run
 
