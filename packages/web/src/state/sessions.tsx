@@ -82,6 +82,13 @@ interface SessionsContextValue {
    */
   machineLabels: ReadonlyMap<string, string>;
   /**
+   * The Project's machines this server holds a connection to — the ones whose API can be
+   * reached through the proxy right now. Any page that has to ask "what does this Agent have
+   * over there" fans out over this alongside this server, rather than fetching the
+   * admin-only machine list of its own.
+   */
+  machineIds: string[];
+  /**
    * Whether a pair's first page has been fetched (false = the folder shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
    * is paged separately from the Agent's whole one.
@@ -1108,6 +1115,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
       machineLabels,
+      machineIds: state.machineIds,
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,

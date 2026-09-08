@@ -1629,6 +1629,7 @@ export const en: Strings = {
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
