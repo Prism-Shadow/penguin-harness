@@ -28,6 +28,8 @@ export const STAT_ICONS = {
   cost: ICONS.coin,
   /** Copy */
   copy: ICONS.copy,
+  /** Pull request: the branch line, its two nodes, and the arm that joins them. */
+  pullRequest: ICONS.gitPullRequest,
   /** Copied (checkmark) */
   check: ICONS.check,
 } as const;

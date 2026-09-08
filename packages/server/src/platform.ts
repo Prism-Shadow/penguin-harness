@@ -105,6 +105,7 @@ import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
+import { PullRequestService } from "./services/pull-request-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
@@ -180,7 +181,7 @@ import {
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
-import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
+import { FileReveal, PullRequests, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache, OrgGateway } from "./mechanisms/organization.js";
@@ -417,8 +418,8 @@ export class TracesModule {}
 export class AgentsModule {}
 
 @Module({
-  children: [WorkspaceFilesService, RevealService, PreviewModule],
-  exports: [WorkspaceFiles, FileReveal, PreviewTokens],
+  children: [WorkspaceFilesService, RevealService, PullRequestService, PreviewModule],
+  exports: [WorkspaceFiles, FileReveal, PullRequests, PreviewTokens],
 })
 export class WorkspaceModule {}
 

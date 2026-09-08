@@ -2005,6 +2005,8 @@ for (const base of ["/api/sessions/:sessionId/files", "/api/projects/:projectId/
 }
 
 router
+  // The demo's Workspaces are no git checkout, so none is on a pull request.
+  .get("/api/sessions/:sessionId/pull-request", () => ({ pullRequest: null }))
   // The separate preview origin has no counterpart here: the file is served as the page itself.
   .get("/api/sessions/:sessionId/files/preview-redirect", ({ store, query }) => {
     const path = normalizePath(query.get("path") ?? "");

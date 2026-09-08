@@ -180,6 +180,9 @@ export const ICONS = {
   /** Stacked cylinders: a database. */
   database:
     "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  /** A pull request: the branch line, its two nodes, and the arm that joins them. */
+  gitPullRequest:
+    "M6 9v12M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6M13 6h3a2 2 0 0 1 2 2v7",
   /** A speedometer: half a ring and its needle. */
   gauge: "M5 18a8 8 0 1 1 14 0M12 12l4-3",
   /** A bullseye: two rings and a centre. */

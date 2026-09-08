@@ -397,6 +397,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   plug: "slate",
   plugLifted: "slate",
   database: "slate",
+  gitPullRequest: "slate",
   arrowUpDown: "slate",
   ellipsis: "slate",
   wrapText: "slate",
