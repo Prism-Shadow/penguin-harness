@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BenchmarkEvaluation, BenchmarkSummary } from "@prismshadow/penguin-server/api";
-import { mergeBenchmarks, mergeBenchmarkCases } from "../src/lib/benchmark-merge";
+import { mergeAgents, mergeBenchmarks, mergeBenchmarkCases } from "../src/lib/benchmark-merge";
 
 const MACHINE = "noeSE0FFHhNXl2J5";
 
@@ -127,6 +127,31 @@ describe("mergeBenchmarks", () => {
     ]);
     expect(mine.evaluations).toHaveLength(1);
     expect(mine.evaluations[0]).not.toHaveProperty("machineId");
+  });
+});
+
+describe("mergeAgents", () => {
+  const agent = (agentId: string, name?: string) =>
+    ({ agentId, ...(name === undefined ? {} : { name }) }) as never;
+
+  it("lists an Agent only a machine has — its Benchmarks had no row to hang off", () => {
+    const merged = mergeAgents([
+      { machineId: null, agents: [agent("default_agent")] },
+      { machineId: MACHINE, agents: [agent("default_agent"), agent("revival_worker")] },
+    ]);
+    expect(merged.map((m) => [m.agent.agentId, m.machineIds])).toEqual([
+      ["default_agent", [null, MACHINE]],
+      ["revival_worker", [MACHINE]],
+    ]);
+  });
+
+  it("keeps the first source's description of a shared Agent", () => {
+    const merged = mergeAgents([
+      { machineId: null, agents: [agent("default_agent", "Here")] },
+      { machineId: MACHINE, agents: [agent("default_agent", "There")] },
+    ]);
+    expect(merged[0]!.agent.name).toBe("Here");
+    expect(mergeAgents([])).toEqual([]);
   });
 });
 

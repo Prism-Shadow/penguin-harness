@@ -8,7 +8,7 @@
  * Session link.
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
@@ -17,8 +17,8 @@ import type {
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { mergeBenchmarks, mergeBenchmarkCases } from "../../lib/benchmark-merge";
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+import { mergeAgents, mergeBenchmarks, mergeBenchmarkCases } from "../../lib/benchmark-merge";
+import type { AgentSource, MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
 import { S } from "../../lib/strings";
@@ -57,9 +57,8 @@ interface Selection {
 async function fetchBenchmarks(
   projectId: string,
   agentId: string,
-  machineIds: readonly string[],
+  sources: readonly (string | null)[],
 ): Promise<{ benchmarks: MergedBenchmark[]; error: unknown | null }> {
-  const sources: (string | null)[] = [null, ...machineIds];
   const answers = await Promise.allSettled(
     sources.map(async (machineId) => ({
       machineId,
@@ -78,7 +77,7 @@ function AgentNode({
   projectId,
   agentId,
   name,
-  machineIds,
+  sources,
   machineNameOf,
   defaultOpen,
   selection,
@@ -87,8 +86,8 @@ function AgentNode({
   projectId: string;
   agentId: string;
   name: string;
-  /** Machines to ask alongside this server; a change re-asks (a machine that reconnects should appear). */
-  machineIds: readonly string[];
+  /** Where this Agent exists — the only servers worth asking about its Benchmarks (null is this one). */
+  sources: readonly (string | null)[];
   /** The ssh alias qualifying a name that is not on this server; null for this one. */
   machineNameOf: (machineId: string | null) => string | null;
   /** Whether initially expanded: all expanded when there's no deep link; only the target Agent expanded with a ?agentId= deep link. */
@@ -99,13 +98,18 @@ function AgentNode({
   const [open, setOpen] = useState(defaultOpen);
   const [benchmarks, setBenchmarks] = useState<MergedBenchmark[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const machinesKey = [...machineIds].join(",");
+  // Joined so the effect re-runs on a changed SET, not on a new array of the same machines.
+  const sourcesKey = sources.map((source) => source ?? "").join(",");
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setError(null);
-    void fetchBenchmarks(projectId, agentId, machinesKey === "" ? [] : machinesKey.split(","))
+    void fetchBenchmarks(
+      projectId,
+      agentId,
+      sourcesKey.split(",").map((source) => (source === "" ? null : source)),
+    )
       .then(({ benchmarks: merged, error: failure }) => {
         if (cancelled) return;
         if (failure !== null) setError(apiErrorText(failure));
@@ -117,7 +121,7 @@ function AgentNode({
     return () => {
       cancelled = true;
     };
-  }, [open, projectId, agentId, machinesKey]);
+  }, [open, projectId, agentId, sourcesKey]);
 
   return (
     <li className="pt-2.5">
@@ -575,6 +579,13 @@ export function BenchmarkPage() {
   const focusAgentId = searchParams.get("agentId");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
+  /**
+   * The Agents each machine has, alongside this server's (which the Project context already
+   * loaded). An Agent that has only ever run on a machine exists only over there — without
+   * this, the tree has no row to hang its Benchmarks off, which reads as "no benchmarks".
+   */
+  const [machineAgents, setMachineAgents] = useState<AgentSource[]>([]);
+  const machinesKey = [...machineIds].join(",");
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
@@ -582,6 +593,33 @@ export function BenchmarkPage() {
   useEffect(() => {
     setSelection(null);
   }, [projectId]);
+
+  useEffect(() => {
+    setMachineAgents([]);
+    if (projectId === null || machinesKey === "") return;
+    let cancelled = false;
+    void Promise.allSettled(
+      machinesKey.split(",").map(async (machineId) => ({
+        machineId,
+        agents: (await api.listAgents(projectId, machineId)).agents,
+      })),
+    ).then((answers) => {
+      // A machine that cannot answer contributes no Agents, which is what not reading it
+      // means; this server's own list still stands on its own.
+      if (!cancelled) {
+        setMachineAgents(answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : [])));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, machinesKey]);
+
+  /** Every Agent of the Project, wherever its state directory is, this server's first. */
+  const mergedAgents = useMemo(
+    () => mergeAgents([{ machineId: null, agents }, ...machineAgents]),
+    [agents, machineAgents],
+  );
 
   useEffect(() => {
     setCaseStatements(null);
@@ -643,14 +681,21 @@ export function BenchmarkPage() {
           <SkeletonList rows={4} />
         ) : (
           <ul>
-            {agents.map((a) => (
+            {mergedAgents.map(({ agent: a, machineIds: on }) => (
               <AgentNode
                 key={a.agentId}
                 projectId={projectId}
                 agentId={a.agentId}
-                machineIds={machineIds}
+                sources={on}
                 machineNameOf={machineNameOf}
-                name={agentDisplayName(a)}
+                name={
+                  // An Agent that lives on exactly one machine and not here is named for it;
+                  // one this server also has needs no saying, and one spread over several
+                  // machines has no single machine to name.
+                  on.length === 1 && on[0] !== null
+                    ? nameOnMachine(agentDisplayName(a), machineNameOf(on[0] ?? null))
+                    : agentDisplayName(a)
+                }
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
                 onSelect={setSelection}
