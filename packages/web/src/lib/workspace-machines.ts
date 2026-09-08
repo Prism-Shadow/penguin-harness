@@ -8,6 +8,7 @@
  * machine id and labelled by ssh alias.
  */
 import type { MachineInfo, MachinesResponse } from "@prismshadow/penguin-server/api";
+import { S } from "./strings";
 
 /** One machine a workspace can live on, and whether it can be browsed right now. */
 export interface WorkspaceMachine {
@@ -83,6 +84,16 @@ export function recordedMachineId(machine: WorkspaceMachine | undefined): string
   // Absent rather than null for the local machine: an entry with no machine is one picked
   // where the app was, which is every entry that existed before machines did.
   return machine === undefined || machine.local ? undefined : (machine.id ?? undefined);
+}
+
+/**
+ * A name qualified by the machine it is on: `Name [SSH: alias]`, and the bare name for this
+ * one. Two machines can hold the same directory path — and the same Workspace name — so a
+ * name shown without its machine is a name that cannot be told apart from another machine's.
+ * This server needs no saying: it is where the app is, and marking it would mark everything.
+ */
+export function nameOnMachine(name: string, machineLabel: string | null): string {
+  return machineLabel === null ? name : S.chat.onMachine(name, machineLabel);
 }
 
 /** Reads the machine off a machine list entry, for callers holding a raw MachineInfo. */

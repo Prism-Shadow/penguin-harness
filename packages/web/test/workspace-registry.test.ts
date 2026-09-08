@@ -41,6 +41,7 @@ function group(key: string, over: Partial<WorkspaceGroup<{ id: string }>> = {}) 
     key,
     label: key.split("/").filter(Boolean).pop() ?? "/",
     fullPath: key,
+    machineId: null as string | null,
     temp: false,
     sessions: [] as { id: string }[],
     ...over,
@@ -97,17 +98,17 @@ describe("setWorkspaceAlias", () => {
   const entries: readonly WorkspaceEntry[] = [{ path: "/a" }, { path: "/b" }];
 
   it("sets a trimmed alias, clears it on blank (revert to basename), and never mutates the input", () => {
-    const named = setWorkspaceAlias(entries, "/a", "  My App  ");
+    const named = setWorkspaceAlias(entries, "/a", null, "  My App  ");
     expect(named).toEqual([{ path: "/a", alias: "My App" }, { path: "/b" }]);
     expect(entries[0]).toEqual({ path: "/a" }); // input untouched (React state discipline)
-    expect(setWorkspaceAlias(named, "/a", "   ")).toEqual([{ path: "/a" }, { path: "/b" }]);
+    expect(setWorkspaceAlias(named, "/a", null, "   ")).toEqual([{ path: "/a" }, { path: "/b" }]);
   });
 
   it("same-reference fast exit: unknown path, unchanged alias, or clearing an alias that isn't set", () => {
-    expect(setWorkspaceAlias(entries, "/zzz", "X")).toBe(entries);
-    expect(setWorkspaceAlias(entries, "/a", "")).toBe(entries);
-    const named = setWorkspaceAlias(entries, "/a", "X");
-    expect(setWorkspaceAlias(named, "/a", " X ")).toBe(named);
+    expect(setWorkspaceAlias(entries, "/zzz", null, "X")).toBe(entries);
+    expect(setWorkspaceAlias(entries, "/a", null, "")).toBe(entries);
+    const named = setWorkspaceAlias(entries, "/a", null, "X");
+    expect(setWorkspaceAlias(named, "/a", null, " X ")).toBe(named);
   });
 });
 
@@ -273,5 +274,73 @@ describe("a workspace's machine", () => {
       setItem: (k: string, v: string) => void store.set(k, v),
     };
     expect(loadWorkspaceRegistry("p", storage)).toEqual([{ path: "/a" }]);
+  });
+
+  it("loads both machines' entries for one path (a path-only dedup here lost one for good)", () => {
+    const store = new Map<string, string>();
+    store.set(
+      workspaceRegistryKey("p"),
+      JSON.stringify([{ path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" }, { path: "/srv/app" }]),
+    );
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    expect(loadWorkspaceRegistry("p", storage)).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ]);
+  });
+
+  it("renames one machine's workspace, keeps its machine, and leaves the other machine's alone", () => {
+    const entries: readonly WorkspaceEntry[] = [
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ];
+    expect(setWorkspaceAlias(entries, "/srv/app", "noeSE0FFHhNXl2J5", "Prod")).toEqual([
+      { path: "/srv/app", alias: "Prod", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ]);
+    expect(setWorkspaceAlias(entries, "/srv/app", null, "Here")).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app", alias: "Here" },
+    ]);
+  });
+
+  it("removes one machine's workspace, not every entry sharing the path", () => {
+    const entries: readonly WorkspaceEntry[] = [
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+      { path: "/srv/app" },
+    ];
+    expect(unregisterWorkspace(entries, "/srv/app", "noeSE0FFHhNXl2J5")).toEqual([
+      { path: "/srv/app" },
+    ]);
+    expect(unregisterWorkspace(entries, "/srv/app")).toEqual([
+      { path: "/srv/app", machineId: "noeSE0FFHhNXl2J5" },
+    ]);
+    expect(unregisterWorkspace(entries, "/srv/app", "UNREGISTEREDaaaa")).toBe(entries);
+  });
+
+  it("merges one group per machine, and an alias relabels only its own", () => {
+    const remote = "noeSE0FFHhNXl2J5";
+    const groups = [
+      group(`${remote}\u0000/srv/app`, {
+        fullPath: "/srv/app",
+        machineId: remote,
+        label: "app",
+        sessions: [{ id: "s1" }],
+      }),
+    ];
+    const merged = mergeRegisteredWorkspaces(groups, [
+      { path: "/srv/app", machineId: remote, alias: "Prod" },
+      { path: "/srv/app" },
+    ]);
+    expect(merged.map((g) => g.key)).toEqual([`${remote}\u0000/srv/app`, "/srv/app"]);
+    // The remote group keeps its Sessions and takes its own alias …
+    expect(merged[0]).toMatchObject({ label: "Prod", machineId: remote });
+    expect(merged[0]!.sessions).toEqual([{ id: "s1" }]);
+    // … and this machine's entry becomes its own empty group, unaliased.
+    expect(merged[1]).toMatchObject({ label: "app", machineId: null, fullPath: "/srv/app" });
+    expect(merged[1]!.sessions).toEqual([]);
   });
 });
