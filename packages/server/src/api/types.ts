@@ -3415,6 +3415,12 @@ export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "t
 export type OrgTicketChange = "assigned" | "blocked" | "blocker_closed" | "done" | "rejected";
 /** What the last evaluation of a calendar event did. */
 export type OrgCalendarOutcome = "fired" | "queued" | "paused" | "missed" | "error";
+/**
+ * The organization's working language: the language its handbook, its CEO's initialization
+ * run, every employee brief and every desk and ticket run are written in. Detected from the
+ * mission at creation (CJK text → `zh`, anything else → `en`) unless the request names one.
+ */
+export type OrgLanguage = "zh" | "en";
 
 /** The organization's settings as `org_config.toml` records them. */
 export interface OrganizationSettings {
@@ -3433,6 +3439,8 @@ export interface OrganizationSettings {
   workspace?: string;
   /** The model desks and ticket sessions run on when the employee names none; absent = the Project default. */
   model?: { provider: string; modelId: string };
+  /** The working language (`language` in `org_config.toml`); absent on an organization written before the field existed, which reads as `en`. */
+  language?: OrgLanguage;
 }
 
 /** Period spend against the CEO's budget (= the whole organization). */
@@ -3775,6 +3783,8 @@ export interface OrganizationCreateRequest {
    * later (`PATCH …/employees/:agentId` with `budget: null`) leaves the CEO unbounded.
    */
   ceoBudget?: number;
+  /** The working language; omitted = detected from the mission. */
+  language?: OrgLanguage;
 }
 
 export interface OrganizationPatchRequest {
@@ -3790,6 +3800,29 @@ export interface OrganizationPatchRequest {
   workspace?: string | null;
   /** null returns to the Project default. */
   model?: { provider: string; modelId: string } | null;
+  language?: OrgLanguage;
+}
+
+/**
+ * A semantic id proposed for a display name — the organization and channel dialogs let the
+ * user name the thing first and derive the id from that name. The server asks the Project's
+ * default model for a short English snake_case id (a Chinese name has no mechanical
+ * transliteration), falling back to an ASCII slug of the name when the model is unavailable.
+ */
+export interface SemanticIdSuggestRequest {
+  /** The display name typed so far (or the mission, when nothing else names the thing). */
+  name: string;
+  /** What the id is for: decides the prompt's examples and the fallback's prefix. */
+  kind: "org" | "channel";
+  /** Ids already in use in the target scope; the proposal avoids them. */
+  taken?: string[];
+}
+
+export interface SemanticIdSuggestResponse {
+  /** A valid semantic id (`^[a-z][a-z0-9_]{1,63}$`), not in `taken`. */
+  id: string;
+  /** Whether a model produced it or the ASCII fallback did. */
+  source: "model" | "fallback";
 }
 
 export interface OrgHireRequest {
@@ -3827,6 +3860,17 @@ export interface OrgCalendarUpsertRequest {
   startAt: string;
   period?: string;
   endAt?: string;
+}
+
+/**
+ * What a calendar write answers: the stored event, plus advisory `warnings` — one line each —
+ * about the rota: another employee's recurring event on the same start minute, or the same
+ * employee already holding a recurring event (desks that fire together compete for the same
+ * budget minute and the same tickets). The write succeeds regardless; the CLI prints the
+ * lines so the scheduling employee can stagger.
+ */
+export interface OrgCalendarWriteResponse extends OrgCalendarItem {
+  warnings?: string[];
 }
 
 export interface OrgTicketCreateRequest {

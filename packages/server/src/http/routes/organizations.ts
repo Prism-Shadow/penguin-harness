@@ -1,6 +1,7 @@
 /**
  * Company-mode routes, nested under a Project:
  *   GET|POST      /api/projects/:p/organizations
+ *   POST          /api/projects/:p/organizations/suggest-id   # a semantic id for a display name
  *   GET|PATCH|DELETE /api/projects/:p/organizations/:orgId
  *   GET           …/:orgId/chart
  *   POST          …/:orgId/employees                        # hire
@@ -34,6 +35,7 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
   OrganizationsResponse,
+  SemanticIdSuggestRequest,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
@@ -59,6 +61,7 @@ import {
 const STATUSES: readonly OrgStatus[] = ["active", "paused"];
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
+const ID_KINDS: readonly SemanticIdSuggestRequest["kind"][] = ["org", "channel"];
 
 function requireTicketId(raw: string | undefined): string {
   if (!raw || !TICKET_ID_PATTERN.test(raw)) throw badRequest("Invalid ticket id.");
@@ -185,6 +188,22 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       c.var.user.userId,
     );
     return c.json(detail, 201);
+  });
+
+  // Before the `/:orgId` routes: a proposal needs no organization, only the Project.
+  app.post("/suggest-id", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    member(c, projectId);
+    const body = await readJson(c);
+    const name = requireString(body, "name", { minLen: 1, maxLen: 4000 });
+    const kind = requireEnum(body, "kind", ID_KINDS);
+    const taken = optionalStringArray(body, "taken");
+    const res = await deps.orgService.suggestId(projectId, {
+      name,
+      kind,
+      ...(taken !== undefined ? { taken } : {}),
+    });
+    return c.json(res);
   });
 
   app.get("/:orgId", async (c) => {

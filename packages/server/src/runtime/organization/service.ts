@@ -10,6 +10,8 @@ import type {
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
   OrgChannelCreateRequest,
   OrgChannelDetail,
   OrgChannelItem,
@@ -74,6 +76,7 @@ import {
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
+import { fallbackSemanticId } from "../../organization/semantic-id.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
@@ -134,6 +137,26 @@ export class OrganizationService {
   /** The organization a session belongs to, for the `PENGUIN_ORG_ID` control variable. */
   orgIdOfSession(sessionId: string): string | null {
     return this.deps.cache.ownerOfSession(sessionId)?.orgId ?? null;
+  }
+
+  /**
+   * A semantic id for a display name (the organization and channel dialogs name the thing
+   * first and derive the id). The ASCII fallback alone for now: a name with nothing ASCII in
+   * it (a Chinese name) is a 422 until the model-backed path lands.
+   */
+  async suggestId(
+    _projectId: string,
+    req: SemanticIdSuggestRequest,
+  ): Promise<SemanticIdSuggestResponse> {
+    const id = fallbackSemanticId(req.name, req.kind, req.taken ?? []);
+    if (id === null) {
+      throw new HttpError(
+        422,
+        "id_not_derivable",
+        "No id can be derived from this name; type one by hand.",
+      );
+    }
+    return { id, source: "fallback" };
   }
 
   private async requireOrg(projectId: string, orgId: string): Promise<LoadedOrg> {

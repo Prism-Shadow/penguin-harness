@@ -180,6 +180,8 @@ import type {
   OrganizationCreateRequest,
   OrganizationDetail,
   OrganizationPatchRequest,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
   OrganizationSettings,
   OrganizationsResponse,
 } from "@prismshadow/penguin-server/api";
@@ -1275,6 +1277,10 @@ export const listOrganizations = (projectId: string) =>
 
 export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
   apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+
+/** A semantic id for a display name (organization or channel), from the Project's default model with an ASCII fallback. */
+export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
+  apiFetch<SemanticIdSuggestResponse>(`${orgBase(projectId)}/suggest-id`, { method: "POST", body });
 
 export const getOrganization = (projectId: string, orgId: string) =>
   apiFetch<OrganizationDetail>(orgBase(projectId, orgId));
