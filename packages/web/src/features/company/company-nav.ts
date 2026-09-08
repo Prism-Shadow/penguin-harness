@@ -2,10 +2,10 @@
  * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
  * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
  * `/channels/:channelId` path of a channel, the `<projectId>/<orgId>` key the shell remembers
- * an organization by, and where `/org` lands when it is opened without naming an
- * organization. The sidebar, the collapsed rail and the router all derive their rows from
- * this file, so the covered range is pinned here (and in the unit tests) rather than
- * duplicated.
+ * an organization by, and which organization `/org` resolves to when it is opened without
+ * naming one (the page it then opens is the overview, the first entry below). The sidebar,
+ * the collapsed rail and the router all derive their rows from this file, so the covered
+ * range is pinned here (and in the unit tests) rather than duplicated.
  */
 
 /** The two work modes of the shell: development (the default) or company. */
@@ -59,12 +59,27 @@ export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKe
 }
 
 /**
- * Path of one channel of one organization — company mode's home surface, which is why the
- * organization switcher and a bare `/org/<projectId>/<orgId>` land on the all-hands channel
- * rather than on a page.
+ * Path of one channel of one organization. A channel is reached from the sidebar's list, not
+ * from a landing: the organization switcher and a bare `/org/<projectId>/<orgId>` open the
+ * overview instead, which is the page that says what the whole organization is doing.
  */
 export function orgChannelPath(projectId: string, orgId: string, channelId: string): string {
   return `${orgRoot(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;
+}
+
+/**
+ * Where a newly created organization opens: the CEO's desk session, so the conversation
+ * about the mission starts in the same click that made the organization, and its overview
+ * when no desk session came back with it.
+ */
+export function orgCreatedPath(created: {
+  projectId: string;
+  orgId: string;
+  ceoDeskSessionId?: string;
+}): string {
+  return created.ceoDeskSessionId !== undefined
+    ? `/chat/${created.ceoDeskSessionId}`
+    : orgPagePath(created.projectId, created.orgId, "overview");
 }
 
 /** Whether a location is inside company mode's own routes (a Session's own page is shared by both modes and is not). */

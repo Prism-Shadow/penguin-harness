@@ -2,9 +2,13 @@
  * The organization switcher that stands where the Project switcher stands in development
  * mode. The trigger names the open organization with its status dot and, beneath it, the
  * Project it belongs to; the menu lists every organization the user can reach, grouped by
- * Project with a check mark on the open one (picking one opens its all-hands channel), then the two entries that make and shape one —
- * "New organization" (success lands in the CEO's desk session) and "Organization settings".
+ * Project with a check mark on the open one (picking one opens its overview), then the two
+ * entries that make and shape one — "New organization" (success lands in the CEO's desk
+ * session) and "Organization settings".
  * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
+ *
+ * Beside it lives what the sidebar shows in place of a channel list while the user has no
+ * organization at all — the same create dialog, reached from the slot where the list would be.
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -15,10 +19,17 @@ import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
-import { groupOrganizationsByProject, orgChannelPath, orgKey, parseOrgKey } from "./company-nav";
-import { DEFAULT_CHANNEL_ID } from "./channel-list";
+import {
+  groupOrganizationsByProject,
+  orgCreatedPath,
+  orgKey,
+  orgPagePath,
+  parseOrgKey,
+} from "./company-nav";
 import { CreateOrganizationDialog, OrganizationSettingsDialog } from "./org-dialogs";
 import { OrgStatusDot } from "./shared";
 
@@ -137,7 +148,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   aria-current={active ? "true" : undefined}
                   onClick={() => {
                     setOpen(false);
-                    go(orgChannelPath(o.projectId, o.orgId, DEFAULT_CHANNEL_ID));
+                    go(orgPagePath(o.projectId, o.orgId, "overview"));
                   }}
                   className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
                 >
@@ -203,11 +214,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           setCreateOpen(false);
           void company.reloadOrganizations();
           // Creation opens the CEO's desk: land in it so the mission conversation starts now.
-          go(
-            detail.ceoDeskSessionId !== undefined
-              ? `/chat/${detail.ceoDeskSessionId}`
-              : orgChannelPath(detail.projectId, detail.orgId, DEFAULT_CHANNEL_ID),
-          );
+          go(orgCreatedPath(detail));
         }}
       />
       {settingsTarget !== null && (
@@ -219,11 +226,47 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           onChanged={() => void company.reloadOrganizations()}
           onDeleted={() => {
             setSettingsOpen(false);
-            void company.reloadOrganizations();
-            go("/org");
+            // The reload is awaited before the redirect: `/org` resolves against the list it
+            // finds, and a stale one would send the shell straight back at the organization
+            // that was just deleted.
+            void company.reloadOrganizations().then(() => go("/org"));
           }}
         />
       )}
     </>
+  );
+}
+
+/**
+ * The sidebar's list slot while the user has no organization anywhere: one quiet line and
+ * the button that fixes it, in place of a channel list that would have nothing to list (and
+ * of the load failure a listing for a deleted organization used to leave there). The six
+ * page rows above stay put, disabled — the shell keeps its shape rather than collapsing into
+ * something that reads as broken.
+ */
+export function NoOrganizationsSidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const navigate = useNavigate();
+  const company = useCompany();
+  const [createOpen, setCreateOpen] = useState(false);
+  // "No organization" is only true once the list has settled; before that it is a guess, and
+  // a guess that flashes a call to action is worse than a placeholder.
+  if (!company.orgsLoaded) return <SkeletonList rows={3} />;
+  return (
+    <div className="mt-3 space-y-2 px-2.5 pt-2">
+      <p className="text-xs text-gray-400 dark:text-gray-500">{S.company.noOrganizations}</p>
+      <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
+        {S.company.createOrg}
+      </Button>
+      <CreateOrganizationDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(detail) => {
+          setCreateOpen(false);
+          void company.reloadOrganizations();
+          navigate(orgCreatedPath(detail));
+          onNavigate?.();
+        }}
+      />
+    </div>
   );
 }

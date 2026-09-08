@@ -1,12 +1,13 @@
 /**
  * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
- * landing): create an organization — id, display name, one-sentence mission, the Project it
- * belongs to when the user has several, the model its sessions run on (the Project default
- * unless chosen), the company workspace (the organization's own directory unless one is
- * picked) and the CEO's monthly budget, which is the whole company's — and an organization's
- * settings: name, mission, model, workspace, timezone, approval mode, pause / resume, and
- * (Project owner only) deletion behind the shared confirmation, whose copy says what stays:
- * the employee Agents and every session.
+ * landing): create an organization — display name, the id (still required, generated from
+ * that name by the field's own button), a one-sentence mission with three examples under it,
+ * the Project it belongs to when the user has several, the model its sessions run on (the
+ * Project default unless chosen), the company workspace (the organization's own directory
+ * unless one is picked) and the CEO's monthly budget, which is the whole company's — and an
+ * organization's settings: name, mission, model, workspace, timezone, working language,
+ * approval mode, pause / resume, and (Project owner only) deletion behind the shared
+ * confirmation, whose copy says what stays: the employee Agents and every session.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -22,6 +23,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
   OrgApprovalMode,
+  OrgLanguage,
   OrganizationCreateRequest,
   OrganizationDetail,
   OrganizationPatchRequest,
@@ -47,6 +49,8 @@ import { modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, OrgStatusPill } from "./shared";
+import { ORG_EXAMPLES } from "./org-examples";
+import { SemanticIdField } from "./semantic-id-field";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
@@ -57,6 +61,14 @@ import {
 } from "./org-draft";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
+
+/**
+ * The working languages an organization can be set to. An organization written before the
+ * field existed carries none, which the server reads as English — so does this dialog, or
+ * saving an unrelated field would silently re-declare the language.
+ */
+const ORG_LANGUAGES: readonly OrgLanguage[] = ["zh", "en"];
+const DEFAULT_ORG_LANGUAGE: OrgLanguage = "en";
 
 /**
  * The CEO's monthly budget the dialog offers, in USD. It is the whole company's ceiling: the
@@ -188,6 +200,42 @@ function WorkspaceField({
         clearLabel={S.company.workspaceClear}
       />
       <FieldHint>{S.company.workspaceHint}</FieldHint>
+    </div>
+  );
+}
+
+/**
+ * The three example missions under the mission field. A click takes the mission whole (the
+ * click asks for THIS mission) and the display name only while the name is still empty, so
+ * an example never overwrites what someone typed; the id is left to the generate button
+ * beside it. One line each — the mission is long enough that a card of it would push the
+ * rest of the form off the dialog, so the row carries the names and the tooltips carry what
+ * each one actually says.
+ */
+function MissionExamples({
+  disabled,
+  onPick,
+}: {
+  disabled: boolean;
+  onPick: (example: { name: string; mission: string }) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {ORG_EXAMPLES.map((example) => {
+        const copy = S.company.missionExamples[example.id];
+        return (
+          <button
+            key={example.id}
+            type="button"
+            title={`${copy.mission}\n${S.company.missionExampleHint}`}
+            disabled={disabled}
+            onClick={() => onPick(copy)}
+            className="min-w-0 flex-1 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          >
+            {copy.name}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -368,28 +416,30 @@ export function CreateOrganizationDialog({
             ))}
           </Select>
         )}
-        <Input
-          label={S.company.orgId}
-          required
-          size="sm"
-          value={orgId}
-          error={idError}
-          hint={S.company.orgIdHint}
-          className="font-mono"
-          autoFocus
-          disabled={busy}
-          onChange={(e) => {
-            setOrgId(e.target.value);
-            setIdError(undefined);
-          }}
-        />
+        {/* The name comes first and the id is derived from it: an id is the harder half to
+            invent, and naming the thing is where anyone starts anyway. */}
         <Input
           label={S.company.displayName}
           size="sm"
           value={name}
           hint={S.company.displayNameHint}
+          autoFocus
           disabled={busy}
           onChange={(e) => setName(e.target.value)}
+        />
+        <SemanticIdField
+          projectId={projectId}
+          kind="org"
+          label={S.company.orgId}
+          hint={S.company.orgIdHint}
+          value={orgId}
+          source={name.trim() || mission}
+          error={idError}
+          disabled={busy}
+          onChange={(id) => {
+            setOrgId(id);
+            setIdError(undefined);
+          }}
         />
         <Textarea
           label={S.company.mission}
@@ -404,6 +454,14 @@ export function CreateOrganizationDialog({
           onChange={(e) => {
             setMission(e.target.value);
             setMissionError(undefined);
+          }}
+        />
+        <MissionExamples
+          disabled={busy}
+          onPick={(example) => {
+            setMission(example.mission);
+            setMissionError(undefined);
+            if (name.trim() === "") setName(example.name);
           }}
         />
         <ModelField
@@ -460,6 +518,7 @@ export function OrganizationSettingsDialog({
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
   const [timezone, setTimezone] = useState("");
+  const [language, setLanguage] = useState<OrgLanguage>(DEFAULT_ORG_LANGUAGE);
   const [approvalMode, setApprovalMode] = useState<OrgApprovalMode>("allow-all");
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
@@ -472,6 +531,7 @@ export function OrganizationSettingsDialog({
     setName(next.name);
     setMission(next.mission);
     setTimezone(next.timezone);
+    setLanguage(next.language ?? DEFAULT_ORG_LANGUAGE);
     setApprovalMode(next.approvalMode);
     setModelRef(next.model ?? null);
     setWorkspace(next.workspace ?? "");
@@ -520,6 +580,7 @@ export function OrganizationSettingsDialog({
     if (name.trim() && name.trim() !== settings.name) body.name = name.trim();
     if (mission.trim() && mission.trim() !== settings.mission) body.mission = mission.trim();
     if (timezone.trim() && timezone.trim() !== settings.timezone) body.timezone = timezone.trim();
+    if (language !== (settings.language ?? DEFAULT_ORG_LANGUAGE)) body.language = language;
     if (approvalMode !== settings.approvalMode) body.approvalMode = approvalMode;
     // Clearing sends null: the organization returns to the Project default / its own directory.
     const storedModel = settings.model ?? null;
@@ -640,6 +701,26 @@ export function OrganizationSettingsDialog({
             className="font-mono"
             onChange={(e) => setTimezone(e.target.value)}
           />
+          <div>
+            {/* The "?" sits beside the field's own title (Select carries no info slot). */}
+            <span className="mb-1 flex items-center gap-1">
+              <FieldLabel block={false}>{S.company.language}</FieldLabel>
+              <InfoPopover label={S.company.language}>{S.company.languageInfo}</InfoPopover>
+            </span>
+            <Select
+              size="sm"
+              aria-label={S.company.language}
+              value={language}
+              disabled={!hydrated || busy}
+              onChange={(e) => setLanguage(e.target.value as OrgLanguage)}
+            >
+              {ORG_LANGUAGES.map((l) => (
+                <option key={l} value={l}>
+                  {S.company.languages[l]}
+                </option>
+              ))}
+            </Select>
+          </div>
           <div>
             {/* The "?" sits beside the field's own title (Select carries no info slot). */}
             <span className="mb-1 flex items-center gap-1">

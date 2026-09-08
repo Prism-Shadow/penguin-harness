@@ -2396,15 +2396,44 @@ Benchmark：
     landingTitle: "公司模式",
     landingBody:
       "组织是一群员工 Agent 按汇报线协作：一位 CEO、它招募的员工、共享的看板与频道，以及驱动它们的日程。新建一个组织，先和 CEO 谈谈使命。",
+    /** The page a stale deep link lands on: the organization it names is gone. */
+    orgGoneTitle: "组织不存在",
+    orgGoneBody: "它可能已被删除，或者你不再能访问它所属的 Project。",
+    backToOrgs: "回到组织列表",
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
+    /**
+     * The id field's generate button, the clause the hint appends for it, and what a name no
+     * id can be derived from is told. The clause carries its own leading separator: what
+     * joins two clauses is punctuation, and punctuation belongs to the language.
+     */
+    generateId: "从名称生成 ID",
+    idGenerateHint: "；也可以从显示名生成",
+    idNotDerivable: "无法从名称推导 ID，请手动输入",
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
     missionHint: "一句话说明这个组织存在的目的；CEO 的初始化会话从它开始",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
+    /** The three examples under the mission field (org-examples.ts holds their order). */
+    missionExampleHint: "点一下填入使命",
+    missionExamples: {
+      research: {
+        name: "科研论文公司",
+        mission: "新建一个公司帮我做科研，不断写稿审稿，产出可以投稿顶级会议的学术论文",
+      },
+      agentTuning: {
+        name: "Agent 优化公司",
+        mission: "新建一个公司帮我优化产品 Agent，提高 Agent 在实际业务中的准确度和产品体验",
+      },
+      cloudReseller: {
+        name: "云服务转售站",
+        mission:
+          "新建一个公司帮我运营一个类似云服务的网站，收集市面上所有的低价服务，并且加价以后打包出售，目的是帮我赚钱，并且要提高站点的 SEO 和曝光程度",
+      },
+    },
     createdOpeningCeo: "组织已创建，正在打开 CEO 的工位会话",
     /** Create and settings dialogs: the model and the shared workspace, both optional. */
     modelField: "模型",
@@ -2432,6 +2461,13 @@ Benchmark：
     settingsTitle: "组织设置",
     timezone: "时区",
     timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与频道日志按它划分",
+    language: "工作语言",
+    languageInfo:
+      "组织的工作语言：手册、员工简报、CEO 初始化会话与各工位的输出都用这个语言；创建时按使命的语言自动判断。",
+    languages: {
+      zh: "中文",
+      en: "English",
+    },
     approvalMode: "审批模式",
     approvalModeInfo:
       "工位会话与工单会话的工具审批口径。无人值守的运行不会停下来等人拍板，所以这里没有「总是询问」。",

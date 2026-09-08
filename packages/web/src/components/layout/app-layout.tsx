@@ -20,7 +20,7 @@ import { UpdateDot } from "../ui/update-dot";
 import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
-import { ChannelRailRows, NewChannelButton } from "../../features/company/channel-sidebar";
+import { ChannelRailRows } from "../../features/company/channel-sidebar";
 import { DeskRailRows } from "../../features/company/org-session-groups";
 import {
   COMPANY_NAV_KEYS,
@@ -111,23 +111,30 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
       switcher, which is the only place it happens. */
-  const pages: ReadonlyArray<{ to: string; label: string; icon: string; note: string | null }> =
-    inCompany
-      ? navOrg === null
-        ? []
-        : COMPANY_NAV_KEYS.map((key) => ({
-            to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
-            label: S.nav.org[key],
-            icon: COMPANY_NAV_ICONS[key],
-            note: null,
-          }))
-      : [
-          { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-          { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
-          { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-          { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-          { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-        ].map((item) => ({ ...item, note: navNoteFor(badges, item.to) }));
+  const pages: ReadonlyArray<{
+    key: string;
+    /** Where the entry leads — null while company mode has no organization, which renders it disabled. */
+    to: string | null;
+    label: string;
+    icon: string;
+    note: string | null;
+  }> = inCompany
+    ? COMPANY_NAV_KEYS.map((key) => ({
+        key,
+        // The six entries keep their places with no organization, disabled: a rail that
+        // empties itself reads as a broken shell rather than as an empty one.
+        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+        label: S.nav.org[key],
+        icon: COMPANY_NAV_ICONS[key],
+        note: null,
+      }))
+    : [
+        { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
+        { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
+        { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
+        { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
+        { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
+      ].map((item) => ({ ...item, key: item.to, note: navNoteFor(badges, item.to) }));
 
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2.5">
@@ -181,13 +188,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           <GlyphIcon d={HISTORY_ICON} size={18} />
         </button>
         {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar
-            convention). Company mode makes a channel in this slot instead — the same swap the
-            pinned sidebar's own button makes. */}
-        {inCompany ? (
-          navOrg !== null && (
-            <NewChannelButton rail projectId={navOrg.projectId} orgId={navOrg.orgId} />
-          )
-        ) : (
+            convention). Company mode leaves this slot empty — a channel is made rarely, from
+            the channel list's own header, and the rail carries no create control of its own. */}
+        {!inCompany && (
           <button
             type="button"
             title={S.chat.newSessionMenu}
@@ -205,9 +208,25 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
              say what is waiting, and this rail's icons have no visible label, so they carry
              both the entry's name and that sentence. */
           const note = item.note;
+          if (item.to === null) {
+            /* Nowhere to go: the icon keeps its place, muted, with no hover fill and nothing
+               to click or tab to. The name still stands, so the row is readable. */
+            return (
+              <span
+                key={item.key}
+                role="link"
+                title={item.label}
+                aria-label={item.label}
+                aria-disabled="true"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
+              >
+                <GlyphIcon d={item.icon} size={18} />
+              </span>
+            );
+          }
           return (
             <NavLink
-              key={item.to}
+              key={item.key}
               to={item.to}
               title={note !== null ? `${item.label} · ${note}` : item.label}
               aria-label={note !== null ? `${item.label} · ${note}` : item.label}

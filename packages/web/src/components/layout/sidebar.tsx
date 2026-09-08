@@ -176,8 +176,8 @@ import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
-import { OrgSwitcher } from "../../features/company/org-switcher";
-import { ChannelSidebar, NewChannelButton } from "../../features/company/channel-sidebar";
+import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
+import { ChannelSidebar } from "../../features/company/channel-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import {
@@ -1505,22 +1505,31 @@ export function Sidebar({
    * they are the list below. Always mounted — the collapse animates their height to zero and
    * turns them inert.
    */
-  const navItems: Array<{ to: string; label: string; icon: string; note: string | null }> =
-    inCompany
-      ? navOrg === null
-        ? []
-        : COMPANY_NAV_KEYS.map((key) => ({
-            to: orgPagePath(navOrg.projectId, navOrg.orgId, key),
-            label: S.nav.org[key],
-            icon: COMPANY_NAV_ICONS[key],
-            note: null,
-          }))
-      : navKeysFor(user?.isAdmin === true).map((key) => ({
-          to: `/${key}`,
-          label: S.nav[key],
-          icon: NAV_ICONS[key],
-          note: navNoteFor(badges, `/${key}`),
-        }));
+  const navItems: Array<{
+    key: string;
+    /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
+    to: string | null;
+    label: string;
+    icon: string;
+    note: string | null;
+  }> = inCompany
+    ? COMPANY_NAV_KEYS.map((key) => ({
+        key,
+        // Company mode with no organization keeps its six rows and disables them: the pages
+        // exist, they just have no organization to show yet, and a nav that empties itself
+        // reads as a broken shell rather than as an empty one.
+        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+        label: S.nav.org[key],
+        icon: COMPANY_NAV_ICONS[key],
+        note: null,
+      }))
+    : navKeysFor(user?.isAdmin === true).map((key) => ({
+        key,
+        to: `/${key}`,
+        label: S.nav[key],
+        icon: NAV_ICONS[key],
+        note: navNoteFor(badges, `/${key}`),
+      }));
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -1629,18 +1638,11 @@ export function Sidebar({
           it, so a scrolled nav entry ended up flush against this pinned button, the two
           labels touching. Outside the scroller the 8px stays put at every scroll offset —
           the same text-to-text rhythm two adjacent nav rows have. */}
-      {/* Company mode puts "New channel" in this slot: a channel is what a person makes
-          there, the way a conversation is what they make in development mode. */}
+      {/* Company mode pins nothing here: a channel is made rarely, so "New channel" is the
+          channel list's own header action rather than a permanent row (channel-sidebar.tsx).
+          The slot still holds its 8px, which is the gap the scroll area below depends on. */}
       {inCompany ? (
-        navOrg !== null && (
-          <div className="shrink-0 px-2 pb-2 pt-2">
-            <NewChannelButton
-              projectId={navOrg.projectId}
-              orgId={navOrg.orgId}
-              {...(onNavigate ? { onNavigate } : {})}
-            />
-          </div>
-        )
+        <div className="shrink-0 pb-2" />
       ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">
           <button
@@ -1701,9 +1703,26 @@ export function Sidebar({
                      row's right edge, on the same inset as its horizontal padding, and vertically
                      centred on the row rather than on the line of text. */
                   const note = item.note;
+                  if (item.to === null) {
+                    /* Nowhere to go: the row keeps its place and its glyph, muted, with no
+                       hover fill and nothing to click or tab to. */
+                    return (
+                      <span
+                        key={item.key}
+                        role="link"
+                        aria-disabled="true"
+                        className="relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-400 dark:text-gray-600"
+                      >
+                        <span className="text-gray-300 dark:text-gray-700">
+                          <Icon d={item.icon} />
+                        </span>
+                        {item.label}
+                      </span>
+                    );
+                  }
                   return (
                     <NavLink
-                      key={item.to}
+                      key={item.key}
                       to={item.to}
                       onClick={() => onNavigate?.()}
                       {...(note !== null
@@ -1763,7 +1782,7 @@ export function Sidebar({
         </nav>
 
         {inCompany ? (
-          navOrg !== null && (
+          navOrg !== null ? (
             /* Company mode: the organization's channels, where development mode lists
                conversations, and below them its own two groups — one row per employee's
                desk, and the sessions attached to tickets. */
@@ -1780,6 +1799,9 @@ export function Sidebar({
                 {...(onNavigate ? { onNavigate } : {})}
               />
             </>
+          ) : (
+            /* No organization to list: the create block, not an empty channel list. */
+            <NoOrganizationsSidebar {...(onNavigate ? { onNavigate } : {})} />
           )
         ) : (
           <>

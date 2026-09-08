@@ -1,8 +1,9 @@
 /**
- * The dialogs a channel needs: creating one (id, display name, purpose) from the sidebar,
- * and the two one-field edits its header menu opens — rename and purpose. Failures stay
- * inside the dialog: a rejected id lands under the id field, anything else in a strip above
- * the footer, so the fields never sit disabled behind a toast that has already gone.
+ * The dialogs a channel needs: creating one (display name, then the id derived from it by
+ * the field's own button, then the purpose) from the channel list's header, and the two
+ * one-field edits its header menu opens — rename and purpose. Failures stay inside the
+ * dialog: a rejected id lands under the id field, anything else in a strip above the footer,
+ * so the fields never sit disabled behind a toast that has already gone.
  */
 import { useEffect, useState } from "react";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
@@ -15,6 +16,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { channelIdProblem } from "./channel-list";
 import type { ChannelIdProblem } from "./channel-list";
+import { SemanticIdField } from "./semantic-id-field";
 import { ErrorLine } from "./shared";
 
 /** The error codes that are about the id the user typed; every other failure is the form's. */
@@ -103,34 +105,32 @@ export function NewChannelDialog({
       }
     >
       <div className="space-y-3">
-        <Input
-          label={S.company.channels.idField}
-          required
-          size="sm"
-          value={channelId}
-          error={idError}
-          hint={S.company.channels.idHint}
-          className="font-mono"
-          autoFocus
-          disabled={busy}
-          onChange={(e) => {
-            setChannelId(e.target.value);
-            setIdError(undefined);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-        />
+        {/* The name comes first and the id is derived from it: an id is the harder half to
+            invent, and naming the channel is where anyone starts anyway. */}
         <Input
           label={S.company.channels.nameField}
           size="sm"
           value={name}
           hint={S.company.channels.nameHint}
+          autoFocus
           disabled={busy}
           onChange={(e) => setName(e.target.value)}
+        />
+        <SemanticIdField
+          projectId={projectId}
+          kind="channel"
+          label={S.company.channels.idField}
+          hint={S.company.channels.idHint}
+          value={channelId}
+          source={name}
+          taken={taken}
+          error={idError}
+          disabled={busy}
+          onChange={(id) => {
+            setChannelId(id);
+            setIdError(undefined);
+          }}
+          onEnter={() => void submit()}
         />
         <Textarea
           label={S.company.channels.purpose}
