@@ -10,6 +10,10 @@
  * evaluations under it. The machine rides along as attribution — which disk an evaluation was
  * read from, and where a Case's files have to be fetched from — and is not a grouping key.
  *
+ * The same holds one level up, for the Agents themselves: an Agent that has only ever run on a
+ * machine has its state directory only over there, so a tree built from this server's Agent
+ * list has no row to hang its Benchmarks off (mergeAgents, below).
+ *
  * Two rules are load-bearing:
  *
  * - **Order.** A scoreboard's append order IS its evaluation sequence, and the page preserves
@@ -21,10 +25,48 @@
  *   where two disks disagree, the one the person is looking at is the honest choice.
  */
 import type {
+  AgentSummary,
   BenchmarkCaseSummary,
   BenchmarkEvaluation,
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
+
+/** One server's answer about a Project's Agents, with the machine that gave it. */
+export interface AgentSource {
+  machineId: string | null;
+  agents: readonly AgentSummary[];
+}
+
+/** One Agent of a Project, and the machines that actually hold its state directory. */
+export interface MergedAgent {
+  agent: AgentSummary;
+  /** Where this Agent exists, in the order the sources were asked; this server is null. */
+  machineIds: (string | null)[];
+}
+
+/**
+ * The Agents of a Project as every machine together has them.
+ *
+ * An Agent belongs to the Project, but its state directory is created on whichever machine it
+ * has run on — so an Agent that has only ever run on a machine exists only over there, and a
+ * page that lists this server's Agents cannot show it at all.
+ *
+ * The first source to name an Agent describes it (this server, when it has it): a name and a
+ * description read here are the ones the person is looking at. `machineIds` is what the caller
+ * asks about that Agent — asking a machine that has never heard of it earns a 404 per call.
+ */
+export function mergeAgents(sources: readonly AgentSource[]): MergedAgent[] {
+  const byId = new Map<string, MergedAgent>();
+  for (const source of sources) {
+    for (const agent of source.agents) {
+      const existing = byId.get(agent.agentId);
+      if (existing === undefined)
+        byId.set(agent.agentId, { agent, machineIds: [source.machineId] });
+      else existing.machineIds.push(source.machineId);
+    }
+  }
+  return [...byId.values()];
+}
 
 /** One server's answer about a Project's Benchmarks, with the machine that gave it. */
 export interface BenchmarkSource {
