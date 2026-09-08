@@ -1355,8 +1355,7 @@ export const zh = {
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     installedTitle: "已安装的插件",
-    installedDesc:
-      "plugins.json 列出的插件，以及本进程实际在跑的那些。插件在服务器启动时加载一次，所以改动会在下次重启后生效。",
+    installedDesc: "本 Project 要求的插件，以及其中本进程实际持有的那些。改动立即生效，无需重启。",
     installedEmpty: "还没有安装任何插件。",
     stateActive: "运行中",
     builtin: "内置",
@@ -1364,7 +1363,7 @@ export const zh = {
     installedRestart: "待重启",
     stateInactive: "未加载",
     replacesLabel: "替换",
-    restartPending: "有已安装但未加载的插件：重启服务器后生效。",
+    restartPending: "有已列出但未运行的插件：该服务端的 runtime 无法就地应用改动，重启后才会加载。",
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
@@ -1419,7 +1418,7 @@ export const zh = {
     pageTitle: "插件市场",
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
-    specifierHint: "写入 plugins.json 的包名",
+    specifierHint: "包名",
     back: "返回插件市场",
     readme: "说明文档",
     noReadme: "该插件暂无说明文档。",
@@ -1435,7 +1434,7 @@ export const zh = {
     license: "许可证",
     copySpecifier: "复制包名",
     copied: "已复制",
-    installHint: "安装方式：把包名写入数据目录下的 plugins.json。",
+    installHint: "安装方式：在插件列表中该插件所在行点击「安装」，仅管理员可用。",
   },
 
   skills: {

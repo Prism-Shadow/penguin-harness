@@ -3724,7 +3724,10 @@ export interface InstalledPluginsResponse {
   shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
-  /** A listed plugin is not running: plugins load once per process, so a restart applies it. */
+  /**
+   * A listed plugin is not running and did not fail to resolve — this runtime cannot re-assemble
+   * the App, so the list is written but not applied until the process restarts.
+   */
   restartPending: boolean;
 }
 

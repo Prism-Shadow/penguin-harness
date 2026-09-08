@@ -22,6 +22,8 @@ A write re-reads the closure into a fresh plugin host and asks the runtime to re
 
 `Hmr.reload` is an optional **field** rather than a method, and that is load-bearing: the signature check tolerates a field a runtime does not declare, and refuses a platform whose required method is missing. A runtime older than this keeps taking pushes and simply reports that it is waiting for a restart, which is what every runtime did before.
 
+The page says the same: the Installed plugins dialog no longer describes a data-root `plugins.json` or a pending restart, and the catalogue points at the row's own Install control. The one place a restart is still named is the runtime that cannot re-assemble — the case that produces it.
+
 ## The same list on a Project's machines
 
 A Project's list is handed to the machines it uses, on the same trip its Model credentials already take and at the same moments: when the list changes, and again on connect. Parity is **strict** — the Project's list is the truth and what a machine has beyond it is removed.
