@@ -98,7 +98,11 @@ text \`@<id>\` is shorthand: employees resolve first, then Project members; writ
   moves the ticket if the work is complete.
 - Stuck (waiting for a decision, another ticket, a missing key): \`penguin org ticket block <id>
   --reason … --by …\` and stop working on it. Blocked tickets are skipped by the sweep until unblocked.
-- Closing a ticket notifies its \`Notify\` list and the initiator.
+- Name every input you rely on and every deliverable you produce by its full path (absolute, or
+  \`<app_data_dir>/…\`) in \`## Goal\`, \`## Acceptance criteria\`, your progress lines and \`## Result\`;
+  a colleague must be able to open it without asking.
+- Closing a ticket notifies its \`Notify\` list, and the initiator when it is an employee; a person
+  who wants to hear about it lists themselves in \`Notify\`.
 
 ## Decisions belong to the board
 
@@ -210,7 +214,8 @@ ${input.mission}
 - 负责人把完成的工单移到 \`review\`；由 CEO 或某个人移到 \`done\`。验收标准明显已满足的 P2 工单可以直接进 \`done\`。
 - 工单会话结束前要写进展（\`penguin org ticket progress <id> -m …\`），工作完成则移列。
 - 卡住了（等人拍板、等另一张工单、缺一把 key）：\`penguin org ticket block <id> --reason … --by …\`，然后停手。被阻塞的工单在解除之前会被巡检跳过。
-- 关闭一张工单会通知它的 \`Notify\` 名单与发起人。
+- \`## Goal\`、\`## Acceptance criteria\`、进展行与 \`## Result\` 里的每个参考物与交付物都写**完整路径**（绝对路径或 \`<app_data_dir>/…\`），同事不用问就能打开。
+- 关闭一张工单会通知它的 \`Notify\` 名单，发起人是员工时也通知发起人；想收到通知的人把自己列进 \`Notify\`。
 
 ## 决策属于董事会
 

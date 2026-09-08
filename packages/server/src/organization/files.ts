@@ -14,6 +14,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   OrgApprovalMode,
   OrgChannelMessage,
+  OrgChannelNoticeKind,
   OrgLanguage,
   OrgStatus,
   OrgTicketPriority,
@@ -595,8 +596,15 @@ export function parseTicket(raw: string): ParseResult<TicketDoc> {
   const parent = headers.get("parent") ?? "";
   if (parent !== "" && !TICKET_ID_PATTERN.test(parent)) return fail("Parent must be a ticket id");
   const notifyRaw = headers.get("notify");
+  // No Notify header, or an empty one: tell the initiator when it is an employee — the
+  // notice reaches its desk — and nobody when a person filed the ticket, because one
+  // @-mention per closed ticket is a badge nobody asked for. A person lists itself to be told.
   const notify =
-    notifyRaw === undefined || notifyRaw === "" ? [initiator] : splitPrincipalList(notifyRaw);
+    notifyRaw === undefined || notifyRaw === ""
+      ? parsePrincipal(initiator)?.kind === "agent"
+        ? [initiator]
+        : []
+      : splitPrincipalList(notifyRaw);
   for (const n of notify)
     if (!isPersonPrincipal(n)) return fail(`Notify entry is not a principal: ${n}`);
   const priority = headers.get("priority") ?? "P2";
@@ -873,6 +881,26 @@ export function parseChannelMessageLine(line: string): ParseResult<OrgChannelMes
       ...(typeof rr["reply_to"] === "string" ? { replyTo: rr["reply_to"] } : {}),
     };
   }
+  // The kind is taken as written rather than checked against the known list: a line a newer
+  // server wrote still parses here, and a client that does not know the kind shows `text`.
+  let notice: OrgChannelMessage["notice"];
+  if (o["notice"] !== undefined) {
+    const n = o["notice"];
+    if (n === null || typeof n !== "object") return fail("notice must be an object");
+    const nn = n as Record<string, unknown>;
+    if (typeof nn["kind"] !== "string" || nn["kind"] === "")
+      return fail("notice.kind must be a non-empty string");
+    const params = nn["params"] ?? {};
+    if (params === null || typeof params !== "object" || Array.isArray(params))
+      return fail("notice.params must be an object");
+    const entries = Object.entries(params as Record<string, unknown>);
+    if (entries.some(([, value]) => typeof value !== "string"))
+      return fail("notice.params values must be strings");
+    notice = {
+      kind: nn["kind"] as OrgChannelNoticeKind,
+      params: Object.fromEntries(entries) as Record<string, string>,
+    };
+  }
   return {
     ok: true,
     value: {
@@ -883,6 +911,7 @@ export function parseChannelMessageLine(line: string): ParseResult<OrgChannelMes
       text: o["text"],
       mentions: mentions as string[],
       ...(refs !== undefined && Object.keys(refs).length > 0 ? { refs } : {}),
+      ...(notice !== undefined ? { notice } : {}),
     },
   };
 }
@@ -904,6 +933,7 @@ export function serializeChannelMessageLine(msg: OrgChannelMessage): string {
     text: msg.text,
     mentions: msg.mentions,
     ...(refs !== undefined && Object.keys(refs).length > 0 ? { refs } : {}),
+    ...(msg.notice !== undefined ? { notice: msg.notice } : {}),
   });
 }
 

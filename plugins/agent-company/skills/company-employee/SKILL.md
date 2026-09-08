@@ -13,7 +13,7 @@ If the message only names this skill (e.g. "use company-employee skill") without
 
 ## Every work run starts with the handbook
 
-The organization lives at `<app_data_dir>/organizations/<org_id>/` — substitute the App Data Dir from your Environment and the `org:` line of the trigger block, and never write absolute paths into tickets, channels or notes. Read `handbook/README.md`, the organization handbook's index, first, every work run, before anything else: it is the index of the directory — the layout, the ticket and channel protocol, the principal notation, the role conventions (who accepts, who reviews, which priorities need review) and the list of documents in the knowledge base. `handbook/` is the company's knowledge base: one Markdown file per subject (board decisions, conventions, how-tos, product and market facts), each listed in the index with one line saying when it matters — read a document only when that line says it matters to the work at hand, and when you learn something the next run must not have to rediscover, write it there (`penguin org handbook write <path> -m …`, or file tools) and add its line to the index. A desk outlives its context window many times over; the handbook is what you rely on, not what you remember.
+The organization lives at `<app_data_dir>/organizations/<org_id>/` — substitute the App Data Dir from your Environment and the `org:` line of the trigger block. Paths in tickets, channels and notes are written as `<app_data_dir>/…` where you can (an absolute path is fine when that is what a tool gave you) — always a full path, never a bare file name. Read `handbook/README.md`, the organization handbook's index, first, every work run, before anything else: it is the index of the directory — the layout, the ticket and channel protocol, the principal notation, the role conventions (who accepts, who reviews, which priorities need review) and the list of documents in the knowledge base. `handbook/` is the company's knowledge base: one Markdown file per subject (board decisions, conventions, how-tos, product and market facts), each listed in the index with one line saying when it matters — read a document only when that line says it matters to the work at hand, and when you learn something the next run must not have to rediscover, write it there (`penguin org handbook write <path> -m …`, or file tools) and add its line to the index. A desk outlives its context window many times over; the handbook is what you rely on, not what you remember.
 
 Write in the organization's **working language** — the one the handbook's 「工作语言」 / “Working language” section names: channel messages, tickets (title, goal, acceptance criteria, progress, result), handbook documents, calendar prompts and employee briefs are all written in it. Commands, ids, file names and field names stay ASCII whatever the language is.
 
@@ -64,7 +64,11 @@ Structured fields — ticket headers, a message's `sender` / `mentions`, `--owne
 
 ## The desk session: schedule, do not do
 
-Your desk session is permanent — one per employee, the target of every calendar event, mention and notice. Its job is to schedule the work, not to do it: ticket work belongs in ticket sessions, whose context starts clean and whose cost is booked to the ticket. A sweep, on a calendar event or whenever a notice calls for one:
+Your desk session is permanent — one per employee, the target of every calendar event, mention and notice. Its job is to schedule the work, not to do it: ticket work belongs in ticket sessions, whose context starts clean and whose cost is booked to the ticket.
+
+- **The desk never edits workspace files for a ticket.** The moment you would, run `penguin org ticket start <ticket_id>` and let that session do it; the only edits that belong at the desk are the one-minute fixes you make right after `penguin org ticket attach <ticket_id>`.
+
+A sweep, on a calendar event or whenever a notice calls for one:
 
 1. `penguin org ticket ls --owner agent:<your_agent_id> --json` — your tickets; add `--status proposed` for candidates and `--blocked` to see what is stuck. Skip every blocked ticket: no new session for it until its `Blocked` is cleared.
 2. For each `in_progress` ticket of yours that no session is working on, start one: `penguin org ticket start <ticket_id> -m "<what to do first, what to leave alone>"`. It runs in the background and prints the session id; start several for independent streams of one ticket, and start one on a colleague's ticket when they asked for help in a channel.
@@ -78,8 +82,8 @@ A small change you can make in a minute is fine to do at the desk — run `pengu
 
 A ticket session works in the desk's workspace (or the `--workspace` sub-directory the starter chose) with the ticket as its first message. Read `## Goal` and `## Acceptance criteria`, do the work, and before your final answer:
 
-- `penguin org ticket progress <ticket_id> -m "<one line: what was done, where it is>"` — the session id is attached automatically; every session that contributed leaves at least one line.
-- `penguin org ticket move <ticket_id> --to review` when the criteria are met and the handbook wants a review, `--to done` when it allows finishing directly. Write the conclusion into the ticket's `## Result` with your file tools (the ticket is an intent file the server never overwrites) so the reviewer does not have to read your transcript.
+- `penguin org ticket progress <ticket_id> -m "<one line: what was done, where it is>"` — the session id is attached automatically; every session that contributed leaves at least one line, and every file it names is named by its full path (absolute, or `<app_data_dir>/…`).
+- `penguin org ticket move <ticket_id> --to review` when the criteria are met and the handbook wants a review, `--to done` when it allows finishing directly. Write the conclusion into the ticket's `## Result` with your file tools (the ticket is an intent file the server never overwrites) so the reviewer does not have to read your transcript; `## Result` lists every deliverable by its full path, so a colleague can open it without asking where it is.
 - If you cannot finish, say why in a progress line and block the ticket (below). Leave the ticket honest, never "almost done".
 
 ## Getting stuck: block, never idle
@@ -131,7 +135,7 @@ penguin org calendar update <name> [--agent-id <id>] [<same field flags>] [--ena
 penguin org calendar rm <name> [--agent-id <id>]
 penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
 penguin org ticket show <ticket_id> [--json]
-penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
+penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--initiator <principal>] [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
 penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # moving into rejected requires a reason
 penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # writes Blocked / Blocked-by; the ticket stays in its column
@@ -153,7 +157,7 @@ penguin org finance [--period <YYYY-MM>] [--json]               # spend (cumulat
 
 - Decisions that change scope, cost or the organization (new roles, budgets, rejecting tickets, anything outside the organization) are not yours: propose them to your manager in the channel that work belongs to — the CEO takes them to the board — and continue with the work that is already decided.
 
-- A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee.
+- A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee. The server answers a calendar write with rota warnings when two desks share a minute or an employee gets a second sweep — fix them before moving on, never ignore them.
 
 - **Facts are the server's.** `desks.toml`, a ticket's `Sessions` line and the channels' message files are written by the server; for everything else you would edit by hand, the CLI is the writer.
 - **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the `Status` line together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. Ticket ids are `<yyyy-mm-dd>-<slug>` and stay in their creation month's directory; moving columns never changes the month.

@@ -85,6 +85,8 @@ export interface FakeOrgState {
   /** Calendar events keyed `<agentId>/<name>`. */
   calendar: Map<string, Json>;
   calendarInvalidFiles: Json[];
+  /** Rota advice a calendar write answers with (`OrgCalendarWriteResponse.warnings`). */
+  calendarWarnings: string[];
   /** Ticket records keyed by ticket id, in creation order. */
   tickets: Map<string, Json>;
   ticketInvalidFiles: Json[];
@@ -374,6 +376,7 @@ export class FakeServer {
       employees: [],
       calendar: new Map(),
       calendarInvalidFiles: [],
+      calendarWarnings: [],
       tickets: new Map(),
       ticketInvalidFiles: [],
       channels: new Map(),
@@ -824,7 +827,7 @@ export class FakeServer {
           }
           const item = this.calendarItem(org, agentId, name, fields.value);
           org.calendar.set(key, item);
-          return this.json(item, 201);
+          return this.json(this.calendarWrite(org, item), 201);
         }
         return this.json({
           events: [...org.calendar.values()],
@@ -847,7 +850,7 @@ export class FakeServer {
           if (!fields.ok) return fields.res;
           const item = this.calendarItem(org, b!, c, fields.value);
           org.calendar.set(key, item);
-          return this.json(item);
+          return this.json(this.calendarWrite(org, item));
         }
         if (method === "DELETE") {
           org.calendar.delete(key);
@@ -1390,6 +1393,14 @@ export class FakeServer {
     };
   }
 
+  /** What a calendar write answers: the stored event plus the rota advice the test staged. */
+  private calendarWrite(org: FakeOrgState, item: Json): Json {
+    return {
+      ...item,
+      ...(org.calendarWarnings.length > 0 ? { warnings: org.calendarWarnings } : {}),
+    };
+  }
+
   private createTicket(org: FakeOrgState, body: Json): Response {
     if (!isNonEmptyString(body.title)) return this.badRequest("title is required.");
     const actor = this.actorOf(body);
@@ -1404,11 +1415,13 @@ export class FakeServer {
     const ticketId = `${ORG_TODAY}-${slug || "ticket"}`;
     if (org.tickets.has(ticketId))
       return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
+    // `--initiator` files the ticket in another principal's name; the server validates it.
+    const initiator = isNonEmptyString(body.initiator) ? body.initiator : actor.principal;
     const rec = this.addTicket(org.orgId, {
       ticketId,
       title: body.title,
-      initiator: actor.principal,
-      notify: Array.isArray(body.notify) ? body.notify : [actor.principal],
+      initiator,
+      notify: Array.isArray(body.notify) ? body.notify : [],
       ...(typeof body.owner === "string" ? { owner: body.owner } : {}),
       ...(typeof body.parent === "string" ? { parent: body.parent } : {}),
       ...(typeof body.priority === "string" ? { priority: body.priority } : {}),

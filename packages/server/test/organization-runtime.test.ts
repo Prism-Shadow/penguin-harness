@@ -369,11 +369,15 @@ describe("organization runtime", () => {
       DEFAULT_CHANNEL_ID,
       {},
     );
-    expect(
-      allHands.messages.some(
-        (m) => m.sender === "system" && m.text.includes("agent:acme_hr joined as HR"),
-      ),
-    ).toBe(true);
+    const joined = allHands.messages.find(
+      (m) => m.sender === "system" && m.text.includes("agent:acme_hr joined as HR"),
+    );
+    // The sentence for the file and the CLI, the structure for a client that renders it in
+    // the reader's language.
+    expect(joined?.notice).toEqual({
+      kind: "employee_joined",
+      params: { agent: `agent:${HR}`, title: "HR", reportsTo: `agent:${CEO}` },
+    });
     await expect(
       service.hire(P, ORG, { agentId: HR, title: "Again", reportsTo: CEO }),
     ).rejects.toMatchObject({
@@ -556,6 +560,25 @@ describe("organization runtime", () => {
     });
   });
 
+  it("announces a departure with the manager the reports move to", async () => {
+    await createOrg();
+    await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+    await service.leave(P, ORG, HR);
+    const allHands = await service.channelMessages(
+      P,
+      ORG,
+      { userId: "alice" },
+      DEFAULT_CHANNEL_ID,
+      {},
+    );
+    const left = allHands.messages.find((m) => m.text.includes("left the organization"));
+    expect(left?.text).toBe(`agent:${HR} left the organization; reports now go to agent:${CEO}.`);
+    expect(left?.notice).toEqual({
+      kind: "employee_left",
+      params: { agent: `agent:${HR}`, reportsTo: `agent:${CEO}` },
+    });
+  });
+
   describe("calendar", () => {
     async function hireHr(): Promise<void> {
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
@@ -656,6 +679,52 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(2);
     });
 
+    it("answers a write with the rota it collides with, and writes it anyway", async () => {
+      await createOrg();
+      await hireHr();
+      const fields = {
+        prompt: "Sweep",
+        enabled: true,
+        startAt: "2026-09-02T10:00:00+08:00",
+        period: "1d",
+      };
+      const first = await service.upsertCalendar(P, ORG, HR, "hr-audit", fields, { create: true });
+      expect(first.warnings).toBeUndefined();
+      const clash = await service.upsertCalendar(P, ORG, CEO, "board-sweep", fields, {
+        create: true,
+      });
+      expect(clash.warnings).toEqual([
+        `\`${HR}/hr-audit\` also fires at 10:00; give every employee its own minute.`,
+      ]);
+      // Advisory only: the event is stored exactly as asked.
+      expect((await service.calendar(P, ORG)).events.map((e) => e.name).sort()).toEqual([
+        "board-sweep",
+        "hr-audit",
+      ]);
+      const second = await service.upsertCalendar(
+        P,
+        ORG,
+        HR,
+        "extra-sweep",
+        { ...fields, startAt: new Date(nowMs).toISOString() },
+        { create: true },
+      );
+      expect(second.warnings).toEqual([
+        `\`${HR}\` already has a recurring event \`hr-audit\` with period 1d; one sweep per employee.`,
+        "A recurring event started at 'now' shares its minute with every other event started the same way; pick the role's hour.",
+      ]);
+      // Staggering it clears the advice on update.
+      const updated = await service.upsertCalendar(
+        P,
+        ORG,
+        CEO,
+        "board-sweep",
+        { ...fields, startAt: "2026-09-02T14:00:00+08:00" },
+        { create: false },
+      );
+      expect(updated.warnings).toBeUndefined();
+    });
+
     it("reports an invalid file and one that belongs to nobody without firing", async () => {
       await createOrg();
       await store.writeCalendarEvent(orgDir(), CEO, "bad", 'prompt = ""\n');
@@ -692,7 +761,8 @@ describe("organization runtime", () => {
       expect(t.ticketId).toMatch(/^2026-09-01-launch-the-site$/);
       expect(t.status).toBe("proposed");
       expect(t.initiator).toBe("user:alice");
-      expect(t.notify).toEqual(["user:alice"]);
+      // A person who files a ticket is not @-mentioned when it closes; it lists itself to be.
+      expect(t.notify).toEqual([]);
       await expect(
         fs.stat(path.join(orgDir(), "tickets", "2026-09", "proposed", `${t.ticketId}.md`)),
       ).resolves.toBeTruthy();
@@ -702,6 +772,12 @@ describe("organization runtime", () => {
         .filter((o) => o?.kind === "ticket_notice");
       expect(notices).toHaveLength(1);
       expect(notices[0]).toMatchObject({ ticket: t.ticketId, change: "assigned" });
+      const assigned = started.find(
+        (x) => parseOrgTriggerMessage(x.text)?.origin.change === "assigned",
+      );
+      expect(assigned!.text).toContain(
+        `Start a ticket session for it now: \`penguin org ticket start ${t.ticketId} -m "…"\` — do not do the work at your desk.`,
+      );
       await scheduler.tickOnce();
       expect(
         started.filter((s) => parseOrgTriggerMessage(s.text)?.origin.kind === "ticket_notice"),
@@ -721,6 +797,13 @@ describe("organization runtime", () => {
       });
       expect(work!.text).toContain("Note from the desk: Start with the scaffold");
       expect(work!.text).toContain("# Ticket: Launch the site");
+      // Where it stands, and the rule that makes its output findable by a colleague.
+      expect(work!.text).toContain(
+        `Workspace: ${path.join(orgDir(), "workspace")} — the organization is at \`<app_data_dir>/organizations/${ORG}/\`.`,
+      );
+      expect(work!.text).toContain(
+        "Name every input you rely on and every deliverable you produce by its full path",
+      );
 
       // A second session for the same ticket, and progress written from inside it.
       const second = await service.startTicket(P, ORG, t.ticketId, {});
@@ -775,10 +858,115 @@ describe("organization runtime", () => {
       const line = allHands.messages.find(
         (m) => m.sender === "system" && m.text.includes(t.ticketId),
       );
-      expect(line?.mentions).toEqual(["user:alice"]);
+      // The line lands for the board to read; nobody is @-mentioned, because the only user
+      // involved is the initiator and it did not ask to be told.
+      expect(line?.mentions).toEqual([]);
+      expect(line?.text).toBe(`Ticket ${t.ticketId} (Write docs) is now done`);
+      expect(line?.notice).toEqual({
+        kind: "ticket_done",
+        params: { ticket: t.ticketId, title: "Write docs" },
+      });
+      expect(line?.refs?.ticket).toBe(t.ticketId);
       expect(events.some((e) => e.type === "org_ticket" && e.change === "status:done")).toBe(true);
       const board = await service.tickets(P, ORG);
       expect(board.columns.done.map((x) => x.ticketId)).toEqual([t.ticketId]);
+    });
+
+    it("books the writing session onto the ticket, so a desk that did the work pays for it", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Fix the footer", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      const desk = await service.desk(P, ORG, HR, {});
+      const fromDesk = { userId: "alice", sessionId: desk.sessionId };
+
+      // A person's write books nothing: there is no session behind it.
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
+      // Management from a desk books nothing either: accepting, blocking and unblocking are
+      // decisions about the ticket, not work on it.
+      await service.moveTicket(P, ORG, t.ticketId, "proposed", undefined, fromDesk);
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, fromDesk);
+      await service.blockTicket(P, ORG, t.ticketId, "waiting for copy", undefined, fromDesk);
+      await service.unblockTicket(P, ORG, t.ticketId, fromDesk);
+      expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
+
+      // Handing the work in claims it: the desk is booked from the move into review on.
+      const moved = await service.moveTicket(P, ORG, t.ticketId, "review", undefined, fromDesk);
+      expect(moved.sessions).toEqual([desk.sessionId]);
+      // Every other work write from the same session is the same contribution, booked once.
+      await service.progressTicket(P, ORG, t.ticketId, "footer replaced", fromDesk);
+      const after = await service.updateTicket(P, ORG, t.ticketId, { priority: "P1" }, fromDesk);
+      expect(after.sessions).toEqual([desk.sessionId]);
+      expect(cache.ticketSessions(P, ORG).map((r) => [r.ticketId, r.sessionId])).toEqual([
+        [t.ticketId, desk.sessionId],
+      ]);
+      // The desk's cost is now the ticket's cost too — that is what the booking is for.
+      costs.set(desk.sessionId, 4);
+      expect((await service.ticket(P, ORG, t.ticketId)).cost).toBe(4);
+      const finance = await service.finance(P, ORG);
+      expect(finance.tickets.find((x) => x.ticketId === t.ticketId)?.cost).toBe(4);
+    });
+
+    it("files a ticket in another principal's name, and refuses one nobody holds", async () => {
+      const byEmployee = await service.createTicket(
+        P,
+        ORG,
+        { title: "Audit the calendar", initiator: HR },
+        { userId: "alice" },
+      );
+      // A bare Agent id is the employee's principal; an employee initiator is notified at its desk.
+      expect(byEmployee.initiator).toBe(`agent:${HR}`);
+      expect(byEmployee.notify).toEqual([`agent:${HR}`]);
+      expect(byEmployee.progress[0]).toMatchObject({
+        by: `agent:${HR}`,
+        text: "created the ticket",
+      });
+      const prefixed = await service.createTicket(
+        P,
+        ORG,
+        { title: "Audit again", initiator: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      expect(prefixed.initiator).toBe(`agent:${CEO}`);
+      const byUser = await service.createTicket(
+        P,
+        ORG,
+        { title: "Board request", initiator: "user:alice" },
+        { userId: "alice" },
+      );
+      expect(byUser.initiator).toBe("user:alice");
+      expect(byUser.notify).toEqual([]);
+      for (const initiator of ["ghost", `agent:ghost`, "user:mallory", "all"]) {
+        await expect(
+          service.createTicket(P, ORG, { title: "Nope", initiator }, { userId: "alice" }),
+        ).rejects.toMatchObject({ status: 400 });
+      }
+    });
+
+    it("mentions on completion only the users Notify names", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Tell me", notify: ["user:alice"] },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "done", undefined, { userId: "alice" });
+      const allHands = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      const lines = allHands.messages.filter(
+        (m) => m.sender === "system" && m.text.includes(t.ticketId),
+      );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.mentions).toEqual(["user:alice"]);
+      expect(lines[0]!.text).toBe(`Ticket ${t.ticketId} (Tell me) is now done: @user:alice`);
     });
 
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {
@@ -818,6 +1006,12 @@ describe("organization runtime", () => {
         .filter((o) => o?.kind === "ticket_notice");
       expect(notices.some((n) => n?.change === "blocker_closed" && n.ticket === t.ticketId)).toBe(
         true,
+      );
+      const closed = started.find(
+        (x) => parseOrgTriggerMessage(x.text)?.origin.change === "blocker_closed",
+      );
+      expect(closed!.text).toContain(
+        `Verify, then \`penguin org ticket unblock ${t.ticketId}\` and start a ticket session.`,
       );
       await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).blocked).toBeUndefined();
@@ -1003,12 +1197,16 @@ describe("organization runtime", () => {
           service.addChannelMember(P, ORG, "site", principal, alice),
         ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
       }
-      expect(
-        (await service.channelMessages(P, ORG, alice, "site", {})).messages.map((m) => m.text),
-      ).toEqual([
+      const lines = (await service.channelMessages(P, ORG, alice, "site", {})).messages;
+      expect(lines.map((m) => m.text)).toEqual([
         `agent:${CEO} created the channel.`,
         "user:alice joined the channel.",
         `agent:${CEO} invited agent:${HR} to the channel.`,
+      ]);
+      expect(lines.map((m) => m.notice)).toEqual([
+        { kind: "channel_created", params: { by: `agent:${CEO}` } },
+        { kind: "channel_joined", params: { principal: "user:alice" } },
+        { kind: "channel_invited", params: { by: `agent:${CEO}`, principal: `agent:${HR}` } },
       ]);
     });
 
@@ -1263,9 +1461,16 @@ describe("organization runtime", () => {
           date: zonedDate("Asia/Shanghai", T0),
         },
       );
-      expect(
-        warned.messages.some((m) => m.sender === "system" && m.text.startsWith("Budget warning")),
-      ).toBe(true);
+      expect(warned.messages.find((m) => m.text.startsWith("Budget warning"))?.notice).toEqual({
+        kind: "budget_warned",
+        params: {
+          agent: `agent:${HR}`,
+          period: "2026-09",
+          percent: "90",
+          cost: "9.00",
+          budget: "10.00",
+        },
+      });
       const paused = await service.channelMessages(
         P,
         ORG,
@@ -1273,9 +1478,9 @@ describe("organization runtime", () => {
         DEFAULT_CHANNEL_ID,
         {},
       );
-      expect(
-        paused.messages.some((m) => m.sender === "system" && m.text.startsWith("Budget pause")),
-      ).toBe(true);
+      expect(paused.messages.find((m) => m.text.startsWith("Budget pause"))?.notice?.kind).toBe(
+        "budget_paused",
+      );
 
       await service.patchEmployee(P, ORG, HR, { budget: 100 });
       expect(

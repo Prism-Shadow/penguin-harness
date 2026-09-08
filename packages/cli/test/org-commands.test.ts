@@ -416,6 +416,50 @@ describe("penguin org calendar", () => {
     expect(out()).toContain("dev1/standup");
   });
 
+  it("prints the rota advice the write answered with, under the written line", async () => {
+    org().calendarWarnings = [
+      "`acme_hr/hr-audit` also fires at 10:00; give every employee its own minute.",
+    ];
+    expect(
+      await cli([
+        "org",
+        "calendar",
+        "add",
+        "standup",
+        "--prompt",
+        "p",
+        "--start-at",
+        "2026-09-08T10:00:00.000Z",
+        "--period",
+        "1d",
+      ]),
+    ).toBe(0);
+    expect(out()).toBe(
+      [
+        t.org.calendarWritten("dev1", "standup", t.schedule.enabled(), "2026-09-08T10:00:00.000Z"),
+        t.org.calendarWarning(
+          "`acme_hr/hr-audit` also fires at 10:00; give every employee its own minute.",
+        ),
+        "",
+      ].join("\n"),
+    );
+
+    // --json hands the warnings on as the server returned them.
+    stdout.length = 0;
+    expect(
+      await cli([
+        "org",
+        "calendar",
+        "update",
+        "standup",
+        "--start-at",
+        "2026-09-08T11:00:00.000Z",
+        "--json",
+      ]),
+    ).toBe(0);
+    expect((JSON.parse(out()) as { warnings: string[] }).warnings).toEqual(org().calendarWarnings);
+  });
+
   it("--disabled opts out of the enabled default; --agent-id overrides the environment", async () => {
     server.addEmployee("acme", { agentId: "hr" });
     expect(
@@ -525,6 +569,26 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     // The file records the session's employee as the initiator, not the token's user.
     expect(org().tickets.get("2026-09-02-build-the-site")).toMatchObject({
       initiator: "agent:dev1",
+    });
+  });
+
+  it("create files the ticket in the --initiator's name", async () => {
+    expect(
+      await cli([
+        "org",
+        "ticket",
+        "create",
+        "--title",
+        "Audit the calendar",
+        "--goal",
+        "One event per employee",
+        "--initiator",
+        "acme_hr",
+      ]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/tickets")?.body).toMatchObject({ initiator: "acme_hr" });
+    expect(org().tickets.get("2026-09-02-audit-the-calendar")).toMatchObject({
+      initiator: "acme_hr",
     });
   });
 
@@ -1115,6 +1179,43 @@ describe("penguin org channel", () => {
     server.addChannel("acme", "quiet", { members: ["user:admin"] });
     expect(await cli(["org", "channel", "tail", "--channel", "quiet"])).toBe(0);
     expect(out()).toBe(`${t.org.channelEmpty("quiet", "2026-09-02")}\n`);
+  });
+
+  it("renders a system line from its structured notice, and falls back to the text", async () => {
+    server.addMessage("acme", {
+      sender: "system",
+      text: "agent:acme_hr joined as HR, reporting to agent:acme_ceo.",
+      notice: {
+        kind: "employee_joined",
+        params: { agent: "agent:acme_hr", title: "HR", reportsTo: "agent:acme_ceo" },
+      },
+      time: "2026-09-02T10:01:00.000Z",
+    });
+    // A kind this build does not know, and a line from before the field existed.
+    server.addMessage("acme", {
+      sender: "system",
+      text: "The office moved to Berlin.",
+      notice: { kind: "office_moved", params: { to: "Berlin" } },
+      time: "2026-09-02T10:02:00.000Z",
+    });
+    server.addMessage("acme", {
+      sender: "system",
+      text: "Something old.",
+      time: "2026-09-02T10:03:00.000Z",
+    });
+    expect(await cli(["org", "channel", "tail"])).toBe(0);
+    expect(out()).toBe(
+      [
+        `2026-09-02T10:01:00.000Z  system  ${t.org.notices.employee_joined({
+          agent: "agent:acme_hr",
+          title: "HR",
+          reportsTo: "agent:acme_ceo",
+        })}`,
+        "2026-09-02T10:02:00.000Z  system  The office moved to Berlin.",
+        "2026-09-02T10:03:00.000Z  system  Something old.",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("send posts the text with refs and the calling session; --channel picks the channel", async () => {

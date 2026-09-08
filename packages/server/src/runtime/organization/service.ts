@@ -10,6 +10,7 @@ import type {
   OrgCalendarItem,
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
   SemanticIdSuggestRequest,
   SemanticIdSuggestResponse,
   OrgChannelCreateRequest,
@@ -89,8 +90,18 @@ import type { OrgSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
+import {
+  channelArchiveChanged,
+  channelCreated,
+  channelMemberAdded,
+  channelMemberRemoved,
+  employeeJoined,
+  employeeLeft,
+  systemMessage,
+} from "./notices.js";
 import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
+import { rotaWarnings } from "./rota.js";
 import type { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
 
@@ -710,12 +721,14 @@ export class OrganizationService {
         ...(req.model !== undefined ? { model: req.model } : {}),
       };
       await this.writeChart(org, [...org.chart.employees, employee]);
-      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
-        sender: "system",
-        hop: 0,
-        text: `${agentPrincipal(agentId)} joined as ${title}, reporting to ${agentPrincipal(req.reportsTo)}.`,
-        mentions: [],
-      });
+      await appendChannelMessage(
+        this.deps,
+        org,
+        DEFAULT_CHANNEL_ID,
+        systemMessage(
+          employeeJoined(agentPrincipal(agentId), title, agentPrincipal(req.reportsTo)),
+        ),
+      );
       const spend = await computeSpend(this.deps, org, (await listTickets(this.deps, org)).tickets);
       const items = await this.employeeItems(org, spend);
       return items.find((i) => i.agentId === agentId)!;
@@ -803,12 +816,12 @@ export class OrganizationService {
           members: members.filter((m) => m !== agentPrincipal(agentId)),
         });
       }
-      await appendChannelMessage(this.deps, org, DEFAULT_CHANNEL_ID, {
-        sender: "system",
-        hop: 0,
-        text: `${agentPrincipal(agentId)} left the organization; reports now go to ${agentPrincipal(manager)}.`,
-        mentions: [],
-      });
+      await appendChannelMessage(
+        this.deps,
+        org,
+        DEFAULT_CHANNEL_ID,
+        systemMessage(employeeLeft(agentPrincipal(agentId), agentPrincipal(manager))),
+      );
     });
     await this.scheduler.reconcile(projectId, orgId);
   }
@@ -949,7 +962,7 @@ export class OrganizationService {
     name: string,
     fields: Omit<OrgCalendarUpsertRequest, "agentId" | "name">,
     opts: { create: boolean },
-  ): Promise<OrgCalendarItem> {
+  ): Promise<OrgCalendarWriteResponse> {
     await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       if (!org.byId.has(agentId))
@@ -982,7 +995,9 @@ export class OrganizationService {
       await this.deps.store.writeCalendarEvent(org.dir, agentId, name, raw);
     });
     await this.scheduler.reconcile(projectId, orgId);
-    const list = await this.calendar(projectId, orgId);
+    const org = await this.requireOrg(projectId, orgId);
+    const spend = await computeSpend(this.deps, org, (await listTickets(this.deps, org)).tickets);
+    const list = await this.calendarItems(org, spend);
     const item = list.events.find((e) => e.agentId === agentId && e.name === name);
     if (!item)
       throw new HttpError(
@@ -990,7 +1005,10 @@ export class OrganizationService {
         "calendar_event_not_found",
         `Calendar event does not exist: ${agentId}/${name}`,
       );
-    return item;
+    // Advisory, computed over the whole calendar after the write: the rota is a property of
+    // the organization, not of the one event, and the write is never refused for it.
+    const warnings = rotaWarnings(list.events, item, this.now(), org.config.timezone);
+    return { ...item, ...(warnings.length > 0 ? { warnings } : {}) };
   }
 
   async deleteCalendar(
@@ -1115,6 +1133,71 @@ export class OrganizationService {
     return raw.trim();
   }
 
+  /**
+   * `initiator`: who the ticket is filed as when it is not the caller. A bare Agent id or
+   * `agent:<id>` has to be an employee and `user:<id>` a Project member — a ticket filed in
+   * the name of somebody the organization does not have is a ticket nobody can be notified about.
+   */
+  private requireInitiator(org: LoadedOrg, raw: string): string {
+    const value = raw.trim();
+    const parsed = parsePrincipal(value);
+    if (parsed === null && org.byId.has(value)) return agentPrincipal(value);
+    if (parsed?.kind === "agent" && org.byId.has(parsed.id)) return agentPrincipal(parsed.id);
+    if (parsed?.kind === "user" && this.projectUserIds(org).includes(parsed.id)) {
+      return userPrincipal(parsed.id);
+    }
+    throw badRequest(
+      `initiator must be an employee of ${org.orgId} (an Agent id or agent:<id>) or a member of this Project (user:<id>): ${raw}`,
+    );
+  }
+
+  /**
+   * The `Notify` list a ticket gets when the filer named none: an employee initiator is told
+   * at its desk, so it defaults to itself; a person is not, because one @-mention per closed
+   * ticket is a badge nobody asked for — a person who wants to be told lists itself.
+   */
+  private defaultNotify(initiator: string): string[] {
+    return principalAgentId(initiator) !== null ? [initiator] : [];
+  }
+
+  /**
+   * Books the calling session as a contributing session of the ticket. A write that claims
+   * work — a progress line, an edit of the body, the move into `review` — from inside one of
+   * this organization's sessions puts that session on the `Sessions` header, so its cost is
+   * split onto the ticket: a desk that did the work at its own table is at least paid for out
+   * of the ticket's budget. Management writes (accepting, closing, blocking, unblocking) book
+   * nothing — a CEO's desk that accepts twenty tickets has not worked on twenty tickets.
+   * Mutates `doc`; returns the session booked, or null when there was none to book.
+   */
+  private bookSession(
+    org: LoadedOrg,
+    actor: Actor,
+    doc: TicketDoc,
+  ): { sessionId: string; agentId: string } | null {
+    const sessionId = actor.sessionId;
+    if (sessionId === undefined) return null;
+    const agentId = principalAgentId(this.actorPrincipal(org, actor));
+    if (agentId === null || doc.sessions.includes(sessionId)) return null;
+    doc.sessions = [...doc.sessions, sessionId];
+    return { sessionId, agentId };
+  }
+
+  /** The cache twin of `bookSession`: the projection a write outside a reconcile would not refresh. */
+  private cacheBookedSession(
+    org: LoadedOrg,
+    ticketId: string,
+    booked: { sessionId: string; agentId: string } | null,
+  ): void {
+    if (booked === null) return;
+    this.deps.cache.addTicketSession(
+      org.projectId,
+      org.orgId,
+      ticketId,
+      booked.sessionId,
+      booked.agentId,
+    );
+  }
+
   async createTicket(
     projectId: string,
     orgId: string,
@@ -1125,7 +1208,10 @@ export class OrganizationService {
       const org = await this.requireValidOrg(projectId, orgId);
       const title = req.title.trim();
       if (title === "") throw badRequest("title must not be empty.");
-      const initiator = this.actorPrincipal(org, actor);
+      const initiator =
+        req.initiator !== undefined && req.initiator.trim() !== ""
+          ? this.requireInitiator(org, req.initiator)
+          : this.actorPrincipal(org, actor);
       const date = zonedDate(org.config.timezone, this.now());
       const base = req.slug !== undefined ? slugify(req.slug) : slugify(title);
       const slug = base !== "" ? base : `t-${Math.random().toString(16).slice(2, 8)}`;
@@ -1151,7 +1237,7 @@ export class OrganizationService {
         initiator,
         ...(owner !== undefined ? { owner } : {}),
         ...(req.parent !== undefined ? { parent: req.parent } : {}),
-        notify: notify.length > 0 ? notify : [initiator],
+        notify: notify.length > 0 ? notify : this.defaultNotify(initiator),
         priority: req.priority ?? "P2",
         ...(req.due !== undefined ? { due: req.due } : {}),
         sessions: [],
@@ -1217,7 +1303,7 @@ export class OrganizationService {
       }
       if (req.notify !== undefined) {
         const notify = req.notify.map((n) => this.requirePerson(n, "notify"));
-        d.notify = notify.length > 0 ? notify : [d.initiator];
+        d.notify = notify.length > 0 ? notify : this.defaultNotify(d.initiator);
       }
       if (req.priority !== undefined) d.priority = req.priority;
       if (req.due === null) delete d.due;
@@ -1231,9 +1317,12 @@ export class OrganizationService {
           new Date(this.now()).toISOString(),
           this.actorPrincipal(org, actor),
           "updated the ticket",
+          actor.sessionId,
         ),
       );
+      const booked = this.bookSession(org, actor, d);
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, d);
+      this.cacheBookedSession(org, ticketId, booked);
       this.deps.notifyProject(projectId, {
         type: "org_ticket",
         projectId,
@@ -1277,7 +1366,10 @@ export class OrganizationService {
           actor.sessionId,
         ),
       );
+      // Handing work in is a claim of work; accepting, closing and rejecting are decisions.
+      const booked = status === "review" ? this.bookSession(org, actor, d) : null;
       await this.deps.store.moveTicket(org.dir, ticketId, from, status, d);
+      this.cacheBookedSession(org, ticketId, booked);
     });
     await this.scheduler.reconcile(projectId, orgId);
     return this.ticket(projectId, orgId, ticketId);
@@ -1368,7 +1460,9 @@ export class OrganizationService {
           actor.sessionId,
         ),
       );
+      const booked = this.bookSession(org, actor, t.doc);
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, t.doc);
+      this.cacheBookedSession(org, ticketId, booked);
       this.deps.notifyProject(projectId, {
         type: "org_ticket",
         projectId,
@@ -1630,12 +1724,12 @@ export class OrganizationService {
         members: [caller.principal],
       };
       await this.deps.store.writeChannel(org.dir, channelId, cfg);
-      await appendChannelMessage(this.deps, org, channelId, {
-        sender: "system",
-        hop: 0,
-        text: `${caller.principal} created the channel.`,
-        mentions: [],
-      });
+      await appendChannelMessage(
+        this.deps,
+        org,
+        channelId,
+        systemMessage(channelCreated(caller.principal)),
+      );
       return this.channelItem(org, channelId, cfg, caller);
     });
     await this.scheduler.reconcile(projectId, orgId);
@@ -1703,12 +1797,12 @@ export class OrganizationService {
       // The notice is written before the flag: an archived channel is skipped by the scan,
       // so a line written after it would wait for the unarchive to reach the event stream.
       if (archiveChanged) {
-        await appendChannelMessage(this.deps, org, channelId, {
-          sender: "system",
-          hop: 0,
-          text: `${caller.principal} ${req.archived === true ? "archived" : "unarchived"} the channel.`,
-          mentions: [],
-        });
+        await appendChannelMessage(
+          this.deps,
+          org,
+          channelId,
+          systemMessage(channelArchiveChanged(caller.principal, req.archived === true)),
+        );
         next.archived = req.archived === true;
       }
       await this.deps.store.writeChannel(org.dir, channelId, next);
@@ -1764,15 +1858,12 @@ export class OrganizationService {
       if (members.includes(principal)) return this.channelDetail(org, channelId, cfg, caller);
       const next: ChannelConfig = { ...cfg, members: [...members, principal] };
       await this.deps.store.writeChannel(org.dir, channelId, next);
-      await appendChannelMessage(this.deps, org, channelId, {
-        sender: "system",
-        hop: 0,
-        text:
-          principal === caller.principal
-            ? `${principal} joined the channel.`
-            : `${caller.principal} invited ${principal} to the channel.`,
-        mentions: [],
-      });
+      await appendChannelMessage(
+        this.deps,
+        org,
+        channelId,
+        systemMessage(channelMemberAdded(caller.principal, principal)),
+      );
       return this.channelDetail(org, channelId, next, caller);
     });
     await this.scheduler.reconcile(projectId, orgId);
@@ -1814,15 +1905,12 @@ export class OrganizationService {
         ...cfg,
         members: members.filter((m) => m !== principal),
       });
-      await appendChannelMessage(this.deps, org, channelId, {
-        sender: "system",
-        hop: 0,
-        text:
-          principal === caller.principal
-            ? `${principal} left the channel.`
-            : `${caller.principal} removed ${principal} from the channel.`,
-        mentions: [],
-      });
+      await appendChannelMessage(
+        this.deps,
+        org,
+        channelId,
+        systemMessage(channelMemberRemoved(caller.principal, principal)),
+      );
     });
     await this.scheduler.reconcile(projectId, orgId);
   }

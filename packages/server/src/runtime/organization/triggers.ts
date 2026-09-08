@@ -187,7 +187,8 @@ export async function dispatchToDesk(
 /**
  * Opens a ticket session: an ordinary session of the employee's Agent in the desk's (or a
  * chosen) workspace, appended to the ticket's `Sessions` header — the fact that makes the
- * session the ticket's — and started with the whole ticket as its first input.
+ * session the ticket's — and started with one input carrying where it stands, the rule that
+ * references and deliverables are named by full path, and the whole ticket.
  */
 export async function openTicketSession(
   deps: OrgDeps,
@@ -236,16 +237,15 @@ export async function openTicketSession(
     ticket: ticket.ticketId,
     ...(opts.budget !== undefined ? { budget: opts.budget } : {}),
   };
+  // Where the session stands, then the naming rule: colleagues read each other's tickets,
+  // not each other's terminals, so a reference nobody can open is a reference nobody has.
+  const note = opts.message?.trim() ?? "";
   const body = [
-    opts.message !== undefined && opts.message.trim() !== ""
-      ? `Note from the desk: ${opts.message.trim()}\n`
-      : "",
-    "The ticket, as filed:",
-    "",
-    serializeTicket(ticket.doc).trimEnd(),
-  ]
-    .filter((l) => l !== "")
-    .join("\n");
+    `Workspace: ${created.workspace} — the organization is at \`<app_data_dir>/organizations/${org.orgId}/\`.`,
+    "Name every input you rely on and every deliverable you produce by its full path (absolute, or `<app_data_dir>/…`) in your progress lines and in `## Result`; a colleague must be able to open it without asking.",
+    ...(note !== "" ? [`Note from the desk: ${note}`] : []),
+    `The ticket, as filed:\n\n${serializeTicket(ticket.doc).trimEnd()}`,
+  ].join("\n\n");
   try {
     await deps.runner.startTask(created.sessionId, [
       userText(buildOrgTriggerMessage(origin, body), "server"),
