@@ -1,22 +1,27 @@
 /**
- * handbook-tree.ts unit tests: the listing shaped into the pinned index, the documents beside
- * it and the top-level folders (root documents first, folders and documents in path order, a
- * deeper path labelled by its remainder); the path rule mirrored from the server; what the
- * new-document dialog sends for what was typed; the body a new document starts with; and how
- * a relative link inside a document resolves to another document of the handbook.
+ * handbook-tree.ts unit tests: the listing shaped into the pinned index and a nested explorer
+ * tree (folders before files at every level, each group ordered case-insensitively, the index
+ * apart); the walking the tree view does — the folders above a document, the rows an expanded
+ * set makes visible, how many documents a subtree holds; the path rule mirrored from the
+ * server; what the new-document dialog sends for what was typed; the body a new document
+ * starts with; and how a relative link inside a document resolves to another document.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
 import {
   HANDBOOK_INDEX,
+  ancestorFolders,
   buildHandbookTree,
   completeHandbookPath,
+  countDocuments,
   fileName,
+  flattenVisible,
   isHandbookPath,
   isMarkdownPath,
   newDocumentBody,
   resolveHandbookLink,
 } from "../src/features/company/handbook-tree";
+import type { HandbookNode } from "../src/features/company/handbook-tree";
 
 const file = (path: string, size = 10): OrgHandbookFile => ({
   path,
@@ -24,49 +29,129 @@ const file = (path: string, size = 10): OrgHandbookFile => ({
   updatedAt: "2026-09-02T10:00:00.000Z",
 });
 
+/** A node's path prefixed by its kind, so an assertion reads as the tree's shape. */
+const shape = (nodes: readonly HandbookNode[]): string[] =>
+  nodes.flatMap((n) =>
+    n.kind === "folder" ? [`dir ${n.path}`, ...shape(n.children)] : [`doc ${n.path}`],
+  );
+
+const MIXED = [
+  file("README.md"),
+  file("decisions/2026/09/plan.md"),
+  file("decisions/2026-09-02-hire-plan.md"),
+  file("conventions.md"),
+  file("decisions/2026-09-01-mission.md"),
+  file("roles/hr.md"),
+  file("Brand.md"),
+];
+
 describe("buildHandbookTree", () => {
-  it("pins the index apart, lists root documents by path, then one group per top-level folder", () => {
-    const tree = buildHandbookTree([
-      file("README.md"),
-      file("decisions/2026-09-02-hire-plan.md"),
-      file("conventions.md"),
-      file("decisions/2026-09-01-mission.md"),
-      file("roles/hr.md"),
-      file("brand.md"),
-    ]);
+  it("nests every path, folders before files at each level, with the index apart", () => {
+    const tree = buildHandbookTree(MIXED);
     expect(tree.index?.path).toBe(HANDBOOK_INDEX);
-    expect(tree.root.map((d) => d.label)).toEqual(["brand.md", "conventions.md"]);
-    expect(tree.folders.map((f) => f.name)).toEqual(["decisions", "roles"]);
-    expect(tree.folders[0]?.docs.map((d) => d.label)).toEqual([
-      "2026-09-01-mission.md",
-      "2026-09-02-hire-plan.md",
+    expect(shape(tree.nodes)).toEqual([
+      "dir decisions",
+      "dir decisions/2026",
+      "dir decisions/2026/09",
+      "doc decisions/2026/09/plan.md",
+      "doc decisions/2026-09-01-mission.md",
+      "doc decisions/2026-09-02-hire-plan.md",
+      "dir roles",
+      "doc roles/hr.md",
+      "doc Brand.md",
+      "doc conventions.md",
     ]);
-    // A row keeps the whole path for selection, and its label for display.
-    expect(tree.folders[0]?.docs[0]?.path).toBe("decisions/2026-09-01-mission.md");
+    // A row carries its own name for display and the whole path for selection.
+    const decisions = tree.nodes[0]!;
+    expect(decisions.kind === "folder" && decisions.name).toBe("decisions");
+    const brand = tree.nodes[2]!;
+    expect(brand.kind === "file" && brand.name).toBe("Brand.md");
+    expect(brand.kind === "file" && brand.file.size).toBe(10);
   });
 
-  it("labels a document two levels down by its remainder under the top-level folder", () => {
-    const tree = buildHandbookTree([file("README.md"), file("decisions/2026/09/plan.md")]);
-    expect(tree.folders).toEqual([
-      {
-        name: "decisions",
-        docs: [{ ...file("decisions/2026/09/plan.md"), label: "2026/09/plan.md" }],
-      },
-    ]);
+  it("orders each level case-insensitively, case deciding only a tie", () => {
+    const tree = buildHandbookTree([file("beta.md"), file("Alpha.md"), file("alpha.md")]);
+    expect(shape(tree.nodes)).toEqual(["doc Alpha.md", "doc alpha.md", "doc beta.md"]);
   });
 
-  it("orders by path whatever order the listing came in, and copes with a missing index", () => {
+  it("ignores the order the listing came in, and copes with a missing index", () => {
     const tree = buildHandbookTree([file("z.md"), file("a.md"), file("m/x.md"), file("b/y.md")]);
     expect(tree.index).toBeNull();
-    expect(tree.root.map((d) => d.path)).toEqual(["a.md", "z.md"]);
-    expect(tree.folders.map((f) => f.name)).toEqual(["b", "m"]);
+    expect(shape(tree.nodes)).toEqual([
+      "dir b",
+      "doc b/y.md",
+      "dir m",
+      "doc m/x.md",
+      "doc a.md",
+      "doc z.md",
+    ]);
   });
 
   it("is empty but for the index when the handbook holds nothing else", () => {
     const tree = buildHandbookTree([file("README.md")]);
     expect(tree.index).not.toBeNull();
-    expect(tree.root).toEqual([]);
-    expect(tree.folders).toEqual([]);
+    expect(tree.nodes).toEqual([]);
+  });
+});
+
+describe("ancestorFolders", () => {
+  it("names the folders above a document, root first", () => {
+    expect(ancestorFolders("decisions/2026/09/plan.md")).toEqual([
+      "decisions",
+      "decisions/2026",
+      "decisions/2026/09",
+    ]);
+    expect(ancestorFolders("conventions.md")).toEqual([]);
+    expect(ancestorFolders(HANDBOOK_INDEX)).toEqual([]);
+  });
+});
+
+describe("flattenVisible", () => {
+  const tree = buildHandbookTree(MIXED);
+
+  it("shows only the top level while everything is collapsed", () => {
+    const rows = flattenVisible(tree.nodes, new Set());
+    expect(rows.map((r) => r.node.path)).toEqual([
+      "decisions",
+      "roles",
+      "Brand.md",
+      "conventions.md",
+    ]);
+    expect(rows.every((r) => r.depth === 0)).toBe(true);
+  });
+
+  it("walks an expanded folder's children in place, one level deeper", () => {
+    const rows = flattenVisible(tree.nodes, new Set(["decisions", "decisions/2026"]));
+    expect(rows.map((r) => `${r.depth} ${r.node.path}`)).toEqual([
+      "0 decisions",
+      "1 decisions/2026",
+      "2 decisions/2026/09",
+      "1 decisions/2026-09-01-mission.md",
+      "1 decisions/2026-09-02-hire-plan.md",
+      "0 roles",
+      "0 Brand.md",
+      "0 conventions.md",
+    ]);
+  });
+
+  it("keeps a folder's children hidden while the folder above it is closed", () => {
+    const rows = flattenVisible(tree.nodes, new Set(["decisions/2026"]));
+    expect(rows.map((r) => r.node.path)).toEqual([
+      "decisions",
+      "roles",
+      "Brand.md",
+      "conventions.md",
+    ]);
+  });
+});
+
+describe("countDocuments", () => {
+  it("counts the documents of a subtree however deep, folders themselves counting for none", () => {
+    const tree = buildHandbookTree(MIXED);
+    expect(countDocuments(tree.nodes)).toBe(6);
+    const decisions = tree.nodes[0]!;
+    expect(decisions.kind === "folder" ? countDocuments(decisions.children) : -1).toBe(3);
+    expect(countDocuments([])).toBe(0);
   });
 });
 

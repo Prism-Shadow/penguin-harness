@@ -1,9 +1,10 @@
 /**
- * The handbook page's pure model (unit tested): the file listing shaped into the pinned
- * index, the documents beside it and the top-level folders; the path rule the server
- * enforces, mirrored so the new-document dialog refuses a bad path before the request; the
- * body a new document starts with; and how a relative link inside one document resolves to
- * another document of the handbook.
+ * The handbook page's pure model (unit tested): the file listing shaped into the pinned index
+ * and an explorer tree of folders and documents, with the walking a keyboard-driven tree needs
+ * — the folders above a document, the rows an expanded set makes visible, how many documents a
+ * subtree holds; the path rule the server enforces, mirrored so the new-document dialog refuses
+ * a bad path before the request; the body a new document starts with; and how a relative link
+ * inside one document resolves to another document of the handbook.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
 
@@ -51,52 +52,114 @@ export function newDocumentBody(path: string): string {
   return `# ${fileName(path).replace(/\.[^.]+$/, "")}\n`;
 }
 
-export interface HandbookDoc extends OrgHandbookFile {
-  /** What the row shows: the file name for a document beside the index, the remainder under its top-level folder otherwise. */
-  label: string;
-}
-
-export interface HandbookFolder {
-  name: string;
-  /** Every document beneath the folder, by path; a deeper path keeps its remainder as the label. */
-  docs: HandbookDoc[];
-}
+/** One row of the explorer: a folder holding more rows, or a document of the listing. */
+export type HandbookNode =
+  | { kind: "folder"; name: string; path: string; children: HandbookNode[] }
+  | { kind: "file"; name: string; path: string; file: OrgHandbookFile };
 
 export interface HandbookTree {
   /** The index, or null when the listing lacks it (a handbook directory someone emptied by hand). */
   index: OrgHandbookFile | null;
-  /** The documents beside the index, by path. */
-  root: HandbookDoc[];
-  /** The top-level folders by name. */
-  folders: HandbookFolder[];
+  /** Everything else, nested: folders before files at every level. */
+  nodes: HandbookNode[];
 }
 
-const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/**
+ * Two names of one level, ordered the way a file explorer orders them: case-insensitively,
+ * with case deciding only a tie, so `Brand.md` sits beside `brand.md` rather than above every
+ * lowercase name. Locale-independent on purpose — the same listing must order the same way
+ * whichever language the app is in.
+ */
+function byName(a: string, b: string): number {
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la !== lb) return la < lb ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
-/** The listing as the page lists it: the index apart, root documents first, then one group per top-level folder. */
+/** A folder while the tree is being built: its subfolders by name, and the documents directly in it. */
+interface Level {
+  folders: Map<string, Level>;
+  files: OrgHandbookFile[];
+}
+
+function levelNodes(level: Level, prefix: string): HandbookNode[] {
+  const folders: HandbookNode[] = [...level.folders.entries()]
+    .sort(([a], [b]) => byName(a, b))
+    .map(([name, child]) => ({
+      kind: "folder",
+      name,
+      path: `${prefix}${name}`,
+      children: levelNodes(child, `${prefix}${name}/`),
+    }));
+  const files: HandbookNode[] = level.files
+    .map((file) => ({ kind: "file" as const, name: fileName(file.path), path: file.path, file }))
+    .sort((a, b) => byName(a.name, b.name));
+  return [...folders, ...files];
+}
+
+/**
+ * The listing as the explorer draws it: the index apart, everything else nested by its path,
+ * folders before files at every level. The listing's own order does not matter.
+ */
 export function buildHandbookTree(files: readonly OrgHandbookFile[]): HandbookTree {
   const index = files.find((f) => f.path === HANDBOOK_INDEX) ?? null;
-  const root: HandbookDoc[] = [];
-  const byFolder = new Map<string, HandbookDoc[]>();
-  const rest = files
-    .filter((f) => f.path !== HANDBOOK_INDEX)
-    .sort((a, b) => byPath(a.path, b.path));
-  for (const file of rest) {
-    const at = file.path.indexOf("/");
-    if (at === -1) {
-      root.push({ ...file, label: file.path });
-      continue;
+  const root: Level = { folders: new Map(), files: [] };
+  for (const file of files) {
+    if (file.path === HANDBOOK_INDEX) continue;
+    const segments = file.path.split("/");
+    let level = root;
+    for (const name of segments.slice(0, -1)) {
+      let child = level.folders.get(name);
+      if (child === undefined) {
+        child = { folders: new Map(), files: [] };
+        level.folders.set(name, child);
+      }
+      level = child;
     }
-    const folder = file.path.slice(0, at);
-    const doc = { ...file, label: file.path.slice(at + 1) };
-    const docs = byFolder.get(folder);
-    if (docs === undefined) byFolder.set(folder, [doc]);
-    else docs.push(doc);
+    level.files.push(file);
   }
-  const folders = [...byFolder.entries()]
-    .sort(([a], [b]) => byPath(a, b))
-    .map(([name, docs]) => ({ name, docs }));
-  return { index, root, folders };
+  return { index, nodes: levelNodes(root, "") };
+}
+
+/** The folder paths above a document, root first: `a/b/c.md` sits under `a` and then `a/b`. */
+export function ancestorFolders(path: string): string[] {
+  const segments = path.split("/");
+  const out: string[] = [];
+  for (let i = 1; i < segments.length; i += 1) out.push(segments.slice(0, i).join("/"));
+  return out;
+}
+
+/** One visible row: the node and how deep it sits, the top level being 0. */
+export interface HandbookRow {
+  node: HandbookNode;
+  depth: number;
+}
+
+/**
+ * The rows in render order for a set of expanded folder paths — what the arrow keys walk. A
+ * collapsed folder is one row and its children are none.
+ */
+export function flattenVisible(
+  nodes: readonly HandbookNode[],
+  expanded: ReadonlySet<string>,
+  depth = 0,
+): HandbookRow[] {
+  const out: HandbookRow[] = [];
+  for (const node of nodes) {
+    out.push({ node, depth });
+    if (node.kind === "folder" && expanded.has(node.path)) {
+      out.push(...flattenVisible(node.children, expanded, depth + 1));
+    }
+  }
+  return out;
+}
+
+/** How many documents a set of nodes holds, however deep — what a folder row counts. */
+export function countDocuments(nodes: readonly HandbookNode[]): number {
+  let n = 0;
+  for (const node of nodes) n += node.kind === "file" ? 1 : countDocuments(node.children);
+  return n;
 }
 
 /**

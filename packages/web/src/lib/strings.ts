@@ -2983,6 +2983,48 @@ Benchmark：
       /** Accessible name of a system banner and of a message's per-line time. */
       systemMessage: "系统消息",
       sentAt: (time: string): string => `发送于 ${time}`,
+      /**
+       * The system lines, one sentence per kind the server records (features/company/channel-notices.ts).
+       * Principals arrive already resolved to display names; a period is `yyyy-mm` and the money
+       * figures are the server's own, in USD.
+       */
+      notices: {
+        employee_joined: (agent: string, title: string, manager: string): string =>
+          `${agent} 以「${title}」身份加入，汇报给 ${manager}。`,
+        employee_left: (agent: string, manager: string): string =>
+          `${agent} 已离开组织，其下属改为汇报给 ${manager}。`,
+        channel_created: (by: string): string => `${by} 创建了这个频道。`,
+        channel_archived: (by: string): string => `${by} 归档了这个频道。`,
+        channel_unarchived: (by: string): string => `${by} 取消了这个频道的归档。`,
+        channel_joined: (principal: string): string => `${principal} 加入了频道。`,
+        channel_invited: (by: string, principal: string): string =>
+          `${by} 邀请 ${principal} 加入了频道。`,
+        channel_left: (principal: string): string => `${principal} 离开了频道。`,
+        channel_removed: (by: string, principal: string): string =>
+          `${by} 把 ${principal} 移出了频道。`,
+        budget_warned: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `预算提醒：${agent} 已用掉 ${period} 预算的 ${percent}%（${cost} / ${budget} USD）。`,
+        budget_paused: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `预算暂停：${agent} 已达到 ${period} 预算的 ${percent}%（${cost} / ${budget} USD）。它与下属的日历已暂停，直到下个月或调高预算；@ 提及和直接对话仍然可用。`,
+        ticket_blocked: (ticket: string, title: string): string =>
+          `工单 ${ticket}（${title}）被阻塞了。`,
+        ticket_done: (ticket: string, title: string): string =>
+          `工单 ${ticket}（${title}）已完成。`,
+        ticket_rejected: (ticket: string, title: string): string =>
+          `工单 ${ticket}（${title}）已被拒绝。`,
+      },
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
@@ -2990,6 +3032,9 @@ Benchmark：
       /** The pinned first row: the index, and why it is pinned. */
       indexLabel: "索引 · 每轮先读",
       documents: "文档",
+      /** The tree's own controls: closing every folder, and what a folder row's count means. */
+      collapseAll: "全部折叠",
+      documentsInFolder: (n: number): string => `${n} 篇文档`,
       noOtherDocuments: "还没有其他文档。新建一篇，并在索引里列出它。",
       emptyDocument: "这篇文档还是空的。",
       newDocument: "新建文档",

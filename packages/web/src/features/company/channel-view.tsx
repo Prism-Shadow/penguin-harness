@@ -1,14 +1,20 @@
 /**
  * One channel: its header, the stream of the loaded days — a separator per day (paging back
  * through earlier day files), consecutive messages by one sender under one avatar and name
- * with each line's time on hover, `system` messages as centred banners, @-mentions as chips
- * (stronger when they address the reader), ticket and session references as chips that open
- * them, an unread divider at the read cursor — and the composer beneath it. The view follows
+ * with each line's time on hover, each body rendered as Markdown with its @-mentions kept as
+ * chips (stronger when they address the reader), `system` messages as centred banners in the
+ * reader's own language, ticket and session references as chips that open them, an unread
+ * divider at the read cursor — and the composer beneath it. The view follows
  * the stream while it is at the bottom; scrolled up, new messages collect behind a pill that
  * returns to the latest. Sitting at the bottom of today marks this channel read, which is
  * what clears its badge in the sidebar and the rail. Nothing here delivers to an employee
  * unless it is @-mentioned, and only inside this channel's membership; the composer's hint
  * and the empty state say so.
+ *
+ * A `system` line is one sentence, so it stays one muted line rather than a Markdown body: the
+ * server writes it twice — as English text and as a structured notice — and the notice is what
+ * this renders (channel-notices.ts), falling back to the text for a line written before that
+ * field existed.
  *
  * A channel the reader has not joined offers Join instead of the composer — people may read
  * every channel but post only in the ones they are in — and an archived channel says it is
@@ -25,7 +31,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -41,6 +47,8 @@ import { principalLabel } from "./shared";
 import { orgKey, orgPagePath } from "./company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
+import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
+import { noticeText } from "./channel-notices";
 import { DEFAULT_CHANNEL_ID, channelLabel } from "./channel-list";
 import {
   channelMentionCandidates,
@@ -308,6 +316,9 @@ export function ChannelView() {
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
+  // Who the mention chips inside the rendered bodies are measured against. Memoized because it
+  // is a context value: a fresh object per render would re-render every message body.
+  const reader = useMemo(() => ({ names, me, employeeIds }), [names, me, employeeIds]);
   const memberPrincipals = useMemo(
     () => (detail === null ? null : new Set(detail.members.map((m) => m.principal))),
     [detail],
@@ -406,6 +417,10 @@ export function ChannelView() {
     }
     if (item.kind === "system") {
       const m = item.message;
+      // The structured notice in the reader's language; a line from before that field, or of a
+      // kind this build does not know, keeps the server's English sentence with its mentions.
+      const notice =
+        m.notice === undefined ? null : noticeText(m.notice, names, S.company.channels.notices);
       return (
         <div key={m.id} id={m.id} className="my-2 flex justify-center">
           <p
@@ -413,7 +428,19 @@ export function ChannelView() {
             className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs leading-relaxed text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
           >
             <span className="sr-only">{S.company.channels.systemMessage} </span>
-            {renderText(m)}
+            {notice === null ? renderText(m) : notice}
+            {/* A notice addressed to people keeps their chips: the sentence names the event,
+                the chips say who has to act on it. */}
+            {notice !== null &&
+              m.mentions.map((principal) => (
+                <span key={principal} className="ml-1">
+                  <MentionChip
+                    raw={`@${principal}`}
+                    label={mentionLabel(principal, names, S.company.principalAll)}
+                    me={mentionIsMe(principal, me, employeeIds)}
+                  />
+                </span>
+              ))}
             <span className="ml-2 text-gray-400 dark:text-gray-500">{clockTime(m.time)}</span>
             {renderRefs(m)}
           </p>
@@ -468,9 +495,9 @@ export function ChannelView() {
                    most messages name someone it turns the stream into a highlight. */
               className="group relative -mx-2 rounded-md px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-900/60"
             >
-              <p className="whitespace-pre-wrap pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-                {renderText(m)}
-              </p>
+              <div className="md-body md-compact pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                <ChannelMessageBody text={m.text} />
+              </div>
               {renderRefs(m)}
               <span
                 className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
@@ -489,129 +516,114 @@ export function ChannelView() {
   const canPost = detail !== null && detail.isMember && !detail.archived;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
-      <ChannelHeader
-        projectId={projectId}
-        orgId={orgId}
-        me={myPrincipal}
-        detail={detail}
-        employees={employees}
-        projectMembers={members}
-        onChanged={() => {
-          void loadDetail();
-          void company.reloadChannels();
-        }}
-      />
-      {detailError !== null && detail === null && (
-        <p role="alert" className={`border-b px-4 py-1.5 text-xs ${toneStrip.danger}`}>
-          {S.company.channels.channelLoadFailed} · {detailError}
-        </p>
-      )}
-      <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
-        <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
-          <div
-            ref={listRef}
-            role="log"
-            aria-label={S.company.channels.streamLabel(label)}
-            onScroll={onScroll}
-            onWheel={(e) => follow.wheel(e.deltaY)}
-            onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
-            onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
-            onTouchEnd={() => follow.touchEnd()}
-            className="min-h-0 flex-1 overflow-y-auto pr-1"
-          >
-            <div>
-              {days === null && error !== null ? (
-                <EmptyState
-                  title={error}
-                  action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
-                />
-              ) : days === null ? (
-                <StreamSkeleton />
-              ) : (
-                <>
-                  {earlier !== null ? (
-                    <div className="flex justify-center py-2">
-                      <Button
-                        size="sm"
-                        disabled={loadingEarlier}
-                        onClick={() => void loadEarlier()}
-                      >
-                        {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
-                      </Button>
-                    </div>
-                  ) : (
-                    messageCount(days) > 0 && (
-                      <p className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
-                        {S.company.channels.noEarlier}
-                      </p>
-                    )
-                  )}
-                  {messageCount(days) === 0 ? (
-                    <EmptyState
-                      title={S.company.channels.empty}
-                      description={S.company.channels.emptyHint}
-                    />
-                  ) : (
-                    stream.map(renderItem)
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          {showJump && (
-            <button
-              type="button"
-              aria-label={S.chat.jumpToLatest}
-              title={S.chat.jumpToLatest}
-              onClick={jumpToLatest}
-              className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
-            >
-              {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
-              <GlyphIcon d={ARROW_DOWN_ICON} size={ICON_SIZE.inlineGlyph} />
-            </button>
-          )}
-        </div>
-        <div className="mx-auto w-full max-w-5xl">
-          {canPost ? (
-            <ChannelComposer candidates={candidates} names={names} onSend={send} />
-          ) : detail !== null && detail.archived ? (
-            <p
-              className={`mt-3 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
-              role="status"
-            >
-              {S.company.channels.archivedNotice}
-            </p>
-          ) : detail !== null ? (
+    <ChannelReaderProvider reader={reader}>
+      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
+        <ChannelHeader
+          projectId={projectId}
+          orgId={orgId}
+          me={myPrincipal}
+          detail={detail}
+          employees={employees}
+          projectMembers={members}
+          onChanged={() => {
+            void loadDetail();
+            void company.reloadChannels();
+          }}
+        />
+        {detailError !== null && detail === null && (
+          <p role="alert" className={`border-b px-4 py-1.5 text-xs ${toneStrip.danger}`}>
+            {S.company.channels.channelLoadFailed} · {detailError}
+          </p>
+        )}
+        <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
+          <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
             <div
-              className={`mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
+              ref={listRef}
+              role="log"
+              aria-label={S.company.channels.streamLabel(label)}
+              onScroll={onScroll}
+              onWheel={(e) => follow.wheel(e.deltaY)}
+              onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
+              onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
+              onTouchEnd={() => follow.touchEnd()}
+              className="min-h-0 flex-1 overflow-y-auto pr-1"
             >
-              <span>{S.company.channels.notMemberNotice}</span>
-              <Button size="sm" variant="primary" disabled={joining} onClick={() => void join()}>
-                {joining ? S.company.channels.joining : S.company.channels.join}
-              </Button>
+              <div>
+                {days === null && error !== null ? (
+                  <EmptyState
+                    title={error}
+                    action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
+                  />
+                ) : days === null ? (
+                  <StreamSkeleton />
+                ) : (
+                  <>
+                    {earlier !== null ? (
+                      <div className="flex justify-center py-2">
+                        <Button
+                          size="sm"
+                          disabled={loadingEarlier}
+                          onClick={() => void loadEarlier()}
+                        >
+                          {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
+                        </Button>
+                      </div>
+                    ) : (
+                      messageCount(days) > 0 && (
+                        <p className="py-2 text-center text-[11px] text-gray-400 dark:text-gray-500">
+                          {S.company.channels.noEarlier}
+                        </p>
+                      )
+                    )}
+                    {messageCount(days) === 0 ? (
+                      <EmptyState
+                        title={S.company.channels.empty}
+                        description={S.company.channels.emptyHint}
+                      />
+                    ) : (
+                      stream.map(renderItem)
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          ) : null}
+            {showJump && (
+              <button
+                type="button"
+                aria-label={S.chat.jumpToLatest}
+                title={S.chat.jumpToLatest}
+                onClick={jumpToLatest}
+                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-full border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
+              >
+                {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
+                <GlyphIcon d={ARROW_DOWN_ICON} size={ICON_SIZE.inlineGlyph} />
+              </button>
+            )}
+          </div>
+          <div className="mx-auto w-full max-w-5xl">
+            {canPost ? (
+              <ChannelComposer candidates={candidates} names={names} onSend={send} />
+            ) : detail !== null && detail.archived ? (
+              <p
+                className={`mt-3 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+                role="status"
+              >
+                {S.company.channels.archivedNotice}
+              </p>
+            ) : detail !== null ? (
+              <div
+                className={`mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
+              >
+                <span>{S.company.channels.notMemberNotice}</span>
+                <Button size="sm" variant="primary" disabled={joining} onClick={() => void join()}>
+                  {joining ? S.company.channels.joining : S.company.channels.join}
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** A mention as a chip: the resolved name after the `@`, the raw token in the tooltip; attention-toned when it addresses the reader. */
-function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
-  return (
-    <span
-      title={raw}
-      className={`rounded px-1 ${
-        me
-          ? `font-semibold ${toneSurface.attention}`
-          : "bg-gray-100 font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-100"
-      }`}
-    >
-      @{label}
-      {me && <span className="sr-only"> ({S.company.channels.mentionsYou})</span>}
-    </span>
+    </ChannelReaderProvider>
   );
 }
 
