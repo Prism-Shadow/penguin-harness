@@ -32,19 +32,52 @@ export function isTempWorkspace(workspace: string): boolean {
   return p === "" || TEMP_WORKSPACE_RE.test(p);
 }
 
-/** Stable group key for a Session's Workspace (collapse state / React key): the path itself, or the temp sentinel. */
-export function workspaceGroupKey(workspace: string): string {
-  return isTempWorkspace(workspace) ? TEMP_WORKSPACE_GROUP_KEY : workspace.trim();
+/**
+ * Stable group key for a Session's Workspace (collapse state / React key): the path itself,
+ * or the temp sentinel — prefixed by the machine the directory is ON.
+ *
+ * A Workspace is a directory on a machine, so `/srv/app` on two machines is two different
+ * directories and the pair is the identity (the same rule workspace-registry.ts stores by,
+ * and the dashboard's rows follow). Keying on the path alone merged them into one folder
+ * whose "+" then opened a chat here, in whatever this machine has at that path.
+ *
+ * A machine of `null` — this server — keys exactly as it did before machines existed, which
+ * is what every persisted key already on a browser (collapse state, pin set, group order)
+ * was written as. `\0` appears in no path and in no machine id, so the two halves stay
+ * separable and neither can forge the other's shape.
+ */
+export function workspaceGroupKey(workspace: string, machineId: string | null = null): string {
+  const key = isTempWorkspace(workspace) ? TEMP_WORKSPACE_GROUP_KEY : workspace.trim();
+  return machineId === null ? key : `${machineId}\0${key}`;
+}
+
+/**
+ * The machine half of a group key; null for this server's own groups — including every key
+ * written before a group could name a machine, and the sentinel keys of the other grouping
+ * modes, which begin with the separator and so have no machine half.
+ */
+export function workspaceGroupMachine(groupKey: string): string | null {
+  const sep = groupKey.indexOf("\0");
+  return sep <= 0 ? null : groupKey.slice(0, sep);
+}
+
+/** The Workspace half of a group key: the path, or the temp sentinel. */
+export function workspaceGroupPath(groupKey: string): string {
+  const sep = groupKey.indexOf("\0");
+  return sep <= 0 ? groupKey : groupKey.slice(sep + 1);
 }
 
 /**
  * Query value that names a Workspace group to the server's list endpoint — the group's
  * path, or the sentinel the server merges every auto-created temporary Workspace under
  * (its `TEMP_WORKSPACE_GROUP`; stored Workspaces are realpath results and therefore
- * absolute, so the bare word cannot collide with one).
+ * absolute, so the bare word cannot collide with one). The machine half is dropped: the
+ * query goes TO that machine (the page key carries the source), and no server is asked
+ * about a path in another server's name.
  */
 export function workspaceGroupQuery(groupKey: string): string {
-  return groupKey === TEMP_WORKSPACE_GROUP_KEY ? "temp" : groupKey;
+  const path = workspaceGroupPath(groupKey);
+  return path === TEMP_WORKSPACE_GROUP_KEY ? "temp" : path;
 }
 
 /** Short display label: the last path segment (the filesystem root yields "/"). */
@@ -193,19 +226,20 @@ export interface GroupCounts {
 }
 
 /**
- * Folds the per-Agent per-Workspace-path category counts (SessionsResponse.workspaceCounts)
- * into workspace-mode groups, keyed like groupSessionsByWorkspace (exact path;
- * temporary-workspace paths merged into the temp group). The sidebar labels a group's
- * folders and decides its "More" from its own share — never from an Agent's other
- * Workspaces, which would advertise folders whose content lives in other groups.
+ * Folds the per-Agent per-group category counts (SessionsResponse.workspaceCounts, keyed by
+ * the store into workspaceGroupKey form) into workspace-mode groups. The keys arrive
+ * machine-qualified because each machine answers about its own paths: summing two machines'
+ * counts for one path string would put both totals on both folders, each contradicting the
+ * rows under it. The sidebar labels a group's folders and decides its "More" from its own
+ * share — never from an Agent's other Workspaces, which would advertise folders whose
+ * content lives in other groups.
  */
 export function aggregateWorkspaceCounts(
   byAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
 ): Map<string, GroupCounts> {
   const out = new Map<string, GroupCounts>();
-  for (const [agentId, byWorkspace] of byAgent) {
-    for (const [workspace, counts] of Object.entries(byWorkspace)) {
-      const key = workspaceGroupKey(workspace);
+  for (const [agentId, byGroup] of byAgent) {
+    for (const [key, counts] of Object.entries(byGroup)) {
       let group = out.get(key);
       if (!group) {
         group = {
@@ -253,12 +287,14 @@ export function latestConversation(sessions: readonly SessionInfo[]): SessionInf
 }
 
 export interface WorkspaceGroup<T = SessionInfo> {
-  /** Stable group key: the Workspace path, or TEMP_WORKSPACE_GROUP_KEY for the merged temp group. */
+  /** Stable group key: the machine and the Workspace path (workspaceGroupKey), or the temp sentinel for the merged temp group — one per machine. */
   key: string;
   /** Display label: the path basename; empty for the temp group (the sidebar renders the localized name). */
   label: string;
   /** Full path for tooltips; null for the merged temp group (its members' paths all differ). */
   fullPath: string | null;
+  /** The machine the directory is on; null for this server — a path is only a directory together with its machine. */
+  machineId: string | null;
   /** True for the merged temporary-workspace group. */
   temp: boolean;
   /** Member Sessions, newest first (createdAt desc). */
@@ -275,20 +311,28 @@ export interface WorkspaceGroup<T = SessionInfo> {
  * Generic over the row type (defaulting to SessionInfo, the sidebar's rows): the Trace
  * page groups its own Session rows with the same logic — only `workspace` and the
  * `createdAt` sort key are touched.
+ *
+ * Which machine a Session is on is asked of the caller rather than read off the row: the
+ * rows are the server's own SessionInfo, and where each one lives is the browser's fact,
+ * held by the map that routes every call about it (lib/session-machines.ts). The default
+ * says "this server", which is what a list of one server's Sessions is.
  */
 export function groupSessionsByWorkspace<T extends { workspace: string; createdAt: string }>(
   sessions: T[],
+  machineOf: (session: T) => string | null = () => null,
 ): WorkspaceGroup<T>[] {
   const byKey = new Map<string, WorkspaceGroup<T>>();
   for (const s of sessions) {
-    const key = workspaceGroupKey(s.workspace);
+    const machineId = machineOf(s);
+    const key = workspaceGroupKey(s.workspace, machineId);
     let group = byKey.get(key);
     if (!group) {
-      const temp = key === TEMP_WORKSPACE_GROUP_KEY;
+      const temp = isTempWorkspace(s.workspace);
       group = {
         key,
         label: temp ? "" : workspaceLabel(s.workspace),
         fullPath: temp ? null : s.workspace.trim(),
+        machineId,
         temp,
         sessions: [],
       };
