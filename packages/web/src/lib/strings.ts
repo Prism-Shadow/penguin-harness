@@ -1596,6 +1596,8 @@ export const zh = {
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
+    /** A name that only means something on another machine, written with the ssh alias that reaches it. */
+    onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
