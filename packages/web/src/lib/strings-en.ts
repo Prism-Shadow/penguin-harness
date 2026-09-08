@@ -1414,7 +1414,7 @@ export const en: Strings = {
   plugins: {
     installedTitle: "Installed plugins",
     installedDesc:
-      "What plugins.json lists, and which of them this process is running. Plugins load once when the server starts, so a change here takes effect at the next restart.",
+      "What this Project asks for, and which of those the running process holds. A change applies at once, with no restart.",
     installedEmpty: "No plugins installed yet.",
     stateActive: "running",
     builtin: "built in",
@@ -1423,7 +1423,8 @@ export const en: Strings = {
     installedRestart: "restart to load",
     stateInactive: "not loaded",
     replacesLabel: "replaces",
-    restartPending: "A plugin is installed but not loaded: restart the server to apply it.",
+    restartPending:
+      "A plugin is listed but not running: this server's runtime cannot apply the change in place. Restart it to load the plugin.",
     uninstall: "Remove",
     install: "Install",
     installing: "Installing…",
@@ -1478,7 +1479,7 @@ export const en: Strings = {
   pluginRegistry: {
     pageTitle: "Plugins",
     empty: "No plugins yet",
-    specifierHint: "Package specifier for plugins.json",
+    specifierHint: "Package specifier",
     back: "Back to Plugins",
     readme: "Documentation",
     noReadme: "This plugin has no documentation yet.",
@@ -1494,7 +1495,8 @@ export const en: Strings = {
     license: "License",
     copySpecifier: "Copy specifier",
     copied: "Copied",
-    installHint: "To install, add the specifier to plugins.json under the data root.",
+    installHint:
+      "To install, use the Install button on this plugin's row in the Plugins list. Admins only.",
   },
 
   skills: {
