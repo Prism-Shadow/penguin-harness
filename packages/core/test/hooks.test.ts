@@ -135,7 +135,10 @@ describe("script hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-script-hook-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    // Windows holds a handle open a moment after the hook's child exits, so the rmdir can
+    // race it and fail with EBUSY. The directory is a temp one the OS reclaims either way;
+    // failing the test over its cleanup would report a Windows scheduling detail as a bug.
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   const write = async (name: string, body: string): Promise<string> => {
