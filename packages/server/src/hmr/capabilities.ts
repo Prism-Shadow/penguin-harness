@@ -202,26 +202,6 @@ export const HMR_DB_RESOURCE_ID = "runtime:db";
  * costs one reprint of the first-login link and nothing else.
  */
 export const PARKED_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
-/**
- * PARKED PLATFORM STATE. The frames the host sent, unread, and a way to send one back. What
- * a frame MEANS — which commands exist, what they are called, who may run one — is policy
- * and belongs to the platform (http/routes/command.ts); the runtime carries the port and not
- * a line of the interpretation.
- *
- * Parked rather than kept by the platform because the host announces itself ONCE per wiring:
- * a platform holding the announcement in its own memory would lose it at the next push and
- * never be told again. Claimed optionally — an older runtime publishes no holder, and
- * RuntimeDesktop synthesizes one from that runtime's own service.
- */
-  /** The last `host-commands` frame, exactly as the host sent it. Unparsed on purpose. */
-  hostCommands: unknown;
-  /** The last `desktop-updater-status` frame, likewise raw: what it means is the platform's. */
-  updaterStatus: unknown;
-  /** Sends one frame to the host; null when this process has no host port. */
-  post: ((frame: unknown) => void) | null;
-}
-  return { hostCommands: null, updaterStatus: null, post: null };
-}
 
 // --- capabilities, continued -------------------------------------------------------------
 
