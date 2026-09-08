@@ -150,3 +150,70 @@ cursors, budget marks) and each user's read cursor per channel.
   hidden, so a group never promises rows it will not draw.
 - Docs: a Company Mode guide with the marketplace walkthrough, the `penguin org` reference,
   and the organization routes in the server API reference.
+
+### After the first trial round (2026-09-08)
+
+- Working language: `org_config.toml` gained `language` (`zh` / `en`), detected from the mission
+  at creation (one Han character anywhere makes it `zh`) unless the request names one —
+  `language` on `POST /organizations` and `PATCH /:orgId`,
+  `penguin org create --language <zh|en>`, and a Working language select in the Web App's
+  organization settings; `penguin org show` prints it. The handbook index, the CEO's
+  initialization run, the employee briefs (`AGENTS.md`) and the desk session titles are
+  rendered in it, and the skills have every employee write its messages, tickets, documents
+  and reports in it. An organization written
+  before the field has none stored and reads as whatever its mission is written in; nothing
+  was migrated.
+- Relative workspace sub-directories are created: `--workspace hr` (or `./hr`) on `hire` and
+  `employee set` is normalized to `hr` and created under the shared workspace when it is
+  missing, an absolute path must still exist, and a spec climbing out with `..` is 400
+  `invalid_workspace`. Opening a desk or a ticket session creates the directory too, so a
+  hand-edited chart never leaves an employee unable to work over a missing directory.
+- `POST /api/projects/:projectId/organizations/suggest-id` — `{name, kind: "org" | "channel",
+  taken?}` → `{id, source: "model" | "fallback"}`: the Project's default model proposes a short
+  English snake_case id, an ASCII slug of the name answers when it cannot, and 422
+  `id_not_derivable` when neither can name it; the completion belongs to no Session and is not
+  metered. The Web App's create-organization and new-channel dialogs put the display name
+  first and carry a button that generates the id from it.
+- Calendar writes answer with rota advice: `POST /:orgId/calendar`, `PUT
+  /:orgId/calendar/:agentId/:name` and `penguin org calendar add | update` return the stored
+  event plus advisory `warnings` — another employee's recurring event on the same start
+  minute, a second recurring event for the same employee on the same period, a recurring event
+  started at `now`. The CLI prints them as `Rota notice:` lines, the Web calendar dialog puts a
+  stagger hint under the start time and toasts the warnings, and the CEO and HR skills say to
+  fix them rather than move on.
+- Tickets: `--initiator <agent_id|principal>` (`initiator` in the create body) files a ticket
+  in an employee's or a Project member's name — it becomes the `Initiator`, the author of the
+  "created the ticket" progress line and the default `Notify`, the last only when the initiator
+  is an employee: a person filing a ticket is no longer @-mentioned when it closes (list
+  yourself in `--notify` to be told; the completion's system line still goes to the all-hands
+  channel). A session's progress line, body edit or move into `review` books that session as
+  one of the ticket's contributing sessions, so its cost lands on the ticket; accepting,
+  closing, blocking and unblocking book nothing. A `ticket_work` session opens with a
+  `Workspace:` line and the rule that every reference and deliverable is named by its full
+  path, and the `assigned` and `blocker_closed` notices end with the `penguin org ticket start`
+  command to run.
+- Channel `system` lines carry a structured `notice` — a `kind` (`employee_joined`,
+  `employee_left`, `channel_created`, `channel_archived`, `channel_unarchived`,
+  `channel_joined`, `channel_invited`, `channel_left`, `channel_removed`, `budget_warned`,
+  `budget_paused`, `ticket_blocked`, `ticket_done`, `ticket_rejected`) plus string `params` —
+  beside their English `text`; the Web App and `penguin org channel tail` render them in the
+  reader's language with display names, and a kind the client does not know keeps the English.
+  Channel message bodies render as Markdown in the Web App.
+- Web: an organization opens on its overview (`/org/:projectId/:orgId` and the switcher both
+  land there); the pinned "New channel" slot became a "+" beside the channel list's title; a
+  deleted organization no longer strands the sidebar on an error (the nav rows go disabled
+  under a "New organization" prompt, and `/org` resolves to the next organization or to the
+  empty landing, now vertically centred); the create dialog offers three mission examples and
+  the language setting; the overview folds the mission, gives every summary card a jump button
+  instead of a whole-card click, and stacks the inbox (mentions, tickets in review and
+  blocked, the all-hands channel's latest messages), today's calendar and the alerts full
+  width; the empty calendar and board
+  keep one create button under a dismissible hint; the finance page lays the KPI panel beside
+  the trend, then the spend tree beside the ticket table, with the alerts last; and the
+  handbook's file list became an explorer tree with collapsible folders, keyboard navigation,
+  "collapse all" and a new document prefilled with the current folder.
+- Skills: `company-ceo`, `company-hr`, `company-employee` and `company-setup` restate that a
+  desk never does ticket work (it starts a ticket session), that goals, acceptance criteria,
+  progress lines and results name files by their full path, that rota warnings are fixed rather
+  than ignored, that everything is written in the organization's working language, and that a
+  relative workspace is created as it is assigned.

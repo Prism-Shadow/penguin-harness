@@ -15,23 +15,25 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 
 三个入口，背后是同一个服务端调用：
 
-- **Web App**——组织切换器里的「新建组织」；
-- **CLI**——`penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`；
+- **Web App**——组织切换器里的「新建组织」：显示名在前，id 字段内的按钮请服务端据名称推导一个 id（Project 的缺省 Model 提出一个简短的英文 snake_case id，模型给不出时以名称的 ASCII slug 兜底，两条路都命名不了的名称会在字段下方说明）；使命字段下另有三个示例，点一下即填入；
+- **CLI**——`penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`；
 - **通用 Agent**——让任何装有 `agent-development` 插件的 Agent 帮你开一家公司，它的 `company-setup` Skill 接手：一次只问一个问题（id、名称、使命、公共工作区、Model、CEO 预算），确认一屏摘要，然后执行上面这条命令。它到此为止——招募、排日程和开工单是 CEO 在董事会答复之后的事。
 
 创建会写下组织目录、全员频道与组织手册，以及唯一一名员工：**CEO**，月预算缺省 **100 美元**，除非创建时另行指定（API 的 `ceoBudget`、CLI 的 `--ceo-budget`、对话框里的 CEO 预算字段）。预算按累计线比较，所以这一个数字就是整家公司的上限；它写在 `org_chart.yaml` 里，随时可以在组织图上调高、调低或清除。随后 CEO 的工位随初始化会话打开，在全员频道里发出一份提案，然后停下来等董事会答复。
+
+组织还有唯一的**工作语言**。它是 `org_config.toml` 的 `language`，创建时从使命判定——正文里出现任一汉字即 `zh`，否则 `en`——除非创建时指定（`--language`、API 的 `language`、创建对话框里的「工作语言」）；之后可在组织设置里修改。组织手册、员工简介（`AGENTS.md`）、CEO 的初始化会话与工位会话标题都用它书写，Skill 也要求每位员工用它写频道消息、工单、文档与汇报；无论哪种语言，命令、id、文件名与字段名都保持 ASCII。该字段出现之前创建的组织没有存这一项，读作它使命本身的语言，因此无需任何迁移。
 
 ## 组成部分
 
 | 部分 | 是什么 | 在哪里 |
 | --- | --- | --- |
-| 组织 | 一家公司：名称、使命、状态、时区、审批模式 | `<project>/organizations/<org_id>/org_config.toml` |
+| 组织 | 一家公司：名称、使命、状态、时区、工作语言、审批模式 | `<project>/organizations/<org_id>/org_config.toml` |
 | 员工 | 以 CEO 为根、经汇报线连成一棵树的 Agent——没有部门与岗位；每个条目带头衔、职责、工作区和月度预算 | `org_chart.yaml` |
 | 工位会话 | 每个员工一个常设会话：所有触发都发到这里；它负责调度、发起工单会话，不亲自做工单 | `desks.toml`（服务端写入） |
 | 日程 | 按员工分组的日程项，格式同定时任务、去掉目标字段——唯一的周期性驱动 | `calendar/<agent_id>/<event>.toml` |
 | 工单 | 一个工单一个 Markdown 文件，所在列目录即状态 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
 | 频道 | 一个频道一个目录：一份写有名称、用途与成员的意图文件，加上一行一条消息、按天分的 JSON Lines | `channels/<channel_id>/channel.toml`、`channels/<channel_id>/<yyyy-mm-dd>.jsonl` |
-| 公共工作区 | 公司的工作目录；CEO 划分子目录指定给各工位 | `workspace/` |
+| 公共工作区 | 公司的工作目录；CEO 划分子目录指定给各工位——相对子目录在指定时由服务端建好，绝对路径必须已经存在 | `workspace/` |
 | 组织手册 | 公司知识库；根部 `README.md` 是每个工作轮先读的索引，其余文档在索引中列出、按需读取 | `handbook/` |
 
 手册就是渐进加载的落地：每次触发都指向 `handbook/README.md`，索引写明目录布局、协议、职责约定，以及每份文档一行「何时需要读」，工作轮只在那一行说相关时才读对应文档。董事会的决策记在 `handbook/decisions/<yyyy-mm-dd>-<slug>.md`，约定与操作指南放在旁边；Web App 的「手册」页可以浏览、编辑与新建文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事。索引不可删除。
@@ -41,9 +43,9 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 ## 工作怎么流转
 
 1. **触发到达工位。** 日程项到期、有人在它所在的频道里 @ 了这位员工、或它关心的工单发生变化。服务端向工位会话发送一条以 `[org_trigger]` 块开头的消息——组织、员工、触发种类、该员工的支出与预算——后面跟着触发内容。Web App 把块折叠成一行提示，Trace 原样保留。
-2. **工位负责调度。** 员工按 `company-employee` Skill 先读手册，再看看板，为该推进的工单各发起一个**工单会话**（`penguin org ticket start <id>`）——同一 Agent 在工位工作区里的另一个普通会话。一个工单可以由多个会话、多名员工共同贡献，每个会话都记录在工单头部的 `Sessions` 字段。
-3. **工单会话做事并回写。** 结束前追加进展（`penguin org ticket progress`）并移列（`penguin org ticket move`）。卡住了——等人拍板、等另一个工单、缺 key——就给工单标记阻塞、写明原因与等谁解开（`penguin org ticket block`），然后停手；被阻塞的工单会被每一次巡检跳过，直到解除。
-4. **结束即通知。** 工单进入已完成或已拒绝时通知它的 `Notify` 名单与发起人：员工收到发往工位的通知，人收到全员频道里 @ 自己的系统消息。等着它的工单会告诉负责人「阻塞已解除」。
+2. **工位负责调度。** 员工按 `company-employee` Skill 先读手册，再看看板，为该推进的工单各发起一个**工单会话**（`penguin org ticket start <id>`）——同一 Agent 在工位工作区里的另一个普通会话。工位自己绝不动工单的文件：一旦要动，就发起工单会话交给它做。一个工单可以由多个会话、多名员工共同贡献，每个会话都记录在工单头部的 `Sessions` 字段。
+3. **工单会话做事并回写。** 它以自己的处境开场——工作区、「一切引用与交付物都写完整路径」的规则，以及工单原文。结束前追加进展（`penguin org ticket progress`）并移列（`penguin org ticket move`）。声称做了活的写入——一条进展、正文编辑、移入审核中——会把该会话记为这张工单的贡献会话，其成本因此摊到工单上；接受、关闭、阻塞与解除阻塞都不记。卡住了——等人拍板、等另一个工单、缺 key——就给工单标记阻塞、写明原因与等谁解开（`penguin org ticket block`），然后停手；被阻塞的工单会被每一次巡检跳过，直到解除。
+4. **结束即通知。** 工单进入已完成或已拒绝时通知它的 `Notify` 名单，发起人是员工时也通知发起人：员工收到发往工位的通知，人收到全员频道里 @ 自己的系统消息。人开的工单在完成时不会 @ 他——那条系统消息照样写进全员频道，董事会正是在那里读到完成；想收到通知就把自己列进 `Notify`。等着它的工单会告诉负责人「阻塞已解除」。
 5. **人在频道与看板上拍板。** CEO 不会擅自做重大决定：招募计划、预算、拒绝他人的工单、任何触及组织之外的动作，都先在全员频道里 @ 你提案，等你答复后才执行。只有 `@<员工>` 和 `@all` 会把消息投递到工位，且只在该频道的成员范围内生效：触发块写明消息来自哪个频道，员工也回到那里作答。提及了不在该频道的人，整条消息会被拒收，而不是写下去却投递不出；达到 @ 连锁上限的消息只记录不投递，两个员工不会无休止地互相 @。接受、拒绝与审核工单由你或 CEO 决定，规则写在组织手册里。
 
 预算是每个员工的月度上限，口径是本人加全部下属的会话——CEO 的预算就是整家公司。到 80% 时全员频道里出现一条系统消息；到 100% 时该员工（及其下属）的日程暂停，直到下个月或上调预算。@提及和直接对话照常，你随时可以告诉一个被暂停的员工该做什么。
@@ -52,10 +54,12 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 
 沟通与工作区一样是分区的。每个组织创建时自带一个**全员频道** `default_channel`，全体员工与全体 Project 成员隐式在其中——提案、预算告警、招募与里程碑都发在这里，董事会也在这里读。其余频道由大家按条线或按大工单自行新建，以免一条线的讨论淹没全员频道。
 
-- **新建**：人和员工都可以（`penguin org channel create <id>`，或 App 里的「新建频道」）。新频道只有创建者一人；id 规则同组织 id，`default_channel` 为保留字。
+- **新建**：人和员工都可以（`penguin org channel create <id>`，或 App 里频道列表标题旁的 **+**）。新频道只有创建者一人；id 规则同组织 id，`default_channel` 为保留字。
 - **加入**：员工只能由频道成员邀请进入；人可以自行加入任何频道，也能读到所有频道——董事会看得到全部。只有成员能发言。
 - **投递**：`@agent:<id>` 只在该频道的成员范围内唤醒对方工位，`@all` 指该频道的成员（不含发送者）。提及非成员的消息会被拒收（`mention_not_member`），而不是写下去却投递不出。
 - **生命周期**：任一成员可改名称与用途；归档与取消归档只有人能做，归档后频道只读并折叠收起。全员频道不能归档、不能退出、成员不可编辑——所有人本就在其中，界面上也只显示它的固定名称「全员频道」。
+
+频道里的 `system` 消息——招募与离任，频道的创建、加入、退出与归档，预算预警与暂停，工单被阻塞、完成或否决——在英文正文之外记下一份结构化 notice，App 与 `penguin org channel tail` 因此按读者的语言、用显示名渲染它们。消息正文在 App 里按 Markdown 渲染。
 
 未读计数与每个人的已读游标都按频道分别计算；新员工与离任员工的频道成员关系由人事负责维护。
 
@@ -81,7 +85,7 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 penguin org show                                  # 员工、看板计数、支出对预算
 penguin org hire --new-agent <id> --title <s> --reports-to <agent_id> [--workspace <sub>] [--budget <usd>]
 penguin org calendar add <name> --prompt <s> --start-at 2026-09-03T09:00:00+08:00 --period 1d   # 排班：各占时刻，按角色定节奏
-penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>]
+penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>] [--initiator <principal>]
 penguin org ticket start <ticket_id> [-m <note>]  # 发起工单会话，打印会话 id
 penguin org ticket progress <ticket_id> -m <text>
 penguin org ticket move <ticket_id> --to review|done|rejected [--reason <s>]
@@ -91,6 +95,12 @@ penguin org channel tail [--channel <id>] [-n <count>]
 penguin org channel send -m "@<employee> …" [--channel <id>]   # 缺省 default_channel
 penguin org finance                               # 按员工（累计）与按工单的支出
 ```
+
+## 页面
+
+组织打开时落在**概览**：折成一行的使命、本期支出对照 CEO 预算、一条 KPI 带，然后是三段通栏——收件箱（@ 我的消息、待审核工单、等我的阻塞工单，以及全员频道的最新消息）、今日日程、告警。卡片本身都不是链接，而是各带一个角上的按钮，写明跳到哪一页。
+
+**手册**页把知识库画成资源管理器式的树——每一层文件夹在文档之前，默认收起，可用方向键走——正文渲染在旁边。**财务**页把本期分成三行：KPI 面板与逐日趋势并列，然后是支出树与工单表左右分列，最后是本期的预警与暂停。**日历**与**看板**在空态下只留一个新建按钮，下方的说明可以永久关掉。
 
 ## 开关
 

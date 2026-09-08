@@ -227,18 +227,19 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限 |
-| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、告警）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone` 与阈值 / 删除（员工 Agent 与会话保留） |
+| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
+| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source}`。Project 的缺省 Model 把名称译成一个 snake_case 英文 id（`source: model`）；未配置 Model 或其回答无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回 422 `id_not_derivable`。该次补全不属于任何 Session，也不计量 |
+| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone`、`language` 与阈值 / 删除（员工 Agent 与会话保留） |
 | GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
-| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?` |
-| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
+| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
+| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区（校验与创建同招募）、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
 | GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
 | GET / PUT | /:orgId/handbook | 组织手册索引（`handbook/README.md`） |
 | GET | /:orgId/handbook/files | 知识库文件清单，索引在前 |
 | GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
-| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` |
-| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项 |
-| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}` |
+| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` → 除写下的事件外还带一组建议性的 `warnings`（每条一行）：同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算。写入绝不因此被拒 |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项；`PUT` 的响应与上面的新建相同，同样带 `warnings` |
+| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, initiator?, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。`initiator` 是本组织的员工（裸 Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；它成为工单的 `Initiator`、首条进展的作者，并在没有 `notify` 时成为整个 `Notify`——但仅限它是员工时，人不会因为自己开过的工单被 @ |
 | GET / PUT | /:orgId/tickets/:ticketId | 工单详情（各节、进展、贡献会话、子工单、上卷成本）/ 更新头部字段与各节 |
 | POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
 | POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
@@ -250,7 +251,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
 | POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
 | DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
-| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员 |
+| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`、`ticket_blocked`、`ticket_done`、`ticket_rejected`）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
 | POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
 | GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
 | GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |

@@ -221,8 +221,8 @@ penguin schedule rm daily-report
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]
-penguin org show [--org-id <id>] [--json]                       # 概览：员工与状态、看板计数、预算占用、待处理事项
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]
+penguin org show [--org-id <id>] [--json]                       # 概览：工作语言、员工与状态、看板计数、预算占用、待处理事项
 penguin org chart [--org-id <id>] [--json]                      # 员工树
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
@@ -235,7 +235,7 @@ penguin org calendar update <name> [--agent-id <id>] [<同上字段>] [--enable|
 penguin org calendar rm <name> [--agent-id <id>]
 penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
 penguin org ticket show <ticket_id> [--json]
-penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
+penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--initiator <principal>] [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
 penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # 移入 rejected 须给 reason
 penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # 工单留在所在列
@@ -273,12 +273,12 @@ penguin org finance [--period <YYYY-MM>] [--json]
 
 分组说明：
 
-- `ls` / `show` / `chart`：Project 的组织及其员工、工单与支出计数；单个组织的概览——名称、使命与状态，按状态分的员工数，各列工单数，本期支出对照 CEO 预算，以及等你处理的事（@我、待审核工单、等我的阻塞）；以及按层级缩进的汇报树，逐员工列出头衔、实时状态、自身与累计支出和预算。校验失败的组织或员工以 `invalid: <原因>` 列出，不隐藏。
-- `create`：`--ceo-budget` 是 CEO 的月预算（美元），缺省 **100**。预算按累计线比较——该员工及其全部下属——所以 CEO 的预算就是整家公司的：新组织一开始就有上限而非无限，初始化会话的触发块里也会带上这个数字，CEO 据此裁剪自己的招募方案。`0` 是真的零预算；要重新变回无限，用 `PATCH .../employees/<org_id>_ceo` 传 `budget: null`（Web App 的员工编辑即发此请求）。
-- `hire`：`--agent-id`（既有 Agent）与 `--new-agent`（新建）二选一；`--name`、`--description`、`--skills`（新 Agent 的插件库插件，替换缺省的 `agent-company,agent-development`）描述新 Agent。`--workspace` 原样写入：组织公共工作区的子目录（`.` 即整个工作区）或绝对路径，不按 CLI 的 cwd 解析。`--budget` 是该员工及其全部下属的月预算（美元）。`employee set` 只改给出的字段；模型对「都给或都不给」，同各处约定。
-- `calendar`：与 `penguin schedule` 同一套写入器——`add` 缺省启用、`--disabled` 关闭，`--start-at now` 即当前时刻，`update` 读改写，`rm` 不做确认。日程项一律发往员工的工位会话，且只在组织与该员工都处于运行状态时触发；否则状态列显示 `paused`。
-- `ticket`：`ls` 取整个看板后在本地过滤（`--status` 为列名：`proposed`、`in_progress`、`review`、`done`、`rejected`）；`show` 先打印派生数据——所在列、运行状态、成本与含子工单成本、贡献会话数、子工单数——再打印工单文件本身。`create` 二选一：`--goal`（配合 `--criteria`）或以 `--body-file` 给出整个 Markdown 正文，头部都由服务端生成。`--json` 下 `ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。`start` 像 `run --background` 一样打印裸 session id，供 `penguin logs` / `penguin input` 接续。
-- `chat tail` 以 `time  sender  text` 打印当天最后 20 条消息（`-n` 改条数，`--date` 换一天），`--json` 下即当天的响应、只含这些消息；`chat send` 发一条——`@agent:<id>` 与 `@all` 会触发被提及员工的工位。
+- `ls` / `show` / `chart`：Project 的组织及其员工、工单与支出计数；单个组织的概览——名称、使命、状态与工作语言，按状态分的员工数，各列工单数，本期支出对照 CEO 预算，以及等你处理的事（@我、待审核工单、等我的阻塞）；以及按层级缩进的汇报树，逐员工列出头衔、实时状态、自身与累计支出和预算。校验失败的组织或员工以 `invalid: <原因>` 列出，不隐藏。
+- `create`：`--ceo-budget` 是 CEO 的月预算（美元），缺省 **100**。预算按累计线比较——该员工及其全部下属——所以 CEO 的预算就是整家公司的：新组织一开始就有上限而非无限，初始化会话的触发块里也会带上这个数字，CEO 据此裁剪自己的招募方案。`0` 是真的零预算；要重新变回无限，用 `PATCH .../employees/<org_id>_ceo` 传 `budget: null`（Web App 的员工编辑即发此请求）。`--language zh|en` 指定组织的工作语言；不给则由使命决定（正文里出现任一汉字即为 `zh`），组织写下的一切——组织手册、员工简介、CEO 的初始化会话、工位会话标题——都随之而定。
+- `hire`：`--agent-id`（既有 Agent）与 `--new-agent`（新建）二选一；`--name`、`--description`、`--skills`（新 Agent 的插件库插件，替换缺省的 `agent-company,agent-development`）描述新 Agent。`--workspace` 是组织公共工作区的子目录（`.` 即整个工作区）或绝对路径，不按 CLI 的 cwd 解析。相对子目录会先归一化——`./hr`、`hr/` 与 `hr` 是同一个分区——并在写下这次招募时由服务端建好，因此 `--workspace hr` 就够了，无需事先存在；绝对路径指向用户自己的目录，必须已经存在；用 `..` 爬出公共工作区的写法直接以 400 `invalid_workspace` 拒收。`employee set --workspace` 同理，工位会话与工单会话打开时也会补建该目录。`--budget` 是该员工及其全部下属的月预算（美元）。`employee set` 只改给出的字段；模型对「都给或都不给」，同各处约定。
+- `calendar`：与 `penguin schedule` 同一套写入器——`add` 缺省启用、`--disabled` 关闭，`--start-at now` 即当前时刻，`update` 读改写，`rm` 不做确认。日程项一律发往员工的工位会话，且只在组织与该员工都处于运行状态时触发；否则状态列显示 `paused`。`add` 与 `update` 在返回事件之外附上本次写入引出的排班提醒——同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算——每条一行，以「排班提醒：」打印。它们只是建议：写入一律成功，提醒文本保持服务端的英文。
+- `ticket`：`ls` 取整个看板后在本地过滤（`--status` 为列名：`proposed`、`in_progress`、`review`、`done`、`rejected`）；`show` 先打印派生数据——所在列、运行状态、成本与含子工单成本、贡献会话数、子工单数——再打印工单文件本身。`create` 二选一：`--goal`（配合 `--criteria`）或以 `--body-file` 给出整个 Markdown 正文，头部都由服务端生成。`--json` 下 `ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。`start` 像 `run --background` 一样打印裸 session id，供 `penguin logs` / `penguin input` 接续。`--initiator <principal>` 以他人名义创建工单——组织的员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）；它成为工单的 `Initiator`、`created the ticket` 那条进展的作者，并在没有 `--notify` 时成为整个 `Notify`——但仅限发起人是员工：人不会因为自己开过的工单在完成时被全员频道 @，想收到通知就把自己写进 `--notify`（那条完成的系统消息无论如何都会写下）。声称做了活的写入——`progress`、正文编辑、`move --to review`——还会把调用方所在的会话记为该工单的贡献会话，其成本因此摊到工单上；移入其他列以及 `block`、`unblock` 都不记。`--goal`、`--criteria` 与 `progress -m` 要求把依赖的输入、预期交付物与涉及的文件一律写成完整路径。
+- `channel tail` 以 `time  sender  text` 打印当天最后 20 条消息（`-n` 改条数，`--date` 换一天），`--json` 下即当天的响应、只含这些消息；`channel send` 发一条——`@agent:<id>` 与 `@all` 会触发被提及员工的工位。`system` 消息在英文正文之外带一份结构化 `notice`，`tail` 因此按 CLI 自身的语言渲染；本版本不认识的种类保留英文原文。
 - `finance`：本期按员工（自身与沿汇报线累计，对照预算，附 `warned` / `paused` 标记）与按工单的支出，然后是合计；部分用量所用模型未配置价格时，stderr 上一行提示说明数字是下限。
 
 ## 审批模式（--approve）
