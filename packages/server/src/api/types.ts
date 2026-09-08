@@ -3585,6 +3585,38 @@ export interface OrgTicketsResponse {
   invalidFiles: Array<{ path: string; error: string }>;
 }
 
+/**
+ * What a `system` line records, structured: the kind of event and its parameters, so a client
+ * renders the sentence in the reader's language and with the principals' display names instead
+ * of showing the English `text` verbatim. `text` stays the English sentence (the CLI, older
+ * clients and the file itself read it); `notice` is the same fact for a client that can do better.
+ */
+export type OrgChannelNoticeKind =
+  | "employee_joined"
+  | "employee_left"
+  | "channel_created"
+  | "channel_archived"
+  | "channel_unarchived"
+  | "channel_joined"
+  | "channel_invited"
+  | "channel_left"
+  | "channel_removed"
+  | "budget_warned"
+  | "budget_paused"
+  | "ticket_blocked"
+  | "ticket_done"
+  | "ticket_rejected";
+
+/**
+ * The parameters each kind carries, all strings: principals as `agent:<id>` / `user:<id>`
+ * (`agent`, `principal`, `by`, `reportsTo`), a ticket as `ticket` + `title`, a budget event as
+ * `agent`, `period`, `percent`, `cost`, `budget`.
+ */
+export interface OrgChannelNotice {
+  kind: OrgChannelNoticeKind;
+  params: Record<string, string>;
+}
+
 export interface OrgChannelMessage {
   id: string;
   /** ISO 8601 UTC. */
@@ -3596,6 +3628,8 @@ export interface OrgChannelMessage {
   /** Principals mentioned, `all` included. */
   mentions: string[];
   refs?: { ticket?: string; session?: string; replyTo?: string };
+  /** Present on `system` lines the server wrote with a structured notice; absent on lines from before the field existed. */
+  notice?: OrgChannelNotice;
 }
 
 /**
@@ -3875,6 +3909,12 @@ export interface OrgCalendarWriteResponse extends OrgCalendarItem {
 
 export interface OrgTicketCreateRequest {
   title: string;
+  /**
+   * Who files the ticket, when it is not the caller: an employee's `agent:<id>` (or bare Agent
+   * id) or a member's `user:<id>`. Default = the caller — the session's employee inside a desk
+   * or ticket session, else the token's or cookie's user.
+   */
+  initiator?: string;
   /** Overrides the slug derived from the title. */
   slug?: string;
   goal?: string;
