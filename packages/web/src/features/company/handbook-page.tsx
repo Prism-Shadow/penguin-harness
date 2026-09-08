@@ -1,14 +1,15 @@
 /**
  * The organization handbook — `handbook/` in the organization directory, the company's
- * knowledge base — as two panes. Left, the file list: the index (`README.md`, the page every
- * trigger makes the employee read first) pinned at the top, then the documents beside it and
- * one group per top-level folder, each row with its file name and when it was last written.
- * Right, the selected document rendered as Markdown (anything else preformatted), edited in
- * place through a monospace textarea with save and cancel, and — for every document but the
- * index — deleted behind the shared confirmation. The new-document dialog refuses a path the
- * server would, then creates the file with a one-line title and selects it. A relative link
- * inside a document opens the document it names in the same pane, so the index works as the
- * handbook's own navigation.
+ * knowledge base — as two panes. Left, an explorer tree of the directory (handbook-explorer.tsx):
+ * the index (`README.md`, the page every trigger makes the employee read first) pinned at the
+ * top, then folders and documents nested as they are on disk, with one button that collapses
+ * them all. Right, the selected document rendered as Markdown (anything else preformatted),
+ * edited in place through a monospace textarea with save and cancel, and — for every document
+ * but the index — deleted behind the shared confirmation. The new-document dialog refuses a
+ * path the server would, starts from the selected document's own folder so a document lands
+ * beside its siblings, then creates the file with a one-line title and selects it. A relative
+ * link inside a document opens the document it names in the same pane, so the index works as
+ * the handbook's own navigation.
  *
  * Loading discipline: the skeleton stands only until the first listing or its failure; a
  * failed refresh keeps the list on screen under one error line with its retry; a document
@@ -25,13 +26,10 @@ import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/form
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useLocale } from "../../state/locale";
-import type { Locale } from "../../state/locale";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { FILE_ICON, NAV_ICONS } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -39,8 +37,10 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
+import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";
 import {
   HANDBOOK_INDEX,
+  ancestorFolders,
   buildHandbookTree,
   completeHandbookPath,
   isHandbookPath,
@@ -62,6 +62,8 @@ export function HandbookPage() {
   const [files, setFiles] = useState<OrgHandbookFile[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState(HANDBOOK_INDEX);
+  /** The open folders of the tree, by path: a folder starts closed and is opened by hand. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [doc, setDoc] = useState<OrgHandbookFileResponse | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   /** Bumped to re-read the selected document (its retry) without changing the selection. */
@@ -78,6 +80,7 @@ export function HandbookPage() {
     setFiles(null);
     setListError(null);
     setSelected(HANDBOOK_INDEX);
+    setExpanded(new Set<string>());
     setEditing(false);
   }, [projectId, orgId]);
 
@@ -122,6 +125,27 @@ export function HandbookPage() {
       setSelected(HANDBOOK_INDEX);
     }
   }, [files, selected]);
+
+  // The selected document is always in view: whatever selects it — the first load, a link
+  // followed inside another document, a document just created — opens the folders above it.
+  // Collapsing them all afterwards is the reader's to do, and stays done.
+  useEffect(() => {
+    const parents = ancestorFolders(selected);
+    if (parents.length === 0) return;
+    setExpanded((prev) => {
+      if (parents.every((p) => prev.has(p))) return prev;
+      const next = new Set(prev);
+      for (const p of parents) next.add(p);
+      return next;
+    });
+  }, [selected]);
+
+  const toggleFolder = (path: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
 
   /** A write's effect on the listing, ahead of the re-read that confirms it. */
   const upsertFile = (file: OrgHandbookFile) =>
@@ -210,6 +234,10 @@ export function HandbookPage() {
   const existing = useMemo(() => new Set((files ?? []).map((f) => f.path)), [files]);
   const selectedFile = files?.find((f) => f.path === selected) ?? null;
   const isIndex = selected === HANDBOOK_INDEX;
+  // A new document starts in the selected one's folder: that is where its siblings are.
+  const selectedFolders = ancestorFolders(selected);
+  const newDocumentFolder =
+    selectedFolders.length === 0 ? "" : `${selectedFolders[selectedFolders.length - 1]!}/`;
 
   const title = S.nav.org.handbook;
   const info = S.company.handbook.info;
@@ -230,19 +258,6 @@ export function HandbookPage() {
     );
   }
 
-  const rowOf = (file: OrgHandbookFile, label: string) => (
-    <li key={file.path}>
-      <FileRow
-        label={label}
-        icon={FILE_ICON}
-        file={file}
-        selected={selected === file.path}
-        locale={locale}
-        onClick={() => setSelected(file.path)}
-      />
-    </li>
-  );
-
   return (
     <OrgPage title={title} info={info}>
       {listError !== null && (
@@ -260,40 +275,33 @@ export function HandbookPage() {
           title={S.company.handbook.documents}
           count={files?.length ?? 0}
           actions={
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              {S.company.handbook.newDocument}
-            </Button>
+            <>
+              <button
+                type="button"
+                title={S.company.handbook.collapseAll}
+                aria-label={S.company.handbook.collapseAll}
+                disabled={expanded.size === 0}
+                onClick={() => setExpanded(new Set<string>())}
+                className="inline-flex items-center justify-center rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
+              </button>
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                {S.company.handbook.newDocument}
+              </Button>
+            </>
           }
         >
-          <ul className="space-y-0.5">
-            <li>
-              <FileRow
-                label={HANDBOOK_INDEX}
-                sublabel={S.company.handbook.indexLabel}
-                icon={NAV_ICONS.orgHandbook}
-                file={tree.index}
-                selected={isIndex}
-                locale={locale}
-                onClick={() => setSelected(HANDBOOK_INDEX)}
-              />
-            </li>
-            {tree.root.map((d) => rowOf(d, d.label))}
-          </ul>
-          {tree.folders.map((folder) => (
-            <div key={folder.name} className="mt-3">
-              <p
-                className={`flex items-center ${ICON_GAP.row} px-2 pb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400`}
-              >
-                <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.inlineGlyph} />
-                <span className="min-w-0 truncate">{folder.name}</span>
-                <span className="tabular-nums text-gray-400 dark:text-gray-500">
-                  {folder.docs.length}
-                </span>
-              </p>
-              <ul className="space-y-0.5">{folder.docs.map((d) => rowOf(d, d.label))}</ul>
-            </div>
-          ))}
-          {tree.root.length === 0 && tree.folders.length === 0 && (
+          <HandbookExplorer
+            index={tree.index}
+            nodes={tree.nodes}
+            selected={selected}
+            expanded={expanded}
+            locale={locale}
+            onSelect={setSelected}
+            onToggle={toggleFolder}
+          />
+          {tree.nodes.length === 0 && (
             <OrgEmptyLine>{S.company.handbook.noOtherDocuments}</OrgEmptyLine>
           )}
         </OrgSection>
@@ -396,6 +404,7 @@ export function HandbookPage() {
 
       <NewDocumentDialog
         open={createOpen}
+        folder={newDocumentFolder}
         existing={existing}
         onClose={() => setCreateOpen(false)}
         onCreate={create}
@@ -417,79 +426,20 @@ export function HandbookPage() {
 }
 
 /**
- * One row of the list: the glyph, the name (with the index's reason for being pinned under
- * it), and how long ago the file was written; the whole path (a long name truncates), the
- * exact time and the size ride in the tooltip. The selected row is filled rather than merely
- * bold, so the pane beside it reads as that row's.
- */
-function FileRow({
-  label,
-  sublabel,
-  icon,
-  file,
-  selected,
-  locale,
-  onClick,
-}: {
-  label: string;
-  sublabel?: string;
-  icon: string;
-  /** The listing's entry, or null for the index while the listing lacks it. */
-  file: OrgHandbookFile | null;
-  selected: boolean;
-  locale: Locale;
-  onClick: () => void;
-}) {
-  const tooltip =
-    file === null
-      ? label
-      : `${file.path} · ${S.company.handbook.updatedAt(formatDateTime(file.updatedAt), formatBytes(file.size))}`;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={selected ? "true" : undefined}
-      title={tooltip}
-      className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 ${
-        selected
-          ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-          : "hover:bg-gray-100 dark:hover:bg-gray-800"
-      }`}
-    >
-      <span
-        className={`shrink-0 ${selected ? "text-gray-700 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}
-      >
-        <GlyphIcon d={icon} size={ICON_SIZE.rowLead} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{label}</span>
-        {sublabel !== undefined && (
-          <span className="block truncate text-[11px] font-normal text-gray-500 dark:text-gray-400">
-            {sublabel}
-          </span>
-        )}
-      </span>
-      {file !== null && (
-        <span className="shrink-0 text-[11px] font-normal tabular-nums text-gray-400 dark:text-gray-500">
-          {formatRelativeShort(file.updatedAt, locale)}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/**
  * The new-document dialog: one path field, checked here before the request — the server's
  * own rule, a name already taken — so the failure lands under the field; anything the server
  * still refuses lands in a strip above the footer with its retry.
  */
 function NewDocumentDialog({
   open,
+  folder,
   existing,
   onClose,
   onCreate,
 }: {
   open: boolean;
+  /** What the field starts with: the selected document's folder as a `<folder>/` prefix, or "". */
+  folder: string;
   /** Every path the listing holds, so a duplicate is refused before it overwrites. */
   existing: ReadonlySet<string>;
   onClose: () => void;
@@ -501,17 +451,20 @@ function NewDocumentDialog({
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // No draft is kept: the field starts empty every time the dialog opens.
+  // No draft is kept: the field starts from the selected document's folder every time the
+  // dialog opens, so a document lands beside its siblings unless the path is typed over.
   useEffect(() => {
     if (!open) return;
-    setPath("");
+    setPath(folder);
     setPathError(undefined);
     setFormError(null);
-  }, [open]);
+  }, [open, folder]);
 
   const submit = async () => {
     const rel = completeHandbookPath(path);
-    if (rel === "") {
+    // A path that is only a folder names no document: the field starts as one, and completing
+    // `decisions/` to `decisions.md` would create a file beside the folder rather than in it.
+    if (rel === "" || path.trim().endsWith("/")) {
       setPathError(S.common.requiredField);
       return;
     }

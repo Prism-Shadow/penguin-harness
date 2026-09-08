@@ -2949,6 +2949,9 @@ Benchmark：
       /** The pinned first row: the index, and why it is pinned. */
       indexLabel: "索引 · 每轮先读",
       documents: "文档",
+      /** The tree's own controls: closing every folder, and what a folder row's count means. */
+      collapseAll: "全部折叠",
+      documentsInFolder: (n: number): string => `${n} 篇文档`,
       noOtherDocuments: "还没有其他文档。新建一篇，并在索引里列出它。",
       emptyDocument: "这篇文档还是空的。",
       newDocument: "新建文档",

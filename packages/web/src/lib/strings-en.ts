@@ -3024,6 +3024,9 @@ Scenarios:
       /** The pinned first row: the index, and why it is pinned. */
       indexLabel: "Index · read first every run",
       documents: "Documents",
+      /** The tree's own controls: closing every folder, and what a folder row's count means. */
+      collapseAll: "Collapse all",
+      documentsInFolder: (n: number): string => `${n} document${n === 1 ? "" : "s"}`,
       noOtherDocuments: "No other documents yet. Create one and list it in the index.",
       emptyDocument: "This document is still empty.",
       newDocument: "New document",
