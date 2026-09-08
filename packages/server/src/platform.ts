@@ -88,6 +88,7 @@ import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
+import { PullRequestService } from "./services/pull-request-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
@@ -142,7 +143,7 @@ import {
   Memory,
   Snapshots,
 } from "./mechanisms/agents.js";
-import { WorkspaceFiles } from "./mechanisms/workspace.js";
+import { PullRequests, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -331,8 +332,8 @@ export class TracesModule {}
 export class AgentsModule {}
 
 @Module({
-  children: [WorkspaceFilesService, PreviewModule],
-  exports: [WorkspaceFiles, PreviewTokens],
+  children: [WorkspaceFilesService, PullRequestService, PreviewModule],
+  exports: [WorkspaceFiles, PullRequests, PreviewTokens],
 })
 export class WorkspaceModule {}
 

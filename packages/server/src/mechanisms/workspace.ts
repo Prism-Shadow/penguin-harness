@@ -8,6 +8,7 @@ import type {
   WorkspaceFileStat,
 } from "../services/workspace-files-service.js";
 import type { WorkspaceFilesResponse } from "../api/types.js";
+import type { WorkspacePullRequest } from "../services/pull-request-service.js";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
 export abstract class WorkspaceFiles extends Interface<{
@@ -20,4 +21,9 @@ export abstract class WorkspaceFiles extends Interface<{
     options?: WorkspaceFileReadOptions,
   ): Promise<WorkspaceFileContent>;
   write(workspace: string, rel: string, data: Buffer<ArrayBufferLike>): Promise<void>;
+}>() {}
+
+/** PullRequests: the mechanism PullRequestService implements. */
+export abstract class PullRequests extends Interface<{
+  forWorkspace(workspace: string): Promise<WorkspacePullRequest | null>;
 }>() {}
