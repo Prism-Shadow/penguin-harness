@@ -6,7 +6,9 @@
  * confirms the move (a move into rejected asks for a one-line reason) before posting it, the
  * detail drawer, the create form, and the tickets and files the server could not accept.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
- * as drop zones, the board plus an error strip when a refetch fails.
+ * as drop zones — with a one-line note above them while the organization has no tickets at
+ * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
+ * refetch fails.
  * `?column=` / `?blocked=1` / `?ticket=` deep links arrive from the overview.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -26,6 +28,7 @@ import { formatMoney } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
@@ -37,6 +40,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CloseIcon } from "../../components/ui/icons";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Skeleton } from "../../components/ui/skeleton";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
@@ -55,6 +59,7 @@ import {
   moveNeedsReason,
 } from "./ticket-board";
 import { TicketDrawer } from "./ticket-drawer";
+import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, principalAgentId, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 
@@ -86,6 +91,7 @@ const columnClass =
 export function TicketsPage() {
   const { projectId, orgId, org } = useOrg();
   const company = useCompany();
+  const { user } = useAuth();
   const { currency } = useTheme();
   const [params, setParams] = useSearchParams();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.tickets}` : S.nav.org.tickets);
@@ -103,6 +109,14 @@ export function TicketsPage() {
   const [busy, setBusy] = useState(false);
   const openTicketId = params.get("ticket");
   const highlightColumn = params.get("column");
+  // The empty-board note goes away for good once read; the page's "?" carries the same
+  // sentence. The key holds the organization, so switching to another one — which does not
+  // unmount this page — re-reads the dismissal instead of carrying the last answer over.
+  const emptyHintKey = hintKey(user?.userId ?? null, projectId, orgId, "tickets");
+  const [hintDismissed, setHintDismissed] = useState(() => isHintDismissed(emptyHintKey));
+  useEffect(() => {
+    setHintDismissed(isHintDismissed(emptyHintKey));
+  }, [emptyHintKey]);
 
   const load = useCallback(async () => {
     try {
@@ -349,16 +363,29 @@ export function TicketsPage() {
         </div>
       )}
 
-      {board !== null && allTickets(board).length === 0 && board.invalidFiles.length === 0 && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
-        >
-          <span>{S.company.tickets.emptyHint}</span>
-          <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
-            {S.company.tickets.create}
-          </Button>
-        </div>
-      )}
+      {board !== null &&
+        allTickets(board).length === 0 &&
+        board.invalidFiles.length === 0 &&
+        !hintDismissed && (
+          <div
+            className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+          >
+            <span className="min-w-0 flex-1">{S.company.tickets.emptyHint}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="shrink-0"
+              title={S.company.tickets.dismissHint}
+              aria-label={S.company.tickets.dismissHint}
+              onClick={() => {
+                dismissHint(emptyHintKey);
+                setHintDismissed(true);
+              }}
+            >
+              <CloseIcon />
+            </Button>
+          </div>
+        )}
 
       <div className="overflow-x-auto pb-2">
         <div className="grid min-w-[50rem] grid-cols-5 gap-3">

@@ -1,11 +1,14 @@
 /**
- * Finance: budgets and spend for one period. The KPI row puts the organization's total
- * against the CEO's budget (the ring), the ratio in its threshold tone, the head count and
- * the alert count; the spend tree walks the reporting line with own / cumulative / budget /
- * ratio per employee and edits a budget in place (written straight to the employee); the
- * ticket table rolls costs up along parent tickets; the daily costs draw on the cost
- * center's trend chart; and the period's warnings and pauses are listed by state with how a
- * pause is lifted. `?period=yyyy-mm` switches between this period and the previous one.
+ * Finance: budgets and spend for one period, in three rows. The top row reads the period —
+ * the KPI panel (the ring against the CEO's budget, then the total, the ratio in its
+ * threshold tone, the head count and the alert count, two by two) beside the trend chart the
+ * daily costs draw. The middle row says where the spend sat: the spend tree walks the
+ * reporting line with own / cumulative / budget / ratio per employee and edits a budget in
+ * place (written straight to the employee), and the ticket table rolls costs up along parent
+ * tickets — side by side on a wide screen, each scrolling in its own half, stacked on a
+ * narrow one. The period's warnings and pauses close the page full width, listed by state
+ * with how a pause is lifted. `?period=yyyy-mm` switches between this period and the
+ * previous one.
  *
  * Loading discipline: the skeleton stands only until the first response; a failed first
  * fetch is an error with a retry; a failed refetch keeps the last good data on screen and
@@ -343,252 +346,199 @@ export function FinancePage() {
         </div>
       )}
       <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
-        {/* KPI row: the organization's total against the CEO's budget, then the counts. */}
-        <div className="mb-2 flex flex-wrap items-center gap-x-10 gap-y-4">
-          <div className={`flex items-center ${ICON_GAP.card}`}>
-            <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} />
-            <div>
-              <Stat label={S.company.finance.kpiTotal} value={formatMoney(kpis.total, currency)} />
-              <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                {S.company.finance.orgBudget} ·{" "}
-                {kpis.budget === undefined
-                  ? S.company.noBudget
-                  : formatMoney(kpis.budget, currency)}
-              </p>
+        {/* Top row: what the period cost against the budget, beside how it accumulated. */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          {/* The KPI panel: the ring, and the four numbers it summarises, two by two. */}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-4">
+              <FinanceGauge ratio={kpis.ratio} label={gaugeLabel} />
+              <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                  <Stat
+                    label={S.company.finance.kpiTotal}
+                    value={formatMoney(kpis.total, currency)}
+                  />
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {S.company.finance.orgBudget} ·{" "}
+                    {kpis.budget === undefined
+                      ? S.company.noBudget
+                      : formatMoney(kpis.budget, currency)}
+                  </p>
+                </div>
+                <div>
+                  <Stat
+                    label={S.company.finance.ratio}
+                    value={formatPercent(kpis.ratio)}
+                    {...(ratioTone === "muted" ? {} : { tone: ratioTone })}
+                  />
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {S.company.finance.thresholds}
+                  </p>
+                </div>
+                <div>
+                  <Stat label={S.company.finance.kpiEmployees} value={kpis.employees} />
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {S.company.finance.budgetsSet(kpis.budgeted)}
+                  </p>
+                </div>
+                <div>
+                  <Stat
+                    label={S.company.finance.kpiAlerts}
+                    value={data.alerts.length}
+                    {...(kpis.paused > 0
+                      ? { tone: "danger" as const }
+                      : kpis.warned > 0
+                        ? { tone: "attention" as const }
+                        : {})}
+                  />
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {S.company.finance.alertsSummary(kpis.warned, kpis.paused)}
+                  </p>
+                </div>
+              </div>
             </div>
+            {data.unpriced && (
+              <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.unpriced}
+              </p>
+            )}
           </div>
-          <div>
-            <Stat
-              label={S.company.finance.ratio}
-              value={formatPercent(kpis.ratio)}
-              {...(ratioTone === "muted" ? {} : { tone: ratioTone })}
-            />
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {S.company.finance.thresholds}
-            </p>
-          </div>
-          <div>
-            <Stat label={S.company.finance.kpiEmployees} value={kpis.employees} />
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {S.company.finance.budgetsSet(kpis.budgeted)}
-            </p>
-          </div>
-          <div>
-            <Stat
-              label={S.company.finance.kpiAlerts}
-              value={data.alerts.length}
-              {...(kpis.paused > 0
-                ? { tone: "danger" as const }
-                : kpis.warned > 0
-                  ? { tone: "attention" as const }
-                  : {})}
-            />
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              {S.company.finance.alertsSummary(kpis.warned, kpis.paused)}
-            </p>
-          </div>
+          <OrgSection title={S.company.finance.trend} info={S.company.finance.trendInfo}>
+            {series.length === 0 ? (
+              <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.trendEmpty}
+              </p>
+            ) : (
+              <TrendChart
+                series={series}
+                granularity="day"
+                currency={currency}
+                breaks={dailyBreaks(data.daily)}
+              />
+            )}
+          </OrgSection>
         </div>
-        {data.unpriced && (
-          <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
-            {S.company.finance.unpriced}
-          </p>
-        )}
 
-        <OrgSection
-          title={S.company.finance.spendTree}
-          info={S.company.finance.spendTreeInfo}
-          className="mt-6"
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-xs">
-              <thead>
-                <tr>
-                  <th className={`${headClass} text-left`}>{S.company.overview.employees}</th>
-                  <th className={`${headClass} text-right`}>{S.company.finance.own}</th>
-                  <th className={`${headClass} text-right`}>
-                    <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
-                      {S.company.finance.cumulative}
-                      <InfoPopover label={S.company.finance.cumulative}>
-                        {S.company.finance.cumulativeInfo}
-                      </InfoPopover>
-                    </span>
-                  </th>
-                  <th className={`${headClass} text-right`}>{S.company.finance.budget}</th>
-                  <th className={`${headClass} w-44 text-left`}>{S.company.finance.ratio}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                {rows.map(({ employee, depth }) => {
-                  const tone = budgetTone(employee.ratio);
-                  const editing = editingId === employee.agentId;
-                  return (
-                    <tr key={employee.agentId}>
-                      <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
-                        <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
-                          {depth > 0 && <TreeElbow />}
-                          <AgentAvatar
-                            id={employee.agentId}
-                            name={employee.name}
-                            size={ICON_SIZE.navRow}
-                            className="shrink-0 rounded"
-                          />
-                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">
-                            {employee.name}
-                          </span>
-                          {employee.reportsTo === null &&
-                            employee.title.trim().toLowerCase() !== "ceo" && (
-                              <Badge tone="gray">{S.company.ceo}</Badge>
-                            )}
-                          <span className="truncate text-gray-400 dark:text-gray-500">
-                            {employee.title}
-                          </span>
-                          {employee.paused ? (
-                            <StateMark tone="danger">{S.company.finance.paused}</StateMark>
-                          ) : employee.warned ? (
-                            <StateMark tone="attention">{S.company.finance.warned}</StateMark>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className={`${cellClass} text-gray-600 dark:text-gray-300`}>
-                        {formatMoney(employee.own, currency)}
-                      </td>
-                      <td className={`${cellClass} font-semibold text-gray-900 dark:text-gray-100`}>
-                        {formatMoney(employee.cumulative, currency)}
-                      </td>
-                      <td className={cellClass}>
-                        {editing ? (
-                          <BudgetEditor
-                            initial={employee.budget}
-                            name={employee.name}
-                            busy={busy}
-                            onSave={(value) => void saveBudget(employee.agentId, value)}
-                            onCancel={() => setEditingId(null)}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            title={S.company.finance.editBudget}
-                            aria-label={S.company.finance.editBudgetOf(employee.name)}
-                            onClick={() => setEditingId(employee.agentId)}
-                            className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1.5 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                          >
-                            <span
-                              className={
-                                employee.budget === undefined
-                                  ? "text-gray-400 dark:text-gray-500"
-                                  : "text-gray-900 dark:text-gray-100"
-                              }
-                            >
-                              {employee.budget === undefined
-                                ? S.company.noBudget
-                                : formatMoney(employee.budget, currency)}
-                            </span>
-                            <GlyphIcon
-                              d={PENCIL_ICON}
-                              size={ICON_SIZE.inlineGlyph}
-                              className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
-                            />
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">
-                        {employee.budget === undefined ? (
-                          <span className="text-gray-400 dark:text-gray-500">—</span>
-                        ) : (
-                          <span className={`flex items-center ${ICON_GAP.menu}`}>
-                            <span className="w-24">
-                              <BudgetBar
-                                compact
-                                cost={employee.cumulative}
-                                currency={currency}
-                                budget={employee.budget}
-                                {...(employee.ratio !== undefined ? { ratio: employee.ratio } : {})}
-                              />
-                            </span>
-                            <span
-                              className={`w-12 text-right font-medium tabular-nums ${toneInk[tone]}`}
-                            >
-                              {formatPercent(employee.ratio)}
-                            </span>
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </OrgSection>
-
-        <OrgSection
-          title={S.company.finance.ticketsTable}
-          info={S.company.finance.ticketsInfo}
-          className="mt-8"
-        >
-          {ticketRows.length === 0 ? (
-            <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
-              {S.company.finance.ticketsEmpty}
-            </p>
-          ) : (
+        {/* Middle row: where the spend sat — by employee, and by ticket; each table scrolls in its own half. */}
+        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <OrgSection title={S.company.finance.spendTree} info={S.company.finance.spendTreeInfo}>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-xs">
+              <table className="w-full min-w-[30rem] text-xs">
                 <thead>
                   <tr>
-                    <th className={`${headClass} text-left`}>{S.nav.org.tickets}</th>
-                    <th className={`${headClass} text-left`}>{S.company.status}</th>
-                    <th className={`${headClass} text-left`}>{S.company.tickets.owner}</th>
-                    <th className={`${headClass} text-right`}>{S.company.tickets.cost}</th>
+                    <th className={`${headClass} text-left`}>{S.company.overview.employees}</th>
+                    <th className={`${headClass} text-right`}>{S.company.finance.own}</th>
                     <th className={`${headClass} text-right`}>
                       <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
-                        {S.company.finance.rolledUp}
-                        <InfoPopover label={S.company.finance.rolledUp}>
-                          {S.company.finance.rolledUpInfo}
+                        {S.company.finance.cumulative}
+                        <InfoPopover label={S.company.finance.cumulative}>
+                          {S.company.finance.cumulativeInfo}
                         </InfoPopover>
                       </span>
                     </th>
+                    <th className={`${headClass} text-right`}>{S.company.finance.budget}</th>
+                    <th className={`${headClass} w-44 text-left`}>{S.company.finance.ratio}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                  {ticketRows.map(({ ticket, depth }) => {
-                    const owner = owners.get(ticket.ticketId);
+                  {rows.map(({ employee, depth }) => {
+                    const tone = budgetTone(employee.ratio);
+                    const editing = editingId === employee.agentId;
                     return (
-                      <tr key={ticket.ticketId}>
+                      <tr key={employee.agentId}>
                         <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                           <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                             {depth > 0 && <TreeElbow />}
-                            <button
-                              type="button"
-                              title={S.company.finance.openTicket}
-                              onClick={() => openTicket(ticket.ticketId)}
-                              className="truncate text-left font-medium text-gray-900 hover:underline dark:text-gray-100"
-                            >
-                              {ticket.title}
-                            </button>
-                            <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
-                              {ticket.ticketId}
+                            <AgentAvatar
+                              id={employee.agentId}
+                              name={employee.name}
+                              size={ICON_SIZE.navRow}
+                              className="shrink-0 rounded"
+                            />
+                            <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                              {employee.name}
                             </span>
+                            {employee.reportsTo === null &&
+                              employee.title.trim().toLowerCase() !== "ceo" && (
+                                <Badge tone="gray">{S.company.ceo}</Badge>
+                              )}
+                            <span className="truncate text-gray-400 dark:text-gray-500">
+                              {employee.title}
+                            </span>
+                            {employee.paused ? (
+                              <StateMark tone="danger">{S.company.finance.paused}</StateMark>
+                            ) : employee.warned ? (
+                              <StateMark tone="attention">{S.company.finance.warned}</StateMark>
+                            ) : null}
                           </span>
                         </td>
-                        <td className="px-2 py-2">
-                          <TicketStatusBadge status={ticket.status} />
-                        </td>
-                        <td className="px-2 py-2">
-                          {owner === undefined ? (
-                            <span className="text-gray-400 dark:text-gray-500">
-                              {S.company.tickets.noOwner}
-                            </span>
-                          ) : (
-                            <PrincipalChip principal={owner} names={names} />
-                          )}
-                        </td>
                         <td className={`${cellClass} text-gray-600 dark:text-gray-300`}>
-                          {formatMoney(ticket.cost, currency)}
+                          {formatMoney(employee.own, currency)}
                         </td>
                         <td
                           className={`${cellClass} font-semibold text-gray-900 dark:text-gray-100`}
                         >
-                          {formatMoney(ticket.rolledUp, currency)}
+                          {formatMoney(employee.cumulative, currency)}
+                        </td>
+                        <td className={cellClass}>
+                          {editing ? (
+                            <BudgetEditor
+                              initial={employee.budget}
+                              name={employee.name}
+                              busy={busy}
+                              onSave={(value) => void saveBudget(employee.agentId, value)}
+                              onCancel={() => setEditingId(null)}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              title={S.company.finance.editBudget}
+                              aria-label={S.company.finance.editBudgetOf(employee.name)}
+                              onClick={() => setEditingId(employee.agentId)}
+                              className={`group inline-flex items-center ${ICON_GAP.tight} rounded px-1.5 py-0.5 tabular-nums transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                            >
+                              <span
+                                className={
+                                  employee.budget === undefined
+                                    ? "text-gray-400 dark:text-gray-500"
+                                    : "text-gray-900 dark:text-gray-100"
+                                }
+                              >
+                                {employee.budget === undefined
+                                  ? S.company.noBudget
+                                  : formatMoney(employee.budget, currency)}
+                              </span>
+                              <GlyphIcon
+                                d={PENCIL_ICON}
+                                size={ICON_SIZE.inlineGlyph}
+                                className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
+                              />
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-2 py-2">
+                          {employee.budget === undefined ? (
+                            <span className="text-gray-400 dark:text-gray-500">—</span>
+                          ) : (
+                            <span className={`flex items-center ${ICON_GAP.menu}`}>
+                              <span className="w-24">
+                                <BudgetBar
+                                  compact
+                                  cost={employee.cumulative}
+                                  currency={currency}
+                                  budget={employee.budget}
+                                  {...(employee.ratio !== undefined
+                                    ? { ratio: employee.ratio }
+                                    : {})}
+                                />
+                              </span>
+                              <span
+                                className={`w-12 text-right font-medium tabular-nums ${toneInk[tone]}`}
+                              >
+                                {formatPercent(employee.ratio)}
+                              </span>
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -596,27 +546,82 @@ export function FinancePage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </OrgSection>
+          </OrgSection>
 
-        <OrgSection
-          title={S.company.finance.trend}
-          info={S.company.finance.trendInfo}
-          className="mt-8"
-        >
-          {series.length === 0 ? (
-            <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
-              {S.company.finance.trendEmpty}
-            </p>
-          ) : (
-            <TrendChart
-              series={series}
-              granularity="day"
-              currency={currency}
-              breaks={dailyBreaks(data.daily)}
-            />
-          )}
-        </OrgSection>
+          <OrgSection title={S.company.finance.ticketsTable} info={S.company.finance.ticketsInfo}>
+            {ticketRows.length === 0 ? (
+              <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
+                {S.company.finance.ticketsEmpty}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[28rem] text-xs">
+                  <thead>
+                    <tr>
+                      <th className={`${headClass} text-left`}>{S.nav.org.tickets}</th>
+                      <th className={`${headClass} text-left`}>{S.company.status}</th>
+                      <th className={`${headClass} text-left`}>{S.company.tickets.owner}</th>
+                      <th className={`${headClass} text-right`}>{S.company.tickets.cost}</th>
+                      <th className={`${headClass} text-right`}>
+                        <span className={`inline-flex items-center ${ICON_GAP.tight}`}>
+                          {S.company.finance.rolledUp}
+                          <InfoPopover label={S.company.finance.rolledUp}>
+                            {S.company.finance.rolledUpInfo}
+                          </InfoPopover>
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+                    {ticketRows.map(({ ticket, depth }) => {
+                      const owner = owners.get(ticket.ticketId);
+                      return (
+                        <tr key={ticket.ticketId}>
+                          <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
+                            <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                              {depth > 0 && <TreeElbow />}
+                              <button
+                                type="button"
+                                title={S.company.finance.openTicket}
+                                onClick={() => openTicket(ticket.ticketId)}
+                                className="truncate text-left font-medium text-gray-900 hover:underline dark:text-gray-100"
+                              >
+                                {ticket.title}
+                              </button>
+                              <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                                {ticket.ticketId}
+                              </span>
+                            </span>
+                          </td>
+                          <td className="px-2 py-2">
+                            <TicketStatusBadge status={ticket.status} />
+                          </td>
+                          <td className="px-2 py-2">
+                            {owner === undefined ? (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                {S.company.tickets.noOwner}
+                              </span>
+                            ) : (
+                              <PrincipalChip principal={owner} names={names} />
+                            )}
+                          </td>
+                          <td className={`${cellClass} text-gray-600 dark:text-gray-300`}>
+                            {formatMoney(ticket.cost, currency)}
+                          </td>
+                          <td
+                            className={`${cellClass} font-semibold text-gray-900 dark:text-gray-100`}
+                          >
+                            {formatMoney(ticket.rolledUp, currency)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </OrgSection>
+        </div>
 
         <OrgSection
           title={S.company.finance.alerts}
