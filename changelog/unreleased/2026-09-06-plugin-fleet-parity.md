@@ -35,3 +35,7 @@ That has a cost worth knowing: a platform-specific sandbox backend is not in the
 **The data root's `plugins.json` is no longer read, and nothing migrates it.** A deployment that had one starts with **no plugins**: sandbox backends, languages and session surfaces are all absent from the tree until each Project asks again on the plugins page. The old file is left on disk untouched, so rolling back to an earlier platform finds it exactly as it was.
 
 There is no compatibility code to carry, and therefore nothing to remove later — which is why this route was chosen over a migration or a dual read.
+
+## Why that machine answered 404
+
+A machine can refuse the sync with 404 for two reasons that look identical in the status alone and lead to opposite conclusions: the route is not there (its program is too old), or the Project is not there. The report asks the one question every build can answer — does it list the Project? — instead of guessing. Saying "that machine has no such Project" about a Project the models sync had written in the line above sends an operator hunting a fault that does not exist, which is exactly what it did.
