@@ -17,6 +17,10 @@ import type {
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { mergeBenchmarks, mergeBenchmarkCases } from "../../lib/benchmark-merge";
+import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useSessions } from "../../state/sessions";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -39,7 +43,34 @@ import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 
 interface Selection {
   agentId: string;
-  benchmark: BenchmarkSummary;
+  benchmark: MergedBenchmark;
+}
+
+/**
+ * Asks this server and every reachable machine for one Agent's Benchmarks, and folds the
+ * answers into one list (lib/benchmark-merge.ts).
+ *
+ * A machine that cannot answer is left out rather than failing the list: its scoreboard is
+ * missing from the merge, which is what "could not read it" means, while everything this
+ * server holds still renders. Only when NO source answered is there an error to report.
+ */
+async function fetchBenchmarks(
+  projectId: string,
+  agentId: string,
+  machineIds: readonly string[],
+): Promise<{ benchmarks: MergedBenchmark[]; error: unknown | null }> {
+  const sources: (string | null)[] = [null, ...machineIds];
+  const answers = await Promise.allSettled(
+    sources.map(async (machineId) => ({
+      machineId,
+      benchmarks: (await api.listBenchmarks(projectId, agentId, machineId)).benchmarks,
+    })),
+  );
+  const answered = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+  if (answered.length === 0) {
+    return { benchmarks: [], error: answers[0]?.status === "rejected" ? answers[0].reason : null };
+  }
+  return { benchmarks: mergeBenchmarks(answered), error: null };
 }
 
 /** Expandable tree node for a single Agent (benchmarks are only fetched once expanded; same shape as the AgentNode on the trace observability page). */
@@ -47,6 +78,8 @@ function AgentNode({
   projectId,
   agentId,
   name,
+  machineIds,
+  machineNameOf,
   defaultOpen,
   selection,
   onSelect,
@@ -54,22 +87,37 @@ function AgentNode({
   projectId: string;
   agentId: string;
   name: string;
+  /** Machines to ask alongside this server; a change re-asks (a machine that reconnects should appear). */
+  machineIds: readonly string[];
+  /** The ssh alias qualifying a name that is not on this server; null for this one. */
+  machineNameOf: (machineId: string | null) => string | null;
   /** Whether initially expanded: all expanded when there's no deep link; only the target Agent expanded with a ?agentId= deep link. */
   defaultOpen: boolean;
   selection: Selection | null;
   onSelect: (sel: Selection) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
+  const [benchmarks, setBenchmarks] = useState<MergedBenchmark[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const machinesKey = [...machineIds].join(",");
 
   useEffect(() => {
-    if (!open || benchmarks) return;
-    api
-      .listBenchmarks(projectId, agentId)
-      .then((data) => setBenchmarks(data.benchmarks))
-      .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId]);
+    if (!open) return;
+    let cancelled = false;
+    setError(null);
+    void fetchBenchmarks(projectId, agentId, machinesKey === "" ? [] : machinesKey.split(","))
+      .then(({ benchmarks: merged, error: failure }) => {
+        if (cancelled) return;
+        if (failure !== null) setError(apiErrorText(failure));
+        else setBenchmarks(merged);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId, agentId, machinesKey]);
 
   return (
     <li className="pt-2.5">
@@ -114,7 +162,11 @@ function AgentNode({
                     }`}
                   >
                     <Truncated
-                      text={b.title}
+                      text={
+                        b.machineIds.length === 1
+                          ? nameOnMachine(b.title, machineNameOf(b.machineIds[0] ?? null))
+                          : b.title
+                      }
                       className={`min-w-0 flex-1 text-sm ${
                         active
                           ? "font-medium text-gray-900 dark:text-gray-100"
@@ -264,11 +316,19 @@ const CELL = "px-3 py-2";
 /** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
 function EvaluationRow({
   evaluation,
+  machineName,
   caseTitles,
   onOpenCase,
   currency,
 }: {
   evaluation: BenchmarkEvaluation;
+  /**
+   * The ssh alias of the machine whose scoreboard recorded this round, when the Benchmark was
+   * evaluated on more than one — otherwise null, and nothing is said. One Agent's history can
+   * span machines, and a row read without knowing where it ran is a row that cannot be
+   * reproduced.
+   */
+  machineName: string | null;
   caseTitles: ReadonlyMap<string, string>;
   onOpenCase: (caseId: string) => void;
   currency: Currency;
@@ -284,6 +344,11 @@ function EvaluationRow({
           <span className="flex items-center gap-1.5 text-xs">
             <Chevron open={open} size={12} className="text-gray-400" />
             {formatDateTime(evaluation.time)}
+            {machineName !== null && (
+              <span className="font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                {S.chat.machineTag(machineName)}
+              </span>
+            )}
           </span>
         </td>
         <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
@@ -499,13 +564,17 @@ function CasesSection({
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const { currentProject, agents, agentsLoading } = useProject();
+  const { machineIds, machineLabels } = useSessions();
   const { currency } = useTheme();
+  /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
   const [searchParams] = useSearchParams();
   const focusAgentId = searchParams.get("agentId");
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
+  const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
@@ -520,10 +589,31 @@ export function BenchmarkPage() {
     setOpenCaseId(null);
     if (!projectId || !selection) return;
     let cancelled = false;
-    api
-      .listBenchmarkCases(projectId, selection.agentId, selection.benchmark.id)
-      .then((data) => {
-        if (!cancelled) setCaseStatements(data.cases);
+    // Asked of the machines this Benchmark is actually on, and of those only: its Cases are
+    // one library held in copies, so the union is the library and a machine without it has
+    // nothing to say about it.
+    void Promise.allSettled(
+      selection.benchmark.machineIds.map(async (machineId) => ({
+        machineId,
+        cases: (
+          await api.listBenchmarkCases(
+            projectId,
+            selection.agentId,
+            selection.benchmark.id,
+            machineId,
+          )
+        ).cases,
+      })),
+    )
+      .then((answers) => {
+        if (cancelled) return;
+        const answered = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+        if (answered.length === 0) {
+          const first = answers[0];
+          setCaseError(apiErrorText(first?.status === "rejected" ? first.reason : null));
+          return;
+        }
+        setCaseStatements(mergeBenchmarkCases(answered));
       })
       .catch((error: unknown) => {
         if (!cancelled) setCaseError(apiErrorText(error));
@@ -558,6 +648,8 @@ export function BenchmarkPage() {
                 key={a.agentId}
                 projectId={projectId}
                 agentId={a.agentId}
+                machineIds={machineIds}
+                machineNameOf={machineNameOf}
                 name={agentDisplayName(a)}
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
@@ -613,6 +705,9 @@ export function BenchmarkPage() {
                           <EvaluationRow
                             key={i}
                             evaluation={ev}
+                            machineName={
+                              bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null
+                            }
                             caseTitles={caseTitles}
                             onOpenCase={setOpenCaseId}
                             currency={currency}
@@ -636,6 +731,7 @@ export function BenchmarkPage() {
                   agentId={selection.agentId}
                   benchmarkId={bm.id}
                   caseSummary={openCase}
+                  machineId={openCase.machineId}
                 />
               </Modal>
             )}
