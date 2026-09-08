@@ -92,6 +92,7 @@ import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
 import { heldRouteSession, sessionForProject, sessionProbeKey } from "./session-project";
 import { machineForSession } from "../../lib/session-machines";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
@@ -272,6 +273,7 @@ export function ChatPage() {
   const {
     sessions,
     loading: sessionsLoading,
+    machineLabels,
     machinesUnreachable,
     offlineMachineIds,
     reload: reloadSessions,
@@ -666,6 +668,16 @@ export function ChatPage() {
    * "gone" is what drops the reader into the draft page mid-conversation.
    */
   const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
+
+  /**
+   * The ssh alias of the machine a Session is on, or null for this server's own. Falls back
+   * to the machine id when the list could not be read (it is admin-only) — honest, where
+   * inventing a name is not.
+   */
+  const machineNameOf = (sessionId: string): string | null => {
+    const machineId = machineForSession(sessionId);
+    return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  };
   const routeSessionUnowned =
     !!routeSessionId &&
     (routeSessionOwner === null
@@ -1903,7 +1915,11 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}
                 </p>
-                <p className="break-all font-mono text-xs leading-5">{selected.workspace}</p>
+                {/* The machine too: a path names a directory only together with the
+                    filesystem it is on, and the same path exists on more than one of them. */}
+                <p className="break-all font-mono text-xs leading-5">
+                  {nameOnMachine(selected.workspace, machineNameOf(selected.sessionId))}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">

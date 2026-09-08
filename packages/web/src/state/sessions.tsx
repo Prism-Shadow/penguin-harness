@@ -61,6 +61,7 @@ import {
   sessionCategory,
   splitPage,
   workspaceGroupKey,
+  workspaceGroupMachine,
   workspaceGroupQuery,
 } from "../lib/session-grouping";
 import { useProject } from "./project";
@@ -72,8 +73,14 @@ interface SessionsContextValue {
   byAgent: ReadonlyMap<string, SessionInfo[]>;
   /** agentId → per-category totals from the last list fetch (folder labels; kept in step locally on add / remove / archive toggles). */
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
-  /** agentId → the same totals broken down by Workspace path (workspace-mode groups read their own share from it; maintained like countsByAgent). */
+  /** agentId → the same totals broken down by Workspace group — a path ON a machine, keyed by workspaceGroupKey (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  /**
+   * machineId → the ssh alias that reaches it, for naming what is not on this server. Empty
+   * when the machine list could not be read (it is admin-only): a caller then shows the bare
+   * name, which is what it showed before machines existed.
+   */
+  machineLabels: ReadonlyMap<string, string>;
   /**
    * Whether a pair's first page has been fetched (false = the folder shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
@@ -193,6 +200,23 @@ function parsePageKey(
 const scopeOf = (workspaceGroup?: string) =>
   workspaceGroup === undefined || workspaceGroup === "" ? "" : workspaceGroupQuery(workspaceGroup);
 
+/**
+ * Which servers a scope is about: every one for the Agent's whole stream, and exactly the
+ * one a Workspace group is ON for a group.
+ *
+ * A group is a directory on a machine, so the others hold nothing of it. Asking them is not
+ * merely wasteful: their answers about a path that happens to have the same name would decide
+ * this group's "load more" and its loaded-ness — a folder offering more rows that belong to
+ * another machine's folder, and never arrive in this one.
+ */
+const sourcesFor = (
+  allSources: readonly (string | null)[],
+  workspaceGroup?: string,
+): (string | null)[] =>
+  workspaceGroup === undefined || workspaceGroup === ""
+    ? [...allSources]
+    : [workspaceGroupMachine(workspaceGroup)];
+
 /** One pair's paging cursor. */
 interface PagePosition {
   /** Whether the server still has unfetched rows past `fetched`. */
@@ -284,11 +308,14 @@ export function createSessionsStore() {
       const workspaceCounts = get().workspaceCountsByAgent;
       const wsCur = workspaceCounts.get(agentId);
       if (wsCur) {
-        const ws = wsCur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
+        // Keyed by GROUP, as the fetch stores them: the badge belongs to the directory on
+        // the machine this Session is on, not to every machine holding that path string.
+        const key = workspaceGroupKey(workspace, machineForSession(session.sessionId));
+        const ws = wsCur[key] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
         const next = new Map(workspaceCounts);
         next.set(agentId, {
           ...wsCur,
-          [workspace]: { ...ws, [category]: Math.max(0, ws[category] + delta) },
+          [key]: { ...ws, [category]: Math.max(0, ws[category] + delta) },
         });
         set({ workspaceCountsByAgent: next });
       }
@@ -407,9 +434,14 @@ export function createSessionsStore() {
           // Counts are SUMMED across sources, not overwritten: a folder badge that counted
           // one machine would contradict the rows underneath it (mergeCounts).
           const countParts = new Map<string, SessionCategoryCounts[]>();
+          // Each answer with the machine that gave it: a path means a directory only
+          // together with the filesystem it was read from.
           const workspaceParts = new Map<
             string,
-            Array<Readonly<Record<string, SessionCategoryCounts>>>
+            Array<{
+              source: string | null;
+              counts: Readonly<Record<string, SessionCategoryCounts>>;
+            }>
           >();
           for (const r of results) {
             for (const p of r.pages) {
@@ -422,7 +454,7 @@ export function createSessionsStore() {
               if (p.workspaceCounts) {
                 workspaceParts.set(r.agentId, [
                   ...(workspaceParts.get(r.agentId) ?? []),
-                  p.workspaceCounts,
+                  { source: r.source, counts: p.workspaceCounts },
                 ]);
               }
               for (const s of p.items) {
@@ -443,18 +475,21 @@ export function createSessionsStore() {
             if (merged) nextCounts.set(agentId, merged);
           }
           for (const [agentId, parts] of workspaceParts) {
-            // Per workspace path, summed the same way: two machines may hold Sessions in
-            // paths that are equal as strings, and the badge is about the path.
-            const byPath = new Map<string, SessionCategoryCounts[]>();
-            for (const part of parts) {
-              for (const [path, counts] of Object.entries(part)) {
-                byPath.set(path, [...(byPath.get(path) ?? []), counts]);
+            // Per GROUP, which is a path on a machine. Each machine answers about its own
+            // filesystem, so two machines' counts for paths that are equal as strings belong
+            // to two different directories: summing them would put both totals under both
+            // folders, each one contradicting the rows beneath it.
+            const byGroup = new Map<string, SessionCategoryCounts[]>();
+            for (const { source, counts: byPath } of parts) {
+              for (const [path, counts] of Object.entries(byPath)) {
+                const groupKey = workspaceGroupKey(path, source);
+                byGroup.set(groupKey, [...(byGroup.get(groupKey) ?? []), counts]);
               }
             }
             const out: Record<string, SessionCategoryCounts> = {};
-            for (const [path, list] of byPath) {
+            for (const [groupKey, list] of byGroup) {
               const merged = mergeCounts(list);
-              if (merged) out[path] = merged;
+              if (merged) out[groupKey] = merged;
             }
             nextWorkspaceCounts.set(agentId, out);
           }
@@ -522,7 +557,7 @@ export function createSessionsStore() {
       loadMoreFor: async (agentIds, category, workspaceGroup) => {
         const { projectId, machineIds } = get();
         if (!projectId) return;
-        const sources: (string | null)[] = [null, ...machineIds];
+        const sources = sourcesFor([null, ...machineIds], workspaceGroup);
         const scope = scopeOf(workspaceGroup);
         // One target per (Agent, SOURCE): each server pages its own Sessions with its own
         // offsets, so a shared cursor would ask one machine for rows only another had
@@ -558,7 +593,7 @@ export function createSessionsStore() {
             (s) =>
               s.agentId === agentId &&
               sessionCategory(s) === category &&
-              workspaceGroupKey(s.workspace) === group &&
+              workspaceGroupKey(s.workspace, machineForSession(s.sessionId)) === group &&
               machineForSession(s.sessionId) === source,
           ).length;
         const results = await Promise.all(
@@ -861,11 +896,19 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    */
   const [machineIdsKey, setMachineIdsKey] = useState("");
   const [offlineMachineIdsKey, setOfflineMachineIdsKey] = useState("");
+  /**
+   * machineId → its ssh alias, as JSON so an unchanged answer keeps its identity (the id
+   * lists above are strings for the same reason). What the list is FOR: a Workspace group
+   * from another machine is named with the alias that reaches it, and an alias is the only
+   * part of a machine a person recognises.
+   */
+  const [machineLabelsJson, setMachineLabelsJson] = useState("[]");
   const [machinesEpoch, setMachinesEpoch] = useState(0);
   useEffect(() => {
     if (projectId === null) {
       setMachineIdsKey("");
       setOfflineMachineIdsKey("");
+      setMachineLabelsJson("[]");
       return;
     }
     let cancelled = false;
@@ -881,6 +924,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         const offline = installed.filter((m) => m.connection === null);
         setMachineIdsKey(held.map(machineIdOf).join(","));
         setOfflineMachineIdsKey(offline.map(machineIdOf).join(","));
+        setMachineLabelsJson(
+          JSON.stringify(installed.map((machine) => [machine.machineId, machine.alias])),
+        );
         // The terminal list asks the same machines, from a module-scope timer with no React
         // context to read them from (lib/terminal-machines.ts).
         setTerminalMachines(held.map(machineIdOf).filter((id): id is string => id !== null));
@@ -993,7 +1039,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // "load more" that never appears.
   const isLoadedFor = useCallback(
     (agentId: string, category: SessionCategory, workspaceGroup?: string) =>
-      sources.every((source) =>
+      sourcesFor(sources, workspaceGroup).every((source) =>
         pageState.has(pageKey(agentId, category, scopeOf(workspaceGroup), source)),
       ),
     [pageState, sources],
@@ -1005,7 +1051,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     (agentId: string, category: SessionCategory, workspaceGroup?: string) => {
       const scope = scopeOf(workspaceGroup);
       let anyUnloaded = false;
-      for (const source of sources) {
+      for (const source of sourcesFor(sources, workspaceGroup)) {
         const position = pageState.get(pageKey(agentId, category, scope, source));
         if (position === undefined) anyUnloaded = true;
         else if (position.hasMore) return true;
@@ -1049,12 +1095,20 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return map;
   }, [state.sessions]);
 
+  const machineLabels = useMemo<ReadonlyMap<string, string>>(() => {
+    const entries = JSON.parse(machineLabelsJson) as [string | null, string][];
+    return new Map(
+      entries.flatMap(([id, alias]) => (id === null ? [] : [[id, alias] as [string, string]])),
+    );
+  }, [machineLabelsJson]);
+
   const value = useMemo<SessionsContextValue>(() => {
     return {
       sessions: state.sessions,
       byAgent,
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
+      machineLabels,
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,
@@ -1069,7 +1123,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setStatus: state.setStatus,
       setTitle: state.setTitle,
     };
-  }, [state, byAgent, isLoadedFor, hasMoreFor, isDeleted]);
+  }, [state, byAgent, machineLabels, isLoadedFor, hasMoreFor, isDeleted]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }
