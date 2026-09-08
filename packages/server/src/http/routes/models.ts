@@ -33,8 +33,6 @@ export interface ModelsRouteDeps {
   /** The machines this Project uses receive a credential change too (machines/service.ts). */
   machines: Machines;
   channels: ChannelHub;
-  /** The machines this Project uses receive a credential change too (machines/service.ts). */
-  machines: Machines;
   manager: SessionManager;
   projectConfigService: ProjectConfigStore;
   access: Access;

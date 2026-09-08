@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { AdminUserCreateResponse, AdminUsersResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { rejectInDesktopMode } from "./desktop.js";
-import type { DesktopService, Desktop } from "../../services/desktop-service.js";
+import type { DesktopService } from "../../services/desktop-service.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { pathParam, readJson, requireString } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";

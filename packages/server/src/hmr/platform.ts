@@ -445,4 +445,3 @@ export const packagedPlatform: PlatformBundle = {
   impl: platformImpl,
   context: { motd: "hello from the penguin hot platform" } satisfies PlatformCtx,
 };
-

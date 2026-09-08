@@ -27,12 +27,10 @@ import type {
 import type { AgentListItem } from "../services/agent-service.js";
 import type {
   BuiltinTool,
-  BuiltinToolFactory,
   EnvironmentServices,
   PromptSection,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
-import type { ToolFactory } from "../services/host-assembly.js";
 
 /** AgentConfig: the mechanism AgentConfigService implements. */
 export abstract class AgentConfig extends Interface<{
@@ -144,5 +142,4 @@ export abstract class AgentLifecycle extends Interface<{
 /** Assembly: the mechanism HostAssembly implements. */
 export abstract class Assembly extends Interface<{
   promptSections(): PromptSection[];
-  toolFactories(): Record<string, ToolFactory>;
 }>() {}

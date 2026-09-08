@@ -49,6 +49,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Schedules, Scheduling } from "../../mechanisms/sessions.js";
+import type { ScheduleStateRow } from "../../db/repos/schedules.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 
 /** Validate and shape the POST/PUT request body into file fields (semantic validation is left to parseScheduleFile). */

@@ -189,8 +189,8 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
               `${read.where}#penguin.${kind} names '${manifest.name}', but the default export's ${kind} has no create() for it`,
             );
           }
-          // The manifest is the statically checked half and comes first: code cannot replace it.
-          out.push({ manifest, ...impl });
+          // The manifest is the statically checked half and comes last: code cannot replace it.
+          out.push({ ...impl, manifest });
         }
         const declared = new Set(manifests.map((m) => m.name));
         for (const name of Object.keys(impls ?? {})) {

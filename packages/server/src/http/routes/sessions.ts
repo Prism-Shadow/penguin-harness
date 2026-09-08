@@ -122,7 +122,6 @@ import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/s
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
 import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
-import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 

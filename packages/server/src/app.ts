@@ -340,8 +340,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
       liveApi<Errors>(boot, "ObservabilityModule", "Errors").record(entry),
   };
   const log = {
-    line: (text: string) =>
-      liveApi<Log>(boot, "RuntimeModule", "Log").line(text),
+    line: (text: string) => liveApi<Log>(boot, "RuntimeModule", "Log").line(text),
   };
   const settings = () => liveApi<Settings>(boot, "SettingsModule", "Settings");
   const access = () => liveApi<Access>(boot, "ProjectsModule", "Access");
@@ -761,4 +760,3 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
  * claim — one live instance per process, shared with the runtime. Everything else is
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
-
