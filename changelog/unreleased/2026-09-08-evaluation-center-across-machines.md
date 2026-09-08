@@ -13,4 +13,6 @@ The list is now asked of this server and of every machine it holds a connection 
 
 Order is the part that could only be decided one way. A scoreboard's append order *is* its evaluation sequence, and the page trusts it over the timestamps — but two scoreboards on two disks share no append order at all, so a joined history is ordered by time, and a Benchmark that came from a single machine is left exactly as its file had it.
 
+The tree itself is the union too. An Agent belongs to the Project, but its state directory is created on whichever machine it has run on — so an Agent that has only ever run on a machine exists only over there, and a tree built from this server's Agent list had no row to hang its Benchmarks off at all. The Agents of every machine are merged in, this server describing the ones it also has, and an Agent that lives on exactly one machine is named for it.
+
 A Benchmark's Cases are the union of what those machines hold, and a Case's files are read from the machine its listing came from — two copies of one Case, and reading either is reading the Case. A machine that cannot answer is left out of the merge, which is what "could not read it" means; everything this server holds still renders, and only when no source answered at all is there an error to report.
