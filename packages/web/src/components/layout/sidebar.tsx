@@ -68,6 +68,8 @@ import {
   workspaceLabel,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
+import { machineForSession } from "../../lib/session-machines";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
   navKeysFor,
@@ -339,6 +341,7 @@ export function Sidebar({
     countsByAgent,
     workspaceCountsByAgent,
     workspaceLatestByAgent,
+    machineLabels,
     isLoadedFor,
     hasMoreFor,
     loadMoreFor,
@@ -414,12 +417,16 @@ export function Sidebar({
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
   );
-  /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. */
-  const [renamingWorkspace, setRenamingWorkspace] = useState<{ path: string } | null>(null);
+  /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. The machine is half of which directory this is. */
+  const [renamingWorkspace, setRenamingWorkspace] = useState<{
+    path: string;
+    machineId: string | null;
+  } | null>(null);
   const [workspaceAliasText, setWorkspaceAliasText] = useState("");
   /** Registered Workspace pending removal confirmation (null = none); label = the group's displayed name for the confirm copy. */
   const [deletingWorkspace, setDeletingWorkspace] = useState<{
     path: string;
+    machineId: string | null;
     label: string;
   } | null>(null);
   /** Live title search: the input's visibility and its query (transient — never persisted). */
@@ -526,7 +533,9 @@ export function Sidebar({
     () =>
       mergeRegisteredWorkspaces(
         completeWorkspaceGroups(
-          groupSessionsByWorkspace(sessions),
+          // A Workspace is a directory on a machine: rows from two machines that share a path
+          // string are two groups, and the "+" of each opens a chat on its own machine.
+          groupSessionsByWorkspace(sessions, (s) => machineForSession(s.sessionId)),
           workspaceGroupCounts,
           workspaceGroupLatest,
         ),
@@ -573,7 +582,7 @@ export function Sidebar({
       ? s.agentId
       : groupMode === "time"
         ? TIME_FOLDERS_GROUP_KEY
-        : workspaceGroupKey(s.workspace);
+        : workspaceGroupKey(s.workspace, machineForSession(s.sessionId));
 
   const toggleGroup = (key: string) => {
     // Inert while searching: groups render force-opened then, so a click would change
@@ -898,7 +907,7 @@ export function Sidebar({
         ? s.agentId
         : groupMode === "time"
           ? TIME_FOLDERS_GROUP_KEY
-          : workspaceGroupKey(s.workspace);
+          : workspaceGroupKey(s.workspace, machineForSession(s.sessionId));
     const key = folderKey(groupKey, category);
     setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
@@ -1115,36 +1124,44 @@ export function Sidebar({
     const next = registerWorkspace(registeredWorkspaces, path, machineId ?? undefined);
     if (next === registeredWorkspaces) return;
     applyRegistryChange(next);
-    const key = workspaceGroupKey(path);
+    const key = workspaceGroupKey(path, machineId ?? null);
     const existing = orderedWorkspaceGroups.findIndex((g) => g.key === key);
     setGroupPage(groupPageOf(existing >= 0 ? existing : orderedWorkspaceGroups.length));
   };
 
   /**
-   * The machine a registered Workspace is on, by path. Undefined for a group that came from
-   * Sessions rather than the registry, which is this machine — every Session in the list is
-   * one this server knows about.
+   * The ssh alias of a group's machine, or null for this server's own groups — what a name
+   * is qualified with. An unlabelled machine (the list is admin-only, and a machine can also
+   * drop out of the ssh config) falls back to its id: honest, where inventing a name is not.
    */
-  const machineOfWorkspace = (path: string): string | undefined =>
-    registeredWorkspaces.find((entry) => entry.path === path)?.machineId;
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
 
-  /** Paths with a registry entry — only their groups offer the rename/remove overflow. */
-  const registeredPaths = useMemo(
-    () => new Set(registeredWorkspaces.map((e) => e.path)),
+  /** Registered Workspaces by GROUP key — only their groups offer the rename/remove overflow. */
+  const registeredKeys = useMemo(
+    () => new Set(registeredWorkspaces.map((e) => workspaceGroupKey(e.path, e.machineId ?? null))),
     [registeredWorkspaces],
   );
 
   /** Open the alias editor pre-filled with the current alias ("" = following the basename). */
-  const openRenameWorkspace = (path: string) => {
-    setWorkspaceAliasText(registeredWorkspaces.find((e) => e.path === path)?.alias ?? "");
-    setRenamingWorkspace({ path });
+  const openRenameWorkspace = (path: string, machineId: string | null) => {
+    setWorkspaceAliasText(
+      registeredWorkspaces.find((e) => e.path === path && (e.machineId ?? null) === machineId)
+        ?.alias ?? "",
+    );
+    setRenamingWorkspace({ path, machineId });
   };
 
   /** Commit the alias (blank reverts the label to the directory basename). Direct save — no server, nothing destructive. */
   const confirmRenameWorkspace = () => {
     if (!renamingWorkspace) return;
     applyRegistryChange(
-      setWorkspaceAlias(registeredWorkspaces, renamingWorkspace.path, workspaceAliasText),
+      setWorkspaceAlias(
+        registeredWorkspaces,
+        renamingWorkspace.path,
+        renamingWorkspace.machineId,
+        workspaceAliasText,
+      ),
     );
     setRenamingWorkspace(null);
   };
@@ -1157,7 +1174,13 @@ export function Sidebar({
    */
   const confirmDeleteWorkspace = () => {
     if (!deletingWorkspace) return;
-    applyRegistryChange(unregisterWorkspace(registeredWorkspaces, deletingWorkspace.path));
+    applyRegistryChange(
+      unregisterWorkspace(
+        registeredWorkspaces,
+        deletingWorkspace.path,
+        deletingWorkspace.machineId,
+      ),
+    );
     setDeletingWorkspace(null);
   };
 
@@ -2036,6 +2059,10 @@ export function Sidebar({
             const drag = groupDragProps(group.key, workspaceGroupSequence);
             /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
             const counts = workspaceGroupCounts.get(group.key);
+            /** Read once so the registry actions below keep the narrowing (null = the merged temp group, which has no single path). */
+            const fullPath = group.fullPath;
+            /** The ssh alias qualifying this group's names, or null when it is on this server. */
+            const machineName = machineNameOf(group.machineId);
             const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
             const agentsFor = (category: SessionCategory) => [
               ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
@@ -2059,13 +2086,16 @@ export function Sidebar({
                       />
                     </span>
                   }
-                  label={group.temp ? S.chat.tempWorkspaces : group.label}
+                  label={nameOnMachine(
+                    group.temp ? S.chat.tempWorkspaces : group.label,
+                    machineName,
+                  )}
                   count={
                     searching
                       ? parts.active.length
                       : Math.max(counts?.totals.active ?? 0, parts.active.length)
                   }
-                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                  {...(fullPath !== null ? { title: nameOnMachine(fullPath, machineName) } : {})}
                   actions={
                     <>
                       <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
@@ -2077,8 +2107,10 @@ export function Sidebar({
                         onClick={() =>
                           newChat(
                             workspaceNewChatAgentId,
-                            group.fullPath ?? "",
-                            machineOfWorkspace(group.fullPath ?? ""),
+                            fullPath ?? "",
+                            // The machine travels with the path: this group's rows live on it,
+                            // and the same path here is a different directory (or none).
+                            group.machineId ?? undefined,
                           )
                         }
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -2088,11 +2120,15 @@ export function Sidebar({
                       {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
                             derived groups have no registry entry for these to act on). */}
-                      {registeredPaths.has(group.key) && (
+                      {fullPath !== null && registeredKeys.has(group.key) && (
                         <GroupOverflowMenu
-                          onRename={() => openRenameWorkspace(group.key)}
+                          onRename={() => openRenameWorkspace(fullPath, group.machineId)}
                           onDelete={() =>
-                            setDeletingWorkspace({ path: group.key, label: group.label })
+                            setDeletingWorkspace({
+                              path: fullPath,
+                              machineId: group.machineId,
+                              label: group.label,
+                            })
                           }
                         />
                       )}
