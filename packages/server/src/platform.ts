@@ -1,7 +1,7 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
-import type { RuntimeCapabilities } from "./hmr/capabilities.js";
+import type { HmrCapabilities } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
@@ -417,7 +417,7 @@ export class PlatformModule {}
  * plugin modules appended under the root.
  */
 export function platformDef(
-  caps: RuntimeCapabilities,
+  caps: HmrCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),

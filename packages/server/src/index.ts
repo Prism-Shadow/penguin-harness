@@ -20,7 +20,7 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp, liveApi } from "./app.js";
+import { bootAppDeps, createHmrApp, liveApi } from "./app.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -75,7 +75,7 @@ class PenguinServer {
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: ServerBoot;
   /** Assigned by buildApp(). */
-  private app!: ReturnType<typeof createRuntimeApp>;
+  private app!: ReturnType<typeof createHmrApp>;
   /** Assigned by listen(). */
   private httpServer!: ReturnType<typeof serve>;
 
@@ -185,7 +185,7 @@ class PenguinServer {
 
   /** Assembles the runtime shell's middleware and routes. Nothing is listening yet. */
   buildApp(): void {
-    this.app = createRuntimeApp(this.deps);
+    this.app = createHmrApp(this.deps);
   }
 
   /**

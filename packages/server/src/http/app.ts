@@ -33,8 +33,8 @@ export interface HttpSlots {
   >;
 }
 
-/** Prefixes the runtime owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
-const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
+/** Prefixes the HMR layer owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
+const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
 /**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every
@@ -105,7 +105,7 @@ export class HttpModule {
       // terminal route ends the chain first; everything after it declines /api/auth etc.
       if (!declinedRuntime && r.order > 0) {
         app.use("*", async (c, next) => {
-          if (RUNTIME_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
+          if (HMR_LAYER_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
             return declined();
           }
           await next();
