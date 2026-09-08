@@ -3,6 +3,7 @@
 - **Date:** 2026-09-08
 - **Type:** fix
 - **Scope:** `core`, `docs`
+- **PR:** [#649](https://github.com/Prism-Shadow/penguin-harness/pull/649)
 
 [English](2026-09-08-deepseek-flash-pricing.md)
 
