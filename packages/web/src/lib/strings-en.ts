@@ -204,6 +204,8 @@ export const en: Strings = {
     loadFailed: "Failed to load",
     silentMachines: (n: number) =>
       `${n} machine${n > 1 ? "s" : ""} did not answer — Sessions there are not counted. Connect to it on the Machines page.`,
+    /** Tooltip on a row's count: it unfolds into the Sessions it counts. */
+    toggleList: "Show or hide these Sessions",
   },
 
   settings: {
