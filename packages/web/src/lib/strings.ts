@@ -1595,6 +1595,8 @@ export const zh = {
     tempWorkspaces: "临时工作区",
     /** A name that only means something on another machine, written with the ssh alias that reaches it. */
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
