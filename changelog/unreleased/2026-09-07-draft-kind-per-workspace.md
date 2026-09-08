@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#644](https://github.com/Prism-Shadow/penguin-harness/pull/644)
 
 [中文版](2026-09-07-draft-kind-per-workspace.zh.md)
 
