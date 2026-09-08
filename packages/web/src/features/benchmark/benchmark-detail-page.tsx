@@ -7,8 +7,11 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import type { BenchmarkSummary, ModelsResponse } from "@prismshadow/penguin-server/api";
+import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import type { MergedBenchmark } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useSessions } from "../../state/sessions";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -21,6 +24,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Skeleton } from "../../components/ui/skeleton";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
+import { fetchBenchmarks } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /** Back to the list: the arrow-left every detail page's back button carries. */
@@ -31,9 +35,10 @@ export function BenchmarkDetailPage() {
   const benchmarkId = params.benchmarkId ?? "";
   const navigate = useNavigate();
   const { currentProject, agents } = useProject();
+  const { machineIds, machineLabels } = useSessions();
   const projectId = currentProject?.projectId ?? null;
 
-  const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
+  const [benchmark, setBenchmark] = useState<MergedBenchmark | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
   const [missing, setMissing] = useState(false);
@@ -43,18 +48,18 @@ export function BenchmarkDetailPage() {
   useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 
   // The Project's list is the only read that carries a Benchmark's scoreboard, so the page takes
-  // it whole and picks its own out of it.
+  // it whole — merged over this server and the machines it holds — and picks its own out of it.
+  const machinesKey = machineIds.join(",");
   useEffect(() => {
     if (!projectId || benchmarkId === "") return;
     let cancelled = false;
     setBenchmark(null);
     setError(null);
     setMissing(false);
-    api
-      .listBenchmarks(projectId)
-      .then((data) => {
+    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
+      .then((merged) => {
         if (cancelled) return;
-        const found = data.benchmarks.find((b) => b.id === benchmarkId) ?? null;
+        const found = merged.find((b) => b.id === benchmarkId) ?? null;
         setBenchmark(found);
         setMissing(found === null);
       })
@@ -64,7 +69,7 @@ export function BenchmarkDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, benchmarkId]);
+  }, [projectId, benchmarkId, machinesKey]);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.
@@ -83,6 +88,15 @@ export function BenchmarkDetailPage() {
   }, [projectId]);
 
   if (!projectId) return null;
+
+  /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  /** The one machine holding this Benchmark when it is not on this server; null otherwise. */
+  const onlyMachine =
+    benchmark !== null && benchmark.machineIds.length === 1
+      ? machineNameOf(benchmark.machineIds[0] ?? null)
+      : null;
 
   // A Benchmark that is not published has no settled cases or scores to show and nothing to
   // evaluate against: a draft is still being written and calibrated by the agent, and a failed
@@ -112,7 +126,9 @@ export function BenchmarkDetailPage() {
       <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />
     );
   } else {
-    body = <BenchmarkDetail projectId={projectId} benchmark={benchmark} />;
+    body = (
+      <BenchmarkDetail projectId={projectId} benchmark={benchmark} machineNameOf={machineNameOf} />
+    );
   }
 
   return (
@@ -134,7 +150,11 @@ export function BenchmarkDetailPage() {
             Use, and shows the building or creation-failed notice in place of the detail. */}
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
           <h1 className="min-w-0 truncate text-xl font-semibold">
-            {benchmark?.title ?? benchmarkId}
+            {benchmark === null
+              ? benchmarkId
+              : onlyMachine !== null
+                ? nameOnMachine(benchmark.title, onlyMachine)
+                : benchmark.title}
           </h1>
           {/* A Benchmark that no longer resolves has no directory to name and nothing to use:
               the title and the way back are all this row keeps. */}
