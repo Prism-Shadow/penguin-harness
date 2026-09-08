@@ -77,6 +77,7 @@ function AgentNode({
   projectId,
   agentId,
   name,
+  machineName,
   sources,
   machineNameOf,
   defaultOpen,
@@ -86,6 +87,12 @@ function AgentNode({
   projectId: string;
   agentId: string;
   name: string;
+  /**
+   * The ssh alias of the machine this Agent lives on, when it lives on exactly one that is not
+   * this server; null otherwise. Kept apart from the name because the row renders names
+   * uppercased, and an alias is an identifier that has to read as it is written.
+   */
+  machineName: string | null;
   /** Where this Agent exists — the only servers worth asking about its Benchmarks (null is this one). */
   sources: readonly (string | null)[];
   /** The ssh alias qualifying a name that is not on this server; null for this one. */
@@ -136,6 +143,11 @@ function AgentNode({
           <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {name}
           </span>
+          {machineName !== null && (
+            <span className="shrink-0 font-mono text-[11px] normal-case text-gray-400 dark:text-gray-500">
+              {S.chat.machineTag(machineName)}
+            </span>
+          )}
           <Chevron open={open} size={12} className="text-gray-400" />
           <span className="min-w-0 flex-1" />
         </button>
@@ -688,13 +700,12 @@ export function BenchmarkPage() {
                 agentId={a.agentId}
                 sources={on}
                 machineNameOf={machineNameOf}
-                name={
+                name={agentDisplayName(a)}
+                machineName={
                   // An Agent that lives on exactly one machine and not here is named for it;
                   // one this server also has needs no saying, and one spread over several
                   // machines has no single machine to name.
-                  on.length === 1 && on[0] !== null
-                    ? nameOnMachine(agentDisplayName(a), machineNameOf(on[0] ?? null))
-                    : agentDisplayName(a)
+                  on.length === 1 && on[0] != null ? machineNameOf(on[0]) : null
                 }
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
