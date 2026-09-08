@@ -31,6 +31,9 @@ import {
   timeGroupKey,
   totalCategoryCounts,
   workspaceGroupKey,
+  workspaceGroupMachine,
+  workspaceGroupPath,
+  workspaceGroupQuery,
   workspaceLabel,
 } from "../src/lib/session-grouping";
 
@@ -68,6 +71,8 @@ function session(
 
 const TEMP_A = "/data/proj/agents/default_agent/workspaces/tmp-1a2b3c4d";
 const TEMP_B = "/data/proj/agents/agent_helper/workspaces/tmp-00ff00aa";
+/** A machine's own id, as one mints for itself: 16 base64url characters. */
+const MACHINE = "noeSE0FFHhNXl2J5";
 
 describe("isTempWorkspace (temporary-workspace pattern from core's createTempWorkspace)", () => {
   it("matches <...>/workspaces/tmp-<8hex> with either path separator, and the empty path", () => {
@@ -96,6 +101,31 @@ describe("workspaceGroupKey / workspaceLabel", () => {
     expect(workspaceGroupKey(" /srv/repo ")).toBe("/srv/repo");
     expect(workspaceGroupKey(TEMP_A)).toBe(TEMP_WORKSPACE_GROUP_KEY);
     expect(workspaceGroupKey("")).toBe(TEMP_WORKSPACE_GROUP_KEY);
+  });
+
+  it("a machine's directory keys under that machine, and this server keys as it always did", () => {
+    // The same path on two machines is two different directories. Absence keeps meaning
+    // "here", which is what every key already persisted in a browser was written as.
+    expect(workspaceGroupKey("/srv/repo", MACHINE)).toBe(`${MACHINE}\u0000/srv/repo`);
+    expect(workspaceGroupKey("/srv/repo", null)).toBe("/srv/repo");
+    expect(workspaceGroupKey("/srv/repo", MACHINE)).not.toBe(workspaceGroupKey("/srv/repo"));
+    expect(workspaceGroupKey(TEMP_A, MACHINE)).toBe(`${MACHINE}\u0000${TEMP_WORKSPACE_GROUP_KEY}`);
+  });
+
+  it("a key splits back into the machine that holds it and the workspace half", () => {
+    expect(workspaceGroupMachine(workspaceGroupKey("/srv/repo", MACHINE))).toBe(MACHINE);
+    expect(workspaceGroupMachine(workspaceGroupKey(TEMP_A, MACHINE))).toBe(MACHINE);
+    expect(workspaceGroupMachine("/srv/repo")).toBeNull();
+    expect(workspaceGroupMachine(TEMP_WORKSPACE_GROUP_KEY)).toBeNull();
+    expect(workspaceGroupPath(workspaceGroupKey("/srv/repo", MACHINE))).toBe("/srv/repo");
+    expect(workspaceGroupPath(workspaceGroupKey(TEMP_A, MACHINE))).toBe(TEMP_WORKSPACE_GROUP_KEY);
+  });
+
+  it("the server query drops the machine half — the request already goes to that machine", () => {
+    expect(workspaceGroupQuery(workspaceGroupKey("/srv/repo", MACHINE))).toBe("/srv/repo");
+    expect(workspaceGroupQuery(workspaceGroupKey(TEMP_A, MACHINE))).toBe("temp");
+    expect(workspaceGroupQuery("/srv/repo")).toBe("/srv/repo");
+    expect(workspaceGroupQuery(TEMP_WORKSPACE_GROUP_KEY)).toBe("temp");
   });
 
   it("labels are the last path segment; the filesystem root yields '/'", () => {
@@ -151,6 +181,32 @@ describe("groupSessionsByWorkspace", () => {
     const tempOnly = groupSessionsByWorkspace([session(TEMP_A, "2026-07-01T10:00:00.000Z")]);
     expect(tempOnly).toHaveLength(1);
     expect(tempOnly[0]!.key).toBe(TEMP_WORKSPACE_GROUP_KEY);
+  });
+
+  it("splits one path across machines into one group each, and names the machine on the group", () => {
+    // The sidebar's "+" opens a chat in the group's directory: one merged group would open
+    // it here, in whatever this machine happens to have at that path.
+    const here = session("/srv/app", "2026-07-01T10:00:00.000Z");
+    const there = session("/srv/app", "2026-07-02T10:00:00.000Z");
+    const groups = groupSessionsByWorkspace([here, there], (s) =>
+      s.sessionId === there.sessionId ? MACHINE : null,
+    );
+    expect(groups.map((g) => g.key)).toEqual([`${MACHINE}\u0000/srv/app`, "/srv/app"]);
+    expect(groups[0]).toMatchObject({ machineId: MACHINE, label: "app", fullPath: "/srv/app" });
+    expect(groups[1]).toMatchObject({ machineId: null, label: "app", fullPath: "/srv/app" });
+  });
+
+  it("keeps each machine's temporary workspaces in its own temp group", () => {
+    const here = session(TEMP_A, "2026-07-01T10:00:00.000Z");
+    const there = session(TEMP_B, "2026-07-02T10:00:00.000Z");
+    const groups = groupSessionsByWorkspace([here, there], (s) =>
+      s.sessionId === there.sessionId ? MACHINE : null,
+    );
+    expect(groups.map((g) => g.key)).toEqual([
+      `${MACHINE}\u0000${TEMP_WORKSPACE_GROUP_KEY}`,
+      TEMP_WORKSPACE_GROUP_KEY,
+    ]);
+    expect(groups.every((g) => g.temp)).toBe(true);
   });
 
   it("keeps archived sessions in their group (the sidebar splits active/archived per group)", () => {
@@ -287,13 +343,12 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(aggregateWorkspaceCounts(new Map()).size).toBe(0);
   });
 
-  it("folds every temporary-workspace path into the merged temp group, deduplicating agents", () => {
+  it("sums the temp group's paths, which the store has already folded onto its key", () => {
     const byAgent = new Map([
       [
         "agent_a",
         {
-          [TEMP_A]: { ...zero, active: 1 },
-          [TEMP_B]: { ...zero, active: 2, archived: 1 },
+          [TEMP_WORKSPACE_GROUP_KEY]: { ...zero, active: 3, archived: 1 },
         },
       ],
     ]);
@@ -303,6 +358,21 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
       totals: { ...zero, active: 3, archived: 1 },
       agents: { active: ["agent_a"], subagent: [], schedule: [], archived: ["agent_a"] },
     });
+  });
+
+  it("counts one path on two machines as two groups (one badge each, matching its own rows)", () => {
+    const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
+      [
+        "agent_a",
+        {
+          "/srv/app": { ...zero, active: 2 },
+          [`${MACHINE}\u0000/srv/app`]: { ...zero, active: 5 },
+        },
+      ],
+    ]);
+    const groups = aggregateWorkspaceCounts(byAgent);
+    expect(groups.get("/srv/app")?.totals.active).toBe(2);
+    expect(groups.get(`${MACHINE}\u0000/srv/app`)?.totals.active).toBe(5);
   });
 });
 
