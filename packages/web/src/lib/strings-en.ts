@@ -2445,11 +2445,24 @@ Scenarios:
     landingTitle: "Company mode",
     landingBody:
       "An organization is a group of employee Agents working along a reporting line: a CEO, the employees it hires, a shared board and its channels, and the calendar that drives them. Create one and start by talking to the CEO about its mission.",
+    /** The page a stale deep link lands on: the organization it names is gone. */
+    orgGoneTitle: "Organization not found",
+    orgGoneBody:
+      "It may have been deleted, or you may no longer have access to the Project it belongs to.",
+    backToOrgs: "Back to organizations",
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
     orgIdHint:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
+    /**
+     * The id field's generate button, the clause the hint appends for it, and what a name no
+     * id can be derived from is told. The clause carries its own leading separator: what
+     * joins two clauses is punctuation, and punctuation belongs to the language.
+     */
+    generateId: "Generate an id from the name",
+    idGenerateHint: "; you can also generate one from the display name",
+    idNotDerivable: "No id can be derived from this name — type one by hand",
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",
@@ -2457,6 +2470,25 @@ Scenarios:
       "One sentence on why this organization exists; the CEO's first session starts from it",
     missionPlaceholder:
       "e.g. Maintain the PenguinHarness docs site and publish a weekly update digest",
+    /** The three examples under the mission field (org-examples.ts holds their order). */
+    missionExampleHint: "Click to fill the mission",
+    missionExamples: {
+      research: {
+        name: "Research Paper Lab",
+        mission:
+          "Set up a company that does research for me: keeps drafting and reviewing papers and produces work that can be submitted to top-tier conferences.",
+      },
+      agentTuning: {
+        name: "Agent Tuning Studio",
+        mission:
+          "Set up a company that optimizes my product Agent: raise its accuracy in real business use and improve the product experience.",
+      },
+      cloudReseller: {
+        name: "Cloud Service Reseller",
+        mission:
+          "Set up a company that runs a cloud-service-style website for me: collect every low-priced service on the market, bundle and resell them at a markup to make money, and grow the site's SEO and visibility.",
+      },
+    },
     createdOpeningCeo: "Organization created — opening the CEO's desk session",
     /** Create and settings dialogs: the model and the shared workspace, both optional. */
     modelField: "Model",
@@ -2487,6 +2519,13 @@ Scenarios:
     timezone: "Timezone",
     timezoneHint:
       "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and channel day files follow it",
+    language: "Working language",
+    languageInfo:
+      "The language the organization works in: its handbook, the employee briefs, the CEO's initialization session and every desk's output are written in it; it is detected from the mission when the organization is created.",
+    languages: {
+      zh: "中文",
+      en: "English",
+    },
     approvalMode: "Approval mode",
     approvalModeInfo:
       "How tool calls in desk and ticket sessions are approved. Unattended runs never stop to ask a person, so there is no always-ask here.",

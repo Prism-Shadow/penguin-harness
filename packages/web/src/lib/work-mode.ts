@@ -14,6 +14,7 @@ import { parseOrgKey } from "../features/company/company-nav";
 export interface WorkModeStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 export const WORK_MODE_KEY = "penguin.workMode";
@@ -49,6 +50,19 @@ export function initialLastOrgKey(storage?: WorkModeStorage): string | null {
 export function storeLastOrgKey(key: string, storage?: WorkModeStorage): void {
   try {
     (storage ?? localStorage).setItem(LAST_ORG_KEY, key);
+  } catch {
+    /* best-effort persistence */
+  }
+}
+
+/**
+ * Forgets the remembered organization — the one case a mirror is dropped rather than
+ * overwritten: the organization it named was deleted, and leaving the key behind would send
+ * the next reload straight back at it.
+ */
+export function clearLastOrgKey(storage?: WorkModeStorage): void {
+  try {
+    (storage ?? localStorage).removeItem(LAST_ORG_KEY);
   } catch {
     /* best-effort persistence */
   }

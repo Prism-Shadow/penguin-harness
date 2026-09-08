@@ -5,8 +5,9 @@
  * not (each with a Join action — people may join any channel), then the archived ones folded
  * away. A row carries its unread count and, when a message names the reader, an "@me" chip.
  *
- * "New channel" sits where "New chat" sits in development mode; the organization's desk and
- * ticket sessions follow the list as their own groups (org-session-groups.tsx).
+ * "New channel" is the header's own trailing action rather than a pinned row above the list;
+ * the organization's desk and ticket sessions follow the list as their own groups
+ * (org-session-groups.tsx).
  *
  * The list itself is the store's (state/company.tsx): one listing per organization, refreshed
  * when a message event says a counter moved, so the sidebar, the rail and the channel view
@@ -25,6 +26,7 @@ import { useCompany } from "../../state/company";
 import { Button } from "../../components/ui/button";
 import { FolderSection, Icon } from "../../components/ui/group-list";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { PlusIcon } from "../../components/ui/icons";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
@@ -39,10 +41,6 @@ export const CHANNEL_ICON = "M4 9h16M4 15h16M10 3L8 21M16 3l-2 18";
 export const ALL_HANDS_ICON =
   "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75";
 
-/** New channel (lucide message-square-plus): the pinned button above the list. */
-const NEW_CHANNEL_ICON =
-  "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6";
-
 export const channelGlyph = (channelId: string): string =>
   isAllHands(channelId) ? ALL_HANDS_ICON : CHANNEL_ICON;
 
@@ -54,18 +52,19 @@ function badgeNote(channel: OrgChannelItem): string | null {
 }
 
 /**
- * The pinned "New channel" button, in the slot development mode gives "New chat". The rail
- * wears the same action as an icon button. Creating one opens it.
+ * "New channel", at the right end of the channel list's header — the group-header action
+ * shape, not a pinned row: development mode's pinned slot holds "New chat" because a
+ * conversation is what a person makes there several times a day, while a channel is made
+ * rarely and belongs beside the list it joins. The collapsed rail carries no counterpart for
+ * the same reason. Creating one opens it.
  */
-export function NewChannelButton({
+function NewChannelButton({
   projectId,
   orgId,
-  rail = false,
   onNavigate,
 }: {
   projectId: string;
   orgId: string;
-  rail?: boolean;
   onNavigate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -75,28 +74,15 @@ export function NewChannelButton({
   const label = S.company.channels.newChannel;
   return (
     <>
-      {rail ? (
-        <button
-          type="button"
-          title={label}
-          aria-label={label}
-          onClick={() => setOpen(true)}
-          className="relative flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <GlyphIcon d={NEW_CHANNEL_ICON} size={18} />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200`}
-        >
-          <span className="text-gray-500 dark:text-gray-400">
-            <Icon d={NEW_CHANNEL_ICON} />
-          </span>
-          {label}
-        </button>
-      )}
+      <button
+        type="button"
+        title={label}
+        aria-label={label}
+        onClick={() => setOpen(true)}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      >
+        <PlusIcon size={ICON_SIZE.groupHeaderAction} />
+      </button>
       <NewChannelDialog
         open={open}
         projectId={projectId}
@@ -238,11 +224,17 @@ export function ChannelSidebar({
 
   return (
     <>
-      {/* The list's header, at the height and density of the development list's own. */}
+      {/* The list's header, at the height and density of the development list's own, with
+          "New channel" as its trailing action. */}
       <div className="mt-3 flex items-center justify-between gap-2 px-1 pt-2">
         <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
           {S.company.channels.listTitle}
         </span>
+        <NewChannelButton
+          projectId={projectId}
+          orgId={orgId}
+          {...(onNavigate ? { onNavigate } : {})}
+        />
       </div>
       {channels === null ? (
         company.channelsError !== null ? (

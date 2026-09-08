@@ -11,7 +11,10 @@
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
  * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
- * in the right mode before the preferences arrive; the stored copy wins once it does.
+ * in the right mode before the preferences arrive; the stored copy wins once it does. Both
+ * the open and the remembered organization are forgotten once a complete listing comes back
+ * without them: a deleted organization that keeps the shell aimed at it costs a broken
+ * sidebar on every later visit.
  *
  * Company events ride the same user-level event stream the session list consumes
  * (state/sessions.tsx forwards them through `publishCompanyEvent`): the store keeps the
@@ -40,6 +43,7 @@ import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";
 import {
+  clearLastOrgKey,
   initialLastOrgKey,
   initialWorkMode,
   storeLastOrgKey,
@@ -111,6 +115,12 @@ interface CompanyStoreState {
   orgsLoading: boolean;
   orgsLoaded: boolean;
   /**
+   * At least one Project's listing failed in the last read, so `organizations` is missing
+   * whatever that Project holds. An absent organization then means "not listed this time",
+   * not "gone", which is what keeps a transient failure from forgetting the open one.
+   */
+  orgsPartial: boolean;
+  /**
    * The open organization's channels, as `GET /channels` last answered them — the sidebar's
    * list, the rail's rows and the channel view all read this one copy. Null before the first
    * listing of the organization now open.
@@ -141,6 +151,7 @@ interface CompanyStoreState {
   reloadChannels: (projectId: string, orgId: string) => Promise<void>;
   markChannelRead: (channelId: string) => void;
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
+  forgetMissingOrganizations: () => void;
   reloadOrgSessions: (projectId: string) => Promise<void>;
   reloadOrgChart: (projectId: string, orgId: string) => Promise<void>;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
@@ -169,6 +180,7 @@ export function createCompanyStore() {
     organizations: [],
     orgsLoading: false,
     orgsLoaded: false,
+    orgsPartial: false,
     channels: null,
     channelsError: null,
     channelReadAt: new Map(),
@@ -269,13 +281,52 @@ export function createCompanyStore() {
             api
               .listOrganizations(projectId)
               .then((res) => res.organizations)
-              // One Project's failure (lost access, a transient error) must not hide the rest.
-              .catch(() => [] as OrganizationSummary[]),
+              // One Project's failure (lost access, a transient error) must not hide the
+              // rest — but it is recorded, since the shortened list is not evidence that
+              // anything was deleted (forgetMissingOrganizations).
+              .catch(() => null),
           ),
         );
-        set({ organizations: lists.flat(), orgsLoaded: true });
+        set({
+          organizations: lists.filter((list) => list !== null).flat(),
+          orgsLoaded: true,
+          orgsPartial: lists.some((list) => list === null),
+        });
       } finally {
         set({ orgsLoading: false });
+      }
+    },
+
+    /**
+     * Drops the open and the remembered organization when the settled list no longer holds
+     * them — a deletion, or access lost. Neither key is a cache the shell can afford to keep
+     * stale: `currentOrgKey` is what the channel listing and the roster are fetched for (a
+     * deleted organization answers 404 and the sidebar shows a load failure), and
+     * `lastOrgKey` is where `/org` lands, so a stale one sends every later visit at an
+     * organization that is gone. The remembered key is cleared in all three places it lives:
+     * the store, the localStorage mirror and the server preference — written as an empty
+     * string, which `parseOrgKey` reads as none (`UiPrefs.lastOrgKey` is a string).
+     *
+     * A partial list is not evidence: one Project's listing failing would otherwise forget an
+     * organization that is merely unreachable this minute.
+     */
+    forgetMissingOrganizations: () => {
+      const state = get();
+      if (!state.orgsLoaded || state.orgsPartial) return;
+      const known = (key: string | null): boolean => {
+        const parsed = parseOrgKey(key);
+        if (parsed === null) return false;
+        return state.organizations.some(
+          (o) => o.projectId === parsed.projectId && o.orgId === parsed.orgId,
+        );
+      };
+      if (state.currentOrgKey !== null && !known(state.currentOrgKey)) {
+        get().setCurrentOrg(null);
+      }
+      if (get().lastOrgKey !== null && !known(get().lastOrgKey)) {
+        clearLastOrgKey();
+        set({ lastOrgKey: null });
+        void api.putPrefs({ lastOrgKey: "" }).catch(() => undefined);
       }
     },
 
@@ -446,18 +497,32 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const { orgs: orgsVersion, runs: runsVersion, tickets: ticketsVersion } = state.versions;
   useEffect(() => {
     if (!serverEnabled || projectIdsKey === "") {
-      store.setState({ organizations: [], orgsLoaded: false, orgSessions: new Map() });
+      store.setState({
+        organizations: [],
+        orgsLoaded: false,
+        orgsPartial: false,
+        orgSessions: new Map(),
+      });
       return;
     }
     void store.getState().reloadOrganizations(projectIdsKey.split(","));
   }, [store, serverEnabled, projectIdsKey, orgsVersion]);
 
+  const { orgsLoaded, orgsPartial } = state;
+  const orgListKey = state.organizations.map((o) => orgKey(o.projectId, o.orgId)).join(",");
+
+  // A deleted organization must not leave the shell aimed at it. The list is the only place
+  // that knows: once it has settled, the open key and the remembered one are checked against
+  // it, so the sidebar drops to its no-organization shape instead of failing to load the
+  // channels of something that is gone.
+  useEffect(() => {
+    store.getState().forgetMissingOrganizations();
+  }, [store, orgsLoaded, orgsPartial, orgListKey]);
+
   // The current Project's desk and ticket Sessions: the company sidebar lists them, and the
   // development sidebar folds them into an "organization" folder.
   // Keyed on the list's identity as well: a newly created organization has no sessions entry
   // until its first event otherwise.
-  const { orgsLoaded } = state;
-  const orgListKey = state.organizations.map((o) => orgKey(o.projectId, o.orgId)).join(",");
   useEffect(() => {
     if (!serverEnabled || currentProjectId === null || !orgsLoaded) return;
     void store.getState().reloadOrgSessions(currentProjectId);

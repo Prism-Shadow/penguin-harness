@@ -3,9 +3,9 @@
  * in rendered order, each with a zh label, an en label and a glyph — the sidebar, the rail
  * and the router all derive their rows from it), the `<projectId>/<orgId>` key, the
  * `/org/:projectId/:orgId/<page>` and `…/channels/:channelId` grammars, where `/org` lands
- * without an organization, the switcher's grouping by Project, and the localStorage mirrors
- * of the mode and the last organization (injectable storage, degrading to the defaults on
- * anything unexpected).
+ * without an organization and where a freshly created one opens, the switcher's grouping by
+ * Project, and the localStorage mirrors of the mode and the last organization (injectable
+ * storage, forgettable, degrading to the defaults on anything unexpected).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -13,6 +13,7 @@ import {
   groupOrganizationsByProject,
   isOrgRoute,
   orgChannelPath,
+  orgCreatedPath,
   orgKey,
   orgPagePath,
   parseOrgKey,
@@ -23,6 +24,7 @@ import { COMPANY_NAV_ICONS } from "../src/features/company/company-nav-icons";
 import {
   LAST_ORG_KEY,
   WORK_MODE_KEY,
+  clearLastOrgKey,
   initialLastOrgKey,
   initialWorkMode,
   storeLastOrgKey,
@@ -38,6 +40,7 @@ function memStorage(): WorkModeStorage & { map: Map<string, string> } {
     map,
     getItem: (k) => map.get(k) ?? null,
     setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
   };
 }
 
@@ -106,6 +109,21 @@ describe("org keys and paths", () => {
     );
     expect(orgChannelPath("p1", "acme", "site")).toBe("/org/p1/acme/channels/site");
     expect(orgChannelPath("alice-proj", "a b", "site")).toBe("/org/alice-proj/a%20b/channels/site");
+  });
+
+  // An organization opens on its overview, not on a channel: the switcher's pick, `/org`'s
+  // redirect and the router's index route all land there, and a channel is reached from the
+  // sidebar's own list.
+  it("makes the overview the first page of the six, which is where an organization opens", () => {
+    expect(COMPANY_NAV_KEYS[0]).toBe("overview");
+    expect(orgPagePath("p1", "acme", "overview")).toBe("/org/p1/acme/overview");
+  });
+
+  it("lands a newly created organization in the CEO's desk, else on its overview", () => {
+    expect(orgCreatedPath({ projectId: "p1", orgId: "acme", ceoDeskSessionId: "s-1" })).toBe(
+      "/chat/s-1",
+    );
+    expect(orgCreatedPath({ projectId: "p1", orgId: "acme" })).toBe("/org/p1/acme/overview");
   });
 
   it("tells organization routes from the shared chat route", () => {
@@ -181,6 +199,16 @@ describe("work-mode storage mirrors", () => {
     expect(initialLastOrgKey(s)).toBeNull();
   });
 
+  // The organization it named was deleted: the mirror is dropped, not overwritten, so the
+  // next reload starts with no remembered organization at all.
+  it("forgets the last organization key outright", () => {
+    const s = memStorage();
+    storeLastOrgKey("p1/acme", s);
+    clearLastOrgKey(s);
+    expect(s.map.has(LAST_ORG_KEY)).toBe(false);
+    expect(initialLastOrgKey(s)).toBeNull();
+  });
+
   it("throwing storage degrades to the defaults instead of escaping", () => {
     const broken: WorkModeStorage = {
       getItem: () => {
@@ -189,8 +217,12 @@ describe("work-mode storage mirrors", () => {
       setItem: () => {
         throw new Error("denied");
       },
+      removeItem: () => {
+        throw new Error("denied");
+      },
     };
     expect(() => storeWorkMode("company", broken)).not.toThrow();
+    expect(() => clearLastOrgKey(broken)).not.toThrow();
     expect(initialWorkMode(broken)).toBe("dev");
     expect(initialLastOrgKey(broken)).toBeNull();
   });

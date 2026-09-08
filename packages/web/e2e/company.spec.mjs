@@ -146,14 +146,15 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.goto(`/org/${projectId}/${ORG}/tickets`);
   await expect(page.getByText("Build the marketplace site").first()).toBeVisible();
 
-  // Channels are company mode's home surface: the sidebar lists them where development mode
-  // lists conversations, and the all-hands channel is pinned at its top.
+  // An organization opens on its overview; its channels are the sidebar's own list, where
+  // development mode lists conversations, with the all-hands channel pinned at its top.
   await page.goto(`/org/${projectId}/${ORG}`);
-  await expect(page).toHaveURL(/channels\/default_channel/);
+  await expect(page).toHaveURL(/\/overview$/);
   await page
     .getByRole("link", { name: /^全员频道/ })
     .first()
     .click();
+  await expect(page).toHaveURL(/channels\/default_channel/);
   await expect(page.getByRole("heading", { name: /全员频道/ })).toBeVisible();
 
   // A mention typed in the all-hands channel lands on the CEO's desk as a mention work run.
@@ -174,8 +175,8 @@ test("company mode: create the organization, meet the CEO, see the board and the
     )
     .toBe(true);
 
-  // A new channel: the dialog validates the id here, the sidebar gains a row, and the view
-  // opens on it.
+  // A new channel: created from the channel list header's own "+", the dialog validates the
+  // id here, the sidebar gains a row, and the view opens on it.
   await page.getByRole("button", { name: "新建频道", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "新建频道" })).toBeVisible();
   await page.getByRole("textbox", { name: /^频道 id/ }).fill("site");

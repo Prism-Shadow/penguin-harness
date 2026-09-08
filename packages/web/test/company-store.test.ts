@@ -1,15 +1,17 @@
 /**
  * state/company.tsx unit tests: the company store's routing of the scheduler's events (the
  * per-channel counters of the open organization and the totals the sidebar badges read, the
- * version bump each family causes, and what a local read mark clears) and the user-channel
- * forwarding in state/sessions.tsx's applyUserEvent — a company event reaches every
- * subscriber, and a work run refreshes the session list of the Project it belongs to.
+ * version bump each family causes, and what a local read mark clears), what it forgets when
+ * the organization list comes back without the organization it is aimed at, and the
+ * user-channel forwarding in state/sessions.tsx's applyUserEvent — a company event reaches
+ * every subscriber, and a work run refreshes the session list of the Project it belongs to.
  */
 import { describe, expect, it, vi } from "vitest";
 import type {
   CompanyServerEvent,
   OrgChannelItem,
   OrgChannelMessage,
+  OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
 import { createCompanyStore, isCompanyEvent, subscribeCompanyEvents } from "../src/state/company";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
@@ -189,6 +191,90 @@ describe("company store event routing", () => {
       runs: 1,
       budget: 1,
     });
+  });
+});
+
+/** One organization as the list carries it; only the two ids matter to the checks below. */
+const summary = (projectId: string, orgId: string): OrganizationSummary => ({
+  projectId,
+  orgId,
+  name: orgId,
+  mission: "",
+  status: "active",
+  employeeCount: 0,
+  runningCount: 0,
+  pausedCount: 0,
+  openTickets: 0,
+  blockedTickets: 0,
+  createdBy: "user:alice",
+  spend: { period: "2026-09", cost: 0 },
+});
+
+describe("forgetting an organization the list no longer holds", () => {
+  it("drops the open organization and the remembered one, and the channels read for it", () => {
+    const store = createCompanyStore();
+    store.setState({
+      organizations: [summary("p1", "other")],
+      orgsLoaded: true,
+      orgsPartial: false,
+      currentOrgKey: "p1/acme",
+      lastOrgKey: "p1/acme",
+      channels: [channel({ unread: 3 })],
+      channelUnread: 3,
+    });
+    store.getState().forgetMissingOrganizations();
+    expect(store.getState().currentOrgKey).toBeNull();
+    expect(store.getState().lastOrgKey).toBeNull();
+    // The listing belonged to the organization that is gone: a retry would only 404.
+    expect(store.getState().channels).toBeNull();
+    expect(store.getState().channelUnread).toBe(0);
+  });
+
+  it("keeps both when the organization is still listed", () => {
+    const store = createCompanyStore();
+    store.setState({
+      organizations: [summary("p1", "acme"), summary("p2", "other")],
+      orgsLoaded: true,
+      orgsPartial: false,
+      currentOrgKey: "p1/acme",
+      lastOrgKey: "p1/acme",
+      channels: [channel()],
+    });
+    store.getState().forgetMissingOrganizations();
+    expect(store.getState().currentOrgKey).toBe("p1/acme");
+    expect(store.getState().lastOrgKey).toBe("p1/acme");
+    expect(store.getState().channels).not.toBeNull();
+  });
+
+  it("forgets the remembered organization on its own, with none open", () => {
+    const store = createCompanyStore();
+    store.setState({
+      organizations: [],
+      orgsLoaded: true,
+      orgsPartial: false,
+      currentOrgKey: null,
+      lastOrgKey: "p1/acme",
+    });
+    store.getState().forgetMissingOrganizations();
+    expect(store.getState().lastOrgKey).toBeNull();
+  });
+
+  it("waits for a settled and complete list — neither a first load nor a failed Project is a deletion", () => {
+    for (const settling of [
+      { orgsLoaded: false, orgsPartial: false },
+      { orgsLoaded: true, orgsPartial: true },
+    ]) {
+      const store = createCompanyStore();
+      store.setState({
+        organizations: [],
+        ...settling,
+        currentOrgKey: "p1/acme",
+        lastOrgKey: "p1/acme",
+      });
+      store.getState().forgetMissingOrganizations();
+      expect(store.getState().currentOrgKey).toBe("p1/acme");
+      expect(store.getState().lastOrgKey).toBe("p1/acme");
+    }
   });
 });
 

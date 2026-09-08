@@ -1,10 +1,10 @@
 /**
  * The route shell of company mode. `/org` alone resolves to an organization (the one last
- * opened, else the first of the current Project, else the first anywhere) or, with none, to
- * an empty landing that offers creating one; `/org/:projectId/:orgId/<page>` renders the
- * page inside an organization context. Both fall back to a Session's own page while company mode
- * is unavailable — the admin master switch off, or the user's own switch off — so a stale
- * bookmark never shows an empty shell.
+ * opened, else the first of the current Project, else the first anywhere) and opens its
+ * overview, or, with none, renders an empty landing that offers creating one;
+ * `/org/:projectId/:orgId/<page>` renders the page inside an organization context. Both fall
+ * back to a Session's own page while company mode is unavailable — the admin master switch
+ * off, or the user's own switch off — so a stale bookmark never shows an empty shell.
  *
  * Entering an organization's routes has three side effects the shell relies on: the work
  * mode flips to company (a deep link is a mode choice), the current Project follows the
@@ -31,8 +31,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { COMPANY_MODE_ICON } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
-import { orgChannelPath, orgKey, resolveOrgLanding } from "./company-nav";
-import { DEFAULT_CHANNEL_ID } from "./channel-list";
+import { orgCreatedPath, orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog } from "./org-dialogs";
 import { FIRST_STEPS } from "./overview-summary";
 import type { FirstStep } from "./overview-summary";
@@ -61,6 +60,22 @@ function OrgFrame({ wide = false, children }: { wide?: boolean; children: ReactN
   );
 }
 
+/**
+ * The frame the two organization-less surfaces sit in — the empty landing and the stale deep
+ * link. Each is one short block of guidance with nothing above or below it, so the column
+ * centres it in the window instead of parking it against the top edge, the way the dialogs
+ * are centred. `min-h-full` rather than a fixed centred height: a window shorter than the
+ * block grows the column and scrolls it whole, where `justify-center` alone would push its
+ * top out of reach.
+ */
+function OrgCenteredFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="flex min-h-full flex-col justify-center">{children}</div>
+    </div>
+  );
+}
+
 /** `/org` with no organization named. */
 export function OrgIndexRedirect() {
   const company = useCompany();
@@ -81,10 +96,9 @@ export function OrgIndexRedirect() {
     currentProject?.projectId ?? null,
   );
   if (target === null) return <OrgEmptyLanding />;
-  // An organization opens on its all-hands channel: channels are where company mode works.
-  return (
-    <Navigate to={orgChannelPath(target.projectId, target.orgId, DEFAULT_CHANNEL_ID)} replace />
-  );
+  // An organization opens on its overview: the one page that says what the whole
+  // organization is doing. Its channels are one click away in the sidebar's own list.
+  return <Navigate to={orgPagePath(target.projectId, target.orgId, "overview")} replace />;
 }
 
 /** The three first steps as the landing tells them: what happens once the organization exists. */
@@ -115,7 +129,7 @@ function OrgEmptyLanding() {
     if (available) setWorkMode("company");
   }, [available, setWorkMode]);
   return (
-    <OrgFrame>
+    <OrgCenteredFrame>
       <div className="mx-auto max-w-2xl py-8 text-center md:py-14">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
           <GlyphIcon d={COMPANY_MODE_ICON} size={ICON_SIZE.sectionMark + 6} />
@@ -155,31 +169,49 @@ function OrgEmptyLanding() {
           setCreateOpen(false);
           company.setWorkMode("company");
           void company.reloadOrganizations();
-          navigate(
-            detail.ceoDeskSessionId !== undefined
-              ? `/chat/${detail.ceoDeskSessionId}`
-              : orgChannelPath(detail.projectId, detail.orgId, DEFAULT_CHANNEL_ID),
-          );
+          navigate(orgCreatedPath(detail));
         }}
       />
-    </OrgFrame>
+    </OrgCenteredFrame>
   );
 }
 
-/** The list is settled and the routed organization is not in it: gone, or never reachable. */
+/**
+ * The list is settled and the routed organization is not in it: gone, or never reachable —
+ * a bookmark that outlived what it pointed at. The page says so and then offers the two ways
+ * on, rather than leaving the reader on a dead end: make one, or go back to the list (which
+ * lands on another organization, or on the empty landing when there is none).
+ */
 function OrgGone() {
   const navigate = useNavigate();
+  const company = useCompany();
+  const [createOpen, setCreateOpen] = useState(false);
   return (
-    <OrgFrame>
+    <OrgCenteredFrame>
       <EmptyState
-        title={S.errors.byCode.org_not_found}
+        title={S.company.orgGoneTitle}
+        description={S.company.orgGoneBody}
         action={
-          <Button variant="primary" onClick={() => navigate("/org", { replace: true })}>
-            {S.company.switcher}
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              {S.company.createOrg}
+            </Button>
+            <Button onClick={() => navigate("/org", { replace: true })}>
+              {S.company.backToOrgs}
+            </Button>
+          </div>
         }
       />
-    </OrgFrame>
+      <CreateOrganizationDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(detail) => {
+          setCreateOpen(false);
+          void company.reloadOrganizations();
+          navigate(orgCreatedPath(detail));
+        }}
+      />
+    </OrgCenteredFrame>
   );
 }
 
