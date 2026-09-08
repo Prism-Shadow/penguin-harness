@@ -177,6 +177,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.chatSurface.",
+    scope: "install",
+    why: "What a new chat opens per Workspace: Project id in the key, Workspace paths and machine ids inside it.",
+  },
+  {
+    kind: "family",
     key: "penguin.sidebarWorkspaces.",
     scope: "install",
     why: "Manually registered Workspace paths per Project; a new root has no such Project.",
