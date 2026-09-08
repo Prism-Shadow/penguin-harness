@@ -237,6 +237,8 @@ export const zh = {
     emptyHint: "有会话正在运行、或自你上次打开后已完成的工作区会显示在这里。",
     loadFailed: "加载失败",
     silentMachines: (n: number) => `${n} 台机器没有应答——那里的会话没有计入。请到机器页面连接它。`,
+    /** Tooltip on a row's count: it unfolds into the Sessions it counts. */
+    toggleList: "展开或收起这些会话",
   },
 
   settings: {
