@@ -8,7 +8,7 @@ import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest, boot, initialDoc } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PluginHost, PLUGINS_RESOURCE_ID, pluginHostFrom } from "../src/plugin/host.js";
-import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import type { SandboxProvider } from "@prismshadow/penguin-core/plugin";
 
@@ -90,7 +90,7 @@ describe("plugin modules on the real platform", () => {
   /** A bare-kernel boot (no capabilities): the sandbox floor plus whatever plugins contribute. */
   async function bootWith(modules: ModuleDef[]) {
     const resources = new HotResources();
-    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const host = new PluginHost();
     host.use({ specifier: "test", modules, replaces: [] });
     resources.register(PLUGINS_RESOURCE_ID, host);
@@ -104,7 +104,7 @@ describe("plugin modules on the real platform", () => {
 
   it("boots an App when the runtime published no host at all", async () => {
     const resources = new HotResources();
-    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const inst = await boot(
       packagedPlatform.impl,
       packagedPlatform.iface,

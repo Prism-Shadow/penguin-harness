@@ -55,7 +55,7 @@ plugins.json 加载（⑤ 发布）                插件模块作为树的子�
 
 **swap 语义：未实现 park 的状态一律硬中止**——待审批全部拒绝、运行中任务中止、scheduler 随旧 App 死掉，新 App 从认领的能力重建一切。只有实现了 park/adopt 的资源（终端 pty）跨 swap 存活。
 
-资源本身也有接口契约，但它不进 kernel 的 iface——声明本身就是注册表里的一个条目（`resource-interfaces`，按 ID 前缀组记版本，如 `{ terminal: 1, platform: 1 }`），由每代 App 的 `create()` 写入并留给继任者。新 App 在 adopt 任何东西之前读前任的声明、与自己编译期的声明比对：同版本的组整体集成存续；版本不同或本代不再声明的组，按**逆注册序**逐一 dispose 后重建（活对象无法像 context 文档那样 strict-parse，声明一致就是集成的判据）。kernel 的 park/validate/swap 机制不参与也不感知这套约定，因此调和策略本身也随平台热推送演进。运行时能力（`runtime:*`）走另一条对称防线：bundle 编译期携带能力契约版本，`claimRuntimeCapabilities` 先与运行时发布的版本握手，不符则整组拒领、退化为 terminals-only，而不是在使用时抛 TypeError。
+资源本身也有接口契约，但它不进 kernel 的 iface——声明本身就是注册表里的一个条目（`resource-interfaces`，按 ID 前缀组记版本，如 `{ terminal: 1, platform: 1 }`），由每代 App 的 `create()` 写入并留给继任者。新 App 在 adopt 任何东西之前读前任的声明、与自己编译期的声明比对：同版本的组整体集成存续；版本不同或本代不再声明的组，按**逆注册序**逐一 dispose 后重建（活对象无法像 context 文档那样 strict-parse，声明一致就是集成的判据）。kernel 的 park/validate/swap 机制不参与也不感知这套约定，因此调和策略本身也随平台热推送演进。运行时能力（`runtime:*`）走另一条对称防线：bundle 编译期携带能力契约版本，`claimHmrCapabilities` 先与运行时发布的版本握手，不符则整组拒领、退化为 terminals-only，而不是在使用时抛 TypeError。
 
 分界线是**资源注册表**：它位于可重载的平台树之外，因此跨 App 存活。pty 进程本身寄存在里面，新 App 只是接管句柄——所以热更新对正在敲终端的人不可见；PluginHost、DB 句柄、认证服务、SSE hub 走的是同一条路：运行时发布进注册表，每个 App 认领同一份。
 
@@ -68,7 +68,7 @@ App 创建的完整顺序在 `server/src/hmr/platform.ts` 的 `platformImpl.crea
 ```text
 platformImpl.create
 │
-├─ caps = claimRuntimeCapabilities(resources)   # db/auth-state/channels/config/proxy/hmr/desktop
+├─ caps = claimHmrCapabilities(resources)   # db/auth-state/channels/config/proxy/hmr/desktop
 ├─ plugins = pluginHostFrom(resources)  # 认领运行时在 ④ 加载好的那个 host（未发布则为空 host）
 ├─ tree = bootModules(platformTree(caps, …, 插件模块), { ifaces, parked: context.modules })
 │    # 模块树（server/src/platform.ts）：
