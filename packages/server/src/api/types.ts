@@ -1293,6 +1293,8 @@ export interface SessionsResponse {
  */
 export interface SessionActivityInfo {
   sessionId: string;
+  /** The Agent the Session belongs to (SessionInfo.agentId): opening it makes that Agent current. */
+  agentId: string;
   /** The Workspace path as the Session carries it (SessionInfo.workspace). */
   workspace: string;
   status: SessionStatus;
@@ -1300,6 +1302,14 @@ export interface SessionActivityInfo {
   hasTrace: boolean;
   /** SessionInfo.lastActiveAt — what the read/unread marker is compared against. */
   lastActiveAt: string;
+  /** SessionInfo.title; absent while none has been generated. */
+  title?: string;
+  /**
+   * SessionInfo.source: how the Session came to be. The dashboard leaves a subagent Session
+   * out of its counts — it belongs to the conversation that spawned it, which is the row the
+   * sidebar shows and the one a person opens.
+   */
+  source?: SessionSource;
 }
 
 /** `GET /api/projects/:projectId/sessions/overview`: every non-archived Session of the Project, over every Agent. */

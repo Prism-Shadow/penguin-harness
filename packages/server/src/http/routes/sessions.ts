@@ -631,11 +631,11 @@ export function sessionOverviewRoutes(
   deps: Pick<SessionsRouteDeps, "access" | "sessionService">,
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  app.get("/overview", (c) => {
+  app.get("/overview", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return c.json({
-      sessions: deps.sessionService.sessionsOverview(projectId),
+      sessions: await deps.sessionService.sessionsOverview(projectId),
     } satisfies SessionsOverviewResponse);
   });
   return app;
