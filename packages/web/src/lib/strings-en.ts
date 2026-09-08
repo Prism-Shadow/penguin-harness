@@ -2546,18 +2546,10 @@ Scenarios:
       today: "Today's calendar",
       todayEmpty: "Nothing scheduled today",
       spend: "This period's spend",
-      pending: "For me",
-      pendingInfo:
-        "Unread channel messages that mention you, tickets waiting for your review, and blocked tickets waiting on you — everything in the organization that needs a person to decide.",
       mentions: (n: number): string => `${n} message${n === 1 ? "" : "s"} mentioning me`,
       reviewTickets: "Tickets in review",
-      blockedByMe: "Tickets blocked on me",
-      pendingEmpty: "Nothing needs you right now",
-      recentMessages: "Latest in all hands",
-      recentMessagesEmpty: "No messages in the all-hands channel yet",
       alerts: "Alerts",
       alertsEmpty: "No budget alerts this period",
-      openAllHands: "Open all hands",
       /** A fresh organization: point the user at the CEO. */
       firstStep:
         "The organization is brand new: open the CEO's desk session to confirm the mission, hire employees and set up the calendar.",
@@ -2567,6 +2559,10 @@ Scenarios:
       period: (period: string): string => `Period ${period}`,
       openCeoDesk: "Open the CEO's desk",
       refreshFailed: "The refresh failed; this is the last data read",
+      /** The hero's mission, clamped to one line until the toggle opens it. */
+      mission: "Mission",
+      expand: "Expand",
+      collapse: "Collapse",
       /** The KPI strip. */
       openTickets: "Open tickets",
       boardTotal: (n: number): string => `${n} in total`,
@@ -2575,6 +2571,11 @@ Scenarios:
       failed: "Not on time",
       budgetLeft: (amount: string): string => `${amount} left`,
       overBudget: (amount: string): string => `${amount} over`,
+      /** The corner button of a KPI cell and of the hero's spend block: where it jumps to. */
+      openChart: "Open the org chart",
+      openBoard: "Open the ticket board",
+      openCalendar: "Open the calendar",
+      openFinance: "Open finance",
       /** The three first steps of a new organization (replaces the empty sections). */
       firstStepsTitle: "First steps",
       firstStepsInfo:
@@ -2591,10 +2592,15 @@ Scenarios:
       stepDone: "Done",
       goToChart: "Open the org chart",
       goToCalendar: "Open the calendar",
-      /** "For me" rows. */
-      openMentions: "Read them in the channels",
-      reviewHint: "Drag to Done once it passes review, otherwise reject with a reason",
-      blockedHint: "Unblock it from the ticket's details",
+      /** The inbox: everything that needs the reader, newest first. */
+      inbox: "Inbox",
+      inboxInfo:
+        "Everything that needs you, newest first: mentions of you, tickets in review and tickets blocked on you, and the all-hands channel's latest messages.",
+      inboxEmpty: "Nothing in the inbox.",
+      /** The filter chips over the rows, each with its own count. */
+      inboxFilters: { all: "All", mention: "@me", ticket: "Tickets", message: "Messages" },
+      /** The chip that leads a row, naming what the row is. */
+      inboxCategories: { mention: "@me", review: "Review", blocked: "Blocked", message: "Message" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `${n} more — open the calendar`,
       viewAll: "View all",

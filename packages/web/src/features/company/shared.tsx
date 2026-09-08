@@ -1,8 +1,8 @@
 /**
  * Small pieces every organization page shares: the organization's status pill and dot, the
  * budget bar and ring, the ticket status and priority pills, the blocked badge, the
- * failed-refresh line, and principal naming. Every status colour here is a tone from
- * lib/tone.ts, picked by meaning.
+ * failed-refresh line, the corner button that jumps from a summary to the page it summarizes,
+ * and principal naming. Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
 import type { ReactNode } from "react";
 import type {
@@ -12,6 +12,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
@@ -19,6 +20,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { budgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
@@ -26,6 +28,38 @@ import type { OrgStatusKind } from "./shell-org-status";
 
 /** Circled exclamation (lucide circle-alert): the danger mark of an invalid chart entry or ticket file. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
+
+/** Arrow leaving to the upper right (lucide arrow-up-right): the mark of a jump to another page. */
+const JUMP_ICON = "M7 7h10v10M7 17 17 7";
+
+/**
+ * The corner button of a summary card: a flat glyph that opens the page the card summarizes.
+ * The card itself is deliberately not a link — a whole-card click swallows the controls that
+ * live inside it, and it leaves a reader guessing where the click would land — so the jump is
+ * this one explicit affordance, named for its destination ("Open the org chart").
+ */
+export function JumpButton({
+  label,
+  onClick,
+  className = "",
+}: {
+  /** Where it goes, as the tooltip and the accessible name both read it. */
+  label: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`inline-flex shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 ${className}`}
+    >
+      <GlyphIcon d={JUMP_ICON} size={ICON_SIZE.inlineGlyph} />
+    </button>
+  );
+}
 
 /** The label of an organization's headline state. */
 function orgStatusLabel(kind: OrgStatusKind): string {
