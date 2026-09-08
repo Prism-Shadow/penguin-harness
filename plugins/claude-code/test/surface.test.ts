@@ -112,8 +112,11 @@ describe("the program", () => {
   it("refuses to open when nothing is installed, naming where it looked", async () => {
     const { terminals, created } = fakeTerminals();
     const surface = new ClaudeCodeSurface(terminals, { PATH: "", HOME: "/home/nobody" });
+    // The separator and the executable's suffix are the platform's — `.local/bin/claude` on
+    // POSIX, `.local\bin\claude.exe` on Windows — so the assertion is about what the message
+    // names, not how this host spells a path.
     await expect(surface.open(ref, {}, () => {})).rejects.toThrow(
-      /not installed where this server can see it.*\.local\/bin\/claude/s,
+      /not installed where this server can see it.*\.local[\\/]bin[\\/]claude/s,
     );
     // …and nothing was spawned to find that out.
     expect(created).toHaveLength(0);
