@@ -25,6 +25,7 @@ import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
+import { TouchScroll } from "./terminal-touch";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useTheme } from "../../state/theme";
 import { useAuth } from "../../state/auth";
@@ -463,6 +464,72 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         },
         { signal },
       );
+      /**
+       * A finger dragging while a program owns the mouse: the wheel it does not have.
+       *
+       * xterm turns its own touch scrolling off for exactly these programs, and they are the
+       * ones that need it most — a TUI on the alternate screen (Claude Code) leaves the
+       * terminal no scrollback to scroll, draws its transcript itself, and pages it only when
+       * a wheel reports. So the travel becomes wheel events (terminal-touch.ts for the
+       * arithmetic), dispatched at xterm's own element so IT encodes them in whatever
+       * protocol the program asked for — hand-rolled SGR here would be a second encoder to
+       * keep in step with the first.
+       *
+       * A tap is left alone: nothing scrolls until the travel passes the slop, so the
+       * browser's tap-to-click still reaches a program that answers clicks. Where the mouse
+       * is free, xterm's own touch handling runs first (on its element, below this one) and
+       * this stays out of the way entirely.
+       */
+      const touchScroll = new TouchScroll();
+      /** The height of one row, in pixels: the screen element is exactly rows cells tall. */
+      const cellHeight = (): number => {
+        const screen = term.element?.querySelector(".xterm-screen");
+        if (!screen || term.rows <= 0) return 0;
+        return screen.getBoundingClientRect().height / term.rows;
+      };
+      const wheelLine = (x: number, y: number, down: boolean): void => {
+        term.element?.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: down ? 1 : -1,
+            // Lines, not pixels: one event is one line, whatever this device's cells measure.
+            deltaMode: 1,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      container.addEventListener(
+        "touchstart",
+        (event) => {
+          if (!appOwnsMouse() || event.touches.length !== 1) {
+            touchScroll.end(); // a second finger (pinch) is not a scroll
+            return;
+          }
+          touchScroll.start(event.touches[0]!.clientY);
+        },
+        { signal, passive: true },
+      );
+      container.addEventListener(
+        "touchmove",
+        (event) => {
+          const touch = event.touches[0];
+          if (!touchScroll.started || event.touches.length !== 1 || touch === undefined) return;
+          const lines = touchScroll.move(touch.clientY, cellHeight());
+          if (!touchScroll.engaged) return;
+          // The host carries `touch-none` on a touch device, so there is normally nothing
+          // left to cancel; this is for the device that reports a fine pointer and is one
+          // anyway, where the page would otherwise scroll out from under the gesture.
+          if (event.cancelable) event.preventDefault();
+          for (let i = Math.abs(lines); i > 0; i--)
+            wheelLine(touch.clientX, touch.clientY, lines > 0);
+        },
+        { signal, passive: false },
+      );
+      container.addEventListener("touchend", () => touchScroll.end(), { signal, passive: true });
+      container.addEventListener("touchcancel", () => touchScroll.end(), { signal, passive: true });
+
       // Click-to-focus anywhere in the view, padding included — finishing a selection drag
       // also lands here, which is fine: focusing xterm's textarea keeps the selection.
       container.addEventListener("mouseup", () => term.focus(), { signal });
@@ -628,7 +695,14 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
   // terminal's grid instead of pushing the surface past its container.
   return (
     <div className={`flex flex-col ${className ?? "min-h-0 flex-1 overflow-hidden"}`}>
-      <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden" />
+      {/* `touch-none` on a touch device: the drag above is the gesture, and the browser
+          must not take it for its own (a page scroll, a pull-to-refresh) — which also
+          stops mid-gesture cancellation, since a taken-over touch stops being cancelable.
+          xterm's own touch scrolling sets scrollTop itself and is unaffected. */}
+      <div
+        ref={hostRef}
+        className={`min-h-0 flex-1 overflow-hidden ${coarsePointer ? "touch-none" : ""}`}
+      />
       {coarsePointer && (
         <TerminalKeyBar
           control={control}
