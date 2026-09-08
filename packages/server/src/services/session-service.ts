@@ -110,22 +110,33 @@ export class SessionService {
 
   /**
    * The dashboard's read: every non-archived Session of the Project over every Agent, as the
-   * facts it counts from. Off the index and the manager and nothing else — no Trace
-   * discovery, no source classification: `hasTrace` is the row's own flag, and the counts are
-   * about this moment. Read versus unread is the client's (a per-browser marker), which is
+   * facts it counts from and the lines it lists. Off the index and the manager and nothing
+   * else — no Trace discovery: `hasTrace` is the row's own flag, and the counts are about
+   * this moment. Read versus unread is the client's (a per-browser marker), which is
    * why this hands over facts rather than totals.
    */
-  sessionsOverview(projectId: string): SessionActivityInfo[] {
-    return this.deps.sessions
+  async sessionsOverview(projectId: string): Promise<SessionActivityInfo[]> {
+    const rows = this.deps.sessions
       .listByProject(projectId)
-      .filter((row) => (row.archivedAt ?? null) === null)
-      .map((row) => ({
-        sessionId: row.sessionId,
-        workspace: row.workspace,
-        status: this.deps.manager.statusOf(row.sessionId),
-        hasTrace: row.hasTrace === true,
-        lastActiveAt: row.lastActiveAt,
-      }));
+      .filter((row) => (row.archivedAt ?? null) === null);
+    return Promise.all(
+      rows.map(async (row) => {
+        const hasTrace = row.hasTrace === true;
+        // The origin comes from the same registry the list classifies with (sourceOf: the
+        // in-process entry, else the index's registration-time facts — no file is read).
+        const source = await this.sourceOf(row, hasTrace);
+        return {
+          sessionId: row.sessionId,
+          agentId: row.agentId,
+          workspace: row.workspace,
+          status: this.deps.manager.statusOf(row.sessionId),
+          hasTrace,
+          lastActiveAt: row.lastActiveAt,
+          ...(row.title !== null ? { title: row.title } : {}),
+          ...(source !== undefined ? { source } : {}),
+        };
+      }),
+    );
   }
 
   /**
