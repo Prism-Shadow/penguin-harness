@@ -2,8 +2,8 @@
  * Test fixture: a pushed platform that SERVES HTTP.
  *
  * The point of the seam it exercises: this bundle adds `/api/demo/ping`, replaces the
- * runtime's `/api/version`, and tries (and fails) to claim `/api/hmr/platform` — none of which
- * the runtime knows anything about. It arrives as bytes over one HTTP push, with no rebuild.
+ * runtime's `/api/version` and the host-command surface at `/api/command`, and tries (and
+ * fails) to claim `/api/hmr/platform` — none of which the runtime knows anything about. It arrives as bytes over one HTTP push, with no rebuild.
  *
  * Standalone on purpose, like the other fixtures: no kernel or arktype imports, only what an
  * independently built artifact can rely on.
@@ -59,6 +59,25 @@ const impl = {
         if (url.pathname === "/api/version") {
           // Replacing an existing runtime route, which is the other half of the point.
           return new Response(JSON.stringify({ version: "from-platform" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.pathname === "/api/command") {
+          // The host-command surface belongs to the platform (it used to sit above the
+          // seam, where its shape could never be changed by a push).
+          return new Response(
+            JSON.stringify({ commands: [], offers: [], from: "pushed-platform" }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        if (url.pathname === "/api/desktop/update") {
+          // The update relay is the platform's too; the rest of /api/desktop (the shell's
+          // one-shot login and its shutdown) stays the runtime's and is declined below.
+          return new Response(JSON.stringify({ status: null, from: "pushed-platform" }), {
             status: 200,
             headers: { "content-type": "application/json" },
           });

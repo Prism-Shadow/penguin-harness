@@ -33,8 +33,22 @@ export interface HttpSlots {
   >;
 }
 
-/** Prefixes the HMR layer owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
-const HMR_LAYER_PREFIXES = ["/api/auth", "/api/command", "/api/desktop", "/api/hmr"];
+/**
+ * Prefixes the runtime owns; the platform declines them before anything else runs — in
+ * particular before the auth gate, which would otherwise 401 an unauthenticated
+ * /api/auth/login. `/api/command` used to be on this list and is not any more: what a host
+ * command is and does is policy (hmr/README.md), so the platform serves it and the runtime
+ * keeps a copy below the seam for a platform that still declines it.
+ */
+const HMR_LAYER_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
+
+/**
+ * …and the paths inside those prefixes that the platform DOES serve. `/api/desktop` is the
+ * shell's own mechanism surface — a one-shot login token and a process shutdown — but the
+ * update relay under it is policy: who may see an update, what consent a download needs,
+ * what the page is shown. Checked before the prefixes, so the narrower rule wins.
+ */
+const PLATFORM_PATHS = ["/api/desktop/update"];
 
 /**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every
@@ -105,7 +119,9 @@ export class HttpModule {
       // terminal route ends the chain first; everything after it declines /api/auth etc.
       if (!declinedRuntime && r.order > 0) {
         app.use("*", async (c, next) => {
-          if (HMR_LAYER_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
+          const path = c.req.path;
+          const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
+          if (!PLATFORM_PATHS.some(under) && HMR_LAYER_PREFIXES.some(under)) {
             return declined();
           }
           await next();
