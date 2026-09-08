@@ -54,7 +54,7 @@ import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { PluginHost } from "../src/plugin/host.js";
-import type { Replacements } from "../src/hmr/capabilities.js";
+import type { Replacements, ShellFrames } from "../src/hmr/capabilities.js";
 import { ConsoleLog, SystemClock } from "../src/hmr/capabilities.js";
 import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
@@ -129,6 +129,8 @@ export interface TestDeps {
   hmr: ServerHmrHost;
   channels: ChannelHub;
   desktop: DesktopService | null;
+  /** The host's message port as state — where a test puts the frame a shell would send. */
+  shellFrames: ShellFrames;
   tree: ModuleTree;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
@@ -174,6 +176,7 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     hmr: boot.hmr,
     channels: boot.channels,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     tree,
     sessionsRepo: api("SessionRuntimeModule", "SessionIndex"),
     prefsRepo: api("SettingsModule", "UiPrefsStore"),

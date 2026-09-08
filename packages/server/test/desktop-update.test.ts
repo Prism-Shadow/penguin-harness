@@ -44,7 +44,9 @@ describe("GET /api/desktop/update", () => {
       expect(before.status).toBe(200);
       expect((await before.json()) as DesktopUpdateStatusResponse).toEqual({ status: null });
 
-      t.deps.desktop!.setUpdateStatus(STATUS);
+      // The shell's own frame, where the shell would put it: the platform parses it on
+      // read, so what a frame means travels with the platform rather than the runtime.
+      t.deps.shellFrames.updaterStatus = { type: "desktop-updater-status", status: STATUS };
       const after = await t.app.request("/api/desktop/update", { headers: { cookie } });
       expect((await after.json()) as DesktopUpdateStatusResponse).toEqual({ status: STATUS });
     } finally {
@@ -85,8 +87,8 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
     const t = await createDesktopApp();
     try {
       const cookie = await desktopLoginCookie(t.app);
-      const actions: string[] = [];
-      t.deps.desktop!.onUpdateCommand((action) => actions.push(action));
+      const frames: unknown[] = [];
+      t.deps.shellFrames.post = (frame) => frames.push(frame);
 
       const check = await t.app.request("/api/desktop/update/check", {
         method: "POST",
@@ -106,7 +108,11 @@ describe("POST /api/desktop/update/{check,download,install}", () => {
         body: "{}",
       });
       expect(install.status).toBe(202);
-      expect(actions).toEqual(["check", "download", "install"]);
+      expect(frames).toEqual([
+        { type: "desktop-updater-command", action: "check" },
+        { type: "desktop-updater-command", action: "download" },
+        { type: "desktop-updater-command", action: "install" },
+      ]);
     } finally {
       await t.cleanup();
     }
@@ -204,9 +210,14 @@ describe("/api/command", () => {
       const installCli = { command: "install-cli", label: "Install it", labelZh: "装上它" };
       // A command this build has no words for: offered, listed, runnable.
       const revealLogs = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
-      t.deps.desktop!.setCommands([installCli, revealLogs]);
-      const ran: string[] = [];
-      t.deps.desktop!.onCommand((command) => ran.push(command));
+      // The host's own frame, put where the host would put it: the platform reads THAT,
+      // never a list the runtime parsed for it.
+      t.deps.shellFrames.hostCommands = {
+        type: "host-commands",
+        commands: [installCli, revealLogs],
+      };
+      const ran: unknown[] = [];
+      t.deps.shellFrames.post = (frame) => ran.push(frame);
       const listed = await t.app.request("/api/command", { headers: { cookie } });
       expect(await listed.json()).toEqual({
         // The legacy field stays narrow — a page older than `offers` looks every id up in a
@@ -220,7 +231,7 @@ describe("/api/command", () => {
         body: "{}",
       });
       expect(run.status).toBe(202);
-      expect(ran).toEqual(["install-cli"]);
+      expect(ran).toEqual([{ type: "host-command", command: "install-cli" }]);
       // Known but not offered here, and not a command at all.
       const notOffered = await t.app.request("/api/command/check-updates", {
         method: "POST",
@@ -241,7 +252,10 @@ describe("/api/command", () => {
         body: "{}",
       });
       expect(newer.status).toBe(202);
-      expect(ran).toEqual(["install-cli", "reveal-logs"]);
+      expect(ran).toEqual([
+        { type: "host-command", command: "install-cli" },
+        { type: "host-command", command: "reveal-logs" },
+      ]);
     } finally {
       await t.cleanup();
     }

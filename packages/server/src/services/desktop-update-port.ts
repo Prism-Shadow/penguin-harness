@@ -22,6 +22,7 @@ import type {
   HostCommandsMessage,
 } from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
+import type { ShellFrames } from "../hmr/capabilities.js";
 
 /** The slice of Electron's ParentPort this relay uses (structural: the server must not depend on Electron types). */
 export interface ShellPort {
@@ -101,13 +102,33 @@ export function shellPortOf(proc: NodeJS.Process): ShellPort | null {
     : null;
 }
 
-/** Connects the port to the service: stores validated status pushes, registers the command sender. */
-export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): void {
+/**
+ * Connects the port to the service: stores validated status pushes, registers the command
+ * sender, and keeps the host's raw frames where the PLATFORM can read them.
+ *
+ * The frames holder is the whole point of the split. What a `host-commands` frame means is
+ * policy — which commands exist, what they are called, who may run one — and policy ships by
+ * push, so this function stores the frame unread and the platform interprets it (see
+ * http/routes/command.ts). Parsing it here as well is a shim for platforms older than the
+ * holder, which still ask the service for a parsed list; it goes when they do.
+ */
+export function wireShellUpdatePort(
+  desktop: DesktopService,
+  port: ShellPort,
+  frames: ShellFrames | null = null,
+): void {
+  if (frames !== null) frames.post = (frame) => port.postMessage(frame);
   port.on("message", (e) => {
     const status = parseUpdaterStatusMessage(e.data);
-    if (status !== null) desktop.setUpdateStatus(status);
+    if (status !== null) {
+      if (frames !== null) frames.updaterStatus = e.data;
+      desktop.setUpdateStatus(status);
+    }
     const offers = parseHostCommandsMessage(e.data);
-    if (offers !== null) desktop.setCommands(offers);
+    if (offers !== null) {
+      if (frames !== null) frames.hostCommands = e.data;
+      desktop.setCommands(offers);
+    }
   });
   desktop.onUpdateCommand((action) => {
     port.postMessage({
