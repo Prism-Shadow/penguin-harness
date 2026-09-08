@@ -8,6 +8,7 @@ import type {
   WorkspaceFileStat,
 } from "../services/workspace-files-service.js";
 import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
+import type { WorkspacePullRequest } from "../services/pull-request-service.js";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
 export abstract class WorkspaceFiles extends Interface<{
@@ -34,4 +35,9 @@ export abstract class WorkspaceFiles extends Interface<{
 /** FileReveal: opening a path in the machine's file manager, as RevealService implements it. */
 export abstract class FileReveal extends Interface<{
   reveal(filePath: string): Promise<void>;
+}>() {}
+
+/** PullRequests: the mechanism PullRequestService implements. */
+export abstract class PullRequests extends Interface<{
+  forWorkspace(workspace: string): Promise<WorkspacePullRequest | null>;
 }>() {}

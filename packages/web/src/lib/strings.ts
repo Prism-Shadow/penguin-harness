@@ -2503,6 +2503,7 @@ Benchmark：
      * (approval waits, harness overhead), so this reads as two measurements, never as a split.
      */
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
+    statPullRequest: (title: string): string => `Pull Request：${title}`,
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",

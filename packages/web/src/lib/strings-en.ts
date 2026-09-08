@@ -2495,6 +2495,8 @@ Scenarios:
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
+    /** Header chip for the open PR the Workspace's branch has; the hover carries its title. */
+    statPullRequest: (title: string): string => `Pull request: ${title}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
