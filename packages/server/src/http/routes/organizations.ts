@@ -31,6 +31,7 @@ import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type {
   OrgApprovalMode,
+  OrgLanguage,
   OrgStatus,
   OrgTicketPriority,
   OrgTicketStatus,
@@ -60,6 +61,7 @@ import {
 
 const STATUSES: readonly OrgStatus[] = ["active", "paused"];
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
+const LANGUAGES: readonly OrgLanguage[] = ["zh", "en"];
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 const ID_KINDS: readonly SemanticIdSuggestRequest["kind"][] = ["org", "channel"];
 
@@ -173,6 +175,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const timezone = optionalString(body, "timezone", { minLen: 1, maxLen: 64 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
     const ceoBudget = optionalNumber(body, "ceoBudget", { nonNegative: true });
+    const language = optionalEnum(body, "language", LANGUAGES);
     const model = parseModel(body);
     const detail = await deps.orgService.create(
       projectId,
@@ -183,6 +186,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(timezone !== undefined ? { timezone } : {}),
         ...(workspace !== undefined ? { workspace } : {}),
         ...(ceoBudget !== undefined ? { ceoBudget } : {}),
+        ...(language !== undefined ? { language } : {}),
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
@@ -223,6 +227,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const status = optionalEnum(body, "status", STATUSES);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const timezone = optionalString(body, "timezone", { minLen: 1, maxLen: 64 });
+    const language = optionalEnum(body, "language", LANGUAGES);
     const mentionChainLimit = optionalNumber(body, "mentionChainLimit", {
       integer: true,
       nonNegative: true,
@@ -240,6 +245,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(status !== undefined ? { status } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
       ...(timezone !== undefined ? { timezone } : {}),
+      ...(language !== undefined ? { language } : {}),
       ...(mentionChainLimit !== undefined ? { mentionChainLimit } : {}),
       ...(budgetWarnRatio !== undefined ? { budgetWarnRatio } : {}),
       ...(budgetPauseRatio !== undefined ? { budgetPauseRatio } : {}),

@@ -114,6 +114,7 @@ describe("penguin org ls / show / chart", () => {
     const text = out();
     expect(text).toContain("Acme (acme) — active");
     expect(text).toContain("Mission: Ship the site");
+    expect(text).toContain(t.org.showLanguage("en"));
     expect(text).toContain(t.org.showEmployees(2, 1, 0));
     expect(text).toContain("proposed 1, in_progress 0, review 1, done 0, rejected 0 (1 blocked)");
     expect(text).toContain("Spend (2026-09): $0.0000");
@@ -211,6 +212,22 @@ describe("penguin org create", () => {
       expect(server.orgs.has("delta")).toBe(false);
     }
     expect(err()).toContain(t.org.budgetInvalid("--ceo-budget", "many"));
+  });
+
+  it("--language overrides the language the mission would give; a value that is neither is refused", async () => {
+    expect(
+      await cli(["org", "create", "--org-id", "beta", "--mission", "m", "--language", "zh"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/organizations")?.body).toMatchObject({ language: "zh" });
+    // Omitted, the field is not sent at all: the server detects it from the mission.
+    expect(await cli(["org", "create", "--org-id", "gamma", "--mission", "m"])).toBe(0);
+    expect(lastRequest("POST", "/organizations")?.body).not.toHaveProperty("language");
+
+    expect(
+      await cli(["org", "create", "--org-id", "delta", "--mission", "m", "--language", "fr"]),
+    ).toBe(1);
+    expect(err()).toContain(t.org.languageInvalid("fr"));
+    expect(server.orgs.has("delta")).toBe(false);
   });
 
   it("create's --org-id names the organization to create; PENGUIN_ORG_ID never fills it in", async () => {

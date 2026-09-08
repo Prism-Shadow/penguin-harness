@@ -63,6 +63,8 @@ describe("organization runtime", () => {
   let events: ServerEvent[];
   let errors: ErrorRecordArgs[];
   let companyMode: boolean;
+  /** The one-off utility completion behind semantic id proposals; null = no model answered. */
+  let completion: { answer: string | null; prompts: string[] };
   let scheduler: OrganizationScheduler;
   let service: OrganizationService;
   let seq: number;
@@ -96,6 +98,7 @@ describe("organization runtime", () => {
     events = [];
     errors = [];
     companyMode = true;
+    completion = { answer: null, prompts: [] };
     seq = 0;
     const existingAgents = new Set<string>();
     const deps: OrgDeps = {
@@ -150,6 +153,10 @@ describe("organization runtime", () => {
         },
       },
       projectConfig: new ProjectConfigService(root),
+      completeOnce: async (_p, prompt) => {
+        completion.prompts.push(prompt);
+        return completion.answer;
+      },
       usage: {
         costBySession: async (_p, ids) => ({
           bySession: new Map(ids.filter((id) => costs.has(id)).map((id) => [id, costs.get(id)!])),
@@ -268,7 +275,8 @@ describe("organization runtime", () => {
     // The board decides: the init run proposes and stops before hiring anything.
     expect(parsed?.rest).toContain("END THIS RUN");
     expect(parsed?.rest).toContain("@user:alice");
-    expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO} 的工位`);
+    // The mission is English, so the organization works in English — its desk titles too.
+    expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO}'s desk`);
     expect(cache.ownerOfSession(started[0]!.sessionId)).toMatchObject({
       orgId: ORG,
       agentId: CEO,
@@ -375,6 +383,176 @@ describe("organization runtime", () => {
       service.hire(P, ORG, { agentId: "ghost", title: "X", reportsTo: CEO }),
     ).rejects.toMatchObject({
       code: "agent_not_found",
+    });
+  });
+
+  describe("employee workspaces", () => {
+    it("creates a relative sub-directory as the employee is hired, and stores one spelling of it", async () => {
+      await createOrg();
+      const item = await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "HR",
+        reportsTo: CEO,
+        workspace: "./hr/",
+      });
+      const dir = path.join(orgDir(), "workspace", "hr");
+      // The directory the CEO never created is there, and the chart holds the plain form.
+      expect((await fs.stat(dir)).isDirectory()).toBe(true);
+      expect(item.workspace).toBe("hr");
+      expect(item.resolvedWorkspace).toBe(dir);
+      expect(item.invalid).toBeUndefined();
+      // …and the desk opens in it, which is what `desk_unavailable` used to refuse.
+      const desk = await service.desk(P, ORG, HR, {});
+      expect(desk.workspace).toBe(dir);
+    });
+
+    it("refuses a spec that leaves the shared workspace, and an absolute path nobody created", async () => {
+      await createOrg();
+      await expect(
+        service.hire(P, ORG, {
+          newAgent: { agentId: HR },
+          title: "HR",
+          reportsTo: CEO,
+          workspace: "../outside",
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_workspace" });
+      await expect(
+        service.hire(P, ORG, {
+          newAgent: { agentId: HR },
+          title: "HR",
+          reportsTo: CEO,
+          workspace: path.join(root, "nowhere"),
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_workspace" });
+      // Nothing was written for either refusal.
+      expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toEqual([CEO]);
+      await expect(fs.stat(path.join(orgDir(), "workspace", "outside"))).rejects.toBeTruthy();
+    });
+
+    it("creates the directory a hand-edited chart names, so the calendar still reaches that desk", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      // A hand edit, as a person or the CEO's file tools would leave it: a partition that
+      // exists only in the file. The chart lists it as usable, and the desk creates it.
+      await fs.writeFile(
+        path.join(orgDir(), "org_chart.yaml"),
+        [
+          "employees:",
+          `  - agent_id: ${CEO}`,
+          "    title: CEO",
+          "    reports_to: null",
+          "    workspace: .",
+          `  - agent_id: ${HR}`,
+          "    title: HR",
+          `    reports_to: ${CEO}`,
+          "    workspace: people",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const hr = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR)!;
+      expect(hr.invalid).toBeUndefined();
+      expect(hr.resolvedWorkspace).toBe(path.join(orgDir(), "workspace", "people"));
+      const desk = await service.desk(P, ORG, HR, {});
+      expect(desk.workspace).toBe(path.join(orgDir(), "workspace", "people"));
+      expect((await fs.stat(path.join(orgDir(), "workspace", "people"))).isDirectory()).toBe(true);
+    });
+
+    it("reassigns a partition and creates the new one", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const item = await service.patchEmployee(P, ORG, HR, { workspace: "./people" });
+      expect(item.workspace).toBe("people");
+      expect((await fs.stat(path.join(orgDir(), "workspace", "people"))).isDirectory()).toBe(true);
+      await expect(
+        service.patchEmployee(P, ORG, HR, { workspace: "../elsewhere" }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_workspace" });
+    });
+  });
+
+  describe("the working language", () => {
+    const ZH_MISSION = "做一个 DeepSeek Harness 插件市场，并靠首页置顶位盈利。";
+
+    it("follows the mission: a Chinese mission gives a Chinese handbook, brief and init run", async () => {
+      await service.create(P, { orgId: ORG, name: "插件市场", mission: ZH_MISSION }, "alice");
+      const settings = (await service.detail(P, ORG, "alice")).settings;
+      expect(settings.language).toBe("zh");
+      expect(await fs.readFile(path.join(orgDir(), "org_config.toml"), "utf8")).toContain(
+        'language = "zh"',
+      );
+      const handbook = await service.handbook(P, ORG);
+      expect(handbook).toContain("## 工作语言");
+      expect(handbook).toContain("## 使命");
+      expect(handbook).toContain(ZH_MISSION);
+      // Paths, commands and field names stay ASCII whatever the language is.
+      expect(handbook).toContain("`org_chart.yaml`");
+      expect(handbook).toContain("penguin org ticket start <id>");
+      expect(briefs.get(CEO)).toContain("# 员工简介");
+      expect(briefs.get(CEO)).toContain(`<app_data_dir>/organizations/${ORG}/`);
+      const parsed = parseOrgTriggerMessage(started[0]!.text);
+      expect(parsed?.rest).toContain(`使命：${ZH_MISSION}`);
+      expect(parsed?.rest).toContain("penguin org ticket start <id>");
+      expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO} 的工位`);
+      // Hires inherit it: the brief is written in the organization's language, not the request's.
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "人事", reportsTo: CEO });
+      expect(briefs.get(HR)).toContain("# 员工简介");
+    });
+
+    it("takes the request's language over the mission's, and PATCH changes it", async () => {
+      await service.create(P, { orgId: ORG, mission: ZH_MISSION, language: "en" }, "alice");
+      expect(await service.handbook(P, ORG)).toContain("## Working language");
+      const settings = await service.patch(P, ORG, { language: "zh" });
+      expect(settings.language).toBe("zh");
+      expect(await fs.readFile(path.join(orgDir(), "org_config.toml"), "utf8")).toContain(
+        'language = "zh"',
+      );
+      // The handbook is an intent file: a language change never rewrites what the CEO owns.
+      expect(await service.handbook(P, ORG)).toContain("## Working language");
+    });
+
+    it("says English when nothing was ever written, so an old organization still reports one", async () => {
+      await createOrg();
+      const raw = await fs.readFile(path.join(orgDir(), "org_config.toml"), "utf8");
+      await fs.writeFile(
+        path.join(orgDir(), "org_config.toml"),
+        raw.replace('language = "en"\n', ""),
+        "utf8",
+      );
+      expect((await service.detail(P, ORG, "alice")).settings.language).toBe("en");
+    });
+  });
+
+  describe("semantic id proposals", () => {
+    it("takes the model's answer, names the ids already taken, and never returns one of them", async () => {
+      completion.answer = "`research_paper_lab`\n";
+      expect(await service.suggestId(P, { name: "科研论文公司", kind: "org" })).toEqual({
+        id: "research_paper_lab",
+        source: "model",
+      });
+      expect(completion.prompts[0]).toContain("科研论文公司");
+      completion.answer = "site";
+      expect(
+        await service.suggestId(P, { name: "站点", kind: "channel", taken: ["site"] }),
+      ).toEqual({ id: "site_2", source: "model" });
+      expect(completion.prompts[1]).toContain("Do not answer any of: site.");
+    });
+
+    it("falls back to the ASCII slug when the answer is unusable, and 422s when neither can name it", async () => {
+      completion.answer = "我建议叫「科研实验室」";
+      expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
+        id: "plugin_marketplace",
+        source: "fallback",
+      });
+      // No model at all (no default model, no credential, a failure) is the same case.
+      completion.answer = null;
+      expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
+        id: "plugin_marketplace",
+        source: "fallback",
+      });
+      await expect(service.suggestId(P, { name: "科研公司", kind: "org" })).rejects.toMatchObject({
+        status: 422,
+        code: "id_not_derivable",
+      });
     });
   });
 

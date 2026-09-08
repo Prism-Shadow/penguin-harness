@@ -1105,6 +1105,7 @@ export function buildAppDeps(
         agentConfigService.updateConfig(projectId, agentId, { agentsMd: content }),
     },
     projectConfig: projectConfigService,
+    completeOnce: (projectId, prompt) => projectConfigService.completeOnce(projectId, prompt),
     usage: usageService,
     errors,
     notifyProject: notifyProjectUsers,

@@ -527,21 +527,50 @@ export class OrgStore {
   // ---- workspace ----
 
   /**
-   * Resolves an employee's workspace as the chart writes it: relative → under the shared
-   * workspace (and it must stay inside it); absolute → as given. Null when the directory
-   * does not exist — the caller reports the entry as invalid rather than creating anything.
+   * Where an employee's workspace spec points, without touching the disk: relative → under
+   * the shared workspace, absolute → itself. Null only when a relative spec climbs out of
+   * the shared workspace with `..` — that is a spec no organization may hold, whether or not
+   * the directory happens to exist.
+   */
+  workspaceTarget(shared: string, spec: string): string | null {
+    if (path.isAbsolute(spec)) return spec;
+    const target = path.resolve(shared, spec);
+    const rel = path.relative(shared, target);
+    return rel.startsWith("..") || path.isAbsolute(rel) ? null : target;
+  }
+
+  /**
+   * Resolves an employee's workspace as the chart writes it, read-only: null when the spec
+   * escapes the shared workspace or the directory does not exist. Callers that are about to
+   * put an employee to work use {@link ensureWorkspace} instead.
    */
   async resolveWorkspace(shared: string, spec: string): Promise<string | null> {
-    const target = path.isAbsolute(spec) ? spec : path.resolve(shared, spec);
-    if (!path.isAbsolute(spec)) {
-      const rel = path.relative(shared, target);
-      if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
-    }
+    const target = this.workspaceTarget(shared, spec);
+    if (target === null) return null;
     try {
       const stat = await fs.stat(target);
       return stat.isDirectory() ? target : null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The workspace to open a session in, created when it is the organization's to create: a
+   * relative spec names a partition of the shared workspace, so the server makes it rather
+   * than refusing an employee for a directory nobody thought to create; an absolute spec
+   * names an arbitrary user directory and must already exist. Null when a relative spec
+   * escapes the shared workspace, or when an absolute one is missing or not a directory.
+   */
+  async ensureWorkspace(shared: string, spec: string): Promise<string | null> {
+    const target = this.workspaceTarget(shared, spec);
+    if (target === null) return null;
+    if (path.isAbsolute(spec)) return this.resolveWorkspace(shared, spec);
+    try {
+      await fs.mkdir(target, { recursive: true });
+    } catch {
+      return null;
+    }
+    return target;
   }
 }

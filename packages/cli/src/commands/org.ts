@@ -333,6 +333,7 @@ function renderDetail(d: OrganizationDetail, t: Messages): string {
   const lines = [
     t.org.showHead(d.name, d.orgId, d.status),
     t.org.showMission(d.mission),
+    t.org.showLanguage(d.settings.language ?? "en"),
     t.org.showEmployees(d.employeeCount, d.runningCount, d.pausedCount),
     t.org.showBoard(board, d.blockedTickets),
     t.org.showSpend(d.spend.period, spendText(d.spend)),
@@ -528,6 +529,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     .requiredOption("--org-id <id>", t.org.newOrgId)
     .requiredOption("--mission <text>", t.org.mission)
     .option("--name <name>", t.org.orgName)
+    .option("--language <zh|en>", t.org.orgLanguageOption)
     .option("--workspace <path>", t.common.workspace)
     .option("--ceo-budget <usd>", t.org.ceoBudget, String(DEFAULT_CEO_BUDGET))
     .option("--model-id <id>", t.common.modelId)
@@ -543,6 +545,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       }
       const ceoBudget = parseBudget("--ceo-budget", String(opts.ceoBudget), t);
       if (ceoBudget === null) return;
+      if (opts.language !== undefined && opts.language !== "zh" && opts.language !== "en") {
+        fail(t, t.org.languageInvalid(String(opts.language)));
+        return;
+      }
       const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
       const projectId = resolveProjectId(opts.projectId);
       const detail = await client.request<OrganizationDetail>(
@@ -552,6 +558,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
           orgId: String(opts.orgId),
           mission: String(opts.mission),
           ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
+          ...(opts.language !== undefined ? { language: opts.language as "zh" | "en" } : {}),
           ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
           ceoBudget,
           ...(opts.modelId !== undefined

@@ -8,10 +8,15 @@
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
 import type { TicketDoc } from "../../organization/files.js";
-import { serializeTicket } from "../../organization/files.js";
+import { orgLanguage, serializeTicket } from "../../organization/files.js";
 import type { OrgDeps } from "./deps.js";
 import type { LoadedOrg } from "./model.js";
 import { employeeLine, sharedWorkspace } from "./model.js";
+
+/** The desk session's title, in the organization's working language. */
+function deskTitle(org: LoadedOrg, name: string): string {
+  return orgLanguage(org.config) === "zh" ? `${name} 的工位` : `${name}'s desk`;
+}
 
 export interface DeskHandle {
   sessionId: string;
@@ -26,7 +31,9 @@ export type DeskResult = { ok: true; desk: DeskHandle } | { ok: false; error: st
  * The employee's desk session: reused while it exists and still sits in the workspace the
  * chart resolves to; otherwise (first use, deleted session, reassigned workspace, or an
  * explicit renewal) a new one is opened and the ledger rewritten. The old session stays as
- * history under `previous` so its cost keeps counting.
+ * history under `previous` so its cost keeps counting. A relative workspace that is not on
+ * disk is created here too — a hand-edited chart, or the calendar reaching a desk before
+ * anyone opened it, must not leave an employee unable to work over a missing directory.
  */
 export async function ensureDesk(
   deps: OrgDeps,
@@ -39,7 +46,14 @@ export async function ensureDesk(
   if (!(await deps.agents.exists(org.projectId, agentId))) {
     return { ok: false, error: `Agent ${agentId} does not exist` };
   }
-  const workspace = await deps.store.resolveWorkspace(sharedWorkspace(org), employee.workspace);
+  const shared = sharedWorkspace(org);
+  if (deps.store.workspaceTarget(shared, employee.workspace) === null) {
+    return {
+      ok: false,
+      error: `workspace leaves the shared workspace for ${agentId}: ${employee.workspace}`,
+    };
+  }
+  const workspace = await deps.store.ensureWorkspace(shared, employee.workspace);
   if (workspace === null) {
     return {
       ok: false,
@@ -81,7 +95,7 @@ export async function ensureDesk(
   }
   const name = await deps.agents.displayName(org.projectId, agentId);
   // A manual title: the auto-title pass only fills empty titles, so the desk keeps its name.
-  deps.sessions.updateTitle(created.sessionId, `${name} 的工位`);
+  deps.sessions.updateTitle(created.sessionId, deskTitle(org, name));
   const openedAt = new Date(deps.now?.() ?? Date.now()).toISOString();
   const previous = existing ? [...existing.previous, existing.sessionId] : [];
   org.desks[agentId] = {
@@ -184,15 +198,10 @@ export async function openTicketSession(
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const employee = org.byId.get(agentId);
   if (!employee) return { ok: false, error: `${agentId} is not an employee of ${org.orgId}` };
-  const workspace = await deps.store.resolveWorkspace(
-    sharedWorkspace(org),
-    opts.workspace ?? employee.workspace,
-  );
+  const spec = opts.workspace ?? employee.workspace;
+  const workspace = await deps.store.ensureWorkspace(sharedWorkspace(org), spec);
   if (workspace === null) {
-    return {
-      ok: false,
-      error: `workspace directory does not exist: ${opts.workspace ?? employee.workspace}`,
-    };
+    return { ok: false, error: `workspace directory does not exist: ${spec}` };
   }
   const model = employee.model ?? org.config.model;
   let created: { sessionId: string; workspace: string };

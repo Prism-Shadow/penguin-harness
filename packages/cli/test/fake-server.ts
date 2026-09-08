@@ -75,6 +75,8 @@ export interface FakeOrgState {
   status: "active" | "paused";
   createdBy: string;
   timezone: string;
+  /** The working language the settings DTO always carries. */
+  language: "zh" | "en";
   invalid?: string;
   ceoAgentId: string;
   ceoDeskSessionId?: string;
@@ -366,6 +368,7 @@ export class FakeServer {
       status: "active",
       createdBy: "user:admin",
       timezone: "UTC",
+      language: "en",
       ceoAgentId: "ceo",
       spend: { period: ORG_PERIOD, cost: 0 },
       employees: [],
@@ -525,6 +528,7 @@ export class FakeServer {
         budgetWarnRatio: 0.8,
         budgetPauseRatio: 1,
         createdBy: org.createdBy,
+        language: org.language,
       },
       board: Object.fromEntries(
         TICKET_COLUMNS.map((column) => [column, tickets.filter((x) => x.status === column).length]),
@@ -685,6 +689,7 @@ export class FakeServer {
           projectId,
           mission: body.mission,
           ...(isNonEmptyString(body.name) ? { name: body.name } : {}),
+          ...(body.language === "zh" || body.language === "en" ? { language: body.language } : {}),
         });
         // Creation opens the CEO's desk and starts the initialization run.
         const ceo = org.employees.find((e) => e.agentId === org.ceoAgentId)!;

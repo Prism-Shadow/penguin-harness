@@ -248,6 +248,14 @@ const LIST_MODELS_TIMEOUT_MS = 20_000;
 const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
+/**
+ * Bounds for a one-off utility completion (see completeOnce). An identifier is a handful of
+ * tokens, and the caller is a dialog waiting on the answer with a working fallback already
+ * in hand — so the budget is small and the wait is short.
+ */
+const UTILITY_COMPLETION_MAX_TOKENS = 48;
+const UTILITY_COMPLETION_TIMEOUT_MS = 15_000;
+
 export class ProjectConfigService {
   /**
    * Parsed-table cache, one entry per Project, keyed by the config file's mtime as
@@ -633,6 +641,54 @@ export class ProjectConfigService {
         outcome,
         message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
       };
+    }
+  }
+
+  /**
+   * One short completion on the Project's **default** model, for utility asks that belong to
+   * no Session — today the English identifier a display name is translated into. Everything
+   * comes from the stored default entry (credential, base URL, pinned protocol), the answer
+   * is the model's plain text, and every failure is `null` rather than an exception: no
+   * default model, no entry for it, a construction that throws on a missing credential, a
+   * refusal, a timeout, or an answer with no text at all. Callers must have a result that
+   * works without it. The request is not metered — it carries no Session to attribute it to.
+   */
+  async completeOnce(projectId: string, prompt: string): Promise<string | null> {
+    const raw = await this.readRaw(projectId);
+    const ref = optRef(raw.default_model);
+    if (ref === undefined) return null;
+    const entry = asArray(raw.models).find((m) => entryMatches(m, ref.provider, ref.model_id));
+    if (entry === undefined) return null;
+    const apiKey = optStr(entry.api_key);
+    const baseUrl = optStr(entry.base_url);
+    const clientType = canonicalClientType(optStr(entry.client_type));
+    try {
+      // Inside the try for the same reason as the probes: the SDK throws during
+      // construction when a credential is missing, and that must read as "no answer".
+      const llm = new GenerativeModel({
+        modelId: ref.model_id,
+        ...(apiKey ? { apiKey } : {}),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(clientType ? { clientType } : {}),
+        tools: [],
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright.
+        thinkingLevel: "low",
+        maxTokens: UTILITY_COMPLETION_MAX_TOKENS,
+        requestTimeoutMs: UTILITY_COMPLETION_TIMEOUT_MS,
+      });
+      const gen = llm.streamGenerate({ newMessages: [userText(prompt)] });
+      let text = "";
+      for (;;) {
+        const step = await gen.next();
+        if (step.done) return text.trim() === "" ? null : text;
+        // Complete text messages only: the partial fragments concatenate to the same string,
+        // so counting both would return the answer twice.
+        const p = step.value.payload as { type?: string; text?: string };
+        if (p.type === "text" && typeof p.text === "string") text += p.text;
+      }
+    } catch {
+      return null;
     }
   }
 

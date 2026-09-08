@@ -79,6 +79,13 @@ export interface OrgDeps {
   sessionCreator: OrgSessionCreator;
   agents: OrgAgentGateway;
   projectConfig: ProjectConfigService;
+  /**
+   * One short completion on the Project's default model, for the utility asks that are not a
+   * Session's work — today the semantic id a display name is translated into. Null whenever
+   * the model cannot answer (no default model, no credential, any failure): every caller
+   * carries an answer that works without it. Optional so a test binds a double or nothing.
+   */
+  completeOnce?: (projectId: string, prompt: string) => Promise<string | null>;
   usage: OrgUsageGateway;
   errors: ErrorSink;
   /** Company-mode notifications go to the Project's owner and members (app.ts binds the user channels). */

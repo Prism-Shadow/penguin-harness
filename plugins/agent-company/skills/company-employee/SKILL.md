@@ -15,6 +15,8 @@ If the message only names this skill (e.g. "use company-employee skill") without
 
 The organization lives at `<app_data_dir>/organizations/<org_id>/` — substitute the App Data Dir from your Environment and the `org:` line of the trigger block, and never write absolute paths into tickets, channels or notes. Read `handbook/README.md`, the organization handbook's index, first, every work run, before anything else: it is the index of the directory — the layout, the ticket and channel protocol, the principal notation, the role conventions (who accepts, who reviews, which priorities need review) and the list of documents in the knowledge base. `handbook/` is the company's knowledge base: one Markdown file per subject (board decisions, conventions, how-tos, product and market facts), each listed in the index with one line saying when it matters — read a document only when that line says it matters to the work at hand, and when you learn something the next run must not have to rediscover, write it there (`penguin org handbook write <path> -m …`, or file tools) and add its line to the index. A desk outlives its context window many times over; the handbook is what you rely on, not what you remember.
 
+Write in the organization's **working language** — the one the handbook's 「工作语言」 / “Working language” section names: channel messages, tickets (title, goal, acceptance criteria, progress, result), handbook documents, calendar prompts and employee briefs are all written in it. Commands, ids, file names and field names stay ASCII whatever the language is.
+
 | Path | What it is | Who writes it |
 | --- | --- | --- |
 | `org_config.toml` | Name, mission, status, timezone, approval mode, mention chain limit, budget ratios, creator | humans, the CEO |
