@@ -2632,7 +2632,7 @@ Benchmark：
     },
     calendar: {
       title: "日历",
-      info: "全员日程项的月 / 周 / 日视图。每条日程属于一位员工，到点即向它的工位会话发送提示词；颜色按员工区分，已过去的实例标出触发结果。",
+      info: "全员日程项的月 / 周 / 日视图。每条日程属于一位员工，到点即向它的工位会话发送提示词；颜色按员工区分，已过去的实例标出触发结果。日程驱动员工的工位会话按时巡检看板、推进工单，点右上角「新建日程」为某位员工安排一条。",
       month: "月",
       week: "周",
       day: "日",
@@ -2664,7 +2664,8 @@ Benchmark：
       disabledNote: "已停用",
       invalidFiles: "解析失败的日程文件",
       empty: "还没有日程",
-      emptyHint: "日程驱动员工的工位会话按时巡检看板、推进工单。点「新建日程」为某位员工安排一条。",
+      emptyHint:
+        "日程驱动员工的工位会话按时巡检看板、推进工单，点右上角「新建日程」为某位员工安排一条。",
       moreEvents: (n: number): string => `还有 ${n} 项`,
       weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as readonly string[],
       allDay: "全天",
@@ -2685,10 +2686,17 @@ Benchmark：
       legendFilter: (name: string): string => `只看 ${name} 的日程`,
       createAt: (label: string): string => `在 ${label} 新建日程`,
       loadFailed: (error: string): string => `日历加载失败：${error}`,
+      /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "知道了",
+      /** Under the start time: why two employees should not share one minute. */
+      staggerHint:
+        "错峰安排：给每位员工各自的时刻，不要让多位员工在同一分钟触发，避免争抢预算与工单。",
+      /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
+      warningsPrefix: "排班提醒",
     },
     tickets: {
       title: "工单",
-      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片看详情；被阻塞的工单留在原列并带角标。",
+      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片看详情；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
       columns: {
         proposed: "提议",
         in_progress: "进行中",
@@ -2701,7 +2709,9 @@ Benchmark：
       createTitle: "新建工单",
       empty: "还没有工单",
       emptyHint:
-        "工单是组织的工作单位：新建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
+        "工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
+      /** The "×" that puts the empty-board note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "知道了",
       columnEmpty: "空",
       ticketTitle: "标题",
       goal: "目标",

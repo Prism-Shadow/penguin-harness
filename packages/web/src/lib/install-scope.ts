@@ -243,6 +243,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.orgPageHint.",
+    scope: "install",
+    why: "A dismissed empty-page note, keyed by user, Project and organization id of this root.",
+  },
+  {
+    kind: "family",
     key: "penguin.lastAgentId.",
     scope: "install",
     why: "The Agent id last selected, per Project.",

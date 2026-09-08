@@ -5,8 +5,10 @@
  * and one dialog for creating and editing an event — the scheduled-task dialog minus its
  * target fields, with the employee as a select. The grid is always on screen: a skeleton of
  * it while the first fetch is out, the empty grid with a one-line hint when the organization
- * has no events yet, the grid plus an error strip when a refetch fails. Past instances carry
- * the outcome the scheduler recorded; every write confirms first.
+ * has no events yet — dismissible, and repeated in the page's "?" so it stays reachable —
+ * the grid plus an error strip when a refetch fails. Past instances carry the outcome the
+ * scheduler recorded; every write confirms first, and reports back whatever the server has
+ * to say about the rota.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -24,6 +26,7 @@ import { employeeColor } from "../../lib/category-colors";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
+import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { Button } from "../../components/ui/button";
 import { Segmented } from "../../components/ui/segmented";
@@ -33,8 +36,9 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
@@ -51,6 +55,7 @@ import {
   weekDays,
 } from "./calendar-geom";
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
+import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 
 const PREV_ICON = "M15 18 9 12l6-6";
 const NEXT_ICON = "m9 18 6-6-6-6";
@@ -119,6 +124,7 @@ export function CalendarPage() {
   const { projectId, orgId, org } = useOrg();
   const navigate = useNavigate();
   const company = useCompany();
+  const { user } = useAuth();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.calendar}` : S.nav.org.calendar);
   const [events, setEvents] = useState<OrgCalendarItem[] | null>(null);
   const [invalidFiles, setInvalidFiles] = useState<
@@ -138,6 +144,14 @@ export function CalendarPage() {
   const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The empty-calendar note goes away for good once read; the page's "?" carries the same
+  // sentence. The key holds the organization, so switching to another one — which does not
+  // unmount this page — re-reads the dismissal instead of carrying the last answer over.
+  const emptyHintKey = hintKey(user?.userId ?? null, projectId, orgId, "calendar");
+  const [hintDismissed, setHintDismissed] = useState(() => isHintDismissed(emptyHintKey));
+  useEffect(() => {
+    setHintDismissed(isHintDismissed(emptyHintKey));
+  }, [emptyHintKey]);
 
   const load = useCallback(async () => {
     try {
@@ -243,22 +257,27 @@ export function CalendarPage() {
         ...(form.period.trim() ? { period: form.period.trim() } : {}),
         ...(form.endAt ? { endAt: new Date(form.endAt).toISOString() } : {}),
       };
-      if (form.editing !== null) {
-        await api.updateOrgCalendarEvent(
-          projectId,
-          orgId,
-          form.editing.agentId,
-          form.editing.name,
-          body,
-        );
-      } else {
-        await api.createOrgCalendarEvent(projectId, orgId, {
-          ...body,
-          agentId: form.agentId,
-          name: form.name.trim(),
-        });
-      }
+      const written =
+        form.editing !== null
+          ? await api.updateOrgCalendarEvent(
+              projectId,
+              orgId,
+              form.editing.agentId,
+              form.editing.name,
+              body,
+            )
+          : await api.createOrgCalendarEvent(projectId, orgId, {
+              ...body,
+              agentId: form.agentId,
+              name: form.name.trim(),
+            });
       toastSuccess(S.common.saved);
+      // Rota advice, not a failure: the event is stored either way, so it rides in a second
+      // toast rather than turning the save into an error.
+      const warnings = written.warnings ?? [];
+      if (warnings.length > 0) {
+        toastAttention(`${S.company.calendar.warningsPrefix} · ${warnings.join(" · ")}`);
+      }
       setConfirmSave(false);
       setForm(null);
       void load();
@@ -657,18 +676,23 @@ export function CalendarPage() {
         </div>
       )}
 
-      {events !== null && events.length === 0 && invalidFiles.length === 0 && (
+      {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
         <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
         >
-          <span>{S.company.calendar.emptyHint}</span>
+          <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
           <Button
-            size="sm"
-            variant="primary"
-            disabled={employees.length === 0}
-            onClick={() => openCreate()}
+            size="icon"
+            variant="ghost"
+            className="shrink-0"
+            title={S.company.calendar.dismissHint}
+            aria-label={S.company.calendar.dismissHint}
+            onClick={() => {
+              dismissHint(emptyHintKey);
+              setHintDismissed(true);
+            }}
           >
-            {S.company.calendar.create}
+            <CloseIcon />
           </Button>
         </div>
       )}
@@ -819,6 +843,7 @@ export function CalendarPage() {
                 label={S.company.calendar.startAt}
                 required
                 type="datetime-local"
+                hint={S.company.calendar.staggerHint}
                 {...(fieldErrors.startAt !== undefined ? { error: fieldErrors.startAt } : {})}
                 value={form.startAt}
                 onChange={(e) => set({ startAt: e.target.value })}

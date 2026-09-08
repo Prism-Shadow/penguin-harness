@@ -2694,7 +2694,7 @@ Scenarios:
     },
     calendar: {
       title: "Calendar",
-      info: "Every employee's calendar events in a month / week / day view. Each event belongs to one employee and sends its prompt to that employee's desk session when due; colours tell employees apart, and past instances show what the trigger did.",
+      info: "Every employee's calendar events in a month / week / day view. Each event belongs to one employee and sends its prompt to that employee's desk session when due; colours tell employees apart, and past instances show what the trigger did. Calendar events drive employees' desk sessions to check the board and push tickets on time; use New event, top right, to schedule one for an employee.",
       month: "Month",
       week: "Week",
       day: "Day",
@@ -2728,7 +2728,7 @@ Scenarios:
       invalidFiles: "Calendar files that failed to parse",
       empty: "No events yet",
       emptyHint:
-        "Calendar events drive employees' desk sessions to check the board and push tickets on time. Use New event to schedule one for an employee.",
+        "Calendar events drive employees' desk sessions to check the board and push tickets on time; use New event, top right, to schedule one for an employee.",
       moreEvents: (n: number): string => `${n} more`,
       weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as readonly string[],
       allDay: "All day",
@@ -2766,10 +2766,17 @@ Scenarios:
       legendFilter: (name: string): string => `Show only ${name}'s events`,
       createAt: (label: string): string => `New event at ${label}`,
       loadFailed: (error: string): string => `Could not load the calendar: ${error}`,
+      /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "Got it",
+      /** Under the start time: why two employees should not share one minute. */
+      staggerHint:
+        "Stagger the rota: give every employee its own minute; desks that fire together compete for the same budget and tickets.",
+      /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
+      warningsPrefix: "Rota notice",
     },
     tickets: {
       title: "Tickets",
-      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click it for the detail; a blocked ticket stays in its column with a badge.",
+      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click it for the detail; a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
       columns: {
         proposed: "Proposed",
         in_progress: "In progress",
@@ -2782,7 +2789,9 @@ Scenarios:
       createTitle: "New ticket",
       empty: "No tickets yet",
       emptyHint:
-        "A ticket is the organization's unit of work: create one and name an owner, and the owner's desk session starts a ticket session for it.",
+        "A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      /** The "×" that puts the empty-board note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "Got it",
       columnEmpty: "Empty",
       ticketTitle: "Title",
       goal: "Goal",

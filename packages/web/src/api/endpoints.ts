@@ -144,9 +144,9 @@ import type {
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
 import type {
-  OrgCalendarItem,
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
   OrgChartResponse,
   OrgChannelCreateRequest,
   OrgChannelDetail,
@@ -1369,7 +1369,11 @@ export const createOrgCalendarEvent = (
   projectId: string,
   orgId: string,
   body: OrgCalendarUpsertRequest & { agentId: string; name: string },
-) => apiFetch<OrgCalendarItem>(`${orgBase(projectId, orgId)}/calendar`, { method: "POST", body });
+) =>
+  apiFetch<OrgCalendarWriteResponse>(`${orgBase(projectId, orgId)}/calendar`, {
+    method: "POST",
+    body,
+  });
 
 export const updateOrgCalendarEvent = (
   projectId: string,
@@ -1378,7 +1382,7 @@ export const updateOrgCalendarEvent = (
   name: string,
   body: OrgCalendarUpsertRequest,
 ) =>
-  apiFetch<OrgCalendarItem>(
+  apiFetch<OrgCalendarWriteResponse>(
     `${orgBase(projectId, orgId)}/calendar/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}`,
     { method: "PUT", body },
   );
