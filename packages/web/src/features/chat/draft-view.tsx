@@ -27,6 +27,11 @@
  * approval mode (precedence: route state > draft cache > project default > built-in
  * fallback); the model default already flows through models.defaultModel.
  *
+ * What the draft OPENS — the conversation, or a plugin's surface — is remembered per
+ * Workspace instead (surface-memory.ts), and outside the draft cache: it has to survive the
+ * send that clears one. A directory driven through Claude Code is offered that way whenever
+ * it is the selected Workspace again, and the directory beside it stays a conversation.
+ *
  * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
  * the change up: the project-settings dialog strips the cached pins (next visits reseed
  * from the fresh defaults) and dispatches a same-tab chat-defaults-changed event that a
@@ -79,6 +84,12 @@ import type { ExampleFolderId, ExampleTask } from "./example-tasks";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
+import {
+  applicableSurfaceKind,
+  recallSurfaceKind,
+  rememberSurfaceKind,
+  workspaceKey,
+} from "./surface-memory";
 import type { DraftCache } from "./draft-cache";
 import {
   DRAFT_FLUSH_EVENT,
@@ -291,6 +302,49 @@ export function DraftView({
   const [surfaceKind, setSurfaceKind] = useState<string | null>(routeState?.surface ?? null);
   const surfaceEntry =
     surfaceKind === null ? null : (surfaces.find((s) => s.kind === surfaceKind) ?? null);
+  /**
+   * The pick follows the WORKSPACE (surface-memory.ts): a directory driven through Claude
+   * Code is driven that way the next time it is selected, while the one beside it stays a
+   * conversation. So this re-applies the remembered kind whenever the selected Workspace
+   * changes — including the first pass, where the Workspace is whatever the cache, the
+   * route or the Project default seeded.
+   *
+   * It waits for the contributed list, and drops a kind that is not in it: a surface whose
+   * plugin the Project no longer loads would otherwise leave every new draft in this
+   * Workspace on a composer that can only say "unavailable". `surfaces` may arrive after
+   * mount and may be replaced when the App is swapped, so the guard is the Workspace this
+   * last applied to, not a once-per-mount ref: a re-run for the same Workspace must never
+   * clobber a pick the user just made.
+   */
+  const kindWorkspace = workspaceKey(workspace, workspaceMachine);
+  const appliedKindWorkspace = useRef<string | null>(null);
+  useEffect(() => {
+    if (surfaces.length === 0 || !userId) return;
+    if (appliedKindWorkspace.current === kindWorkspace) return;
+    const first = appliedKindWorkspace.current === null;
+    appliedKindWorkspace.current = kindWorkspace;
+    // A deep link's `state.surface` already seeded the state and outranks the memory —
+    // but only for the Workspace it landed on; switching away is an ordinary recall.
+    if (first && routeState?.surface !== undefined) return;
+    const remembered = recallSurfaceKind(userId, projectId, workspace, workspaceMachine);
+    setSurfaceKind(
+      applicableSurfaceKind(
+        remembered,
+        surfaces.map((s) => s.kind),
+      ),
+    );
+    // routeState is read once, on the first pass, and re-reading it on a later one is
+    // exactly what the `first` guard above forbids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfaces, kindWorkspace, workspace, workspaceMachine, userId, projectId]);
+  /** Picking a kind records it for the Workspace it was picked in. */
+  const selectKind = useCallback(
+    (kind: string | null) => {
+      setSurfaceKind(kind);
+      if (userId) rememberSurfaceKind(userId, projectId, workspace, workspaceMachine, kind);
+    },
+    [userId, projectId, workspace, workspaceMachine],
+  );
   const uiLocale = useLocale().locale;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
@@ -923,7 +977,7 @@ export function DraftView({
             <KindSelect
               surfaces={surfaces}
               selected={surfaceKind}
-              onSelect={setSurfaceKind}
+              onSelect={selectKind}
               locale={uiLocale}
             />
           )}
