@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** fix
 - **Scope:** `web`, `server`
+- **PR:** [#643](https://github.com/Prism-Shadow/penguin-harness/pull/643)
 
 [English](2026-09-07-dashboard-session-list.md)
 
