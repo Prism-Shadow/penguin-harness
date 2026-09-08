@@ -7,7 +7,9 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the direct DeepSeek V4 Flash rows (flash and
+ * flash-vision-exp): 2026-09-08, for the official adjustment effective 2026-09-10 — per each
+ * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -419,18 +421,20 @@ export function effectivePricing(
  * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
-  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
-  // from api-docs.deepseek.com/quick_start/pricing after the official price increase
-  // introduced time-based tiers. The rows store the PEAK tier and declare
-  // DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday 09:00-12:00 and
-  // 14:00-18:00 — so both tiers are billed at the rate actually in force, rather than one of
-  // them being approximated by the other. --
+  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices re-read
+  // 2026-09-08 from api-docs.deepseek.com/quick_start/pricing, covering the official price
+  // adjustment effective 2026-09-10 12:00 Beijing: the V4 Flash rows (flash and
+  // flash-vision-exp) are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak
+  // 0.02 / 1 / 4; deepseek-v4-pro sits outside that adjustment, at 0.3 / 9 / 27. The rows
+  // store the PEAK tier and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside
+  // Beijing weekday 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate
+  // actually in force, rather than one of them being approximated by the other. --
   {
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
@@ -441,7 +445,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
   },

@@ -697,12 +697,13 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    // DeepSeek rows carry the official PEAK tier — re-read 2026-08-18 after the official price
-    // increase introduced time-based tiers. The off-peak tier is exactly half, and is applied
-    // from the row's schedule rather than stored (see the off-peak schedules block below).
+    // DeepSeek rows carry the official PEAK tier; the off-peak tier is exactly half, and is
+    // applied from the row's schedule rather than stored (see the off-peak schedules block
+    // below). The flash rows were re-read 2026-09-08 for the official price adjustment
+    // effective 2026-09-10; V4 Pro sits outside that adjustment.
     const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
-      0.1, 3, 9,
+      0.04, 2, 8,
     ]);
     const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
@@ -1110,11 +1111,11 @@ describe("off-peak schedules", () => {
         5,
       );
     }
-    // The published peak figures themselves: CNY 0.1 / 3 / 9 per million, at the catalog's 7:1
-    // display convention, which is DeepSeek's off-peak 0.05 / 1.5 / 4.5 doubled.
+    // The published peak figures themselves: CNY 0.04 / 2 / 8 per million, at the catalog's 7:1
+    // display convention, which is DeepSeek's off-peak 0.02 / 1 / 4 doubled.
     const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
     expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
-      0.014286, 0.428571, 1.285714,
+      0.005714, 0.285714, 1.142857,
     ]);
   });
 
