@@ -12,7 +12,7 @@
  * property holds by construction — which is what these tests pin.
  */
 import { describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { HotResources } from "@prismshadow/penguin-hmr";
@@ -132,7 +132,10 @@ describe("loadPluginHost", () => {
       const resources = new HotResources();
       const first = await loadPluginHost(resources, root);
       const held = first.entries().get("@acme/real");
-      expect(held?.file).toBe(path.join(dir, "index.js"));
+      // The entry file comes from require.resolve, which resolves symlinks; macOS's tmpdir
+      // is /var → /private/var, so the expected path has to be resolved the same way.
+      const entryFile = await realpath(path.join(dir, "index.js"));
+      expect(held?.file).toBe(entryFile);
 
       // Same file behind the name: the same object, not a second import.
       resources.register(PLUGINS_RESOURCE_ID, first);
@@ -145,7 +148,7 @@ describe("loadPluginHost", () => {
       resources.register(PLUGINS_RESOURCE_ID, moved);
       const afterPush = await loadPluginHost(resources, root);
       expect(afterPush.entries().get("@acme/real")).not.toBe(held);
-      expect(afterPush.entries().get("@acme/real")?.file).toBe(path.join(dir, "index.js"));
+      expect(afterPush.entries().get("@acme/real")?.file).toBe(entryFile);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
