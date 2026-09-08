@@ -3017,6 +3017,43 @@ Scenarios:
       mentionsYou: "Mentions you",
       systemMessage: "System message",
       sentAt: (time: string): string => `Sent at ${time}`,
+      notices: {
+        employee_joined: (agent: string, title: string, manager: string): string =>
+          `${agent} joined as ${title}, reporting to ${manager}.`,
+        employee_left: (agent: string, manager: string): string =>
+          `${agent} left the organization; reports now go to ${manager}.`,
+        channel_created: (by: string): string => `${by} created the channel.`,
+        channel_archived: (by: string): string => `${by} archived the channel.`,
+        channel_unarchived: (by: string): string => `${by} unarchived the channel.`,
+        channel_joined: (principal: string): string => `${principal} joined the channel.`,
+        channel_invited: (by: string, principal: string): string =>
+          `${by} invited ${principal} to the channel.`,
+        channel_left: (principal: string): string => `${principal} left the channel.`,
+        channel_removed: (by: string, principal: string): string =>
+          `${by} removed ${principal} from the channel.`,
+        budget_warned: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `Budget warning: ${agent} has used ${percent}% of its ${period} budget (${cost} / ${budget} USD).`,
+        budget_paused: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `Budget pause: ${agent} reached ${percent}% of its ${period} budget (${cost} / ${budget} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
+        ticket_blocked: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) is blocked.`,
+        ticket_done: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) is done.`,
+        ticket_rejected: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) was rejected.`,
+      },
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {

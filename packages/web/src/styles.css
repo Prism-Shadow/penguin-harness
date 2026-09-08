@@ -554,6 +554,42 @@ html.dark .shiki span {
   @apply border border-gray-200 px-2 py-1 text-sm dark:border-gray-800;
 }
 
+/* A channel message body (features/company/channel-view.tsx): the same Markdown typography, one
+   size tighter. A message is a line in a stream, not a document — its blocks sit closer, its
+   headings step down towards body size, and the first and last block give up their outer margins
+   so a one-paragraph message occupies exactly its row. Used together with .md-body, after it, so
+   these win at equal specificity. */
+.md-compact :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.25rem 0;
+}
+.md-compact li {
+  margin: 0.125rem 0;
+}
+.md-compact p {
+  line-height: 1.6;
+}
+.md-compact :is(h1, h2, h3, h4) {
+  margin: 0.5rem 0 0.25rem;
+}
+.md-compact h1 {
+  font-size: 1.0625rem;
+}
+.md-compact h2 {
+  font-size: 1rem;
+}
+.md-compact h3 {
+  font-size: 0.9375rem;
+}
+.md-compact h4 {
+  font-size: 0.875rem;
+}
+.md-compact > :first-child {
+  margin-top: 0;
+}
+.md-compact > :last-child {
+  margin-bottom: 0;
+}
+
 /* ---------- KaTeX (math rendering; see lib/markdown-plugins.ts) ---------- */
 
 /* KaTeX's own fonts carry no CJK glyphs, and it tags every CJK run `cjk_fallback` while leaving

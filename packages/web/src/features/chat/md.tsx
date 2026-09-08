@@ -15,11 +15,16 @@
  * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage
  * out, so a formula shows its own TeX source until the message settles and is typeset once
  * (see NO_REHYPE_PLUGINS in lib/markdown-plugins.ts for the measurements).
+ *
+ * Two optional props open the renderer to a surface with its own nodes — the channel message
+ * body, which keeps `@mentions` as chips — without a second copy of the pipeline drifting from
+ * this one. They only ever ADD to the shared stage and to the maps below; nothing a surface
+ * passes can take the shared plugins away.
  */
 import { isValidElement, memo } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import type { Components, ExtraProps } from "react-markdown";
+import type { Components, ExtraProps, Options } from "react-markdown";
 import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { CodeBlock } from "./code-block";
 
@@ -99,15 +104,34 @@ const SETTLED_COMPONENTS: Components = {
 export const Md = memo(function Md({
   text,
   streaming = false,
+  extraPlugins,
+  components,
 }: {
   text: string;
   streaming?: boolean;
+  /**
+   * Remark plugins a surface adds to the shared stage, for a node of its own — the channel
+   * message body adds the pass that turns its `@mentions` into elements. They are appended to
+   * REMARK_PLUGINS rather than replacing it: a renderer that dropped the shared list would end
+   * bare URLs and typeset math differently from every other one, which is the drift
+   * markdown-plugins.ts exists to prevent.
+   */
+  extraPlugins?: NonNullable<Options["remarkPlugins"]>;
+  /**
+   * Element overrides merged over the two maps below, which keep `pre` and `a`. A module
+   * constant, for the same reason those are: react-markdown uses a component as the element
+   * *type*, so a fresh function per render remounts everything it renders.
+   */
+  components?: Components;
 }) {
+  const base = streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS;
   return (
     <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
+      remarkPlugins={
+        extraPlugins === undefined ? REMARK_PLUGINS : [...REMARK_PLUGINS, ...extraPlugins]
+      }
       rehypePlugins={streaming ? NO_REHYPE_PLUGINS : REHYPE_PLUGINS}
-      components={streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS}
+      components={components === undefined ? base : { ...base, ...components }}
     >
       {text}
     </ReactMarkdown>
