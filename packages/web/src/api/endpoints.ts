@@ -1441,13 +1441,26 @@ export const removeAgentSkill = (projectId: string, agentId: string, name: strin
 // Benchmarks sit at the Project level, beside agents rather than under one: a Benchmark can
 // evaluate many agents, so no agent id travels in these paths.
 
-export const listBenchmarks = (projectId: string) =>
-  apiFetch<BenchmarksResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`);
+/**
+ * A Project's Benchmarks as ONE server holds them. A `benchmarks/` directory is written on
+ * whichever machine created or evaluated the Benchmark, so the Evaluation Center asks this
+ * server and each machine it holds, then merges the answers (lib/benchmark-merge.ts). The path
+ * is not Session-scoped, so nothing about it can be routed from an id — the machine is passed.
+ */
+export const listBenchmarks = (projectId: string, machineId?: string | null) =>
+  apiFetch<BenchmarksResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`, {
+    server: machineId ?? null,
+  });
 
-export const listBenchmarkCases = (projectId: string, benchmarkId: string) =>
+export const listBenchmarkCases = (
+  projectId: string,
+  benchmarkId: string,
+  machineId?: string | null,
+) =>
   apiFetch<BenchmarkCasesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
       `/cases`,
+    { server: machineId ?? null },
   );
 
 /** Creates a Benchmark by hand (owner only); the server writes the on-disk layout. 409 `benchmark_exists` on a taken id. */
@@ -1480,12 +1493,11 @@ export const listBenchmarkCaseFiles = (
   caseId: string,
   path: string,
   material: CaseMaterial,
+  machineId?: string | null,
 ) =>
   apiFetch<WorkspaceFilesResponse>(
     benchmarkCaseFilesPath(projectId, benchmarkId, caseId, material),
-    {
-      query: { path },
-    },
+    { query: { path }, server: machineId ?? null },
   );
 
 export const benchmarkCaseFileUrl = (
@@ -1494,7 +1506,7 @@ export const benchmarkCaseFileUrl = (
   caseId: string,
   path: string,
   material: CaseMaterial,
-  options?: { download?: boolean; preview?: boolean },
+  options?: { download?: boolean; preview?: boolean; machineId?: string | null },
 ): string => {
   const base = `${benchmarkCaseFilesPath(
     projectId,
@@ -1503,7 +1515,9 @@ export const benchmarkCaseFileUrl = (
     material,
   )}/content?path=${encodeURIComponent(path)}`;
   return (
-    base +
+    // A browser-followed URL (an <img> src, a download link), so the proxy prefix has to be
+    // IN it — there is no request here for a routing rule to act on.
+    apiUrl(base, options?.machineId ?? null) +
     (options?.download ? "&download=1" : "") +
     (options?.preview && !options.download ? "&preview=1" : "")
   );

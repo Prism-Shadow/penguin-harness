@@ -5,15 +5,13 @@
  * thinking-level columns. A row there opens that evaluation in a dialog, a case opens the case
  * browser in another, and either dialog can hand what it shows to an agent as a question. This
  * is the body of the Benchmark's own page (the title lives in that page's header), which mounts
- * it once its Benchmark has been read, so nothing stays open from the Benchmark before it.
+ * it once its Benchmark has been read, so nothing stays open from the Benchmark before it. The
+ * Benchmark is the merge of every machine holding it: a row names the machine its round was read
+ * from when there is more than one, and a case's files come from the machine that listed it.
  */
 import { useEffect, useState } from "react";
-import type {
-  BenchmarkCaseSummary,
-  BenchmarkEvaluation,
-  BenchmarkSummary,
-} from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
+import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
@@ -32,6 +30,7 @@ import { makeRangeGeom, segmentPath } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import { fetchBenchmarkCases } from "./benchmark-sources";
 import {
   evaluationLabel,
   labelSeries,
@@ -174,10 +173,17 @@ const CELL = "px-3 py-2";
 /** One evaluation record: a clickable row; the detail it used to unfold is a dialog of its own. */
 function EvaluationRow({
   evaluation,
+  machineName,
   onOpen,
   currency,
 }: {
   evaluation: BenchmarkEvaluation;
+  /**
+   * The ssh alias of the machine whose scoreboard recorded this round, when the Benchmark is
+   * held in more than one place — otherwise null, and nothing is said. A row read without
+   * knowing where it ran is a row that cannot be reproduced.
+   */
+  machineName: string | null;
   onOpen: () => void;
   currency: Currency;
 }) {
@@ -199,6 +205,11 @@ function EvaluationRow({
         >
           {formatDateTime(evaluation.time)}
         </button>
+        {machineName !== null && (
+          <span className="ml-1.5 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+            {S.chat.machineTag(machineName)}
+          </span>
+        )}
       </td>
       <td className={`${CELL} text-xs text-gray-500 dark:text-gray-400`}>
         {evaluation.agentId ? (
@@ -317,14 +328,18 @@ function CasesSection({
 export function BenchmarkDetail({
   projectId,
   benchmark: bm,
+  machineNameOf,
 }: {
   projectId: string;
-  benchmark: BenchmarkSummary;
+  benchmark: MergedBenchmark;
+  /** The ssh alias of a machine, or null for this server. */
+  machineNameOf: (machineId: string | null) => string | null;
 }) {
   const { currency } = useTheme();
-  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
+  const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  const machinesKey = bm.machineIds.map((machineId) => machineId ?? "").join(",");
   /** Which evaluation's dialog is open, as a position in scoreboard order. */
   const [openEvaluationIndex, setOpenEvaluationIndex] = useState<number | null>(null);
   /** The case whose Ask AI dialog is open; kept as an id so it cannot outlive its case dialog. */
@@ -337,10 +352,9 @@ export function BenchmarkDetail({
     setOpenEvaluationIndex(null);
     setAskingCaseId(null);
     let cancelled = false;
-    api
-      .listBenchmarkCases(projectId, bm.id)
-      .then((data) => {
-        if (!cancelled) setCaseStatements(data.cases);
+    fetchBenchmarkCases(projectId, bm)
+      .then((cases) => {
+        if (!cancelled) setCaseStatements(cases);
       })
       .catch((error: unknown) => {
         if (!cancelled) setCaseError(apiErrorText(error));
@@ -348,7 +362,9 @@ export function BenchmarkDetail({
     return () => {
       cancelled = true;
     };
-  }, [projectId, bm.id]);
+    // The machines are part of what the read asks; the key keeps a re-render from re-asking.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, bm.id, machinesKey]);
 
   // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
   // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
@@ -405,6 +421,7 @@ export function BenchmarkDetail({
                       <EvaluationRow
                         key={index}
                         evaluation={ev}
+                        machineName={bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null}
                         onOpen={() => setOpenEvaluationIndex(index)}
                         currency={currency}
                       />
@@ -441,7 +458,12 @@ export function BenchmarkDetail({
             </Button>
           }
         >
-          <BenchmarkCaseBrowser projectId={projectId} benchmarkId={bm.id} caseSummary={openCase} />
+          <BenchmarkCaseBrowser
+            projectId={projectId}
+            benchmarkId={bm.id}
+            caseSummary={openCase}
+            machineId={openCase.machineId}
+          />
         </Modal>
       )}
       {openCase && askingCaseId === openCase.id && (
