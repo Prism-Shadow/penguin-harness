@@ -3,6 +3,7 @@
 - **Date:** 2026-09-08
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#646](https://github.com/Prism-Shadow/penguin-harness/pull/646)
 
 [English](2026-09-08-a-workspace-is-a-directory-on-a-machine.md)
 
