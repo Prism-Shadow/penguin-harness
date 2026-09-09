@@ -6,11 +6,14 @@
  * target fields, with the employee as a select. The grid is always on screen: a skeleton of
  * it while the first fetch is out, the empty grid with a one-line hint when the organization
  * has no events yet — dismissible, and repeated in the page's "?" so it stays reachable —
- * the grid plus an error strip when a refetch fails. Past instances carry the outcome the
- * scheduler recorded; every write confirms first, and reports back whatever the server has
- * to say about the rota.
+ * the grid plus an error strip when a refetch fails. A month cell shows a few chips and folds
+ * the rest into a button that opens the whole day in a popover rather than the create dialog.
+ * Past instances carry the outcome the scheduler recorded; every write confirms first, and
+ * reports back whatever the server has to say about the rota.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type {
   OrgCalendarItem,
@@ -38,6 +41,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
+import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
@@ -86,6 +90,12 @@ const VISIBLE_FROM_HOUR = 6;
 const VISIBLE_HOURS = 16;
 /** Chips shown per month cell before the rest fold into a count. */
 const MONTH_CELL_CHIPS = 3;
+/**
+ * Width of the day popover, in px rather than a `w-` class: usePortalPanel clamps the panel's
+ * left edge against this number, and the app's root font size is a user setting (16 / 18 / 20
+ * px), so a rem-based class and a px constant would agree only at one of the three tiers.
+ */
+const DAY_PANEL_WIDTH = 240;
 
 interface FormState {
   /** Editing an existing event (its file is fixed): agentId + name; null when creating. */
@@ -321,7 +331,7 @@ export function CalendarPage() {
    * the one instance it belongs to) rides at the end as a toned glyph; a past instance fades,
    * and a disabled or paused event is struck through so the chip says it will not fire.
    */
-  const chip = (i: EventInstance, opts: { block?: boolean } = {}) => {
+  const chip = (i: EventInstance, opts: { block?: boolean; onOpen?: () => void } = {}) => {
     const color = colorOf(i.event.agentId);
     const outcome = i.outcome;
     const label = i.event.title ?? i.event.name;
@@ -346,6 +356,7 @@ export function CalendarPage() {
         title={title}
         onClick={(e) => {
           e.stopPropagation();
+          opts.onOpen?.();
           openEdit(i.event);
         }}
         className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-[11px] leading-5 transition-opacity ${color.chip} ${
@@ -399,12 +410,16 @@ export function CalendarPage() {
     </>
   );
 
-  /** A month cell: the day number, up to three chips, the rest folded into a count; the cell itself creates at 09:00. */
+  /**
+   * A month cell: the day number, up to three chips, the rest folded into a button that opens
+   * the whole day; the cell itself creates at 09:00.
+   */
   const monthCell = (day: GridDay) => {
     const list = byDay.get(day.key) ?? [];
     const shown = list.slice(0, MONTH_CELL_CHIPS);
     const isToday = day.key === todayKey;
     const createMs = day.dayStartMs + 9 * 3_600_000;
+    const weekday = S.company.calendar.weekdays[(new Date(day.dayStartMs).getDay() + 6) % 7] ?? "";
     return (
       <div
         key={day.key}
@@ -430,9 +445,17 @@ export function CalendarPage() {
         <div className="space-y-0.5">
           {shown.map((i) => chip(i))}
           {list.length > shown.length && (
-            <p className="px-1 text-[10px] text-gray-400 dark:text-gray-500">
-              {S.company.calendar.moreEvents(list.length - shown.length)}
-            </p>
+            <DayOverflow
+              hidden={list.length - shown.length}
+              total={list.length}
+              dateLabel={`${day.key} ${weekday}`}
+              onOpenDay={() => {
+                setAnchor(day.dayStartMs);
+                setView("day");
+              }}
+            >
+              {(close) => list.map((i) => chip(i, { onOpen: close }))}
+            </DayOverflow>
           )}
         </div>
       </div>
@@ -900,6 +923,104 @@ export function CalendarPage() {
         </p>
       </ConfirmModal>
     </OrgPage>
+  );
+}
+
+/**
+ * The chips a month cell could not fit, behind the count that stands for them. The count used
+ * to be plain text inside a cell whose own click creates an event at 09:00, so reading "3 more"
+ * opened the create dialog; it is a button now, it stops that click, and it opens the day
+ * instead — every chip of it in time order, plus a link into the day view.
+ *
+ * The panel is portaled to document.body and placed by usePortalPanel, which also closes it on
+ * an outside click, on Esc (captured, so an enclosing dialog stays open), and on a scroll or a
+ * resize that moves the trigger. Portaled or not, a React event still travels the *React* tree,
+ * so a click inside the panel would reach the day cell's create handler: the panel stops it at
+ * its own root, and a chip closes the panel before opening its event.
+ */
+function DayOverflow({
+  hidden,
+  total,
+  dateLabel,
+  onOpenDay,
+  children,
+}: {
+  /** How many chips the cell could not show — what the trigger counts. */
+  hidden: number;
+  /** How many the day holds in all — what the panel lists, and how tall it is expected to be. */
+  total: number;
+  /** The day the panel heads with, as the day view names it ("2026-09-08 Tue"). */
+  dateLabel: string;
+  onOpenDay: () => void;
+  /** The day's chips; `close` puts the panel away as one of them opens its event. */
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const { triggerRef, panelRef, position } = usePortalPanel({
+    open,
+    onClose: () => setOpen(false),
+    // A chip row is 20px tall; the header and the panel's own padding add about 40.
+    estimatedHeight: total * 22 + 40,
+    panelWidth: DAY_PANEL_WIDTH,
+  });
+  const close = () => setOpen(false);
+  const label = S.company.calendar.moreEventsExpand(hidden);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        title={label}
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="block w-full rounded px-1 text-left text-[10px] text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+      >
+        {S.company.calendar.moreEvents(hidden)}
+      </button>
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={panelId}
+            role="group"
+            aria-label={dateLabel}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: position.topPx,
+              bottom: position.bottomPx,
+              left: position.left,
+              width: DAY_PANEL_WIDTH,
+            }}
+            className="anim-pop z-[60] flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
+              <span className="truncate text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-200">
+                {dateLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  onOpenDay();
+                }}
+                className="shrink-0 text-[11px] text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                {S.company.calendar.openDay}
+              </button>
+            </div>
+            <div className="space-y-0.5 overflow-y-auto p-1">{children(close)}</div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

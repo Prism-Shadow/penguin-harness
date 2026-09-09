@@ -2775,6 +2775,9 @@ Scenarios:
       emptyHint:
         "Calendar events drive employees' desk sessions to check the board and push tickets on time; use New event, top right, to schedule one for an employee.",
       moreEvents: (n: number): string => `${n} more`,
+      /** The month cell's "+N more" is a button: its accessible name, and the day panel it opens. */
+      moreEventsExpand: (n: number): string => `${n} more, expand`,
+      openDay: "Open the day",
       weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as readonly string[],
       allDay: "All day",
       promptHint:
@@ -2930,6 +2933,8 @@ Scenarios:
       budgetSaved: "Budget updated",
       own: "Own spend",
       cumulative: "Cumulative",
+      /** The spend tree reads cumulative against budget in one column; own spend rides in the row tooltip. */
+      cumulativeBudget: "Cumulative / budget",
       ratio: "Ratio",
       warned: "Warned",
       paused: "Paused",
@@ -2940,7 +2945,7 @@ Scenarios:
       ticketsInfo:
         "Each ticket's contributing-session cost; the rolled-up cost adds up along parent tickets. A session attached to several tickets is shared between them.",
       ticketsEmpty: "No ticket spend this period",
-      rolledUp: "Rolled up",
+      rolledUp: "Rolled-up cost",
       trend: "Trend",
       alerts: "Alerts and pauses",
       alertsEmpty: "No alerts this period",

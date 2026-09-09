@@ -1,7 +1,8 @@
 /**
  * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket table
  * along parent tickets, period arithmetic, the budget tone thresholds, the trend series
- * and its axis breaks, the KPI row's numbers and the alert grouping.
+ * and its axis breaks, the KPI row's numbers, the alert grouping, and the two row tooltips
+ * that carry what the tables dropped a column for.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
@@ -12,7 +13,9 @@ import {
   financeSeries,
   groupAlerts,
   shiftPeriod,
+  spendRowTooltip,
   spendTreeRows,
+  ticketRowTooltip,
   ticketTreeRows,
 } from "../src/features/company/finance-tree";
 
@@ -174,5 +177,49 @@ describe("groupAlerts", () => {
     ]);
     expect(groups.paused.map((a) => a.agentId)).toEqual(["d", "b"]);
     expect(groups.warned.map((a) => a.agentId)).toEqual(["c", "a"]);
+  });
+});
+
+describe("spendRowTooltip", () => {
+  const labels = {
+    own: "Own spend",
+    cumulative: "Cumulative",
+    budget: "Budget",
+    noBudget: "Unbounded",
+  };
+  const money = (value: number) => `$${value.toFixed(2)}`;
+
+  it("names all three figures, the budget among them", () => {
+    expect(spendRowTooltip({ own: 12, cumulative: 41, budget: 100 }, labels, money)).toBe(
+      "Own spend $12.00 · Cumulative $41.00 · Budget $100.00",
+    );
+  });
+
+  it("says a missing budget is unbounded rather than dropping the field", () => {
+    expect(spendRowTooltip({ own: 12, cumulative: 41 }, labels, money)).toBe(
+      "Own spend $12.00 · Cumulative $41.00 · Budget Unbounded",
+    );
+  });
+});
+
+describe("ticketRowTooltip", () => {
+  const labels = {
+    owner: "Owner",
+    noOwner: "Unassigned",
+    cost: "Cost",
+    rolledUp: "Rolled-up cost",
+  };
+  const money = (value: number) => `$${value.toFixed(2)}`;
+
+  it("leads with the id and carries the owner and both costs", () => {
+    expect(
+      ticketRowTooltip({ ticketId: "TCK-1", cost: 3.2, rolledUp: 8.7 }, "Ada", labels, money),
+    ).toBe("TCK-1 · Owner Ada · Cost $3.20 · Rolled-up cost $8.70");
+  });
+
+  it("keeps the owner field with a stand-in when nobody owns the ticket", () => {
+    expect(
+      ticketRowTooltip({ ticketId: "TCK-2", cost: 0, rolledUp: 0 }, undefined, labels, money),
+    ).toBe("TCK-2 · Owner Unassigned · Cost $0.00 · Rolled-up cost $0.00");
   });
 });

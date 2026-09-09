@@ -2,8 +2,9 @@
  * The finance page's shaping (pure, unit tested): the spend tree in reporting-line order with
  * depths, the ticket table along parent tickets, period arithmetic for the this / previous
  * switch, the tone a budget ratio takes, the daily series in the trend chart's shape (with
- * the axis breaks where days were skipped), the KPI row's numbers, and the alert list
- * grouped by state.
+ * the axis breaks where days were skipped), the KPI row's numbers, the alert list grouped by
+ * state, and the two row tooltips that carry the figures the tables no longer spend a column
+ * on.
  */
 import type {
   OrgBudgetAlert,
@@ -64,6 +65,43 @@ export function ticketTreeRows(
   };
   walk(null, 0);
   return out;
+}
+
+/**
+ * The tooltip an employee row of the spend tree carries: own spend, cumulative spend and the
+ * budget, each named. The table shows cumulative against budget in one cell and leaves own
+ * spend to this line, so the reader still reaches it without a column of its own. `money`
+ * formats an amount in the reader's currency; `labels.noBudget` stands in for an unbounded one.
+ */
+export function spendRowTooltip(
+  row: { own: number; cumulative: number; budget?: number },
+  labels: { own: string; cumulative: string; budget: string; noBudget: string },
+  money: (value: number) => string,
+): string {
+  return [
+    `${labels.own} ${money(row.own)}`,
+    `${labels.cumulative} ${money(row.cumulative)}`,
+    `${labels.budget} ${row.budget === undefined ? labels.noBudget : money(row.budget)}`,
+  ].join(" · ");
+}
+
+/**
+ * The tooltip a ticket row carries: its id, its owner, its own cost and its rolled-up cost —
+ * the three the table dropped so it fits beside the spend tree. `owner` is the display name of
+ * whoever owns it, absent when nobody does.
+ */
+export function ticketRowTooltip(
+  row: { ticketId: string; cost: number; rolledUp: number },
+  owner: string | undefined,
+  labels: { owner: string; noOwner: string; cost: string; rolledUp: string },
+  money: (value: number) => string,
+): string {
+  return [
+    row.ticketId,
+    `${labels.owner} ${owner ?? labels.noOwner}`,
+    `${labels.cost} ${money(row.cost)}`,
+    `${labels.rolledUp} ${money(row.rolledUp)}`,
+  ].join(" · ");
 }
 
 /** `yyyy-mm` shifted by whole months (a negative delta goes back). Null for anything not of that shape. */
