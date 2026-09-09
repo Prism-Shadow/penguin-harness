@@ -95,6 +95,8 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
 | GET | /api/admin/settings/proxy-probe | The reachability probe's targets: `{targets: [{provider, url}]}` (no request is made) |
 | POST | /api/admin/settings/proxy-probe/:provider | Probe one of those targets over the server's outbound path, no credential sent: `{probe: {provider, url, outcome, ms, status?}}`; `outcome` is `reachable` for any HTTP answer, else `timeout` / `dns` / `refused` / `tls` / `network`; 404 `probe_target_not_found` for an id outside the list |
+| GET | /api/admin/plugin-config | Every loaded plugin that declares options (`package.json#penguin.configuration`): `{plugins: [{name, configuration, values}]}` — the schema as declared, the stored values merged onto its defaults, secrets masked |
+| PUT | /api/admin/plugin-config | Save one package's options: `{name, values}` — fields the request omits keep their value, `null` or `""` clears one, a secret sent back as its mask keeps the stored one; 400 `plugin_config_invalid` names the refused field, 404 `plugin_config_unknown` for a package that declares none. The plugin picks the change up through its watch, no restart |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
 

@@ -59,6 +59,7 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
+      "plugins",
       "users",
     ]);
   });
@@ -82,6 +83,7 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
+      "plugins",
     ]);
   });
 
@@ -96,6 +98,7 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
+      "plugins",
     ]);
   });
 });
