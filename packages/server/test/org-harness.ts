@@ -42,7 +42,7 @@ export interface OrgHarness {
   /** Every Task the runtime started, in order. */
   started: StartedTask[];
   /** Every session the fake creator opened. */
-  created: Array<{ projectId: string; agentId: string; workspace?: string }>;
+  created: Array<{ projectId: string; agentId: string; workspace?: string; client: "org" }>;
   /** Agents the fake lifecycle created, with their plugin seeds. */
   agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   /** AGENTS.md text written per Agent. */
@@ -121,6 +121,7 @@ export async function makeOrgHarness(opts: {
           projectId: args.projectId,
           agentId: args.agentId,
           ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
+          client: args.client,
         });
         const createdAt = new Date(clock.nowMs).toISOString();
         sessions.insert({
@@ -132,7 +133,9 @@ export async function makeOrgHarness(opts: {
           workspace: args.workspace ?? root,
           approvalMode: args.approvalMode ?? "allow-all",
           title: null,
-          client: "web",
+          // The row the real SessionService writes carries the caller's hint verbatim; a
+          // fake that hardcoded "web" here would pass the marker's own test.
+          client: args.client,
           lastActiveAt: createdAt,
           createdAt,
         });

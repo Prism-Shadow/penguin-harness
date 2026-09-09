@@ -28,6 +28,7 @@ import type {
   OrgEmployeePatchRequest,
   OrgFinanceResponse,
   OrgHireRequest,
+  OrgInbox,
   OrgSessionsResponse,
   OrgTicketCreateRequest,
   OrgTicketDetail,
@@ -212,6 +213,15 @@ export class OrganizationService {
     return userPrincipal(actor.userId);
   }
 
+  /**
+   * The employee an actor writes as, or null when it writes as a person. The one question
+   * the ticket-start rule asks: a desk or ticket session names its employee, everything else
+   * — the Web App, a signed-in CLI outside a session — is a person of the Project.
+   */
+  private actorEmployee(org: LoadedOrg, actor: Actor): string | null {
+    return principalAgentId(this.actorPrincipal(org, actor));
+  }
+
   // ---------------------------------------------------------------------------
   // Organizations
   // ---------------------------------------------------------------------------
@@ -346,8 +356,64 @@ export class OrganizationService {
         blockedByMe: items.filter((t) => t.blockedBy === me),
       },
       recentMessages: recent?.messages.slice(-20) ?? [],
+      inbox: this.inbox(spend, items, tickets, recent?.messages ?? [], me),
       alerts: this.alerts(org, spend.period),
       ...(ceoDesk !== undefined ? { ceoDeskSessionId: ceoDesk.sessionId } : {}),
+    };
+  }
+
+  /**
+   * The overview's inbox — what a person is waited on or told about, read from the same
+   * files `detail` already loaded:
+   *
+   * - `mentions`: the all-hands messages of the window `recentMessages` reads (the
+   *   organization's current day) that name the caller or `all`, newest first.
+   * - `blockedTickets`: every ticket carrying a `Blocked` reason, whoever it waits on —
+   *   uncapped, because a blocked ticket is work nobody is doing.
+   * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
+   *   taken from the last progress line that moved them there. A ticket whose file was moved
+   *   by hand has no such line and no closing time to test, so it is listed with `closedAt`
+   *   absent rather than hidden.
+   *
+   * Newest first everywhere; ticket ids start with the filing date, so ordering by id
+   * descending is ordering by age.
+   */
+  private inbox(
+    spend: OrgSpend,
+    items: readonly OrgTicketItem[],
+    tickets: readonly LoadedTicket[],
+    windowMessages: readonly OrgChannelMessage[],
+    me: string,
+  ): OrgInbox {
+    const mentions = windowMessages
+      .filter((m) => m.mentions.includes(me) || m.mentions.includes("all"))
+      .reverse()
+      .slice(0, INBOX_PAGE);
+    const newestFirst = <T extends { ticketId: string }>(a: T, b: T): number =>
+      a.ticketId < b.ticketId ? 1 : a.ticketId > b.ticketId ? -1 : 0;
+    const closedAt = new Map<string, string>();
+    for (const t of tickets) {
+      const at = lastClosedAt(t.doc);
+      if (at !== null) closedAt.set(t.ticketId, at);
+    }
+    const inPeriod = (iso: string): boolean => {
+      const ms = Date.parse(iso);
+      // An unparsable stamp is a hand-edited line, not evidence the ticket closed elsewhen.
+      return Number.isNaN(ms) || (ms >= spend.range.fromMs && ms < spend.range.toMs);
+    };
+    const doneTickets = items
+      .filter((t) => t.status === "done")
+      .map((t): OrgInbox["doneTickets"][number] => {
+        const at = closedAt.get(t.ticketId);
+        return { ...t, ...(at !== undefined ? { closedAt: at } : {}) };
+      })
+      .filter((t) => t.closedAt === undefined || inPeriod(t.closedAt))
+      .sort(newestFirst)
+      .slice(0, INBOX_PAGE);
+    return {
+      mentions,
+      blockedTickets: items.filter((t) => (t.blocked ?? "") !== "").sort(newestFirst),
+      doneTickets,
     };
   }
 
@@ -1476,18 +1542,38 @@ export class OrganizationService {
     return this.ticket(projectId, orgId, ticketId);
   }
 
+  /**
+   * Opens a ticket session. Who may open one is the ticket's own rule: a person may open a
+   * session for any ticket, naming the employee with `agentId`; an employee may open one
+   * only for a ticket it owns. A desk that wants a colleague's ticket worked assigns it and
+   * lets that desk pick it up in its next sweep — an assignment is how work moves between
+   * employees, and a session opened around it leaves the owner with work it never saw. The
+   * owner may still pass `agentId` to enlist a colleague on its OWN ticket, which is how a
+   * request for help in a channel is answered.
+   */
   async startTicket(
     projectId: string,
     orgId: string,
     ticketId: string,
     req: { agentId?: string; message?: string; workspace?: string },
+    actor: Actor,
   ): Promise<{ sessionId: string }> {
     const sessionId = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const t = await this.requireTicket(org, ticketId);
-      const agentId =
-        req.agentId ?? (t.doc.owner !== undefined ? principalAgentId(t.doc.owner) : null);
-      if (agentId === null || agentId === undefined) {
+      const owner = t.doc.owner !== undefined ? principalAgentId(t.doc.owner) : null;
+      const caller = this.actorEmployee(org, actor);
+      if (caller !== null && caller !== owner) {
+        throw new HttpError(
+          403,
+          "not_ticket_owner",
+          owner === null
+            ? `Only the ticket's owner starts its sessions; ${ticketId} has no employee owner — assign an owner first (\`penguin org ticket assign ${ticketId} --owner agent:<employee>\`) and its desk picks it up in its next sweep.`
+            : `Only the ticket's owner starts its sessions; assign the ticket (\`penguin org ticket assign ${ticketId} --owner agent:<employee>\`) and its desk picks it up in its next sweep.`,
+        );
+      }
+      const agentId = req.agentId ?? owner;
+      if (agentId === null) {
         throw badRequest("The ticket has no employee owner; pass agentId.");
       }
       if (!org.byId.has(agentId))
@@ -2171,11 +2257,30 @@ function requireHandbookPath(rel: string): void {
     );
 }
 
+/** How many rows one inbox list carries: a page, the same cap the overview renders. */
+const INBOX_PAGE = 20;
+
+/** A progress line `moveTicket` writes when a ticket lands in `done`, reason or not. */
+const MOVED_TO_DONE = /^moved \S+ → done(?::|$)/;
+
+/**
+ * The time a ticket last moved into `done`, from its progress log. Null when the log has no
+ * such line, which is what a ticket moved by editing its file looks like.
+ */
+function lastClosedAt(doc: TicketDoc): string | null {
+  for (let i = doc.progress.length - 1; i >= 0; i -= 1) {
+    const entry = parseProgressLine(doc.progress[i]!);
+    if (entry !== null && MOVED_TO_DONE.test(entry.text)) return entry.time;
+  }
+  return null;
+}
+
 /**
  * The prompt behind a model-backed semantic id: the model translates a display name into
- * one snake_case English identifier. Examples in both scripts, the taken ids named so the
- * answer does not collide, and no room for prose — whatever comes back still passes through
- * `sanitizeSuggestedId`, and anything that does not survive it falls back to the ASCII slug.
+ * one snake_case English identifier — the semantic core only, since `sanitizeSuggestedId`
+ * puts the kind's prefix (`co_` / `ch_`) in front of whatever comes back. Examples in both
+ * scripts, the taken ids named so the answer does not collide, and no room for prose;
+ * anything that does not survive the sanitizer falls back to the ASCII slug.
  */
 function semanticIdPrompt(req: SemanticIdSuggestRequest): string {
   const taken = (req.taken ?? []).join(", ");
@@ -2185,7 +2290,8 @@ function semanticIdPrompt(req: SemanticIdSuggestRequest): string {
     "English words that carry the name's meaning (translate a non-English name), no explanation,",
     "nothing else. Examples: Plugin Marketplace → plugin_marketplace; 科研论文公司 →",
     "research_paper_lab; 市场推广 → marketing; Site → site.",
-    ...(taken !== "" ? [`Do not answer any of: ${taken}.`] : []),
+    "Do not add any prefix of your own; one is added to your answer.",
+    ...(taken !== "" ? [`Those answers are taken, prefix included: ${taken}.`] : []),
     `Name: ${req.name}`,
   ].join(" ");
 }
@@ -2238,8 +2344,8 @@ function initBody(org: LoadedOrg): string {
       `2. 答复会以提及或本会话消息的形式到来。董事会确认后，先招人事与财务——\`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\`，\`${org.orgId}_finance\` 同理——再招确认过的其他角色。`,
       "3. 按确认的方案划分公共工作区：把子目录分配下去（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
       "4. 把你自己、人事与财务排进日历（`penguin org calendar add …`），做成轮值表而不是广播：你每天 09:00，人事每三天 10:00，财务每周 16:00（组织时区，写成带偏移量的 ISO 时刻，绝不用 `--start-at now`），此后每招一人就给它一个各自不同的时点。",
-      '5. 把确认过的工单开进 `proposed`（`penguin org ticket create …`）：一个项目级目标一张父工单，每条工作线一张子工单。随后，每接受一张工单进入 `in_progress`，就为它发起一个工单会话（`penguin org ticket start <id> -m "…"`）——工位只负责调度与跟踪，绝不在工位上做工单本身的活。',
-      "6. 每条工作线开一个频道（`penguin org channel create <id> --name …`）并邀请它的负责人（`penguin org channel invite <id> agent:<agent_id>`），免得一条线索淹没全员频道。",
+      "5. 把确认过的工单开进 `proposed`（`penguin org ticket create …`）：一个项目级目标一张父工单，每条工作线一张子工单。接受一张工单进入 `in_progress` 时就指派负责人（`penguin org ticket assign <id> --owner agent:<员工>`）：那名员工的工位会在下一次巡检时接手并发起工单会话。只有工单的负责人可以为它发起会话，所以你只为自己名下的工单执行 `penguin org ticket start <id>`；工位只负责调度与跟踪，绝不在工位上做工单本身的活。",
+      "6. 每条工作线开一个频道（`penguin org channel create ch_<工作线> --name …`）并邀请它的负责人（`penguin org channel invite ch_<工作线> agent:<agent_id>`），免得一条线索淹没全员频道。",
       `7. 在全员频道里向董事会汇报并 @${board}，如果还需要拍板，就点明下一个决定。`,
     ].join("\n");
   }
@@ -2251,8 +2357,8 @@ function initBody(org: LoadedOrg): string {
     `2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
     "3. Partition the shared workspace as confirmed: assign the sub-directories (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
-    '5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream. Then, for every ticket you accept into `in_progress`, START a ticket session for it (`penguin org ticket start <id> -m "…"`) — the desk schedules and tracks, and never does the ticket work itself.',
-    "6. Open one channel per stream (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
+    "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream. Assign an owner as you accept one into `in_progress` (`penguin org ticket assign <id> --owner agent:<employee>`): that employee's desk picks it up in its next sweep and starts the ticket session itself. Only a ticket's owner may start its sessions, so run `penguin org ticket start <id>` for the tickets you own yourself — the desk schedules and tracks, and never does the ticket work itself.",
+    "6. Open one channel per stream (`penguin org channel create ch_<stream> --name …`) and invite its owner (`penguin org channel invite ch_<stream> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",
     `7. Report to the board in the all-hands channel, mentioning @${board}, and name the next decision you need, if any.`,
   ].join("\n");
 }

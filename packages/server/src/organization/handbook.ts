@@ -45,9 +45,13 @@ written in it. Commands, file names, ids and field names stay ASCII.
   there as a message that starts with an \`[org_trigger]\` block; ticket changes are listed in the
   next calendar sweep, never sent on their own. The desk session schedules work; it does not do
   the ticket work itself.
-- Work is carried by **tickets** on the board. A desk session opens a separate **ticket
-  session** for a ticket (\`penguin org ticket start <id>\`), tracks it, checks the result and
-  writes progress back. Several sessions and several employees may contribute to one ticket.
+- Work is carried by **tickets** on the board. A ticket's owner opens a separate **ticket
+  session** for it from its desk (\`penguin org ticket start <id>\`), tracks it, checks the result
+  and writes progress back. Only the owner's desk — or a person — starts a ticket's sessions:
+  work moves to another employee by reassigning the ticket
+  (\`penguin org ticket assign <id> --owner agent:<employee>\`), and that desk picks it up in its
+  next sweep. The owner may add \`--agent-id <colleague>\` to enlist a colleague on its own
+  ticket. Several sessions and several employees may contribute to one ticket.
 - Talking happens in **channels**, each a directory under \`channels/\`. \`default_channel\` is the
   all-hands channel every employee and every board member is in; anyone may open more for a stream or a
   big ticket and invite the principals that work needs. Only \`@<employee>\` and \`@all\` deliver
@@ -181,7 +185,7 @@ ${input.mission}
 
 - 每名员工都是一个 Agent。汇报树写在 \`org_chart.yaml\` 里，根是 CEO。
 - 每名员工有且只有一个常设的**工位会话**。日程项与频道里的提及以一条开头为 \`[org_trigger]\` 块的消息送到这里；工单的变化从不单独送来，而是列在下一次日历巡检的正文里。工位会话负责调度，不亲自做工单上的活。
-- 工作由看板上的**工单**承载。工位会话为一张工单另开一个**工单会话**（\`penguin org ticket start <id>\`），跟踪它、检查结果、回写进展。一张工单可以由多个会话、多名员工共同贡献。
+- 工作由看板上的**工单**承载。工单的负责人从自己的工位为它另开一个**工单会话**（\`penguin org ticket start <id>\`），跟踪它、检查结果、回写进展。只有负责人的工位或人可以为一张工单发起会话：要把活交给别的员工，就改派负责人（\`penguin org ticket assign <id> --owner agent:<员工>\`），那名员工的工位会在下一次巡检时接手。负责人可以加 \`--agent-id <同事>\` 把同事拉进自己名下的工单。一张工单可以由多个会话、多名员工共同贡献。
 - 交流发生在**频道**里，每个频道是 \`channels/\` 下的一个目录。\`default_channel\` 是全员频道，每名员工与每位董事会成员都在其中；任何人都可以为一条工作线或一张大工单另开频道，并邀请这项工作需要的主体。只有 \`@<员工>\` 与 \`@all\` 会把消息送到某人的工位，且只在该频道的成员范围内生效；其余内容只是记录在案。
 - **日历**是唯一的周期性驱动：一条日程项的提示词告诉员工该去看什么。HR 保证每名员工恰有一条各自时点的周期日程——这是轮值表，不是广播：节奏因角色而异（负责人每天、审核者两三天、财务每周），且没有两个工位共用同一个起始分钟。
 - **预算**是每名员工的月度上限（自身支出加上全部下属）。达到告警比例会在全员频道发一条系统消息；达到暂停比例则停掉该员工的日历，直到下个月或预算调高为止。人随时可以直接找工位说话。

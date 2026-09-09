@@ -97,18 +97,39 @@ export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<Ticket
   return { tickets, invalid };
 }
 
-/** Projects the ledger and the tickets' Sessions headers into the two session caches. */
+/**
+ * Projects the ledger and the tickets' `Sessions` headers into the two session caches, and
+ * stamps `client = "org"` on every session row those files name. The caches are rebuilt from
+ * the files on every pass and vanish with the organization; the stamp is written once per row
+ * and stays, which is what keeps a desk or ticket session out of development mode's list
+ * after the organization is deleted or company mode is switched off. It also backfills the
+ * sessions of organizations that already existed before the marker did — one pass marks them
+ * all. Sessions of organizations deleted before then are never seen again and stay unmarked.
+ */
 export function syncCaches(deps: OrgDeps, org: LoadedOrg, tickets: readonly LoadedTicket[]): void {
   syncDeskCache(deps, org);
+  // The stamp is durable, unlike the caches beside it, so a hand-edited ledger naming a
+  // session of another Project must not mark it as this organization's.
+  const owned: string[] = [];
+  const own = (sessionId: string): void => {
+    if (deps.sessions.findById(sessionId)?.projectId === org.projectId) owned.push(sessionId);
+  };
+  for (const desk of Object.values(org.desks)) {
+    own(desk.sessionId);
+    for (const prev of desk.previous) own(prev);
+  }
   const rows: Array<{ ticketId: string; sessionId: string; agentId: string }> = [];
   for (const t of tickets) {
     for (const sessionId of t.doc.sessions) {
       const row = deps.sessions.findById(sessionId);
-      if (row && row.projectId === org.projectId)
+      if (row && row.projectId === org.projectId) {
         rows.push({ ticketId: t.ticketId, sessionId, agentId: row.agentId });
+        owned.push(sessionId);
+      }
     }
   }
   deps.cache.syncTicketSessions(org.projectId, org.orgId, rows);
+  deps.sessions.markOrgClient(owned);
 }
 
 /** The CEO moved an employee's workspace: a desk whose session sits elsewhere is renewed. */

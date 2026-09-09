@@ -35,7 +35,7 @@ Name the Project in the summary. Pass `--project-id <id>` only when the user exp
 
 One question per message, in the user's own language, in this order. Never batch them into a form and never fill one in yourself: an unanswered question is asked again, not guessed. Each answer is echoed back in the summary at the end, so a mistake costs one line, not a re-run.
 
-1. **Organization id.** The directory name and the id every command takes: `[a-z][a-z0-9_]{1,63}` — a lowercase letter, then lowercase letters, digits and underscores, 2–64 characters. Suggest one derived from what the user has already called the company (lowercase it, transliterate to ASCII, join words with underscores: "Plugin Marketplace" → `plugin_marketplace`) and let them confirm or replace it. If nothing in the conversation names the company yet, ask question 2 first and derive the suggestion from that answer — those two questions swap, the rest of the order does not. Never propose an id already in `penguin org ls`; the server refuses it with `409 org_exists`.
+1. **Organization id.** The directory name and the id every command takes: `[a-z][a-z0-9_]{1,63}` — a lowercase letter, then lowercase letters, digits and underscores, 2–64 characters. Suggest one derived from what the user has already called the company: lowercase it, transliterate to ASCII, join the words with underscores and put `co_` in front — "Plugin Marketplace" → `co_plugin_marketplace`. The prefix is the convention (`co_` for an organization, `ch_` for a channel, so an id says what it names); the server does not enforce it, so a user who wants a bare id gets one. Let them confirm or replace the suggestion. If nothing in the conversation names the company yet, ask question 2 first and derive the suggestion from that answer — those two questions swap, the rest of the order does not. Never propose an id already in `penguin org ls`; the server refuses it with `409 org_exists`.
 2. **Name.** The display name, free text. Say that leaving it empty makes it the id.
 3. **Mission.** One sentence: what the company is for, and how one would know it succeeded. This is the single most load-bearing answer — it becomes the CEO's initialization run, the handbook and the first tickets. A vague mission ("build a website") produces a vague company, so if the user's sentence is broad, **propose a sharper wording** and ask them to confirm or correct it; propose once, do not negotiate it into a paragraph. Their wording wins if they keep it. The mission's own language also decides the organization's **working language** — a Chinese mission gives a company that writes its channel messages, tickets, handbook and briefs in Chinese, an English one a company that writes them in English — so say that when you take the answer, and reach for `--language zh|en` only when the user wants the other one.
 4. **Shared workspace.** The company's working directory, which the CEO partitions into a sub-directory per employee. Either an **existing absolute directory** or the default — the organization's own `workspace/` inside the Project directory, which is what most missions want. Offer the default explicitly; if the user names a path, check it exists before you put it in the summary (the server refuses one that does not).
@@ -51,7 +51,7 @@ One question per message, in the user's own language, in this order. Never batch
 Before running anything, put all six answers on one screen, in the user's language, and ask for a plain yes:
 
 ```text
-Organization  plugin_marketplace  (Project: default_project)
+Organization  co_plugin_marketplace  (Project: default_project)
 Name          Plugin Marketplace
 Mission       Build a PenguinHarness plugin marketplace, promote it into the top three search results, and earn from paid featured slots.
 Workspace     default (the organization's own workspace/)
@@ -74,7 +74,7 @@ penguin org create --org-id <id> --mission <sentence> \
 A complete invocation of the summary above:
 
 ```bash
-penguin org create --org-id plugin_marketplace \
+penguin org create --org-id co_plugin_marketplace \
   --name "Plugin Marketplace" \
   --mission "Build a PenguinHarness plugin marketplace, promote it into the top three search results, and earn from paid featured slots." \
   --ceo-budget 100

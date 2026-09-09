@@ -438,6 +438,29 @@ describe("organization routes", () => {
     const start = await owner.post(`${base}/start`, { agentId: "acme_dev", message: "go" });
     expect(start.status).toBe(202);
     expect(await start.json()).toEqual({ sessionId: "session-x" });
+    // Who asks rides along: only the ticket's owner (or a person) may start its sessions.
+    expect(calls.at(-1)).toMatchObject({
+      method: "startTicket",
+      args: [
+        ownerProject,
+        "acme",
+        "2026-09-01-site",
+        { agentId: "acme_dev", message: "go" },
+        { userId: "olivia" },
+      ],
+    });
+    const startFromDesk = await fromSession(t, `${base}/start`, { sessionId: "session-desk" });
+    expect(startFromDesk.status).toBe(202);
+    expect(calls.at(-1)).toMatchObject({
+      method: "startTicket",
+      args: [
+        ownerProject,
+        "acme",
+        "2026-09-01-site",
+        {},
+        { userId: "admin", sessionId: "session-desk" },
+      ],
+    });
     const block = await owner.post(`${base}/block`, { reason: "waiting", by: "user:olivia" });
     expect(block.status).toBe(200);
     expect(calls.at(-1)).toMatchObject({

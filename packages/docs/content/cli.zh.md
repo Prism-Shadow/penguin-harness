@@ -217,11 +217,11 @@ penguin schedule rm daily-report
 
 ## penguin org
 
-公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、频道）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。
+公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、频道）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。自动生成的 id 按约定带前缀——组织 `co_`、频道 `ch_`——服务端只提议、不强制，因此这里传入的 id 一律按原样创建。
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # 按约定取 `co_<slug>`
 penguin org show [--org-id <id>] [--json]                       # 概览：工作语言、员工与状态、看板计数、预算占用、待处理事项
 penguin org chart [--org-id <id>] [--json]                      # 员工树
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
@@ -241,10 +241,10 @@ penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # 工单留在所在列
 penguin org ticket unblock <ticket_id>
 penguin org ticket progress <ticket_id> -m <text>               # 追加一条进展，记为当前会话所写
-penguin org ticket start <ticket_id> [-m <附言>] [--workspace <path>] [--json]   # 新开一个后台处理该工单的工单会话，打印会话 id
+penguin org ticket start <ticket_id> [-m <附言>] [--workspace <path>] [--agent-id <id>] [--json]   # 新开一个后台处理该工单的工单会话，打印会话 id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # 把既有会话挂为贡献会话（缺省当前会话）
 penguin org channel ls [--json]                                 # 人看到全部频道，员工只看到自己所在的
-penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # 新频道只有创建者一人
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # 新频道只有创建者一人；按约定取 `ch_<slug>`
 penguin org channel show <channel_id> [--json]                  # 用途、成员数与成员清单
 penguin org channel invite <channel_id> <principal>...          # 任一成员可邀请；每个 principal 一次 POST
 penguin org channel join <channel_id>                           # 仅限人；员工只能等成员邀请
@@ -265,7 +265,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 同一套环境在会话内标识调用方：
 
 - `calendar` 各命令的 `--agent-id` 与 `desk` 的位置参数缺省取 `PENGUIN_AGENT_ID`——员工安排自己的日程、换自己的工位。`calendar ls` 不带该选项时列出全部员工的日程项。
-- `ticket start` 在设置了 `PENGUIN_AGENT_ID` 时以它为工单会话的员工；否则由服务端取工单负责人。
+- `ticket start` 给了 `--agent-id` 就用它，否则用设置了的 `PENGUIN_AGENT_ID`，再否则由服务端取工单负责人。它同时携带 `PENGUIN_SESSION_ID`，服务端据此施加规则：**一张工单的会话只能由它的负责人或人发起**——员工对别人的工单（或没有员工负责人的工单）发起会得到 `403 not_ticket_owner`，原样打印，提示改用改派（`penguin org ticket assign <id> --owner agent:<员工>`），由那名员工的工位在下一次巡检时接手。`--agent-id` 则是负责人把同事拉进自己名下工单的方式。
 - 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与频道写入（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
 - 频道读取（`ls`、`show`、`tail`）以及 `leave` 与 `remove` 背后的成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入。不带它，服务端会把员工当作登录的那个人来应答，`channel ls` 便会列出全部频道而非该员工自己的。
 

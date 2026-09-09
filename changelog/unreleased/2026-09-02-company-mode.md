@@ -234,3 +234,44 @@ cursors, budget marks) and each user's read cursor per channel.
   `org_desk_notices`, the table that holds the queue. `ticket_notice` stays in `OrgTriggerKind`
   because Traces recorded while it existed carry it; nothing writes it any more. The skills,
   the handbook templates, the Company Mode guide and the server API reference say so.
+
+### After the third trial round (2026-09-09)
+
+- Company mode's sessions carry a durable marker. A desk or ticket session is created with
+  `client: "org"` on its index row and `SessionInfo` now serves the field, so development
+  mode's session list can leave those rows out whether or not the organization still exists
+  and whether or not company mode is switched on — the `orgId` stamp beside it is projected
+  from the organization caches, which are deleted with the organization and not read while the
+  mode is off. Every reconcile pass also stamps the sessions the organization's files name —
+  the desk ledger, current and previous, and the tickets' `Sessions` headers — so the sessions
+  of organizations that already exist are marked on the next pass, with no migration (the
+  column exists and takes free text). Sessions of organizations deleted before this change
+  were never named by any surviving file and stay unmarked; they read as development mode's
+  own, and archiving or deleting them is the only cleanup. `POST .../sessions` still accepts
+  only `"web"` and `"cli"`: `"org"` is written by the organization runtime, which calls the
+  service directly, so no request can claim it.
+- Generated ids carry a prefix that says what they name: `co_` for an organization, `ch_` for
+  a channel. `POST /organizations/suggest-id` asks the model for the semantic core as before
+  and prefixes the answer itself — the ASCII-slug fallback too, before the length cap and the
+  `taken` check, and never twice when the core already starts with the prefix. The `company-setup`
+  skill proposes `co_<slug>`, and the CEO's and employees' channel examples read `ch_site`,
+  `ch_marketing`. The prefix is a convention the server proposes and does not enforce: an id
+  typed by hand is created exactly as written and existing ids keep working.
+- Only a ticket's owner, or a person, starts its sessions.
+  `POST /:orgId/tickets/:ticketId/start` now reads the caller: a person may start a session
+  for any ticket, naming the employee with `agentId`, while a caller writing as an employee
+  (a desk or ticket session quoting its own `sessionId`) may start one only for a ticket it
+  owns and gets `403 not_ticket_owner` for anyone else's — or for a ticket with no employee
+  owner — with the message telling it to assign the ticket instead and let that desk pick it
+  up in its next sweep. An owner may still pass `agentId` to enlist a colleague on its own
+  ticket, and `penguin org ticket start` gained `--agent-id` for exactly that; the command now
+  also sends `PENGUIN_SESSION_ID`, which is what identifies the employee behind it. The CEO
+  skill, the employee skill, the handbook templates, the CEO's initialization run, the Company
+  Mode guide, the server API reference and the CLI reference all describe the rule.
+- The organization overview's detail carries an `inbox`: the all-hands messages of the day's
+  window that mention the caller or `all` (newest first, at most 20), every ticket carrying a
+  `Blocked` reason whoever it waits on (newest first), and the tickets in `done` that closed in
+  the current budget period (newest first, at most 20), each with the `closedAt` its last
+  "moved … → done" progress line records. A ticket whose file was moved into `done` by hand has
+  no such line and is listed with no `closedAt` rather than hidden. `pending` and
+  `recentMessages` are unchanged.

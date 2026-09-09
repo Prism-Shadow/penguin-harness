@@ -3,7 +3,8 @@
  * session: an `[org_trigger]` block (built by core's marker module, which also owns the
  * parser the frontend folds it with) followed by the trigger's content. Desk sessions
  * are opened lazily here on first use and renewed when the CEO reassigns a workspace;
- * ticket sessions are opened per start.
+ * ticket sessions are opened per start. Both are stamped `client: "org"` at creation — the
+ * durable marker development mode's list reads to leave them out of it.
  */
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
@@ -86,6 +87,7 @@ export async function ensureDesk(
       workspace,
       ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
+      client: "org",
     });
   } catch (err) {
     return {
@@ -213,6 +215,7 @@ export async function openTicketSession(
       workspace,
       ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
       approvalMode: org.config.approvalMode,
+      client: "org",
     });
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

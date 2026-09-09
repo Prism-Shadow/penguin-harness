@@ -559,10 +559,55 @@ describe("session-index", () => {
     expect(t.deps.sessionsRepo.findById(fromCli.session.sessionId)!.client).toBe("cli");
     expect(t.deps.sessionsRepo.findById(fromWeb.session.sessionId)!.client).toBe("web");
     expect((await api.post(base(), { client: "carrier-pigeon" })).status).toBe(400);
+    // "org" is the organization runtime's own marker: it calls SessionService directly, so
+    // no request may claim it and hide its Session from development mode's list.
+    expect((await api.post(base(), { client: "org" })).status).toBe(400);
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     const ids = list.sessions.map((s) => s.sessionId);
     expect(ids).toContain(fromCli.session.sessionId);
     expect(ids).toContain(fromWeb.session.sessionId);
+    // The DTO carries the stamp, which is what the two modes' lists partition on.
+    expect(list.sessions.find((s) => s.sessionId === fromCli.session.sessionId)!.client).toBe(
+      "cli",
+    );
+    expect(fromWeb.session.client).toBe("web");
+  });
+
+  it("an organization's session carries client: 'org' through the list and the single GET", async () => {
+    const deskSession = "session-2026-07-03-09-00-00-0abc0002";
+    t.deps.sessionsRepo.insert({
+      sessionId: deskSession,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-desk",
+      workspace: "/tmp/w-desk",
+      approvalMode: "allow-all",
+      title: null,
+      client: "org",
+      createdAt: "2026-07-03T09:00:00.000Z",
+      lastActiveAt: "2026-07-03T09:00:00.000Z",
+    });
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === deskSession)!.client).toBe("org");
+    const one = (await (await api.get(`/api/sessions/${deskSession}`)).json()) as SessionResponse;
+    expect(one.session.client).toBe("org");
+    // A row that predates the column says nothing rather than claiming a client.
+    const legacyId = "session-2026-07-03-10-00-00-0abc0003";
+    t.deps.sessionsRepo.insert({
+      sessionId: legacyId,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-legacy",
+      workspace: "/tmp/w-legacy",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-07-03T10:00:00.000Z",
+      lastActiveAt: "2026-07-03T10:00:00.000Z",
+    });
+    const again = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(again.sessions.find((s) => s.sessionId === legacyId)!.client).toBeUndefined();
   });
 
   it("legacy rows without a client marker stay visible by default (grandfathered as web)", async () => {

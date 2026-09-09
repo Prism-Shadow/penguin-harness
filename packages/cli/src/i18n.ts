@@ -350,6 +350,8 @@ export interface Messages {
     startMessage: string;
     /** start's --workspace: another directory inside the shared workspace (default: the employee's desk workspace). */
     startWorkspace: string;
+    /** start's --agent-id: which employee the ticket session runs as (default: the caller inside a session, else the ticket's owner). */
+    startAgentId: string;
     /** attach's --session: the session to attach (default: the calling session). */
     attachSession: string;
     /** tail / send's --channel: which channel to read or write in (default: the all-hands channel). */
@@ -1050,7 +1052,7 @@ const en: Messages = {
     ticketUnblockDesc: "Clear a ticket's blocked state",
     ticketProgressDesc: "Append a progress entry (attributed to the calling session)",
     ticketStartDesc:
-      "Open a ticket session that works on the ticket in the background; prints the session id",
+      "Open a ticket session that works on the ticket in the background; prints the session id. Only the ticket's owner (its desk) or a person may start one — assign the ticket to move it to another employee",
     ticketAttachDesc:
       "Attach an existing session as a contributor (defaults to the calling session)",
     channelDesc:
@@ -1121,6 +1123,8 @@ const en: Messages = {
     startMessage: "A note appended to the ticket text the session opens with",
     startWorkspace:
       "Another directory inside the shared workspace (defaults to the employee's desk workspace)",
+    startAgentId:
+      "Which employee the session runs as: a colleague you enlist on your own ticket (defaults to you inside a session, otherwise the ticket's owner)",
     attachSession:
       "The session to attach, full id or unique fragment (defaults to PENGUIN_SESSION_ID)",
     channelOpt: "Channel to read or write in (default: default_channel, the all-hands channel)",
@@ -1795,7 +1799,8 @@ const zh: Messages = {
     ticketBlockDesc: "标记工单为阻塞（留在所在列）",
     ticketUnblockDesc: "清除工单的阻塞状态",
     ticketProgressDesc: "追加一条进展（记为当前会话所写）",
-    ticketStartDesc: "新开一个在后台处理该工单的工单会话；打印会话 id",
+    ticketStartDesc:
+      "新开一个在后台处理该工单的工单会话；打印会话 id。只有工单的负责人（其工位）或人可以发起——要交给别的员工，改派负责人",
     ticketAttachDesc: "把既有会话挂为贡献会话（缺省当前会话）",
     channelDesc: "组织的频道（default_channel 是全员频道，所有人都在其中）",
     channelLsDesc: "列出频道：人看到全部频道，员工只看到自己所在的",
@@ -1853,6 +1858,8 @@ const zh: Messages = {
     progressText: "进展内容，涉及的文件一律写完整路径",
     startMessage: "附在工单正文之后、随会话首条输入发出的附言",
     startWorkspace: "公共工作区内的另一个目录（缺省为该员工工位的 Workspace）",
+    startAgentId:
+      "会话以哪名员工的身份运行：可以拉同事来做自己名下的工单（会话内缺省为你自己，否则为工单负责人）",
     attachSession: "要挂接的会话，完整 id 或唯一片段（缺省 PENGUIN_SESSION_ID）",
     channelOpt: "要读取或写入的频道（缺省 default_channel，即全员频道）",
     channelName: "显示名（缺省同 id）",

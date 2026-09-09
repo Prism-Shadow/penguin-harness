@@ -694,7 +694,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     expect(lastRequest("POST", "/tickets/2026-09-02-site/unblock")?.body).toEqual({});
   });
 
-  it("start runs the ticket session as PENGUIN_AGENT_ID and prints the bare session id (--json: {sessionId})", async () => {
+  it("start runs the ticket session as PENGUIN_AGENT_ID, carries the calling session, and prints the bare session id (--json: {sessionId})", async () => {
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site", owner: "agent:ceo" });
     expect(
       await cli([
@@ -708,24 +708,36 @@ describe("penguin org ticket (writes carry the calling session)", () => {
         "site",
       ]),
     ).toBe(0);
+    // The calling session rides along: it is what tells the server which employee is asking,
+    // and only a ticket's owner may start its sessions.
     expect(lastRequest("POST", "/tickets/2026-09-02-site/start")?.body).toEqual({
       agentId: "dev1",
       message: "start with the header",
       workspace: "site",
+      sessionId: DESK_SESSION,
     });
     const sessions = org().tickets.get("2026-09-02-site")!.sessions as string[];
     expect(sessions).toHaveLength(1);
     expect(out()).toBe(`${sessions[0]}\n`);
     expect(server.sessions.get(sessions[0]!)?.agentId).toBe("dev1");
 
-    // Without PENGUIN_AGENT_ID the body names no employee: the server picks the owner.
+    // --agent-id wins over the environment: the owner enlisting a colleague on its own ticket.
+    stdout.length = 0;
+    expect(await cli(["org", "ticket", "start", "2026-09-02-site", "--agent-id", "ceo"])).toBe(0);
+    expect(lastRequest("POST", "/tickets/2026-09-02-site/start")?.body).toEqual({
+      agentId: "ceo",
+      sessionId: DESK_SESSION,
+    });
+
+    // Outside a session the body names neither employee nor session: the server picks the owner.
     delete process.env.PENGUIN_AGENT_ID;
+    delete process.env.PENGUIN_SESSION_ID;
     stdout.length = 0;
     expect(await cli(["org", "ticket", "start", "2026-09-02-site", "--json"])).toBe(0);
     expect(lastRequest("POST", "/tickets/2026-09-02-site/start")?.body).toEqual({});
-    expect(sessions).toHaveLength(2);
-    expect(JSON.parse(out())).toEqual({ sessionId: sessions[1] });
-    expect(server.sessions.get(sessions[1]!)?.agentId).toBe("ceo");
+    expect(sessions).toHaveLength(3);
+    expect(JSON.parse(out())).toEqual({ sessionId: sessions[2] });
+    expect(server.sessions.get(sessions[2]!)?.agentId).toBe("ceo");
   });
 
   it("attach defaults to the calling session, resolves a fragment, and needs one of the two", async () => {

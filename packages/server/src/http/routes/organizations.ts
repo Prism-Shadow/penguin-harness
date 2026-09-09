@@ -662,11 +662,18 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const agentId = optionalString(body, "agentId", { minLen: 2, maxLen: 64 });
     const message = optionalString(body, "message", { maxLen: 100_000 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
-    const res = await deps.orgService.startTicket(projectId, orgId, ticketId, {
-      ...(agentId !== undefined ? { agentId } : {}),
-      ...(message !== undefined ? { message } : {}),
-      ...(workspace !== undefined ? { workspace } : {}),
-    });
+    const res = await deps.orgService.startTicket(
+      projectId,
+      orgId,
+      ticketId,
+      {
+        ...(agentId !== undefined ? { agentId } : {}),
+        ...(message !== undefined ? { message } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+      },
+      // Who asks decides whether it may: an employee starts sessions only on its own tickets.
+      actorOf(c, body),
+    );
     return c.json(res, 202);
   });
 

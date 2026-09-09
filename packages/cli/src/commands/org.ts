@@ -18,7 +18,8 @@
  *   penguin org calendar ls [--agent-id] | add <name> … | update <name> … | rm <name>
  *   penguin org ticket ls [--status] [--owner] [--blocked] | show <id> | create … | move <id> --to <col>
  *                    | assign <id> --owner <p> | block <id> --reason <s> [--by] | unblock <id>
- *                    | progress <id> -m <text> | start <id> [-m] [--workspace] | attach <id> [--session]
+ *                    | progress <id> -m <text> | start <id> [-m] [--workspace] [--agent-id]
+ *                    | attach <id> [--session]
  *   penguin org channel ls | create <id> [--name] [--purpose] | show <id> | invite <id> <principal>...
  *                    | join <id> | leave <id> | remove <id> <principal> | archive <id> | unarchive <id>
  *                    | tail [--channel <id>] [--date <d>] [-n <count>]
@@ -31,7 +32,8 @@
  * organization), `--project-id`, `--json` and `--server`. The same environment
  * identifies the caller: `--agent-id` on the calendar commands and the desk positional
  * default to PENGUIN_AGENT_ID; `ticket start` sends it as the employee the ticket
- * session runs as (the server otherwise picks the ticket owner); the ticket writes and
+ * session runs as (its own `--agent-id` enlists a colleague on the caller's own ticket,
+ * and outside a session the server picks the ticket owner); the ticket writes and
  * the channel writes carry PENGUIN_SESSION_ID in their body so the file records the
  * employee rather than the token's user, and `ticket attach` attaches that session by
  * default. The reads that depend on who is asking — `channel ls`, `channel show`,
@@ -1135,14 +1137,21 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .command("start <ticket_id>")
       .description(t.org.ticketStartDesc)
       .option("-m, --message <text>", t.org.startMessage)
-      .option("--workspace <path>", t.org.startWorkspace),
+      .option("--workspace <path>", t.org.startWorkspace)
+      .option("--agent-id <id>", t.org.startAgentId),
     t,
   ).action(async (ticketId: string, opts) => {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    // Inside a session the ticket session runs as the calling employee; outside one the
-    // server picks the ticket's owner — so the plain default_agent fallback is not applied.
-    const agentId = process.env.PENGUIN_AGENT_ID?.trim() || undefined;
+    // Inside a session the ticket session runs as the calling employee unless --agent-id
+    // enlists a colleague on the caller's own ticket; outside one the server picks the
+    // ticket's owner — so the plain default_agent fallback is not applied. `actorFields`
+    // carries the calling session so the server can tell an employee from a person: an
+    // employee may start a session only on a ticket it owns, and anyone else's is a 403.
+    const agentId =
+      (typeof opts.agentId === "string" ? opts.agentId.trim() : "") ||
+      process.env.PENGUIN_AGENT_ID?.trim() ||
+      undefined;
     const res = await scope.client.request<OrgTicketStartResponse>(
       "POST",
       `${scope.base}/tickets/${enc(ticketId)}/start`,
@@ -1150,6 +1159,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
         ...(agentId !== undefined ? { agentId } : {}),
         ...(opts.message !== undefined ? { message: String(opts.message) } : {}),
         ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
+        ...actorFields(),
       },
     );
     // Like `run --background`: the bare session id is what `penguin input` / `penguin logs` address later.
