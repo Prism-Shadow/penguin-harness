@@ -31,6 +31,7 @@ import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -41,7 +42,7 @@ import { NAV_ICONS } from "../../components/ui/icons";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { orgChannelPath, orgPagePath } from "./company-nav";
+import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";
 import type { CompanyNavKey } from "./company-nav";
 import { CHANNEL_ICON } from "./channel-sidebar";
 import { OrgEmptyLine, OrgPage, OrgPageSkeleton, OrgSection, useOrg } from "./org-layout";
@@ -55,6 +56,7 @@ import {
   principalLabel,
 } from "./shared";
 import { agentPrincipal } from "./principals";
+import { liveEmployeeStates } from "./org-sessions";
 import { timeLabel } from "./calendar-geom";
 import {
   BOARD_SEGMENT_TONE,
@@ -307,6 +309,7 @@ export function OverviewPage() {
   const company = useCompany();
   const { currency } = useTheme();
   const { locale } = useLocale();
+  const liveStatuses = useLiveSessionStatuses();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.overview}` : S.nav.org.overview);
   const [detail, setDetail] = useState<OrganizationDetail | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
@@ -401,7 +404,16 @@ export function OverviewPage() {
     );
   }
 
-  const counts = employeeCounts(chart.employees);
+  // Who is actually working: the session list's live statuses, since the chart's own `state`
+  // only moves on an organization event and a run ending publishes none.
+  const counts = employeeCounts(
+    chart.employees,
+    liveEmployeeStates(
+      chart.employees,
+      company.orgSessions.get(orgKey(projectId, orgId)),
+      liveStatuses,
+    ),
+  );
   const board = boardSummary(detail.board);
   const today = todaySummary(detail.today);
   const spend = spendSummary(detail.spend);

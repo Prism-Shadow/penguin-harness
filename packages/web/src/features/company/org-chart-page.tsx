@@ -6,6 +6,11 @@
  * change the reporting line, renew the desk (a fresh desk session, and the workspace it runs
  * in), leave. Every one of the personnel actions confirms before it writes the chart file.
  *
+ * A card's state dot is NOT the chart's own `state`: that snapshot is re-read on organization
+ * events, and a run ending publishes none of them, so an employee that finished would keep its
+ * running dot until something unrelated moved. The dots read the session list's live statuses
+ * instead (org-sessions.ts, liveEmployeeStates), falling back to the snapshot per employee.
+ *
  * The drawing centres itself when narrower than the page and scrolls sideways when wider.
  * A wide chart opens shrunk to fit the page's width; the header's zoom control steps
  * between 60% and 120%, and its readout puts the chart back to fit.
@@ -20,6 +25,7 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { useCompany } from "../../state/company";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -32,6 +38,8 @@ import {
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
+import { orgKey } from "./company-nav";
+import { liveEmployeeStates } from "./org-sessions";
 import { DESK_ICON } from "./channel-header";
 import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
 import { ZOOM_MAX, ZOOM_MIN, fitZoom, stepZoom } from "./chart-view";
@@ -99,8 +107,10 @@ export function OrgChartPage() {
       setError(apiErrorText(e));
     }
   }, [projectId, orgId]);
-  // A run starting or ending moves a state dot, a ticket change can attach a session to an
-  // employee, and a budget event pauses one: reload on those, never on a timer.
+  // A run starting moves a state dot, a ticket change can attach a session to an employee, and
+  // a budget event pauses one: reload on those, never on a timer. A run ENDING publishes
+  // nothing at all, which is why the dots are drawn from the live statuses below rather than
+  // from the state this response carries.
   const { runs, tickets, budget } = company.versions;
   useEffect(() => {
     void load();
@@ -109,6 +119,16 @@ export function OrgChartPage() {
   const layout = useMemo(
     () => (chart === null ? null : layoutOrgTree(chart.employees, chart.ceoAgentId)),
     [chart],
+  );
+
+  // The dots' states: the live session list first, the chart's own state for an employee whose
+  // Sessions that list has not loaded. The ticket sessions come from the organization's own
+  // snapshot, which is the only listing that says which employee is working which ticket.
+  const liveStatuses = useLiveSessionStatuses();
+  const orgSessions = company.orgSessions.get(orgKey(projectId, orgId));
+  const employeeStates = useMemo(
+    () => liveEmployeeStates(chart?.employees ?? [], orgSessions, liveStatuses),
+    [chart, orgSessions, liveStatuses],
   );
   const scale = layout === null ? 1 : (zoom ?? fitZoom(frameWidth, layout.width));
   const percent = Math.round(scale * 100);
@@ -326,6 +346,7 @@ export function OrgChartPage() {
                     <ChartCard
                       key={node.id}
                       employee={employee}
+                      state={employeeStates.get(employee.agentId) ?? employee.state}
                       isCeo={isCeo}
                       currency={currency}
                       x={node.x}

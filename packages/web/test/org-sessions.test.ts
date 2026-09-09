@@ -3,8 +3,9 @@
  * development list's organization filter (session-grouping): a desk row per employee in chart
  * order whether or not a desk exists, the session list's live status winning over both
  * snapshots, ticket sessions newest first under the ticket that names them, the glyph a row
- * draws, the split of a loaded list into the user's own rows and the organizations', and the
- * totals corrected by what that split hid.
+ * draws, an employee's own state read from every Session the organization attributes to it,
+ * the split of a loaded list into the user's own rows and the organizations', and the totals
+ * corrected by what that split hid.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -14,7 +15,12 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { deskRows, orgRowActivity, ticketSessionRows } from "../src/features/company/org-sessions";
+import {
+  deskRows,
+  liveEmployeeStates,
+  orgRowActivity,
+  ticketSessionRows,
+} from "../src/features/company/org-sessions";
 import {
   countsWithoutOrgSessions,
   isOrgSession,
@@ -181,6 +187,64 @@ describe("orgRowActivity", () => {
     expect(orgRowActivity("running")).toBe("running");
     expect(orgRowActivity("compacting")).toBe("compacting");
     expect(orgRowActivity("idle")).toBeNull();
+  });
+});
+
+describe("liveEmployeeStates", () => {
+  it("reads every Session the organization attributes to an employee, live status first", () => {
+    // The chart says the CEO is running; the live list has settled its desk and its ticket
+    // session, so the employee has stopped.
+    const states = liveEmployeeStates(
+      chart.employees,
+      sessions,
+      liveStatuses({ "s-ceo": "idle", "s-t2": "idle", "s-pm": "idle", "s-t1": "idle" }),
+    );
+    expect([...states]).toEqual([
+      ["ceo", "idle"],
+      ["pm", "idle"],
+      // Its only session (s-t3) is not loaded, so the snapshot's own status stands.
+      ["dev", "idle"],
+    ]);
+  });
+
+  it("is running while any of them is running or compacting", () => {
+    // The CEO's desk has settled and one of its ticket sessions has started: it is at work.
+    expect(
+      liveEmployeeStates(chart.employees, sessions, liveStatuses({ "s-t2": "running" })).get("ceo"),
+    ).toBe("running");
+    // Compaction is work too, and here it is the desk that is doing it.
+    expect(
+      liveEmployeeStates(chart.employees, sessions, liveStatuses({ "s-pm": "compacting" })).get(
+        "pm",
+      ),
+    ).toBe("running");
+    // The chart's own desk id counts even before the sessions route lists that desk.
+    expect(
+      liveEmployeeStates(
+        chart.employees,
+        { desks: [], tickets: [] },
+        liveStatuses({ "s-ceo": "running" }),
+      ).get("ceo"),
+    ).toBe("running");
+  });
+
+  it("falls back to the organization's snapshot, and then to the chart's own state", () => {
+    // Nothing live at all: the sessions route still says the desk is compacting and one of the
+    // ticket sessions is running.
+    const states = liveEmployeeStates(chart.employees, sessions);
+    expect(states.get("pm")).toBe("running");
+    // The CEO's snapshot rows have all settled, so the chart's stale "running" gives way.
+    expect(states.get("ceo")).toBe("idle");
+    // No sessions listing at all: only the chart's own state is left to go on.
+    expect(liveEmployeeStates(chart.employees, undefined).get("dev")).toBe("idle");
+    expect(liveEmployeeStates(chart.employees, undefined).get("ceo")).toBe("running");
+  });
+
+  it("leaves a budget-paused employee paused, whatever its sessions are doing", () => {
+    const paused = [{ agentId: "pm", state: "paused" as const, desk: { sessionId: "s-pm" } }];
+    expect(
+      liveEmployeeStates(paused, sessions, liveStatuses({ "s-pm": "running" })).get("pm"),
+    ).toBe("paused");
   });
 });
 

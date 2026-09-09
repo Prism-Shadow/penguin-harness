@@ -6,7 +6,9 @@
  * action live. A whole-card link promises one of its many actions and steals the click from
  * the rest. Three rows: avatar with the name and title (the CEO wears a chip); the live
  * state dot and its label, the workspace tail, this period's spend against the budget; a
- * thin ratio bar.
+ * thin ratio bar. The state the dot draws is passed in rather than read off the employee: the
+ * chart is a snapshot re-read on organization events, and no event says a run ended
+ * (org-sessions.ts, liveEmployeeStates).
  * Every status colour is a tone picked by meaning; running and on-desk share emerald and
  * are told apart by motion (the running dot pulses) and by their labels.
  */
@@ -67,6 +69,7 @@ export function ChartLegend() {
 
 export function ChartCard({
   employee,
+  state,
   isCeo,
   currency,
   x,
@@ -77,6 +80,8 @@ export function ChartCard({
   menu,
 }: {
   employee: OrgEmployeeItem;
+  /** The state the dot draws — the live one, which the chart's own `state` cannot be. */
+  state: OrgEmployeeState;
   isCeo: boolean;
   currency: Currency;
   /** Top-left corner inside the drawing. */
@@ -137,7 +142,7 @@ export function ChartCard({
           </span>
         </span>
         <span className="mt-2 flex items-center gap-1.5 text-[11px] leading-4 text-gray-600 dark:text-gray-300">
-          <ChartStateDot state={employee.state} />
+          <ChartStateDot state={state} />
           <span
             className="flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] text-gray-400 dark:text-gray-500"
             title={flag ?? employee.resolvedWorkspace ?? employee.workspace}
