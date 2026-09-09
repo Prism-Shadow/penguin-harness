@@ -11,18 +11,15 @@
  * The harness has no notion of a chat bot. What it lends this package is what it already
  * has — the Discord messaging connector (credential shape, Gateway, sends, Markdown, the
  * 2000-character cap), Session creation, the task runner, the Session event channel, the
- * settings store and the Projects' config files — reached through the module's `requires`;
- * everything that makes those a bot lives here: config.ts reads a Project's `[discord_bot]`
- * table, manager.ts keeps one bot per such Project in line with the files, bot.ts is the
- * bot (one Gateway connection, a Session per chat, replies relayed back, `/new`, `/approve`,
- * `/deny`, `/status`), routes.ts the read-only status route at `/api/discord-bot`.
+ * settings store and the plugin configuration it stores for this package — reached through
+ * the module's `requires`; everything that makes those a bot lives here: config.ts reads the
+ * package's options, manager.ts keeps the bot in line with them, bot.ts is the bot (one
+ * Gateway connection, a Session per chat, replies relayed back, `/new`, `/approve`, `/deny`,
+ * `/status`), routes.ts the read-only status route at `/api/discord-bot`.
  *
- * Configuration is the Project's config file and nothing else:
- *
- *   [discord_bot]
- *   bot_token = "…"          # the Bot page of the Discord developer portal
- *   agent = "default_agent"  # optional
- *   enabled = true           # optional
+ * Configuration is the settings group the module declares below and an admin fills in on the
+ * Settings dialog's Plugins page: the bot token, the Project, the Agent, the switch. Nothing
+ * else — no environment variable, no file to edit.
  */
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
@@ -35,8 +32,7 @@ import type {
   Messaging,
   MessagingTaskRunner,
   Paths,
-  ProjectConfigStore,
-  Projects,
+  PluginConfig,
   ScheduleSessionCreator,
   SessionIndex,
   Sessions,
@@ -59,10 +55,10 @@ export {
   writeAttachment,
 } from "./bot.js";
 export type { BotDeps, BotInfo, BotStatus, BotTarget } from "./bot.js";
-export { CONFIG_TABLE, DEFAULT_AGENT, botConfigOf, botIdOf } from "./config.js";
+export { CONFIG_GROUP, DEFAULT_AGENT, botConfigOf, botIdOf } from "./config.js";
 export type { BotConfig } from "./config.js";
-export { DiscordBots, RECONCILE_INTERVAL_MS } from "./manager.js";
-export type { BrokenBotInfo, ManagerDeps } from "./manager.js";
+export { DiscordBots } from "./manager.js";
+export type { BotsStatus, ManagerDeps } from "./manager.js";
 export { ROUTES_ID, discordBotRoutes } from "./routes.js";
 
 /**
@@ -76,6 +72,52 @@ export { ROUTES_ID, discordBotRoutes } from "./routes.js";
     "HttpModule.routes": [
       { id: "discord-bot.routes", prefix: "/api/discord-bot", auth: "user", order: 286 },
     ],
+    "PluginConfigProvider.groups": [
+      {
+        id: "discord-bot",
+        title: "Discord bot",
+        titleZh: "Discord 机器人",
+        description:
+          "Message the bot in Discord, and a Session opens on the chosen Agent and answers in the same channel. Create the bot in the Discord developer portal and invite it to your server; in a server channel it reads only messages that @-mention it.",
+        descriptionZh:
+          "在 Discord 里给机器人发消息，就会在所选 Agent 下开一个 Session 并在同一频道回复。先在 Discord 开发者后台创建机器人并邀请进服务器；在服务器频道里它只读取 @ 它的消息。",
+        properties: {
+          bot_token: {
+            type: "secret",
+            title: "Bot token",
+            titleZh: "Bot Token",
+            description: "From the Bot page of the Discord developer portal.",
+            descriptionZh: "来自 Discord 开发者后台的 Bot 页。",
+            required: true,
+          },
+          project: {
+            type: "string",
+            title: "Project",
+            titleZh: "Project",
+            description: "The id of the Project every chat's Session is created under.",
+            descriptionZh: "每个聊天的 Session 创建在哪个 Project 下（填 Project id）。",
+            placeholder: "default_project",
+            required: true,
+          },
+          agent: {
+            type: "string",
+            title: "Agent",
+            titleZh: "Agent",
+            description: "The Agent in that Project that answers.",
+            descriptionZh: "该 Project 中负责回答的 Agent。",
+            default: "default_agent",
+          },
+          enabled: {
+            type: "boolean",
+            title: "Enabled",
+            titleZh: "启用",
+            description: "Off keeps the token and stops the bot.",
+            descriptionZh: "关闭后保留 Token，停掉机器人。",
+            default: true,
+          },
+        },
+      },
+    ],
   },
   context: { version: 1 },
 })
@@ -86,8 +128,7 @@ export class DiscordBotPlugin {
   @Use("SessionRuntimeModule") private readonly sessionCreator!: ScheduleSessionCreator;
   @Use("SessionRuntimeModule") private readonly sessionIndex!: SessionIndex;
   @Use("ProjectsModule") private readonly agents!: AgentIndex;
-  @Use("ProjectsModule") private readonly projects!: Projects;
-  @Use("ProjectsModule") private readonly configStore!: ProjectConfigStore;
+  @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Use("SettingsModule") private readonly settings!: Settings;
   @Use("RuntimeModule") private readonly channels!: Channels;
   @Use("ObservabilityModule") private readonly errors!: Errors;
@@ -103,8 +144,7 @@ export class DiscordBotPlugin {
       sessionCreator: this.sessionCreator,
       sessionIndex: this.sessionIndex,
       agents: this.agents,
-      projects: this.projects,
-      configStore: this.configStore,
+      pluginConfig: this.pluginConfig,
       settings: this.settings,
       channels: this.channels,
       errors: this.errors,
