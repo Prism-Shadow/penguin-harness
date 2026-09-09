@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>module tree · 58a43833d4fa</title>
+<title>module tree · c32f6a1a80b7</title>
 <style>
 :root { color-scheme: light dark; --ink: #1f2328; --muted: #6a737d; --line: #d0d7de; --bg: #fff; --panel: #f6f8fa; --accent: #0969da; --mod: #8250df; --comp: #1a7f37; }
 @media (prefers-color-scheme: dark) { :root { --ink: #e6edf3; --muted: #8b949e; --line: #30363d; --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --mod: #d2a8ff; --comp: #3fb950; } }
@@ -48,9 +48,9 @@ summary { cursor: pointer; color: var(--muted); }
 <body>
 <header>
   <h1>module tree</h1>
-  <span class="hash" title="sha256 of the interface table">58a43833d4fa49f36c339ebf9ba17fb4fde939bffeb30286fb2231e359b06729</span>
+  <span class="hash" title="sha256 of the interface table">c32f6a1a80b71d919c481a391ac0ebbae25b36e5a57d139dfa147fd3a48fbc95</span>
   <a href="ifaces.json">ifaces.json</a>
-  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/17eabd79c2d8601fa141966b8e1f321f3cf932a2"><code>17eabd7</code> 544/merge</a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness/commit/f168808fb992adce341ea0ce11513ce506f90870"><code>f168808</code> 544/merge</a>
   <input id="q" type="search" placeholder="filter nodes and interfaces">
 </header>
 <main>
@@ -58,7 +58,7 @@ summary { cursor: pointer; color: var(--muted); }
   <section id="detail"><p class="muted">Pick a node or an interface.</p></section>
 </main>
 <script id="data" type="application/json">{
- "hash": "58a43833d4fa49f36c339ebf9ba17fb4fde939bffeb30286fb2231e359b06729",
+ "hash": "c32f6a1a80b71d919c481a391ac0ebbae25b36e5a57d139dfa147fd3a48fbc95",
  "ifaces": {
   "@prismshadow/penguin-server#Access": {
    "name": "Access",
@@ -1395,16 +1395,6 @@ summary { cursor: pointer; color: var(--muted); }
        }
       ]
      }
-    },
-    "isAdmin": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
     }
    },
    "fields": {
@@ -1477,16 +1467,6 @@ summary { cursor: pointer; color: var(--muted); }
         "token": "string"
        }
       }
-     }
-    },
-    "isAdmin": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "data": "boolean"
      }
     },
     "loginDesktop": {
@@ -2602,7 +2582,7 @@ summary { cursor: pointer; color: var(--muted); }
        "fn": {
         "params": [
          {
-          "data": "'install'|'check'|'download'"
+          "data": "'check'|'install'|'download'"
          }
         ],
         "returns": {
@@ -2618,7 +2598,7 @@ summary { cursor: pointer; color: var(--muted); }
     "requestUpdateCommand": {
      "params": [
       {
-       "data": "'install'|'check'|'download'"
+       "data": "'check'|'install'|'download'"
       }
      ],
      "returns": {
@@ -3263,7 +3243,7 @@ summary { cursor: pointer; color: var(--muted); }
     "routes": {
      "data": {
       "prefix": "string",
-      "auth": "'user'|'none'",
+      "auth": "'none'|'user'",
       "order": "number"
      },
      "code": {
@@ -3494,35 +3474,6 @@ summary { cursor: pointer; color: var(--muted); }
      "returns": {
       "promise": {
        "void": true
-      }
-     }
-    },
-    "proxyTarget": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "promise": {
-       "oneOf": [
-        {
-         "object": {
-          "agent": {
-           "opaque": "@types/node#Agent"
-          },
-          "port": {
-           "data": "number"
-          },
-          "cookie": {
-           "data": "string"
-          }
-         }
-        },
-        {
-         "data": "null"
-        }
-       ]
       }
      }
     }
@@ -5678,27 +5629,6 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "slots": {}
   },
-  "@prismshadow/penguin-server#ProjectEvents": {
-   "name": "ProjectEvents",
-   "methods": {
-    "notifyProjectUsers": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ServerEvent"
-       }
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
   "@prismshadow/penguin-server#ProjectLifecycle": {
    "name": "ProjectLifecycle",
    "methods": {
@@ -5908,27 +5838,6 @@ summary { cursor: pointer; color: var(--muted); }
       },
       {
        "data": "string"
-      }
-     ],
-     "returns": {
-      "void": true
-     }
-    }
-   },
-   "slots": {}
-  },
-  "@prismshadow/penguin-server#ProjectNotifier": {
-   "name": "ProjectNotifier",
-   "methods": {
-    "notifyProjectUsers": {
-     "params": [
-      {
-       "data": "string"
-      },
-      {
-       "data": {
-        "$ref": "@prismshadow/penguin-server#ServerEvent"
-       }
       }
      ],
      "returns": {
@@ -6440,52 +6349,6 @@ summary { cursor: pointer; color: var(--muted); }
   "@prismshadow/penguin-server#QqMessaging": {
    "name": "QqMessaging",
    "methods": {},
-   "slots": {}
-  },
-  "@prismshadow/penguin-server#RemoteTerminals": {
-   "name": "RemoteTerminals",
-   "methods": {
-    "get": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "maybe": {
-       "opaque": "@prismshadow/penguin-server#TerminalSession"
-      }
-     }
-    },
-    "attach": {
-     "params": [
-      {
-       "opaque": "@types/ws#WebSocket"
-      },
-      {
-       "opaque": "@prismshadow/penguin-server#TerminalSession"
-      },
-      {
-       "opaque": "@types/node#URL"
-      },
-      {
-       "fn": {
-        "params": [
-         {
-          "data": "string"
-         }
-        ],
-        "returns": {
-         "void": true
-        }
-       }
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
-    }
-   },
    "slots": {}
   },
   "@prismshadow/penguin-server#ResourceGroups": {
@@ -9081,52 +8944,6 @@ summary { cursor: pointer; color: var(--muted); }
    "fields": {
     "transport": {
      "opaque": "@prismshadow/penguin-server#TelegramTransport"
-    }
-   },
-   "slots": {}
-  },
-  "@prismshadow/penguin-server#TerminalRelay": {
-   "name": "TerminalRelay",
-   "methods": {
-    "get": {
-     "params": [
-      {
-       "data": "string"
-      }
-     ],
-     "returns": {
-      "maybe": {
-       "opaque": "@prismshadow/penguin-server#TerminalSession"
-      }
-     }
-    },
-    "attach": {
-     "params": [
-      {
-       "opaque": "@types/ws#WebSocket"
-      },
-      {
-       "opaque": "@prismshadow/penguin-server#TerminalSession"
-      },
-      {
-       "opaque": "@types/node#URL"
-      },
-      {
-       "fn": {
-        "params": [
-         {
-          "data": "string"
-         }
-        ],
-        "returns": {
-         "void": true
-        }
-       }
-      }
-     ],
-     "returns": {
-      "data": "boolean"
-     }
     }
    },
    "slots": {}
@@ -12152,14 +11969,14 @@ summary { cursor: pointer; color: var(--muted); }
    "error_message?": "string"
   },
   "@prismshadow/penguin-core#CompactionMode": "'summarize'|'discard'",
-  "@prismshadow/penguin-core#CompactionReason": "'context'|'turns'|'manual'",
+  "@prismshadow/penguin-core#CompactionReason": "'manual'|'context'|'turns'",
   "@prismshadow/penguin-core#ControlEnvContext": {
    "projectId": "string",
    "agentId": "string",
    "sessionId": "string"
   },
   "@prismshadow/penguin-core#DefaultChatThinkingLevel": "'low'|'medium'|'high'|'xhigh'|'max'",
-  "@prismshadow/penguin-core#ErrorCode": "'user_abort'|'backoff_interrupted'|'compaction_interrupted'|'timeout'|'network'|'malformed'|'auth'|'rejected'|'unsupported'|'invalid_input'|'connect_failed'",
+  "@prismshadow/penguin-core#ErrorCode": "'unsupported'|'timeout'|'user_abort'|'backoff_interrupted'|'compaction_interrupted'|'network'|'malformed'|'auth'|'rejected'|'invalid_input'|'connect_failed'",
   "@prismshadow/penguin-core#Fidelity": {
    "[string]": "unknown"
   },
@@ -12647,7 +12464,7 @@ summary { cursor: pointer; color: var(--muted); }
   },
   "@prismshadow/penguin-core#StopReason": "'completed'|'aborted'|'retryable'|'fatal'",
   "@prismshadow/penguin-core#StreamEventType": "'start'|'delta'|'stop'",
-  "@prismshadow/penguin-core#SubagentMessageOutcome": "'busy'|'steered'|'started'|'resumed'|'gone'",
+  "@prismshadow/penguin-core#SubagentMessageOutcome": "'steered'|'started'|'resumed'|'busy'|'gone'",
   "@prismshadow/penguin-core#SubagentPayload": {
    "type": "'subagent'",
    "session_id": "string"
@@ -13422,7 +13239,7 @@ summary { cursor: pointer; color: var(--muted); }
    "isDefault": "boolean"
   },
   "@prismshadow/penguin-server#ModelOAuthErrorCode": "'invalid_request'|'code_rejected'|'upstream_failed'|'unreachable'|'apply_failed'",
-  "@prismshadow/penguin-server#ModelOAuthMode": "'manual'|'callback'",
+  "@prismshadow/penguin-server#ModelOAuthMode": "'callback'|'manual'",
   "@prismshadow/penguin-server#ModelOAuthStartResult": {
    "flowId": "string",
    "authorizeUrl": "string"
@@ -13508,7 +13325,7 @@ summary { cursor: pointer; color: var(--muted); }
    },
    "message?": "string"
   },
-  "@prismshadow/penguin-server#ModelVisionOutcome": "'unsupported'|'supported'|'failed'",
+  "@prismshadow/penguin-server#ModelVisionOutcome": "'supported'|'unsupported'|'failed'",
   "@prismshadow/penguin-server#ModelsResponse": {
    "defaultModel?": {
     "$ref": "@prismshadow/penguin-server#ModelRefDto"
@@ -13619,7 +13436,7 @@ summary { cursor: pointer; color: var(--muted); }
    "ownerUserId": "string",
    "createdAt": "string"
   },
-  "@prismshadow/penguin-server#ProtocolProbeOutcome": "'timeout'|'served'|'route_missing'|'server_error'|'junk'|'network_error'",
+  "@prismshadow/penguin-server#ProtocolProbeOutcome": "'served'|'route_missing'|'server_error'|'junk'|'timeout'|'network_error'",
   "@prismshadow/penguin-server#ProxySettings": {
    "proxyForApp": "boolean",
    "proxyUrl": "null|string"
@@ -13631,7 +13448,7 @@ summary { cursor: pointer; color: var(--muted); }
    "publishedAt": "string",
    "digest?": "string"
   },
-  "@prismshadow/penguin-server#QQBindStatus": "'completed'|'none'|'pending'|'expired'",
+  "@prismshadow/penguin-server#QQBindStatus": "'none'|'pending'|'completed'|'expired'",
   "@prismshadow/penguin-server#QQScanPoll": {
    "status": {
     "$ref": "@prismshadow/penguin-server#QQBindStatus"
@@ -13804,7 +13621,7 @@ summary { cursor: pointer; color: var(--muted); }
            "projectId": "string",
            "agentId": "string",
            "sessionId": "string",
-           "source?": {
+           "source": {
             "$ref": "@prismshadow/penguin-server#SessionSource"
            }
           }
@@ -16232,7 +16049,6 @@ summary { cursor: pointer; color: var(--muted); }
     "SandboxModule",
     "TerminalModule",
     "MachinesModule",
-    "TerminalRelay",
     "WorkflowsModule",
     "PackagesModule",
     "Startup"
@@ -16412,30 +16228,6 @@ summary { cursor: pointer; color: var(--muted); }
    "contributes": {},
    "children": []
   },
-  "ProjectNotifier": {
-   "name": "ProjectNotifier",
-   "kind": "component",
-   "requires": {
-    "projects": {
-     "iface": "@prismshadow/penguin-server#Projects",
-     "from": "ProjectsRepo"
-    },
-    "members": {
-     "iface": "@prismshadow/penguin-server#Members",
-     "from": "MembersRepo"
-    },
-    "channels": {
-     "iface": "@prismshadow/penguin-server#Channels",
-     "from": "RuntimeModule"
-    }
-   },
-   "provides": {
-    "ProjectNotifier": "@prismshadow/penguin-server#ProjectNotifier",
-    "ProjectEvents": "@prismshadow/penguin-server#ProjectEvents"
-   },
-   "contributes": {},
-   "children": []
-  },
   "ProjectService": {
    "name": "ProjectService",
    "kind": "component",
@@ -16512,8 +16304,7 @@ summary { cursor: pointer; color: var(--muted); }
     "ProjectLifecycle": "@prismshadow/penguin-server#ProjectLifecycle",
     "ProjectConfigStore": "@prismshadow/penguin-server#ProjectConfigStore",
     "ModelOAuth": "@prismshadow/penguin-server#ModelOAuth",
-    "InitialProjectProvisioner": "@prismshadow/penguin-server#InitialProjectProvisioner",
-    "ProjectEvents": "@prismshadow/penguin-server#ProjectEvents"
+    "InitialProjectProvisioner": "@prismshadow/penguin-server#InitialProjectProvisioner"
    },
    "contributes": {},
    "children": [
@@ -16521,7 +16312,6 @@ summary { cursor: pointer; color: var(--muted); }
     "MembersRepo",
     "AgentsRepo",
     "ProjectAccess",
-    "ProjectNotifier",
     "ProjectService",
     "ProjectConfigService",
     "ModelOAuthService",
@@ -16536,8 +16326,7 @@ summary { cursor: pointer; color: var(--muted); }
     "ProjectLifecycle",
     "ProjectConfigStore",
     "ModelOAuth",
-    "InitialProjectProvisioner",
-    "ProjectEvents"
+    "InitialProjectProvisioner"
    ]
   },
   "ProjectsRepo": {
@@ -16975,10 +16764,6 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#Access",
      "from": "ProjectsModule"
     },
-    "projectEvents": {
-     "iface": "@prismshadow/penguin-server#ProjectEvents",
-     "from": "ProjectsModule"
-    },
     "projectConfig": {
      "iface": "@prismshadow/penguin-server#ProjectConfigStore",
      "from": "ProjectsModule"
@@ -17222,8 +17007,12 @@ summary { cursor: pointer; color: var(--muted); }
      "iface": "@prismshadow/penguin-server#Sandbox",
      "from": "SandboxModule"
     },
-    "projectEvents": {
-     "iface": "@prismshadow/penguin-server#ProjectEvents",
+    "projectsRepo": {
+     "iface": "@prismshadow/penguin-server#Projects",
+     "from": "ProjectsModule"
+    },
+    "membersRepo": {
+     "iface": "@prismshadow/penguin-server#Members",
      "from": "ProjectsModule"
     },
     "messagingRepo": {
@@ -17382,10 +17171,6 @@ summary { cursor: pointer; color: var(--muted); }
     "auth": {
      "iface": "@prismshadow/penguin-server#Auth",
      "from": "IdentityModule"
-    },
-    "remote": {
-     "iface": "@prismshadow/penguin-server#RemoteTerminals",
-     "from": "TerminalRelay"
     }
    },
    "provides": {
@@ -17408,26 +17193,6 @@ summary { cursor: pointer; color: var(--muted); }
      "terminals?": "string[]"
     }
    }
-  },
-  "TerminalRelay": {
-   "name": "TerminalRelay",
-   "kind": "component",
-   "requires": {
-    "machines": {
-     "iface": "@prismshadow/penguin-server#Machines",
-     "from": "MachinesModule"
-    },
-    "auth": {
-     "iface": "@prismshadow/penguin-server#Auth",
-     "from": "IdentityModule"
-    }
-   },
-   "provides": {
-    "TerminalRelay": "@prismshadow/penguin-server#TerminalRelay",
-    "RemoteTerminals": "@prismshadow/penguin-server#RemoteTerminals"
-   },
-   "contributes": {},
-   "children": []
   },
   "TraceIndexRepo": {
    "name": "TraceIndexRepo",
