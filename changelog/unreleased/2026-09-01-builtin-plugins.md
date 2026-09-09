@@ -3,6 +3,7 @@
 - **Date:** 2026-09-01
 - **Type:** feature
 - **Scope:** `server`, `desktop`, `tooling`
+- **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 
 [中文版](2026-09-01-builtin-plugins.zh.md)
 

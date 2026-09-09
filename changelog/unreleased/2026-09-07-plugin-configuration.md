@@ -3,7 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** feature
 - **Scope:** `server`, `web`, `plugins`
-- **PR:** [#641](https://github.com/Prism-Shadow/penguin-harness/pull/641)
+- **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 
 [中文版](2026-09-07-plugin-configuration.zh.md)
 
