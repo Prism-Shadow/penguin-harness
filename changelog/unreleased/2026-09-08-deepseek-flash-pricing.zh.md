@@ -24,7 +24,7 @@ Token）；其空闲档正好减半——0.02 / 1 / 4——由每条已声明的
   发布公告支持图像输入，价格取 V4 Flash 系列的 CNY 0.04 / 2 / 8 并沿用同一空闲时段规则；上下文
   窗口在官方模型页给出之前，先按 `deepseek-v4-flash` 的 1,000,000 Token 记。图像要等到
   `@prismshadow/agenthub` 发布带有 DeepSeek 客户端 text-only 拒绝名单的版本才能送达；当前锁定的
-  `^0.4.9` 只把图像部件转发给 id 中含 `vision` 的模型。
+  `^0.4.10` 只把图像部件转发给 id 中含 `vision` 的模型。
 - 转售 DeepSeek 的网关条目——OpenRouter、Fireworks AI、SiliconFlow、TokenDance 以及两个 Qwen
   分组——维持原样。每一条记录的是各自卖家的收费，而不是厂商牌价。
 - 配置文档中示意用的 `[[models]]` 代码块同步改为新数字；模型文档的示例清单，以及 `unified-llm-api`

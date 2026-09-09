@@ -27,7 +27,7 @@ that date and not served yet, was added at the head of the group at the same pri
   group: image input per DeepSeek's announcement, the V4 Flash price CNY 0.04 / 2 / 8 on the same
   off-peak schedule, and a 1,000,000-token context window assumed from `deepseek-v4-flash` until
   the official model page lists one. Image parts reach it only from the `@prismshadow/agenthub`
-  release carrying the DeepSeek client's text-only deny-list; the pinned `^0.4.9` forwards them to
+  release carrying the DeepSeek client's text-only deny-list; the pinned `^0.4.10` forwards them to
   ids containing `vision` alone.
 - The gateway rows reselling DeepSeek — OpenRouter, Fireworks AI, SiliconFlow, TokenDance and the
   two Qwen groups — were left as they were. Each records what its own seller bills, which is not
