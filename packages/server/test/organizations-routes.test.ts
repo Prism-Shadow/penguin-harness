@@ -1,8 +1,8 @@
 /**
  * Organization routes over the real app: the admin master switch 404s the whole group and
  * is reported by /api/me and /api/admin/settings; Project authorization gates reads and
- * writes (an outsider gets 404, a member may write, only the owner may delete); bodies are
- * validated before the service is asked; and the calling session rides write bodies as
+ * writes (an outsider gets 404, a member may write) and no route deletes an organization;
+ * bodies are validated before the service is asked; and the calling session rides write bodies as
  * `sessionId` (a read's query string), but only from the control environment's API token —
  * a signed-in member's claim is dropped. The service itself is a recording fake here — its semantics have their
  * own suites — so no Agent is created and no session runs.
@@ -122,7 +122,7 @@ describe("organization routes", () => {
     expect((await owner.get(`/api/projects/${ownerProject}/organizations`)).status).toBe(200);
   });
 
-  it("gates by Project access: outsiders 404, members read and write, only the owner deletes", async () => {
+  it("gates by Project access: outsiders 404, members read and write", async () => {
     const stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     expect((await stranger.get(`/api/projects/${ownerProject}/organizations`)).status).toBe(404);
     expect(
@@ -148,13 +148,23 @@ describe("organization routes", () => {
       method: "sendChannelMessage",
       args: [ownerProject, "acme", "mia", "default_channel", { text: "hi @all" }],
     });
-    expect(
-      (await memberApi.delete(`/api/projects/${ownerProject}/organizations/acme`)).status,
-    ).toBe(403);
+  });
+
+  it("has no route that deletes an organization", async () => {
+    // Pause is the whole lifecycle. DELETE is not a route, so the Project's own owner gets 404
+    // and the service is never asked; pausing is a PATCH like any other setting.
     expect((await owner.delete(`/api/projects/${ownerProject}/organizations/acme`)).status).toBe(
-      204,
+      404,
     );
-    expect(calls.at(-1)).toMatchObject({ method: "remove", args: [ownerProject, "acme"] });
+    expect(calls).toEqual([]);
+    const patch = await owner.patch(`/api/projects/${ownerProject}/organizations/acme`, {
+      status: "paused",
+    });
+    expect(patch.status).toBe(200);
+    expect(calls.at(-1)).toMatchObject({
+      method: "patch",
+      args: [ownerProject, "acme", { status: "paused" }],
+    });
   });
 
   it("validates bodies before asking the service", async () => {

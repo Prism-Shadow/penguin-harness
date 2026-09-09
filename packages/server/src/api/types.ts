@@ -3483,7 +3483,11 @@ export interface MachinesResponse {
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 
-/** Organization status: `paused` stops every automatic trigger; humans can still talk to any desk. */
+/**
+ * Organization status: `paused` stops every automatic trigger; humans can still talk to any
+ * desk. These two values are the whole lifecycle — no route deletes an organization, so a
+ * paused one keeps its conversations, employees, desks and tickets.
+ */
 export type OrgStatus = "active" | "paused";
 /** Approval mode for desk and ticket sessions; unattended runs never get always-ask. */
 export type OrgApprovalMode = "allow-all" | "read-only" | "deny-all";

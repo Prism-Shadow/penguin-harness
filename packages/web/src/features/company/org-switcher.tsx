@@ -224,13 +224,6 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           orgId={settingsTarget.orgId}
           onClose={() => setSettingsOpen(false)}
           onChanged={() => void company.reloadOrganizations()}
-          onDeleted={() => {
-            setSettingsOpen(false);
-            // The reload is awaited before the redirect: `/org` resolves against the list it
-            // finds, and a stale one would send the shell straight back at the organization
-            // that was just deleted.
-            void company.reloadOrganizations().then(() => go("/org"));
-          }}
         />
       )}
     </>

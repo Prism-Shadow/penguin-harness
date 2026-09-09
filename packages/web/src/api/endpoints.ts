@@ -1289,9 +1289,6 @@ export const patchOrganization = (
   body: OrganizationPatchRequest,
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
-export const deleteOrganization = (projectId: string, orgId: string) =>
-  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
-
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 

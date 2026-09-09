@@ -241,16 +241,16 @@ cursors, budget marks) and each user's read cursor per channel.
   `client: "org"` on its index row and `SessionInfo` now serves the field, so development
   mode's session list can leave those rows out whether or not the organization still exists
   and whether or not company mode is switched on — the `orgId` stamp beside it is projected
-  from the organization caches, which are deleted with the organization and not read while the
-  mode is off. Every reconcile pass also stamps the sessions the organization's files name —
-  the desk ledger, current and previous, and the tickets' `Sessions` headers — so the sessions
-  of organizations that already exist are marked on the next pass, with no migration (the
-  column exists and takes free text). Sessions of organizations deleted before this change
-  were never named by any surviving file and stay unmarked; they read as development mode's
-  own, and archiving or deleting them is the only cleanup. The backfill and the rest of what
-  this round tolerates are recorded in [backward compatibility](2026-09-09-backward-compatibility.md). `POST .../sessions` still accepts
-  only `"web"` and `"cli"`: `"org"` is written by the organization runtime, which calls the
-  service directly, so no request can claim it.
+  from the organization caches, which are not read while the mode is off. Every reconcile
+  pass also stamps the sessions the organization's files name — the desk ledger, current and
+  previous, and the tickets' `Sessions` headers — so the sessions of organizations that
+  already exist are marked on the next pass, with no migration (the column exists and takes
+  free text). Sessions of organizations deleted before this change were never named by any
+  surviving file and stay unmarked; they read as development mode's own, and archiving or
+  deleting them is the only cleanup. The backfill and the rest of what this round tolerates
+  are recorded in [backward compatibility](2026-09-09-backward-compatibility.md).
+  `POST .../sessions` still accepts only `"web"` and `"cli"`: `"org"` is written by the
+  organization runtime, which calls the service directly, so no request can claim it.
 - Generated ids carry a prefix that says what they name: `co_` for an organization, `ch_` for
   a channel. `POST /organizations/suggest-id` asks the model for the semantic core as before
   and prefixes the answer itself — the ASCII-slug fallback too, before the length cap and the
@@ -276,3 +276,14 @@ cursors, budget marks) and each user's read cursor per channel.
   "moved … → done" progress line records. A ticket whose file was moved into `done` by hand has
   no such line and is listed with no `closedAt` rather than hidden. `pending` and
   `recentMessages` are unchanged.
+- An organization is never deleted through the product. `DELETE /api/projects/:p/organizations/:orgId`
+  is gone — the path answers 404 for everyone, the owner included, so a script that called it
+  fails instead of silently doing nothing — and the App's settings dialog has lost its delete
+  button and its confirmation. `status` (`active` / `paused`) is the whole lifecycle: pausing
+  stops every automatic trigger while every desk stays open to talk to, and the pause row's
+  "?" says so. Deleting an organization threw away the only way back to its conversations,
+  employees, desks and tickets. Removing the organization's directory by hand is the only way
+  one goes away, and that case is unchanged: the runtime stops seeing it on the next pass, the
+  App offers to create another in its place, and the Agents and sessions stay — the sessions
+  still marked as the organization's, so they never return to development mode's list. The
+  Company Mode guide and the server API reference say so.
