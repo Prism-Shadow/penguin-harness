@@ -132,7 +132,12 @@ export function ChannelReaderProvider({
   return <ReaderContext.Provider value={reader}>{children}</ReaderContext.Provider>;
 }
 
-/** A mention as a chip: the resolved name after the `@`, the raw token in the tooltip; attention-toned when it addresses the reader. */
+/**
+ * A mention as a chip: the resolved name after the `@`, the raw token in the tooltip;
+ * attention-toned when it addresses the reader. The ordinary chip sits one step deeper than
+ * the app's usual grey fill, because the bubble it is printed on is that grey (channel-view's
+ * BUBBLE_SURFACE) and a chip the colour of its background is not a chip.
+ */
 export function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
   return (
     <span
@@ -140,7 +145,7 @@ export function MentionChip({ raw, label, me }: { raw: string; label: string; me
       className={`rounded px-1 ${
         me
           ? `font-semibold ${toneSurface.attention}`
-          : "bg-gray-100 font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+          : "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
       }`}
     >
       @{label}

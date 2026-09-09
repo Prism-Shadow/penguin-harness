@@ -1,8 +1,8 @@
 /**
  * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket table
- * along parent tickets, period arithmetic, the budget tone thresholds, the trend series
- * and its axis breaks, the KPI row's numbers, the alert grouping, and the two row tooltips
- * that carry what the tables dropped a column for.
+ * along parent tickets, period arithmetic, the budget tone thresholds, the marks the state
+ * column carries, the trend series and its axis breaks, the KPI row's numbers, the alert
+ * grouping, and the two row tooltips that carry what the tables dropped a column for.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
@@ -14,6 +14,7 @@ import {
   groupAlerts,
   shiftPeriod,
   spendRowTooltip,
+  spendStateMarks,
   spendTreeRows,
   ticketRowTooltip,
   ticketTreeRows,
@@ -221,5 +222,41 @@ describe("ticketRowTooltip", () => {
     expect(
       ticketRowTooltip({ ticketId: "TCK-2", cost: 0, rolledUp: 0 }, undefined, labels, money),
     ).toBe("TCK-2 · Owner Unassigned · Cost $0.00 · Rolled-up cost $0.00");
+  });
+});
+
+describe("spendStateMarks", () => {
+  const calm = { warned: false, paused: false };
+
+  it("leads with the live state and adds what the budget did", () => {
+    expect(spendStateMarks(calm, "running")).toEqual([{ tone: "busy", key: "running" }]);
+    expect(spendStateMarks(calm, "idle")).toEqual([{ tone: "success", key: "idle" }]);
+    expect(spendStateMarks({ warned: true, paused: false }, "running")).toEqual([
+      { tone: "busy", key: "running" },
+      { tone: "attention", key: "warned" },
+    ]);
+  });
+
+  it("says paused once, however the two sources spell it", () => {
+    // A budget pause is the reason the live state reads `paused`: one mark, not two.
+    const paused = [{ tone: "danger", key: "paused" }];
+    expect(spendStateMarks({ warned: true, paused: true }, "paused")).toEqual(paused);
+    expect(spendStateMarks({ warned: false, paused: true }, "idle")).toEqual([
+      { tone: "success", key: "idle" },
+      { tone: "danger", key: "paused" },
+    ]);
+    // The chart knows before the period's figures do, and the row still says why.
+    expect(spendStateMarks(calm, "paused")).toEqual(paused);
+  });
+
+  it("stands on the budget alone while the live state is unknown", () => {
+    // The chart is a best-effort join: a row must still read without it.
+    expect(spendStateMarks(calm, undefined)).toEqual([]);
+    expect(spendStateMarks({ warned: true, paused: false }, undefined)).toEqual([
+      { tone: "attention", key: "warned" },
+    ]);
+    expect(spendStateMarks({ warned: false, paused: true }, undefined)).toEqual([
+      { tone: "danger", key: "paused" },
+    ]);
   });
 });

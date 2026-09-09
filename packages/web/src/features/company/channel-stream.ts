@@ -2,8 +2,9 @@
  * A channel's stream shaping (pure, unit tested): the loaded day files in
  * order become one list of items — a separator per day, the unread divider at the read
  * cursor, `system` messages on their own, and consecutive messages by one sender folded
- * into a run under a single header — plus the day arithmetic the separators and the
- * "earlier" paging need, and the immutable append a live message goes through.
+ * into a run under a single header — plus which side of the stream a run sits on and where
+ * each of its bubbles falls inside it, the day arithmetic the separators and the "earlier"
+ * paging need, and the immutable append a live message goes through.
  */
 import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import { parsePrincipal } from "./principals";
@@ -30,6 +31,44 @@ export const RUN_GAP_MS = 5 * 60_000;
  */
 export function hopChipShown(hop: number): boolean {
   return hop >= 2;
+}
+
+/**
+ * Whether a run is the reader's own, which is what puts it on the right of the stream with
+ * neither an avatar nor a name. Only a `user:` principal can be: an employee writes as
+ * `agent:`, and a reader whose id is not known yet (`me` is "" until the session loads) owns
+ * nothing rather than owning every unnamed message.
+ */
+export function isOwnRun(sender: string, me: string): boolean {
+  if (me === "") return false;
+  const p = parsePrincipal(sender);
+  return p.kind === "user" && p.id === me;
+}
+
+/** Where one bubble of a run sits: which side of the stream, and its place inside the run. */
+export interface BubbleShape {
+  /** The reader's own message: the right-hand side, without an avatar or a name above it. */
+  own: boolean;
+  /** First of the run — the bubble the sender's name sits above. */
+  first: boolean;
+  /** Last of the run — the bubble the avatar is bottom-aligned to, and whose near corner is squared. */
+  last: boolean;
+}
+
+/**
+ * How the bubble at `index` of a run is drawn. A run of one message is both its first and its
+ * last bubble, so it carries the name, the avatar and the squared corner all at once.
+ */
+export function bubbleShape(
+  run: { sender: string; messages: readonly OrgChannelMessage[] },
+  index: number,
+  me: string,
+): BubbleShape {
+  return {
+    own: isOwnRun(run.sender, me),
+    first: index === 0,
+    last: index === run.messages.length - 1,
+  };
 }
 
 /**
