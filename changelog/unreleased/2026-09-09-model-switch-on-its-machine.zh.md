@@ -3,7 +3,7 @@
 - **Date:** 2026-09-09
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#650](https://github.com/Prism-Shadow/penguin-harness/pull/650)
+- **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
 
 [English](2026-09-09-model-switch-on-its-machine.md)
 
