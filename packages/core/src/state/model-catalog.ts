@@ -7,7 +7,8 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the GPT-6 Astra rows (direct + OpenRouter):
+ * 2026-09-09 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -690,6 +691,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
   // gateway rows on the Responses protocol (see the block comment). Their context windows
   // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  {
+    // Read 2026-09-09 from the models API and the per-model endpoints API: the default
+    // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /
+    // $50 output with `discount: 0`, so the list price is what OpenRouter bills. The
+    // endpoints API also publishes `overrides` above 272,000 prompt tokens (2x prompt and
+    // cache, 1.5x completion); as on the direct row, only the base tier is recorded.
+    modelId: "openai/gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
   {
     // The 50% promotion this row used to store has ended: OpenRouter now bills the full
     // $0.20/$1.20 rate (endpoints API `discount: 0`), so the stored rates doubled on the
@@ -1503,12 +1519,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenAI (official USD pricing) --
   {
+    // OpenAI's list price (developers.openai.com/api/docs/models/gpt-6-astra, read
+    // 2026-09-09) is $10 input / $1 cached input / $12.5 cache write / $50 output. Per the
+    // bucket convention at the top of this file, cache_write carries the published
+    // cache-write price of 12.5; the $10 rate applies only to input that is not written to
+    // cache, a split the three buckets do not express. Every rate doubles above 272K input
+    // tokens (output 1.5x) — the base tier is what this row records, as the header says.
+    // Served by AgentHub's gpt6 client from the release that ships it.
+    modelId: "gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
     // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier, so the
     // row names the Sol codename its siblings and the openai/gpt-5.6-sol row already show —
     // the id stays bare, only the label says which variant this is; served by AgentHub
-    // 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
-    // OpenRouter rows above, which carry the gateway's (currently discounted) rates instead
-    // of this list price.
+    // 0.4.2's native gpt-5.6 client. This row and the two gpt-5.6 rows below mirror the
+    // openai/gpt-5.6-* OpenRouter rows above, which carry the gateway's (currently
+    // discounted) rates instead of this list price.
     modelId: "gpt-5.6",
     displayName: "GPT-5.6 Sol",
     provider: "openai",
@@ -1720,7 +1751,12 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   ) {
     return env("ANTHROPIC");
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) {
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
     return env("OPENAI");
   }
   // agenthub 0.4.2's unified GLM client serves the whole glm-5 series (5.3 included).
@@ -1746,7 +1782,7 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 
 /**
  * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
- * OpenAI-protocol clients (openai_chat / openai_responses / gpt5_6 / minimax_m3), which send
+ * OpenAI-protocol clients (openai_chat / openai_responses / gpt6 / minimax_m3), which send
  * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
  * / claude5), which send `speed: "fast"` plus the `fast-mode-2026-02-01` beta header. The two
  * differ in what the user must be warned about, not just in wire shape (see fastModeProtocol).
@@ -1809,7 +1845,14 @@ export function fastModeProtocol(
     if (modelId.includes("4-6")) return undefined;
     return "anthropic";
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) return "openai";
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
+    return "openai";
+  }
   if (t.includes("glm-5")) return undefined;
   if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
   if (t.includes("deepseek-v4")) return undefined;
