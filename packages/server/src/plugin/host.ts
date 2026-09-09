@@ -4,6 +4,7 @@
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
 import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import type { PluginConfiguration } from "../api/types.js";
 
 /** One loaded plugin: the package, and its modules with manifests paired to code. */
 export interface LoadedPlugin {
@@ -21,6 +22,10 @@ export interface LoadedPlugin {
   modules: ModuleDef[];
   /** Nodes the plugin stands in for, by the replaced node's name. */
   replaces: ModuleDef[];
+  /** The package's name (`package.json#name`) — what its configuration is keyed by. */
+  name?: string;
+  /** The options the package declares (`package.json#penguin.configuration`), when it does. */
+  configuration?: PluginConfiguration;
 }
 
 /** One host per server process; load order is the order the modules join the tree. */
@@ -56,6 +61,15 @@ export class PluginHost {
   /** The nodes plugins stand in for, by name — what the platform builds instead of its own. */
   replacements(): ReadonlyMap<string, ModuleDef> {
     return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
+  }
+
+  /** The declared configurations, by package name — what the settings page lists and the store validates against. */
+  configurations(): ReadonlyMap<string, PluginConfiguration> {
+    const out = new Map<string, PluginConfiguration>();
+    for (const e of this.plugins) {
+      if (e.name !== undefined && e.configuration !== undefined) out.set(e.name, e.configuration);
+    }
+    return out;
   }
 
   /** What is loaded, by specifier — how the next App reuses these objects instead of importing again. */

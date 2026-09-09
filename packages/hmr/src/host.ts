@@ -396,7 +396,7 @@ export class HmrHost<Api extends Park = Park> {
       this.warn(`the App failed to boot after a plugin change; the previous one was restored`);
       return false;
     }
-    this.instance = result.instance as Instance<PlatformApi>;
+    this.instance = result.instance as Instance<Api>;
     return true;
   }
 

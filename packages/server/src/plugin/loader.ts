@@ -30,6 +30,8 @@ import { pathToFileURL } from "node:url";
 import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { parsePluginConfiguration } from "./config.js";
+import type { PluginConfiguration } from "../api/types.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin, PluginModule } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -262,6 +264,8 @@ export async function readPluginDeclaration(
  */
 async function readPackageManifests(file: string | null): Promise<{
   where: string;
+  name?: string;
+  configuration?: PluginConfiguration;
   manifests: ModuleDef["manifest"][];
   replaces: ModuleDef["manifest"][];
 } | null> {
@@ -270,9 +274,16 @@ async function readPackageManifests(file: string | null): Promise<{
   for (;;) {
     const where = path.join(dir, "package.json");
     try {
-      const raw = JSON.parse(await fs.readFile(where, "utf8")) as { penguin?: unknown };
+      const raw = JSON.parse(await fs.readFile(where, "utf8")) as {
+        name?: unknown;
+        penguin?: unknown;
+      };
       if (raw.penguin === undefined) return null;
-      const penguin = raw.penguin as { modules?: unknown; replaces?: unknown };
+      const penguin = raw.penguin as {
+        modules?: unknown;
+        replaces?: unknown;
+        configuration?: unknown;
+      };
       const list = penguin.modules ?? [];
       const replaces = penguin.replaces ?? [];
       if (!Array.isArray(list) || !Array.isArray(replaces)) {
@@ -293,8 +304,14 @@ async function readPackageManifests(file: string | null): Promise<{
           at,
         );
       };
+      const configuration = parsePluginConfiguration(
+        penguin.configuration,
+        `${where}#penguin.configuration`,
+      );
       return {
         where,
+        ...(typeof raw.name === "string" ? { name: raw.name } : {}),
+        ...(configuration !== undefined ? { configuration } : {}),
         manifests: list.map((doc, i) => manifestAt(doc, `${where}#penguin.modules[${i}]`)),
         replaces: replaces.map((doc, i) => manifestAt(doc, `${where}#penguin.replaces[${i}]`)),
       };
@@ -420,7 +437,14 @@ export async function loadPlugins(
       };
       const modules = pair(read.manifests, plugin.modules, "modules");
       const replaces = pair(read.replaces, plugin.replaces, "replaces");
-      loaded.push({ specifier, file, modules, replaces });
+      loaded.push({
+        specifier,
+        file,
+        modules,
+        replaces,
+        ...(read.name !== undefined ? { name: read.name } : {}),
+        ...(read.configuration !== undefined ? { configuration: read.configuration } : {}),
+      });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

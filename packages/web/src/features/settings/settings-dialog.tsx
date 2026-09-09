@@ -26,6 +26,7 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { SandboxSection } from "./sandbox-section";
+import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -41,9 +42,11 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
-    "M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
   /** Shield: confinement. */
   sandbox: "M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z",
+  /** Puzzle piece: plugins. */
+  plugins:
+    "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -77,6 +80,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     sandbox: S.settings.sandboxTitle,
+    plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -89,6 +93,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     sandbox: S.settings.sandboxInfo,
+    plugins: S.settings.pluginsInfo,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -121,6 +126,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "sandbox" && <SandboxSection />}
+      {current === "plugins" && <PluginsSection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );
