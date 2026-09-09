@@ -1332,10 +1332,12 @@ export interface SessionCreateRequest {
   approvalMode?: ApprovalMode;
   /**
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
-   * Session through the API; defaults to "web". Informational provenance only — lists
-   * serve every row regardless of client.
+   * Session through the API, "org" when the organization runtime opened it (a desk or a
+   * ticket session — company mode's own, kept out of development mode's lists whether or
+   * not the organization still exists); defaults to "web". Lists serve every row regardless
+   * of client; only development mode's session list filters on it.
    */
-  client?: "web" | "cli";
+  client?: "web" | "cli" | "org";
 }
 
 export interface SessionCreateResponse {
@@ -3800,8 +3802,22 @@ export interface OrganizationDetail extends OrganizationSummary {
   /** The last messages of the all-hands channel. */
   recentMessages: OrgChannelMessage[];
   alerts: OrgBudgetAlert[];
+  /** What the overview's inbox lists; absent only from a server older than the field. */
+  inbox?: OrgInbox;
   /** The CEO's desk session once opened (creation opens it). */
   ceoDeskSessionId?: string;
+}
+
+/**
+ * The overview's inbox: the three things a person is waited on or told about — messages
+ * that name them (or `@all`) in the all-hands channel, the tickets that are blocked (all of
+ * them, whoever they wait on), and the tickets closed as done this period. Newest first in
+ * each list; each capped at a page.
+ */
+export interface OrgInbox {
+  mentions: OrgChannelMessage[];
+  blockedTickets: OrgTicketItem[];
+  doneTickets: Array<OrgTicketItem & { closedAt?: string }>;
 }
 
 export interface OrganizationCreateRequest {
