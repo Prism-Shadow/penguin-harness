@@ -199,10 +199,8 @@ async function reconcileCalendar(
     const firedAt = new Date(nowMs).toISOString();
     // The sweep is where ticket changes are delivered: taken here, at the last moment before
     // the run that carries them, so a slot held for a paused employee keeps its queue.
-    const digest = deskDigest(
-      deps.cache.takeDeskNotices(org.projectId, org.orgId, file.agentId),
-      tickets,
-    );
+    const notices = deps.cache.takeDeskNotices(org.projectId, org.orgId, file.agentId);
+    const digest = deskDigest(notices, tickets);
     const outcome = await dispatchToDesk(
       deps,
       org,
@@ -212,6 +210,9 @@ async function reconcileCalendar(
       { hop: 0, budget: budgetLine(org, spend, file.agentId) },
     );
     if (outcome === "skipped") {
+      // The run never started (no desk, or the Task could not be queued): the changes go
+      // back on the queue in their order, so the slot that does fire still carries them.
+      for (const row of notices) deps.cache.queueDeskNotice(row);
       mark("error");
       continue;
     }

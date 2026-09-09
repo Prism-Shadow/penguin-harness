@@ -68,6 +68,8 @@ describe("organization runtime", () => {
   let scheduler: OrganizationScheduler;
   let service: OrganizationService;
   let seq: number;
+  /** The Agents the fake gateway says exist; a test deletes one to make its desk unopenable. */
+  let existingAgents: Set<string>;
 
   beforeEach(async () => {
     root = await makeTempRoot();
@@ -100,7 +102,7 @@ describe("organization runtime", () => {
     companyMode = true;
     completion = { answer: null, prompts: [] };
     seq = 0;
-    const existingAgents = new Set<string>();
+    existingAgents = new Set<string>();
     const deps: OrgDeps = {
       root,
       store,
@@ -863,6 +865,44 @@ describe("organization runtime", () => {
       nowMs = T0 + 3 * DAY + 1000;
       await scheduler.tickOnce();
       expect(parseOrgTriggerMessage(started[0]!.text)?.rest).toBe("Sweep the board");
+    });
+
+    it("puts the queued changes back when the sweep cannot start", async () => {
+      await store.writeCalendarEvent(
+        store.dir(P, ORG),
+        HR,
+        "sweep",
+        serializeCalendarEvent({
+          prompt: "Sweep the board",
+          enabled: true,
+          startAt: new Date(T0).toISOString(),
+          period: "1d",
+        }),
+      );
+      await scheduler.tickOnce();
+      started.length = 0;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Write the FAQ", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      expect(started).toHaveLength(0);
+
+      // The Agent vanishes, so the desk cannot be opened: the slot fails and the change is kept.
+      existingAgents.delete(HR);
+      nowMs = T0 + DAY + 1000;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(0);
+      expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("error");
+
+      existingAgents.add(HR);
+      nowMs = T0 + 2 * DAY + 1000;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+      expect(parseOrgTriggerMessage(started[0]!.text)?.rest).toContain(
+        `- ${t.ticketId} (Write the FAQ): assigned to you`,
+      );
     });
 
     it("drops an employee's undelivered changes when it leaves", async () => {

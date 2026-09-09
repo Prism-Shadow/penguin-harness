@@ -53,6 +53,8 @@ export interface OrgHarness {
   errors: ErrorRecordArgs[];
   /** The admin master switch. */
   flags: { companyMode: boolean };
+  /** The Agents that exist in the Project, as the fake gateway answers `exists`; delete one to make its desk unopenable. */
+  agents: Set<string>;
 }
 
 function textOf(input: OmniMessage[]): string {
@@ -182,5 +184,6 @@ export async function makeOrgHarness(opts: {
     events,
     errors,
     flags,
+    agents: existingAgents,
   };
 }
