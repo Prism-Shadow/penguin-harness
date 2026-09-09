@@ -92,6 +92,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
+| GET | /api/admin/plugin-config | 每个声明了选项（`package.json#penguin.configuration`）的已加载插件：`{plugins: [{name, configuration, values}]}`——声明原样的 schema、合并到缺省值上的存储值，密钥掩码 |
+| PUT | /api/admin/plugin-config | 保存一个包的选项：`{name, values}`——请求省略的字段保持原值，`null` 或 `""` 清除，密钥按掩码原样送回即保持存储值；400 `plugin_config_invalid` 点名被拒字段，404 `plugin_config_unknown` 表示该包没有声明选项。插件经 watch 接到改动，无需重启 |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 
