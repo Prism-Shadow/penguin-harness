@@ -26,7 +26,7 @@ A plugin package is a set of modules: `package.json#penguin.modules` carries the
 
 ## The table as a page
 
-`pnpm ifaces:page` renders `ifaces.json` into one self-contained HTML page (`dist-ifaces/index.html`): the module tree, every node's requires / provides / contributes, every interface at signature level, with the table's sha256 in the title and the JSON beside it. CI renders it for every commit, publishes it under the commit's sha on the `ifaces-pages` branch, and links it from the job summary and a pull-request comment — the page's `ifaces.json` is the table that commit builds, hash for hash.
+`pnpm ifaces:page` renders `ifaces.json` into one self-contained HTML page (`dist-ifaces/index.html`): the module tree, every node's requires / provides / contributes, every interface at signature level, with the table's sha256 in the title and the JSON beside it. CI renders it for every commit, uploads it as a workflow artifact named by the commit's sha, and links it from the job summary — the page's `ifaces.json` is the table that commit builds, hash for hash.
 
 ## Compatibility
 
