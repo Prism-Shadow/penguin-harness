@@ -12,7 +12,6 @@ import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import type {
-  PenguinContext,
   SandboxDimension,
   SandboxPolicy,
   SandboxProvider,
