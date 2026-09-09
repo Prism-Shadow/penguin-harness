@@ -910,6 +910,7 @@ export const en: Strings = {
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
     defaultValue: "(default)",
+    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>
