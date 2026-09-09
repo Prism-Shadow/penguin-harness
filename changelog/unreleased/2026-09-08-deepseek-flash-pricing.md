@@ -1,8 +1,8 @@
-# The DeepSeek V4 Flash rows carry the price effective 2026-09-10
+# The DeepSeek V4 Flash price effective 2026-09-10, and a pre-registered V4.1 Flash row
 
 - **Date:** 2026-09-08
 - **Type:** fix
-- **Scope:** `core`, `docs`
+- **Scope:** `core`, `docs`, `skills`
 - **PR:** [#649](https://github.com/Prism-Shadow/penguin-harness/pull/649)
 
 [中文版](2026-09-08-deepseek-flash-pricing.zh.md)
@@ -10,7 +10,8 @@
 DeepSeek adjusted the V4 Flash series price, effective 2026-09-10 12:00 Beijing. The catalog's two
 direct V4 Flash rows were re-read on 2026-09-08 and now record the peak tier CNY 0.04 / 2 / 8 per
 million tokens (cache hit / cache miss / output), whose off-peak half — 0.02 / 1 / 4 — is applied
-from the schedule each row already declares.
+from the schedule each row already declares. `deepseek-v4.1-flash`, announced for release after
+that date and not served yet, was added at the head of the group at the same price.
 
 ## Details
 
@@ -22,10 +23,18 @@ from the schedule each row already declares.
   so every bucket is still halved outside Beijing weekday 09:00–12:00 and 14:00–18:00, when a
   price is read rather than when it is written.
 - `deepseek-v4-pro` kept CNY 0.3 / 9 / 27. The adjustment covers the Flash series only.
+- `deepseek-v4.1-flash` (**DeepSeek V4.1 Flash**) was pre-registered at the head of the `deepseek`
+  group: image input per DeepSeek's announcement, the V4 Flash price CNY 0.04 / 2 / 8 on the same
+  off-peak schedule, and a 1,000,000-token context window assumed from `deepseek-v4-flash` until
+  the official model page lists one. Image parts reach it only from the `@prismshadow/agenthub`
+  release carrying the DeepSeek client's text-only deny-list; the pinned `^0.4.9` forwards them to
+  ids containing `vision` alone.
 - The gateway rows reselling DeepSeek — OpenRouter, Fireworks AI, SiliconFlow, TokenDance and the
   two Qwen groups — were left as they were. Each records what its own seller bills, which is not
   the vendor's list price.
-- The illustrative `[[models]]` block in the configuration document was moved to the new figures.
+- The illustrative `[[models]]` block in the configuration document was moved to the new figures,
+  and the sample list in the models document plus the `unified-llm-api` skill's DeepSeek V4 id
+  list gained the new row.
 
 ## Existing Projects
 
@@ -35,5 +44,5 @@ what brings the new one in. Until it syncs, a Project still holding the old peak
 the off-peak split in the cost center nor the `-50%` badge on the models page: both apply only
 while the stored price equals the catalog's current peak price (`tieredRates` in
 `packages/server/src/services/project-config-service.ts`, `discountedPrice` in
-`packages/web/src/features/models/model-grouping.ts`). Because the prices moved, a Project holding
-either row sees the preset-update badge until it syncs or dismisses it.
+`packages/web/src/features/models/model-grouping.ts`). Because the prices moved and a row was
+added, every existing Project sees the preset-update badge until it syncs or dismisses it.
