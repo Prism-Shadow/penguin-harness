@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** improvement
 - **Scope:** `server`
+- **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 
 [中文版](2026-09-07-plugins-load-in-the-platform.zh.md)
 
