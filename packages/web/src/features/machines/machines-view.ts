@@ -12,11 +12,7 @@
  * record rather than from the job: the job is one slot, so deriving it from there made an
  * installed machine vanish as soon as anything else was installed or the server restarted.
  */
-import type {
-  MachineInfo,
-  MachineInstallJob,
-  MachinesResponse,
-} from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 
 /** The finished job's verdict, in the shape the page renders. */
 export type MachineVerdict =
@@ -36,10 +32,13 @@ export interface InstallButtonState {
 }
 
 /** The verdict of a job that has finished, or null while it is still running. */
-export function verdictOf(job: MachineInstallJob): MachineVerdict | null {
+export function verdictOf(job: MachineJob): MachineVerdict | null {
   if (job.result === null) return null;
-  if (job.result.ok) return { kind: job.result.kind, version: job.result.version };
-  return { kind: "failed", step: job.result.step, message: job.result.message };
+  if (!job.result.ok) return { kind: "failed", step: job.result.step, message: job.result.message };
+  // A connect has no install verdict to report; the controls that start one, and what they
+  // render when it settles, arrive with the page that has them.
+  if (!("installed" in job.result)) return null;
+  return { kind: job.result.installed, version: job.result.version };
 }
 
 /**
@@ -82,9 +81,11 @@ export function installButtonState(
  * server can no longer resolve, let alone install to.
  */
 export function installedMachines(state: MachinesResponse): MachineInfo[] {
+  // This machine is always installed and never a target: it is not a remote, so it is not
+  // in the list of remotes this server has put the program on.
   return state.machines
     .map((machine, index) => ({ machine, index }))
-    .filter((entry) => entry.machine.installed != null)
+    .filter((entry) => !entry.machine.local && entry.machine.installed != null)
     .sort((a, b) => {
       const at = b.machine.installed!.at.localeCompare(a.machine.installed!.at);
       return at !== 0 ? at : a.index - b.index;

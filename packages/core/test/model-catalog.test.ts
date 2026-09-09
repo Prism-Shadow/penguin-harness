@@ -281,8 +281,9 @@ describe("model-catalog", () => {
 
   it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
-    // Dictionary order, newer versions of a series first (gpt-5.6-* before gpt-5.5,
-    // opus-4.8 before 4.7) — precomputed in the catalog, no runtime sorting.
+    // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
+    // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
+    // runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
       "anthropic/claude-fable-5",
       "anthropic/claude-opus-5",
@@ -302,6 +303,7 @@ describe("model-catalog", () => {
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openai/gpt-6-astra",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
@@ -753,6 +755,7 @@ describe("model-catalog", () => {
     // `gpt-5.6` id is the same tier OpenRouter spells `openai/gpt-5.6-sol`, so it displays
     // that codename too rather than leaving the variant unnamed.
     for (const [directProvider, directId, gatewayProvider, gatewayId] of [
+      ["openai", "gpt-6-astra", "openrouter", "openai/gpt-6-astra"],
       ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
       ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
@@ -825,6 +828,7 @@ describe("model-catalog", () => {
     // gains a model.
     const direct = MODEL_CATALOG.filter((m) => m.provider === "openai").map((m) => m.modelId);
     expect(direct).toEqual([
+      "gpt-6-astra",
       "gpt-5.6",
       "gpt-5.6-luna",
       "gpt-5.6-terra",
@@ -846,8 +850,9 @@ describe("model-catalog", () => {
     // Because it is that tier, the alias is labelled with the sol codename its siblings and
     // its gateway listing carry; the id users send stays bare.
     expect(catalogEntryFor("openai", "gpt-5.6")!.displayName).toBe("GPT-5.6 Sol");
-    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client); only the
-    // gateway rows pin a protocol, and they pin Responses.
+    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client, and its gpt6
+    // client for the gpt-6 ids from the release that ships it); only the gateway rows pin a
+    // protocol, and they pin Responses.
     for (const m of MODEL_CATALOG.filter((m) => m.provider === "openai")) {
       expect(m.clientType, m.modelId).toBeUndefined();
       expect(m.baseUrl, m.modelId).toBeUndefined();
@@ -859,6 +864,10 @@ describe("model-catalog", () => {
       const p = catalogEntryFor(provider, id)!.pricing!;
       return [p.cache_read, p.cache_write, p.output];
     };
+    // GPT-6 Astra's cache_write bucket carries OpenAI's published $12.5 cache-write price
+    // rather than the $10 input rate: the buckets have no slot for input that is never
+    // written to cache.
+    expect(price("openai", "gpt-6-astra")).toEqual([1, 12.5, 50]);
     expect(price("openai", "gpt-5.6")).toEqual([0.5, 5, 30]);
     expect(price("openai", "gpt-5.6-terra")).toEqual([0.2, 2, 12]);
     expect(price("openai", "gpt-5.6-luna")).toEqual([0.02, 0.2, 1.2]);
@@ -868,6 +877,10 @@ describe("model-catalog", () => {
     expect(price("openrouter", "openai/gpt-5.6-sol")).toEqual([0.25, 3.125, 15]);
     expect(price("openrouter", "openai/gpt-5.6-terra")).toEqual([0.2, 2.5, 12]);
     expect(price("openrouter", "openai/gpt-5.6-luna")).toEqual([0.02, 0.25, 1.2]);
+    // GPT-6 Astra runs no promotion (`discount: 0`) and its default endpoint is OpenAI's own,
+    // so every bucket matches the direct row.
+    expect(price("openrouter", "openai/gpt-6-astra")).toEqual([1, 12.5, 50]);
+    expect(catalogEntryFor("openrouter", "openai/gpt-6-astra")!.contextWindow).toBe(1050000);
     // The 5.4/5.5 rows run no promotion, so gateway and direct agree except on cache_write,
     // where the gateway publishes GPT's genuine 1.25x write premium and the direct rows use
     // the standard input price.
@@ -909,6 +922,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("gpt-5.5-pro")?.envKey).toBe("OPENAI_API_KEY");
     // The GPT-5.6 generation (agenthub 0.4.2) reads the same OPENAI_* pair.
     expect(resolveModelEnv("gpt-5.6-luna")?.envKey).toBe("OPENAI_API_KEY");
+    // So does the GPT-6 generation: agenthub routes the gpt-6 substring to its gpt6 client.
+    expect(resolveModelEnv("gpt-6-astra")?.envKey).toBe("OPENAI_API_KEY");
+    expect(resolveModelEnv("gpt-6-astra")?.envBaseUrlKey).toBe("OPENAI_BASE_URL");
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
     // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
     expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
@@ -1035,6 +1051,8 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(fastModeProtocol("gpt-5.5-pro")).toBe("openai");
     expect(fastModeProtocol("gpt-5.4-mini")).toBe("openai");
     expect(fastModeProtocol("gpt-5.6")).toBe("openai");
+    // The gpt-6 branch sits alongside them: agenthub's gpt6 client maps fast mode too.
+    expect(fastModeProtocol("gpt-6-astra")).toBe("openai");
   });
 
   it("Anthropic-protocol clients carry it as speed=fast", () => {
