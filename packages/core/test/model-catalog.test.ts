@@ -583,8 +583,10 @@ describe("model-catalog", () => {
     const sonnet5 = catalogEntryFor("openrouter", "anthropic/claude-sonnet-5")!.pricing!;
     expect([sonnet5.cache_read, sonnet5.cache_write, sonnet5.output]).toEqual([0.2, 2.5, 10]);
     // Gemini 3.6 Flash and 3.5 Flash Lite: upstream publishes a cache-hit price, so cache_read
-    // stores the real discounted price (not the input price) — cache_read is its own billing
+    // stores the real cache-hit price (not the input price) — cache_read is its own billing
     // bucket in the cost center. cache_write repeats input (no per-token cache-write fee).
+    // What the 3.6 row stores is the LIST price; the launch discount it also declares, and
+    // the halved rate it bills today, are asserted with the rest of the 3.x Flash rows below.
     const g36 = catalogEntryFor("openrouter", "google/gemini-3.6-flash")!;
     expect([g36.contextWindow, g36.supportsVision]).toEqual([1048576, true]);
     expect([g36.pricing!.cache_read, g36.pricing!.cache_write, g36.pricing!.output]).toEqual([
@@ -637,33 +639,49 @@ describe("model-catalog", () => {
       "glm-5.1",
       "glm-5",
     ]);
-    // Gemini 3.8 Flash: both rows store Google's list price and declare its launch discount
-    // in `discount`, so the list survives the promotion and effectivePricing yields the
-    // 0.075/0.75/3.75 either seller bills through 2026-12-31.
-    for (const g38 of [
-      catalogEntryFor("google", "gemini-3.8-flash")!,
-      catalogEntryFor("openrouter", "google/gemini-3.8-flash")!,
-    ]) {
-      expect([g38.contextWindow, g38.supportsVision, g38.discount]).toEqual([1048576, true, 0.5]);
-      expect([g38.pricing!.cache_read, g38.pricing!.cache_write, g38.pricing!.output]).toEqual([
-        0.15, 1.5, 7.5,
+    // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
+    // all six of their rows — direct and on OpenRouter — store Google's list price and
+    // declare that launch discount in `discount`, so the list survives the promotion and
+    // effectivePricing yields the 0.075/0.75/3.75 either seller bills today.
+    for (const [provider, modelId] of [
+      ["google", "gemini-3.8-flash"],
+      ["google", "gemini-3.7-flash"],
+      ["google", "gemini-3.6-flash"],
+      ["openrouter", "google/gemini-3.8-flash"],
+      ["openrouter", "google/gemini-3.7-flash"],
+      ["openrouter", "google/gemini-3.6-flash"],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect([row.contextWindow, row.supportsVision, row.discount], modelId).toEqual([
+        1048576,
+        true,
+        0.5,
       ]);
-      const billed = effectivePricing(g38)!;
-      expect([billed.cache_read, billed.cache_write, billed.output]).toEqual([0.075, 0.75, 3.75]);
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual([0.15, 1.5, 7.5]);
+      const billed = effectivePricing(row)!;
+      expect([billed.cache_read, billed.cache_write, billed.output], modelId).toEqual([
+        0.075, 0.75, 3.75,
+      ]);
     }
-    // Gemini 3.7 Flash predates that treatment: the direct row stores the list price and
-    // leaves the same launch discount out entirely, while the OpenRouter row has its price
-    // rewritten to what the gateway bills — a `discount: 0.75` off the list, a quarter of it.
-    const g37 = catalogEntryFor("google", "gemini-3.7-flash")!;
-    expect([g37.contextWindow, g37.supportsVision]).toEqual([1048576, true]);
-    expect([g37.pricing!.cache_read, g37.pricing!.cache_write, g37.pricing!.output]).toEqual([
-      0.15, 1.5, 7.5,
-    ]);
-    const g37or = catalogEntryFor("openrouter", "google/gemini-3.7-flash")!;
-    expect([g37or.contextWindow, g37or.supportsVision]).toEqual([1048576, true]);
-    expect([g37or.pricing!.cache_read, g37or.pricing!.cache_write, g37or.pricing!.output]).toEqual([
-      0.0375, 0.375, 1.875,
-    ]);
+    // No other Gemini row carries a launch discount: Google's pricing page marks one on the
+    // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // bill exactly the list price they store.
+    for (const [provider, modelId] of [
+      ["google", "gemini-3.5-flash"],
+      ["google", "gemini-3.5-flash-lite"],
+      ["google", "gemini-3.1-flash-lite"],
+      ["google", "gemini-3.1-pro-preview"],
+      ["google", "gemini-3-flash-preview"],
+      ["openrouter", "google/gemini-3.5-flash"],
+      ["openrouter", "google/gemini-3.5-flash-lite"],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect(row.discount, modelId).toBeUndefined();
+      expect(effectivePricing(row), modelId).toEqual(row.pricing);
+    }
     // GLM-5.3 is listed both directly and on OpenRouter; the gateway runs no discount, so
     // the two rows agree on price and differ only in context window and protocol pin.
     const glm53or = catalogEntryFor("openrouter", "z-ai/glm-5.3")!;

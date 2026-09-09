@@ -8,7 +8,8 @@
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
  * the direct qwen3.8-flash: 2026-08-26; the vLLM group: 2026-09-03; the GPT-6 Astra rows
- * (direct + OpenRouter): 2026-09-09 — per each provider's docs).
+ * (direct + OpenRouter): 2026-09-09; the Gemini 3.x Flash launch discounts (direct +
+ * OpenRouter): 2026-09-09 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -524,12 +525,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
   // product-line policy) even where the gateway page omits the modality.
   //
-  // Discounts: these rows store what OpenRouter actually BILLS, so an active promotion is
-  // stored at its discounted rate (unlike the direct-vendor rows, which keep the list price).
-  // The endpoints API exposes the running promotion as `pricing.discount` on the default
-  // endpoint; rows sitting on one say so and name the rate to restore, because a lapsed
-  // promotion silently doubles the real cost — that is exactly how the gpt-5.6-terra and
-  // gpt-5.6-luna rows drifted 2x low before the 2026-08-18 re-read. --
+  // Discounts: what these rows record is what OpenRouter actually BILLS, so a gateway
+  // promotion is stored at its discounted rate (unlike the direct-vendor rows, which keep the
+  // list price). The Gemini 3.x Flash rows are the exception: the promotion they sit on is
+  // Google's own dated launch discount rather than the gateway's, so they keep the list price
+  // and declare it in `discount`, exactly as their direct-vendor twins do. The endpoints API
+  // exposes the running promotion as `pricing.discount` on the default endpoint; rows sitting
+  // on one say so and name the rate to restore, because a lapsed promotion silently doubles
+  // the real cost — that is exactly how the gpt-5.6-terra and gpt-5.6-luna rows drifted 2x
+  // low before the 2026-08-18 re-read. --
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -639,9 +643,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Same Gemini cache conventions as the gemini-3.7-flash row below. OpenRouter passes
-    // Google's launch discount through without deepening it the way it does for 3.7, so it
-    // bills $0.075/$0.75/$3.75 — the list price less 50%, declared in `discount` so the
-    // $0.15/$1.50/$7.50 list survives the promotion.
+    // Google's launch discount through, so it bills $0.075/$0.75/$3.75 — the list price less
+    // 50%, declared in `discount` so the $0.15/$1.50/$7.50 list survives the promotion (same
+    // treatment as the 3.6 and 3.7 rows below).
     modelId: "google/gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
     provider: "openrouter",
@@ -653,17 +657,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // Same Gemini cache conventions as the gemini-3.6-flash row below. The stored rates are
-    // what OpenRouter currently bills: the default Google endpoint runs `discount: 0.75` off
-    // the $0.15/$1.50/$7.50 list price (Google's launch discount through 2026-12-31, which
-    // OpenRouter deepens further), so it bills $0.0375/$0.375/$1.875 — re-read when the
-    // discount ends, and restore the $0.15/$1.50/$7.50 list then (the direct-vendor row
-    // stores that list price already).
+    // Same Gemini cache conventions as the gemini-3.6-flash row below. The default Google
+    // endpoint now bills $0.075/$0.75/$3.75 with `discount: 0.5` (endpoints API, read
+    // 2026-09-09) — Google's launch discount passed straight through; the deeper
+    // `discount: 0.75` promotion this row used to store has ended. Declared in `discount` so
+    // the $0.15/$1.50/$7.50 list stays on file.
     modelId: "google/gemini-3.7-flash",
     displayName: "Gemini 3.7 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
-    pricing: usd(0.0375, 0.375, 1.875),
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
@@ -672,12 +676,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // cache_read is billed as its own bucket in the cost center, and an input-priced
     // cache_read would overstate cache-heavy Gemini spend 10x; cache_write repeats the input
     // price (see the block comment — Gemini publishes storage-per-hour, not per-token write),
-    // matching the direct-vendor Gemini rows below.
+    // matching the direct-vendor Gemini rows below. OpenRouter bills $0.075/$0.75/$3.75
+    // today (endpoints API, read 2026-09-09): it reports that halved rate as its plain price
+    // with `discount: 0`, but it is Google's launch discount passed through and ends with it
+    // on 2026-12-31, so this row records the list price and the promotion the way its
+    // siblings do.
     modelId: "google/gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
@@ -1459,11 +1468,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Google Gemini (official USD pricing) --
   {
-    // Same list price and same launch discount as gemini-3.7-flash below: Google halves all
-    // three rates through 2026-12-31. This row declares that promotion in `discount` instead
-    // of leaving it out, so the list price stays on file while a Project is preset with — and
-    // the cost center bills — the 0.075/0.75/3.75 Google actually charges today. One field to
-    // delete when the promotion lapses.
+    // Same list price and same launch discount as the gemini-3.7-flash and gemini-3.6-flash
+    // rows below: Google halves all three rates through 2026-12-31. Like those rows this one
+    // declares the promotion in `discount`, so the list price stays on file while a Project is
+    // preset with — and the cost center bills — the 0.075/0.75/3.75 Google actually charges
+    // today. One field to delete when the promotion lapses.
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
     provider: "google",
@@ -1473,23 +1482,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
-    // Official list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
-    // Google's price page). Google halves all three rates as a launch discount through
-    // 2026-12-31; like other limited-time promotions the discount is not stored (the
-    // OpenRouter row bills — and stores — the halved rates instead).
+    // Google's list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
+    // Google's price page), halved through 2026-12-31 by a launch discount on all three
+    // rates. That promotion is declared in `discount` — same treatment as gemini-3.8-flash
+    // above — so the list price survives it and there is one field to delete when it lapses.
     modelId: "gemini-3.7-flash",
     displayName: "Gemini 3.7 Flash",
     provider: "google",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
   },
   {
+    // Same list price and same launch discount as the 3.7 and 3.8 rows: Google halves all
+    // three rates through 2026-12-31 (Google's pricing page, read 2026-09-09).
     modelId: "gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "google",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
   },
   {
