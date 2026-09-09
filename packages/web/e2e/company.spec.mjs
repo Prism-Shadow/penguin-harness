@@ -160,7 +160,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await expect(page.getByRole("heading", { name: /全员频道/ })).toBeVisible();
 
   // A mention typed in the all-hands channel lands on the CEO's desk as a mention work run.
-  const input = page.getByRole("textbox", { name: /写点什么/ });
+  const input = page.getByRole("textbox", { name: /输入消息/ });
   await expect(input).toBeVisible();
   await input.fill(`@${ORG}_ceo 先把站点搭起来，验收标准写在工单里。`);
   await input.press("Enter");
@@ -199,7 +199,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await expect(page.getByText("已邀请").first()).toBeVisible();
 
   // …and the mention posts, appears in this channel's stream, and reaches the desk.
-  const siteInput = page.getByRole("textbox", { name: /写点什么/ });
+  const siteInput = page.getByRole("textbox", { name: /输入消息/ });
   await siteInput.fill(`@${ORG}_ceo 站点频道成立，先出一版信息架构。`);
   await siteInput.press("Enter");
   await expect(page.getByText("站点频道成立").first()).toBeVisible();
