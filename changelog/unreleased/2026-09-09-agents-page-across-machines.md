@@ -3,7 +3,7 @@
 - **Date:** 2026-09-09
 - **Type:** feat
 - **Scope:** `web`
-- **PR:** [#653](https://github.com/Prism-Shadow/penguin-harness/pull/653)
+- **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
 
 [中文版](2026-09-09-agents-page-across-machines.zh.md)
 
