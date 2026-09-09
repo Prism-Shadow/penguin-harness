@@ -1124,12 +1124,21 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, selected.agentId, {
-          provider: ref.provider,
-          modelId: ref.modelId,
-          workspace: selected.workspace,
-          approvalMode: selected.approvalMode,
-        });
+        const created = await api.createSession(
+          projectId,
+          selected.agentId,
+          {
+            provider: ref.provider,
+            modelId: ref.modelId,
+            workspace: selected.workspace,
+            approvalMode: selected.approvalMode,
+          },
+          // On the machine the source Session is on: the Workspace being carried over is a
+          // directory THERE, and this server would refuse a path it does not have
+          // ("Workspace does not exist or is inaccessible"). The machine travels with the
+          // path, here as everywhere.
+          machineForSession(selected.sessionId),
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
