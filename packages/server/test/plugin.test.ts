@@ -10,10 +10,13 @@ import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
-import type { PenguinContext, PenguinInterface } from "@prismshadow/penguin-core/plugin";
+import type {
+  PenguinContext,
+  PenguinInterface,
+  WorkflowFactory,
+} from "@prismshadow/penguin-core/plugin";
 import type { HarnessContext } from "../src/plugin/index.js";
 import { instantiateWorkflows, WorkflowFactories } from "../src/plugin/workflow.js";
-import type { WorkflowFactory } from "@prismshadow/penguin-core/plugin";
 
 function emptyIface(): PenguinInterface {
   // The registry, not a bare Map: that IS the surface a plugin gets (see platform.ts).

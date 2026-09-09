@@ -30,7 +30,11 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import type { SandboxProviderSource, SandboxSettings } from "@prismshadow/penguin-core/plugin";
+import type {
+  PenguinInterface,
+  SandboxProviderSource,
+  SandboxSettings,
+} from "@prismshadow/penguin-core/plugin";
 import { SandboxService } from "../sandbox/index.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
@@ -40,7 +44,6 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
-import type { PenguinInterface } from "@prismshadow/penguin-core/plugin";
 import type { HarnessContext } from "../plugin/index.js";
 import { pluginHostFrom } from "../plugin/host.js";
 import { instantiateWorkflows, WorkflowFactories } from "../plugin/workflow.js";
