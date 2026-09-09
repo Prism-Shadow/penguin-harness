@@ -242,11 +242,14 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
     // The vision revision is a model of its own in both the direct group and on OpenRouter,
-    // and it is the only vision-capable DeepSeek row in either.
+    // and on OpenRouter it is the only vision-capable DeepSeek row. In the direct group the
+    // pre-registered deepseek-v4.1-flash reads images too, so the flag is per row rather than
+    // a property of the id's spelling.
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
     expect(
       catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
     ).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
@@ -782,12 +785,13 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    // DeepSeek rows carry the official PEAK tier — re-read 2026-08-18 after the official price
-    // increase introduced time-based tiers. The off-peak tier is exactly half, and is applied
-    // from the row's schedule rather than stored (see the off-peak schedules block below).
+    // DeepSeek rows carry the official PEAK tier; the off-peak tier is exactly half, and is
+    // applied from the row's schedule rather than stored (see the off-peak schedules block
+    // below). The flash rows were re-read 2026-09-08 for the official price adjustment
+    // effective 2026-09-10; V4 Pro sits outside that adjustment.
     const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
-      0.1, 3, 9,
+      0.04, 2, 8,
     ]);
     const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
@@ -916,6 +920,9 @@ describe("model-catalog", () => {
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes on.
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
@@ -1210,11 +1217,11 @@ describe("off-peak schedules", () => {
         5,
       );
     }
-    // The published peak figures themselves: CNY 0.1 / 3 / 9 per million, at the catalog's 7:1
-    // display convention, which is DeepSeek's off-peak 0.05 / 1.5 / 4.5 doubled.
+    // The published peak figures themselves: CNY 0.04 / 2 / 8 per million, at the catalog's 7:1
+    // display convention, which is DeepSeek's off-peak 0.02 / 1 / 4 doubled.
     const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
     expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
-      0.014286, 0.428571, 1.285714,
+      0.005714, 0.285714, 1.142857,
     ]);
   });
 
