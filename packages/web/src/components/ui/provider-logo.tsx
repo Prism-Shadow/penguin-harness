@@ -7,8 +7,10 @@
  * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); custom models use a generic cube. All
- * are pure paths, no external image assets.
+ * exact reproduction of the trademark); vLLM uses its official mark from the
+ * project's media kit, its two brand colours flattened to currentColor like
+ * Qwen's gradient; custom models use a generic cube. All are pure paths, no
+ * external image assets.
  *
  * Vendor ids outside the preset table are user-defined groups: instead of all
  * sharing the cube (which made same-named models across groups
@@ -136,6 +138,20 @@ const GLYPHS: Record<string, Glyph> = {
         <path d="M318.563 221.755C300.863 221.755 284.979 211.247 278.206 194.978L196.549 0H244.342L318.842 178.361L393.273 0H441.066L358.92 195.048C352.112 211.247 336.263 221.755 318.563 221.755Z" />
         <path d="M425.111 314.933C407.481 314.933 391.667 304.494 384.824 288.366C377.947 272.097 381.507 253.524 393.936 240.921L542.657 90.2803L561.229 134.094L425.076 271.748L619.147 270.666L637.72 314.479L425.146 315.003L425.076 314.933H425.111Z" />
         <path d="M0 314.408L18.5727 270.595L212.643 271.677L76.525 133.988L95.0977 90.1748L243.819 240.816C256.247 253.384 259.843 272.026 252.93 288.26C246.088 304.424 230.203 314.827 212.643 314.827L0.0698221 314.339L0 314.408Z" />
+      </>
+    ),
+  },
+  vllm: {
+    // The official mark (vllm-project/media-kit, vLLM-Logo.svg): the solid wedge and the
+    // swoosh beside it, coordinates rounded to 2dp and the viewBox tightened to their bounding
+    // box. Its two brand colours (amber wedge, blue swoosh) collapse into currentColor the way
+    // Qwen's gradient does above — this set is monochrome so a row of provider glyphs reads as
+    // one family. The drop-shadow layer the source draws underneath is dropped with them.
+    viewBox: "13.39 12.21 68.04 70.39",
+    path: (
+      <>
+        <path d="m41.05 27.29l0 55.31l-27.66 -55.31z" />
+        <path d="m41.05 82.6l21.73 0l18.65 -70.39l-25.57 13.46z" />
       </>
     ),
   },

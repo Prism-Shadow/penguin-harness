@@ -707,6 +707,9 @@ export const zh = {
     /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
     vendorProtocolHint: (vendor: string): string =>
       `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
+    /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
+    addProtocolHintPinned: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
