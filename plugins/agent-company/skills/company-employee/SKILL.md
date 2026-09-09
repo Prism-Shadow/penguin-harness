@@ -38,25 +38,25 @@ Every automated drive is one user message: a one-line preface saying it comes fr
 [org_trigger]
 org: acme
 employee: acme_hr (HR, reports to acme_ceo)
-kind: event                          # init | event | mention | ticket_notice | ticket_work
+kind: event                          # init | event | mention | ticket_work
 event: daily-standup                 # kind=event: the calendar event and when it fired
 fired_at: 2026-09-01T09:00:00+08:00
 message: msg-… from agent:acme_ceo   # kind=mention: the triggering message and its sender
 channel: default_channel             # kind=mention: the channel it was said in — answer there
-ticket: 2026-09-01-site-launch       # kind=ticket_notice / ticket_work: the ticket id
-change: assigned                     # kind=ticket_notice: assigned | blocked | blocker_closed | done | rejected
+ticket: 2026-09-01-site-launch       # kind=ticket_work: the ticket id
 budget: 12.40 / 30.00 USD (41%)      # this period's spend (you + subordinates) / your budget; unbounded when none
 [/org_trigger]
 <body>
 ```
 
 - `init` — the first run of a new organization's CEO: the mission and the initialization tasks (see `company-ceo`).
-- `event` — a calendar event fired; the body is the event's `prompt`.
+- `event` — a calendar event fired; the body is the event's `prompt`, followed by `## Since your last sweep` when ticket changes are waiting for you.
 - `mention` — someone @-mentioned you in a channel; the body is that message plus up to 20 earlier messages of the same day **in that channel**, quoted. Answer where you were addressed — the `channel:` line names it: `penguin org channel send --channel <channel_id> -m "…"`.
-- `ticket_notice` — a ticket you are involved in changed: `assigned` (you are its new owner), `blocked` (a ticket is waiting on you or on your subordinate's ticket), `blocker_closed` (the ticket yours was waiting on is done or rejected — verify, then `unblock`), `done` / `rejected` (a ticket that notifies you ended). The body is the ticket header and its `## Result`. A notice is delivery, not an order: decide whether to start, verify or leave it.
 - `ticket_work` — the first message of a ticket session: the ticket in full plus the starter's note. Do the work.
 
-The first four arrive at your desk session; `ticket_work` opens a ticket session. A message with no block is a human talking to you directly — answer as in any conversation.
+The first three arrive at your desk session; `ticket_work` opens a ticket session. A message with no block is a human talking to you directly — answer as in any conversation.
+
+**Ticket changes never wake a desk.** An owner assigned, a ticket blocked, a blocker closed, a ticket done or rejected — none of them starts a run. They are recorded and handed to you inside the next `event` body, under a `## Since your last sweep` section: one line per change, naming the ticket, its title, what happened and the reason or blocker it carries. The sweep is where you decide on each — start a ticket session (`penguin org ticket start <id> -m "…"`), verify and unblock, or leave it — and the work itself still belongs in a ticket session, never at the desk.
 
 ## Principals
 
@@ -64,11 +64,11 @@ Structured fields — ticket headers, a message's `sender` / `mentions`, `--owne
 
 ## The desk session: schedule, do not do
 
-Your desk session is permanent — one per employee, the target of every calendar event, mention and notice. Its job is to schedule the work, not to do it: ticket work belongs in ticket sessions, whose context starts clean and whose cost is booked to the ticket.
+Your desk session is permanent — one per employee, the target of every calendar event and every mention. Its job is to schedule the work, not to do it: ticket work belongs in ticket sessions, whose context starts clean and whose cost is booked to the ticket.
 
 - **The desk never edits workspace files for a ticket.** The moment you would, run `penguin org ticket start <ticket_id>` and let that session do it; the only edits that belong at the desk are the one-minute fixes you make right after `penguin org ticket attach <ticket_id>`.
 
-A sweep, on a calendar event or whenever a notice calls for one:
+A sweep, on a calendar event or whenever a human asks you for one — start it by reading the `## Since your last sweep` list the event carries, then:
 
 1. `penguin org ticket ls --owner agent:<your_agent_id> --json` — your tickets; add `--status proposed` for candidates and `--blocked` to see what is stuck. Skip every blocked ticket: no new session for it until its `Blocked` is cleared.
 2. For each `in_progress` ticket of yours that no session is working on, start one: `penguin org ticket start <ticket_id> -m "<what to do first, what to leave alone>"`. It runs in the background and prints the session id; start several for independent streams of one ticket, and start one on a colleague's ticket when they asked for help in a channel.
@@ -96,7 +96,7 @@ penguin org ticket block <ticket_id> --reason "Needs the API from the backend ti
 penguin org ticket unblock <ticket_id>      # after you verified the blocker is really gone
 ```
 
-`--by` names who or which ticket you wait for; the server notifies them and your superior, and notifies you (`blocker_closed`) when a blocking ticket ends. A blocked ticket stays in its column, sweeps skip it, and it stays blocked until you clear it — a `blocker_closed` notice is the cue to verify, not an automatic release. Do not loop: no schedule that polls, no self-mention, no "check again in five minutes".
+`--by` names who or which ticket you wait for; the server tells them and your superior, and lists `blocker closed` in your next sweep when a blocking ticket ends. A blocked ticket stays in its column, sweeps skip it, and it stays blocked until you clear it — that sweep line is the cue to verify, not an automatic release. Do not loop: no schedule that polls, no self-mention, no "check again in five minutes".
 
 ## Channel etiquette
 
@@ -109,7 +109,7 @@ Talk happens in **channels**. `default_channel` is the all-hands channel every e
 - Open a channel when a thread would drown the all-hands channel — one per stream or per big ticket: `penguin org channel create <id> --name "<what it is>" --purpose "<what belongs here>"`, then `penguin org channel invite <id> agent:<owner>` for exactly the principals the work needs, and say so once in the all-hands channel so nobody has to guess where the thread went. A new channel holds only you until you invite.
 - What the board must decide goes to the all-hands channel: that is where the people read.
 - Mentions chain: a human's message is hop 0, what you send from a work run is one hop deeper, and at the organization's `mention_chain_limit` (default 3) an @ is recorded but no longer delivered. Two employees @-ing each other stop on the third hop by design — settle it with one message that carries everything the other side needs, or block the ticket and let the calendar or a human push again.
-- System messages (budget alerts, ticket notices, invitations and leaves) trigger nobody; read them, do not answer them.
+- System messages (budget alerts, ticket completions, invitations and leaves) trigger nobody; read them, do not answer them.
 
 ## Budget awareness
 

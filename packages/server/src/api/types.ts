@@ -3409,9 +3409,13 @@ export type OrgTicketStatus = "proposed" | "in_progress" | "review" | "done" | "
 export type OrgTicketPriority = "P0" | "P1" | "P2";
 /** Live employee state: running when the desk or any ticket session has a Task in progress; paused when budget-paused. */
 export type OrgEmployeeState = "running" | "idle" | "paused";
-/** The trigger kinds an `[org_trigger]` block carries. */
+/**
+ * The trigger kinds an `[org_trigger]` block carries. `ticket_notice` is read-only: a ticket
+ * change starts no run of its own, so nothing writes that kind any more, and it stays in the
+ * union because Traces recorded while it did still carry it.
+ */
 export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
-/** Ticket notice kinds delivered to desk sessions (`kind: ticket_notice`). */
+/** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
 export type OrgTicketChange = "assigned" | "blocked" | "blocker_closed" | "done" | "rejected";
 /** What the last evaluation of a calendar event did. */
 export type OrgCalendarOutcome = "fired" | "queued" | "paused" | "missed" | "error";

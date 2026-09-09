@@ -3,10 +3,13 @@
  * desk session an employee has, which sessions contribute to a ticket, how far a calendar
  * event or a channel scan has got, what a ticket looked like when it was last notified) or a
  * user's own read cursor. The service rebuilds the projections every reconcile pass, so a
- * dropped table costs one pass of silence, never a wrong answer.
+ * dropped table costs one pass of silence, never a wrong answer. `org_desk_notices` is the
+ * one queue in the family: the ticket changes an employee has not been told about yet, held
+ * until its next calendar sweep carries them, so dropping it loses those digests and nothing
+ * else — the changes themselves live in the ticket files and the all-hands channel.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { OrgCalendarOutcome } from "../../api/types.js";
+import type { OrgCalendarOutcome, OrgTicketChange } from "../../api/types.js";
 
 export interface OrgSessionRow {
   sessionId: string;
@@ -60,6 +63,20 @@ export interface OrgBudgetStateRow {
   period: string;
   warnedAt: string | null;
   pausedAt: string | null;
+}
+
+/**
+ * One ticket change waiting for an employee's next calendar sweep. `seq` is the delivery
+ * order (a rowid alias, so it never repeats) and `at` is when the change was noticed.
+ */
+export interface OrgDeskNoticeRow {
+  seq: number;
+  projectId: string;
+  orgId: string;
+  agentId: string;
+  ticketId: string;
+  change: OrgTicketChange;
+  at: string;
 }
 
 /** Where a session belongs, when it belongs to an organization at all. */
@@ -547,6 +564,59 @@ export class OrgCacheRepo {
     }
   }
 
+  // ---- desk notices (the queue delivered in the next calendar sweep) ----
+
+  /** Records a ticket change for an employee. Nothing is sent: the next sweep carries it. */
+  queueDeskNotice(row: Omit<OrgDeskNoticeRow, "seq">): void {
+    this.db
+      .prepare(
+        `INSERT INTO org_desk_notices (project_id, org_id, agent_id, ticket_id, change, at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(row.projectId, row.orgId, row.agentId, row.ticketId, row.change, row.at);
+  }
+
+  /**
+   * The employee's queued changes in delivery order, removed as they are read: one
+   * transaction, so a sweep never carries a notice a second sweep also carries.
+   */
+  takeDeskNotices(projectId: string, orgId: string, agentId: string): OrgDeskNoticeRow[] {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM org_desk_notices
+           WHERE project_id = ? AND org_id = ? AND agent_id = ? ORDER BY seq`,
+        )
+        .all(projectId, orgId, agentId) as Record<string, unknown>[];
+      this.db
+        .prepare(
+          "DELETE FROM org_desk_notices WHERE project_id = ? AND org_id = ? AND agent_id = ?",
+        )
+        .run(projectId, orgId, agentId);
+      this.db.exec("COMMIT");
+      return rows.map((r) => ({
+        seq: Number(r.seq),
+        projectId: r.project_id as string,
+        orgId: r.org_id as string,
+        agentId: r.agent_id as string,
+        ticketId: r.ticket_id as string,
+        change: r.change as OrgTicketChange,
+        at: r.at as string,
+      }));
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /** An employee that left takes its undelivered notices with it: no sweep will ever carry them. */
+  deleteDeskNotices(projectId: string, orgId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM org_desk_notices WHERE project_id = ? AND org_id = ? AND agent_id = ?")
+      .run(projectId, orgId, agentId);
+  }
+
   // ---- lifecycle ----
 
   deleteOrg(projectId: string, orgId: string): void {
@@ -558,6 +628,7 @@ export class OrgCacheRepo {
       "org_channel_state",
       "org_channel_reads",
       "org_budget_state",
+      "org_desk_notices",
     ]) {
       this.db
         .prepare(`DELETE FROM ${table} WHERE project_id = ? AND org_id = ?`)
@@ -574,6 +645,7 @@ export class OrgCacheRepo {
       "org_channel_state",
       "org_channel_reads",
       "org_budget_state",
+      "org_desk_notices",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(projectId);
     }

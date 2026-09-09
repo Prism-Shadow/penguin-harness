@@ -3,7 +3,7 @@
  * the organization and its CEO; the CEO hires HR, finance, a developer and a marketer,
  * partitions the shared workspace, schedules everyone and files the first tickets; the
  * calendar drives the desks; ticket sessions do the work and write back; review and done
- * notify the right people; finance rolls the spend up the reporting line and to the parent
+ * reach the right people — the board at once, an employee in its next sweep; finance rolls the spend up the reporting line and to the parent
  * ticket. Every command an employee would run through `penguin org` hits the same service
  * methods the routes call, attributed to the employee's session.
  */
@@ -145,6 +145,7 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
 
     // 4. The mission becomes a ticket tree: one parent, one child per stream.
     const ceoActor = { userId: "alice", sessionId: ceoDesk };
+    const runsBeforeTickets = h.started.length;
     const parent = await service.createTicket(
       P,
       ORG,
@@ -204,13 +205,8 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect((await service.ticket(P, ORG, parent.ticketId)).children.sort()).toEqual(
       [site.ticketId, seo.ticketId, social.ticketId, slots.ticketId].sort(),
     );
-    // Assignment notices reached the owners' desks (which opened lazily).
-    const assigned = triggers().filter(
-      (t) => t.origin?.origin.kind === "ticket_notice" && t.origin.origin.change === "assigned",
-    );
-    expect(assigned.map((t) => t.origin!.origin.ticket).sort()).toEqual(
-      [parent.ticketId, site.ticketId, seo.ticketId, social.ticketId, slots.ticketId].sort(),
-    );
+    // Filing the tree woke nobody: an assignment waits for the owner's next sweep.
+    expect(h.started).toHaveLength(runsBeforeTickets);
     const devDesk = (await service.desk(P, ORG, DEV, {})).sessionId;
     const mktDesk = (await service.desk(P, ORG, MKT, {})).sessionId;
 
@@ -296,6 +292,18 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(sweeps.map((t) => t.origin!.origin.event)).toEqual(Array(5).fill("daily-sweep"));
     const devSweep = sweeps.find((t) => t.sessionId === devDesk)!;
     expect(devSweep.origin!.origin.budget).toBe("0.00 / 100.00 USD (0%)");
+    // The sweep is where the ticket changes land: the developer's two assignments …
+    expect(devSweep.origin!.rest).toContain("## Since your last sweep");
+    expect(devSweep.origin!.rest).toContain(
+      `- ${site.ticketId} (Build the marketplace site): assigned to you`,
+    );
+    expect(devSweep.origin!.rest).toContain(
+      `- ${slots.ticketId} (Paid featured slots): assigned to you`,
+    );
+    // … and, for the CEO, the block the marketer put on the SEO ticket it manages.
+    expect(sweeps.find((t) => t.sessionId === ceoDesk)!.origin!.rest).toContain(
+      `- ${seo.ticketId} (SEO to the top three): blocked — "Nothing to index until the site is live" (by ${site.ticketId})`,
+    );
 
     // 7. The developer's desk opens a ticket session for the site; the session works and writes back.
     const { sessionId: siteWork } = await service.startTicket(P, ORG, site.ticketId, {
@@ -344,13 +352,15 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     // 8. The CEO reviews and closes it: the developer is told, and the marketer learns its blocker closed.
     h.started.length = 0;
     await service.moveTicket(P, ORG, site.ticketId, "done", undefined, ceoActor);
-    const notices = triggers().filter((t) => t.origin?.origin.kind === "ticket_notice");
-    expect(notices.map((t) => [t.origin!.origin.change, t.sessionId])).toEqual(
-      expect.arrayContaining([
-        ["done", ceoDesk],
-        ["blocker_closed", mktDesk],
-      ]),
-    );
+    // Closing it starts no run either: the CEO (on `Notify`) and the owner of the ticket
+    // that was waiting are queued, each for its own next sweep.
+    expect(h.started).toHaveLength(0);
+    expect(h.cache.takeDeskNotices(P, ORG, CEO).map((n) => [n.ticketId, n.change])).toEqual([
+      [site.ticketId, "done"],
+    ]);
+    expect(h.cache.takeDeskNotices(P, ORG, MKT).map((n) => [n.ticketId, n.change])).toEqual([
+      [seo.ticketId, "blocker_closed"],
+    ]);
     await service.unblockTicket(P, ORG, seo.ticketId, { userId: "alice", sessionId: mktDesk });
 
     // 9. Marketing works SEO and social from one session attached to both tickets; finance rolls it all up.

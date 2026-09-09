@@ -260,6 +260,8 @@ Channel errors: `channel_not_found` (404 — also for an id no channel could car
 
 User-level events on `GET /api/events`: `org_run` (a work run or ticket session started), `org_channel` (a new message, with its `channelId` and mentions), `org_ticket` (a ticket's status, owner, block or sessions changed), `org_budget` (warned / paused / resumed).
 
+A desk session is driven by three things only: a calendar event, a channel `@`-mention, and a person talking to it (the CEO's creation-time initialization run is the one exception). **A ticket write starts no run.** `move`, `block`, `unblock` and an owner set through `PUT /:orgId/tickets/:ticketId` are recorded — in the ticket file, in the all-hands `system` line where the change has one, and as an `org_ticket` event — and queued for the employees they concern; the next calendar event of each carries them in its body under `## Since your last sweep`, one line per change. A queue survives a paused organization or employee and is delivered by the sweep that eventually fires; an employee that leaves takes its undelivered lines with it.
+
 ### Session Creation and Directory Browsing
 
 | Method | Path | Description |

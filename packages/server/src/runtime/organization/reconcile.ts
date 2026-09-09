@@ -2,9 +2,10 @@
  * One reconcile pass over an organization — the same pass whether the scheduler's timer
  * or a route's write asks for it. Files in, decisions out: caches are projected from the
  * ledger and the tickets, desks are renewed where the chart moved them, due calendar
- * events fire, ticket changes are noticed, new channel mentions are delivered, budgets are
- * checked. Missed work is never backfilled: a slot that passed while the server was down,
- * the organization paused or the switch off is consumed and skipped, like a schedule.
+ * events fire (carrying the ticket changes queued since the employee's last sweep), ticket
+ * changes are recorded and queued, new channel mentions are delivered, budgets are checked.
+ * Missed work is never backfilled: a slot that passed while the server was down, the
+ * organization paused or the switch off is consumed and skipped, like a schedule.
  */
 import { createHash } from "node:crypto";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
@@ -22,6 +23,7 @@ import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend, TicketForSpend } from "./budget.js";
 import type { OrgDeps } from "./deps.js";
+import { deskDigest } from "./digest.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { budgetPaused, budgetWarned, systemMessage, ticketState } from "./notices.js";
@@ -128,6 +130,7 @@ async function renewMovedDesks(deps: OrgDeps, org: LoadedOrg): Promise<void> {
 async function reconcileCalendar(
   deps: OrgDeps,
   org: LoadedOrg,
+  tickets: readonly LoadedTicket[],
   spend: OrgSpend,
   paused: Set<string>,
   triggers: boolean,
@@ -194,12 +197,18 @@ async function reconcileCalendar(
       continue;
     }
     const firedAt = new Date(nowMs).toISOString();
+    // The sweep is where ticket changes are delivered: taken here, at the last moment before
+    // the run that carries them, so a slot held for a paused employee keeps its queue.
+    const digest = deskDigest(
+      deps.cache.takeDeskNotices(org.projectId, org.orgId, file.agentId),
+      tickets,
+    );
     const outcome = await dispatchToDesk(
       deps,
       org,
       file.agentId,
       { kind: "event", event: file.name, firedAt },
-      def.prompt,
+      digest === "" ? def.prompt : `${def.prompt}\n\n${digest}`,
       { hop: 0, budget: budgetLine(org, spend, file.agentId) },
     );
     if (outcome === "skipped") {
@@ -223,63 +232,28 @@ async function reconcileCalendar(
 // Tickets
 // ---------------------------------------------------------------------------
 
-/**
- * What a desk is told to do next about the ticket. A notice is delivery, not an order, but
- * the two changes that have exactly one right next step say it as the command to run: work
- * on a ticket belongs in a ticket session, never at the desk that received the notice.
- */
-function ticketNoticeNextStep(t: LoadedTicket, change: OrgTicketChange): string | null {
-  switch (change) {
-    case "assigned":
-      return `Start a ticket session for it now: \`penguin org ticket start ${t.ticketId} -m "…"\` — do not do the work at your desk.`;
-    case "blocker_closed":
-      return `Verify, then \`penguin org ticket unblock ${t.ticketId}\` and start a ticket session.`;
-    default:
-      return null;
-  }
-}
-
-/** A ticket notice's body: the header as filed, the Result section, then the next step this change calls for. */
-function ticketNoticeBody(t: LoadedTicket, change: OrgTicketChange): string {
-  const d = t.doc;
-  const lines = [
-    `# Ticket: ${d.title}`,
-    "",
-    `Status: ${d.status}`,
-    `Initiator: ${d.initiator}`,
-    `Owner: ${d.owner ?? ""}`,
-    ...(d.parent !== undefined ? [`Parent: ${d.parent}`] : []),
-    `Priority: ${d.priority}`,
-    ...(d.due !== undefined ? [`Due: ${d.due}`] : []),
-    ...(d.blocked !== undefined ? [`Blocked: ${d.blocked}`] : []),
-    ...(d.blockedBy !== undefined ? [`Blocked-by: ${d.blockedBy}`] : []),
-    `Sessions: ${d.sessions.join(", ")}`,
-  ];
-  if (d.result.trim() !== "")
-    lines.push("", "## Result", d.result.split("\n").slice(0, 20).join("\n"));
-  const next = ticketNoticeNextStep(t, change);
-  if (next !== null) lines.push("", next);
-  return lines.join("\n");
-}
-
-/** The ticket changes that also write a `system` line; the rest only reach desks. */
+/** The ticket changes that also write a `system` line; the rest only reach the employees they concern. */
 const TICKET_NOTICE_KIND: Partial<Record<OrgTicketChange, TicketNoticeKind>> = {
   blocked: "ticket_blocked",
   done: "ticket_done",
   rejected: "ticket_rejected",
 };
 
+/**
+ * One ticket change, told to the people it concerns and queued for the employees it
+ * concerns. A change never starts a work run: the employees' half is a row per (employee,
+ * ticket, change) that the employee's next calendar sweep carries under "Since your last
+ * sweep" — queued whether or not the organization is paused, since delivery waits for that
+ * sweep anyway. The people's half is immediate: the all-hands line the board reads.
+ */
 async function notifyTicket(
   deps: OrgDeps,
   org: LoadedOrg,
-  spend: OrgSpend,
   t: LoadedTicket,
   change: OrgTicketChange,
   agentIds: Iterable<string>,
   userIds: Iterable<string>,
-  triggers: boolean,
 ): Promise<void> {
-  const body = ticketNoticeBody(t, change);
   const users = [...new Set(userIds)];
   const kind = TICKET_NOTICE_KIND[change];
   // A closing status is the board's news whether or not anyone asked to be @-mentioned, so
@@ -295,17 +269,17 @@ async function notifyTicket(
       { ticket: t.ticketId },
     );
   }
-  if (!triggers || org.config.status === "paused") return;
+  const at = new Date(nowOf(deps)).toISOString();
   for (const agentId of new Set(agentIds)) {
     if (!org.byId.has(agentId)) continue;
-    await dispatchToDesk(
-      deps,
-      org,
+    deps.cache.queueDeskNotice({
+      projectId: org.projectId,
+      orgId: org.orgId,
       agentId,
-      { kind: "ticket_notice", ticket: t.ticketId, change },
-      body,
-      { hop: 0, budget: budgetLine(org, spend, agentId) },
-    );
+      ticketId: t.ticketId,
+      change,
+      at,
+    });
   }
 }
 
@@ -313,8 +287,6 @@ async function reconcileTickets(
   deps: OrgDeps,
   org: LoadedOrg,
   tickets: readonly LoadedTicket[],
-  spend: OrgSpend,
-  triggers: boolean,
 ): Promise<void> {
   for (const t of tickets) {
     const cur = {
@@ -356,7 +328,7 @@ async function reconcileTickets(
     }
     const ownerAgent = cur.owner === "" ? null : principalAgentId(cur.owner);
     if (prev.owner !== cur.owner && ownerAgent !== null) {
-      await notifyTicket(deps, org, spend, t, "assigned", [ownerAgent], [], triggers);
+      await notifyTicket(deps, org, t, "assigned", [ownerAgent], []);
     }
     if (prev.blocked === "" && cur.blocked !== "") {
       const agents: string[] = [];
@@ -366,11 +338,11 @@ async function reconcileTickets(
       else if (by?.kind === "user") users.push(by.id);
       const manager = ownerAgent !== null ? (org.byId.get(ownerAgent)?.reportsTo ?? null) : null;
       if (manager !== null) agents.push(manager);
-      await notifyTicket(deps, org, spend, t, "blocked", agents, users, triggers);
+      await notifyTicket(deps, org, t, "blocked", agents, users);
     }
     if (prev.status !== cur.status && (cur.status === "done" || cur.status === "rejected")) {
-      // An employee initiator hears about its own ticket at its desk; a person does not get
-      // an @-mention for filing one — a mention badge per closed ticket is noise, and the
+      // An employee initiator hears about its own ticket in its next sweep; a person does not
+      // get an @-mention for filing one — a mention badge per closed ticket is noise, and the
       // sweep report carries completions. A person who wants to be told lists itself in Notify.
       const agents: string[] = [];
       for (const p of new Set([...t.doc.notify, t.doc.initiator])) {
@@ -382,23 +354,15 @@ async function reconcileTickets(
         const parsed = parsePrincipal(p);
         if (parsed?.kind === "user") users.push(parsed.id);
       }
-      await notifyTicket(deps, org, spend, t, cur.status, agents, users, triggers);
-      // Tickets waiting on this one: their owners learn the blocker closed and decide whether to unblock.
+      await notifyTicket(deps, org, t, cur.status, agents, users);
+      // Tickets waiting on this one: their owners are told in their own next sweep, which is
+      // where they decide whether to verify and unblock.
       for (const waiting of tickets) {
         if (waiting.doc.blockedBy !== t.ticketId) continue;
         const waitingOwner =
           waiting.doc.owner === undefined ? null : principalAgentId(waiting.doc.owner);
         if (waitingOwner !== null) {
-          await notifyTicket(
-            deps,
-            org,
-            spend,
-            waiting,
-            "blocker_closed",
-            [waitingOwner],
-            [],
-            triggers,
-          );
+          await notifyTicket(deps, org, waiting, "blocker_closed", [waitingOwner], []);
         }
       }
     }
@@ -703,8 +667,8 @@ export async function reconcileOrg(
   const spend = await computeSpend(deps, org, tickets);
   await reconcileBudgets(deps, org, spend);
   const paused = pausedEmployees(deps, org, spend.period);
-  await reconcileCalendar(deps, org, spend, paused, triggers);
-  await reconcileTickets(deps, org, tickets, spend, triggers);
+  await reconcileCalendar(deps, org, tickets, spend, paused, triggers);
+  await reconcileTickets(deps, org, tickets);
   await scanChannels(deps, org, spend, triggers);
   return { org, tickets, spend };
 }

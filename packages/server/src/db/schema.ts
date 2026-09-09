@@ -251,4 +251,14 @@ CREATE TABLE IF NOT EXISTS org_budget_state (   -- DERIVED CACHE (company mode):
   paused_at  TEXT,
   PRIMARY KEY (project_id, org_id, agent_id, period)
 );
+CREATE TABLE IF NOT EXISTS org_desk_notices (   -- DERIVED CACHE (company mode): ticket changes waiting for an employee's next calendar sweep; dropping it loses only the digests not delivered yet
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  org_id     TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  ticket_id  TEXT NOT NULL,
+  change     TEXT NOT NULL,
+  at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_org_desk_notices_agent ON org_desk_notices(project_id, org_id, agent_id);
 `;
