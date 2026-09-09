@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#448](https://github.com/Prism-Shadow/penguin-harness/pull/448)
 
 [中文版](2026-09-07-machine-linked-but-stopped.zh.md)
 
