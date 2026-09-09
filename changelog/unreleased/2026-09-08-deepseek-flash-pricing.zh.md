@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-08
 - **Type:** fix
-- **Scope:** `core`, `docs`, `skills`
+- **Scope:** `core`, `cli`, `docs`, `skills`
 - **PR:** [#649](https://github.com/Prism-Shadow/penguin-harness/pull/649)
 
 [English](2026-09-08-deepseek-flash-pricing.md)
@@ -22,13 +22,22 @@ Token）；其空闲档正好减半——0.02 / 1 / 4——由每条已声明的
 - `deepseek-v4-pro` 保持 CNY 0.3 / 9 / 27，本次调整只覆盖 Flash 系列。
 - `deepseek-v4.1-flash`（**DeepSeek V4.1 Flash**）预先登记在 `deepseek` 分组首位：按 DeepSeek 的
   发布公告支持图像输入，价格取 V4 Flash 系列的 CNY 0.04 / 2 / 8 并沿用同一空闲时段规则；上下文
-  窗口在官方模型页给出之前，先按 `deepseek-v4-flash` 的 1,000,000 Token 记。图像要等到
-  `@prismshadow/agenthub` 发布带有 DeepSeek 客户端 text-only 拒绝名单的版本才能送达；当前锁定的
-  `^0.4.10` 只把图像部件转发给 id 中含 `vision` 的模型。
+  窗口在官方模型页给出之前，先按 `deepseek-v4-flash` 的 1,000,000 Token 记。图像部件经
+  `@prismshadow/agenthub` 0.4.11 送达：其 DeepSeek 客户端把图像转发给除 text-only 的
+  `deepseek-v4-flash` 与 `deepseek-v4-pro` 之外的所有 id（见下文）。
 - 转售 DeepSeek 的网关条目——OpenRouter、Fireworks AI、SiliconFlow、TokenDance 以及两个 Qwen
   分组——维持原样。每一条记录的是各自卖家的收费，而不是厂商牌价。
 - 配置文档中示意用的 `[[models]]` 代码块同步改为新数字；模型文档的示例清单，以及 `unified-llm-api`
   技能中 DeepSeek V4 一行的 id 列表，都加入了新条目。
+
+## AgentHub 依赖升至 0.4.11
+
+`packages/core` 与 `packages/cli` 的 `@prismshadow/agenthub` 从 `^0.4.10` 升至 `^0.4.11`。该版本
+（[agenthub 0.4.11](https://github.com/Prism-Shadow/agenthub/blob/main/changelog/0.4.11/README.md)）
+带有 DeepSeek 客户端的 text-only 拒绝名单、注册表中同样的 V4 Flash 调价与 `deepseek-v4.1-flash`，
+以及 `gpt6` 客户端——因此 [#654](https://github.com/Prism-Shadow/penguin-harness/pull/654) 中先于
+该版本加入目录的 `gpt-6-astra` 与 `openai/gpt-6-astra` 从此可以路由。`pnpm-workspace.yaml` 中的
+`minimumReleaseAgeExclude` 条目随之移到新版本。
 
 ## 存量 Project
 

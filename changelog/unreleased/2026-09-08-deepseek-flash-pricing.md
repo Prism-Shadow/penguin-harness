@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-08
 - **Type:** fix
-- **Scope:** `core`, `docs`, `skills`
+- **Scope:** `core`, `cli`, `docs`, `skills`
 - **PR:** [#649](https://github.com/Prism-Shadow/penguin-harness/pull/649)
 
 [中文版](2026-09-08-deepseek-flash-pricing.zh.md)
@@ -26,15 +26,26 @@ that date and not served yet, was added at the head of the group at the same pri
 - `deepseek-v4.1-flash` (**DeepSeek V4.1 Flash**) was pre-registered at the head of the `deepseek`
   group: image input per DeepSeek's announcement, the V4 Flash price CNY 0.04 / 2 / 8 on the same
   off-peak schedule, and a 1,000,000-token context window assumed from `deepseek-v4-flash` until
-  the official model page lists one. Image parts reach it only from the `@prismshadow/agenthub`
-  release carrying the DeepSeek client's text-only deny-list; the pinned `^0.4.10` forwards them to
-  ids containing `vision` alone.
+  the official model page lists one. Image parts reach it through `@prismshadow/agenthub` 0.4.11,
+  whose DeepSeek client forwards them to every id except the text-only `deepseek-v4-flash` and
+  `deepseek-v4-pro` (see below).
 - The gateway rows reselling DeepSeek — OpenRouter, Fireworks AI, SiliconFlow, TokenDance and the
   two Qwen groups — were left as they were. Each records what its own seller bills, which is not
   the vendor's list price.
 - The illustrative `[[models]]` block in the configuration document was moved to the new figures,
   and the sample list in the models document plus the `unified-llm-api` skill's DeepSeek V4 id
   list gained the new row.
+
+## The AgentHub dependency moves to 0.4.11
+
+`packages/core` and `packages/cli` move `@prismshadow/agenthub` from `^0.4.10` to `^0.4.11`, the
+release ([agenthub 0.4.11](https://github.com/Prism-Shadow/agenthub/blob/main/changelog/0.4.11/README.md))
+that carries the DeepSeek client's text-only deny-list, the same V4 Flash re-pricing and
+`deepseek-v4.1-flash` in its registry, and the `gpt6` client — so `gpt-6-astra` and
+`openai/gpt-6-astra`, added to this catalog in
+[#654](https://github.com/Prism-Shadow/penguin-harness/pull/654) ahead of that release, become
+routable. The `minimumReleaseAgeExclude` entry in `pnpm-workspace.yaml` moves to the new version
+with it.
 
 ## Existing Projects
 

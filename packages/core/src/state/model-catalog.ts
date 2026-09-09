@@ -480,9 +480,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // registered ahead of the launch. The announcement gives it image input by default, and
     // the V4 Flash series price: the peak tier is stored and the schedule declared, exactly
     // like its siblings. The context window is assumed equal to deepseek-v4-flash until the
-    // official model page lists one. Image parts reach it only from the AgentHub release
-    // carrying the DeepSeek client's text-only deny-list — the pinned
-    // @prismshadow/agenthub ^0.4.10 forwards them to ids containing "vision" alone.
+    // official model page lists one. Image parts reach it through @prismshadow/agenthub
+    // ^0.4.11, whose DeepSeek client forwards them to every id except the text-only
+    // deepseek-v4-flash and deepseek-v4-pro (0.4.10 forwarded them to ids containing
+    // "vision" alone).
     modelId: "deepseek-v4.1-flash",
     displayName: "DeepSeek V4.1 Flash",
     provider: "deepseek",
