@@ -423,7 +423,8 @@ export async function loadPlugins(
               `${read.where}#penguin.${kind} names '${manifest.name}', but the default export's ${kind} has no create() for it`,
             );
           }
-          out.push({ manifest, ...impl });
+          // The manifest is the statically checked half and comes last: code cannot replace it.
+          out.push({ ...impl, manifest });
         }
         const declared = new Set(manifests.map((m) => m.name));
         for (const name of Object.keys(impls ?? {})) {
@@ -435,8 +436,41 @@ export async function loadPlugins(
         }
         return out;
       };
-      const modules = pair(read.manifests, plugin.modules, "modules");
-      const replaces = pair(read.replaces, plugin.replaces, "replaces");
+      // A manifest's `children` names other modules of the same list; the booter wants
+      // that hierarchy as nested definitions and checks each node's children against its
+      // manifest, so the tree is built here and only its roots join the platform.
+      const nest = (defs: ModuleDef[]): ModuleDef[] => {
+        const byName = new Map(defs.map((def) => [def.manifest.name, def]));
+        const claimed = new Map<string, string>();
+        for (const def of defs) {
+          const children: ModuleDef[] = [];
+          for (const ref of def.manifest.children) {
+            if (typeof ref !== "string") {
+              throw new Error(
+                `${read.where}#penguin: module '${def.manifest.name}' declares a keyed child, which a plugin cannot supply`,
+              );
+            }
+            const child = byName.get(ref);
+            if (child === undefined) {
+              throw new Error(
+                `${read.where}#penguin: module '${def.manifest.name}' declares child '${ref}', which the package does not define`,
+              );
+            }
+            const parent = claimed.get(ref);
+            if (parent !== undefined) {
+              throw new Error(
+                `${read.where}#penguin: module '${ref}' is a child of both '${parent}' and '${def.manifest.name}'`,
+              );
+            }
+            claimed.set(ref, def.manifest.name);
+            children.push(child);
+          }
+          if (children.length > 0) def.children = children;
+        }
+        return defs.filter((def) => !claimed.has(def.manifest.name));
+      };
+      const modules = nest(pair(read.manifests, plugin.modules, "modules"));
+      const replaces = nest(pair(read.replaces, plugin.replaces, "replaces"));
       loaded.push({
         specifier,
         file,
