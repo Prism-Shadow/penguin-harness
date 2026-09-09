@@ -487,7 +487,10 @@ export function FinancePage() {
         </div>
 
         {/* Middle row: where the spend sat — by employee, and by ticket; each table scrolls in its own half. */}
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* The two tables sit side by side only from 1536px: a three-column spend tree with its
+            meter needs about 560px, and half of a laptop's content column is less than that —
+            below the threshold they stack rather than scroll sideways. */}
+        <div className="mt-4 grid grid-cols-1 gap-4 2xl:grid-cols-2">
           <FinanceCard title={S.company.finance.spendTree} info={S.company.finance.spendTreeInfo}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[20rem] text-xs">
