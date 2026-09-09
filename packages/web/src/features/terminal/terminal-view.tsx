@@ -307,6 +307,11 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         lineHeight: 1.2,
         scrollback: 5000,
         theme: terminalTheme(darkRef.current),
+        // The one way to select text while a program owns the mouse. xterm forces a
+        // selection on Shift+drag everywhere else, but on a Mac it asks for Option+drag AND
+        // this option, which is off by default — so a Mac had no way at all to select
+        // inside a full-screen program, not even the awkward one.
+        macOptionClickForcesSelection: true,
         // OSC 8 hyperlinks — how a program that knows the terminal is capable writes a link.
         // The providers only REPORT links here; the click itself is resolved below by
         // position, because xterm's own activation cannot survive a redrawing program
@@ -431,6 +436,41 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
        */
       const { signal } = listenerAbort;
       const appOwnsMouse = (): boolean => term.modes.mouseTrackingMode !== "none";
+
+      /**
+       * A selection has to outlive the pointer that made it.
+       *
+       * xterm drops the selection on any user input (its SelectionService listens to
+       * `onUserInput`), which is right for a keystroke — the highlight is stale the moment
+       * you type. But a mouse REPORT counts as user input too (`triggerMouseEvent` sends it
+       * with `wasUserInput`), and a program in any-event tracking (`?1003h` — Claude Code
+       * turns it on) is reported every bare mouse move, cell by cell. So a selection made
+       * over such a program died the instant the hand left the mouse, and Ctrl+C, which
+       * copies only when there IS a selection, fell through to the interrupt it means
+       * otherwise. Nothing could be copied out of Claude Code at all.
+       *
+       * While a selection stands, a bare move is therefore not reported. The gesture is
+       * about the terminal's own text, not about the program, and what pauses for as long as
+       * the highlight is up is hover — the program's, and this view's own link tracking with
+       * it. A click, a drag and the wheel all still report, and a keystroke still clears the
+       * selection, exactly as xterm intends.
+       *
+       * Capture on the document because that is where xterm listens for bare moves (it
+       * binds them there when the protocol asks for motion), and `stopImmediatePropagation`
+       * from an earlier phase on the same target is what keeps that listener from running.
+       * Guarded on the event's position rather than fired for every terminal on the page:
+       * two terminals can be mounted at once (the dock and a Session's surface), and a
+       * selection in one is no reason to blind the other.
+       */
+      document.addEventListener(
+        "mousemove",
+        (event) => {
+          if (event.buttons !== 0 || !term.hasSelection()) return;
+          if (!container.contains(event.target as Node | null)) return;
+          event.stopImmediatePropagation();
+        },
+        { signal, capture: true },
+      );
       // A long press on a touchscreen also raises `contextmenu`, and it is not a right
       // click: the finger that meant to select text would paste the clipboard into a live
       // shell instead. Touch gets the key bar's paste cap, which says what it does.

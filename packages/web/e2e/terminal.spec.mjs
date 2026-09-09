@@ -157,3 +157,64 @@ test("?id= attaches an existing terminal with its screen (deep link)", async ({ 
   await run(page, "echo DEEP_LINK_LIVE");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DEEP_LINK_LIVE");
 });
+
+/**
+ * Copying out of a program that has taken the mouse — Claude Code being the one everybody
+ * runs. It asks for any-event tracking (`?1003h`), so every bare mouse move is reported to
+ * it, and xterm counts a report as user input, which drops the selection. The selection
+ * therefore used to die the moment the hand left the mouse, and Ctrl+C — which copies only
+ * when a selection stands — fell through to the interrupt.
+ */
+test("a selection over a mouse-owning program survives the pointer, and Ctrl+C copies it", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/terminal`);
+  await waitForShell(page, "SELECT_UP_1");
+
+  // The arrangement a TUI uses: the alternate screen plus any-event mouse tracking in SGR,
+  // with text drawn after the switch so there is something on the screen to select.
+  await run(
+    page,
+    String.raw`printf '\033[?1049h\033[?1000h\033[?1002h\033[?1003h\033[?1006h'; ` +
+      `printf 'COPY_ME_%s\\n' 1 2 3 4 5; cat -v`,
+  );
+  await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("COPY_ME_3");
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector(".xterm")?.className ?? ""), {
+      timeout: 15000,
+    })
+    .toContain("enable-mouse-events");
+
+  // Shift forces a selection past the program's grip (xterm's shouldForceSelection).
+  const line = page.locator(".xterm-rows > div", { hasText: "COPY_ME_3" }).first();
+  const box = await line.boundingBox();
+  const y = box.y + box.height / 2;
+  await page.keyboard.down("Shift");
+  await page.mouse.move(box.x + 2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 90, y, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+
+  // The hand leaves the mouse: bare motion, several cells of it. This is what used to wipe
+  // the selection before it could be copied.
+  await page.mouse.move(box.x + 300, y + 4 * box.height, { steps: 8 });
+  await page.waitForTimeout(200);
+
+  await page.keyboard.press("Control+KeyC");
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 10000 })
+    .toContain("COPY_ME_3");
+
+  // And a keystroke still drops the selection, exactly as xterm intends.
+  await page.keyboard.press("KeyX");
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.querySelector(".xterm-selection")?.children.length ?? 0),
+    )
+    .toBe(0);
+});
