@@ -9,10 +9,10 @@ import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
-import type { PenguinContext } from "@prismshadow/penguin-core/plugin";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import type {
+  PenguinContext,
   SandboxDimension,
   SandboxPolicy,
   SandboxProvider,
