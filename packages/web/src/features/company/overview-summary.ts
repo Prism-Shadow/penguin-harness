@@ -9,6 +9,7 @@ import type {
   OrgCalendarItem,
   OrgCalendarOutcome,
   OrgEmployeeItem,
+  OrgEmployeeState,
   OrgInbox,
   OrgTicketItem,
   OrgTicketStatus,
@@ -26,16 +27,25 @@ export interface EmployeeCounts {
   paused: number;
 }
 
+/**
+ * The employee tallies. `liveStates` is what the session list says each employee is doing
+ * (org-sessions.ts, liveEmployeeStates), which outranks the chart's own `state`: that snapshot
+ * is re-read on organization events and a run ending publishes none, so the running count
+ * would otherwise keep counting employees that had already stopped. An employee the map does
+ * not name — or a page that passes no map at all — falls back to the snapshot.
+ */
 export function employeeCounts(
-  employees: ReadonlyArray<Pick<OrgEmployeeItem, "state" | "desk">>,
+  employees: ReadonlyArray<Pick<OrgEmployeeItem, "agentId" | "state" | "desk">>,
+  liveStates?: ReadonlyMap<string, OrgEmployeeState>,
 ): EmployeeCounts {
   let onDesk = 0;
   let running = 0;
   let paused = 0;
   for (const e of employees) {
     if (e.desk !== undefined) onDesk += 1;
-    if (e.state === "running") running += 1;
-    else if (e.state === "paused") paused += 1;
+    const state = liveStates?.get(e.agentId) ?? e.state;
+    if (state === "running") running += 1;
+    else if (state === "paused") paused += 1;
   }
   return { total: employees.length, onDesk, running, paused };
 }

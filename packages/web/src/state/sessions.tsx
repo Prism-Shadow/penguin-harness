@@ -732,3 +732,17 @@ export function useSessions(): SessionsContextValue {
   if (!ctx) throw new Error("useSessions must be used within a SessionsProvider");
   return ctx;
 }
+
+/**
+ * Every loaded Session's run status by id — the user event channel's view of it, which is the
+ * only one that reports a run ENDING. Surfaces built on a server-side snapshot (company mode's
+ * desk and ticket rows, the org chart's state dots, the overview's employee counts) read this
+ * first and keep their snapshot for the rows this list has not loaded: their snapshots are
+ * re-read on organization events, and no event announces that a run finished.
+ *
+ * Memoized on the rows, so a consumer re-shapes only when a status (or the list) actually moves.
+ */
+export function useLiveSessionStatuses(): ReadonlyMap<string, SessionStatus> {
+  const { sessions } = useSessions();
+  return useMemo(() => new Map(sessions.map((s) => [s.sessionId, s.status])), [sessions]);
+}

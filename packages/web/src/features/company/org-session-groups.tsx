@@ -14,7 +14,7 @@
  * marks come from the session list's live statuses wherever it holds the row — those caches
  * are only re-read on an organization event, and a run ending publishes none (org-sessions.ts).
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -23,7 +23,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { useSessions } from "../../state/sessions";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { FolderSection } from "../../components/ui/group-list";
@@ -35,17 +35,6 @@ import { Truncated } from "../../components/ui/truncated";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { orgKey } from "./company-nav";
 import { deskRows, orgRowActivity, ticketSessionRows } from "./org-sessions";
-import type { LiveSessionStatuses } from "./org-sessions";
-
-/**
- * The session list's statuses by id — what the user event channel has reported for every row
- * that list holds. Memoized on the rows so the two groups below re-shape only when a status
- * (or the list itself) actually moves.
- */
-function useLiveSessionStatuses(): LiveSessionStatuses {
-  const { sessions } = useSessions();
-  return useMemo(() => new Map(sessions.map((s) => [s.sessionId, s.status])), [sessions]);
-}
 
 /** A row of either group, at the channel rows' density so the whole sidebar reads as one list. */
 const rowClass = (active: boolean) =>

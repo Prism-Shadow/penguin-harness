@@ -5,7 +5,12 @@
  * mission fold's guess.
  */
 import { describe, expect, it } from "vitest";
-import type { OrgChannelMessage, OrgInbox, OrgTicketItem } from "@prismshadow/penguin-server/api";
+import type {
+  OrgChannelMessage,
+  OrgEmployeeState,
+  OrgInbox,
+  OrgTicketItem,
+} from "@prismshadow/penguin-server/api";
 import {
   BOARD_SEGMENT_TONE,
   FIRST_STEPS,
@@ -36,16 +41,29 @@ const ticket = (ticketId: string, extra: Partial<OrgTicketItem> = {}): OrgTicket
   ...extra,
 });
 
+const roster = [
+  { agentId: "a", state: "running", desk: { sessionId: "s1", workspace: "/w", openedAt: "t" } },
+  { agentId: "b", state: "idle", desk: { sessionId: "s2", workspace: "/w", openedAt: "t" } },
+  { agentId: "c", state: "paused" },
+  { agentId: "d", state: "idle" },
+] as const;
+
 describe("employeeCounts", () => {
   it("counts desks, running and budget-paused employees", () => {
-    expect(
-      employeeCounts([
-        { state: "running", desk: { sessionId: "s1", workspace: "/w", openedAt: "t" } },
-        { state: "idle", desk: { sessionId: "s2", workspace: "/w", openedAt: "t" } },
-        { state: "paused" },
-        { state: "idle" },
-      ]),
-    ).toEqual({ total: 4, onDesk: 2, running: 1, paused: 1 });
+    expect(employeeCounts(roster)).toEqual({ total: 4, onDesk: 2, running: 1, paused: 1 });
+  });
+
+  it("counts the live states where they are known, and the snapshot's for the rest", () => {
+    // "a" finished (the chart still says running), "d" started, "c" stays budget-paused.
+    const live = new Map<string, OrgEmployeeState>([
+      ["a", "idle"],
+      ["d", "running"],
+    ]);
+    expect(employeeCounts(roster, live)).toEqual({ total: 4, onDesk: 2, running: 1, paused: 1 });
+    expect(employeeCounts(roster, new Map([["a", "idle"]]))).toMatchObject({
+      running: 0,
+      paused: 1,
+    });
   });
 
   it("is all zeros for no employees", () => {
