@@ -51,6 +51,12 @@ describe("POST agent config kernel-update", () => {
    * customization: no kernel stamp, the legacy default template (LEGACY_* sections instead
    * of the section placeholders, no {{SCHEDULES}}), no vault/skills/schedules sections, and
    * a customized memory.prompt.
+   *
+   * The template is the one the toggles generation shipped, frozen byte-exact in core's test
+   * fixture — not the live default, which has moved on since. The prompt tab reads as an
+   * untouched old default (and advances) only while its hash is a recorded superseded one, and
+   * the live template with the legacy sections swapped in stopped hashing to one the first
+   * time the prompt changed after that generation.
    */
   async function agePersistedConfig(): Promise<void> {
     const configPath = systemConfigPath(t.root, projectId, "default_agent");
@@ -59,8 +65,12 @@ describe("POST agent config kernel-update", () => {
     delete config.vault;
     delete config.skills;
     delete config.schedules;
-    config.system_prompt = defaultSystemConfig()
-      .system_prompt.split(VAULT_PLACEHOLDER)
+    const togglesGenerationTemplate = await fs.readFile(
+      new URL("../../core/test/fixtures/toggles-generation-system-prompt.txt", import.meta.url),
+      "utf8",
+    );
+    config.system_prompt = togglesGenerationTemplate
+      .split(VAULT_PLACEHOLDER)
       .join(LEGACY_VAULT_SECTION)
       .split(SKILLS_PLACEHOLDER)
       .join(LEGACY_SKILLS_SECTION)

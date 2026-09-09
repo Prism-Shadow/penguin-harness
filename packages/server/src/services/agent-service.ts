@@ -28,8 +28,6 @@ import {
   scheduleDir,
   skillsDir,
   systemConfigPath,
-} from "@prismshadow/penguin-core";
-import {
   comparePluginVersions,
   loadLibraryPlugins,
   parseSkillFrontmatter,
