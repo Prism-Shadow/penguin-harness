@@ -3,7 +3,7 @@
 - **Date:** 2026-09-08
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#648](https://github.com/Prism-Shadow/penguin-harness/pull/648)
+- **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
 
 [English](2026-09-08-evaluation-center-across-machines.md)
 
