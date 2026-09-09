@@ -2,7 +2,7 @@
  * Company-mode routes, nested under a Project:
  *   GET|POST      /api/projects/:p/organizations
  *   POST          /api/projects/:p/organizations/suggest-id   # a semantic id for a display name
- *   GET|PATCH|DELETE /api/projects/:p/organizations/:orgId
+ *   GET|PATCH     /api/projects/:p/organizations/:orgId
  *   GET           …/:orgId/chart
  *   POST          …/:orgId/employees                        # hire
  *   PATCH|DELETE  …/:orgId/employees/:agentId
@@ -20,8 +20,10 @@
  *   GET           …/:orgId/finance ; GET …/:orgId/sessions
  *
  * Authorization is the Project's: any member reads and writes (tickets, channels, calendar, the
- * tree, the handbook) and creates organizations, like creating an Agent; deleting one is the
- * owner's. Every route answers 404 while the admin master switch is off. A write carries the
+ * tree, the handbook) and creates organizations, like creating an Agent. There is no route
+ * that deletes an organization: `status` (`active` / `paused`) is its whole lifecycle, so the
+ * conversations, employees, desks and tickets of an organization that is switched off stay
+ * reachable. Every route answers 404 while the admin master switch is off. A write carries the
  * caller's session id when it comes from inside a session (the CLI's control environment), so
  * the file records the employee rather than the token's user — see {@link callerSessionId} for
  * why only the control environment may make that claim.
@@ -253,14 +255,6 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(model !== undefined ? { model } : {}),
     });
     return c.json(settings);
-  });
-
-  app.delete("/:orgId", async (c) => {
-    const projectId = requireValidId(c, "projectId");
-    const orgId = requireValidId(c, "orgId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
-    await deps.orgService.remove(projectId, orgId);
-    return c.body(null, 204);
   });
 
   // ---- employees ----

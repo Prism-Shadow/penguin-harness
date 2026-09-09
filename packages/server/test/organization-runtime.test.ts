@@ -595,9 +595,12 @@ describe("organization runtime", () => {
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
 
-      // The stamp is the row's own, so deleting the organization leaves it in place — which
-      // is the whole point: the caches that carry `orgId` are gone by then.
-      await service.remove(P, ORG);
+      // The stamp is the row's own, so an organization whose directory was removed by hand
+      // leaves it in place — which is the whole point: nothing else is left to say whose the
+      // sessions were.
+      await fs.rm(orgDir(), { recursive: true, force: true });
+      await scheduler.tickOnce();
+      expect(await service.list(P)).toEqual([]);
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
     });
@@ -1856,14 +1859,24 @@ describe("organization runtime", () => {
       expect(cache.orgIdsOfProject("other_project").size).toBe(0);
     });
 
-    it("removing the organization keeps the Agents and sessions", async () => {
+    it("pausing keeps every desk session open, and nothing removes an organization", async () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
-      await service.remove(P, ORG);
+      // Pause is the whole lifecycle: the organization stays listed and its desk stays open.
+      await service.patch(P, ORG, { status: "paused" });
+      expect((await service.list(P)).map((o) => o.status)).toEqual(["paused"]);
+      expect((await service.desk(P, ORG, CEO, {})).sessionId).toBe(desk.sessionId);
+      expect(await service.detail(P, ORG, "alice")).toMatchObject({
+        settings: { status: "paused" },
+      });
+      expect(await fs.stat(orgDir())).toBeTruthy();
+
+      // The only way one goes away is by hand, and it takes neither the Agent nor the session.
+      await fs.rm(orgDir(), { recursive: true, force: true });
+      await scheduler.tickOnce();
       expect(await service.list(P)).toEqual([]);
+      expect(existingAgents.has(CEO)).toBe(true);
       expect(sessions.findById(desk.sessionId)).not.toBeNull();
-      expect(cache.ownerOfSession(desk.sessionId)).toBeNull();
-      await expect(fs.stat(orgDir())).rejects.toBeTruthy();
     });
   });
 });

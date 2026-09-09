@@ -2544,11 +2544,7 @@ Scenarios:
     pause: "Pause organization",
     resume: "Resume organization",
     pauseInfo:
-      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly.",
-    deleteOrg: "Delete organization",
-    deleteOrgConfirm: (name: string): string =>
-      `Delete organization "${name}"? Employee Agents and every session are kept; only the organization directory goes — the chart, calendar, tickets and channel logs.`,
-    deleted: "Organization deleted",
+      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {

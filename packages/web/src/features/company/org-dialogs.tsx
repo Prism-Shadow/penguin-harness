@@ -6,8 +6,9 @@
  * Project default unless chosen), the company workspace (the organization's own directory
  * unless one is picked) and the CEO's monthly budget, which is the whole company's — and an
  * organization's settings: name, mission, model, workspace, timezone, working language,
- * approval mode, pause / resume, and (Project owner only) deletion behind the shared
- * confirmation, whose copy says what stays: the employee Agents and every session.
+ * approval mode, and pause / resume — the one lifecycle control there is, since an
+ * organization is never deleted through the App. Pause / resume writes its own PATCH the
+ * moment it is clicked; everything else is a draft until Save.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -43,7 +44,6 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { ICON_GAP } from "../../lib/icon-scale";
@@ -517,7 +517,6 @@ export function OrganizationSettingsDialog({
   orgId,
   onClose,
   onChanged,
-  onDeleted,
 }: {
   open: boolean;
   projectId: string;
@@ -525,10 +524,7 @@ export function OrganizationSettingsDialog({
   onClose: () => void;
   /** Settings were written (name, mission, status …): the caller refreshes the list. */
   onChanged: () => void;
-  onDeleted: () => void;
 }) {
-  const { currentProject } = useProject();
-  const isOwner = currentProject?.projectId === projectId && currentProject.role === "owner";
   /** Stored settings as loaded on open (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -540,7 +536,6 @@ export function OrganizationSettingsDialog({
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const { models, error: modelsError } = useProjectModels(projectId, open);
 
   const adopt = (next: OrganizationSettings) => {
@@ -617,161 +612,123 @@ export function OrganizationSettingsDialog({
     });
   };
 
-  const remove = async () => {
-    setBusy(true);
-    try {
-      await api.deleteOrganization(projectId, orgId);
-      toastSuccess(S.company.deleted);
-      setDeleteOpen(false);
-      onDeleted();
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const hydrated = settings !== null;
   const paused = settings?.status === "paused";
   return (
-    <>
-      <Modal
-        open={open}
-        title={S.company.settingsTitle}
-        onClose={onClose}
-        widthClass="sm:max-w-lg"
-        footer={
-          <>
-            {isOwner && (
-              <Button
-                variant="danger"
-                disabled={!hydrated || busy}
-                onClick={() => setDeleteOpen(true)}
-                className="mr-auto"
-              >
-                {S.company.deleteOrg}
-              </Button>
-            )}
-            <Button onClick={onClose} disabled={busy}>
-              {S.common.cancel}
-            </Button>
-            <Button variant="primary" disabled={!hydrated || busy} onClick={save}>
-              {S.common.save}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          {loadError !== null && (
-            <ErrorLine message={S.company.settingsLoadFailed} detail={loadError} onRetry={load} />
-          )}
-          {/* Status row: the pause / resume is immediate (its own PATCH), not part of Save —
+    <Modal
+      open={open}
+      title={S.company.settingsTitle}
+      onClose={onClose}
+      widthClass="sm:max-w-lg"
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button variant="primary" disabled={!hydrated || busy} onClick={save}>
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {loadError !== null && (
+          <ErrorLine message={S.company.settingsLoadFailed} detail={loadError} onRetry={load} />
+        )}
+        {/* Status row: the pause / resume is immediate (its own PATCH), not part of Save —
               stopping an organization is a decision, not a draft. */}
-          <div className="flex items-center justify-between gap-3">
-            <span
-              className={`flex items-center ${ICON_GAP.row} text-xs font-semibold text-gray-600 dark:text-gray-400`}
-            >
-              {S.company.status}
-              <InfoPopover label={S.company.status}>{S.company.pauseInfo}</InfoPopover>
-            </span>
-            <span className="flex items-center gap-2">
-              {settings !== null && <OrgStatusPill org={settings} />}
-              <Button
-                size="sm"
-                disabled={!hydrated || busy}
-                onClick={() => void patch({ status: paused ? "active" : "paused" })}
-              >
-                {paused ? S.company.resume : S.company.pause}
-              </Button>
-            </span>
-          </div>
-          <Input
-            label={S.company.displayName}
-            size="sm"
-            value={name}
-            disabled={!hydrated || busy}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Textarea
-            label={S.company.mission}
-            size="sm"
-            rows={3}
-            value={mission}
-            disabled={!hydrated || busy}
-            hint={S.company.missionHint}
-            onChange={(e) => setMission(e.target.value)}
-          />
-          <ModelField
-            models={models}
-            loadError={modelsError}
-            value={modelRef}
-            onChange={setModelRef}
-            disabled={!hydrated || busy}
-          />
-          <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
-          <Input
-            label={S.company.timezone}
-            size="sm"
-            value={timezone}
-            disabled={!hydrated || busy}
-            hint={S.company.timezoneHint}
-            className="font-mono"
-            onChange={(e) => setTimezone(e.target.value)}
-          />
-          <div>
-            {/* The "?" sits beside the field's own title (Select carries no info slot). */}
-            <span className="mb-1 flex items-center gap-1">
-              <FieldLabel block={false}>{S.company.language}</FieldLabel>
-              <InfoPopover label={S.company.language}>{S.company.languageInfo}</InfoPopover>
-            </span>
-            <Select
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className={`flex items-center ${ICON_GAP.row} text-xs font-semibold text-gray-600 dark:text-gray-400`}
+          >
+            {S.company.status}
+            <InfoPopover label={S.company.status}>{S.company.pauseInfo}</InfoPopover>
+          </span>
+          <span className="flex items-center gap-2">
+            {settings !== null && <OrgStatusPill org={settings} />}
+            <Button
               size="sm"
-              aria-label={S.company.language}
-              value={language}
               disabled={!hydrated || busy}
-              onChange={(e) => setLanguage(e.target.value as OrgLanguage)}
+              onClick={() => void patch({ status: paused ? "active" : "paused" })}
             >
-              {ORG_LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {S.company.languages[l]}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            {/* The "?" sits beside the field's own title (Select carries no info slot). */}
-            <span className="mb-1 flex items-center gap-1">
-              <FieldLabel block={false}>{S.company.approvalMode}</FieldLabel>
-              <InfoPopover label={S.company.approvalMode}>{S.company.approvalModeInfo}</InfoPopover>
-            </span>
-            <Select
-              size="sm"
-              aria-label={S.company.approvalMode}
-              value={approvalMode}
-              disabled={!hydrated || busy}
-              onChange={(e) => setApprovalMode(e.target.value as OrgApprovalMode)}
-            >
-              {APPROVAL_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {S.company.approvalModes[m] ?? m}
-                </option>
-              ))}
-            </Select>
-          </div>
+              {paused ? S.company.resume : S.company.pause}
+            </Button>
+          </span>
         </div>
-      </Modal>
-      <ConfirmModal
-        open={deleteOpen}
-        title={S.company.deleteOrg}
-        confirmLabel={S.common.delete}
-        busy={busy}
-        onClose={() => (busy ? undefined : setDeleteOpen(false))}
-        onConfirm={() => void remove()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.deleteOrgConfirm(settings?.name ?? orgId)}
-        </p>
-      </ConfirmModal>
-    </>
+        <Input
+          label={S.company.displayName}
+          size="sm"
+          value={name}
+          disabled={!hydrated || busy}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Textarea
+          label={S.company.mission}
+          size="sm"
+          rows={3}
+          value={mission}
+          disabled={!hydrated || busy}
+          hint={S.company.missionHint}
+          onChange={(e) => setMission(e.target.value)}
+        />
+        <ModelField
+          models={models}
+          loadError={modelsError}
+          value={modelRef}
+          onChange={setModelRef}
+          disabled={!hydrated || busy}
+        />
+        <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        <Input
+          label={S.company.timezone}
+          size="sm"
+          value={timezone}
+          disabled={!hydrated || busy}
+          hint={S.company.timezoneHint}
+          className="font-mono"
+          onChange={(e) => setTimezone(e.target.value)}
+        />
+        <div>
+          {/* The "?" sits beside the field's own title (Select carries no info slot). */}
+          <span className="mb-1 flex items-center gap-1">
+            <FieldLabel block={false}>{S.company.language}</FieldLabel>
+            <InfoPopover label={S.company.language}>{S.company.languageInfo}</InfoPopover>
+          </span>
+          <Select
+            size="sm"
+            aria-label={S.company.language}
+            value={language}
+            disabled={!hydrated || busy}
+            onChange={(e) => setLanguage(e.target.value as OrgLanguage)}
+          >
+            {ORG_LANGUAGES.map((l) => (
+              <option key={l} value={l}>
+                {S.company.languages[l]}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          {/* The "?" sits beside the field's own title (Select carries no info slot). */}
+          <span className="mb-1 flex items-center gap-1">
+            <FieldLabel block={false}>{S.company.approvalMode}</FieldLabel>
+            <InfoPopover label={S.company.approvalMode}>{S.company.approvalModeInfo}</InfoPopover>
+          </span>
+          <Select
+            size="sm"
+            aria-label={S.company.approvalMode}
+            value={approvalMode}
+            disabled={!hydrated || busy}
+            onChange={(e) => setApprovalMode(e.target.value as OrgApprovalMode)}
+          >
+            {APPROVAL_MODES.map((m) => (
+              <option key={m} value={m}>
+                {S.company.approvalModes[m] ?? m}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+    </Modal>
   );
 }

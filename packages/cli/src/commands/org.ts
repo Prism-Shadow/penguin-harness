@@ -126,8 +126,8 @@ function fail(t: Messages, message: string): void {
 /**
  * Refuses a caller-supplied id or handbook path holding a `.` / `..` segment: those survive
  * encodeURIComponent, and the URL parser then collapses them onto a different route —
- * `employees/..` is the organization itself, whose DELETE removes the whole company. True
- * after the error, and the caller returns.
+ * `employees/..` addresses the organization itself rather than one employee. True after the
+ * error, and the caller returns.
  */
 function refuseDotSegments(value: string, t: Messages): boolean {
   if (!value.split("/").some((segment) => segment === "." || segment === "..")) return false;

@@ -2487,11 +2487,7 @@ Benchmark：
     pause: "暂停组织",
     resume: "恢复组织",
     pauseInfo:
-      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。",
-    deleteOrg: "删除组织",
-    deleteOrgConfirm: (name: string): string =>
-      `确认删除组织「${name}」？员工 Agent 与所有会话都会保留，删除的只是组织目录：组织图、日程、工单与频道记录。`,
-    deleted: "组织已删除",
+      "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
     /** Employee state dot, and the CEO mark. */
     employeeStates: {

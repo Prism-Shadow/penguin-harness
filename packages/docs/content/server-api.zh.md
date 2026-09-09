@@ -236,13 +236,13 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 ### 组织（公司模式）
 
-以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写；删除组织仅 owner 可为。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；频道的读取与成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入（仅对携带本机 API token 的请求生效），员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写。没有删除组织的路由：`status`（`active` / `paused`）就是它的开关，暂停的组织仍保留其对话、员工、工位与工单。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；频道的读取与成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入（仅对携带本机 API token 的请求生效），员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
 | POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source}`。Project 的缺省 Model 把名称译成一个 snake_case 英文词干（`source: model`）；未配置 Model 或其回答无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回 422 `id_not_derivable`。随后服务端按 kind 给词干加前缀——`org` 加 `co_`、`channel` 加 `ch_`，词干本就带前缀时不会加第二遍——再截长度、再避开 `taken`，因此提议出来的 id 一定带前缀，而手工输入的 id 一律按原样接受。该次补全不属于任何 Session，也不计量 |
-| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone`、`language` 与阈值 / 删除（员工 Agent 与会话保留） |
+| GET / PATCH | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`——暂停即停止一切自动触发）、`approvalMode`、`timezone`、`language` 与阈值 |
 | GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
 | POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
 | PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区（校验与创建同招募）、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |

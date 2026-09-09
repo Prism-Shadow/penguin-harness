@@ -590,15 +590,6 @@ export class OrganizationService {
     });
   }
 
-  /** Removes the directory and every cache row; desk and ticket sessions stay as ordinary sessions of their Agents. */
-  async remove(projectId: string, orgId: string): Promise<void> {
-    await this.scheduler.withLock(projectId, orgId, async () => {
-      const org = await this.requireOrg(projectId, orgId);
-      await this.deps.store.remove(org.dir);
-      this.deps.cache.deleteOrg(projectId, orgId);
-    });
-  }
-
   // ---------------------------------------------------------------------------
   // Employees, desks, handbook
   // ---------------------------------------------------------------------------

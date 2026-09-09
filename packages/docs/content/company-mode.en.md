@@ -11,7 +11,7 @@ Everything the company is lives in **files** under the Project directory. SQLite
 
 Switch modes with the Development | Company control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, default on) and you have not hidden it yourself (System settings › Personal › Company mode).
 
-A desk or ticket session is stamped as the organization's on the row itself when it is opened, so it is listed in company mode and never in development mode's session list — including after the organization is deleted or the master switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their sessions stamped on the runtime's next pass over their files.
+A desk or ticket session is stamped as the organization's on the row itself when it is opened, so it is listed in company mode and never in development mode's session list — including after the organization's directory is removed by hand or the master switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their sessions stamped on the runtime's next pass over their files.
 
 ## Creating one
 
@@ -112,4 +112,6 @@ The **handbook** page lists the knowledge base as an explorer tree — folders b
 - **Personal**: hides the mode switch for you only; the organizations keep running.
 - **Organization**: pausing an organization stops all of its automatic triggers; people can still open any desk and talk.
 
-Employees are ordinary Agents: deleting an organization removes its directory and caches, and keeps the Agents and their sessions.
+**There is no delete.** An organization is turned on or off, and that is its whole lifecycle. Deleting one would throw away the only way back to its conversations, employees, desks and tickets, while a paused organization costs nothing to keep — it fires nothing, and every desk is still there to talk to.
+
+Removing the organization's directory by hand is the only way one goes away. The runtime stops seeing it on its next pass, and the App says so and offers to create another in its place. Employees are ordinary Agents and their desk and ticket sessions are ordinary sessions: both survive, and the sessions keep the mark that says they were the organization's, so they never reappear in development mode's list.
