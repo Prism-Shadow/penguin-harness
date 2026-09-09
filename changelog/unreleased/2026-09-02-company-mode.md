@@ -247,7 +247,8 @@ cursors, budget marks) and each user's read cursor per channel.
   of organizations that already exist are marked on the next pass, with no migration (the
   column exists and takes free text). Sessions of organizations deleted before this change
   were never named by any surviving file and stay unmarked; they read as development mode's
-  own, and archiving or deleting them is the only cleanup. `POST .../sessions` still accepts
+  own, and archiving or deleting them is the only cleanup. The backfill and the rest of what
+  this round tolerates are recorded in [backward compatibility](2026-09-09-backward-compatibility.md). `POST .../sessions` still accepts
   only `"web"` and `"cli"`: `"org"` is written by the organization runtime, which calls the
   service directly, so no request can claim it.
 - Generated ids carry a prefix that says what they name: `co_` for an organization, `ch_` for
