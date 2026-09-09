@@ -13,7 +13,7 @@ Nothing in the default system prompt said where an agent should look for a file,
 
 - The default system prompt's `# File system` section gained one bullet: search from `CWD` down, since walking the user's home or the whole filesystem is rarely worth its cost, and prefer narrowing a path that does not resolve — by reasoning about the project's layout — over widening the root.
 - That is a kernel change (generation `2026-09-03`, prompt tab): an existing Agent whose prompt tab is still the built-in default picks the rule up on a kernel update, while one the user has edited keeps what it says.
-- The kernel record's pre-#257 reconstruction proof now reads a frozen copy of the template that generation shipped (`core/test/fixtures/toggles-generation-system-prompt.txt`) instead of the live default, so it stays anchored as the prompt goes on changing.
+- The kernel record's pre-#257 reconstruction proof now reads a frozen copy of the template that generation shipped (`core/test/fixtures/toggles-generation-system-prompt.txt`) instead of the live default, so it stays anchored as the prompt goes on changing; the server's kernel-update test seeds its pre-stamp config from the same copy.
 
 ## Development skills
 

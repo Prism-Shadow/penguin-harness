@@ -13,7 +13,7 @@
 
 - 默认 System Prompt 的 `# File system` 一节新增一条:搜索从 `CWD` 向下进行——遍历用户主目录或整个文件系统通常不值得;路径解析不到时,优先靠推断项目结构来收窄,而不是把根往外扩。
 - 这是一次 kernel 变更(generation `2026-09-03`,prompt tab):Prompt tab 仍是内置默认值的存量 Agent 会在 kernel 更新时拿到该规则,用户改过的则保持原样。
-- kernel 记录中那份 #257 之前的重建校验,现在读取该 generation 所发布模板的冻结副本(`core/test/fixtures/toggles-generation-system-prompt.txt`),不再读取实时默认值,因此 Prompt 继续演进也不会失锚。
+- kernel 记录中那份 #257 之前的重建校验,现在读取该 generation 所发布模板的冻结副本(`core/test/fixtures/toggles-generation-system-prompt.txt`),不再读取实时默认值,因此 Prompt 继续演进也不会失锚;服务端的 kernel-update 测试也改用同一份副本来构造未盖章的存量配置。
 
 ## 开发用 Skill
 
