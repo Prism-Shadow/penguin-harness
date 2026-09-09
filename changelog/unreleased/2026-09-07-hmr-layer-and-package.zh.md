@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** improvement
 - **Scope:** `server`, `desktop`
+- **PR:** [#656](https://github.com/Prism-Shadow/penguin-harness/pull/656)
 
 [English](2026-09-07-hmr-layer-and-package.md)
 
