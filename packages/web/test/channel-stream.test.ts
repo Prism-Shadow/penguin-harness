@@ -1,16 +1,19 @@
 /**
  * channel-stream.ts unit tests: day separators and sender runs, the unread divider at the read
- * cursor, which hop counts are worth a chip, day arithmetic for the separators and paging,
- * and the immutable live append.
+ * cursor, which hop counts are worth a chip, which side of the stream a run stands on and
+ * where each of its bubbles falls, day arithmetic for the separators and paging, and the
+ * immutable live append.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
   appendMessage,
+  bubbleShape,
   buildStream,
   dayKind,
   earlierDay,
   hopChipShown,
+  isOwnRun,
   lastMessageId,
   messageCount,
   shiftDate,
@@ -132,5 +135,49 @@ describe("hopChipShown", () => {
     expect(hopChipShown(1)).toBe(false);
     expect(hopChipShown(2)).toBe(true);
     expect(hopChipShown(5)).toBe(true);
+  });
+});
+
+describe("isOwnRun", () => {
+  it("claims the reader's own messages and nobody else's", () => {
+    expect(isOwnRun("user:alice", "alice")).toBe(true);
+    expect(isOwnRun("user:bob", "alice")).toBe(false);
+    // An employee writes as an agent, never as the reader — even when the ids collide.
+    expect(isOwnRun("agent:alice", "alice")).toBe(false);
+    expect(isOwnRun("system", "alice")).toBe(false);
+    expect(isOwnRun("all", "alice")).toBe(false);
+  });
+
+  it("owns nothing while the reader is unknown", () => {
+    // "" is the id before the session has loaded: a malformed `user:` principal must not
+    // start reading as the reader's own message.
+    expect(isOwnRun("user:", "")).toBe(false);
+    expect(isOwnRun("user:alice", "")).toBe(false);
+  });
+});
+
+describe("bubbleShape", () => {
+  const run = (sender: string, n: number) => ({
+    sender,
+    messages: Array.from({ length: n }, (_, i) => msg(sender, `2026-09-02T10:0${i}:00Z`)),
+  });
+
+  it("marks the first and the last bubble of a run, on the side that wrote it", () => {
+    const others = run("agent:ceo", 3);
+    expect(bubbleShape(others, 0, "alice")).toEqual({ own: false, first: true, last: false });
+    expect(bubbleShape(others, 1, "alice")).toEqual({ own: false, first: false, last: false });
+    expect(bubbleShape(others, 2, "alice")).toEqual({ own: false, first: false, last: true });
+    const mine = run("user:alice", 2);
+    expect(bubbleShape(mine, 0, "alice")).toEqual({ own: true, first: true, last: false });
+    expect(bubbleShape(mine, 1, "alice")).toEqual({ own: true, first: false, last: true });
+  });
+
+  it("makes a run of one both its first and its last bubble", () => {
+    // The lone bubble carries the name, the avatar and the squared corner all at once.
+    expect(bubbleShape(run("user:bob", 1), 0, "alice")).toEqual({
+      own: false,
+      first: true,
+      last: true,
+    });
   });
 });

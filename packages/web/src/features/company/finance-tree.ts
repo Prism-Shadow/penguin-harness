@@ -1,19 +1,21 @@
 /**
  * The finance page's shaping (pure, unit tested): the spend tree in reporting-line order with
  * depths, the ticket table along parent tickets, period arithmetic for the this / previous
- * switch, the tone a budget ratio takes, the daily series in the trend chart's shape (with
- * the axis breaks where days were skipped), the KPI row's numbers, the alert list grouped by
- * state, and the two row tooltips that carry the figures the tables no longer spend a column
- * on.
+ * switch, the tone a budget ratio takes, the marks an employee's state column carries, the
+ * daily series in the trend chart's shape (with the axis breaks where days were skipped), the
+ * KPI row's numbers, the alert list grouped by state, and the two row tooltips that carry the
+ * figures the tables no longer spend a column on.
  */
 import type {
   OrgBudgetAlert,
+  OrgEmployeeState,
   OrgFinanceEmployee,
   OrgFinanceResponse,
   OrgFinanceTicket,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-server/api";
 import type { Tone } from "../../lib/tone";
+import { employeeStateTone } from "./chart-view";
 
 /** Employees in DFS order from the root(s), each with its depth; a row whose manager is missing starts a tree of its own. */
 export function spendTreeRows(
@@ -123,6 +125,34 @@ export function budgetTone(ratio: number | undefined): Tone {
   if (ratio >= 1) return "danger";
   if (ratio >= 0.8) return "attention";
   return "success";
+}
+
+/** What a mark in the spend tree's state column says; the caller spells each one's label. */
+export type SpendStateKey = "running" | "idle" | "warned" | "paused";
+
+export interface SpendStateMark {
+  tone: Tone;
+  key: SpendStateKey;
+}
+
+/**
+ * The state column's marks for one employee: its live state first — running, or on the desk —
+ * then what its budget has to say about it. A budget pause is the *reason* a live state reads
+ * `paused`, so the two collapse into the single danger mark that names it; a row never says
+ * "paused" twice. The live state is joined from the org chart, which the finance page fetches
+ * best effort, so an absent one leaves the budget marks standing alone rather than blocking
+ * the table on a second request.
+ */
+export function spendStateMarks(
+  row: { warned: boolean; paused: boolean },
+  live: OrgEmployeeState | undefined,
+): SpendStateMark[] {
+  const out: SpendStateMark[] = [];
+  if (live !== undefined && live !== "paused")
+    out.push({ tone: employeeStateTone(live), key: live });
+  if (row.paused || live === "paused") out.push({ tone: "danger", key: "paused" });
+  else if (row.warned) out.push({ tone: "attention", key: "warned" });
+  return out;
 }
 
 /** The finance page's daily costs in the cost trend chart's series shape (tokens unknown here, so zero). */

@@ -2933,7 +2933,7 @@ Scenarios:
       own: "Own spend",
       cumulative: "Cumulative",
       /** The spend tree reads cumulative against budget in one column; own spend rides in the row tooltip. */
-      cumulativeBudget: "Cumulative / budget",
+      cumulativeBudget: "Cumulative spend / budget",
       ratio: "Ratio",
       warned: "Warned",
       paused: "Paused",

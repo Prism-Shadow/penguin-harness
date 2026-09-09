@@ -590,6 +590,20 @@ html.dark .shiki span {
   margin-bottom: 0;
 }
 
+/* ---------- Channel message bubble (features/company/channel-view.tsx) ---------- */
+
+/* A bubble's own surface is the grey the shared Markdown rules give inline code and table
+   rules, so inside a bubble those marks are printed on their own colour and disappear. One
+   step deeper puts them back, and reads on both bubble tints in both themes. Fenced blocks
+   need nothing: `.md-body pre` carries a border and its own lighter/darker fill, and the code
+   inside it is transparent. The `:not(pre) >` shape is what keeps this off them. */
+.channel-bubble :not(pre) > code {
+  @apply bg-gray-200 dark:bg-gray-700;
+}
+.channel-bubble :is(th, td) {
+  @apply border-gray-300 dark:border-gray-700;
+}
+
 /* ---------- KaTeX (math rendering; see lib/markdown-plugins.ts) ---------- */
 
 /* KaTeX's own fonts carry no CJK glyphs, and it tags every CJK run `cjk_fallback` while leaving

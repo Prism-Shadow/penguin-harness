@@ -2843,7 +2843,7 @@ Benchmark：
       own: "本人支出",
       cumulative: "累计支出",
       /** The spend tree reads cumulative against budget in one column; own spend rides in the row tooltip. */
-      cumulativeBudget: "累计 / 预算",
+      cumulativeBudget: "累计成本 / 预算",
       ratio: "占比",
       warned: "已告警",
       paused: "已暂停",

@@ -1,16 +1,24 @@
 /**
  * One channel: its header, the stream of the loaded days — a separator per day (paging back
- * through earlier day files), consecutive messages by one sender under one avatar and name
- * with each line's time on hover, each body rendered as Markdown with its @-mentions kept as
- * chips (stronger when they address the reader), `system` messages as centred banners in the
- * reader's own language, ticket and session references as chips that open them, an unread
- * divider at the read cursor — and the composer beneath it. The view follows
- * the stream while it is at the bottom; scrolled up, new messages collect behind a pill that
- * returns to the latest. Sitting at the bottom of today marks this channel read, which is
- * what clears its badge in the sidebar and the rail. Nothing here delivers to an employee
- * unless it is @-mentioned, and only inside this channel's membership; the empty state and
- * the header's "?" say so. A run's header carries the relay chip from the second hop on, with
- * the whole @-chain rule in its tooltip.
+ * through earlier day files), one bubble per message, each body rendered as Markdown with its
+ * @-mentions kept as chips (stronger when they address the reader), `system` messages as
+ * centred banners in the reader's own language, ticket and session references as chips that
+ * open them, an unread divider at the read cursor — and the composer beneath it. The view
+ * follows the stream while it is at the bottom; scrolled up, new messages collect behind a
+ * pill that returns to the latest. Sitting at the bottom of today marks this channel read,
+ * which is what clears its badge in the sidebar and the rail. Nothing here delivers to an
+ * employee unless it is @-mentioned, and only inside this channel's membership; the empty
+ * state and the header's "?" say so.
+ *
+ * The stream is drawn the way every chat client draws one, because a channel is read the way
+ * every chat is. Somebody else's run stands on the left: the avatar once, bottom-aligned to
+ * the run's last bubble, the sender's name above its first — with the relay chip beside it
+ * from the second hop on, the whole @-chain rule in its tooltip — and the bubbles between
+ * them. The reader's own run stands on the right in its own tint, with no avatar and no name
+ * (a screen reader gets one, since a side and a colour are not something every reader can
+ * read). Each bubble carries its own time at its bottom-right, inside it: a time that only
+ * appears on hover is a time a touch reader never sees, and one time per run leaves every
+ * later message in a long run unstamped.
  *
  * A `system` line is one sentence, so it stays one muted line rather than a Markdown body: the
  * server writes it twice — as English text and as a structured notice — and the notice is what
@@ -60,15 +68,17 @@ import {
 } from "./channel-mentions";
 import {
   appendMessage,
+  bubbleShape,
   buildStream,
   clockTime,
   dayKind,
   earlierDay,
   hopChipShown,
+  isOwnRun,
   lastMessageId,
   messageCount,
 } from "./channel-stream";
-import type { ChannelDay, StreamItem } from "./channel-stream";
+import type { BubbleShape, ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
@@ -81,6 +91,34 @@ interface StreamMeta {
 
 /** Downward arrow on the return-to-latest pill (lucide arrow-down). */
 const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
+
+/** The avatar that leads somebody else's run, in pixels — a tile, so one rung above a line glyph. */
+const RUN_AVATAR_PX = 28;
+
+/**
+ * The two bubble surfaces. The reader's own takes the app's brand blue rather than a tone from
+ * lib/tone.ts: which side of a conversation wrote a message is an identity, not a judgement,
+ * and a status hue would announce a state the message does not have. It is also the only tint
+ * that stays clearly apart from the neutral bubble under every accent — `--accent-bg` is grey
+ * in the default neutral theme, where a wash of it is the neutral bubble again.
+ */
+const BUBBLE_SURFACE = {
+  other: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+  own: "bg-brand-50 text-gray-900 dark:bg-brand-950 dark:text-gray-100",
+} as const;
+
+/**
+ * A bubble's corners: 2xl all round, except on the last bubble of a run, where the corner
+ * nearest the run's tail is squared — bottom-left towards the avatar, bottom-right on the
+ * reader's own side. Every corner is named rather than layering a per-corner utility over the
+ * all-corner one, so the result does not depend on which of the two the stylesheet emits last.
+ */
+function bubbleCorners(shape: BubbleShape): string {
+  if (!shape.last) return "rounded-2xl";
+  return shape.own
+    ? "rounded-bl-2xl rounded-br-sm rounded-tl-2xl rounded-tr-2xl"
+    : "rounded-bl-sm rounded-br-2xl rounded-tl-2xl rounded-tr-2xl";
+}
 
 export function ChannelView() {
   const { projectId, orgId, org } = useOrg();
@@ -451,69 +489,86 @@ export function ChannelView() {
     const first = item.messages[0]!;
     const p = parsePrincipal(item.sender);
     const senderLabel = principalLabel(item.sender, names);
-    const mine = p.kind === "user" && p.id === me;
+    const own = isOwnRun(item.sender, me);
     return (
-      <div key={first.id} className={`flex ${ICON_GAP.card} py-1.5`}>
-        {p.kind === "agent" ? (
-          <AgentAvatar
-            id={p.id}
-            name={senderLabel}
-            size={28}
-            className="mt-0.5 shrink-0 rounded-md"
-          />
-        ) : (
-          <span
-            aria-hidden
-            className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-          >
-            {senderLabel.slice(0, 1).toUpperCase()}
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className={`flex flex-wrap items-baseline ${ICON_GAP.menu} text-xs`}>
-            <span className="font-semibold text-gray-900 dark:text-gray-100">{senderLabel}</span>
-            {mine && (
-              <span className="text-gray-400 dark:text-gray-500">({S.company.channels.you})</span>
-            )}
+      <div key={first.id} className={`flex items-end ${ICON_GAP.card} py-1.5`}>
+        {/* One avatar per run, bottom-aligned to its last bubble: a run is one person
+            speaking, and an avatar per line turns a burst of three into three arrivals. */}
+        {!own &&
+          (p.kind === "agent" ? (
+            <AgentAvatar
+              id={p.id}
+              name={senderLabel}
+              size={RUN_AVATAR_PX}
+              className="shrink-0 rounded-md"
+            />
+          ) : (
             <span
-              className="text-[11px] text-gray-400 dark:text-gray-500"
-              title={formatDateTime(first.time)}
+              aria-hidden
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
             >
-              {clockTime(first.time)}
+              {senderLabel.slice(0, 1).toUpperCase()}
             </span>
-            {/* The relay chip names what it is and carries the @-chain rule in its tooltip:
-                "hop 3" alone tells a reader nothing about why a message arrived. */}
-            {hopChipShown(item.hop) && (
-              <span
-                title={S.company.channels.hopInfo}
-                className="text-[11px] text-gray-400 dark:text-gray-500"
-              >
-                {S.company.channels.hop(item.hop)}
-              </span>
-            )}
-          </div>
-          {item.messages.map((m) => (
-            <div
-              key={m.id}
-              id={m.id}
-              /* A message that names the reader is marked by its mention chip alone: a
-                   tinted row reads as a state of the whole message, and in a channel where
-                   most messages name someone it turns the stream into a highlight. */
-              className="group relative -mx-2 rounded-md px-2 py-0.5 hover:bg-gray-50 dark:hover:bg-gray-900/60"
-            >
-              <div className="md-body md-compact pr-12 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-                <ChannelMessageBody text={m.text} />
-              </div>
-              {renderRefs(m)}
-              <span
-                className="absolute right-2 top-0.5 hidden text-[11px] text-gray-400 group-hover:inline dark:text-gray-500"
-                title={formatDateTime(m.time)}
-                aria-label={S.company.channels.sentAt(formatDateTime(m.time))}
-              >
-                {clockTime(m.time)}
-              </span>
-            </div>
           ))}
+        <div
+          className={`flex min-w-0 flex-1 flex-col gap-0.5 ${own ? "items-end" : "items-start"}`}
+        >
+          {own ? (
+            // The side and the tint are the whole of "this one is mine" on screen, and neither
+            // survives a screen reader: it gets the word instead.
+            <span className="sr-only">{S.company.channels.you}</span>
+          ) : (
+            <div
+              className={`flex max-w-full flex-wrap items-baseline ${ICON_GAP.row} px-1 text-[11px]`}
+            >
+              <span className="truncate font-semibold text-gray-700 dark:text-gray-300">
+                {senderLabel}
+              </span>
+              {/* The relay chip names what it is and carries the @-chain rule in its tooltip:
+                  "hop 3" alone tells a reader nothing about why a message arrived. */}
+              {hopChipShown(item.hop) && (
+                <span
+                  title={S.company.channels.hopInfo}
+                  className="text-gray-500 dark:text-gray-400"
+                >
+                  {S.company.channels.hop(item.hop)}
+                </span>
+              )}
+            </div>
+          )}
+          {item.messages.map((m, i) => {
+            const shape = bubbleShape(item, i, me);
+            const at = formatDateTime(m.time);
+            return (
+              <div
+                key={m.id}
+                id={m.id}
+                /* A message that names the reader is marked by its mention chip alone: a
+                   tinted bubble reads as a state of the whole message, and in a channel where
+                   most messages name someone it turns the stream into a highlight. */
+                className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
+              >
+                {/* The time is a column of its own at the bubble's end, bottom-aligned: on a
+                    one-line message it lands beside the words, on a longer one it settles
+                    into the bottom-right corner, and it never overlaps the body. */}
+                <div className={`flex items-end ${ICON_GAP.menu}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="md-body md-compact">
+                      <ChannelMessageBody text={m.text} />
+                    </div>
+                    {renderRefs(m)}
+                  </div>
+                  <span
+                    title={at}
+                    className="shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
+                  >
+                    <span className="sr-only">{S.company.channels.sentAt(at)}</span>
+                    <span aria-hidden>{clockTime(m.time)}</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -655,19 +710,22 @@ function RefChip({
   );
 }
 
-/** Three message-shaped bands while the first day loads. */
+/** Three bubble-shaped bands while the first day loads, on the side each will land on. */
 function StreamSkeleton() {
   return (
     <div className="space-y-4 py-2">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className={`flex ${ICON_GAP.card}`}>
-          <Skeleton className="h-7 w-7 rounded-md" />
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-3 w-40" />
-            <Skeleton className={`h-4 ${i === 1 ? "w-1/2" : "w-3/4"}`} />
+      {[0, 1, 2].map((i) => {
+        const own = i === 1;
+        return (
+          <div key={i} className={`flex items-end ${ICON_GAP.card}`}>
+            {!own && <Skeleton className="h-7 w-7 shrink-0 rounded-md" />}
+            <div className={`flex flex-1 flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
+              {!own && <Skeleton className="h-3 w-24" />}
+              <Skeleton className={`h-8 rounded-2xl ${own ? "w-1/2" : "w-3/5"}`} />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
