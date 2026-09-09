@@ -16,5 +16,6 @@ export type { Sessions, SessionServiceIface } from "../runtime/session-manager.j
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
+export type { PluginConfig, PluginConfiguration, PluginConfigField } from "./config.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";

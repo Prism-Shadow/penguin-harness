@@ -157,6 +157,8 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   PluginIndexResponse,
+  PluginConfigResponse,
+  PluginConfigUpdateRequest,
   PluginReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -256,6 +258,14 @@ export const adminDeleteUser = (userId: string) =>
 
 /** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
 export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
+
+/** Every loaded plugin that declares a configuration, with its schema and masked values (admin). */
+export const adminGetPluginConfig = () =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config");
+
+/** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
+export const adminPutPluginConfig = (body: PluginConfigUpdateRequest) =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body });
 
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
