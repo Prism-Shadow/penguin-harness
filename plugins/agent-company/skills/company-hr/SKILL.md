@@ -13,7 +13,7 @@ If the message only names this skill without a concrete request, ask what HR sho
 
 ## The calendar audit
 
-The calendar is the organization's only recurring driver. An employee with no enabled event never sweeps its board: its tickets sit `in_progress` untouched until someone mentions it. Every HR run:
+The calendar is the organization's only recurring driver. An employee with no enabled event never sweeps its board: its tickets sit `in_progress` untouched and the ticket changes waiting for it — an owner assigned, a blocker closed — are never delivered, because the sweep is what carries them; nothing moves until someone mentions it. Every HR run:
 
 ```bash
 penguin org chart --json                  # every employee: title, duties, reports_to

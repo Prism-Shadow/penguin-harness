@@ -217,3 +217,20 @@ cursors, budget marks) and each user's read cursor per channel.
   progress lines and results name files by their full path, that rota warnings are fixed rather
   than ignored, that everything is written in the organization's working language, and that a
   relative workspace is created as it is assigned.
+
+### After the second trial round (2026-09-09)
+
+- A ticket change no longer starts a work run. Assigning an owner, blocking, a blocker
+  closing, done and rejected are recorded as before — the ticket file, the all-hands `system`
+  line where the change has one, the `org_ticket` event — and queued for the employees they
+  concern; the next calendar event of each carries them in its body under `## Since your last
+  sweep`, one line per change naming the ticket, its title, what happened and the reason or
+  blocker the ticket carries (`(ticket removed)` when its file is gone), and a closing line
+  saying what to decide: start a ticket session, verify and unblock, or leave it. A desk
+  session is driven by calendar events, channel mentions and people talking to it — the CEO's
+  creation-time initialization run is the one exception. A queue is written whether or not the
+  organization or the employee is paused and is delivered by the sweep that eventually fires;
+  an employee that leaves takes its undelivered lines with it. Migration 7 adds
+  `org_desk_notices`, the table that holds the queue. `ticket_notice` stays in `OrgTriggerKind`
+  because Traces recorded while it existed carry it; nothing writes it any more. The skills,
+  the handbook templates, the Company Mode guide and the server API reference say so.

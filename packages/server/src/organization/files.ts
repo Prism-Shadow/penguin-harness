@@ -596,8 +596,8 @@ export function parseTicket(raw: string): ParseResult<TicketDoc> {
   const parent = headers.get("parent") ?? "";
   if (parent !== "" && !TICKET_ID_PATTERN.test(parent)) return fail("Parent must be a ticket id");
   const notifyRaw = headers.get("notify");
-  // No Notify header, or an empty one: tell the initiator when it is an employee — the
-  // notice reaches its desk — and nobody when a person filed the ticket, because one
+  // No Notify header, or an empty one: tell the initiator when it is an employee — its next
+  // sweep lists the change — and nobody when a person filed the ticket, because one
   // @-mention per closed ticket is a badge nobody asked for. A person lists itself to be told.
   const notify =
     notifyRaw === undefined || notifyRaw === ""

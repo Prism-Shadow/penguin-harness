@@ -801,6 +801,8 @@ export class OrganizationService {
         delete org.desks[agentId];
         await this.deps.store.writeDesks(org.dir, org.desks);
       }
+      // Nothing will sweep for this employee again, so its queued ticket changes go with it.
+      this.deps.cache.deleteDeskNotices(projectId, orgId, agentId);
       for (const f of await this.deps.store.listCalendar(org.dir)) {
         if (f.agentId === agentId)
           await this.deps.store.deleteCalendarEvent(org.dir, agentId, f.name);

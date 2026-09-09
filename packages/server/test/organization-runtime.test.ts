@@ -751,7 +751,7 @@ describe("organization runtime", () => {
       events.length = 0;
     });
 
-    it("creates in proposed with the initiator, notices the owner, and opens ticket sessions that contribute", async () => {
+    it("creates in proposed with the initiator, queues the assignment, and opens ticket sessions that contribute", async () => {
       const t = await service.createTicket(
         P,
         ORG,
@@ -766,22 +766,10 @@ describe("organization runtime", () => {
       await expect(
         fs.stat(path.join(orgDir(), "tickets", "2026-09", "proposed", `${t.ticketId}.md`)),
       ).resolves.toBeTruthy();
-      // Assignment at creation reaches the owner's desk once.
-      const notices = started
-        .map((s) => parseOrgTriggerMessage(s.text)?.origin)
-        .filter((o) => o?.kind === "ticket_notice");
-      expect(notices).toHaveLength(1);
-      expect(notices[0]).toMatchObject({ ticket: t.ticketId, change: "assigned" });
-      const assigned = started.find(
-        (x) => parseOrgTriggerMessage(x.text)?.origin.change === "assigned",
-      );
-      expect(assigned!.text).toContain(
-        `Start a ticket session for it now: \`penguin org ticket start ${t.ticketId} -m "…"\` — do not do the work at your desk.`,
-      );
+      // Assignment at creation opens no desk and starts no run: it waits for the owner's sweep.
+      expect(started).toHaveLength(0);
       await scheduler.tickOnce();
-      expect(
-        started.filter((s) => parseOrgTriggerMessage(s.text)?.origin.kind === "ticket_notice"),
-      ).toHaveLength(1);
+      expect(started).toHaveLength(0);
 
       const { sessionId } = await service.startTicket(P, ORG, t.ticketId, {
         message: "Start with the scaffold",
@@ -819,6 +807,76 @@ describe("organization runtime", () => {
       expect(last).toMatchObject({ by: `agent:${HR}`, text: "half done", sessionId });
     });
 
+    it("delivers queued changes in the next sweep, keeps them while paused, and empties the queue", async () => {
+      await store.writeCalendarEvent(
+        orgDir(),
+        HR,
+        "sweep",
+        serializeCalendarEvent({
+          prompt: "Sweep the board",
+          enabled: true,
+          startAt: new Date(T0).toISOString(),
+          period: "1d",
+        }),
+      );
+      await scheduler.tickOnce(); // registers the event and consumes the slot standing at T0
+      started.length = 0;
+
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Launch the site", owner: `agent:${HR}`, notify: [`agent:${HR}`] },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      await service.moveTicket(P, ORG, t.ticketId, "done", undefined, { userId: "alice" });
+      // An owner assigned and a ticket closed: two changes, no run at any desk.
+      expect(started).toHaveLength(0);
+
+      // A paused organization consumes the slot and keeps the queue for the sweep that fires.
+      await service.patch(P, ORG, { status: "paused" });
+      nowMs = T0 + DAY + 1000;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(0);
+      expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("paused");
+      await service.patch(P, ORG, { status: "active" });
+
+      nowMs = T0 + 2 * DAY + 1000;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+      const parsed = parseOrgTriggerMessage(started[0]!.text);
+      expect(parsed?.origin).toMatchObject({ kind: "event", event: "sweep" });
+      expect(parsed?.rest).toBe(
+        [
+          "Sweep the board",
+          "",
+          "## Since your last sweep",
+          `- ${t.ticketId} (Launch the site): assigned to you`,
+          `- ${t.ticketId} (Launch the site): done`,
+          "",
+          'Decide on each: start a ticket session (`penguin org ticket start <id> -m "…"`), verify and unblock, or leave it — do not do the work at your desk.',
+        ].join("\n"),
+      );
+
+      // Delivered once: the next sweep carries the event's own prompt and nothing else.
+      started.length = 0;
+      nowMs = T0 + 3 * DAY + 1000;
+      await scheduler.tickOnce();
+      expect(parseOrgTriggerMessage(started[0]!.text)?.rest).toBe("Sweep the board");
+    });
+
+    it("drops an employee's undelivered changes when it leaves", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Write docs", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      await service.leave(P, ORG, HR);
+      expect(cache.takeDeskNotices(P, ORG, HR)).toEqual([]);
+      expect(t.owner).toBe(`agent:${HR}`);
+    });
+
     it("moves between columns, notifies on done, and rejects need a reason", async () => {
       const t = await service.createTicket(
         P,
@@ -838,16 +896,12 @@ describe("organization runtime", () => {
         service.moveTicket(P, ORG, t.ticketId, "rejected", undefined, { userId: "alice" }),
       ).rejects.toMatchObject({ status: 400 });
       await service.moveTicket(P, ORG, t.ticketId, "done", undefined, { userId: "alice" });
-      const notices = started
-        .map((s) => parseOrgTriggerMessage(s.text)?.origin)
-        .filter((o) => o?.kind === "ticket_notice");
-      // Notify = CEO (agent) and the initiator alice (user): the CEO's desk gets a notice, alice a system line.
-      expect(notices).toHaveLength(1);
-      expect(notices[0]).toMatchObject({
-        ticket: t.ticketId,
-        change: "done",
-        employee: `${CEO} (CEO)`,
-      });
+      // Notify = CEO (agent) and the initiator alice (user): the change is queued for the
+      // CEO's next sweep and written as a system line for alice. Neither is a run.
+      expect(started).toHaveLength(0);
+      expect(cache.takeDeskNotices(P, ORG, CEO).map((n) => [n.ticketId, n.change])).toEqual([
+        [t.ticketId, "done"],
+      ]);
       const allHands = await service.channelMessages(
         P,
         ORG,
@@ -983,36 +1037,25 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       started.length = 0;
+      // The assignment is already queued for HR; clear it so the later lines stand alone.
+      expect(cache.takeDeskNotices(P, ORG, HR).map((n) => n.change)).toEqual(["assigned"]);
       await service.blockTicket(P, ORG, t.ticketId, "Waiting for the domain", blocker.ticketId, {
         userId: "alice",
       });
       const detail = await service.ticket(P, ORG, t.ticketId);
       expect(detail.blocked).toBe("Waiting for the domain");
       expect(detail.blockedBy).toBe(blocker.ticketId);
-      let notices = started
-        .map((s) => parseOrgTriggerMessage(s.text)?.origin)
-        .filter((o) => o?.kind === "ticket_notice");
-      // HR's manager is the CEO.
-      expect(notices).toHaveLength(1);
-      expect(notices[0]).toMatchObject({
-        change: "blocked",
-        ticket: t.ticketId,
-        employee: `${CEO} (CEO)`,
-      });
-      started.length = 0;
+      // HR's manager is the CEO; the block waits in its queue rather than interrupting it.
+      expect(started).toHaveLength(0);
+      expect(cache.takeDeskNotices(P, ORG, CEO).map((n) => [n.ticketId, n.change])).toEqual([
+        [t.ticketId, "blocked"],
+      ]);
       await service.moveTicket(P, ORG, blocker.ticketId, "done", undefined, { userId: "alice" });
-      notices = started
-        .map((s) => parseOrgTriggerMessage(s.text)?.origin)
-        .filter((o) => o?.kind === "ticket_notice");
-      expect(notices.some((n) => n?.change === "blocker_closed" && n.ticket === t.ticketId)).toBe(
-        true,
-      );
-      const closed = started.find(
-        (x) => parseOrgTriggerMessage(x.text)?.origin.change === "blocker_closed",
-      );
-      expect(closed!.text).toContain(
-        `Verify, then \`penguin org ticket unblock ${t.ticketId}\` and start a ticket session.`,
-      );
+      expect(started).toHaveLength(0);
+      // The owner of the waiting ticket learns the blocker closed, in its own next sweep.
+      expect(cache.takeDeskNotices(P, ORG, HR).map((n) => [n.ticketId, n.change])).toEqual([
+        [t.ticketId, "blocker_closed"],
+      ]);
       await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).blocked).toBeUndefined();
       const board = await service.tickets(P, ORG);

@@ -44,7 +44,7 @@ const GOAL_STATE_DDL = `
   CREATE INDEX idx_goal_session ON goal_state(session_id);
 `;
 
-/** The company-mode tables migration 5 adds: a database from before it never had them. */
+/** Every company-mode table the migrations add: a database from before them had none. */
 function dropCompanyModeTables(db: DatabaseSync): void {
   for (const table of [
     "org_sessions",
@@ -54,6 +54,7 @@ function dropCompanyModeTables(db: DatabaseSync): void {
     "org_channel_state",
     "org_channel_reads",
     "org_budget_state",
+    "org_desk_notices",
   ]) {
     db.exec(`DROP TABLE IF EXISTS ${table}`);
   }
@@ -104,7 +105,18 @@ function open5(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec(PRE_CHANNEL_CHAT_DDL);
+  // SCHEMA_SQL declares the CURRENT shape; migration 7's queue came after 5.
+  db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("PRAGMA user_version = 5");
+  return db;
+}
+
+/** A database stamped at migration 6: channels, and no desk-notice queue yet. */
+function open6(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS org_desk_notices");
+  db.exec("PRAGMA user_version = 6");
   return db;
 }
 
@@ -367,6 +379,48 @@ describe("migration 5 → current: company-mode-channels", () => {
     } finally {
       db.close();
       at5.close();
+    }
+  });
+});
+
+describe("migration 6 → current: company-mode-desk-notices", () => {
+  it("adds the queue a ticket change is delivered through, writable and indexed", () => {
+    const db = open6();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(db)).not.toBe(shape(fresh));
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 6).map((m) => m.name),
+      );
+      expect(shape(db)).toBe(shape(fresh));
+      db.exec(
+        "INSERT INTO org_desk_notices (project_id, org_id, agent_id, ticket_id, change, at)" +
+          " VALUES ('p1', 'acme', 'acme_hr', '2026-09-08-site', 'assigned', '2026-09-08T01:00:00Z')",
+      );
+      // seq is the delivery order, handed out by the table itself.
+      expect(db.prepare("SELECT seq FROM org_desk_notices").all()).toEqual([{ seq: 1 }]);
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down drops the queue with the notices nobody has been told about yet", () => {
+    const db = open6();
+    const at6 = open6();
+    try {
+      migrate(db);
+      db.exec(
+        "INSERT INTO org_desk_notices (project_id, org_id, agent_id, ticket_id, change, at)" +
+          " VALUES ('p1', 'acme', 'acme_hr', '2026-09-08-site', 'done', '2026-09-08T01:00:00Z')",
+      );
+      rollbackTo(db, 6);
+      expect(schemaVersion(db)).toBe(6);
+      expect(shape(db)).toBe(shape(at6));
+    } finally {
+      db.close();
+      at6.close();
     }
   });
 });

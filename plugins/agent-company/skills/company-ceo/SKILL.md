@@ -18,7 +18,7 @@ A ticket is the organization's unit of collective work; the mission becomes a tr
 - One **parent ticket per project-level goal**: `--goal` the outcome, `--criteria` how the board will know it is reached, `--due` when the mission has a date. Its owner is you or the employee who leads that stream. `--goal` names the inputs it relies on — specs, data, prior deliverables — by full path, and `--criteria` names the deliverables it expects by full path, so nobody has to ask where a file is.
 - Filing on behalf of the board or of an employee: pass `--initiator <principal>` (an Agent id, or `agent:`/`user:` for the principal it is filed for), so the ticket records who asked for it rather than who typed the command.
 - **Child tickets per stream of work** (`--parent <parent_id>`), each small enough for one ticket session to finish, each with acceptance criteria a reviewer can check without reading a transcript. `--priority P0` for what blocks everything else; `P2` is the default.
-- New tickets land in `proposed`. Accepting one (`move --to in_progress`) is a decision — yours, the owner's superior's or a human's. Assign the owner when you accept: their desk gets an `assigned` notice and picks the ticket up on its next sweep.
+- New tickets land in `proposed`. Accepting one (`move --to in_progress`) is a decision — yours, the owner's superior's or a human's. Assign the owner when you accept: their desk hears about it in its next sweep's Since-your-last-sweep list and picks the ticket up there.
 - Anyone may propose. Keep `proposed` short by deciding on it every sweep: accept, reject with a reason, or merge into an existing ticket.
 
 ```bash

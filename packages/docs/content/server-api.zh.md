@@ -260,6 +260,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 `GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_channel`（新消息，带 `channelId` 与 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
 
+驱动工位会话的只有三样：日程项、频道里的 @ 提及、直接同它说话的人（CEO 创建时的初始化运行是唯一例外）。**工单写入不会启动任何一轮运行。** `move`、`block`、`unblock` 以及经 `PUT /:orgId/tickets/:ticketId` 设定负责人，都只被记录——写进工单文件、该变化在全员频道有系统消息时写进全员频道、并发出 `org_ticket` 事件——同时排入相关员工的队列；每人的下一条日程项在正文的 `## Since your last sweep` 一节里带上它们，一条变化一行。组织或员工被暂停期间队列照常积累，由此后真正触发的那次巡检送达；员工离职时，尚未送达的行随之删除。
+
 ### Session 创建与目录浏览
 
 | 方法 | 路径 | 说明 |

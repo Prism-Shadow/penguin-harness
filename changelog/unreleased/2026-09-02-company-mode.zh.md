@@ -41,3 +41,7 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 - 频道的 `system` 消息在英文 `text` 之外带一份结构化 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`、`ticket_blocked`、`ticket_done`、`ticket_rejected`）加一组字符串 `params`；Web App 与 `penguin org channel tail` 据此按读者的语言、用显示名渲染，客户端不认识的种类保留英文原文。频道消息正文在 Web App 里按 Markdown 渲染。
 - Web：组织打开时落在概览（`/org/:projectId/:orgId` 与组织切换器都到这里）；置顶的「新建频道」槽位改为频道列表标题旁的「+」；组织被删除后侧栏不再停在错误上（导航行置灰，并给出「新建组织」的入口，`/org` 解析到下一个组织或空态落地页——落地页现在垂直居中）；创建对话框给出三个使命示例与工作语言设置；概览折起使命，把整卡点击换成每张摘要卡自己的跳转按钮，并把收件箱（@ 我、待审核与被阻塞的工单、最近消息）、今日日程、告警三段通栏堆叠；空的日历与看板只留一个新建按钮，下方提示可永久关掉；财务页把 KPI 面板与趋势排成一行，支出树与工单表左右分列，告警放在最后；手册的文件清单改为资源管理器式的树，支持折叠文件夹、键盘导航、一键全部折叠，新建文档预填当前文件夹。
 - Skill：`company-ceo`、`company-hr`、`company-employee` 与 `company-setup` 重申——工位绝不亲自做工单（改为发起工单会话）、目标与验收标准与进展与结果里的文件一律写完整路径、排班警告必须改掉而不是略过、一切以组织的工作语言书写、相对工作区在指定时即被创建。
+
+### 第二轮试用之后（2026-09-09）
+
+- 工单的变化不再启动任何一轮运行。指派负责人、标记阻塞、阻塞解除、完成、拒绝，仍照旧记录——写进工单文件、该变化在全员频道有系统消息时写进全员频道、并发出 `org_ticket` 事件——同时排入相关员工的队列；每人的下一条日历事件在正文的 `## Since your last sweep` 一节里带上它们：一条变化一行，写明工单、标题、发生了什么，以及工单自身带的理由或阻塞方（文件已不在时写 `(ticket removed)`），最后一行说明该怎么决定——发起工单会话、核验后解除阻塞，或者放着不动。驱动工位会话的只有日程项、频道里的提及与直接找它说话的人，CEO 创建时的初始化运行是唯一例外。组织或员工处于暂停时队列照样写入，由此后真正触发的那次巡检送达；员工离职时，尚未送达的行随之删除。迁移 7 新增存放该队列的 `org_desk_notices` 表。`ticket_notice` 仍留在 `OrgTriggerKind` 中，因为它存在期间写下的 Trace 带着它；现在已没有任何地方再写出这种触发。Skill、组织手册模板、公司模式指南与服务端 API 参考都已照此叙述。
