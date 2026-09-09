@@ -2,7 +2,7 @@
   "name": "@prismshadow/penguin-plugin-discord-bot",
   "version": "0.1.0",
   "type": "module",
-  "description": "A Discord bot that starts PenguinHarness agents from chat: configure it in a Project's .project_config.toml, message the bot, and a Session opens on that Project's Agent and answers in the same channel.",
+  "description": "A Discord bot that starts PenguinHarness agents from chat: set its token and target Agent on the System settings dialog's Plugins page, message the bot, and a Session opens and answers in the same channel.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -89,13 +89,9 @@
             "iface": "@prismshadow/penguin-server#Log",
             "from": "RuntimeModule"
           },
-          "projects": {
-            "iface": "@prismshadow/penguin-server#Projects",
-            "from": "ProjectsModule"
-          },
-          "configStore": {
-            "iface": "@prismshadow/penguin-server#ProjectConfigStore",
-            "from": "ProjectsModule"
+          "pluginConfig": {
+            "iface": "@prismshadow/penguin-server#PluginConfig",
+            "from": "PluginConfigModule"
           }
         },
         "provides": {},
@@ -114,7 +110,47 @@
         },
         "children": []
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Discord bot",
+      "titleZh": "Discord \u673a\u5668\u4eba",
+      "description": "Message the bot in Discord, and a Session opens on the chosen Agent and answers in the same channel. Create the bot in the Discord developer portal and invite it to your server; in a server channel it reads only messages that @-mention it.",
+      "descriptionZh": "\u5728 Discord \u91cc\u7ed9\u673a\u5668\u4eba\u53d1\u6d88\u606f\uff0c\u5c31\u4f1a\u5728\u6240\u9009 Agent \u4e0b\u5f00\u4e00\u4e2a Session \u5e76\u5728\u540c\u4e00\u9891\u9053\u56de\u590d\u3002\u5148\u5728 Discord \u5f00\u53d1\u8005\u540e\u53f0\u521b\u5efa\u673a\u5668\u4eba\u5e76\u9080\u8bf7\u8fdb\u670d\u52a1\u5668\uff1b\u5728\u670d\u52a1\u5668\u9891\u9053\u91cc\u5b83\u53ea\u8bfb\u53d6 @ \u5b83\u7684\u6d88\u606f\u3002",
+      "properties": {
+        "bot_token": {
+          "type": "secret",
+          "title": "Bot token",
+          "titleZh": "Bot Token",
+          "description": "From the Bot page of the Discord developer portal.",
+          "descriptionZh": "\u6765\u81ea Discord \u5f00\u53d1\u8005\u540e\u53f0\u7684 Bot \u9875\u3002",
+          "required": true
+        },
+        "project": {
+          "type": "project",
+          "title": "Project",
+          "titleZh": "Project",
+          "description": "The Project every chat's Session is created under.",
+          "descriptionZh": "\u6bcf\u4e2a\u804a\u5929\u7684 Session \u521b\u5efa\u5728\u54ea\u4e2a Project \u4e0b\u3002",
+          "required": true
+        },
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "titleZh": "Agent",
+          "description": "The Agent in that Project that answers.",
+          "descriptionZh": "\u8be5 Project \u4e2d\u8d1f\u8d23\u56de\u7b54\u7684 Agent\u3002",
+          "default": "default_agent"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "Enabled",
+          "titleZh": "\u542f\u7528",
+          "description": "Off keeps the token and stops the bot.",
+          "descriptionZh": "\u5173\u95ed\u540e\u4fdd\u7559 Token\uff0c\u505c\u6389\u673a\u5668\u4eba\u3002",
+          "default": true
+        }
+      }
+    }
   },
   "dependencies": {
     "hono": "^4.12.34"

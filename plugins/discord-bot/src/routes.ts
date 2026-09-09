@@ -1,9 +1,8 @@
 /**
  * The bot's status route, `GET /api/discord-bot` — admin only, and read-only: the bot is
- * configured in the Project's config file and nowhere else. Reading the status runs a
- * config pass first, so it is also how an operator applies an edit without waiting for the
- * next interval. Mounted by the harness's HTTP module through the `HttpModule.routes` slot
- * behind its cookie gate, so `c.get("user")` is the signed-in user.
+ * configured on the System settings dialog's Plugins page and nowhere else. Mounted by the
+ * harness's HTTP module through the `HttpModule.routes` slot behind its cookie gate, so
+ * `c.get("user")` is the signed-in user.
  */
 import { Hono } from "hono";
 import type { DiscordBots } from "./manager.js";
@@ -30,7 +29,7 @@ export function discordBotRoutes(bots: DiscordBots): Hono {
   });
   app.get("/", async (c) => {
     await bots.reconcile();
-    return c.json(bots.list());
+    return c.json(bots.status());
   });
   return app;
 }
