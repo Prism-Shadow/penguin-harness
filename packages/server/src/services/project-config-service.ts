@@ -102,9 +102,10 @@ export function maskApiKey(key: string): string {
  * official endpoint, so consulting the vendor variable (ANTHROPIC_API_KEY, …) is the intended
  * configuration and its value may be previewed masked. Excluded — no detection, no preview:
  *
- * - gateway groups (they resell through generic OpenAI-protocol clients whose fallback is
- *   OPENAI_API_KEY, the *official OpenAI* variable; steering it to a reseller endpoint is
- *   exactly the misconfiguration the preview must not encourage) and the custom group;
+ * - gateway groups and any group pinning a protocol, e.g. vLLM (both reach a generic
+ *   OpenAI-protocol client whose fallback is OPENAI_API_KEY, the *official OpenAI*
+ *   variable; steering it to a reseller or to the user's own server is exactly the
+ *   misconfiguration the preview must not encourage), and the custom group;
  * - user-defined groups (not in MODEL_PROVIDERS at all);
  * - any entry re-pointed away from the official shape: a catalog preset whose client_type or
  *   base_url differs from the catalog's own values, or an off-catalog vendor-group entry that
@@ -120,7 +121,12 @@ export function envFallbackFirstParty(entry: {
   baseUrl: string | undefined;
 }): boolean {
   const group = providerInfo(entry.provider);
-  if (group === undefined || group.id === "custom" || group.gatewayBaseUrl !== undefined) {
+  if (
+    group === undefined ||
+    group.id === "custom" ||
+    group.gatewayBaseUrl !== undefined ||
+    group.clientType !== undefined
+  ) {
     return false;
   }
   const cat = catalogEntryFor(entry.provider, entry.modelId);

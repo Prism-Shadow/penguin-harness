@@ -109,9 +109,10 @@ import { MessagingPanel } from "../messaging/messaging-panel";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
-import { adoptDockScope } from "../dock/dock-state";
+// importing it also registers the global Ctrl+` hotkey with the app bundle
 import { setDockCwd } from "../dock/dock-terminal";
 import {
+  adoptDockScope,
   dockViews,
   dockVersion,
   isTabShown,
@@ -120,7 +121,6 @@ import {
   subscribeDock,
   type PanelKind,
 } from "../dock/dock-state";
-import "../dock/dock-terminal"; // registers the global Ctrl+` hotkey with the app bundle
 import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";

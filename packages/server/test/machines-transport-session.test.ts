@@ -104,6 +104,51 @@ exit 1
     expect(spawns()).toHaveLength(2);
   });
 
+  it("a held session that dies comes back on its own; a closed one stays closed", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const held = await conn.hold();
+    expect(held.ok).toBe(true);
+    expect(conn.held()).toBe(true);
+    const first = sessionOf("ssh:nas")!.pid;
+
+    // The link drops — the ssh child is gone, as after keepalives give up on a dead link.
+    process.kill(first);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(sessionOf("ssh:nas")).toBeNull();
+    // Held, so the transport brings it back: the shortest wait is a second.
+    const deadline = Date.now() + 5_000;
+    while (sessionOf("ssh:nas") === null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const second = sessionOf("ssh:nas");
+    expect(second).not.toBeNull();
+    expect(second!.pid).not.toBe(first);
+    // And it is a working session, still held. The spawn count is read only after a command
+    // has completed over it: the stub logs its own invocation from inside the child, after
+    // spawn() has already returned a pid, so a session can exist before its line is there.
+    expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
+    expect(spawns()).toHaveLength(2);
+    expect(conn.held()).toBe(true);
+
+    // An explicit close lets go for good: nothing reopens it.
+    closeConnectionTo("ssh:nas");
+    expect(conn.held()).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(sessionOf("ssh:nas")).toBeNull();
+    expect(spawns()).toHaveLength(2);
+  });
+
+  it("a command that times out on a held session drops the corpse but keeps the hold", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    await conn.hold();
+    const timedOut = await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
+    expect(timedOut).toMatchObject({ code: 255, stdout: "the machine did not answer in time" });
+    expect(conn.held()).toBe(true);
+    // The next command finds a session — reopened by the command itself or by the hold.
+    expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
+    expect(conn.held()).toBe(true);
+  });
+
   it("closing lets go of the session; the next ask opens a new one", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
     await conn.exec("true");

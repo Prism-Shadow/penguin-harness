@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS machines (          -- one row per machine this serve
   version      TEXT,                           -- what this server last installed there; NULL = never
   installed_at TEXT,
   session_pid  INTEGER,                        -- the ssh session this server holds to it; what a successor App closes after a hot swap
-  remote_port  INTEGER                         -- its server's port over there, as of the last connect
+  remote_port  INTEGER,                        -- its server's port over there, as of the last connect
+  platform     TEXT                            -- linux | darwin | win32, as the install found it: the shell dialect the status probe speaks to it in
 );
 CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses; no row = none yet. Follows the Project out, like project_members
   project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
