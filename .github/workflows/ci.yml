@@ -324,8 +324,10 @@ jobs:
   # The interface table as a page: the module tree, every node's requires / provides /
   # contributes and every interface at signature level, rendered from the same
   # ifaces.json the typecheck gate generates (its sha256 is the page's title). Uploaded as
-  # a workflow artifact named by the commit's sha and linked from the job summary — so a
-  # reviewer opens the tree this exact commit builds. An artifact lives in the run and
+  # a workflow artifact named by the commit's sha and linked from the job summary through
+  # the site's viewer (packages/landing/public/ifaces), which fetches the artifact through
+  # the artifact proxy and shows the page — so a reviewer opens the tree this exact commit
+  # builds in one click. An artifact lives in the run and
   # expires with it: nothing accumulates in the repository, runs never contend for a
   # shared branch, and a fork's run uploads like any other.
   ifaces-page:
@@ -365,12 +367,13 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           HASH: ${{ steps.table.outputs.hash }}
           URL: ${{ steps.upload.outputs.artifact-url }}
+          VIEW: https://penguin.ooo/ifaces/?owner=${{ github.repository_owner }}&repo=${{ github.event.repository.name }}&run=${{ github.run_id }}&artifact=${{ steps.upload.outputs.artifact-id }}
         run: |
           {
             echo "### Module tree"
             echo
             if [ -n "$URL" ]; then
-              echo "[$SHA]($URL) — interface table \`$HASH\` (unzip, open \`index.html\`)"
+              echo "[$SHA]($VIEW) — interface table \`$HASH\` ([zip]($URL))"
             else
               echo "$SHA — interface table \`$HASH\` (page not uploaded)"
             fi
