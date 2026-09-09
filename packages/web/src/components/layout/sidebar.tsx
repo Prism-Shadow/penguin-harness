@@ -379,24 +379,21 @@ export function Sidebar({
 
   /**
    * The rows this list renders: the user's OWN conversations. An organization's desk and
-   * ticket Sessions (marked by `orgId`) are driven by its scheduler and are listed as
-   * themselves in company mode's 工位 / 工单会话 groups, so they are filtered out here — once,
-   * at the source, or a dropped row would still conjure the Workspace group, Agent group or
-   * time bucket it belongs to. With company mode unavailable there is no such group to send
-   * them to, and they stay (see withoutOrgSessions).
+   * ticket Sessions (marked by `orgId`, or by the durable `client === "org"` stamp once the
+   * organization is gone) are driven by its scheduler and are listed as themselves in company
+   * mode's 工位 / 工单会话 groups, so they are filtered out here — once, at the source, or a
+   * dropped row would still conjure the Workspace group, Agent group or time bucket it belongs
+   * to. They are filtered whatever the company-mode switches say (see withoutOrgSessions):
+   * this list is the user's conversations, and a switch about the shell does not turn a
+   * scheduler's Session into one.
    */
-  const companyAvailable = company.available;
-  const devList = useMemo(
-    () => splitDevelopmentList(allSessions, companyAvailable),
-    [allSessions, companyAvailable],
-  );
+  const devList = useMemo(() => splitDevelopmentList(allSessions), [allSessions]);
   const sessions = devList.own;
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
-    for (const [agentId, rows] of allByAgent)
-      map.set(agentId, withoutOrgSessions(rows, companyAvailable));
+    for (const [agentId, rows] of allByAgent) map.set(agentId, withoutOrgSessions(rows));
     return map;
-  }, [allByAgent, companyAvailable]);
+  }, [allByAgent]);
   // …and the server totals those rows are counted in, corrected the same way, so a group
   // header never promises rows this list will not draw.
   const { byAgent: countsByAgent, byWorkspace: workspaceCountsByAgent } = useMemo(

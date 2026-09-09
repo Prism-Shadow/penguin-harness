@@ -59,7 +59,6 @@ import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { useCompany } from "../../state/company";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Button } from "../../components/ui/button";
@@ -262,8 +261,6 @@ export function ChatPage() {
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
   const { currency } = useTheme();
-  /** Whether company mode can list an organization's Sessions itself — see withoutOrgSessions. */
-  const { available: companyAvailable } = useCompany();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const agentId = currentAgent?.agentId ?? null;
@@ -670,12 +667,12 @@ export function ChatPage() {
     if (selected !== null) return;
     // A routed id missing from the paged list isn't gone until the direct lookup fails.
     if (routeSessionPending) return;
-    // An organization's desk or ticket Session is never auto-opened where company mode can
-    // list it as itself: landing in one by default would put the user inside a conversation
-    // the scheduler drives, and the sidebar's own groups are where it is reached.
-    const last = latestConversation(withoutOrgSessions(sessions, companyAvailable));
+    // An organization's desk or ticket Session is never auto-opened: landing in one by default
+    // would put the user inside a conversation the scheduler drives, and company mode's own
+    // groups are where it is reached.
+    const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, companyAvailable, navigate]);
+  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //

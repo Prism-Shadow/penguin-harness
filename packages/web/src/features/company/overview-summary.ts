@@ -1,15 +1,15 @@
 /**
  * The overview page's shaping (pure, unit tested): the employee counts, the board as a
  * segmented bar, today's calendar as an ordered timeline with each instance's outcome, the
- * spend against the budget, the inbox — everything that needs the reader, newest first — and
- * whether an organization is still fresh enough that a three-step guide serves it better than
- * an empty dashboard.
+ * spend against the budget, the inbox — what names the reader, what is stuck and what has
+ * landed, newest first — and whether an organization is still fresh enough that a three-step
+ * guide serves it better than an empty dashboard.
  */
 import type {
   OrgCalendarItem,
   OrgCalendarOutcome,
-  OrgChannelMessage,
   OrgEmployeeItem,
+  OrgInbox,
   OrgTicketItem,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
@@ -173,14 +173,17 @@ export function spendSummary(spend: {
  */
 export const INBOX_ROWS = 40;
 
-/** What an inbox row is about. The order is also how rows of the same instant are ranked. */
-export type InboxCategory = "mention" | "review" | "blocked" | "message";
+/**
+ * What an inbox row is about — the three things the organization has to say to a person:
+ * something was said TO them, something is stuck, something is finished. The order is also how
+ * rows of the same instant are ranked.
+ */
+export type InboxCategory = "mention" | "blocked" | "done";
 
 const CATEGORY_ORDER: Record<InboxCategory, number> = {
   mention: 0,
-  review: 1,
-  blocked: 2,
-  message: 3,
+  blocked: 1,
+  done: 2,
 };
 
 /** Where a row leads: the channel it was said in, or the ticket it is about. */
@@ -200,27 +203,17 @@ export interface InboxRow {
 }
 
 export interface InboxInput {
-  pending: {
-    mentions: number;
-    reviewTickets: readonly OrgTicketItem[];
-    blockedByMe: readonly OrgTicketItem[];
-  };
-  /** The all-hands channel's last messages, as the organization detail sends them. */
-  recentMessages: readonly OrgChannelMessage[];
-  /** The reader's own principal (`user:<id>`): what "addressed to me" means. */
-  me: string;
+  /**
+   * The three lists as the organization detail sends them. A server older than the field sends
+   * none, which is an empty inbox rather than an error: every row here is a convenience the
+   * pages behind it also offer.
+   */
+  inbox: OrgInbox | undefined;
   /**
    * A principal's display name. A function rather than a map because `all` and `system` have
    * localized names: the page passes its own `principalLabel` bound to the employee names.
    */
   names: (principal: string) => string;
-  /** The mentions row's sentence — the wording is the dictionary's, the count is this model's. */
-  mentionsTitle: (count: number) => string;
-}
-
-/** Whether a message is addressed to the reader: it names them, or it names everyone. */
-function addressedTo(message: OrgChannelMessage, me: string): boolean {
-  return message.mentions.includes(me) || message.mentions.includes("all");
 }
 
 /** The first line of a message that carries anything; "" when the whole text is blank. */
@@ -245,70 +238,66 @@ function ticketTime(ticketId: string): string | null {
 }
 
 /**
- * Everything that needs the reader as one list, newest first: the waiting @mentions, the
- * tickets in review, the tickets blocked on them, and the all-hands channel's recent messages.
- * Rows without a time sort last (a ticket whose id carries no date, a mention count with no
- * message to date it), ties fall back to the category order and then the key, and the list is
- * capped at `INBOX_ROWS`.
+ * A blocked ticket's aside: why it is stuck, then who it waits on. The reason is what the
+ * reader acts on and the principal is who they act through, so the reason leads; either half
+ * may be missing, and a ticket blocked with neither recorded carries no aside at all.
+ */
+function blockedDetail(ticket: OrgTicketItem, names: (principal: string) => string): string {
+  const reason = ticket.blocked?.trim() ?? "";
+  const waitsOn =
+    ticket.blockedBy === undefined || ticket.blockedBy === "" ? "" : names(ticket.blockedBy);
+  return [reason, waitsOn].filter((part) => part !== "").join(" · ");
+}
+
+/**
+ * The inbox as one list, newest first: the messages that name the reader (or everyone), the
+ * tickets that are blocked, and the tickets closed as done this period. Nothing else — a
+ * dashboard that repeats the whole channel is a second channel, and what earns a place here is
+ * what is addressed to the reader, what has stopped, and what has landed.
+ *
+ * Rows without a time sort last (a ticket whose id carries no date and that was never stamped
+ * closed), ties fall back to the category order and then the key, and the list is capped at
+ * `INBOX_ROWS`.
  */
 export function inboxRows(input: InboxInput): InboxRow[] {
   const rows: InboxRow[] = [];
 
-  if (input.pending.mentions > 0) {
-    // The count is a live unread number rather than a message, so the newest recent message
-    // that names the reader is the closest thing it has to a time.
-    let newest: { iso: string; ms: number } | null = null;
-    for (const message of input.recentMessages) {
-      if (!addressedTo(message, input.me)) continue;
-      const ms = parse(message.time);
-      if (ms !== null && (newest === null || ms > newest.ms)) newest = { iso: message.time, ms };
-    }
+  for (const message of input.inbox?.mentions ?? []) {
     rows.push({
-      key: "mention",
+      key: `mention/${message.id}`,
       category: "mention",
-      title: input.mentionsTitle(input.pending.mentions),
-      time: newest?.iso ?? null,
+      title: firstLine(message.text),
+      detail: input.names(message.sender),
+      time: message.time,
       tone: "attention",
       target: { kind: "channel", channelId: DEFAULT_CHANNEL_ID },
     });
   }
 
-  for (const ticket of input.pending.reviewTickets) {
-    rows.push({
-      key: `review/${ticket.ticketId}`,
-      category: "review",
-      title: ticket.title,
-      ...(ticket.owner !== undefined ? { detail: input.names(ticket.owner) } : {}),
-      time: ticketTime(ticket.ticketId),
-      tone: "attention",
-      target: { kind: "ticket", ticketId: ticket.ticketId },
-    });
-  }
-
-  for (const ticket of input.pending.blockedByMe) {
-    // `blockedBy` is the reader themselves on every row here, so naming them says nothing:
-    // the aside that helps is what the ticket is waiting for.
-    const reason = ticket.blocked ?? "";
+  for (const ticket of input.inbox?.blockedTickets ?? []) {
+    const detail = blockedDetail(ticket, input.names);
     rows.push({
       key: `blocked/${ticket.ticketId}`,
       category: "blocked",
       title: ticket.title,
-      ...(reason !== "" ? { detail: reason } : {}),
+      ...(detail !== "" ? { detail } : {}),
       time: ticketTime(ticket.ticketId),
       tone: "attention",
       target: { kind: "ticket", ticketId: ticket.ticketId },
     });
   }
 
-  for (const message of input.recentMessages) {
+  for (const ticket of input.inbox?.doneTickets ?? []) {
     rows.push({
-      key: `message/${message.id}`,
-      category: "message",
-      title: firstLine(message.text),
-      detail: input.names(message.sender),
-      time: message.time,
-      tone: addressedTo(message, input.me) ? "attention" : "muted",
-      target: { kind: "channel", channelId: DEFAULT_CHANNEL_ID },
+      key: `done/${ticket.ticketId}`,
+      category: "done",
+      title: ticket.title,
+      ...(ticket.owner !== undefined ? { detail: input.names(ticket.owner) } : {}),
+      // A ticket closed before the field existed still has the day it was filed to rank by.
+      time: ticket.closedAt ?? ticketTime(ticket.ticketId),
+      // Nothing is asked of the reader: the row is news, and its mark recedes.
+      tone: "muted",
+      target: { kind: "ticket", ticketId: ticket.ticketId },
     });
   }
 
@@ -327,22 +316,13 @@ export function inboxRows(input: InboxInput): InboxRow[] {
     .map((entry) => entry.row);
 }
 
-/** The inbox's filter chips, in rendered order. */
-export type InboxFilter = "all" | "mention" | "ticket" | "message";
-export const INBOX_FILTERS: readonly InboxFilter[] = ["all", "mention", "ticket", "message"];
+/** The inbox's filter chips, in rendered order: everything, then one per category. */
+export type InboxFilter = "all" | InboxCategory;
+export const INBOX_FILTERS: readonly InboxFilter[] = ["all", "mention", "blocked", "done"];
 
-/** Whether a chip admits a row: the ticket chip covers both ticket categories, "all" everything. */
+/** Whether a chip admits a row: its own category, and "all" everything. */
 export function inboxMatches(row: InboxRow, filter: InboxFilter): boolean {
-  switch (filter) {
-    case "all":
-      return true;
-    case "mention":
-      return row.category === "mention";
-    case "ticket":
-      return row.category === "review" || row.category === "blocked";
-    case "message":
-      return row.category === "message";
-  }
+  return filter === "all" || row.category === filter;
 }
 
 /** How many rows each chip would show. */
@@ -350,8 +330,8 @@ export function inboxCounts(rows: readonly InboxRow[]): Record<InboxFilter, numb
   const counts: Record<InboxFilter, number> = {
     all: rows.length,
     mention: 0,
-    ticket: 0,
-    message: 0,
+    blocked: 0,
+    done: 0,
   };
   for (const row of rows) {
     for (const filter of INBOX_FILTERS) {

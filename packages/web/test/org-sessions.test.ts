@@ -1,10 +1,10 @@
 /**
  * The company sidebar's two session groups (features/company/org-sessions.ts) and the
  * development list's organization filter (session-grouping): a desk row per employee in chart
- * order whether or not a desk exists, the live status winning over the chart's, ticket
- * sessions newest first under the ticket that names them, the glyph a row draws, the split of
- * a loaded list into the user's own rows and the organizations', and the totals corrected by
- * what that split hid.
+ * order whether or not a desk exists, the session list's live status winning over both
+ * snapshots, ticket sessions newest first under the ticket that names them, the glyph a row
+ * draws, the split of a loaded list into the user's own rows and the organizations', and the
+ * totals corrected by what that split hid.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -12,13 +12,18 @@ import type {
   OrgSessionsResponse,
   SessionCategoryCounts,
   SessionInfo,
+  SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import { deskRows, orgRowActivity, ticketSessionRows } from "../src/features/company/org-sessions";
 import {
   countsWithoutOrgSessions,
+  isOrgSession,
   splitDevelopmentList,
   withoutOrgSessions,
 } from "../src/lib/session-grouping";
+
+const liveStatuses = (entries: Record<string, SessionStatus>): ReadonlyMap<string, SessionStatus> =>
+  new Map(Object.entries(entries));
 
 const employee = (
   agentId: string,
@@ -118,6 +123,35 @@ describe("deskRows", () => {
     expect(deskRows(null, sessions).map((d) => d.agentId)).toEqual(["pm", "ceo"]);
     expect(deskRows(null, undefined)).toEqual([]);
   });
+
+  // The snapshots only move on an organization event, and a run ending publishes none: a desk
+  // that stopped would sit on "running" until an unrelated event happened to arrive.
+  it("takes the session list's live status over both snapshots", () => {
+    const live = liveStatuses({ "s-ceo": "running", "s-pm": "idle" });
+    expect(deskRows(chart, sessions, live).map((d) => [d.agentId, d.status])).toEqual([
+      ["ceo", "running"],
+      ["pm", "idle"],
+      // No desk session, so nothing live to read: the chart's own state stands.
+      ["dev", "idle"],
+    ]);
+    // The chart's desk id counts too, even before the sessions route has listed it.
+    expect(
+      deskRows(chart, { desks: [], tickets: [] }, liveStatuses({ "s-ceo": "idle" }))[0],
+    ).toMatchObject({ agentId: "ceo", status: "idle" });
+    // And without a chart, the sessions route's own rows take it as well.
+    expect(deskRows(null, sessions, liveStatuses({ "s-pm": "running" }))[0]).toMatchObject({
+      agentId: "pm",
+      status: "running",
+    });
+  });
+
+  it("falls back to the snapshot for a desk the session list has not loaded", () => {
+    expect(deskRows(chart, sessions, liveStatuses({})).map((d) => d.status)).toEqual([
+      "idle",
+      "compacting",
+      "idle",
+    ]);
+  });
 });
 
 describe("ticketSessionRows", () => {
@@ -130,6 +164,16 @@ describe("ticketSessionRows", () => {
     expect(ticketSessionRows(sessions)[2]).toMatchObject({ title: "Write docs", agentId: "ceo" });
     expect(ticketSessionRows(undefined)).toEqual([]);
   });
+
+  it("takes the session list's live status over the snapshot's", () => {
+    const rows = ticketSessionRows(sessions, liveStatuses({ "s-t1": "idle", "s-t2": "running" }));
+    expect(rows.map((r) => [r.sessionId, r.status])).toEqual([
+      // Not loaded by the session list, so the snapshot's status stands.
+      ["s-t3", "idle"],
+      ["s-t1", "idle"],
+      ["s-t2", "running"],
+    ]);
+  });
 });
 
 describe("orgRowActivity", () => {
@@ -140,43 +184,49 @@ describe("orgRowActivity", () => {
   });
 });
 
+describe("isOrgSession", () => {
+  it("reads either mark, and an empty orgId as no organization", () => {
+    expect(isOrgSession({ orgId: "acme" })).toBe(true);
+    // The durable stamp still answers once the organization is deleted and `orgId` is gone.
+    expect(isOrgSession({ client: "org" })).toBe(true);
+    expect(isOrgSession({})).toBe(false);
+    expect(isOrgSession({ orgId: "" })).toBe(false);
+    expect(isOrgSession({ orgId: "", client: "web" })).toBe(false);
+  });
+});
+
 describe("splitDevelopmentList", () => {
   const rows = [
     { sessionId: "a" },
     { sessionId: "s-ceo", orgId: "acme" },
-    { sessionId: "b" },
+    { sessionId: "b", client: "web" },
     { sessionId: "s-t1", orgId: "acme" },
+    // Its organization is gone, so nothing resolves an orgId for it any more.
+    { sessionId: "s-orphan", client: "org" },
   ];
 
   it("moves the organizations' rows into their own list, keeping order on both sides", () => {
-    expect(splitDevelopmentList(rows, true)).toEqual({
-      own: [{ sessionId: "a" }, { sessionId: "b" }],
+    expect(splitDevelopmentList(rows)).toEqual({
+      own: [{ sessionId: "a" }, { sessionId: "b", client: "web" }],
       organization: [
         { sessionId: "s-ceo", orgId: "acme" },
         { sessionId: "s-t1", orgId: "acme" },
+        { sessionId: "s-orphan", client: "org" },
       ],
     });
   });
 
   it("treats an empty orgId as no organization", () => {
-    expect(withoutOrgSessions([{ sessionId: "a", orgId: "" }, { sessionId: "b" }], true)).toEqual([
+    expect(withoutOrgSessions([{ sessionId: "a", orgId: "" }, { sessionId: "b" }])).toEqual([
       { sessionId: "a", orgId: "" },
       { sessionId: "b" },
     ]);
   });
 
-  it("hides the organizations' rows only while company mode can list them itself", () => {
-    expect(withoutOrgSessions(rows, true).map((s) => s.sessionId)).toEqual(["a", "b"]);
-    // Company mode off (the admin's switch or the user's own): nothing else lists these
-    // Sessions, so hiding them here would put them out of reach entirely — and nothing is
-    // then subtracted from the counts either.
-    expect(withoutOrgSessions(rows, false).map((s) => s.sessionId)).toEqual([
-      "a",
-      "s-ceo",
-      "b",
-      "s-t1",
-    ]);
-    expect(splitDevelopmentList(rows, false).organization).toEqual([]);
+  it("hides the organizations' rows whatever the company-mode switches say", () => {
+    // There is no switch to pass any more: this list is the user's own conversations, and a
+    // Session the scheduler drives is not one whether or not company mode is on screen.
+    expect(withoutOrgSessions(rows).map((s) => s.sessionId)).toEqual(["a", "b"]);
   });
 });
 

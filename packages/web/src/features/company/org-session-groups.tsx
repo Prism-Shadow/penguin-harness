@@ -10,9 +10,11 @@
  * from the board far more often than from here.
  *
  * Both read the company store's caches (the organization's chart and its sessions route), so
- * opening a group costs no request; the session the shell is on is marked in place.
+ * opening a group costs no request; the session the shell is on is marked in place. Their run
+ * marks come from the session list's live statuses wherever it holds the row — those caches
+ * are only re-read on an organization event, and a run ending publishes none (org-sessions.ts).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -21,6 +23,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { FolderSection } from "../../components/ui/group-list";
@@ -32,6 +35,17 @@ import { Truncated } from "../../components/ui/truncated";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { orgKey } from "./company-nav";
 import { deskRows, orgRowActivity, ticketSessionRows } from "./org-sessions";
+import type { LiveSessionStatuses } from "./org-sessions";
+
+/**
+ * The session list's statuses by id — what the user event channel has reported for every row
+ * that list holds. Memoized on the rows so the two groups below re-shape only when a status
+ * (or the list itself) actually moves.
+ */
+function useLiveSessionStatuses(): LiveSessionStatuses {
+  const { sessions } = useSessions();
+  return useMemo(() => new Map(sessions.map((s) => [s.sessionId, s.status])), [sessions]);
+}
 
 /** A row of either group, at the channel rows' density so the whole sidebar reads as one list. */
 const rowClass = (active: boolean) =>
@@ -96,9 +110,10 @@ export function OrgSessionGroups({
   const company = useCompany();
   const [desksOpen, setDesksOpen] = useState(true);
   const [ticketsOpen, setTicketsOpen] = useState(false);
+  const live = useLiveSessionStatuses();
   const sessions = company.orgSessions.get(orgKey(projectId, orgId));
-  const desks = deskRows(company.orgChart, sessions);
-  const tickets = ticketSessionRows(sessions);
+  const desks = deskRows(company.orgChart, sessions, live);
+  const tickets = ticketSessionRows(sessions, live);
   const { openSession, openDesk, opening } = useOpenSession(projectId, orgId, onNavigate);
   // Nothing has been read for this organization yet: a skeleton, not an "empty" claim.
   const chartFailed = company.orgChart === null && company.orgChartError !== null;
@@ -217,7 +232,8 @@ export function OrgSessionGroups({
 /** The collapsed rail's desks: the same rows as avatars, each with its running dot. */
 export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: string }) {
   const company = useCompany();
-  const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)));
+  const live = useLiveSessionStatuses();
+  const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)), live);
   const { openDesk, opening } = useOpenSession(projectId, orgId);
   if (desks.length === 0) return null;
   return (

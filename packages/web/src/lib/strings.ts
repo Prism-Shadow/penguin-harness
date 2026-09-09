@@ -2405,10 +2405,12 @@ Benchmark：
     orgId: "组织 id",
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
     /**
-     * The id field's generate button, the clause the hint appends for it, and what a name no
-     * id can be derived from is told. The clause carries its own leading separator: what
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — the clause the hint appends for it, and what a name
+     * no id can be derived from is told. The clause carries its own leading separator: what
      * joins two clauses is punctuation, and punctuation belongs to the language.
      */
+    generateIdLabel: "用 AI 生成",
     generateId: "从名称生成 ID",
     idGenerateHint: "；也可以从显示名生成",
     idNotDerivable: "无法从名称推导 ID，请手动输入",
@@ -2527,7 +2529,6 @@ Benchmark：
       today: "今日日程",
       todayEmpty: "今天没有日程",
       spend: "本周期支出",
-      mentions: (n: number): string => `${n} 条 @我 的消息`,
       reviewTickets: "审核中的工单",
       alerts: "告警",
       alertsEmpty: "本周期没有预算告警",
@@ -2569,14 +2570,15 @@ Benchmark：
       stepDone: "已完成",
       goToChart: "去组织图",
       goToCalendar: "去日历",
-      /** The inbox: everything that needs the reader, newest first. */
+      /** The inbox: what names the reader, what is stuck and what has landed, newest first. */
       inbox: "收件箱",
-      inboxInfo: "按时间倒序列出需要你看的一切：@我、审核中与被阻塞的工单、全员频道的最新消息。",
+      inboxInfo:
+        "按时间倒序列出组织要对你说的三件事：全员频道里 @我（或 @所有人）的消息、被阻塞的工单、本周期已完成的工单。其余的去频道与看板本身看。",
       inboxEmpty: "收件箱是空的",
       /** The filter chips over the rows, each with its own count. */
-      inboxFilters: { all: "全部", mention: "@我", ticket: "工单", message: "消息" },
+      inboxFilters: { all: "全部", mention: "@我", blocked: "阻塞", done: "已完成" },
       /** The chip that leads a row, naming what the row is. */
-      inboxCategories: { mention: "@我", review: "审核", blocked: "阻塞", message: "消息" },
+      inboxCategories: { mention: "@我", blocked: "阻塞", done: "已完成" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
       viewAll: "查看全部",

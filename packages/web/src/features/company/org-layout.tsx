@@ -33,8 +33,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { orgCreatedPath, orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog } from "./org-dialogs";
-import { FIRST_STEPS } from "./overview-summary";
-import type { FirstStep } from "./overview-summary";
+import { ORG_EXAMPLES } from "./org-examples";
 
 export interface OrgContextValue {
   projectId: string;
@@ -101,27 +100,26 @@ export function OrgIndexRedirect() {
   return <Navigate to={orgPagePath(target.projectId, target.orgId, "overview")} replace />;
 }
 
-/** The three first steps as the landing tells them: what happens once the organization exists. */
-const STEP_TEXT: Record<FirstStep, () => { title: string; body: string }> = {
-  ceo: () => ({
-    title: S.company.overview.stepCeoTitle,
-    body: S.company.overview.stepCeoBody,
-  }),
-  hire: () => ({
-    title: S.company.overview.stepHireTitle,
-    body: S.company.overview.stepHireBody,
-  }),
-  schedule: () => ({
-    title: S.company.overview.stepScheduleTitle,
-    body: S.company.overview.stepScheduleBody,
-  }),
-};
-
-/** The landing of a user who has no organization anywhere: what one is, what the first three steps will be, and the button that makes it. */
+/**
+ * The landing of a user who has no organization anywhere: what one is, the button that makes
+ * one, and three missions worth starting.
+ *
+ * The proposals are the same three the create dialog offers under its mission field, as cards:
+ * a name to recognize the shape of the company by and the mission itself, clamped to three
+ * lines with the whole text in the tooltip. Each opens the dialog already filled in — the
+ * hardest part of an empty landing is not the form, it is having nothing to type into it — and
+ * leaves the id to the field's own generator.
+ */
 function OrgEmptyLanding() {
   const navigate = useNavigate();
   const company = useCompany();
   const [createOpen, setCreateOpen] = useState(false);
+  /** The proposal the dialog opens filled in with; null when the plain create button opened it. */
+  const [picked, setPicked] = useState<{ name: string; mission: string } | null>(null);
+  const openCreate = (example: { name: string; mission: string } | null) => {
+    setPicked(example);
+    setCreateOpen(true);
+  };
   // Landing on `/org` is a choice of mode like entering an organization is: the sidebar
   // shows the company shell around this page rather than the development list.
   const { available, setWorkMode } = company;
@@ -139,31 +137,34 @@ function OrgEmptyLanding() {
           {S.company.landingBody}
         </p>
         <div className="mt-6">
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+          <Button variant="primary" onClick={() => openCreate(null)}>
             {S.company.createOrg}
           </Button>
         </div>
-        <ol className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-4 text-left sm:grid-cols-3">
-          {FIRST_STEPS.map((step, i) => {
-            const text = STEP_TEXT[step]();
+        <ul className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-3 text-left sm:grid-cols-3">
+          {ORG_EXAMPLES.map((example) => {
+            const copy = S.company.missionExamples[example.id];
             return (
-              <li key={step} className={`flex ${ICON_GAP.menu}`}>
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                  {i + 1}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">{text.title}</span>
-                  <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
-                    {text.body}
+              <li key={example.id} className="min-w-0">
+                <button
+                  type="button"
+                  title={copy.mission}
+                  onClick={() => openCreate(copy)}
+                  className="h-full w-full rounded-md border border-gray-200 p-3 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
+                >
+                  <span className="block text-sm font-medium">{copy.name}</span>
+                  <span className="mt-1 line-clamp-3 block text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                    {copy.mission}
                   </span>
-                </span>
+                </button>
               </li>
             );
           })}
-        </ol>
+        </ul>
       </div>
       <CreateOrganizationDialog
         open={createOpen}
+        {...(picked !== null ? { initial: picked } : {})}
         onClose={() => setCreateOpen(false)}
         onCreated={(detail) => {
           setCreateOpen(false);
