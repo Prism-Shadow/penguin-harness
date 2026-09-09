@@ -26,7 +26,7 @@
 
 ## 表就是一个页面
 
-`pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，按 commit sha 发布到 `ifaces-pages` 分支，并从 job summary 与一条 PR 评论链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。
+`pnpm ifaces:page` 把 `ifaces.json` 渲染成一个自包含的 HTML 页面（`dist-ifaces/index.html`）：模块树、每个节点的 requires / provides / contributes、每个接口的签名，标题里是表的 sha256，旁边就是那份 JSON。CI 为每个 commit 渲染一份，以 commit sha 命名上传为 workflow artifact，并从 job summary 链接过去——页面的 `ifaces.json` 就是那个 commit 构建出的表，哈希一致。
 
 ## 兼容性
 
