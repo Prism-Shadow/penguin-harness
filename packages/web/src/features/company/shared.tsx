@@ -326,20 +326,6 @@ export function PrincipalChip({
   );
 }
 
-/** A labelled value in a stat block: the name small above, the value bold beneath. */
-export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: Tone }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-gray-500 dark:text-gray-400">{label}</p>
-      <p
-        className={`truncate text-lg font-semibold tabular-nums ${tone !== undefined ? toneInk[tone] : ""}`}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
 /**
  * One KPI as its own bordered card, the shape the cost center's summary uses: a small glyph
  * beside the label, the value bold beneath it, and a line of detail under that. A tone inks
