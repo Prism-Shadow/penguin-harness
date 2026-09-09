@@ -306,10 +306,17 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     );
 
     // 7. The developer's desk opens a ticket session for the site; the session works and writes back.
-    const { sessionId: siteWork } = await service.startTicket(P, ORG, site.ticketId, {
-      agentId: DEV,
-      message: "Start with a static site; featured row can be hard-coded for now.",
-    });
+    // The developer's OWN desk starts it: an employee may open a session only on a ticket it owns.
+    const { sessionId: siteWork } = await service.startTicket(
+      P,
+      ORG,
+      site.ticketId,
+      {
+        agentId: DEV,
+        message: "Start with a static site; featured row can be hard-coded for now.",
+      },
+      { userId: "alice", sessionId: devDesk },
+    );
     expect(h.sessions.findById(siteWork)?.agentId).toBe(DEV);
     expect(h.sessions.findById(siteWork)?.workspace).toBe(path.join(dir, "workspace", "site"));
     const work = h.started.find((s) => s.sessionId === siteWork)!;
@@ -364,9 +371,13 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     await service.unblockTicket(P, ORG, seo.ticketId, { userId: "alice", sessionId: mktDesk });
 
     // 9. Marketing works SEO and social from one session attached to both tickets; finance rolls it all up.
-    const { sessionId: mktWork } = await service.startTicket(P, ORG, seo.ticketId, {
-      agentId: MKT,
-    });
+    const { sessionId: mktWork } = await service.startTicket(
+      P,
+      ORG,
+      seo.ticketId,
+      { agentId: MKT },
+      { userId: "alice", sessionId: mktDesk },
+    );
     await service.attachTicket(P, ORG, social.ticketId, mktWork, {
       userId: "alice",
       sessionId: mktDesk,
@@ -388,7 +399,13 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     expect(ticketCost.get(parent.ticketId)?.rolledUp).toBe(70);
 
     // 10. Revenue: the paid featured slots ship and the board is told.
-    const slotWork = await service.startTicket(P, ORG, slots.ticketId, { agentId: DEV });
+    const slotWork = await service.startTicket(
+      P,
+      ORG,
+      slots.ticketId,
+      { agentId: DEV },
+      { userId: "alice", sessionId: devDesk },
+    );
     await service.progressTicket(
       P,
       ORG,

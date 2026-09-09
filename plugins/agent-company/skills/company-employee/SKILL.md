@@ -71,7 +71,7 @@ Your desk session is permanent — one per employee, the target of every calenda
 A sweep, on a calendar event or whenever a human asks you for one — start it by reading the `## Since your last sweep` list the event carries, then:
 
 1. `penguin org ticket ls --owner agent:<your_agent_id> --json` — your tickets; add `--status proposed` for candidates and `--blocked` to see what is stuck. Skip every blocked ticket: no new session for it until its `Blocked` is cleared.
-2. For each `in_progress` ticket of yours that no session is working on, start one: `penguin org ticket start <ticket_id> -m "<what to do first, what to leave alone>"`. It runs in the background and prints the session id; start several for independent streams of one ticket, and start one on a colleague's ticket when they asked for help in a channel.
+2. For each `in_progress` ticket of yours that no session is working on, start one: `penguin org ticket start <ticket_id> -m "<what to do first, what to leave alone>"`. It runs in the background and prints the session id; start several for independent streams of one ticket. **Only the ticket's owner starts its sessions** — the server answers `403 not_ticket_owner` on anyone else's ticket. When you need a colleague on your ticket, ask in a channel and they answer with `penguin org ticket start <your_ticket_id> --agent-id <them>`; when a colleague asks you for help, it is their ticket, so they start the session naming you and you work in it. To move the work itself, reassign the ticket: `penguin org ticket assign <ticket_id> --owner agent:<them>`, and their desk picks it up in its next sweep.
 3. Check on the sessions you started earlier: `penguin input <session_id> --timeout 0` for the latest reply, `penguin logs <session_id> --tail 40` for the trail, `penguin input <session_id> -m "<course correction>" --timeout 0` to steer.
 4. Verify what a finished session claims — `penguin org ticket show <ticket_id>`, then the files in the workspace — and write the verdict back: `penguin org ticket progress <ticket_id> -m "verified: …"`, and `penguin org ticket move <ticket_id> --to review` (or `done`, where the handbook allows) if the session did not already.
 5. Report only what needs someone — a decision, a blocker, a completion — in the channel that work belongs to (see etiquette).
@@ -104,9 +104,9 @@ Talk happens in **channels**. `default_channel` is the all-hands channel every e
 
 - Answer where you were addressed: a `kind: mention` trigger names the channel on its `channel:` line, and the reply belongs in the same one — `penguin org channel send --channel <id> -m "…"`.
 - Read the channels you are in — `penguin org channel ls`, then `penguin org channel tail --channel <id> -n 50` (`--date <yyyy-mm-dd>` for another day) — on your own schedule; a message that does not @ you never interrupts you. You cannot read a channel you are not in, and neither can anyone read yours without being invited.
-- @-mention only when you need something from that person: a decision, a blocker they own, or a completion they asked to hear about. Reference the ticket: `penguin org channel send --channel site -m "@acme_ceo 2026-09-01-site-launch is in review" --ref-ticket 2026-09-01-site-launch`. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
+- @-mention only when you need something from that person: a decision, a blocker they own, or a completion they asked to hear about. Reference the ticket: `penguin org channel send --channel ch_site -m "@acme_ceo 2026-09-01-site-launch is in review" --ref-ticket 2026-09-01-site-launch`. A message that mentions someone the channel does not hold is refused — invite them first, or write where they already are.
 - `@all` is that channel's members, not the whole company. Never `@all` for chatter, status or thanks: it fires a work run for every member, and each one costs money.
-- Open a channel when a thread would drown the all-hands channel — one per stream or per big ticket: `penguin org channel create <id> --name "<what it is>" --purpose "<what belongs here>"`, then `penguin org channel invite <id> agent:<owner>` for exactly the principals the work needs, and say so once in the all-hands channel so nobody has to guess where the thread went. A new channel holds only you until you invite.
+- Open a channel when a thread would drown the all-hands channel — one per stream or per big ticket: `penguin org channel create ch_<id> --name "<what it is>" --purpose "<what belongs here>"` (by convention a channel id starts with `ch_`, an organization id with `co_`; the server does not enforce it and older ids keep working), then `penguin org channel invite ch_<id> agent:<owner>` for exactly the principals the work needs, and say so once in the all-hands channel so nobody has to guess where the thread went. A new channel holds only you until you invite.
 - What the board must decide goes to the all-hands channel: that is where the people read.
 - Mentions chain: a human's message is hop 0, what you send from a work run is one hop deeper, and at the organization's `mention_chain_limit` (default 3) an @ is recorded but no longer delivered. Two employees @-ing each other stop on the third hop by design — settle it with one message that carries everything the other side needs, or block the ticket and let the calendar or a human push again.
 - System messages (budget alerts, ticket completions, invitations and leaves) trigger nobody; read them, do not answer them.
@@ -117,7 +117,7 @@ The `budget:` line of every trigger block is your period-to-date spend (yours pl
 
 ## Command reference
 
-Inside a desk or ticket session `PENGUIN_ORG_ID` is injected beside the usual control variables, so `--org-id` is never needed. `--agent-id` on `calendar` and the positional `<agent_id>` of `desk` default to you (`PENGUIN_AGENT_ID`); `ticket start` runs the ticket session as you; `ticket progress` and `ticket attach` take the current session from `PENGUIN_SESSION_ID`.
+Inside a desk or ticket session `PENGUIN_ORG_ID` is injected beside the usual control variables, so `--org-id` is never needed. `--agent-id` on `calendar` and the positional `<agent_id>` of `desk` default to you (`PENGUIN_AGENT_ID`); `ticket start` runs the ticket session as you unless its own `--agent-id` enlists a colleague on your ticket; `ticket progress` and `ticket attach` take the current session from `PENGUIN_SESSION_ID`.
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
@@ -141,10 +141,10 @@ penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # writes Blocked / Blocked-by; the ticket stays in its column
 penguin org ticket unblock <ticket_id>                          # clears the block
 penguin org ticket progress <ticket_id> -m <text>               # appends one progress line, tagged with the current session
-penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--json]   # opens a new ticket session contributing to the ticket (repeatable); runs in the background and prints the session id
+penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--agent-id <id>] [--json]   # opens a new ticket session contributing to the ticket (repeatable); only on a ticket you own, --agent-id enlists a colleague on it; runs in the background and prints the session id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # attaches an existing session as a contributing session; defaults to the current one
 penguin org channel ls [--json]                                 # the channels you are in, with unread counts
-penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holding only you
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holding only you (`ch_<name>` by convention)
 penguin org channel show <channel_id> [--json]                  # its purpose and its members
 penguin org channel invite <channel_id> <principal>...          # any member may invite; an agent joins only by invitation
 penguin org channel leave <channel_id>                          # remove yourself

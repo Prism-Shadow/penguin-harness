@@ -217,11 +217,11 @@ penguin schedule rm daily-report
 
 ## penguin org
 
-Company mode's command family — a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, calendar, tickets, channels) stay the single source of truth; every subcommand reads a projection of them or writes through the route that edits them, with the same validated-writer contract `schedule` has: API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits.
+Company mode's command family — a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, calendar, tickets, channels) stay the single source of truth; every subcommand reads a projection of them or writes through the route that edits them, with the same validated-writer contract `schedule` has: API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits. Generated ids carry a prefix by convention — `co_` for an organization, `ch_` for a channel — which the server proposes but never enforces, so an id passed here is created exactly as typed.
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # by convention `co_<slug>`
 penguin org show [--org-id <id>] [--json]                       # overview: working language, employees and states, board counts, spend against budget, pending items
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
@@ -241,10 +241,10 @@ penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # the ticket stays in its column
 penguin org ticket unblock <ticket_id>
 penguin org ticket progress <ticket_id> -m <text>               # a progress entry, attributed to the calling session
-penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--json]   # a ticket session working on the ticket in the background; prints its id
+penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--agent-id <id>] [--json]   # a ticket session working on the ticket in the background; prints its id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # an existing session as a contributor (default: the calling session)
 penguin org channel ls [--json]                                 # every channel for a person, its own for an employee
-penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holds only its creator
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holds only its creator; `ch_<slug>` by convention
 penguin org channel show <channel_id> [--json]                  # purpose, member count and the member list
 penguin org channel invite <channel_id> <principal>...          # any member invites; one POST per principal
 penguin org channel join <channel_id>                           # people only; an employee waits to be invited
@@ -265,7 +265,7 @@ Every subcommand takes `--org-id <id>`, `--project-id`, `--json` and `--server`.
 The same environment identifies the caller inside a session:
 
 - `--agent-id` on the `calendar` commands and the positional of `desk` default to `PENGUIN_AGENT_ID` — an employee schedules its own events and renews its own desk. `calendar ls` without the flag lists every employee's events.
-- `ticket start` runs the ticket session as `PENGUIN_AGENT_ID` when it is set; otherwise the server picks the ticket's owner.
+- `ticket start` runs the ticket session as `--agent-id` when given, else `PENGUIN_AGENT_ID` when set, else the ticket's owner as the server picks it. It also carries `PENGUIN_SESSION_ID`, which is what lets the server apply the rule: **only the ticket's owner, or a person, starts its sessions** — an employee asking for anyone else's ticket (or for one with no employee owner) gets `403 not_ticket_owner`, printed verbatim, telling it to assign the ticket instead (`penguin org ticket assign <id> --owner agent:<employee>`) and let that desk pick it up in its next sweep. `--agent-id` is how the owner enlists a colleague on its own ticket.
 - The ticket writes (`create`, `assign`, `move`, `block`, `unblock`, `progress`) and the channel writes (`create`, `invite`, `join`, `archive`, `unarchive`, `send`) carry `PENGUIN_SESSION_ID` in their body, so the file records the session's employee rather than the token's user; `ticket attach` attaches that session when `--session` is omitted (a full id or a unique fragment, as everywhere).
 - The channel reads (`ls`, `show`, `tail`) and the member DELETE behind `leave` and `remove` have no body, so they carry the same session as `?sessionId=`. Without it the server answers an employee as the signed-in person, and `channel ls` would list every channel instead of the employee's own.
 

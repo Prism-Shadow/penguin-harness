@@ -1264,6 +1264,16 @@ export interface SessionInfo {
    * company sidebar's 工位 / 工单会话 groups are where they are listed.
    */
   orgId?: string;
+  /**
+   * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
+   * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
+   * runtime (a desk or a ticket session), "web" otherwise. Absent only on a row that
+   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
+   * from the organization caches, so it disappears with the organization and is not read
+   * while company mode is off — this is a durable stamp on the row: development mode's list
+   * hides an "org" Session either way.
+   */
+  client?: "web" | "cli" | "org";
 }
 
 /**
@@ -1334,8 +1344,10 @@ export interface SessionCreateRequest {
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
    * Session through the API, "org" when the organization runtime opened it (a desk or a
    * ticket session — company mode's own, kept out of development mode's lists whether or
-   * not the organization still exists); defaults to "web". Lists serve every row regardless
-   * of client; only development mode's session list filters on it.
+   * not the organization still exists); defaults to "web". A REQUEST may send only "web" or
+   * "cli": the runtime writes "org" by calling the service directly, so no caller can claim
+   * an organization's provenance for its own Session. Lists serve every row regardless of
+   * client; only development mode's session list filters on it.
    */
   client?: "web" | "cli" | "org";
 }

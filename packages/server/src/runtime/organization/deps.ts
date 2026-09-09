@@ -33,6 +33,13 @@ export interface OrgSessionCreator {
     modelId?: string;
     provider?: string;
     approvalMode?: ApprovalMode;
+    /**
+     * Always "org" here — the runtime opens no other kind of session, and the marker is
+     * what keeps a desk or ticket session out of development mode's list once the
+     * organization is gone. Required rather than optional so a new call site cannot
+     * forget it.
+     */
+    client: "org";
   }): Promise<{ sessionId: string; workspace: string }>;
 }
 

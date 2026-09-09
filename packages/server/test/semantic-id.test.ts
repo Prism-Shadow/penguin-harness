@@ -1,23 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
   fallbackSemanticId,
+  prefixSemanticId,
   sanitizeSuggestedId,
   uniqueSemanticId,
 } from "../src/organization/semantic-id.js";
 
 describe("fallbackSemanticId", () => {
-  it("lowercases, folds diacritics and joins words with underscores", () => {
-    expect(fallbackSemanticId("Plugin Marketplace", "org")).toBe("plugin_marketplace");
-    expect(fallbackSemanticId("  Café--Site!! ", "channel")).toBe("cafe_site");
+  it("lowercases, folds diacritics, joins words with underscores and prefixes by kind", () => {
+    expect(fallbackSemanticId("Plugin Marketplace", "org")).toBe("co_plugin_marketplace");
+    expect(fallbackSemanticId("  Café--Site!! ", "channel")).toBe("ch_cafe_site");
   });
 
-  it("prefixes a name that starts with a digit so the id starts with a letter", () => {
-    expect(fallbackSemanticId("2026 plan", "org")).toBe("org_2026_plan");
-    expect(fallbackSemanticId("3d", "channel")).toBe("channel_3d");
+  it("the prefix is what makes a name starting with a digit a valid id", () => {
+    expect(fallbackSemanticId("2026 plan", "org")).toBe("co_2026_plan");
+    expect(fallbackSemanticId("3d", "channel")).toBe("ch_3d");
   });
 
-  it("pads a one-character name to the two-character minimum", () => {
-    expect(fallbackSemanticId("x", "org")).toBe("org_x");
+  it("a one-character name is already long enough once prefixed", () => {
+    expect(fallbackSemanticId("x", "org")).toBe("co_x");
+  });
+
+  it("does not prefix a core that already carries the prefix", () => {
+    expect(fallbackSemanticId("co_acme", "org")).toBe("co_acme");
+    expect(fallbackSemanticId("Ch Site", "channel")).toBe("ch_site");
   });
 
   it("yields null for a name with no ASCII letters or digits", () => {
@@ -27,18 +33,26 @@ describe("fallbackSemanticId", () => {
   });
 
   it("keeps the ASCII part of a mixed name", () => {
-    expect(fallbackSemanticId("科研 Lab 2", "org")).toBe("lab_2");
+    expect(fallbackSemanticId("科研 Lab 2", "org")).toBe("co_lab_2");
   });
 
-  it("caps the length at 64 and never ends in an underscore", () => {
-    const id = fallbackSemanticId("a".repeat(60) + " tail words", "org");
-    expect(id).toHaveLength(64);
-    expect(id?.endsWith("_")).toBe(false);
+  it("caps the length at 64 with the prefix kept, and never ends in an underscore", () => {
+    expect(fallbackSemanticId("a".repeat(70) + " tail words", "org")).toBe(`co_${"a".repeat(61)}`);
   });
 
-  it("avoids taken ids with a numeric suffix", () => {
-    expect(fallbackSemanticId("Site", "channel", ["site"])).toBe("site_2");
-    expect(fallbackSemanticId("Site", "channel", ["site", "site_2"])).toBe("site_3");
+  it("avoids taken ids with a numeric suffix, compared after prefixing", () => {
+    expect(fallbackSemanticId("Site", "channel", ["ch_site"])).toBe("ch_site_2");
+    expect(fallbackSemanticId("Site", "channel", ["ch_site", "ch_site_2"])).toBe("ch_site_3");
+    // The bare core is not the id, so holding it takes nothing.
+    expect(fallbackSemanticId("Site", "channel", ["site"])).toBe("ch_site");
+  });
+});
+
+describe("prefixSemanticId", () => {
+  it("puts the kind's prefix in front exactly once", () => {
+    expect(prefixSemanticId("marketing", "channel")).toBe("ch_marketing");
+    expect(prefixSemanticId("ch_marketing", "channel")).toBe("ch_marketing");
+    expect(prefixSemanticId("marketing", "org")).toBe("co_marketing");
   });
 });
 
@@ -50,9 +64,13 @@ describe("uniqueSemanticId", () => {
 });
 
 describe("sanitizeSuggestedId", () => {
-  it("takes the first non-empty line and strips quotes and code marks", () => {
-    expect(sanitizeSuggestedId("\n`research_lab`\n", "org")).toBe("research_lab");
-    expect(sanitizeSuggestedId('"Research Lab".', "org")).toBe("research_lab");
+  it("takes the first non-empty line, strips quotes and code marks, and prefixes it", () => {
+    expect(sanitizeSuggestedId("\n`research_lab`\n", "org")).toBe("co_research_lab");
+    expect(sanitizeSuggestedId('"Research Lab".', "org")).toBe("co_research_lab");
+  });
+
+  it("does not double a prefix the model added itself", () => {
+    expect(sanitizeSuggestedId("co_research_lab", "org")).toBe("co_research_lab");
   });
 
   it("returns null for an answer that carries no ASCII", () => {

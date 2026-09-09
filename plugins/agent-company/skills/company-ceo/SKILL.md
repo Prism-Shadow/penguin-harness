@@ -19,6 +19,7 @@ A ticket is the organization's unit of collective work; the mission becomes a tr
 - Filing on behalf of the board or of an employee: pass `--initiator <principal>` (an Agent id, or `agent:`/`user:` for the principal it is filed for), so the ticket records who asked for it rather than who typed the command.
 - **Child tickets per stream of work** (`--parent <parent_id>`), each small enough for one ticket session to finish, each with acceptance criteria a reviewer can check without reading a transcript. `--priority P0` for what blocks everything else; `P2` is the default.
 - New tickets land in `proposed`. Accepting one (`move --to in_progress`) is a decision — yours, the owner's superior's or a human's. Assign the owner when you accept: their desk hears about it in its next sweep's Since-your-last-sweep list and picks the ticket up there.
+- **You file and assign; the owner's desk starts the work.** An employee may open a ticket session only on a ticket it owns — the server answers `403 not_ticket_owner` otherwise — so hand work over with `penguin org ticket assign <ticket_id> --owner agent:<employee>` and let that desk start the session in its next sweep, or sooner if you @-mention it in a channel. Run `penguin org ticket start` only for the tickets you own yourself.
 - Anyone may propose. Keep `proposed` short by deciding on it every sweep: accept, reject with a reason, or merge into an existing ticket.
 
 ```bash
@@ -66,13 +67,13 @@ Shared inputs — specs, brand assets, data — live at the workspace root where
 Talk is partitioned the way the workspace is. `default_channel` is the all-hands channel — everyone is in it, and it is where the board reads — so a stream's day-to-day thread belongs in a channel of its own, opened at kickoff and holding exactly the people and employees that stream needs:
 
 ```bash
-penguin org channel create site --name "Site" --purpose "Building and shipping the marketplace site"
-penguin org channel invite site agent:<org_id>_dev agent:<org_id>_writer
-penguin org channel create marketing --name "Marketing" --purpose "SEO, the social launch and the paid slots"
-penguin org channel invite marketing agent:<org_id>_marketer
+penguin org channel create ch_site --name "Site" --purpose "Building and shipping the marketplace site"
+penguin org channel invite ch_site agent:<org_id>_dev agent:<org_id>_writer
+penguin org channel create ch_marketing --name "Marketing" --purpose "SEO, the social launch and the paid slots"
+penguin org channel invite ch_marketing agent:<org_id>_marketer
 ```
 
-- One channel per stream (`site`, `marketing`, `finance` …), plus one for a ticket big enough to carry its own thread; ids follow `^[a-z][a-z0-9_]{1,63}$` and `default_channel` is taken.
+- One channel per stream (`ch_site`, `ch_marketing`, `ch_finance` …), plus one for a ticket big enough to carry its own thread; ids follow `^[a-z][a-z0-9_]{1,63}$` and `default_channel` is taken. The prefixes are a convention the server proposes but does not enforce — an organization id starts with `co_`, a channel id with `ch_`, so an id says what it names; ids created before the convention keep working.
 - A new channel holds only its creator. Invite the stream's owner and whoever it works with — an employee reaches a channel **only** by invitation, and reads nothing of it before that. Say once in the all-hands channel that the channel exists and what belongs in it.
 - Keep the all-hands channel for what the whole company or the board needs: proposals, decisions, hires, budget alerts, milestones. Everything else has a home.
 - `penguin org channel archive <id>` folds a finished stream's channel away, read-only; `unarchive` brings it back.
@@ -144,8 +145,8 @@ A `kind: init` trigger is the first message of a new organization's CEO; its bod
 2. **When the board confirms** (a mention or a message in your desk conversation), hire HR and finance, then the confirmed roles (`penguin org hire --new-agent <org_id>_<role> …`, default plugins).
 3. **Partition the shared workspace** as confirmed: `penguin org employee set <agent_id> --workspace <sub-directory>` — a relative sub-directory is created as it is assigned, so it need not exist first.
 4. **Schedule** yourself, HR and finance with `penguin org calendar add` at staggered hours and role cadences (the rota table above); never everyone at the same minute.
-5. **File the confirmed tickets**: the parent per goal and the first children per stream, owners assigned, accepted into `in_progress` only for what the board confirmed.
-6. **Open one channel per stream** (`penguin org channel create <id> --name …`) and invite its owner (`penguin org channel invite <id> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.
+5. **File the confirmed tickets**: the parent per goal and the first children per stream, owners assigned, accepted into `in_progress` only for what the board confirmed. Assigning is where the work starts moving — each owner's desk picks its tickets up in its next sweep; start a ticket session yourself only for a ticket you own.
+6. **Open one channel per stream** (`penguin org channel create ch_<stream> --name …`) and invite its owner (`penguin org channel invite ch_<stream> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.
 7. **Report** to the creator in one message in the all-hands channel: whom you hired, how the workspace is split, what is scheduled, which channels are open, which tickets are open — and the next decision, if any, you need from the board.
 
 ## Cautions

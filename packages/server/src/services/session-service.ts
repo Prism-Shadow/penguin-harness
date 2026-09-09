@@ -130,6 +130,7 @@ export class SessionService {
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
       ...(orgId !== undefined ? { orgId } : {}),
+      ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
     };
   }
 
@@ -344,10 +345,11 @@ export class SessionService {
     source?: "schedule";
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
-     * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer
-     * filter on it.
+     * "cli" from the CLI, defaulting to "web". "org" is not accepted over HTTP — the
+     * organization runtime calls this method directly and is the only caller that passes
+     * it, so no request can claim an organization's provenance for itself.
      */
-    client?: "web" | "cli";
+    client?: "web" | "cli" | "org";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -418,8 +420,8 @@ export class SessionService {
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
-      // otherwise "web" (schedule runs included). NULL means a legacy row, treated as
-      // web. Informational only — lists serve every row.
+      // "org" when the organization runtime opened a desk or a ticket session, otherwise
+      // "web" (schedule runs included). NULL means a legacy row, treated as web.
       client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,

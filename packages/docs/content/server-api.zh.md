@@ -228,8 +228,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
-| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source}`。Project 的缺省 Model 把名称译成一个 snake_case 英文 id（`source: model`）；未配置 Model 或其回答无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回 422 `id_not_derivable`。该次补全不属于任何 Session，也不计量 |
-| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone`、`language` 与阈值 / 删除（员工 Agent 与会话保留） |
+| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source}`。Project 的缺省 Model 把名称译成一个 snake_case 英文词干（`source: model`）；未配置 Model 或其回答无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回 422 `id_not_derivable`。随后服务端按 kind 给词干加前缀——`org` 加 `co_`、`channel` 加 `ch_`，词干本就带前缀时不会加第二遍——再截长度、再避开 `taken`，因此提议出来的 id 一定带前缀，而手工输入的 id 一律按原样接受。该次补全不属于任何 Session，也不计量 |
+| GET / PATCH / DELETE | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`）、`approvalMode`、`timezone`、`language` 与阈值 / 删除（员工 Agent 与会话保留） |
 | GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
 | POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
 | PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区（校验与创建同招募）、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
@@ -245,7 +245,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
 | POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
 | POST | /:orgId/tickets/:ticketId/progress | `{text}`——追加一条归属于调用方的进展 |
-| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions` |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions`。谁能发起取决于调用方：人可以为任何工单发起（`agentId` 指定员工，缺省取负责人）；而以员工身份写入的调用方——工位会话或工单会话在请求体里带上自己的 `sessionId`——只能为**自己名下**的工单发起，对别人的工单或没有员工负责人的工单一律回 403 `not_ticket_owner`。负责人仍可用 `agentId` 把同事拉进自己名下的工单 |
 | POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
 | GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
 | GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
@@ -267,7 +267,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?}` → 201。`client` 是存入索引行的创建客户端标记，并随每个 `SessionInfo` 返回（CLI 传 `"cli"`，缺省 `"web"`）。请求只能传这两个值：`"org"` 只由组织运行时写入，标记公司模式打开的工位会话与工单会话，这个标记留在行上，因此无论组织是否还在，开发模式的列表都能把它们排除在外 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
 创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。

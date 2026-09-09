@@ -19,7 +19,7 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
-import { DEFAULT_CHANNEL_ID } from "../src/organization/paths.js";
+import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
@@ -56,7 +56,7 @@ describe("organization runtime", () => {
   let nowMs: number;
   let busy: Set<string>;
   let started: Started[];
-  let created: Array<{ projectId: string; agentId: string; workspace?: string }>;
+  let created: Array<{ projectId: string; agentId: string; workspace?: string; client: "org" }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   let briefs: Map<string, string>;
   let costs: Map<string, number>;
@@ -125,6 +125,7 @@ describe("organization runtime", () => {
             projectId: args.projectId,
             agentId: args.agentId,
             ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
+            client: args.client,
           });
           const createdAt = new Date(nowMs).toISOString();
           sessions.insert({
@@ -136,7 +137,9 @@ describe("organization runtime", () => {
             workspace: args.workspace ?? root,
             approvalMode: args.approvalMode ?? "allow-all",
             title: null,
-            client: "web",
+            // The real SessionService stores the caller's hint verbatim; a fake that wrote
+            // "web" here would pass the marker's own test.
+            client: args.client,
             lastActiveAt: createdAt,
             createdAt,
           });
@@ -531,34 +534,240 @@ describe("organization runtime", () => {
   describe("semantic id proposals", () => {
     it("takes the model's answer, names the ids already taken, and never returns one of them", async () => {
       completion.answer = "`research_paper_lab`\n";
+      // The model answers the semantic core; the server puts the kind's prefix on it.
       expect(await service.suggestId(P, { name: "科研论文公司", kind: "org" })).toEqual({
-        id: "research_paper_lab",
+        id: "co_research_paper_lab",
         source: "model",
       });
       expect(completion.prompts[0]).toContain("科研论文公司");
       completion.answer = "site";
       expect(
-        await service.suggestId(P, { name: "站点", kind: "channel", taken: ["site"] }),
-      ).toEqual({ id: "site_2", source: "model" });
-      expect(completion.prompts[1]).toContain("Do not answer any of: site.");
+        await service.suggestId(P, { name: "站点", kind: "channel", taken: ["ch_site"] }),
+      ).toEqual({ id: "ch_site_2", source: "model" });
+      expect(completion.prompts[1]).toContain("Those answers are taken, prefix included: ch_site.");
     });
 
     it("falls back to the ASCII slug when the answer is unusable, and 422s when neither can name it", async () => {
       completion.answer = "我建议叫「科研实验室」";
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
-        id: "plugin_marketplace",
+        id: "co_plugin_marketplace",
         source: "fallback",
       });
       // No model at all (no default model, no credential, a failure) is the same case.
       completion.answer = null;
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
-        id: "plugin_marketplace",
+        id: "co_plugin_marketplace",
         source: "fallback",
       });
       await expect(service.suggestId(P, { name: "科研公司", kind: "org" })).rejects.toMatchObject({
         status: 422,
         code: "id_not_derivable",
       });
+    });
+  });
+
+  describe("company mode's own sessions", () => {
+    it('stamps every desk and ticket session client: "org", and a reconcile pass marks one that is not', async () => {
+      await createOrg();
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      expect(created.at(-1)?.client).toBe("org");
+      expect(sessions.findById(ceoDesk)?.client).toBe("org");
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const { sessionId: work } = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice" },
+      );
+      expect(sessions.findById(work)?.client).toBe("org");
+
+      // What an organization that predates the marker looks like: its files still name the
+      // sessions, so the next reconcile pass stamps them.
+      db.prepare("UPDATE sessions SET client = NULL WHERE session_id IN (?, ?)").run(ceoDesk, work);
+      expect(sessions.findById(ceoDesk)?.client).toBeNull();
+      await scheduler.reconcile(P, ORG);
+      expect(sessions.findById(ceoDesk)?.client).toBe("org");
+      expect(sessions.findById(work)?.client).toBe("org");
+
+      // The stamp is the row's own, so deleting the organization leaves it in place — which
+      // is the whole point: the caches that carry `orgId` are gone by then.
+      await service.remove(P, ORG);
+      expect(sessions.findById(ceoDesk)?.client).toBe("org");
+      expect(sessions.findById(work)?.client).toBe("org");
+    });
+  });
+
+  describe("who starts a ticket session", () => {
+    it("an employee starts one only on the ticket it owns; a person on any", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+
+      // The CEO files and assigns; the owner's desk is what turns that into work.
+      await expect(
+        service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: ceoDesk }),
+      ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
+
+      const own = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice", sessionId: hrDesk },
+      );
+      expect(sessions.findById(own.sessionId)?.agentId).toBe(HR);
+
+      // The owner may enlist a colleague on its OWN ticket — how a request for help is answered.
+      const helper = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        { agentId: CEO },
+        { userId: "alice", sessionId: hrDesk },
+      );
+      expect(sessions.findById(helper.sessionId)?.agentId).toBe(CEO);
+
+      // A person is not an employee of anything: the board may start any ticket.
+      const byPerson = await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
+      expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(HR);
+    });
+
+    it("an unowned ticket needs an owner before an employee may start it", async () => {
+      await createOrg();
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const t = await service.createTicket(P, ORG, { title: "Unowned" }, { userId: "alice" });
+      await expect(
+        service.startTicket(
+          P,
+          ORG,
+          t.ticketId,
+          { agentId: CEO },
+          { userId: "alice", sessionId: ceoDesk },
+        ),
+      ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
+      const byPerson = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        { agentId: CEO },
+        { userId: "alice" },
+      );
+      expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(CEO);
+    });
+  });
+
+  describe("the overview inbox", () => {
+    it("lists what names you, what is blocked and what closed this period", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const alice = { userId: "alice" };
+
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "nothing to see here",
+      });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@user:alice the plan is ready",
+      });
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@all standup at ten",
+      });
+
+      const blocked = await service.createTicket(
+        P,
+        ORG,
+        { title: "Blocked one", slug: "b-blocked", owner: `agent:${HR}` },
+        alice,
+      );
+      await service.blockTicket(
+        P,
+        ORG,
+        blocked.ticketId,
+        "waiting on the vendor",
+        undefined,
+        alice,
+      );
+      const closed = await service.createTicket(
+        P,
+        ORG,
+        { title: "Closed one", slug: "a-closed", owner: `agent:${HR}` },
+        alice,
+      );
+      await service.moveTicket(P, ORG, closed.ticketId, "done", undefined, alice);
+      const open = await service.createTicket(
+        P,
+        ORG,
+        { title: "Still open", slug: "c-open", owner: `agent:${HR}` },
+        alice,
+      );
+
+      const inbox = (await service.detail(P, ORG, "alice")).inbox!;
+      // Newest first, and only the lines that name this person (the ticket changes the
+      // scheduler writes name them too, so the assertion is over what a colleague wrote).
+      expect(inbox.mentions.filter((m) => m.sender !== "system").map((m) => m.text)).toEqual([
+        "@all standup at ten",
+        "@user:alice the plan is ready",
+      ]);
+      expect(inbox.mentions.map((m) => m.text)).not.toContain("nothing to see here");
+      for (const m of inbox.mentions) {
+        expect(m.mentions.includes("user:alice") || m.mentions.includes("all")).toBe(true);
+      }
+      expect(inbox.blockedTickets.map((t) => t.ticketId)).toEqual([blocked.ticketId]);
+      expect(inbox.blockedTickets[0]!.blocked).toBe("waiting on the vendor");
+      expect(inbox.doneTickets.map((t) => t.ticketId)).toEqual([closed.ticketId]);
+      expect(inbox.doneTickets[0]!.closedAt).toBe(new Date(nowMs).toISOString());
+      expect(inbox.doneTickets.map((t) => t.ticketId)).not.toContain(open.ticketId);
+    });
+
+    it("a ticket closed in an earlier period drops out; one closed by hand stays with no time", async () => {
+      await createOrg();
+      const alice = { userId: "alice" };
+      const early = await service.createTicket(
+        P,
+        ORG,
+        { title: "Closed in September", slug: "september" },
+        alice,
+      );
+      await service.moveTicket(P, ORG, early.ticketId, "done", undefined, alice);
+      // A ticket whose file was moved by hand carries no closing line at all.
+      const byHand = await service.createTicket(
+        P,
+        ORG,
+        { title: "Moved by hand", slug: "by-hand" },
+        alice,
+      );
+      await service.moveTicket(P, ORG, byHand.ticketId, "done", undefined, alice);
+      const file = ticketPath(orgDir(), byHand.ticketId, "done");
+      const raw = await fs.readFile(file, "utf8");
+      await fs.writeFile(
+        file,
+        raw
+          .split("\n")
+          .filter((line) => !line.includes("→ done"))
+          .join("\n"),
+        "utf8",
+      );
+
+      nowMs = T0 + 40 * DAY;
+      const inbox = (await service.detail(P, ORG, "alice")).inbox!;
+      const ids = inbox.doneTickets.map((t) => t.ticketId);
+      expect(ids).not.toContain(early.ticketId);
+      expect(ids).toContain(byHand.ticketId);
+      expect(
+        inbox.doneTickets.find((t) => t.ticketId === byHand.ticketId)?.closedAt,
+      ).toBeUndefined();
     });
   });
 
@@ -773,9 +982,13 @@ describe("organization runtime", () => {
       await scheduler.tickOnce();
       expect(started).toHaveLength(0);
 
-      const { sessionId } = await service.startTicket(P, ORG, t.ticketId, {
-        message: "Start with the scaffold",
-      });
+      const { sessionId } = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        { message: "Start with the scaffold" },
+        { userId: "alice" },
+      );
       const detail = await service.ticket(P, ORG, t.ticketId);
       expect(detail.sessions).toEqual([sessionId]);
       expect(sessions.findById(sessionId)?.title).toBe("Launch the site #1");
@@ -796,7 +1009,7 @@ describe("organization runtime", () => {
       );
 
       // A second session for the same ticket, and progress written from inside it.
-      const second = await service.startTicket(P, ORG, t.ticketId, {});
+      const second = await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
       expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([
         sessionId,
         second.sessionId,
@@ -1609,7 +1822,7 @@ describe("organization runtime", () => {
         { title: "Cache me", owner: `agent:${CEO}` },
         { userId: "alice" },
       );
-      const { sessionId } = await service.startTicket(P, ORG, t.ticketId, {});
+      const { sessionId } = await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
       cache.deleteOrg(P, ORG);
       expect(cache.ownerOfSession(desk.sessionId)).toBeNull();
       await scheduler.tickOnce();
@@ -1627,7 +1840,13 @@ describe("organization runtime", () => {
         { title: "Map me", owner: `agent:${CEO}` },
         { userId: "alice" },
       );
-      const { sessionId: work } = await service.startTicket(P, ORG, ticket.ticketId, {});
+      const { sessionId: work } = await service.startTicket(
+        P,
+        ORG,
+        ticket.ticketId,
+        {},
+        { userId: "alice" },
+      );
       // What the session list stamps as SessionInfo.orgId: one map for the whole Project
       // instead of a query per row.
       const ids = cache.orgIdsOfProject(P);
