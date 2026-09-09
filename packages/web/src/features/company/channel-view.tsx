@@ -8,8 +8,9 @@
  * the stream while it is at the bottom; scrolled up, new messages collect behind a pill that
  * returns to the latest. Sitting at the bottom of today marks this channel read, which is
  * what clears its badge in the sidebar and the rail. Nothing here delivers to an employee
- * unless it is @-mentioned, and only inside this channel's membership; the composer's hint
- * and the empty state say so.
+ * unless it is @-mentioned, and only inside this channel's membership; the empty state and
+ * the header's "?" say so. A run's header carries the relay chip from the second hop on, with
+ * the whole @-chain rule in its tooltip.
  *
  * A `system` line is one sentence, so it stays one muted line rather than a Markdown body: the
  * server writes it twice — as English text and as a structured notice — and the notice is what
@@ -480,8 +481,13 @@ export function ChannelView() {
             >
               {clockTime(first.time)}
             </span>
+            {/* The relay chip names what it is and carries the @-chain rule in its tooltip:
+                "hop 3" alone tells a reader nothing about why a message arrived. */}
             {hopChipShown(item.hop) && (
-              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+              <span
+                title={S.company.channels.hopInfo}
+                className="text-[11px] text-gray-400 dark:text-gray-500"
+              >
                 {S.company.channels.hop(item.hop)}
               </span>
             )}

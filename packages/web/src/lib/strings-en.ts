@@ -2653,13 +2653,12 @@ Scenarios:
     } as Record<string, string>,
     chart: {
       title: "Org Chart",
-      info: "The employee tree is the reporting line: the CEO at the root, every node an employee Agent. Click a node to open its desk session; the node menu holds the personnel actions, each of which rewrites the chart file.",
+      info: "The employee tree is the reporting line: the CEO at the root, every node an employee Agent. The menu in a node's top-right corner opens its desk session and holds the personnel actions, each of which rewrites the chart file.",
       empty: "The chart is empty",
       nodeMenu: "Employee actions",
       hire: "Hire a subordinate",
       setBudget: "Set budget",
       changeReportsTo: "Change reporting line",
-      setWorkspace: "Set workspace",
       renewDesk: "New desk session",
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
@@ -2697,7 +2696,7 @@ Scenarios:
       hireConfirm: (name: string, manager: string): string =>
         `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
       hired: (name: string): string => `Hired ${name}`,
-      /** Budget / reporting line / workspace / desk / leave dialogs. */
+      /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `Set the budget of ${name}`,
       budgetConfirm: (name: string, budget: string): string =>
         `Set the monthly budget of ${name} to ${budget}? Past 80% warns; at 100% its automatic triggers pause.`,
@@ -2705,11 +2704,11 @@ Scenarios:
       reportsToConfirm: (name: string, manager: string): string =>
         `Have ${name} report to ${manager}? Its subordinates move along with it.`,
       reportsToCycle: "Cannot report to itself or to one of its own subordinates",
-      workspaceTitle: (name: string): string => `Set the workspace of ${name}`,
-      workspaceConfirm: (name: string, workspace: string): string =>
-        `Set the workspace of ${name} to "${workspace}"? Takes effect from the next work run.`,
-      renewDeskConfirm: (name: string): string =>
-        `Open a new desk session for ${name}? The old one stays as an ordinary session and receives no further triggers.`,
+      renewDeskTitle: (name: string): string => `A new desk session for ${name}`,
+      renewDeskExplain:
+        "A new desk session opens with a fresh context; a changed workspace is written to the org chart.",
+      workspaceInvalid:
+        "Invalid workspace: it must be a sub-directory of the shared workspace, or an absolute path that already exists.",
       renewed: "Moved to a new desk session",
       leaveConfirm: (name: string): string =>
         `Have ${name} leave? It is removed from the chart and its subordinates report to its manager instead; the Agent and every session are kept.`,
@@ -3049,7 +3048,7 @@ Scenarios:
       empty: "No messages yet",
       emptyHint:
         "Only an @ reaches an employee: @employee delivers to its desk session, @all to every member of the channel; a message without one is just a note.",
-      placeholder: "Write something… type @ to mention a member, Enter to send",
+      placeholder: "Type a message — Enter sends, Shift+Enter breaks the line, @ mentions a member",
       send: "Send",
       you: "You",
       mentionAll: "Everyone",
@@ -3060,13 +3059,16 @@ Scenarios:
       ticketRef: (id: string): string => `Ticket ${id}`,
       sessionRef: "View session",
       replyTo: "Reply to",
-      hop: (n: number): string => `hop ${n}`,
+      hop: (n: number): string => `Relay · hop ${n}`,
+      hopInfo:
+        "Sent automatically by an employee's work run, N relays down an @-chain: a message from a person or the calendar is hop 0, an employee's reply from the run it triggered is hop 1 (unmarked), the reply of the next employee it @-mentioned is hop 2 … At the organization's chain limit (3 by default) an @ is recorded but triggers nobody, so two employees cannot @ each other all night.",
+      hopSummary:
+        'A mentioned employee may @ somebody else in its reply, which is an @-chain: from hop 2 a message is marked "Relay · hop N", and at the organization\'s chain limit (3 by default) an @ is recorded but triggers nobody.',
       today: "Today",
       yesterday: "Yesterday",
       noEarlier: "No earlier messages",
       unreadDivider: "Unread",
       newMessages: (n: number): string => `${n} new message${n === 1 ? "" : "s"}`,
-      composerHint: "Only an @ reaches an employee · Enter to send, Shift+Enter for a new line",
       mentionPanel: "Mention",
       mentionsYou: "Mentions you",
       systemMessage: "System message",

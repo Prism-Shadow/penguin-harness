@@ -2,14 +2,17 @@
  * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
  * agent-company and agent-development) and the position (title, duties, workspace, budget)
- * — and the single-field edits, each showing the current value first: budget (a number, or
- * unbounded), reporting line (anyone outside the employee's own subtree), workspace. Every
- * write stops at the shared ConfirmModal first (the confirmation names what the chart file
- * will say), then calls the API.
+ * — the single-field edits, each showing the current value first: budget (a number, or
+ * unbounded) and reporting line (anyone outside the employee's own subtree); and the desk
+ * renewal, which writes the workspace and opens a fresh desk session in one confirm. Every
+ * single-field edit stops at the shared ConfirmModal first (the confirmation names what the
+ * chart file will say), then calls the API; the renewal is its own confirmation and needs no
+ * second one.
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
@@ -30,6 +33,7 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { OrgSection } from "./org-layout";
+import { deskRenewPlan } from "./desk-renew";
 import { managerCandidates } from "./org-chart-tree";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
@@ -370,7 +374,7 @@ export function HireDialog({
 }
 
 /** Which single-field edit a dialog performs. */
-export type EmployeeEdit = "budget" | "reportsTo" | "workspace";
+export type EmployeeEdit = "budget" | "reportsTo";
 
 export function EmployeeEditDialog({
   edit,
@@ -405,9 +409,7 @@ export function EmployeeEditDialog({
         ? employee.budget === undefined
           ? ""
           : String(employee.budget)
-        : edit === "reportsTo"
-          ? (employee.reportsTo ?? managers[0]?.agentId ?? "")
-          : employee.workspace,
+        : (employee.reportsTo ?? managers[0]?.agentId ?? ""),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, employee]);
@@ -416,17 +418,13 @@ export function EmployeeEditDialog({
   const title =
     edit === "budget"
       ? S.company.chart.budgetTitle(employee.name)
-      : edit === "reportsTo"
-        ? S.company.chart.reportsToTitle(employee.name)
-        : S.company.chart.workspaceTitle(employee.name);
+      : S.company.chart.reportsToTitle(employee.name);
   const budgetLabel = (raw: string) =>
     raw.trim() === "" ? S.company.noBudget : formatMoney(Number(raw), currency);
   const confirmText =
     edit === "budget"
       ? S.company.chart.budgetConfirm(employee.name, budgetLabel(value))
-      : edit === "reportsTo"
-        ? S.company.chart.reportsToConfirm(employee.name, managerName(value))
-        : S.company.chart.workspaceConfirm(employee.name, value.trim());
+      : S.company.chart.reportsToConfirm(employee.name, managerName(value));
 
   const validate = (): boolean => {
     if (edit === "budget" && value.trim() !== "" && !(Number(value) >= 0)) {
@@ -435,10 +433,6 @@ export function EmployeeEditDialog({
     }
     if (edit === "reportsTo" && !managers.some((m) => m.agentId === value)) {
       setError(S.company.chart.reportsToCycle);
-      return false;
-    }
-    if (edit === "workspace" && value.trim() === "") {
-      setError(S.common.requiredField);
       return false;
     }
     return true;
@@ -454,9 +448,7 @@ export function EmployeeEditDialog({
         employee.agentId,
         edit === "budget"
           ? { budget: value.trim() === "" ? null : Number(value) }
-          : edit === "reportsTo"
-            ? { reportsTo: value }
-            : { workspace: value.trim() },
+          : { reportsTo: value },
       );
       toastSuccess(S.company.chart.saved);
       setConfirmOpen(false);
@@ -560,25 +552,6 @@ export function EmployeeEditDialog({
             </div>
           </div>
         )}
-        {edit === "workspace" && (
-          <div className="space-y-3">
-            <CurrentValue value={employee.workspace} />
-            <Input
-              label={S.company.chart.workspace}
-              size="sm"
-              value={value}
-              className="font-mono"
-              placeholder="."
-              hint={S.company.chart.workspaceHint}
-              {...(error !== undefined ? { error } : {})}
-              autoFocus
-              onChange={(e) => {
-                setValue(e.target.value);
-                setError(undefined);
-              }}
-            />
-          </div>
-        )}
       </Modal>
       <ConfirmModal
         open={confirmOpen}
@@ -592,5 +565,126 @@ export function EmployeeEditDialog({
         <p className="text-sm text-gray-600 dark:text-gray-300">{confirmText}</p>
       </ConfirmModal>
     </>
+  );
+}
+
+/**
+ * The desk renewal: one confirm that both re-points the workspace and opens a fresh desk
+ * session.
+ *
+ * The two were separate menu rows, but the pair a reader wants is "give this employee a
+ * different working directory, then start its desk over there" — a workspace change reaches
+ * the employee at its next desk session anyway. The field is prefilled with the current spec,
+ * so confirming without touching it is the plain renewal (desk-renew.ts decides); a changed
+ * spec is written first and its 400 lands under the field, leaving the desk alone. A renewal
+ * that fails after the chart was already rewritten keeps the dialog open and asks the page to
+ * reload, so what is on screen never disagrees with the file.
+ */
+export function DeskRenewDialog({
+  open,
+  projectId,
+  orgId,
+  employee,
+  onClose,
+  onChartChanged,
+  onRenewed,
+}: {
+  open: boolean;
+  projectId: string;
+  orgId: string;
+  employee: OrgEmployeeItem;
+  onClose: () => void;
+  /** The workspace patch went through: the chart file changed and the page has to re-read it. */
+  onChartChanged: () => void;
+  /** Both writes went through; carries the new desk session's id. */
+  onRenewed: (sessionId: string) => void;
+}) {
+  const [workspace, setWorkspace] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setWorkspace(employee.workspace);
+    setError(undefined);
+  }, [open, employee]);
+
+  const confirm = async () => {
+    const plan = deskRenewPlan(employee.workspace, workspace);
+    if (!plan.valid) {
+      setError(S.common.requiredField);
+      return;
+    }
+    setBusy(true);
+    let patched = false;
+    try {
+      if (plan.workspace !== null) {
+        await api.patchOrgEmployee(projectId, orgId, employee.agentId, {
+          workspace: plan.workspace,
+        });
+        patched = true;
+      }
+    } catch (e) {
+      // A refused workspace is the field's own error, not a toast: the reader has to see it
+      // beside the box they must fix. Its code is the server's; anything else is its message.
+      setError(
+        e instanceof ApiError && e.code === "invalid_workspace"
+          ? S.company.chart.workspaceInvalid
+          : apiErrorText(e),
+      );
+      setBusy(false);
+      return;
+    }
+    try {
+      const desk = await api.renewOrgDesk(projectId, orgId, employee.agentId);
+      toastSuccess(S.company.chart.renewed);
+      onRenewed(desk.sessionId);
+    } catch (e) {
+      toastError(apiErrorText(e));
+      if (patched) onChartChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      title={S.company.chart.renewDeskTitle(employee.name)}
+      onClose={() => (busy ? undefined : onClose())}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button variant="primary" disabled={busy} onClick={() => void confirm()}>
+            {S.company.chart.renewDesk}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {/* This dialog is its own confirmation, so what it will do stays on screen instead of
+            hiding behind a "?" the reader would have to open before deciding. */}
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {S.company.chart.renewDeskExplain}
+        </p>
+        <Input
+          label={S.company.chart.workspace}
+          required
+          size="sm"
+          value={workspace}
+          className="font-mono"
+          placeholder="."
+          hint={S.company.chart.workspaceHint}
+          {...(error !== undefined ? { error } : {})}
+          autoFocus
+          onChange={(e) => {
+            setWorkspace(e.target.value);
+            setError(undefined);
+          }}
+        />
+      </div>
+    </Modal>
   );
 }

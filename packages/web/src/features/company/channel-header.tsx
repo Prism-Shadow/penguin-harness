@@ -1,9 +1,9 @@
 /**
  * A channel's header, above its stream: the name (the localized label for the all-hands
- * channel, never its stored name) with the "?" that says what kind of channel this is, the
- * purpose beside it, the members as a stack of avatars opening a member popover — an
- * employee row there opens its desk session — and the actions: invite, leave, and the
- * overflow menu with rename, purpose, archive and unarchive.
+ * channel, never its stored name) with the "?" that says what kind of channel this is and how
+ * far an @-chain relays, the purpose beside it, the members as a stack of avatars opening a
+ * member popover — an employee row there opens its desk session — and the actions: invite,
+ * leave, and the overflow menu with rename, purpose, archive and unarchive.
  *
  * Who may do what is the server's rule, not this file's: everything here is shown to a
  * person, who is a Project member and therefore may join, archive and unarchive — and may
@@ -54,8 +54,8 @@ const LEAVE_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H
 /** Purpose (lucide text): the menu row that edits what the channel is for. */
 const PURPOSE_ICON = "M4 6h16M4 12h12M4 18h8";
 
-/** The desk session behind an employee row in the member popover (lucide door-open). */
-const DESK_ICON = "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01";
+/** Opening a desk session (lucide door-open): the member popover's employee rows, and the org chart's node menu. */
+export const DESK_ICON = "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01";
 
 /** Members shown as avatars before the count takes over. */
 const AVATAR_STACK = 3;
@@ -397,8 +397,14 @@ export function ChannelHeader({
               <GlyphIcon d={channelGlyph(detail.channelId)} size={ICON_SIZE.rowLead} />
             </span>
             {label}
+            {/* Two paragraphs, not one string per channel kind: what a hop is has to be
+                readable here as well as from a relay chip's tooltip, and only the first half
+                differs between the all-hands channel and an invited one. */}
             <InfoPopover label={label}>
-              {allHands ? S.company.channels.allHandsInfo : S.company.channels.channelInfo}
+              <span className="block">
+                {allHands ? S.company.channels.allHandsInfo : S.company.channels.channelInfo}
+              </span>
+              <span className="mt-1.5 block">{S.company.channels.hopSummary}</span>
             </InfoPopover>
           </h1>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
