@@ -3,8 +3,9 @@
  * pill, the line of metadata and the mission folded to one line), this period's spend against
  * the CEO's budget as a ring beside it, a KPI strip — employees (on desk / running / paused),
  * the board as a segmented bar with its blocked count, today's calendar, the spend — and then
- * three full-width runs, one under the other: the inbox (everything that needs the reader,
- * newest first), today's timeline with each instance's outcome, and the budget alerts. No card
+ * three full-width runs, one under the other: the inbox (what names the reader, what is stuck
+ * and what has landed, newest first), today's timeline with each instance's outcome, and the
+ * budget alerts. No card
  * is a link: each carries one corner button to the page it summarizes, so the controls inside a
  * card stay clickable and the destination is named rather than guessed. A brand-new
  * organization (nobody hired, empty board) gets the three-step guide in place of the sections.
@@ -28,7 +29,6 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -86,9 +86,8 @@ const TIMELINE_ROWS = 6;
 /** The mark that leads an inbox row: the channel hash for what was said, the board's glyph for a ticket. */
 const INBOX_ICON: Record<InboxCategory, string> = {
   mention: CHANNEL_ICON,
-  review: NAV_ICONS.orgTickets,
   blocked: NAV_ICONS.orgTickets,
-  message: CHANNEL_ICON,
+  done: NAV_ICONS.orgTickets,
 };
 
 /** A row of a section: full width, quiet hover, the content decides the rest. */
@@ -242,15 +241,13 @@ function MissionFold({ mission }: { mission: string }) {
 
 /**
  * An inbox row's state dot: attention while the row needs the reader, muted once it is only
- * news. The one case where the colour would carry alone — a channel message that names the
- * reader, whose category chip says only "message" — spells itself out for a screen reader.
+ * news. Nothing here rests on the colour alone — every row wears the chip that names its
+ * category beside it.
  */
 function InboxDot({ row }: { row: InboxRow }) {
-  const addressed = row.category === "message" && row.tone === "attention";
   return (
     <span className="flex shrink-0 items-center">
       <span aria-hidden className={`block h-1.5 w-1.5 rounded-full ${toneDot[row.tone]}`} />
-      {addressed && <span className="sr-only">{S.company.overview.inboxCategories.mention}</span>}
     </span>
   );
 }
@@ -308,7 +305,6 @@ export function OverviewPage() {
   const { projectId, orgId, org } = useOrg();
   const navigate = useNavigate();
   const company = useCompany();
-  const { user } = useAuth();
   const { currency } = useTheme();
   const { locale } = useLocale();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.overview}` : S.nav.org.overview);
@@ -416,13 +412,9 @@ export function OverviewPage() {
     calendarCount: calendarCount ?? 0,
   });
   const names = new Map(chart.employees.map((e) => [e.agentId, e.name]));
-  const me = `user:${user?.userId ?? ""}`;
   const inbox = inboxRows({
-    pending: detail.pending,
-    recentMessages: detail.recentMessages,
-    me,
+    inbox: detail.inbox,
     names: (principal) => principalLabel(principal, names),
-    mentionsTitle: S.company.overview.mentions,
   });
   const inboxTotals = inboxCounts(inbox);
   const visibleInbox = inbox.filter((row) => inboxMatches(row, inboxFilter));

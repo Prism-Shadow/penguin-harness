@@ -12,7 +12,9 @@
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
  * someone spent minutes writing; it is restored on reopen and dropped on a successful create
- * or an explicit "clear draft".
+ * or an explicit "clear draft". A caller that opens the dialog from a proposal (the empty
+ * landing's cards) passes that proposal as `initial`: it fills the name and the mission over
+ * whatever the draft held, and is then written through to the draft exactly as typed text is.
  *
  * Failures stay inside the dialog: a rejected id lands under the id field, anything else in
  * a strip above the footer, and a settings load that fails offers its retry in place — the
@@ -242,10 +244,13 @@ function MissionExamples({
 
 export function CreateOrganizationDialog({
   open,
+  initial,
   onClose,
   onCreated,
 }: {
   open: boolean;
+  /** A proposal the dialog opens filled in with (the empty landing's cards); the id is still generated. */
+  initial?: { name: string; mission: string };
   onClose: () => void;
   onCreated: (detail: OrganizationDetail) => void;
 }) {
@@ -293,14 +298,26 @@ export function CreateOrganizationDialog({
   // Restore on open, and again when the target Project changes: a draft belongs to the
   // Project it was aimed at, since its Workspace and model are that Project's. This also
   // subsumes the old "switching Projects drops the model pick" rule.
+  //
+  // A proposal outranks the draft's own name and mission — the click asked for THIS one — and
+  // the notice above the fields is then not the truth about what is on screen, so it stays
+  // down. The two texts are the effect's dependencies rather than the object holding them: a
+  // caller building it inline would otherwise reset the form on every render.
+  const initialName = initial?.name ?? null;
+  const initialMission = initial?.mission ?? null;
   useEffect(() => {
     if (!open) return;
     const draft = draftKey === null ? null : loadOrgDraft(draftKey);
-    resetForm(draft ?? EMPTY_ORG_DRAFT);
-    setRestored(draft !== null);
+    const base = draft ?? EMPTY_ORG_DRAFT;
+    resetForm(
+      initialMission === null
+        ? base
+        : { ...base, name: initialName ?? base.name, mission: initialMission },
+    );
+    setRestored(draft !== null && initialMission === null);
     // resetForm is a plain setter bundle; re-running on its identity would reset on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, draftKey]);
+  }, [open, draftKey, initialName, initialMission]);
 
   // Every edit is written straight through: the draft exists for the close nobody meant.
   useEffect(() => {

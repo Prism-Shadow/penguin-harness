@@ -11,10 +11,12 @@
  * (a name with no ASCII in it, when no model is configured) answers 422 and says so under
  * the field rather than in a toast that would be gone by the time the user looks down.
  *
- * The button sits INSIDE the box rather than beside it, and outside the field's `<label>`:
- * a `<button>` is a labelable element, so a wrapping label would name the button instead of
- * the input (the trap field.tsx documents). Hence the label row and the hint are drawn here
- * and the `Input` renders bare.
+ * The button says what it does in words — a model is asked for the id, which is not something
+ * a sparkles glyph on its own tells anyone — so it sits BESIDE the box rather than inside it,
+ * where a label would crowd the value it is meant to leave room for. What it must stay outside
+ * of is the field's `<label>`: a `<button>` is a labelable element, so a wrapping label would
+ * name the button instead of the input (the trap field.tsx documents). Hence the label row and
+ * the hint are drawn here and the `Input` renders bare.
  */
 import { useId, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -24,6 +26,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError } from "../../components/ui/toast";
@@ -100,14 +103,14 @@ export function SemanticIdField({
       <FieldLabel htmlFor={controlId} required>
         {label}
       </FieldLabel>
-      <div className="relative">
+      <div className="flex items-center gap-2">
         <Input
           id={controlId}
           size="sm"
           required
           value={value}
           invalid={error !== undefined}
-          className="pr-7 font-mono"
+          className="min-w-0 flex-1 font-mono"
           disabled={disabled}
           {...(message !== null ? { "aria-describedby": errorId } : {})}
           onChange={(e) => {
@@ -125,21 +128,22 @@ export function SemanticIdField({
               }
             : {})}
         />
-        <button
-          type="button"
+        {/* The tooltip keeps saying where the id comes from; the label only says who makes it. */}
+        <Button
+          size="sm"
           title={S.company.generateId}
-          aria-label={S.company.generateId}
           aria-busy={busy || undefined}
           disabled={disabled || busy || !derivable}
           onClick={() => void generate()}
-          className="absolute inset-y-0 right-1 my-auto flex h-5 w-5 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 disabled:pointer-events-none disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+          className="shrink-0 whitespace-nowrap"
         >
           {busy ? (
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
           ) : (
-            <GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={SPARKLES_ICON} size={ICON_SIZE.inlineGlyph} />
           )}
-        </button>
+          {S.company.generateIdLabel}
+        </Button>
       </div>
       {message !== null ? (
         <FieldError id={errorId}>{message}</FieldError>

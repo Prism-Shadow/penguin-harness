@@ -2456,10 +2456,12 @@ Scenarios:
     orgIdHint:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
     /**
-     * The id field's generate button, the clause the hint appends for it, and what a name no
-     * id can be derived from is told. The clause carries its own leading separator: what
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — the clause the hint appends for it, and what a name
+     * no id can be derived from is told. The clause carries its own leading separator: what
      * joins two clauses is punctuation, and punctuation belongs to the language.
      */
+    generateIdLabel: "Generate with AI",
     generateId: "Generate an id from the name",
     idGenerateHint: "; you can also generate one from the display name",
     idNotDerivable: "No id can be derived from this name — type one by hand",
@@ -2585,7 +2587,6 @@ Scenarios:
       today: "Today's calendar",
       todayEmpty: "Nothing scheduled today",
       spend: "This period's spend",
-      mentions: (n: number): string => `${n} message${n === 1 ? "" : "s"} mentioning me`,
       reviewTickets: "Tickets in review",
       alerts: "Alerts",
       alertsEmpty: "No budget alerts this period",
@@ -2631,15 +2632,15 @@ Scenarios:
       stepDone: "Done",
       goToChart: "Open the org chart",
       goToCalendar: "Open the calendar",
-      /** The inbox: everything that needs the reader, newest first. */
+      /** The inbox: what names the reader, what is stuck and what has landed, newest first. */
       inbox: "Inbox",
       inboxInfo:
-        "Everything that needs you, newest first: mentions of you, tickets in review and tickets blocked on you, and the all-hands channel's latest messages.",
+        "The three things the organization has to tell you, newest first: messages naming you (or everyone) in the all-hands channel, blocked tickets, and the tickets closed as done this period. For anything else, read the channel and the board themselves.",
       inboxEmpty: "Nothing in the inbox.",
       /** The filter chips over the rows, each with its own count. */
-      inboxFilters: { all: "All", mention: "@me", ticket: "Tickets", message: "Messages" },
+      inboxFilters: { all: "All", mention: "@me", blocked: "Blocked", done: "Done" },
       /** The chip that leads a row, naming what the row is. */
-      inboxCategories: { mention: "@me", review: "Review", blocked: "Blocked", message: "Message" },
+      inboxCategories: { mention: "@me", blocked: "Blocked", done: "Done" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `${n} more — open the calendar`,
       viewAll: "View all",
