@@ -6,7 +6,8 @@
  * work in the channels — post in the all-hands channel and see the mention reach the CEO's
  * desk as an `[org_trigger]` work run, create a channel, invite the CEO into it, and post a
  * mention there — and finally check that development mode lists none of the organization's
- * own sessions.
+ * own sessions. The desk row's run mark is checked on both sides of the initialization run:
+ * it turns itself off when the run ends, which no server event announces.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -110,6 +111,15 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await expect(page.getByText(/由组织「marketplace」触发/).first()).toBeVisible();
   await expect(sidebar.getByRole("link", { name: /^全员频道/ })).toBeVisible();
   await expect(ceoDeskRow).toHaveAttribute("aria-current", "true");
+
+  // The desk row's run mark is live. Nothing on the wire says a run ENDED — the organization's
+  // session snapshot is re-read when a run is dispatched and when a ticket moves, and neither
+  // happens here — so the row takes its state from the session list's own status. Once the
+  // mock's answer has landed the row says nothing at all, and the composer is back to taking
+  // an ordinary message rather than steering a run in flight.
+  await expect(page.getByText("chunk-40").first()).toBeVisible({ timeout: 30_000 });
+  await expect(ceoDeskRow).toHaveAttribute("aria-label", "Plugin Marketplace CEO 的工位");
+  await expect(page.getByPlaceholder(/输入消息/)).toBeEnabled();
 
   // A desk opened from the org chart renders too: the routed Session is not in the
   // development list at all, so the page has to resolve it by id (the batch-3 regression).

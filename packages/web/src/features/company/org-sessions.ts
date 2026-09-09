@@ -1,13 +1,21 @@
 /**
  * The company sidebar's two session groups, as pure shaping (unit tested) over the
- * organization's chart and its sessions route:
+ * organization's chart, its sessions route and the session list's live statuses:
  *
  * - 工位 — one row per EMPLOYEE, in chart order, whether or not a desk session exists yet.
  *   The roster is the chart's (the sessions route only knows employees whose desk has been
- *   opened); the live state is the sessions route's, which is the one that moves.
+ *   opened); the state is the live one where the session list holds the row.
  * - 工单会话 — every session attached to a ticket, newest first, each carrying the ticket it
  *   contributes to as its subtitle. A session attached to several tickets appears once per
  *   ticket: it is doing two jobs, and hiding one of them would hide where it is being read.
+ *
+ * Both take their run state from the LIVE statuses first, because the two snapshots behind
+ * them only move on an organization event: the sessions route is re-read when a run is
+ * dispatched (`org_run`) or a ticket moves, and the chart when a summary does — and a run
+ * ENDING publishes none of those. A desk would sit on 「运行中」 until some unrelated event
+ * happened to arrive. The session list's own statuses come from the user event channel, which
+ * reports every flip of every Session, so they are the state that is actually current; the
+ * snapshots stand in for the rows that list has not loaded.
  */
 import type {
   OrgChartResponse,
@@ -15,6 +23,13 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import type { SessionActivity } from "../../lib/session-activity";
+
+/**
+ * Live run statuses by Session id — the session list store's view of them (state/sessions.tsx),
+ * which the user event channel keeps in step. A Session the list has not loaded is simply
+ * absent, and the caller falls back to the snapshot it does have.
+ */
+export type LiveSessionStatuses = ReadonlyMap<string, SessionStatus>;
 
 /** One employee's desk row. `sessionId` is null until a desk has been opened for them. */
 export interface OrgDeskRow {
@@ -41,45 +56,50 @@ export interface OrgTicketSessionRow {
 
 /**
  * Desk rows in chart order — the reporting line, which is how the organization reads. The
- * chart is the roster; the sessions route supplies each desk's live status, since a run
- * starting does not rewrite the chart. Without a chart yet (the first read of an
- * organization) the sessions route stands in: it walks the same chart server-side, so the
- * order holds and only employees without a desk are missing until the chart lands.
+ * chart is the roster; the run state comes from the live statuses, then from the sessions
+ * route's snapshot, then from the chart's own `state` — a desk the sessions route has not
+ * listed yet (it was opened between the two reads) still shows that it is running. Without a
+ * chart yet (the first read of an organization) the sessions route stands in: it walks the
+ * same chart server-side, so the order holds and only employees without a desk are missing
+ * until the chart lands.
  */
 export function deskRows(
   chart: OrgChartResponse | null,
   sessions: OrgSessionsResponse | undefined,
+  live?: LiveSessionStatuses,
 ): OrgDeskRow[] {
-  const live = new Map((sessions?.desks ?? []).map((d) => [d.agentId, d]));
+  const snapshot = new Map((sessions?.desks ?? []).map((d) => [d.agentId, d]));
   if (chart === null) {
     return (sessions?.desks ?? []).map((d) => ({
       agentId: d.agentId,
       name: d.name,
       jobTitle: "",
       sessionId: d.sessionId,
-      status: d.status,
+      status: live?.get(d.sessionId) ?? d.status,
     }));
   }
   return chart.employees.map((e) => {
-    const desk = live.get(e.agentId);
+    const desk = snapshot.get(e.agentId);
+    const sessionId = desk?.sessionId ?? e.desk?.sessionId ?? null;
+    const liveStatus = sessionId === null ? undefined : live?.get(sessionId);
     return {
       agentId: e.agentId,
       name: e.name,
       jobTitle: e.title,
-      sessionId: desk?.sessionId ?? e.desk?.sessionId ?? null,
-      // The chart's own state is the fallback: a desk the sessions route has not listed yet
-      // (it was opened between the two reads) still shows that it is running.
-      status: desk?.status ?? (e.state === "running" ? "running" : "idle"),
+      sessionId,
+      status: liveStatus ?? desk?.status ?? (e.state === "running" ? "running" : "idle"),
     };
   });
 }
 
 /**
  * Ticket session rows, newest first by last activity (a session that has never run sorts
- * last, and equal timestamps break by id so the order never flickers).
+ * last, and equal timestamps break by id so the order never flickers). The run state is the
+ * live one where the session list holds the row, for the same reason the desks' is.
  */
 export function ticketSessionRows(
   sessions: OrgSessionsResponse | undefined,
+  live?: LiveSessionStatuses,
 ): OrgTicketSessionRow[] {
   const rows: OrgTicketSessionRow[] = [];
   for (const t of sessions?.tickets ?? []) {
@@ -90,7 +110,7 @@ export function ticketSessionRows(
         title: s.title ?? "",
         ticketId: t.ticketId,
         ticketTitle: t.title,
-        status: s.status,
+        status: live?.get(s.sessionId) ?? s.status,
         lastActiveAt: s.lastActiveAt ?? null,
       });
     }
