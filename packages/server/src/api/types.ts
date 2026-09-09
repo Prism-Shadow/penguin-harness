@@ -2201,6 +2201,13 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /**
+       * Steering the run ended without delivering (absent = none) — an interrupt while a tool
+       * was running is the ordinary way to produce one. Handed back rather than discarded: the
+       * composer recalls each by the same handle and restores it into the draft, so the typed
+       * message returns to the input box instead of being lost.
+       */
+      returnedSteering?: PendingSteeringInfo[];
       /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
       pendingFollowUps?: PendingFollowUpInfo[];
       /**
