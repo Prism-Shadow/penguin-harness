@@ -19,11 +19,11 @@ there, under the target Agent.
 - **The harness gained no chat-bot concept.** The plugin composes what the harness already
   has: the Discord messaging connector (Gateway, sends, Markdown, the 2000-character cap),
   Session creation, the task runner, the Session event channel, the settings store and the
-  Projects' config files — all reached through the module's `requires`. What changed on the server is that
+  plugin configuration — all reached through the module's `requires`. What changed on the server is that
   `Messaging.connectorFor` is public and the type-only plugin surface exports the mechanisms
   a plugin of this kind needs (`MessagingTaskRunner`, `ScheduleSessionCreator`, `SessionIndex`,
-  `AgentIndex`, `Projects`, `ProjectConfigStore`, `Settings`, `Channels`, `Errors`, `Paths`,
-  `Log`, `Clock`, the connector's types and `ChannelEvent`).
+  `AgentIndex`, `Projects`, `ProjectConfigStore`, `Settings`, `PluginConfig`, `Channels`,
+  `Errors`, `Paths`, `Log`, `Clock`, the connector's types and `ChannelEvent`).
 - **One Gateway connection, a Session per chat.** Messages are routed by chat id; a chat with
   no Session gets one through the path a scheduled task uses. Replies come back into the same
   chat as they complete, Markdown rendered, cut under Discord's cap, threaded onto the inbound
@@ -32,13 +32,14 @@ there, under the target Agent.
 - **Commands.** `/new` opens a fresh Session for that chat; `/approve` and `/deny` decide the
   tool call the Agent is waiting on (the bot says when one is), since the person asking has no
   Web App in front of them; `/status` names the chat's Session.
-- **Configuration is the Project's config file, and nothing else.** A `[discord_bot]` table
-  in `.project_config.toml` — `bot_token`, an optional `agent` (default `default_agent`) and an
-  optional `enabled` — makes that Project's bot; several Projects may each run one. The files
-  are re-read on a short interval and on every read of the plugin's status route
-  (`GET /api/discord-bot`, admin, contributed through the `HttpModule.routes` slot with a
-  bundled Hono), so an edit takes effect without a restart. A table the plugin cannot use is
-  listed with its reason. No environment variable and no write API. The chat → Session table
-  is the only state, kept under `discord-bot:chats:<projectId>` in the server settings.
+- **Configuration is the Plugins page of the System settings dialog, and nothing else.** The
+  package declares its options in its manifest — `bot_token` (a secret), `project` (a Project
+  picker), `agent` (default `default_agent`) and `enabled` — and an admin fills them in there;
+  the plugin watches the stored values and restarts the bot on a save, without a restart. See
+  [the plugin configuration entry](2026-09-07-plugin-configuration.md) for the mechanism. Values
+  that make no bot are reported with their reason on the plugin's read-only status route
+  (`GET /api/discord-bot`, admin, contributed through the `HttpModule.routes` slot with a bundled
+  Hono). No environment variable, no file to edit. The chat → Session table is the only other
+  state, kept under `discord-bot:chats:<projectId>` in the server settings.
 - The plugin ships with every build, listed in the builtin registry and not installed by
   default.

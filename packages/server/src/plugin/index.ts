@@ -36,16 +36,10 @@ export type { ScheduleSessionCreator } from "../runtime/scheduler.js";
 export type { ChannelEvent } from "../runtime/channel.js";
 export type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
 export type { Settings } from "../mechanisms/settings.js";
+export type { PluginConfig, PluginConfiguration, PluginConfigField } from "./config.js";
 export type { SessionIndex } from "../mechanisms/sessions.js";
 export type { AgentIndex, Projects, ProjectConfigStore } from "../mechanisms/projects.js";
 export type { Errors } from "../mechanisms/observability.js";
-  ChatBots,
-  ChatBotsSlots,
-  ChatBotContribution,
-  ChatBotBinding,
-  ChatBotDefaults,
-} from "../runtime/messaging/chat-bots.js";
-export type { PluginConfig, PluginConfiguration, PluginConfigField } from "./config.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { SessionSurfaces, SessionSurfacesSlots } from "../runtime/session-surfaces.js";

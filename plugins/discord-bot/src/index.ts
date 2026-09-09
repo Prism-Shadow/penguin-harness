@@ -11,18 +11,15 @@
  * The harness has no notion of a chat bot. What it lends this package is what it already
  * has — the Discord messaging connector (credential shape, Gateway, sends, Markdown, the
  * 2000-character cap), Session creation, the task runner, the Session event channel, the
- * settings store and the Projects' config files — reached through the module's `requires`;
- * everything that makes those a bot lives here: config.ts reads a Project's `[discord_bot]`
- * table, manager.ts keeps one bot per such Project in line with the files, bot.ts is the
- * bot (one Gateway connection, a Session per chat, replies relayed back, `/new`, `/approve`,
- * `/deny`, `/status`), routes.ts the read-only status route at `/api/discord-bot`.
+ * settings store and the plugin configuration it stores for this package — reached through
+ * the module's `requires`; everything that makes those a bot lives here: config.ts reads the
+ * package's options, manager.ts keeps the bot in line with them, bot.ts is the bot (one
+ * Gateway connection, a Session per chat, replies relayed back, `/new`, `/approve`, `/deny`,
+ * `/status`), routes.ts the read-only status route at `/api/discord-bot`.
  *
- * Configuration is the Project's config file and nothing else:
- *
- *   [discord_bot]
- *   bot_token = "…"          # the Bot page of the Discord developer portal
- *   agent = "default_agent"  # optional
- *   enabled = true           # optional
+ * Configuration is what this package declares in `package.json#penguin.configuration` and an
+ * admin fills in on the System settings dialog's Plugins page: the bot token, the Project,
+ * the Agent, the switch. Nothing else — no environment variable, no file to edit.
  */
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type {
@@ -33,8 +30,7 @@ import type {
   Messaging,
   MessagingTaskRunner,
   Paths,
-  ProjectConfigStore,
-  Projects,
+  PluginConfig,
   ScheduleSessionCreator,
   SessionIndex,
   Sessions,
@@ -57,10 +53,10 @@ export {
   writeAttachment,
 } from "./bot.js";
 export type { BotDeps, BotInfo, BotStatus, BotTarget } from "./bot.js";
-export { CONFIG_TABLE, DEFAULT_AGENT, botConfigOf, botIdOf } from "./config.js";
+export { DEFAULT_AGENT, PACKAGE_NAME, botConfigOf, botIdOf } from "./config.js";
 export type { BotConfig } from "./config.js";
-export { DiscordBots, RECONCILE_INTERVAL_MS } from "./manager.js";
-export type { BrokenBotInfo, ManagerDeps } from "./manager.js";
+export { DiscordBots } from "./manager.js";
+export type { BotsStatus, ManagerDeps } from "./manager.js";
 export { ROUTES_ID, discordBotRoutes } from "./routes.js";
 
 const plugin: Plugin = {
@@ -74,8 +70,7 @@ const plugin: Plugin = {
           sessionCreator: use.sessionCreator as ScheduleSessionCreator,
           sessionIndex: use.sessionIndex as SessionIndex,
           agents: use.agents as AgentIndex,
-          projects: use.projects as Projects,
-          configStore: use.configStore as ProjectConfigStore,
+          pluginConfig: use.pluginConfig as PluginConfig,
           settings: use.settings as Settings,
           channels: use.channels as Channels,
           errors: use.errors as Errors,
