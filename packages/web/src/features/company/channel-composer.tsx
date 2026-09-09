@@ -1,11 +1,15 @@
 /**
- * A channel's composer: a growing textarea (Enter sends, Shift+Enter breaks the
- * line, an IME's accepting Enter never sends), the send button, the one-line hint that only
- * an @ reaches an employee, and the `@` autocomplete — a portaled panel above the box
- * (through Dropdown's portal, so no ancestor's overflow clips it) listing the channel's own members —
- * employees with their titles, then people, then everyone — ranked against what was typed,
- * walked with the arrow keys and picked with Enter or Tab. A pick types the bare id (`@ceo`), which is
- * what the server resolves; Escape dismisses the panel for that token until it changes.
+ * A channel's composer: a growing textarea (Enter sends, Shift+Enter breaks the line, an
+ * IME's accepting Enter never sends), the send button, and the `@` autocomplete — a portaled
+ * panel above the box (through Dropdown's portal, so no ancestor's overflow clips it) listing
+ * the channel's own members — employees with their titles, then people, then everyone —
+ * ranked against what was typed, walked with the arrow keys and picked with Enter or Tab. A
+ * pick types the bare id (`@ceo`), which is what the server resolves; Escape dismisses the
+ * panel for that token until it changes.
+ *
+ * The keys are named in the placeholder and nothing is rendered under the box, the way
+ * development mode's chat input reads: a line of hint below the composer is read once and
+ * then costs a row of the stream on every later visit.
  */
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -224,9 +228,6 @@ export function ChannelComposer({
           {S.company.channels.send}
         </Button>
       </div>
-      <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-        {S.company.channels.composerHint}
-      </p>
     </div>
   );
 }

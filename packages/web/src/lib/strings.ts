@@ -2590,13 +2590,12 @@ Benchmark：
     } as Record<string, string>,
     chart: {
       title: "组织图",
-      info: "员工树即汇报线：CEO 为根，每个节点是一位员工 Agent。点节点打开它的工位会话；节点菜单里是人事操作，每一项都会改写组织图文件。",
+      info: "员工树即汇报线：CEO 为根，每个节点是一位员工 Agent。节点右上角的菜单里是「打开工位会话」和人事操作，每一项人事操作都会改写组织图文件。",
       empty: "组织图为空",
       nodeMenu: "员工操作",
       hire: "招募下属",
       setBudget: "设预算",
       changeReportsTo: "调整汇报线",
-      setWorkspace: "指定工作区",
       renewDesk: "换工位",
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",
@@ -2631,7 +2630,7 @@ Benchmark：
       hireConfirm: (name: string, manager: string): string =>
         `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
       hired: (name: string): string => `已招募 ${name}`,
-      /** Budget / reporting line / workspace / desk / leave dialogs. */
+      /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
       budgetConfirm: (name: string, budget: string): string =>
         `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
@@ -2639,11 +2638,9 @@ Benchmark：
       reportsToConfirm: (name: string, manager: string): string =>
         `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
-      workspaceTitle: (name: string): string => `指定 ${name} 的工作区`,
-      workspaceConfirm: (name: string, workspace: string): string =>
-        `将 ${name} 的工作区改为「${workspace}」？下一次工作轮起生效。`,
-      renewDeskConfirm: (name: string): string =>
-        `为 ${name} 开一个新的工位会话？旧会话保留为普通会话，不再接收触发。`,
+      renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
+      renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
+      workspaceInvalid: "工作区无效：需要是公共工作区下的子目录，或一个已存在的绝对路径。",
       renewed: "已换到新的工位会话",
       leaveConfirm: (name: string): string =>
         `让 ${name} 离任？它会移出组织图，其下属改为汇报给它的上级；Agent 本身与所有会话保留。`,
@@ -2968,7 +2965,7 @@ Benchmark：
       empty: "还没有消息",
       emptyHint:
         "只有 @ 才会打扰员工：@某位员工 送进它的工位会话，@all 送给频道里所有成员；不带 @ 的消息只是留言。",
-      placeholder: "写点什么… 输入 @ 提及频道成员，Enter 发送",
+      placeholder: "输入消息，Enter 发送，Shift+Enter 换行，@ 提及成员",
       send: "发送",
       you: "你",
       mentionAll: "所有人",
@@ -2979,15 +2976,19 @@ Benchmark：
       ticketRef: (id: string): string => `工单 ${id}`,
       sessionRef: "查看会话",
       replyTo: "回复",
-      hop: (n: number): string => `第 ${n} 跳`,
+      hop: (n: number): string => `自动接力 · 第 ${n} 跳`,
+      /** The chip's tooltip, and the one line about hops the channel header's "?" carries. */
+      hopInfo:
+        "这条消息由员工的工作轮自动发出，是一条 @ 连锁的第 N 跳：人或日程发起的消息是第 0 跳，员工被 @ 后在工作轮里的回复是第 1 跳（不标），再被 @ 的员工回复是第 2 跳……到达组织设置的连锁上限（缺省 3）后 @ 只记录、不再触发任何人，避免两个员工互相 @ 到天亮。",
+      hopSummary:
+        "被 @ 的员工在回复里再 @ 别人，就是一条 @ 连锁：从第 2 跳起消息会标出「自动接力 · 第 N 跳」，到达组织的连锁上限（缺省 3）后 @ 只记录、不再触发任何人。",
       /** Day separators, paging and the read cursor in the stream. */
       today: "今天",
       yesterday: "昨天",
       noEarlier: "没有更早的记录",
       unreadDivider: "以下为未读",
       newMessages: (n: number): string => `${n} 条新消息`,
-      /** The composer and its @ autocomplete. */
-      composerHint: "只有 @ 才会送达员工 · Enter 发送，Shift+Enter 换行",
+      /** The composer's @ autocomplete. */
       mentionPanel: "提及",
       mentionsYou: "提到了你",
       /** Accessible name of a system banner and of a message's per-line time. */

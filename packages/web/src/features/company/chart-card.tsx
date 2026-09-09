@@ -1,10 +1,12 @@
 /**
  * One employee card on the org chart, plus the state-dot legend shown beside the chart.
  *
- * The card's face is one real button — clicking anywhere on it opens the desk session —
- * with the personnel menu's kebab in the corner as a sibling (buttons do not nest). Three
- * rows: avatar with the name and title (the CEO wears a chip); the live state dot and its
- * label, the workspace tail, this period's spend against the budget; a thin ratio bar.
+ * The face is inert: it is a plain card that reads, and the kebab in its top-right corner —
+ * the only focusable thing on it — is where opening the desk session and every personnel
+ * action live. A whole-card link promises one of its many actions and steals the click from
+ * the rest. Three rows: avatar with the name and title (the CEO wears a chip); the live
+ * state dot and its label, the workspace tail, this period's spend against the budget; a
+ * thin ratio bar.
  * Every status colour is a tone picked by meaning; running and on-desk share emerald and
  * are told apart by motion (the running dot pulses) and by their labels.
  */
@@ -73,7 +75,6 @@ export function ChartCard({
   menuOpen,
   setMenuOpen,
   menu,
-  onOpen,
 }: {
   employee: OrgEmployeeItem;
   isCeo: boolean;
@@ -87,7 +88,6 @@ export function ChartCard({
   setMenuOpen: (open: boolean) => void;
   /** The personnel menu's rows. */
   menu: ReactNode;
-  onOpen: () => void;
 }) {
   const tone = budgetTone(employee.spend.ratio);
   const spent = formatMoney(employee.spend.cumulative, currency);
@@ -107,18 +107,14 @@ export function ChartCard({
       className="group absolute"
       style={{ left: x, top: y, width: CHART_NODE_W, height: CHART_NODE_H }}
     >
-      <button
-        type="button"
+      {/* The tooltip carries what the two truncating lines may have cut, and nothing else:
+          the card does not act, so it must not promise an action either. */}
+      <div
         title={
-          flag !== undefined
-            ? `${employee.name} · ${flag}`
-            : `${employee.name} · ${S.company.openDesk}`
+          flag !== undefined ? `${employee.name} · ${flag}` : `${employee.name} · ${employee.title}`
         }
-        onClick={onOpen}
-        className={`absolute inset-0 flex flex-col rounded-lg border bg-white px-3 py-2.5 text-left shadow-sm transition-[box-shadow,border-color] duration-150 hover:shadow-md dark:bg-gray-900 ${
-          flagged
-            ? "border-red-300 hover:border-red-400 dark:border-red-800 dark:hover:border-red-700"
-            : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+        className={`absolute inset-0 flex flex-col rounded-lg border bg-white px-3 py-2.5 shadow-sm dark:bg-gray-900 ${
+          flagged ? "border-red-300 dark:border-red-800" : "border-gray-200 dark:border-gray-700"
         }`}
       >
         <span className="flex items-center gap-2.5 pr-6">
@@ -174,7 +170,7 @@ export function ChartCard({
             style={{ width: `${fill}%` }}
           />
         </span>
-      </button>
+      </div>
       {/* The personnel menu: the overflow-menu style of the session rows, anchored at the card's
           corner. Its own wrapper positions it — Dropdown's root is `relative` and would sit in flow. */}
       <div className="absolute top-1.5 right-1.5">
