@@ -34,7 +34,9 @@ repo and are gitignored here:
 
 Editing `AGENTS.md`, `CLAUDE.md` or anything under `specs/` edits **the design repo's files**.
 Commit them there, on their own branch, in their own PR. They can never appear in an
-implementation-repo PR. A fresh clone has none of the three links; recreate them by hand.
+implementation-repo PR. A fresh clone has none of the three links; recreate them by hand. A clone
+with no design repo beside it — the normal state for a remote or throwaway environment — has
+nothing to link to, so it carries no `AGENTS.md` at all and these skills are its whole contract.
 
 Both repos take changes through branch + PR against `main`, squash-merged. Do not push to `main`,
 and `gh pr create --base main` — not `dev`, whatever a sibling repo does.
@@ -46,6 +48,16 @@ conflict again, `git ls-remote --heads origin` names the branch responsible.
 
 Independent changes each get their own git worktree under `../penguin-harness-wt/<topic>/` so
 several can run in parallel.
+
+**Keep searches inside the worktree you are working in.** Scanning the home directory or the whole
+disk is rarely worth it: it is slow, and what it turns up outside the tree is usually another
+checkout's copy of the file you are already looking at. When a path does not resolve, prefer
+narrowing — reason about the package layout, ask `git ls-files`, follow the conventions above — over
+widening the root. The only paths outside the worktree worth reading are the siblings named here:
+`../penguin-harness-design` for specs, `../penguin-harness-wt/*` for another topic's tree, and
+`../agenthub` where it is checked out. Reach them by name; never find them by scanning. Say all of
+this to every subagent you dispatch — widening the search root is the first move a subagent makes
+when a path does not resolve.
 
 ## Verify what you changed
 
@@ -97,6 +109,11 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 `YYYY-MM-DD-<slug>.md` and `YYYY-MM-DD-<slug>.zh.md` pair mirroring section for section, inside the
 PR that makes the change. One without the other is unfinished, **there is no index file**, and
 reasoning belongs in the PR description rather than on disk.
+
+**A conclusion is not a deliverable.** Do not package findings as a standalone page, artifact or
+report file: it detaches them from the diff they are about and no one opens it twice. A review's
+findings go in PR comments, on the lines they concern; everything else goes in the PR description
+and in the reply to whoever asked.
 
 `changelog/README.md` is the full spec and `reference/changelog.md` has the shape plus the traps
 (the metadata block's fixed order, translated headings, `#N` numbers that are often issues rather
