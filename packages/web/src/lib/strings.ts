@@ -1732,8 +1732,8 @@ Benchmark：
     contextPartToolRequests: "工具请求",
     contextPartToolResults: "工具结果",
     contextTopTools: "工具用量 Top 5",
-    /** Tooltip of the dashed mark on the context bar; n = the humanized threshold. */
-    contextCompactAt: (n: string): string => `压缩阈值 ${n}`,
+    /** Panel header, under the used/threshold ratio: the model window, shown only when it is larger than the threshold. */
+    contextWindowIs: (n: string): string => `窗口 ${n}`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
     contextTopFiles: "文件用量 Top 5",
     contextTopFilesHint:
@@ -1749,6 +1749,11 @@ Benchmark：
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",
     contextBreakdownFailed: "读取上下文构成失败",
+    /** Composer notice: the model's window is below the Agent's configured compaction threshold; n = window, m = threshold. */
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。把压缩阈值调到窗口以下，再手动执行一次 /compact，新阈值即从下一个上下文起生效。`,
+    contextWindowUnderThresholdAction: "打开 Agent 设置",
+    contextWindowUnderThresholdDismiss: "忽略",
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",

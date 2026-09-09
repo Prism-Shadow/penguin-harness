@@ -20,7 +20,6 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   DEFAULT_COMPACTION_PROMPT,
-  DEFAULT_MAX_CONTEXT_LENGTH,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -40,7 +39,12 @@ import {
   type ModelEntry,
   type ProjectConfig,
 } from "./state/index.js";
-import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
+import {
+  DEFAULT_MAX_CONTEXT_LENGTH,
+  GenerativeModel,
+  ToolCallIdAllocator,
+  effectiveMaxContextLength,
+} from "./llm/index.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,

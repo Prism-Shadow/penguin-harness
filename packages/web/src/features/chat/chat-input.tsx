@@ -93,6 +93,7 @@ import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown } from "../../components/ui/icons";
@@ -124,6 +125,8 @@ import { isStopAction, midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
+import { modelWindowBelowCompactionLimit } from "../../lib/context";
+import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
 
@@ -762,6 +765,17 @@ export interface ComposerControl {
   fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
 }
 
+/**
+ * Small-window notices already put down, keyed Session + model, for the rest of the tab session.
+ *
+ * Module state rather than storage: the notice reports a live mismatch between two settings, so
+ * a dismissal should not outlive the tab that saw it — reopening the app after changing either
+ * side deserves a fresh answer. Keyed by model as well as Session because switching the
+ * conversation onto another model is exactly the case where the mismatch may no longer hold, or
+ * may hold with different numbers.
+ */
+const dismissedWindowNotices = new Set<string>();
+
 export function ChatInput({
   status,
   onSend,
@@ -786,6 +800,8 @@ export function ChatInput({
   turnThinkingLevel,
   onChangeTurnThinkingLevel,
   contextWindow,
+  compactionLimit,
+  onOpenAgentSettings,
   contextNow,
   contextStale = false,
   sessionId,
@@ -929,6 +945,17 @@ export function ChatInput({
   onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
+  /**
+   * The Agent's CONFIGURED `compaction.max_context_length` (its seeded default when the config
+   * carries none), fetched by the parent alongside the Agent's thinking level. It gives the
+   * context ring the threshold it fills against, and it is the number the small-window notice
+   * below is judged against. Absent where no Agent config is at hand (the draft and subagent
+   * composers, and the moment before the fetch lands): the ring then falls back to the model
+   * window and the notice cannot be raised at all.
+   */
+  compactionLimit?: number;
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
+  onOpenAgentSettings?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -1240,6 +1267,27 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
+  // The model cannot hold what the Agent is configured to compact at. Raised only in session
+  // state, where a Session id gives the dismissal a key and `/compact` is available to act on
+  // the advice; the draft composer has neither.
+  const windowNoticeKey =
+    sessionId !== undefined && modelRef
+      ? `${sessionId}\u0000${modelRef.provider}\u0000${modelRef.modelId}`
+      : null;
+  const [windowNoticeDismissed, setWindowNoticeDismissed] = useState(false);
+  // Re-read on every key change (a `/model` fork, a new Session) so a dismissal that belongs to
+  // another pairing never suppresses this one, and one that belongs to this pairing survives a
+  // trip away and back.
+  useEffect(() => {
+    setWindowNoticeDismissed(
+      windowNoticeKey !== null && dismissedWindowNotices.has(windowNoticeKey),
+    );
+  }, [windowNoticeKey]);
+  const windowNoticeOpen =
+    windowNoticeKey !== null &&
+    !windowNoticeDismissed &&
+    modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -2179,6 +2227,41 @@ export function ChatInput({
         </div>
       )}
 
+      {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
+          at the window's edge instead of at the number the user set. Amber rather than muted
+          body text like the notices below it: the other two describe what the composer is about
+          to do, this one asks for a settings change, and `attention` is the tone for a thing
+          waiting on the user. Dismissible, because keeping the threshold high on purpose is a
+          legitimate answer and a notice with no way down stops being read. */}
+      {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+        <div
+          className={`anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+        >
+          <p className="min-w-0">
+            {S.chat.contextWindowUnderThreshold(
+              humanizeTokens(contextWindow),
+              humanizeTokens(compactionLimit),
+            )}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
+                setWindowNoticeDismissed(true);
+              }}
+            >
+              {S.chat.contextWindowUnderThresholdDismiss}
+            </Button>
+            {onOpenAgentSettings && (
+              <Button size="sm" variant="primary" onClick={onOpenAgentSettings}>
+                {S.chat.contextWindowUnderThresholdAction}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* When the model doesn't support viewing images directly: images still upload as usual,
           and on send the server writes them to the session's scratchpad and appends the file
           path into the message text (the model views them via describe_image). A small note is
@@ -2592,6 +2675,7 @@ export function ChatInput({
                 now={contextNow}
                 unknown={contextStale}
                 {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+                {...(compactionLimit !== undefined ? { compactionLimit } : {})}
                 {...(sessionId !== undefined ? { sessionId } : {})}
               />
             )}

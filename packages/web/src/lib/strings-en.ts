@@ -1765,7 +1765,7 @@ Scenarios:
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
     contextTopTools: "Top 5 tools",
-    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
+    contextWindowIs: (n: string): string => `window ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
     contextTopFiles: "Top 5 files",
@@ -1781,6 +1781,10 @@ Scenarios:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Set the threshold below the window, then run /compact once — the new threshold applies from the next context on.`,
+    contextWindowUnderThresholdAction: "Open agent settings",
+    contextWindowUnderThresholdDismiss: "Dismiss",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",

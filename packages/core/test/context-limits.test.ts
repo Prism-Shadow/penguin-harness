@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPACTION_HEADROOM,
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_CONTEXT_LENGTH,
   MIN_OUTPUT_TOKENS,
   MIN_USABLE_CONTEXT_WINDOW,
   OUTPUT_SAFETY_MARGIN,
@@ -16,7 +17,6 @@ import {
   effectiveMaxOutputTokens,
   resolveContextWindow,
 } from "../src/llm/context-limits.js";
-import { DEFAULT_MAX_CONTEXT_LENGTH } from "../src/state/default-config.js";
 import { toolCallOutput, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 

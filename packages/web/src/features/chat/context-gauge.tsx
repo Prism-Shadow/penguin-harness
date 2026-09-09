@@ -2,10 +2,18 @@
  * Context usage gauge in the composer toolbar, and the composition panel behind it.
  *
  * The resting state is the ring alone: a **single-colour** indicator of total occupancy (no
- * bucketing), turning amber past 80% and red past 95%. The exact `used/window` figures are not
+ * bucketing), turning amber past 80% and red past 95%. The exact `used/basis` figures are not
  * printed beside it — the panel a click away leads with them, and hovering the ring names them
- * too. When the model has no `context_window` configured, resolveContextWindow falls back to
- * 128000 and the ring is drawn as usual, so the ratio always has a reference point.
+ * too.
+ *
+ * What it fills against is the **effective compaction threshold**, not the model window: the
+ * question a reader brings to this ring is how much room is left before the context is
+ * summarized away, and against a window that dwarfs the threshold every answer looks like
+ * "plenty" (64k used at a 128k threshold on a 1M window would draw 6% instead of 50%). The
+ * basis therefore comes from contextFillBasis, which caps the Agent's configured threshold by
+ * what the window leaves room for — exactly the derivation the Agent itself compacts at. Where
+ * no threshold applies it falls back to the window: compaction switched off, and a caller with
+ * no Agent config to give (the subagent composer).
  *
  * `unknown` (a compaction succeeded and the next regular Request has not reported usage yet)
  * draws an empty ring. **Never a full-looking 0**: that would claim the context had been cleared
@@ -23,12 +31,15 @@
  * figure in the panel header, and the estimate's absolute error never reaches the display; the
  * `~` on every derived value marks what is still an approximation.
  *
- * The bar runs the full **context window**, so its filled run is the occupancy the ring shows and
- * a dashed mark says where compaction will fire — how much room is left before the context is
- * summarized away is the thing that decides what to do next. The parts subdivide that filled run;
- * their exact shares are the legend's job, since at low occupancy the run is only a few pixels
- * wide. Hovering a segment or its legend row links the two: the row lights up and the other
- * segments fade.
+ * The bar runs to the same threshold the ring does, so its filled run is the occupancy the ring
+ * shows and its right edge is where compaction fires — there is no separate mark for the trigger
+ * point, because the bar ends on it. While the panel is open the server's own reading of that
+ * threshold wins over the client's: both come from the same derivation, so they differ only when
+ * the Agent's config changed after this page loaded. The parts subdivide the filled run; their
+ * exact shares are the legend's job, since at low occupancy the run is only a few pixels wide.
+ * Hovering a segment or its legend row links the two: the row lights up and the other segments
+ * fade. When the window is larger than the threshold the header names it too, so the room beyond
+ * the trigger point stays visible.
  *
  * The panel is portaled to document.body and positioned against viewport coordinates by
  * usePortalPanel, so the composer's own overflow cannot clip it, and it closes on outside click /
@@ -45,7 +56,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FILE_EDIT_ICON, FILE_ICON, FILE_WRITE_ICON } from "../../components/ui/icons";
 import { Segmented } from "../../components/ui/segmented";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
-import { resolveContextWindow } from "../../lib/context";
+import { contextFillBasis, resolveContextWindow } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
@@ -73,9 +84,6 @@ const PANEL_MAX_HEIGHT = "70vh";
 /** Smallest painted width (px) of the filled run, so a context with a few hundred tokens in it still shows a mark rather than nothing. */
 const MIN_FILL_PX = 2;
 
-/** How far (px) the compaction mark runs past the bar top and bottom: a 9px dash inside the bar reads as a dot, an 18px one reads as dashed. */
-const MARK_OVERHANG_PX = 4;
-
 type PanelState =
   { status: "loading" } | { status: "failed" } | { status: "ready"; data: SessionContextResponse };
 
@@ -91,17 +99,26 @@ let lastRankingView: RankingView = "tools";
 export function ContextGauge({
   now,
   window: win,
+  compactionLimit,
   unknown = false,
   sessionId,
 }: {
   now: number;
   window?: number;
+  /**
+   * The Agent's configured `compaction.max_context_length` (its seeded default when the config
+   * carries none). Omitting it makes the ring fill against the model window instead — which is
+   * what the subagent composer does: it has no Session-level Agent config at hand, and a ring
+   * measured against a threshold nobody supplied would be a made-up number.
+   */
+  compactionLimit?: number;
   unknown?: boolean;
   /** Enables the composition panel. Omitted where no Session-level endpoint can serve it (the subagent composer), leaving the ring a plain readout. */
   sessionId?: string;
 }) {
-  const max = resolveContextWindow(win);
-  const pct = unknown ? 0 : Math.min(1, now / max);
+  const basis = contextFillBasis(compactionLimit, win);
+  const windowTokens = resolveContextWindow(win);
+  const pct = unknown ? 0 : Math.min(1, now / basis);
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const { triggerRef, panelRef, position } = usePortalPanel({
@@ -121,7 +138,7 @@ export function ContextGauge({
   // was computed from, which is all the subagent composer's panel-less ring can offer.
   const usageText = unknown
     ? S.chat.contextUnknown
-    : `${S.chat.contextUsage} ${Math.round(pct * 100)}% · ${humanizeTokens(now)}/${humanizeTokens(max)}`;
+    : `${S.chat.contextUsage} ${Math.round(pct * 100)}% · ${humanizeTokens(now)}/${humanizeTokens(basis)}`;
   const R = 5;
   const C = 2 * Math.PI * R;
   const gauge = (
@@ -194,7 +211,13 @@ export function ContextGauge({
             }}
             className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
-            <ContextPanel sessionId={sessionId} now={now} max={max} pct={pct} unknown={unknown} />
+            <ContextPanel
+              sessionId={sessionId}
+              now={now}
+              fallbackBasis={basis}
+              windowTokens={windowTokens}
+              unknown={unknown}
+            />
           </div>,
           document.body,
         )}
@@ -205,14 +228,16 @@ export function ContextGauge({
 function ContextPanel({
   sessionId,
   now,
-  max,
-  pct,
+  fallbackBasis,
+  windowTokens,
   unknown,
 }: {
   sessionId: string;
   now: number;
-  max: number;
-  pct: number;
+  /** The ring's own basis, shown until the server's reading of the threshold arrives. */
+  fallbackBasis: number;
+  /** The model's resolved context window, named beside the ratio when it is larger than the basis. */
+  windowTokens: number;
   unknown: boolean;
 }) {
   // A snapshot taken when the panel opens (it only mounts while open), not a live counter: the
@@ -246,18 +271,18 @@ function ContextPanel({
   }, [sessionId]);
 
   const data = state.status === "ready" ? state.data : null;
+  // The server re-reads the Agent's config from disk when the panel opens, so its threshold is
+  // the fresher of the two; the client's is the same derivation over the config this page
+  // loaded with. Null means no threshold is in force (compaction off), and then the ring's own
+  // fallback — the window — is what both the header and the bar are drawn against.
+  const basis = data?.compactionThreshold ?? fallbackBasis;
+  const pct = Math.min(1, now / basis);
   // `contextClosed` is the server seeing what `unknown` reports from the stream: a completed
   // compaction, and no measurement of the new context yet. Both say the occupancy is unknown
   // rather than zero, so both render `—` instead of describing a context that no longer exists.
   const unmeasured = unknown || data?.contextClosed === true;
   const composition = data === null ? null : contextComposition(data, now);
   const hoveredPart = composition?.parts.some((p) => p.key === hovered) ? hovered : null;
-  // Only drawn when it falls inside the bar's scale; the server already returns null for a
-  // Session whose compaction is off or whose threshold sits past the window.
-  const compactAt =
-    data !== null && data.compactionThreshold !== null && data.compactionThreshold < max
-      ? data.compactionThreshold
-      : null;
 
   return (
     <>
@@ -269,9 +294,17 @@ function ContextPanel({
           </span>
         </span>
         <span className="font-mono text-gray-500 dark:text-gray-400">
-          {unmeasured ? "—" : humanizeTokens(now)} / {humanizeTokens(max)}
+          {unmeasured ? "—" : humanizeTokens(now)} / {humanizeTokens(basis)}
         </span>
       </div>
+      {/* The window, when the threshold does not reach it: the ratio above answers "how close to
+          compaction", and this answers "and how much model there is behind it" — a distinction
+          the header used to collapse by measuring against the window itself. */}
+      {windowTokens > basis && (
+        <p className="mt-0.5 text-right font-mono text-gray-400 dark:text-gray-500">
+          {S.chat.contextWindowIs(humanizeTokens(windowTokens))}
+        </p>
+      )}
 
       {unmeasured ? (
         <p className="mt-2 leading-relaxed text-gray-400 dark:text-gray-500">
@@ -285,21 +318,17 @@ function ContextPanel({
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownEmpty}</p>
       ) : (
         <>
-          {/* The bar's scale is the whole window: the filled run is the occupancy, the rest is
-              headroom, and the dashed mark is where compaction fires. Squared off, and with no
-              gaps between the fills — once the bar carries an absolute position scale, a surface
-              gap would push every fill after it off the coordinate the mark is drawn on. What
-              keeps neighbouring hues apart is the palette's own adjacent-pair separation.
-              Decorative: the legend below carries every figure, which is why the bar is hidden
-              from assistive tech and offers hover rather than focus. */}
-          <div
-            aria-hidden
-            className="relative mt-2 h-2 bg-gray-200 dark:bg-gray-800"
-            style={{ marginBottom: MARK_OVERHANG_PX }}
-          >
+          {/* The bar's scale is the compaction threshold: the filled run is the occupancy and the
+              rest is what is left before the context is summarized away, so the trigger point is
+              the bar's right edge rather than a mark inside it. Squared off, and with no gaps
+              between the fills — a surface gap would push every fill after it off the share it
+              is meant to occupy. What keeps neighbouring hues apart is the palette's own
+              adjacent-pair separation. Decorative: the legend below carries every figure, which
+              is why the bar is hidden from assistive tech and offers hover rather than focus. */}
+          <div aria-hidden className="relative mt-2 h-2 bg-gray-200 dark:bg-gray-800">
             <div
               className="absolute inset-y-0 left-0 flex overflow-hidden"
-              style={{ width: `${(now / max) * 100}%`, minWidth: now > 0 ? MIN_FILL_PX : 0 }}
+              style={{ width: `${pct * 100}%`, minWidth: now > 0 ? MIN_FILL_PX : 0 }}
             >
               {composition.parts.map((p) =>
                 p.tokens > 0 ? (
@@ -316,17 +345,6 @@ function ContextPanel({
                 ) : null,
               )}
             </div>
-            {compactAt !== null && (
-              <span
-                title={S.chat.contextCompactAt(humanizeTokens(compactAt))}
-                style={{
-                  left: `${(compactAt / max) * 100}%`,
-                  top: -MARK_OVERHANG_PX,
-                  bottom: -MARK_OVERHANG_PX,
-                }}
-                className="absolute border-l border-dashed border-gray-500 dark:border-gray-400"
-              />
-            )}
           </div>
 
           <ul className="mt-2 space-y-0.5">

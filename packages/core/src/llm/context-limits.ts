@@ -13,8 +13,9 @@
  *
  * `OUTPUT_SAFETY_MARGIN` is the single tunable of the margin story: the output floor and
  * the compaction headroom are derived from it (PR #235 review), so their invariants —
- * floor below margin, headroom above margin — cannot drift apart. The two remaining
- * independent facts are `DEFAULT_CONTEXT_WINDOW` and `IMAGE_TOKEN_ESTIMATE`.
+ * floor below margin, headroom above margin — cannot drift apart. The three remaining
+ * independent facts are `DEFAULT_CONTEXT_WINDOW`, `DEFAULT_MAX_CONTEXT_LENGTH` and
+ * `IMAGE_TOKEN_ESTIMATE`.
  *
  * Thinking-level interaction (considered, out of scope): on a high-reasoning session a
  * small derived cap can be consumed by thinking tokens before any visible answer, ending
@@ -33,12 +34,33 @@ import type { OmniMessage } from "../omnimessage/index.js";
  * Models with a *smaller* real window still need `context_window` set on their entry —
  * no derivation can protect a window it doesn't know about.
  *
- * Not the compaction-threshold default (`DEFAULT_MAX_CONTEXT_LENGTH` in
- * state/default-config.ts) — a separate number that happens to concern the same axis. The
- * seeded threshold sits above this assumption, so an entry without a usable `context_window`
- * effectively compacts at `DEFAULT_CONTEXT_WINDOW − COMPACTION_HEADROOM`.
+ * Not {@link DEFAULT_MAX_CONTEXT_LENGTH}, the compaction-threshold default below — a separate
+ * number that happens to concern the same axis. The seeded threshold sits above this
+ * assumption, so an entry without a usable `context_window` effectively compacts at
+ * `DEFAULT_CONTEXT_WINDOW − COMPACTION_HEADROOM`.
  */
 export const DEFAULT_CONTEXT_WINDOW = 128000;
+
+/**
+ * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
+ * start with, and the value {@link effectiveMaxContextLength}'s callers substitute for an Agent
+ * whose config carries none. Set high on purpose, because the model's own `context_window` is
+ * the backstop: the effective threshold is the smaller of this value and the window minus
+ * {@link COMPACTION_HEADROOM}, taken at use. A window with no room for this value plus that
+ * headroom therefore decides the trigger point, so a small-window model still compacts inside
+ * its window rather than never; on a roomier window — nearly every built-in catalog entry —
+ * this value is what fires. A model entry with no usable `context_window` falls back to
+ * {@link DEFAULT_CONTEXT_WINDOW}, which is a different number from this one and must not be
+ * conflated with it.
+ *
+ * Lives beside the derivation rather than with the rest of the seeded config, so that both
+ * halves of the threshold rule — the default and the cap applied to it — reach a browser
+ * bundle through one dependency-free module: the web app draws the composer's context ring
+ * against this same effective threshold and must not re-derive either number.
+ *
+ * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
+ */
+export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
 
 /**
  * Smallest `context_window` value taken at face value. Anything below is treated as
@@ -76,7 +98,7 @@ export const MIN_OUTPUT_TOKENS = Math.floor(OUTPUT_SAFETY_MARGIN / 2);
  * `COMPACTION_HEADROOM − OUTPUT_SAFETY_MARGIN` minus the compaction prompt; reserving less
  * would clamp the summary to the floor and truncate it. On a 32768 window this makes
  * compaction fire at ≈ 30720 instead of never — the seeded default threshold
- * (`DEFAULT_MAX_CONTEXT_LENGTH`, 256000) sits far outside such a window, so without this cap
+ * ({@link DEFAULT_MAX_CONTEXT_LENGTH}, 256000) sits far outside such a window, so without this cap
  * the window's hard limit would always be hit first.
  */
 export const COMPACTION_HEADROOM = OUTPUT_SAFETY_MARGIN * 2;

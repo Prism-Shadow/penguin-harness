@@ -33,6 +33,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -561,26 +562,48 @@ export function ChatPage() {
     };
   }, [projectId, selectedAgentId]);
 
-  // The session Agent's configured thinking level ("" = unset/loading), via the same
-  // agent-config endpoint the draft picker uses: the in-session picker DISPLAYS this while
-  // the user hasn't picked a level (auto-follow — sending still omits the level until
-  // touched, see turnThinkingLevel). Refetched when the session's Agent changes; a failed
-  // fetch leaves it unset (the picker then shows an em dash until picked).
+  // Two readouts come off the session Agent's config, via the same agent-config endpoint the
+  // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
+  // picker DISPLAYS while the user hasn't picked a level (auto-follow — sending still omits the
+  // level until touched, see turnThinkingLevel). The configured compaction threshold is the
+  // basis the composer's context ring fills against, and the number its small-window notice is
+  // judged against. A failed fetch leaves both unset (the picker shows an em dash until picked;
+  // the ring falls back to the model window and the notice stays down).
   const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
+  const [compactionLimit, setCompactionLimit] = useState<number | undefined>(undefined);
+  // Cleared on an Agent switch only. A plain refresh must not blank values that are about to
+  // come back unchanged: doing that inside the fetch effect would flash the thinking picker's
+  // em dash and drop the ring to the window basis on every refetch.
   useEffect(() => {
     setAgentThinkingLevel("");
+    setCompactionLimit(undefined);
+  }, [projectId, selectedAgentId]);
+  // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
+  // the value this composer holds can go stale under it. Routing to the settings page and back
+  // remounts this page and refetches anyway; the focus listener covers the other tab editing the
+  // same Agent. (`models` has no such refresh — a model entry is not edited mid-conversation the
+  // way a threshold is, and it already listens for its own change event.)
+  const [agentConfigTick, setAgentConfigTick] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setAgentConfigTick((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+  useEffect(() => {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
       .getAgentConfig(projectId, selectedAgentId)
       .then((res) => {
-        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        if (cancelled) return;
+        setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        setCompactionLimit(configuredCompactionLimit(res.config.compaction?.maxContextLength));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId]);
+  }, [projectId, selectedAgentId, agentConfigTick]);
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
@@ -1622,6 +1645,8 @@ export function ChatPage() {
       // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
+      {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
