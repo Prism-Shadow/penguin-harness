@@ -66,10 +66,7 @@ describe("POST agent config kernel-update", () => {
     delete config.skills;
     delete config.schedules;
     const togglesGenerationTemplate = await fs.readFile(
-      new URL(
-        "../../core/test/fixtures/toggles-generation-system-prompt.txt",
-        import.meta.url,
-      ),
+      new URL("../../core/test/fixtures/toggles-generation-system-prompt.txt", import.meta.url),
       "utf8",
     );
     config.system_prompt = togglesGenerationTemplate
