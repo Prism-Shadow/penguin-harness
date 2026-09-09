@@ -2705,6 +2705,9 @@ Benchmark：
       emptyHint:
         "日程驱动员工的工位会话按时巡检看板、推进工单，点右上角「新建日程」为某位员工安排一条。",
       moreEvents: (n: number): string => `还有 ${n} 项`,
+      /** The month cell's "+N more" is a button: its accessible name, and the day panel it opens. */
+      moreEventsExpand: (n: number): string => `还有 ${n} 项，展开`,
+      openDay: "查看当天",
       weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as readonly string[],
       allDay: "全天",
       promptHint: "写下你希望员工在这一刻做的巡检，例如：检查看板、推进自己的工单、在频道汇报",
@@ -2839,6 +2842,8 @@ Benchmark：
       budgetSaved: "预算已更新",
       own: "本人支出",
       cumulative: "累计支出",
+      /** The spend tree reads cumulative against budget in one column; own spend rides in the row tooltip. */
+      cumulativeBudget: "累计 / 预算",
       ratio: "占比",
       warned: "已告警",
       paused: "已暂停",
@@ -2847,7 +2852,7 @@ Benchmark：
       ticketsTable: "工单支出",
       ticketsInfo: "每张工单的贡献会话成本；上卷成本沿父工单累加。挂到多张工单的会话按份数分摊。",
       ticketsEmpty: "本周期没有工单支出",
-      rolledUp: "上卷",
+      rolledUp: "上卷成本",
       trend: "趋势",
       alerts: "告警与暂停",
       alertsEmpty: "本周期没有告警",
