@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import {
   SCHEDULE_FILTERS,
-  enabledScheduleSessions,
+  pendingScheduleSessions,
   filterBucket,
   filterSchedules,
   matchesQuery,
@@ -38,39 +38,28 @@ describe("sessionSchedules", () => {
   });
 });
 
-describe("enabledScheduleSessions", () => {
-  const now = Date.parse("2026-09-10T00:00:00.000Z");
+describe("pendingScheduleSessions", () => {
+  const due = "2026-09-11T00:00:00.000Z";
 
-  it("marks only the Sessions holding a task that will actually fire", () => {
+  it("marks only the Sessions holding a task with a next fire time", () => {
     const items = [
-      item({ name: "here", sessionId: "s1" }),
-      item({ name: "also-here", sessionId: "s1", status: "disabled", enabled: false }),
-      // Bound but switched off: the panel still lists it, the row wears nothing.
+      item({ name: "here", sessionId: "s1", nextFireAt: due }),
+      // Bound but switched off: no next run on the calendar, so the row wears nothing.
       item({ name: "paused", sessionId: "s2", status: "disabled", enabled: false }),
+      // A one-off that has already run: still enabled, still bound, nothing more to fire.
+      item({
+        name: "ran",
+        sessionId: "s3",
+        status: "done",
+        lastFiredAt: "2026-09-09T00:00:00.000Z",
+      }),
+      // Past its window: the server stops computing a next run.
+      item({ name: "over", sessionId: "s4", status: "expired", endAt: "2026-09-09T00:00:00.000Z" }),
       // An agent-wide task opens a new Session each run, so it marks no row.
-      item({ name: "fresh" }),
+      item({ name: "fresh", nextFireAt: due }),
     ];
-    expect([...enabledScheduleSessions(items, now)]).toEqual(["s1"]);
-    expect(enabledScheduleSessions([], now).size).toBe(0);
-  });
-
-  it("weighs the end time as well as the switch", () => {
-    // Open-ended, and running until a date still ahead: both still fire.
-    const open = [item({ name: "open", sessionId: "s1" })];
-    expect([...enabledScheduleSessions(open, now)]).toEqual(["s1"]);
-    const future = [item({ name: "until", sessionId: "s1", endAt: "2026-09-11T00:00:00.000Z" })];
-    expect([...enabledScheduleSessions(future, now)]).toEqual(["s1"]);
-    // Its window has closed: enabled or not, nothing more fires from it.
-    const past = [item({ name: "over", sessionId: "s1", endAt: "2026-09-09T00:00:00.000Z" })];
-    expect(enabledScheduleSessions(past, now).size).toBe(0);
-    const offAndFuture = item({
-      name: "off",
-      sessionId: "s1",
-      enabled: false,
-      status: "disabled",
-      endAt: "2026-09-11T00:00:00.000Z",
-    });
-    expect(enabledScheduleSessions([offAndFuture], now).size).toBe(0);
+    expect([...pendingScheduleSessions(items)]).toEqual(["s1"]);
+    expect(pendingScheduleSessions([]).size).toBe(0);
   });
 });
 

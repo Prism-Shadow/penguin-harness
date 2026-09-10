@@ -1672,7 +1672,7 @@ Benchmark：
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
-    sessionScheduled: "有已启用的定时任务",
+    sessionScheduled: "有待触发的定时任务",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,

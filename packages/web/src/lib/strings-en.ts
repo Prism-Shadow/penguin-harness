@@ -1699,7 +1699,7 @@ Scenarios:
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
-    sessionScheduled: "Has an enabled scheduled task",
+    sessionScheduled: "Has a scheduled task still to fire",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,

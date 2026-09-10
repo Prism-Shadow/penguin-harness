@@ -129,7 +129,7 @@ export function subscribeSchedules(listener: () => void): () => void {
  * Subscribes to the store and points it at one agent, refetching whenever `refreshKey` changes
  * — the Session on screen, so two conversations of the same agent each get a fresh read. The
  * result is this agent's whole list; callers narrow it to a Session themselves
- * (`sessionSchedules` / `enabledScheduleSessions`).
+ * (`sessionSchedules` / `pendingScheduleSessions`).
  */
 export function useAgentSchedules(
   projectId: string | null,

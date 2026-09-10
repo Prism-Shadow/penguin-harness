@@ -39,20 +39,18 @@ export function sessionSchedules(
 }
 
 /**
- * The Sessions of one agent that have a task which will actually fire — the rows the sidebar
- * gives an alarm clock. Same binding rule as `sessionSchedules`, so the mark and the panel can
- * never disagree about which tasks belong to a conversation. Two added conditions, both about
- * whether the arrangement still stands: the switch the user flips themselves (a bound but
- * paused task is something they have already turned off, and a mark for it would be noise),
- * and the end of the task's window — past `endAt` nothing more will fire. `now` is passed in
- * rather than read here, so the rule stays pure and the caller decides how fresh it is. A set
- * rather than a per-Session predicate: the sidebar asks the same question of every row it draws.
+ * The Sessions of one agent that have a task still to fire — the rows the sidebar gives an alarm
+ * clock. Same binding rule as `sessionSchedules`, so the mark and the panel can never disagree
+ * about which tasks belong to a conversation. "Still to fire" is the server's `nextFireAt`: it
+ * is set only while a next run is on the calendar, and absent for a task that is switched off,
+ * past its end time, invalid, or a one-off that has already run — every case the row should say
+ * nothing about, and one rule rather than four re-derived here. A set rather than a per-Session
+ * predicate: the sidebar asks the same question of every row it draws.
  */
-export function enabledScheduleSessions(items: readonly ScheduleItem[], now: number): Set<string> {
+export function pendingScheduleSessions(items: readonly ScheduleItem[]): Set<string> {
   const ids = new Set<string>();
   for (const item of items) {
-    if (!item.enabled || item.sessionId === undefined) continue;
-    if (item.endAt !== undefined && Date.parse(item.endAt) <= now) continue;
+    if (item.sessionId === undefined || item.nextFireAt === undefined) continue;
     ids.add(item.sessionId);
   }
   return ids;

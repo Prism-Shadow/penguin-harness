@@ -167,7 +167,7 @@ import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
-import { enabledScheduleSessions } from "../../features/schedules/schedule-panel-state";
+import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
@@ -368,12 +368,11 @@ export function Sidebar({
     currentAgent?.agentId ?? null,
     activeSessionId ?? "",
   );
-  // The Sessions of that Agent wearing the alarm clock: one bound task that is enabled and not
-  // yet past its end time is enough. `Date.now()` is read at render rather than held in state —
-  // the store re-renders these rows on every refresh (a navigation, a schedule event, a turn
-  // ending), and each of those re-reads the clock, which is what keeps an expired task's mark
-  // from lingering.
-  const scheduledSessions = enabledScheduleSessions(agentSchedules ?? [], Date.now());
+  // The Sessions of that Agent wearing the alarm clock: one bound task with a next fire time is
+  // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
+  // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
+  // task that fired for the last time loses its mark at the next refresh.
+  const scheduledSessions = pendingScheduleSessions(agentSchedules ?? []);
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -2529,7 +2528,7 @@ function SessionRow({
   activity: SessionActivity;
   /** Background tasks the Session still owns (sessionBackgroundTasks); 0 draws no mark. */
   background: number;
-  /** An enabled, unexpired scheduled task is bound to this Session (enabledScheduleSessions); false draws no mark. */
+  /** A scheduled task still to fire is bound to this Session (pendingScheduleSessions); false draws no mark. */
   scheduled: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
