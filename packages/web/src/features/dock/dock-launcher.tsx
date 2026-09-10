@@ -1,13 +1,14 @@
 /**
- * The floating launcher for the docks — an AssistiveTouch-style ball riding the chat body's
- * right edge while no dock surface is up, so the dock's panels stay discoverable for a user
- * who never notices the toolbar's toggle. The ball carries a short caption, and a click fans
- * out one round button per panel kind (plus the terminal) onto a tight ring centred on it and
- * opening leftward. The entries are glyphs alone; the caption under the ball is where their
- * names are read — it shows the hovered or focused entry's name — because seven name pills
- * floating around the ball is what pushed the ring far enough out to stop reading as one
- * object. Picking one opens its panel: in the right dock on a wide window, in the merged
- * bottom surface on a narrow one, which makes that surface visible and unmounts the
+ * The floating launcher for the workbench — an AssistiveTouch-style ball floating clear of
+ * the chat body's right edge while no dock surface is up, so the dock's panels stay
+ * discoverable for a user who never notices the toolbar's toggle. The ball carries a short
+ * caption, and a click fans out one round button per panel kind (plus the terminal) onto a
+ * tight ring centred on it and opening leftward. The entries are glyphs alone; the caption
+ * under the ball is where their names are read — it shows the hovered or focused entry's
+ * name — because seven name pills floating around the ball is what pushed the ring far
+ * enough out to stop reading as one object. Nothing carries a tooltip: every name is already
+ * on screen. Picking an entry opens its panel: in the right dock on a wide window, in the
+ * merged bottom surface on a narrow one, which makes that surface visible and unmounts the
  * launcher. The arc's last entry puts the launcher away for good, remembered as a global
  * preference and turned back on from Appearance settings. The ball drags along the edge —
  * another global preference, a ratio of the body's height — and springs back onto it when
@@ -35,7 +36,7 @@ import type {
 } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, NAV_ICONS, PANEL_RIGHT_ICON } from "../../components/ui/icons";
+import { CloseIcon, NAV_ICONS, WORKBENCH_ICON } from "../../components/ui/icons";
 import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -73,8 +74,14 @@ import {
   writeLauncherRatio,
 } from "./dock-launcher-state";
 
-/** The ball's inset from the body's right edge (px). */
-const EDGE_INSET = 14;
+/**
+ * The ball's inset from the body's right edge (px): enough room to read as floating rather
+ * than pinned to the edge, and enough for a caption up to
+ * LAUNCHER_SIZE + 2·(EDGE_INSET − CAPTION_EDGE_MARGIN) wide to stay centred on the ball.
+ */
+const EDGE_INSET = 24;
+/** Air the caption keeps from the body's right edge (px) once it is too wide to stay centred. */
+const CAPTION_EDGE_MARGIN = 6;
 /** Movement that turns a press into a drag (px); under it the press is a click. */
 const DRAG_THRESHOLD = 4;
 /** The fan's exit animation, after which its entries unmount (`.launcher-fan-out` in styles.css). */
@@ -164,6 +171,7 @@ function LauncherBall({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ballRef = useRef<HTMLButtonElement | null>(null);
   const fanRef = useRef<HTMLDivElement | null>(null);
+  const captionRef = useRef<HTMLSpanElement | null>(null);
   /** The resting position — the stored preference — as a ratio of the body's height. */
   const ratioRef = useRef(readLauncherRatio());
   const bodyHeightRef = useRef(0);
@@ -273,6 +281,23 @@ function LauncherBall({
       window.removeEventListener("scroll", onScroll, true);
     };
   }, [fanOpen, closeFan]);
+
+  // ----------------------------------------------------------------------------- caption
+  const captionText = hoveredName ?? S.dock.launcherCaption;
+  /** How far left the caption is pulled off the ball's centre to stay inside the body (px). */
+  const [captionShift, setCaptionShift] = useState(0);
+  // The pill is exactly as wide as its text — a word or a short phrase, in either language —
+  // so how far it reaches is unknown until it has rendered, and it is measured rather than
+  // guessed. Centred on the ball it may reach LAUNCHER_SIZE + 2·(EDGE_INSET −
+  // CAPTION_EDGE_MARGIN) before its right end crosses the body's edge and is clipped; past
+  // that it slides left by exactly the overhang, so a short caption stays centred and a long
+  // one keeps CAPTION_EDGE_MARGIN of air inside the body. A language switch remounts the
+  // tree, so the new dictionary's caption is measured on its own mount.
+  useLayoutEffect(() => {
+    const width = captionRef.current?.offsetWidth ?? 0;
+    const overhang = width / 2 - LAUNCHER_SIZE / 2 - (EDGE_INSET - CAPTION_EDGE_MARGIN);
+    setCaptionShift(Math.max(0, overhang));
+  }, [captionText]);
 
   // The body's height bounds the travel: measured on mount and on every resize, and the
   // ball re-placed from its stored ratio (unless a drag is holding it) — a taller or
@@ -486,9 +511,9 @@ function LauncherBall({
                 type="button"
                 data-testid={entry.testId}
                 // The glyph carries no text, so the name lives in the accessible name and in
-                // the caption under the ball, which reads out whatever is pointed at.
+                // the caption under the ball, which reads out whatever is pointed at. No
+                // tooltip: it would only repeat the caption a few pixels away.
                 aria-label={entry.label}
-                title={entry.label}
                 onClick={entry.choose}
                 onMouseEnter={() => setHoveredName(entry.label)}
                 onMouseLeave={() => setHoveredName((name) => (name === entry.label ? null : name))}
@@ -528,9 +553,10 @@ function LauncherBall({
         type="button"
         {...dragProps}
         onClick={onBallClick}
+        // No tooltip: the caption under the ball already says what it opens, and the drag is
+        // discovered by dragging.
         aria-label={label}
         aria-expanded={fanOpen}
-        title={S.dock.launcherHint}
         data-testid="dock-launcher-ball"
         style={{ width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
         className={`${BALL_CLASS} ${
@@ -539,21 +565,24 @@ function LauncherBall({
             : "bg-white/75 opacity-80 dark:bg-gray-900/75"
         } ${dragging ? "cursor-grabbing" : "cursor-pointer"}`}
       >
-        <GlyphIcon d={PANEL_RIGHT_ICON} size={ICON_SIZE.sectionMark} />
+        <GlyphIcon d={WORKBENCH_ICON} size={ICON_SIZE.sectionMark} />
         {/* The caption hangs below the ball's circle: the launcher's own word at rest, the
             pointed-at entry's name while the fan is open. It is the visible readout only —
             every button carries its own accessible name — so it is hidden from assistive
             technology and never folded into the ball's. Its height is spelled from the
             constant the vertical clamp reserves, so the two cannot drift apart. */}
         <span
+          ref={captionRef}
           aria-hidden
-          className={`${CAPTION_CLASS} left-1/2 -translate-x-1/2`}
+          className={`${CAPTION_CLASS} left-1/2`}
           style={{
             top: LAUNCHER_SIZE + CAPTION_GAP,
             height: LAUNCHER_CAPTION_HEIGHT - CAPTION_GAP,
+            // Centring and the edge correction are one transform, so the two cannot fight.
+            transform: `translateX(calc(-50% - ${captionShift}px))`,
           }}
         >
-          {hoveredName ?? S.dock.launcherCaption}
+          {captionText}
         </span>
         {agentsPending && (
           <span

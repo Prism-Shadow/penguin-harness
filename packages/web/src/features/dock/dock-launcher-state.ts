@@ -56,7 +56,7 @@ export const FAN_ENTRY_GAP = 8;
  * It is there for a body barely taller than the entries themselves, where no radius can
  * space them apart (the arc that fits keeps a bounded length however far the ring is pushed
  * out) and the solver below would otherwise run away with them off the left of the screen.
- * The ceiling is the narrow layout's width: on a ~320px phone the ball's centre sits 36px
+ * The ceiling is the narrow layout's width: on a ~320px phone the ball's centre sits 46px
  * from the edge, so an entry's far side, R + 18, has to fit what is left.
  */
 export const FAN_MAX_RADIUS = 240;

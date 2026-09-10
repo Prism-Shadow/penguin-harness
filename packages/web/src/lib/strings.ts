@@ -114,14 +114,12 @@ export const zh = {
      * `launcherCaption` is printed under the ball at rest — the same words as the ball's
      * accessible name — and gives way to the pointed-at entry's name while the fan is open.
      */
-    launcher: "打开面板",
-    launcherCaption: "打开面板",
-    /** Its tooltip: the click and the drag in one line. */
-    launcherHint: "打开面板 · 可上下拖动",
+    launcher: "打开工作台",
+    launcherCaption: "打开工作台",
     /** Appended to the launcher's accessible name while its amber dot shows. */
     launcherPending: "子智能体有待审批",
-    /** The fan of panel entries the launcher opens (its accessible group name). */
-    launcherPanels: "侧边栏面板",
+    /** The fan of entries the launcher opens (its accessible group name). */
+    launcherPanels: "工作台",
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
@@ -195,9 +193,9 @@ export const zh = {
     fontLarge: "大",
     accent: "主题色",
     accentInfo: "界面强调色。",
-    launcher: "浮动面板球",
+    launcher: "工作台悬浮球",
     launcherInfo:
-      "在对话正文右缘浮动的圆形按钮，展开后可打开侧边栏面板；这里关掉后它就不再出现，展开菜单里的「隐藏悬浮球」也会关掉它。",
+      "在对话正文右缘浮动的圆形按钮，展开后可打开工作台的各块面板；这里关掉后它就不再出现，展开菜单里的「隐藏悬浮球」也会关掉它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {

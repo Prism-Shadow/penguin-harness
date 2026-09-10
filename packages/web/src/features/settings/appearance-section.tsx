@@ -3,8 +3,8 @@
  * user menu. Everything applies on the spot (the theme store persists per browser), so
  * there is no Save button. The terminal keeps its own theme row because plenty of people
  * pin a dark terminal inside a light app; it follows the app unless pinned (see
- * TerminalThemeMode). The floating panel launcher's row is here rather than with the chat's
- * own settings because it is the same kind of choice: whether a piece of chrome is drawn.
+ * TerminalThemeMode). The workbench launcher's row is here rather than with the chat's own
+ * settings because it is the same kind of choice: whether a piece of chrome is drawn.
  */
 import { useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";

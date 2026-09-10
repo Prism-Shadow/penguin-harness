@@ -166,11 +166,14 @@ export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01"
 
 /**
  * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
- * pull-open buttons, the dock header's move-dock buttons and the floating launcher's ball, so
- * one mark stands for one edge everywhere.
+ * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge
+ * everywhere.
  */
 export const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
 export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
+
+/** A dashboard of four tiles: the workbench the floating launcher opens. */
+export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z";
 
 /**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the

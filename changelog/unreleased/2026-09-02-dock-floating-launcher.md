@@ -1,4 +1,4 @@
-# A floating launcher for the docks
+# A floating launcher for the workbench
 
 - **Date:** 2026-09-02
 - **Type:** feature
@@ -7,13 +7,14 @@
 
 [中文版](2026-09-02-dock-floating-launcher.zh.md)
 
-The chat page gained an AssistiveTouch-style floating launcher for the docks: while no dock
-surface is up, a translucent round button rides the right edge of the conversation body under a
-short caption, and a click fans its entries out on a tight semicircular ring around it — one per
-dock panel plus a terminal, glyphs alone, their names read out by that same caption — and picking
-one opens that panel, at which point the launcher goes away. The dock's panels had been reachable only through the toolbar's toggle,
-which a user could fail to notice altogether — on a phone most of all. The arc's last entry puts
-the launcher away for good, and an Appearance setting brings it back.
+The chat page gained an AssistiveTouch-style floating launcher for the workbench: while no dock
+surface is up, a translucent round button floats just inside the right edge of the conversation
+body under a short "Open workbench" caption, and a click fans its entries out on a tight
+semicircular ring around it — one per dock panel plus a terminal, glyphs alone, their names read
+out by that same caption — and picking one opens that panel, at which point the launcher goes
+away. The workbench's panels had been reachable only through the toolbar's toggle, which a user
+could fail to notice altogether — on a phone most of all. The arc's last entry puts the launcher
+away for good, and an Appearance setting brings it back.
 
 ## Details
 
@@ -21,10 +22,14 @@ the launcher away for good, and an Appearance setting brings it back.
   being hidden; below the breakpoint, where the two docks render as one merged bottom surface, it
   is neither dock being open. Narrow layouts used to have no launcher at all.
 - Resting: a 44px translucent circle with backdrop blur and a soft shadow, quiet until hovered or
-  focused (a visible focus ring for keyboard users), showing the toolbar's right-pane glyph, with
-  its name printed under it on the same glass — a bare glyph does not say what it opens, and the
-  ball's accessible name is that same word. It sits inside the chat body — between the toolbar and
-  the composer — so neither it nor its caption ever covers either.
+  focused (a visible focus ring for keyboard users), showing a workbench glyph — a dashboard of
+  four tiles — with its name printed under it on the same glass: a bare glyph does not say what it
+  opens, and the ball's accessible name is that same word. It rests 24px in from the body's right
+  edge, far enough to read as floating rather than pinned, and a caption too wide to stay centred
+  on the ball slides left so its end stays inside the body instead of being clipped by the edge.
+  Neither the ball nor an entry carries a tooltip: every name is already on screen. It sits inside
+  the chat body — between the toolbar and the composer — so neither it nor its caption ever covers
+  either.
 - Click, Enter or Space fans out round entries: every kind in `PANEL_KINDS` through the shared
   panel meta (a kind added later appears by itself), plus the terminal, which adopts a live shell
   no conversation holds or starts one, exactly like the dock picker, and a last "hide launcher"
@@ -42,7 +47,7 @@ the launcher away for good, and an Appearance setting brings it back.
   press elsewhere, or scrolling folds it.
 - "Hide launcher" folds the fan, writes `penguin.dock.launcherHidden` and unmounts the ball under
   its own click, leaving a toast that names where it comes back from. That preference is the one
-  the new **Floating panel launcher** switch on the Appearance settings page reads and writes, so
+  the new **Workbench launcher** switch on the Appearance settings page reads and writes, so
   the fan's entry and the switch are two views of the same choice; both apply on the spot, through
   a small store the launcher's mount and the settings row subscribe to. A tolerant read means only
   a deliberate "1" hides it — an absent or hand-edited value shows the launcher.
