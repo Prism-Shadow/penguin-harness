@@ -1,21 +1,20 @@
 /**
  * The floating dock launcher's decisions (features/dock/dock-launcher-state.ts): when it
  * shows, how its resting position clamps to the chat body and round-trips through the
- * stored ratio, how a drag is bounded, and which way the fan opens.
+ * stored ratio, how a drag is bounded, and where on the arc its entries land.
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LAUNCHER_RATIO,
-  FAN_ENTRY_GAP,
   FAN_ENTRY_SIZE,
-  FAN_GAP,
+  FAN_RADIUS,
+  LAUNCHER_CAPTION_HEIGHT,
   LAUNCHER_EDGE_MARGIN,
   LAUNCHER_SIZE,
   LAUNCHER_Y_KEY,
   clampLauncherTop,
   dragPosition,
-  fanDirection,
-  fanHeight,
+  fanLayout,
   launcherRatioFromTop,
   launcherTopFromRatio,
   parseLauncherRatio,
@@ -23,10 +22,10 @@ import {
   shouldShowLauncher,
   writeLauncherRatio,
 } from "../src/features/dock/dock-launcher-state";
-import type { LauncherStorage } from "../src/features/dock/dock-launcher-state";
+import type { FanSlot, LauncherStorage } from "../src/features/dock/dock-launcher-state";
 
 const BODY = 600;
-const MAX_TOP = BODY - LAUNCHER_SIZE - LAUNCHER_EDGE_MARGIN;
+const MAX_TOP = BODY - LAUNCHER_SIZE - LAUNCHER_CAPTION_HEIGHT - LAUNCHER_EDGE_MARGIN;
 
 function fakeStorage(initial: Record<string, string> = {}): LauncherStorage & {
   map: Map<string, string>;
@@ -55,7 +54,7 @@ describe("visibility", () => {
 });
 
 describe("clamping", () => {
-  it("keeps a top offset inside the body with the edge margin", () => {
+  it("keeps a top offset inside the body with the edge margin and the caption", () => {
     expect(clampLauncherTop(200, BODY)).toBe(200);
     expect(clampLauncherTop(-50, BODY)).toBe(LAUNCHER_EDGE_MARGIN);
     expect(clampLauncherTop(5000, BODY)).toBe(MAX_TOP);
@@ -63,6 +62,11 @@ describe("clamping", () => {
 
   it("pins the ball at the top margin when the body is too short for it", () => {
     expect(clampLauncherTop(30, 40)).toBe(LAUNCHER_EDGE_MARGIN);
+  });
+
+  it("leaves room below the ball for its caption, on top of the margin", () => {
+    const ballBottom = clampLauncherTop(5000, BODY) + LAUNCHER_SIZE;
+    expect(BODY - ballBottom).toBe(LAUNCHER_CAPTION_HEIGHT + LAUNCHER_EDGE_MARGIN);
   });
 
   it("treats a non-finite offset as the top margin", () => {
@@ -163,26 +167,74 @@ describe("drag", () => {
   });
 });
 
-describe("fan direction", () => {
+describe("fan layout", () => {
   const COUNT = 6;
+  const TALL = 900;
+  /** The ball centred in a body tall enough for the whole semicircle. */
+  const MIDDLE = TALL / 2 - LAUNCHER_SIZE / 2;
+  const ENTRY_RADIUS = FAN_ENTRY_SIZE / 2;
 
-  it("measures the stack from the entries, their gaps and the gap to the ball", () => {
-    expect(fanHeight(COUNT)).toBe(FAN_GAP + COUNT * FAN_ENTRY_SIZE + (COUNT - 1) * FAN_ENTRY_GAP);
-    expect(fanHeight(0)).toBe(0);
+  /** The slot's angle on the arc: 0 straight up, pi/2 straight left, pi straight down. */
+  const angleOf = (slot: FanSlot): number => Math.atan2(-slot.x, -slot.y);
+
+  function expectInside(slots: FanSlot[], top: number, bodyHeight: number): void {
+    const centerY = top + LAUNCHER_SIZE / 2;
+    for (const slot of slots) {
+      expect(centerY + slot.y - ENTRY_RADIUS).toBeGreaterThanOrEqual(0);
+      expect(centerY + slot.y + ENTRY_RADIUS).toBeLessThanOrEqual(bodyHeight);
+    }
+  }
+
+  it("spreads the entries evenly over the whole semicircle in the middle of a tall body", () => {
+    const angles = fanLayout(MIDDLE, TALL, COUNT).map(angleOf);
+    expect(angles[0]).toBeCloseTo(0, 6);
+    expect(angles.at(-1)).toBeCloseTo(Math.PI, 6);
+    const step = Math.PI / (COUNT - 1);
+    for (let i = 1; i < angles.length; i += 1) {
+      expect(angles[i]! - angles[i - 1]!).toBeCloseTo(step, 6);
+    }
   });
 
-  it("rises above a ball that has room above it", () => {
-    expect(fanDirection(MAX_TOP, BODY, COUNT)).toBe("up");
-    expect(fanDirection(BODY / 2, BODY, COUNT)).toBe("up");
+  it("puts every entry on the circle, left of the ball, in top-to-bottom order", () => {
+    const slots = fanLayout(MIDDLE, TALL, COUNT);
+    let previousY = -Infinity;
+    for (const slot of slots) {
+      expect(Math.hypot(slot.x, slot.y)).toBeCloseTo(FAN_RADIUS, 6);
+      expect(slot.x).toBeLessThanOrEqual(0);
+      expect(slot.y).toBeGreaterThan(previousY);
+      previousY = slot.y;
+    }
   });
 
-  it("drops below a ball near the top", () => {
-    expect(fanDirection(LAUNCHER_EDGE_MARGIN, BODY, COUNT)).toBe("down");
+  it("stands the arc's end labels above and below it, and the rest beside", () => {
+    const sides = fanLayout(MIDDLE, TALL, COUNT).map((slot) => slot.labelSide);
+    expect(sides[0]).toBe("above");
+    expect(sides.at(-1)).toBe("below");
+    expect(sides.slice(1, -1)).toEqual(Array<string>(COUNT - 2).fill("left"));
   });
 
-  it("picks the roomier side when the stack fits on neither", () => {
-    const short = fanHeight(COUNT); // a body only as tall as the fan itself
-    expect(fanDirection(LAUNCHER_EDGE_MARGIN, short, COUNT)).toBe("down");
-    expect(fanDirection(short - LAUNCHER_SIZE - LAUNCHER_EDGE_MARGIN, short, COUNT)).toBe("up");
+  it("trims the arc's top near the body's top, keeping every entry inside", () => {
+    const slots = fanLayout(LAUNCHER_EDGE_MARGIN, TALL, COUNT);
+    expectInside(slots, LAUNCHER_EDGE_MARGIN, TALL);
+    // What is left runs from around straight left down to straight below the ball.
+    expect(angleOf(slots[0]!)).toBeGreaterThan(Math.PI / 3);
+    expect(angleOf(slots.at(-1)!)).toBeCloseTo(Math.PI, 6);
+  });
+
+  it("trims the arc's bottom near the body's bottom, keeping every entry inside", () => {
+    const top = clampLauncherTop(TALL, TALL);
+    const slots = fanLayout(top, TALL, COUNT);
+    expectInside(slots, top, TALL);
+    expect(angleOf(slots[0]!)).toBeCloseTo(0, 6);
+    expect(angleOf(slots.at(-1)!)).toBeLessThan(Math.PI - 0.1);
+  });
+
+  it("centres a lone entry on the span and puts a pair at its ends", () => {
+    const [only] = fanLayout(MIDDLE, TALL, 1);
+    expect(angleOf(only!)).toBeCloseTo(Math.PI / 2, 6);
+    expect(only!.labelSide).toBe("left");
+    const pair = fanLayout(MIDDLE, TALL, 2);
+    expect(pair.map(angleOf)).toEqual([expect.closeTo(0, 6), expect.closeTo(Math.PI, 6)]);
+    expect(fanLayout(MIDDLE, TALL, 0)).toEqual([]);
   });
 });

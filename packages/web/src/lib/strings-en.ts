@@ -100,8 +100,9 @@ export const en: Strings = {
     killConfirmTitle: "Close this terminal?",
     killConfirmBody: (name: string): string =>
       `This ends the shell "${name}" — it cannot be restored.`,
-    launcher: "Open a side panel",
-    launcherHint: "Open a side panel · drag to move",
+    launcher: "Panels: open a side panel",
+    launcherCaption: "Panels",
+    launcherHint: "Panels: open a side panel · drag to move",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Side panels",
   },

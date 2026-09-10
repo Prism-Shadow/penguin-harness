@@ -257,27 +257,29 @@
 }
 
 /* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
-   with a slight overshoot and fold back without one. `--fan-shift` is an entry's start
-   offset toward the ball, set per fan direction. The resting state is the base state, so
-   the reduced-motion block below leaves the entries in place instead of hiding them. */
+   onto their places on the arc with a slight overshoot, and fold back into it without one.
+   Every entry's box sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from
+   there, set per entry, and that translate is also the entry's resting inline transform — so
+   the reduced-motion block below, which drops the animation outright, leaves each entry
+   standing on the arc instead of collapsed onto the ball or hidden. */
 @keyframes launcher-fan-in {
   from {
     opacity: 0;
-    transform: translateY(var(--fan-shift, 8px)) scale(0.5);
+    transform: translate(0, 0) scale(0.5);
   }
   to {
     opacity: 1;
-    transform: none;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
   }
 }
 @keyframes launcher-fan-out {
   from {
     opacity: 1;
-    transform: none;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
   }
   to {
     opacity: 0;
-    transform: translateY(var(--fan-shift, 8px)) scale(0.5);
+    transform: translate(0, 0) scale(0.5);
   }
 }
 .launcher-fan-in {
