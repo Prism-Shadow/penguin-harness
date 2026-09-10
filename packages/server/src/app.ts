@@ -911,6 +911,10 @@ export function buildAppDeps(
     index: traceIndex,
     sessions: sessionsRepo,
     sources: sessionSources,
+    // The one price table: the analysis costs a file's Requests with the lookup the cost
+    // center prices usage rows with, so the Trace panel and the toolbar never disagree.
+    lookupPricing: (projectId, provider, modelId) =>
+      projectConfigService.getPricing(projectId, provider, modelId),
   });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is

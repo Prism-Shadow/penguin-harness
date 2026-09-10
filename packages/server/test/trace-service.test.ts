@@ -37,7 +37,12 @@ import type {
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
+import { openDatabase } from "../src/db/database.js";
+import { ErrorsRepo } from "../src/db/repos/errors.js";
+import { UsageRepo } from "../src/db/repos/usage.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
+import { UsageService } from "../src/services/usage-service.js";
+import type { PricingLookup } from "../src/services/usage-service.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";
@@ -199,6 +204,135 @@ describe("trace-service", () => {
     expect(analysis.usageTrend).toEqual([
       { ts: "2026-07-05T10:00:07.000Z", requestTotal: 400, sessionTotal: 1000 },
     ]);
+  });
+
+  /** One completed text turn: Prompt, one Request, and its usage stamped at `ts` plus three seconds. */
+  const priceTurn = (ts: string, request: TokenCounts): OmniMessage[] => {
+    const t = Date.parse(ts);
+    const plus = (s: number) => new Date(t + s * 1000).toISOString();
+    return [
+      at(ts, userText("go")),
+      at(plus(1), requestBegin()),
+      at(plus(2), assistantText("ok")),
+      at(plus(3), requestEnd("completed")),
+      at(plus(3), tokenUsage(request, request)),
+    ];
+  };
+
+  it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows", async () => {
+    // A DeepSeek reference carries the catalog's Beijing-hours schedule; the lookup answers
+    // both tiers, as project-config-service does for a row still at the catalog's price.
+    const REF = { provider: "deepseek", model_id: "deepseek-v4-flash" };
+    const lookups: string[] = [];
+    const lookup: PricingLookup = async (projectId, provider, modelId) => {
+      lookups.push(`${projectId}/${provider}/${modelId}`);
+      return {
+        peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+        offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
+      };
+    };
+    const priced = makeTraceHarness(root, { lookupPricing: lookup });
+    const usage = buckets(10, 1, 5);
+    // Tuesday 10:30 Beijing (peak), Tuesday 21:00 Beijing (off-peak), Sunday 11:00 Beijing
+    // (an hour a weekday bills at peak, off-peak on a weekend).
+    const stamps = [
+      "2026-07-07T02:30:00.000Z",
+      "2026-07-07T13:00:00.000Z",
+      "2026-07-12T03:00:00.000Z",
+    ];
+    try {
+      await writeTraceFile(root, P, A, "2026-07-07", S, 1, [
+        sessionMeta(metaPayload(REF)),
+        ...stamps.flatMap((ts) => priceTurn(ts, usage)),
+      ]);
+      const a = await priced.service.analyze(P, A, S, 1);
+      const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
+      expect(a.tasks.map((t) => t.cost)).toEqual([peakCost, peakCost / 2, peakCost / 2]);
+      expect(a.cost).toBeCloseTo(peakCost * 2, 12);
+      expect(lookups).toEqual([`${P}/deepseek/deepseek-v4-flash`]);
+
+      // The same three requests as usage rows, priced by the cost center's session grouping —
+      // the figure the conversation toolbar shows — land on the file's total.
+      const db = openDatabase(":memory:");
+      try {
+        const rows = new UsageRepo(db);
+        for (const ts of stamps) {
+          const at = new Date(Date.parse(ts) + 3000).toISOString();
+          rows.insert({
+            ts: at,
+            date: at.slice(0, 10),
+            projectId: P,
+            agentId: A,
+            sessionId: S,
+            originSessionId: null,
+            provider: REF.provider,
+            modelId: REF.model_id,
+            cacheRead: usage.cache_read,
+            cacheWrite: usage.cache_write,
+            output: usage.output,
+            total: usage.total,
+          });
+        }
+        const center = new UsageService(rows, new ErrorsRepo(db), lookup, () => new Date());
+        const res = await center.query(P, { groupBy: "session" });
+        expect(res.groups.find((g) => g.key === S)?.cost).toBeCloseTo(a.cost!, 12);
+      } finally {
+        db.close();
+      }
+    } finally {
+      priced.close();
+    }
+  });
+
+  it("a model with no schedule bills every hour at its one rate; no pricing, or a head naming no provider, means no cost at all", async () => {
+    const lookups: string[] = [];
+    const priced = makeTraceHarness(root, {
+      lookupPricing: async (_projectId, provider, modelId) => {
+        lookups.push(`${provider}/${modelId}`);
+        // A second tier the schedule gate must never reach for an unscheduled reference.
+        return modelId === "m1"
+          ? {
+              peak: { cacheRead: 1, cacheWrite: 1, output: 1 },
+              offPeak: { cacheRead: 0, cacheWrite: 0, output: 0 },
+            }
+          : undefined;
+      },
+    });
+    try {
+      // Sunday 11:00 Beijing: off-peak for a scheduled model, just an hour for this one.
+      await writeTraceFile(root, P, A, "2026-07-12", S, 1, [
+        sessionMeta(metaPayload()),
+        ...priceTurn("2026-07-12T03:00:00.000Z", buckets(10, 1, 5)),
+        at("2026-07-12T03:01:00.000Z", userText("interrupted before any request")),
+      ]);
+      const flat = await priced.service.analyze(P, A, S, 1);
+      expect(flat.tasks.map((t) => t.cost)).toEqual([(10 + 1 + 5) / 1e6, 0]);
+      expect(flat.cost).toBeCloseTo((10 + 1 + 5) / 1e6, 12);
+
+      await writeTraceFile(root, P, A, "2026-07-12", S, 2, [
+        sessionMeta(metaPayload({ model_id: "m-unpriced" })),
+        ...priceTurn("2026-07-12T03:10:00.000Z", buckets(10, 1, 5)),
+      ]);
+      const unpriced = await priced.service.analyze(P, A, S, 2);
+      expect(unpriced.tasks.map((t) => t.cost)).toEqual([undefined]);
+      expect(unpriced.cost).toBeUndefined();
+
+      const legacy = metaPayload({ model_id: "m1" }) as Partial<SessionMetaPayload>;
+      delete legacy.provider;
+      await writeTraceFile(root, P, A, "2026-07-12", S, 3, [
+        sessionMeta(legacy as SessionMetaPayload),
+        ...priceTurn("2026-07-12T03:20:00.000Z", buckets(10, 1, 5)),
+      ]);
+      const noProvider = await priced.service.analyze(P, A, S, 3);
+      expect(noProvider.cost).toBeUndefined();
+      expect(lookups).toEqual(["custom/m1", "custom/m-unpriced"]);
+    } finally {
+      priced.close();
+    }
+    // The default harness has no lookup: nothing is priced.
+    const plain = await service.analyze(P, A, S, 1);
+    expect(plain.cost).toBeUndefined();
+    expect(plain.tasks.every((t) => t.cost === undefined)).toBe(true);
   });
 
   it("the Task context snapshot takes the turn's last Request, not a sum across its Requests", async () => {
