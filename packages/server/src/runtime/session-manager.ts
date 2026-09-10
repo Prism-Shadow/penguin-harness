@@ -219,7 +219,9 @@ export interface SessionLoader {
  * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
  * address, or null = pass the environment through). `opts.controlEnv` threads the
  * harness-control injection the same way (the server's API URL/token plus the Session's
- * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv).
+ * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv), and
+ * `opts.pathPrepend` the directories every command of a resumed Session finds at the front
+ * of its PATH (the harness's own CLI shim — see CreateAgentOptions.pathPrepend).
  */
 export function createCoreSessionLoader(
   root: string,
@@ -227,6 +229,7 @@ export function createCoreSessionLoader(
   opts: {
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+    pathPrepend?: () => string[];
   } = {},
 ): SessionLoader {
   return {
@@ -237,6 +240,7 @@ export function createCoreSessionLoader(
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
+        ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),

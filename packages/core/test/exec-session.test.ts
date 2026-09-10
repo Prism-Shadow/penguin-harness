@@ -2,7 +2,7 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
@@ -676,6 +676,86 @@ describe("controlEnv injects the host's harness-control variables into commands"
     }
   });
 });
+
+describe.skipIf(process.platform === "win32")(
+  "pathPrepend puts the host's own directories in front of a command's PATH",
+  () => {
+    // The hosting server threads a pathPrepend getter through Environment ->
+    // CommandSessionManager so a command an Agent runs reaches the harness's own `penguin`
+    // rather than whatever the machine has installed globally.
+    const READ_PATH = `node -e "console.log('P=[' + process.env.PATH + ']')"`;
+    let shimDir: string;
+    let prepend: string[];
+    let prepared: Environment;
+
+    beforeEach(async () => {
+      shimDir = path.join(tmp, "shim");
+      await mkdir(shimDir, { recursive: true });
+      const script = path.join(shimDir, "penguin");
+      await writeFile(script, "#!/bin/sh\necho harness-cli\n");
+      await chmod(script, 0o755);
+      prepend = [shimDir];
+      prepared = new Environment({
+        workspaceDir: tmp,
+        toolConfig: sessionConfig(),
+        pathPrepend: () => prepend,
+      });
+    });
+
+    afterEach(() => prepared.dispose());
+
+    it("a bare command name resolves the prepended directory's copy", async () => {
+      const res = await runTool(prepared, "exec_command", { cmd: "penguin" });
+      expect(res.output).toContain("harness-cli");
+    });
+
+    it("the directory is FIRST on the PATH the command sees", async () => {
+      // Not merely present: commands run through a LOGIN shell, whose profile rewrites PATH
+      // after the child environment was set (on a Debian-family box /etc/profile replaces it
+      // outright). Being in front of whatever that left is the whole point.
+      const res = await runTool(prepared, "exec_command", { cmd: READ_PATH });
+      expect(res.output).toContain(`P=[${shimDir}${path.delimiter}`);
+    });
+
+    it("a vault PATH does not displace it", async () => {
+      // The vault replaces the inherited PATH the harness prepared; the statement in front
+      // of the command runs afterwards, so the harness's own directory leads either way.
+      // (The value still has to carry a shell: the session shell is spawned by bare name
+      // against this very PATH, so a vault entry without one is an ENOENT before any of
+      // this — long-standing behaviour of a vault PATH, not something prepending changes.)
+      const vaultEnv = new Environment({
+        workspaceDir: tmp,
+        toolConfig: sessionConfig(),
+        vault: { PATH: "/usr/bin:/bin" },
+        pathPrepend: () => prepend,
+      });
+      try {
+        const res = await runTool(vaultEnv, "exec_command", { cmd: READ_PATH });
+        expect(res.output).toContain(`P=[${shimDir}${path.delimiter}`);
+      } finally {
+        vaultEnv.dispose();
+      }
+    });
+
+    it("the getter is re-read at every spawn: nothing prepended, nothing added", async () => {
+      prepend = [];
+      const res = await runTool(prepared, "exec_command", { cmd: READ_PATH });
+      expect(res.output).not.toContain(shimDir);
+      prepend = [shimDir];
+      expect((await runTool(prepared, "exec_command", { cmd: "penguin" })).output).toContain(
+        "harness-cli",
+      );
+    });
+
+    it("the command the host lists is the one the Agent wrote, without the PATH statement", async () => {
+      const cmd = "sleep 5";
+      await runTool(prepared, "exec_command", { cmd, yield_time_ms: 200 });
+      const listed = prepared.listBackgroundCommands();
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.cmd).toBe(cmd);
+    });
+  },
+);
 
 describe("exec_command — a working directory that is not there", () => {
   // Node reports an unusable `cwd` as `spawn <shell> ENOENT`: the error names the COMMAND,

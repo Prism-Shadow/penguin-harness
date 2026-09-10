@@ -29,6 +29,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 import { sessionShell } from "./shell.js";
+import { pathPrependPrefix } from "./path-prepend.js";
 import { ServiceUrlScanner } from "./service-url.js";
 import { probeGroupListenPorts } from "./port-probe.js";
 
@@ -71,6 +72,14 @@ export interface SpawnOptions {
   cwd: string;
   /** Child process environment variables (the caller has already injected hardening entries like PAGER/TERM). */
   env: NodeJS.ProcessEnv;
+  /**
+   * Directories to put at the front of PATH from INSIDE the shell, as a statement prefixed
+   * to the command string (see {@link pathPrependPrefix}). The caller has already put them
+   * at the front of `env`'s PATH; this is the half that survives a login profile
+   * re-prepending its own directories. Absent or empty = no prefix, and the command string
+   * is spawned exactly as given.
+   */
+  pathPrepend?: readonly string[];
 }
 
 export class ManagedSession {
@@ -98,7 +107,11 @@ export class ManagedSession {
     this.cmd = opts.cmd;
     this.cwd = opts.cwd;
     const shell = sessionShell();
-    this.child = spawn(shell.command, [...shell.args, opts.cmd], {
+    // `cmd` above keeps the command as the caller wrote it — it is what the host lists and
+    // what the model is shown; only the string actually handed to the shell carries the
+    // PATH statement in front of it.
+    const prefix = pathPrependPrefix(shell.name, opts.pathPrepend ?? []);
+    this.child = spawn(shell.command, [...shell.args, prefix + opts.cmd], {
       cwd: opts.cwd,
       env: opts.env,
       detached: SUPPORTS_PROCESS_GROUP, // Become the process-group leader, so the whole group can be signaled

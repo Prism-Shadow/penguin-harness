@@ -311,6 +311,17 @@ export interface EnvironmentConfig {
    * is injected (SDK/CLI standalone use).
    */
   controlEnv?: () => Record<string, string>;
+  /**
+   * Directories put at the FRONT of PATH for exec_command / input_command subprocesses
+   * (see {@link CreateAgentOptions.pathPrepend}). Applied in two places, because one is
+   * not enough: onto the inherited PATH of the child environment — before the vault, so a
+   * vault `PATH` still replaces the whole inherited value — and as a statement in front of
+   * the command string, which is what survives a login profile rewriting PATH after the
+   * child environment was set. The statement runs last, so these directories lead whatever
+   * PATH the shell ended up with, a vault `PATH` included. Re-read at every spawn like
+   * `proxyEnv`. Absent, or a getter returning nothing = PATH is untouched.
+   */
+  pathPrepend?: () => string[];
 }
 
 /**
