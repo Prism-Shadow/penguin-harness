@@ -21,7 +21,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | --- | --- |
 | `provider` | 配置分组名，与 `model_id` 成对构成唯一键 |
 | `model_id` | 上游请求 id |
-| `context_window` | 上下文窗口（Token 数）。不只用于展示：每次请求的实际输出上限与压缩阈值都由它推导，请求不会索要超出窗口剩余空间的输出。缺省（或小于 4096 的非常规值）时输出收敛关闭、压缩按 128000 假定推导——窗口更小的模型务必填真实值 |
+| `context_window` | 上下文窗口（Token 数）。不只用于展示：每次请求的实际输出上限与压缩阈值都由它推导，请求不会索要超出窗口剩余空间的输出。缺省（或小于 4096 的非常规值）时输出收敛关闭、压缩按 128000 假定推导——窗口更小的模型务必填真实值。Web 的模型弹窗在自定义 / 自建分组模型留空该字段时按 1000000 写入（手动新增的条目是已知模型，不是未知窗口），上游窗口更小时自行调低；`penguin config model add` 省略 `--context-window` 时不写入任何缺省值 |
 | `max_tokens` | 可选的按模型输出上限（单次请求最大输出 Token 数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用。该值是天花板而非逐字上线值：每次请求实际发送 `min(max_tokens, context_window − 估算输入 − 安全余量)`，小窗口模型无需手工调低。Web 整表保存时省略该字段即清除 |
 | `client_type` | 协议提示(`openai-chat` 对应 Chat Completions、`openai-responses` 对应 Responses API、`ant-messages` 对应 Anthropic Messages 等)；缺省由 AgentHub 按 model id 推断。自定义端点使用这三种通用协议客户端之一，Web 对话框可按 base URL 检测其中哪一种。0.4.2 之前的旧写法 `openai` 为已废弃别名，读取配置时归一化为 `openai-chat` |
 | `display_name` | 显示名 |

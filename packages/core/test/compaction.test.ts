@@ -527,6 +527,71 @@ describe("context compaction", () => {
     expect(llm2.calls).toHaveLength(1);
   });
 
+  it("a live threshold lowered on disk compacts at the next checkpoint, with no rotation in between", async () => {
+    // Compaction configuration is live tier: the engine asks `readCompaction` at every
+    // checkpoint, so lowering the threshold under a running conversation takes effect on its
+    // next request instead of waiting for a context to rotate.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("answer two"), usage(150, 300)] },
+        { messages: [assistantText("[summary]lowered[/summary]"), usage(10, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([], "llm2");
+    let threshold = 1000;
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings({ maxContextLength: threshold }),
+      readCompaction: () => settings({ maxContextLength: threshold }),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+
+    // 150 tokens against a 1000-token threshold: nothing fires, and the context stays open.
+    const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    expect(compactionEvents(out1)).toEqual([]);
+
+    threshold = 100;
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const events = compactionEvents(out2);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: "compaction_begin", reason: "context" });
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "completed" });
+    // Turn one, turn two, then the compaction request — all on the SAME context: the lowered
+    // threshold was picked up without an opener ever running before it.
+    expect(llm1.calls).toHaveLength(3);
+  });
+
+  it("a readCompaction that throws leaves the settings already in force", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]kept[/summary]"), usage(10, 160)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      readCompaction: () => {
+        throw new Error("config unreadable");
+      },
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    // The failed read neither ends the run nor changes the threshold: 150 still reaches the
+    // static 100, and the static prompt is still what the compaction request carries.
+    expect(compactionEvents(out)).toMatchObject([
+      { type: "compaction_begin", reason: "context" },
+      { type: "compaction_end", status: "completed" },
+    ]);
+    expect(llm1.calls[1]!.map(textOf).join("\n")).toContain("COMPACT NOW");
+  });
+
   it("summarize mid-task: tool outputs pair into the compaction request, summary alone feeds the new LLM", async () => {
     const llm1 = new ScriptedLLM(
       [

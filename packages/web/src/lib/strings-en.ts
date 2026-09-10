@@ -478,6 +478,7 @@ export const en: Strings = {
   agent: {
     savedTakesEffect:
       "Saved. New conversations pick it up right away; running ones after their next compaction.",
+    savedTakesEffectNow: "Saved. It takes effect immediately, including running conversations.",
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
@@ -1768,13 +1769,35 @@ Scenarios:
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
     contextTopTools: "Top 5 tools",
-    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
+    contextWindowIs: (n: string): string => `Max context ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
+    contextTopFiles: "Top 5 files",
+    contextTopFilesHint:
+      "Ranked by the context each file's read_file / edit_file / write_file calls and results occupy; hover a row for the full path",
+    contextRankLabel: "Ranking",
+    contextRankTools: "Tools",
+    contextRankFiles: "Files",
+    contextNoFileTraffic: "No file traffic in this context",
     contextUnknownHint:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
+    contextThresholdCutter: "Compaction threshold",
+    contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
+    contextThresholdTitle: "Change the compaction threshold",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `Change ${agentName}'s compaction threshold from ${old} to the value below? It takes effect immediately, including the running conversation.`,
+    contextThresholdField: "Compaction threshold (tokens)",
+    contextThresholdInvalid: "Must be a whole number above 0",
+    contextThresholdCapped: (n: string): string =>
+      `Above the model window — the threshold in force will be ${n}`,
+    contextThresholdSaved: (n: string): string =>
+      `Compaction threshold changed to ${n}; it applies immediately`,
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
+    contextWindowUnderThresholdAction: "Open agent settings",
+    contextWindowUnderThresholdDismiss: "Dismiss",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
