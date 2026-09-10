@@ -417,6 +417,10 @@ export type DesktopApi = Pick<
   | "setUpdateStatus"
   | "onUpdateCommand"
   | "requestUpdateCommand"
+  | "getTrayStatus"
+  | "setTrayStatus"
+  | "onTrayCommand"
+  | "requestTrayCommand"
 >;
 
 /** The desktop shell's service, or null when this server is not the shell's child. */

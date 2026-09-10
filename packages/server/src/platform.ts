@@ -97,6 +97,8 @@ import { Machines, MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
+import { AuthRoutes } from "./http/routes/auth.js";
+import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
@@ -225,6 +227,7 @@ export class RuntimeModule {}
     AdminService,
     AdminRoutes,
     MeRoutes,
+    AuthRoutes,
   ],
   exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
 })
@@ -346,6 +349,9 @@ export class MessagingHubModule {}
     WebModule,
     InstallRoutes,
     VersionRoutes,
+    DesktopRoutes,
+    DesktopUpdateRoutes,
+    DesktopTrayRoutes,
     PluginRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
