@@ -1,8 +1,9 @@
 # A Security Model page in the docs
 
 - **Date:** 2026-08-24
-- **Type:** docs
+- **Type:** process
 - **Scope:** `docs`
+- **PR:** [#455](https://github.com/Prism-Shadow/penguin-harness/pull/455)
 
 [中文版](2026-08-24-security-docs.zh.md)
 

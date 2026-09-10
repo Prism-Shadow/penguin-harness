@@ -1,8 +1,9 @@
 # 前端资源发送时会压缩了
 
-- **日期：** 2026-08-24
-- **类型：** performance
-- **范围：** `server`
+- **Date:** 2026-08-24
+- **Type:** feature
+- **Scope:** `server`
+- **PR:** [#453](https://github.com/Prism-Shadow/penguin-harness/pull/453)
 
 [English](2026-08-24-static-compression.md)
 

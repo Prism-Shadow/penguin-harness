@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `ci`, `docs`
-- **PR:** [#661](https://github.com/Prism-Shadow/penguin-harness/pull/660)
+- **PR:** [#660](https://github.com/Prism-Shadow/penguin-harness/pull/660)
 
 [中文版](2026-09-10-docker-tags-latest-and-version.zh.md)
 
