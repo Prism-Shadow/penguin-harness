@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `ci`
-- **PR:** PR_PLACEHOLDER
+- **PR:** [#671](https://github.com/Prism-Shadow/penguin-harness/pull/671)
 
 [中文版](2026-09-10-docker-release-tag.zh.md)
 
