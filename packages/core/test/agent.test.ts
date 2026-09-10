@@ -733,7 +733,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
   it("the entry's fast_mode reaches the session LLM and is withheld from the meta LLM", async () => {
     // The scoping decision the whole feature rests on: the premium tier is what the user is
     // waiting on, so it rides the session's own requests, while background one-shots (title
-    // generation here; the describe_image describer builds from the *vision* model's entry and
+    // generation here; read_file's vision describer builds from the *vision* model's entry and
     // so cannot inherit it at all) stay on the standard tier. Without this test the split is
     // asserted only by comments, and a refactor that hoists fastMode into a shared config
     // helper would start billing every session title at premium rates with all suites green.

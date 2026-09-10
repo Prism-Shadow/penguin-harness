@@ -727,6 +727,9 @@ export const zh = {
     /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
     vendorProtocolHint: (vendor: string): string =>
       `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
+    /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
+    addProtocolHintPinned: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
@@ -824,7 +827,7 @@ export const zh = {
     detectVisionNeedsId: "请先填写模型 id，再进行检测。",
     detectVisionOk: "该模型接受图片输入，已开启视觉",
     detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
-    /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
+    /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (read_file hands them to it). */
     visionOffProxyHint: "使用视觉代理模型读图",
     /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
     fastMode: "快速模式",
@@ -851,7 +854,7 @@ export const zh = {
      */
     recommendedGroup: "官方推荐",
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
     offPeakTitle: (pct: number): string =>
@@ -861,7 +864,7 @@ export const zh = {
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
     setVisionModel: "设为视觉代理模型",
-    visionModelHint: "供不支持图片的模型经 describe_image 代读图片",
+    visionModelHint: "供不支持图片的模型在 read_file 读图时代读",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -933,7 +936,7 @@ export const zh = {
     } as Record<string, string | undefined>,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
-      `确定把「${name}」设为视觉代理模型？不支持图片的模型将由它经 describe_image 代读图片。`,
+      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
     confirmSaveTitle: "保存模型配置",
     confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
     confirmDefaultTitle: "设为默认模型",
@@ -1613,6 +1616,10 @@ Benchmark：
     statusCompacting: "压缩中",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "运行完毕，未读",
+    /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
+    backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
+    backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1734,12 +1741,12 @@ Benchmark：
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
-      "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
+      "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 read_file 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
-    copySessionId: "复制 Session id",
+    copySessionId: "复制 Session ID",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",
@@ -1747,13 +1754,17 @@ Benchmark：
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
-    /** Header chip title: count of the conversation's still-running background processes. */
-    runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
     statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
+    /**
+     * The elapsed time's two measured components, shown in parentheses after it. They may
+     * overlap (a background tool runs while the model decodes) and may leave a remainder
+     * (approval waits, harness overhead), so this reads as two measurements, never as a split.
+     */
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",
@@ -2344,10 +2355,20 @@ Benchmark：
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `将删除本 Project 在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其余时间段的记录保留。`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `将删除本 Project 中 Agent「${agentId}」在 ${from} 至 ${to} 区间内的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
+    /** The range half of the confirm: a quick preset by the name the picker gives it, a custom range by its two dates — each one adverbial the sentence below slots in. */
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "最近一小时内",
+        "1d": "最近一天内",
+        "7d": "近 7 天内",
+        "30d": "近 30 天内",
+        "90d": "近 90 天内",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `在 ${from} 至 ${to} 区间内`,
+    errorsClearScope: (count: number, range: string): string =>
+      `将删除本 Project ${range}的 ${count} 条错误记录，其余时间段的记录保留。`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `将删除本 Project 中 Agent「${agentId}」${range}的 ${count} 条错误记录，其他 Agent 与其余时间段的记录保留。`,
     errorsClearIrreversible: "此操作不可恢复。",
     errorsClearDone: (count: number): string => `已删除 ${count} 条错误记录`,
   },

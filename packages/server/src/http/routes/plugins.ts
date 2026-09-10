@@ -9,8 +9,13 @@
  * (skills.ts, hooks.ts).
  */
 import { Hono } from "hono";
-import { installPlugin, listInstalledHooks, listInstalledSkills } from "@prismshadow/penguin-core";
-import { libraryPlugin, loadPluginGroups } from "@prismshadow/penguin-core";
+import {
+  installPlugin,
+  listInstalledHooks,
+  listInstalledSkills,
+  libraryPlugin,
+  loadPluginGroups,
+} from "@prismshadow/penguin-core";
 import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,

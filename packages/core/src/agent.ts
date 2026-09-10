@@ -37,6 +37,7 @@ import {
   tracesDir,
   type AgentState,
   type ModelRef,
+  type ModelEntry,
   type ProjectConfig,
 } from "./state/index.js";
 import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
@@ -93,7 +94,6 @@ import type {
   ToolDefinition,
   VisionDescriberService,
 } from "./interfaces/index.js";
-import type { ModelEntry } from "./state/index.js";
 
 /**
  * Maximum subagent spawn depth. Currently capped at 1 level (a subagent cannot spawn
@@ -127,6 +127,15 @@ export interface CreateAgentOptions {
    * standalone use).
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * Directories put at the FRONT of PATH for the command subprocesses — and the hook
+   * scripts — of every Session this Agent creates or resumes, and of its subagents'
+   * Sessions, which inherit the getter like `proxyEnv`. The Web server points it at the
+   * shim directory holding its own `penguin`, so a command an Agent runs reaches the CLI
+   * of the harness that is running it rather than whatever is installed globally. Re-read
+   * at every spawn. Absent = PATH is untouched (SDK/CLI standalone use).
+   */
+  pathPrepend?: () => string[];
 }
 
 /** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
@@ -281,7 +290,7 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     init: {},
   });
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv);
+  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv, opts.pathPrepend);
 }
 
 export class Agent {
@@ -292,6 +301,8 @@ export class Agent {
     private readonly proxyEnv?: () => ProxyEnvPolicy | null,
     /** See {@link CreateAgentOptions.controlEnv}; evaluated per Session with that Session's coordinates. */
     private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
+    /** See {@link CreateAgentOptions.pathPrepend}; forwarded into every Session's Environment and hooks. */
+    private readonly pathPrepend?: () => string[],
   ) {}
 
   /**
@@ -385,9 +396,9 @@ export class Agent {
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the max spawn
     // depth no longer gets run_subagent or input_subagent (the latter depends on the
     // subagent_id produced by the former, so exposing it alone is meaningless). Tool entries
-    // are also selected by the session model's type (marked via forModel: vision models use
-    // read_image, text-only models use describe_image; entries without this marker are
-    // unaffected).
+    // are also selected by the session model's type through their forModel annotation
+    // (entries without it are unaffected — the built-in set carries none; read_file decides
+    // per model at runtime through the injected vision describer).
     const canSpawn = spec.subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(state);
     const modelVision = spec.modelEntry.vision !== false;
@@ -824,6 +835,7 @@ export class Agent {
                 // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
+                ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -871,6 +883,7 @@ export class Agent {
                 agentId,
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
+                ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -954,11 +967,12 @@ export class Agent {
     }
 
     // When the session model doesn't support images (vision=false): inject a vision
-    // model service for describe_image (forModel: "text-only", selected by the tool
-    // filter in assembleContext) — images are described by the Project config's
-    // vision_model (a paired reference), and the tool returns text. Even when unconfigured
-    // or invalid, it is still injected (modelId=null); the tool then finishes with a failed
-    // explanation, and images are never allowed into that session's history.
+    // model service for read_file's image branch — images are described by the Project
+    // config's vision_model (a paired reference), and the tool returns text instead of
+    // image content. Even when unconfigured or invalid, it is still injected (modelId=null):
+    // its presence is what tells read_file the session model cannot view images; the tool
+    // then finishes with a failed explanation, and images are never allowed into that
+    // session's history.
     let visionDescriber: VisionDescriberService | undefined;
     if (modelEntry.vision === false) {
       const visionRef = this.projectConfig.vision_model;
@@ -1027,6 +1041,7 @@ export class Agent {
               }),
           }
         : {}),
+      ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its
@@ -1169,17 +1184,24 @@ export class Agent {
     const installed = (
       await listInstalledHooks(this.state.root, this.state.projectId, this.state.agentId)
     ).filter(hookPackageEnabled);
+    // Hook scripts get the same PATH front as commands do (see
+    // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
+    // `node <script>` directly, with no shell and so no login profile to re-prepend
+    // anything after it.
+    const pathPrepend = this.pathPrepend;
     const stop = installed.flatMap((hook) =>
-      hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
+      hook.stop.map((cmd) =>
+        scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+      ),
     );
     const preToolUse = installed.flatMap((hook) =>
       hook.pre_tool_use.map((cmd) =>
-        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
       ),
     );
     const userPrompt = installed.flatMap((hook) =>
       hook.user_prompt.map((cmd) =>
-        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
       ),
     );
     if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;
