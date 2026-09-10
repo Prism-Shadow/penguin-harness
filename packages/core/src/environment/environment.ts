@@ -176,6 +176,16 @@ export class Environment implements EnvironmentInterface {
       ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
+    // Background-task liveness fans in from both registries and from the subagent run-state
+    // pings: the host's background-state listener hears every change of "what is still
+    // running in the background", while its run-state listener hears only the rounds.
+    this.commandSessions.onChange(() => this.emitBackgroundState());
+    this.subagentSessions.onChange(() => this.emitBackgroundState());
+    this.subagentSessions.setStateListener(() => {
+      if (this.bgDisposed) return;
+      this.subagentStateListener?.();
+      this.emitBackgroundState();
+    });
     this.subagentRunner = config.services?.subagentRunner ?? null;
     this.services = {
       ...config.services,
@@ -265,6 +275,15 @@ export class Environment implements EnvironmentInterface {
   private bgListener: ((event: BackgroundTaskDoneEvent) => void) | null = null;
   private bgBuffer: BackgroundTaskDoneEvent[] = [];
   private bgDisposed = false;
+  /** Host subagent run-state listener (see setSubagentStateListener); null until a host subscribes. */
+  private subagentStateListener: (() => void) | null = null;
+  /** Host background-task state listener (see setBackgroundStateListener); null until a host subscribes. */
+  private bgStateListener: (() => void) | null = null;
+
+  private emitBackgroundState(): void {
+    if (this.bgDisposed) return;
+    this.bgStateListener?.();
+  }
 
   private emitBackgroundDone(event: BackgroundTaskDoneEvent): void {
     if (this.bgDisposed) return;
@@ -411,11 +430,14 @@ export class Environment implements EnvironmentInterface {
     return this.subagentSessions.bySessionId(childSessionId)?.setThinkingLevel(level) ?? false;
   }
 
-  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener). */
+  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener); the manager's own listener is installed at construction and fans out to it. */
   setSubagentStateListener(listener: () => void): void {
-    this.subagentSessions.setStateListener(() => {
-      if (!this.bgDisposed) listener();
-    });
+    this.subagentStateListener = listener;
+  }
+
+  /** Attaches the single background-task state listener (see EnvironmentInterface.setBackgroundStateListener). Not buffered: the ping carries nothing, and a host reads the registries when it attaches. */
+  setBackgroundStateListener(listener: () => void): void {
+    this.bgStateListener = listener;
   }
 
   /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */

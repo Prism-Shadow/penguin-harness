@@ -191,10 +191,13 @@ export class ManagedSession {
   // One-shot exit watchers (run_in_background completion reports). Consumed on fire; a
   // watcher armed after exit fires on a microtask, so the caller never misses a fast command.
   private exitWatchers: Array<() => void> = [];
+  /** Persistent exit listener (see setExitListener); null until the registry subscribes. */
+  private exitListener: (() => void) | null = null;
   private fireExitWatchers(): void {
     const watchers = this.exitWatchers;
     this.exitWatchers = [];
     for (const cb of watchers) cb();
+    this.exitListener?.();
   }
 
   /** Registers a one-shot callback for the foreground process's terminal state (exit or spawn failure); fires immediately (microtask) when already terminal. */
@@ -209,6 +212,18 @@ export class ManagedSession {
   /** Clears armed exit watchers (a deliberate kill already reports its outcome synchronously, so the completion report is disarmed first). */
   clearExitWatchers(): void {
     this.exitWatchers = [];
+  }
+
+  /**
+   * Attaches the single persistent exit listener: fires once when the foreground process
+   * reaches its terminal state, whatever ended it. Unlike the one-shot watchers above it is
+   * not disarmed by clearExitWatchers — a deliberate kill is still the process leaving the
+   * running set, which is what a registry's membership view has to hear. Fires on a
+   * microtask when the session is already terminal.
+   */
+  setExitListener(listener: () => void): void {
+    this.exitListener = listener;
+    if (this.exited) queueMicrotask(listener);
   }
 
   /** Synchronously drains the yet-undelivered output (the same buffer `collect` serves) — used to build completion reports without an async window. */

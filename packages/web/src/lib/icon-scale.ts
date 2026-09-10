@@ -13,6 +13,12 @@
  */
 
 export const ICON_SIZE = {
+  /**
+   * A trailing status mark on a list row — a session row's activity glyph, background-task
+   * mark, pin and relay arrow. One rung below `inlineGlyph`: several of these may share the
+   * tail of one row behind a title they must not compete with.
+   */
+  rowMark: 12,
   /** A glyph sitting inline with body or secondary text: stat chips, banner leads, buttons with a label, menu rows. The GlyphIcon default. */
   inlineGlyph: 13,
   /** The leading mark of a list row — a session row's agent avatar, a trace row's. */

@@ -210,6 +210,8 @@ export class CommandSessionManager {
    * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
    */
   private readonly controlEnv: (() => Record<string, string>) | undefined;
+  /** Single change listener (see onChange); null until the Environment subscribes. */
+  private changeListener: (() => void) | null = null;
 
   constructor(opts?: {
     vault?: Record<string, string>;
@@ -219,6 +221,17 @@ export class CommandSessionManager {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
     this.controlEnv = opts?.controlEnv;
+    this.registry.onChange(() => this.changeListener?.());
+  }
+
+  /**
+   * Attaches the single listener for changes to the set of running background commands: a
+   * session registered, one removed (kill, reap, eviction, dispose), and a registered
+   * process reaching its terminal state on its own. Payload-free; subscribers re-read
+   * `list()`. A later call replaces the earlier one.
+   */
+  onChange(listener: () => void): void {
+    this.changeListener = listener;
   }
 
   /**
@@ -269,7 +282,11 @@ export class CommandSessionManager {
   /** Registers a still-running session as a background process, allocating and returning a unique `process_id`. */
   register(session: ManagedSession): string {
     this.registry.makeRoom(true);
-    return this.registry.register(session);
+    const id = this.registry.register(session);
+    // A registered process that exits on its own leaves the running set without leaving the
+    // registry (its row stays listed as exited until removed), so the exit itself is reported.
+    session.setExitListener(() => this.changeListener?.());
+    return id;
   }
 
   /** Looks up a session by process_id and refreshes its access time; returns undefined if it doesn't exist. */

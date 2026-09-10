@@ -5,6 +5,10 @@ import type { SessionSeenState } from "./session-seen";
 /**
  * Visual state carried by a Session row / chat header. Three states, and `null` for "say
  * nothing at all" — which is the resting state of every row the user has nothing to act on.
+ *
+ * Background work is a separate facet (see sessionBackgroundTasks), not a fourth state: a
+ * Session can be idle, read, and still own a dev server or a background subagent, and a row
+ * has to say both at once.
  */
 export type SessionActivity = "running" | "compacting" | "completedUnread" | null;
 
@@ -34,6 +38,19 @@ export function sessionActivity(
   if (status === "compacting") return "compacting";
   if (!hasTrace) return null;
   return unread ? "completedUnread" : null;
+}
+
+/**
+ * How many background tasks the Session still owns — command processes running past their
+ * yield window plus background subagents mid-round — or 0 when none. The server omits the
+ * field entirely at zero and pushes every change on the user channel, so this is live data
+ * on the row, not a snapshot from the last list fetch. It is independent of the activity
+ * state above: the mark it drives sits beside the glyph, on an idle row as readily as on a
+ * running one, and goes away the moment the last task ends.
+ */
+export function sessionBackgroundTasks(session: Pick<SessionInfo, "backgroundTasks">): number {
+  const tasks = session.backgroundTasks;
+  return tasks === undefined ? 0 : tasks.processes + tasks.subagents;
 }
 
 /** The subset of a row this function needs (a whole SessionInfo satisfies it). */
