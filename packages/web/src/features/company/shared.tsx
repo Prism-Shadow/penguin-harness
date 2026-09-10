@@ -1,10 +1,12 @@
 /**
  * Small pieces every organization page shares: the organization's status pill and dot, the
- * budget bar and ring, the ticket status and priority pills, the blocked badge, the
- * failed-refresh line, the corner button that jumps from a summary to the page it summarizes,
- * the labelled value and the bordered KPI tile, and principal naming. Every status colour here
- * is a tone from lib/tone.ts, picked by meaning.
+ * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
+ * what a converted amount will be stored as), the ticket status and priority pills, the
+ * blocked badge, the failed-refresh line, the corner button that jumps from a summary to the
+ * page it summarizes, the labelled value and the bordered KPI tile, and principal naming.
+ * Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
+import { useId } from "react";
 import type { ReactNode } from "react";
 import type {
   OrgStatus,
@@ -21,7 +23,10 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { Input } from "../../components/ui/input";
+import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
@@ -248,6 +253,100 @@ export function BudgetBar({
       >
         <div className={`h-full rounded-full ${toneDot[tone]}`} style={{ width: `${width}%` }} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The unit that follows a budget box: the currency the reader picked, and the period the cap
+ * covers ("$ / month"). It sits after the box rather than inside the label, so one mark
+ * serves both a form field and the finance table's in-place editor.
+ */
+export function MoneyPerMonthUnit({ currency }: { currency: Currency }) {
+  return (
+    <span className="shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+      {unitLabel(currency, S)}
+    </span>
+  );
+}
+
+/**
+ * What a budget typed in another currency will actually be stored as. Budgets live in USD in
+ * the organization's chart file and this App converts at one fixed rate, so a reader working
+ * in CNY is told the amount the file is about to hold. Nothing to say to a reader already
+ * working in USD, or while the box is empty.
+ */
+export function StoredUsdNote({ usd, currency }: { usd: number | null; currency: Currency }) {
+  if (currency === "USD" || usd === null) return null;
+  return (
+    <span className="mt-1 block text-[11px] text-gray-400 dark:text-gray-500">
+      {S.company.budgetStoredAs(formatMoney(usd, "USD"))}
+    </span>
+  );
+}
+
+/**
+ * A budget field: a number box in the reader's currency with the unit after it, the hint (or
+ * the error) beneath, and the stored amount under that while the two currencies differ. The
+ * three dialogs that set a budget share it; the finance table edits inside a cell and wears
+ * the two marks above on their own.
+ *
+ * The box is bare — an `Input` with no title of its own — and the title is associated by
+ * `htmlFor`, because a wrapping `<label>` names its first labelable descendant and this
+ * field's row holds more than the box.
+ */
+export function MoneyPerMonthInput({
+  label,
+  currency,
+  value,
+  hint,
+  error,
+  placeholder,
+  disabled = false,
+  autoFocus = false,
+  onChange,
+}: {
+  label: string;
+  currency: Currency;
+  /** The typed text, in the reader's currency; budget-input.ts converts it to what is stored. */
+  value: string;
+  hint?: string;
+  error?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  onChange: (text: string) => void;
+}) {
+  const controlId = useId();
+  const errorId = `${controlId}-error`;
+  return (
+    <div>
+      <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      <div className="flex items-center gap-2">
+        <Input
+          id={controlId}
+          size="sm"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="any"
+          className="min-w-0 flex-1"
+          value={value}
+          disabled={disabled}
+          autoFocus={autoFocus}
+          invalid={error !== undefined}
+          {...(placeholder !== undefined ? { placeholder } : {})}
+          {...(error !== undefined ? { "aria-describedby": errorId } : {})}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <MoneyPerMonthUnit currency={currency} />
+      </div>
+      {error !== undefined ? (
+        <FieldError id={errorId}>{error}</FieldError>
+      ) : hint !== undefined ? (
+        <FieldHint>{hint}</FieldHint>
+      ) : null}
+      <StoredUsdNote usd={toStoredUsd(value, currency)} currency={currency} />
     </div>
   );
 }

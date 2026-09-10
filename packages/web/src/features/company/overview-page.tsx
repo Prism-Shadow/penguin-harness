@@ -1,14 +1,16 @@
 /**
  * The organization's overview, a calm dashboard: a hero naming the organization (its status
- * pill, the line of metadata and the mission folded to one line), this period's spend against
- * the CEO's budget as a ring beside it, a KPI strip — employees (on desk / running / paused),
- * the board as a segmented bar with its blocked count, today's calendar, the spend — and then
- * three full-width runs, one under the other: the inbox (what names the reader, what is stuck
- * and what has landed, newest first), today's timeline with each instance's outcome, and the
- * budget alerts. No card
- * is a link: each carries one corner button to the page it summarizes, so the controls inside a
- * card stay clickable and the destination is named rather than guessed. A brand-new
- * organization (nobody hired, empty board) gets the three-step guide in place of the sections.
+ * pill, the line of metadata and the mission folded to one line), a KPI strip — employees
+ * (on desk / running / paused), the board as a segmented bar with its blocked count, today's
+ * calendar, and this period's spend as the ring beside the amount with the budget bar under
+ * it — and then three full-width runs, one under the other: the inbox (what names the reader,
+ * what is stuck and what has landed, newest first), today's timeline with each instance's
+ * outcome, and the budget alerts. Each reading is stated once: the spend lives in its KPI cell
+ * alone, and no card is a link — each carries one corner button to the page it summarizes, so
+ * the controls inside a card stay clickable and the destination is named rather than guessed.
+ * A brand-new organization (nobody hired, empty board) gets the three-step guide in place of
+ * the sections, and the header then drops its "open the CEO's desk" button: the guide's first
+ * step is that same call to action, and one screen carries a control once.
  *
  * Loading discipline: the skeleton shows only until the first response or the first error;
  * a failed refresh keeps what was last read on screen under one error line with its retry.
@@ -125,8 +127,8 @@ function markLabel(mark: TimelineMark): string {
 
 /**
  * The label row of a summary block: its name, and the one button that opens the page the
- * block summarizes. Shared by the KPI cells and the hero's spend block so the corner button
- * sits in the same place in all of them.
+ * block summarizes. Every KPI cell wears it, so the corner button sits in the same place in
+ * all of them.
  */
 function SummaryLabel({
   label,
@@ -477,7 +479,13 @@ export function OverviewPage() {
         : S.company.overview.budgetLeft(formatMoney(spend.remaining ?? 0, currency));
 
   return (
-    <OrgPage title={title} info={info} actions={deskButton("secondary", "sm")}>
+    // While the first-steps guide is on screen its step 1 IS the "open the CEO's desk"
+    // button, so the header does not draw a second one.
+    <OrgPage
+      title={title}
+      info={info}
+      {...(steps.fresh ? {} : { actions: deskButton("secondary", "sm") })}
+    >
       {error !== null && (
         <ErrorLine
           message={S.company.overview.refreshFailed}
@@ -487,48 +495,19 @@ export function OverviewPage() {
         />
       )}
 
-      {/* Hero: name and state, the metadata line, the mission folded, and the period's spend. */}
-      <header className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4 border-b border-gray-200 pb-5 dark:border-gray-800">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-semibold tracking-tight">{detail.name}</h2>
-            <OrgStatusPill org={detail} />
-          </div>
-          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-            {S.company.overview.createdBy(detail.createdBy)} ·{" "}
-            {S.company.overview.employeesCount(counts.total)} ·{" "}
-            {S.company.overview.period(detail.spend.period)}
-          </p>
-          <MissionFold mission={detail.mission} />
+      {/* Hero: name and state, the metadata line, and the mission folded to one line. The
+          period's spend is not repeated here — it is the last cell of the KPI strip. */}
+      <header className="min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight">{detail.name}</h2>
+          <OrgStatusPill org={detail} />
         </div>
-        <div className="min-w-56 shrink-0">
-          <SummaryLabel
-            label={S.company.overview.spend}
-            jump={S.company.overview.openFinance}
-            onJump={() => page("finance")}
-          />
-          <div className={`mt-1.5 flex items-center ${ICON_GAP.card}`}>
-            <SpendRing
-              cost={spend.cost}
-              currency={currency}
-              {...(spend.budget !== null ? { budget: spend.budget } : {})}
-              {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
-            />
-            <span className="min-w-0">
-              <span className="block text-lg font-semibold leading-tight tabular-nums">
-                {formatMoney(spend.cost, currency)}
-              </span>
-              <span className="block text-xs text-gray-500 dark:text-gray-400">
-                {spend.budget === null
-                  ? S.company.noBudget
-                  : S.company.spendOfBudget(
-                      formatMoney(spend.cost, currency),
-                      formatMoney(spend.budget, currency),
-                    )}
-              </span>
-            </span>
-          </div>
-        </div>
+        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+          {S.company.overview.createdBy(detail.createdBy)} ·{" "}
+          {S.company.overview.employeesCount(counts.total)} ·{" "}
+          {S.company.overview.period(detail.spend.period)}
+        </p>
+        <MissionFold mission={detail.mission} />
       </header>
 
       {/* KPI strip: four cells ruled by hairlines, each with the button that opens its page. */}
@@ -587,14 +566,23 @@ export function OverviewPage() {
                     </span>
                   </button>
                 ))}
+                {/* The blocked count is one more label in this row, not a pill: it is read
+                    beside the five column counts and has to weigh the same as they do. */}
                 <button
                   type="button"
                   onClick={() => page("tickets", "?blocked=1")}
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                    detail.blockedTickets > 0 ? toneSurface.attention : toneSurface.muted
-                  }`}
+                  className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
                 >
-                  {S.company.overview.blocked} {detail.blockedTickets}
+                  <span
+                    className={`block h-1.5 w-1.5 rounded-full ${
+                      detail.blockedTickets > 0 ? toneDot.attention : toneDot.muted
+                    }`}
+                    aria-hidden
+                  />
+                  {S.company.overview.blocked}
+                  <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                    {detail.blockedTickets}
+                  </span>
                 </button>
               </span>
             </span>
@@ -633,7 +621,20 @@ export function OverviewPage() {
         />
         <KpiCell
           label={S.company.overview.spend}
-          value={formatMoney(spend.cost, currency)}
+          value={
+            <span className={`flex items-center ${ICON_GAP.card}`}>
+              {/* Small: the cell is a quarter of the strip, and the ring is the picture of a
+                  number already spelled out beside it. */}
+              <SpendRing
+                size={40}
+                cost={spend.cost}
+                currency={currency}
+                {...(spend.budget !== null ? { budget: spend.budget } : {})}
+                {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
+              />
+              <span className="min-w-0 truncate">{formatMoney(spend.cost, currency)}</span>
+            </span>
+          }
           jump={S.company.overview.openFinance}
           onJump={() => page("finance")}
           detail={
@@ -733,16 +734,9 @@ export function OverviewPage() {
           </OrgSection>
 
           {/* Today's timeline: a dot per instance on a rule, in the tone of its outcome. */}
-          <OrgSection
-            title={S.company.overview.today}
-            count={today.total}
-            className="mt-8"
-            actions={
-              <Button size="sm" onClick={() => page("calendar")}>
-                {S.company.overview.viewAll}
-              </Button>
-            }
-          >
+          {/* No jump of its own: the KPI cell above carries the one button to the calendar,
+              and every row here opens it too. */}
+          <OrgSection title={S.company.overview.today} count={today.total} className="mt-8">
             {today.entries.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.todayEmpty}</OrgEmptyLine>
             ) : (

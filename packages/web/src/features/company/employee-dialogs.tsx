@@ -2,12 +2,12 @@
  * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
  * agent-company and agent-development) and the position (title, duties, workspace, budget)
- * — the single-field edits, each showing the current value first: budget (a number, or
- * unbounded) and reporting line (anyone outside the employee's own subtree); and the desk
- * renewal, which writes the workspace and opens a fresh desk session in one confirm. Every
- * single-field edit stops at the shared ConfirmModal first (the confirmation names what the
- * chart file will say), then calls the API; the renewal is its own confirmation and needs no
- * second one.
+ * — the single-field edits, each showing the current value first: budget (a monthly cap,
+ * typed in the reader's own currency and stored in USD, or unbounded) and reporting line
+ * (anyone outside the employee's own subtree); and the desk renewal, which writes the
+ * workspace and opens a fresh desk session in one confirm. Every single-field edit stops at
+ * the shared ConfirmModal first (the confirmation names what the chart file will say), then
+ * calls the API; the renewal is its own confirmation and needs no second one.
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
@@ -33,6 +33,8 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { OrgSection } from "./org-layout";
+import { MoneyPerMonthInput } from "./shared";
+import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { managerCandidates } from "./org-chart-tree";
 
@@ -67,6 +69,7 @@ export function HireDialog({
   onHired: () => void;
 }) {
   const { agents } = useProject();
+  const { currency } = useTheme();
   const [source, setSource] = useState<"existing" | "new">("existing");
   const [agentId, setAgentId] = useState("");
   const [newId, setNewId] = useState("");
@@ -141,7 +144,7 @@ export function HireDialog({
       next.agent = S.company.chart.agentIdHint;
     }
     if (!title.trim()) next.title = S.common.requiredField;
-    if (budget.trim() !== "" && !(Number(budget) >= 0)) next.budget = S.company.chart.budgetHint;
+    if (!isBudgetText(budget)) next.budget = S.company.chart.budgetHint;
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -149,6 +152,8 @@ export function HireDialog({
   const hire = async () => {
     setBusy(true);
     try {
+      // The box speaks the reader's currency; the chart file holds USD.
+      const budgetUsd = toStoredUsd(budget, currency);
       const body: OrgHireRequest = {
         title: title.trim(),
         reportsTo: manager.agentId,
@@ -163,7 +168,7 @@ export function HireDialog({
               },
             }),
         ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
-        ...(budget.trim() !== "" ? { budget: Number(budget) } : {}),
+        ...(budgetUsd !== null ? { budget: budgetUsd } : {}),
         ...(duties.trim() ? { duties: duties.trim() } : {}),
       };
       await api.hireOrgEmployee(projectId, orgId, body);
@@ -336,19 +341,15 @@ export function HireDialog({
                 placeholder="."
                 onChange={(e) => setWorkspace(e.target.value)}
               />
-              <Input
+              <MoneyPerMonthInput
                 label={S.company.chart.budget}
-                size="sm"
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="any"
+                currency={currency}
                 value={budget}
                 placeholder={S.company.chart.budgetPlaceholder}
                 hint={S.company.chart.budgetHint}
                 {...(errors.budget !== undefined ? { error: errors.budget } : {})}
-                onChange={(e) => {
-                  setBudget(e.target.value);
+                onChange={(text) => {
+                  setBudget(text);
                   setErrors((p) => ({ ...p, budget: undefined }));
                 }}
               />
@@ -406,9 +407,7 @@ export function EmployeeEditDialog({
     setError(undefined);
     setValue(
       edit === "budget"
-        ? employee.budget === undefined
-          ? ""
-          : String(employee.budget)
+        ? fromStoredUsd(employee.budget, currency)
         : (employee.reportsTo ?? managers[0]?.agentId ?? ""),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -419,15 +418,18 @@ export function EmployeeEditDialog({
     edit === "budget"
       ? S.company.chart.budgetTitle(employee.name)
       : S.company.chart.reportsToTitle(employee.name);
-  const budgetLabel = (raw: string) =>
-    raw.trim() === "" ? S.company.noBudget : formatMoney(Number(raw), currency);
+  /** What the confirmation names: the typed amount as it will be stored, read back in the reader's currency. */
+  const budgetLabel = (raw: string) => {
+    const usd = toStoredUsd(raw, currency);
+    return usd === null ? S.company.noBudget : formatMoney(usd, currency);
+  };
   const confirmText =
     edit === "budget"
       ? S.company.chart.budgetConfirm(employee.name, budgetLabel(value))
       : S.company.chart.reportsToConfirm(employee.name, managerName(value));
 
   const validate = (): boolean => {
-    if (edit === "budget" && value.trim() !== "" && !(Number(value) >= 0)) {
+    if (edit === "budget" && !isBudgetText(value)) {
       setError(S.company.chart.budgetHint);
       return false;
     }
@@ -446,9 +448,7 @@ export function EmployeeEditDialog({
         projectId,
         orgId,
         employee.agentId,
-        edit === "budget"
-          ? { budget: value.trim() === "" ? null : Number(value) }
-          : { reportsTo: value },
+        edit === "budget" ? { budget: toStoredUsd(value, currency) } : { reportsTo: value },
       );
       toastSuccess(S.company.chart.saved);
       setConfirmOpen(false);
@@ -493,20 +493,16 @@ export function EmployeeEditDialog({
                   : formatMoney(employee.budget, currency)
               }
             />
-            <Input
+            <MoneyPerMonthInput
               label={S.company.chart.budget}
-              size="sm"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
+              currency={currency}
               value={value}
               placeholder={S.company.chart.budgetPlaceholder}
               hint={S.company.chart.budgetHint}
               {...(error !== undefined ? { error } : {})}
               autoFocus
-              onChange={(e) => {
-                setValue(e.target.value);
+              onChange={(text) => {
+                setValue(text);
                 setError(undefined);
               }}
             />

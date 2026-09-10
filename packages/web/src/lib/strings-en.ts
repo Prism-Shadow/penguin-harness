@@ -2513,7 +2513,7 @@ Scenarios:
     workspaceClear: "Back to the organization's own directory",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO budget",
-    ceoBudgetHint: "Monthly USD; the CEO's budget is the whole company's",
+    ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",
     /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
     draftRestored: "Restored the draft you had not submitted",
     clearDraft: "Clear draft",
@@ -2562,6 +2562,8 @@ Scenarios:
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
+    budgetUnit: (symbol: string): string => `${symbol} / month`,
+    budgetStoredAs: (amount: string): string => `Stored as ${amount} / month`,
     /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
     sessionList: {
       desks: (n: number): string => `Desks (${n})`,
@@ -2641,7 +2643,6 @@ Scenarios:
       inboxCategories: { mention: "@me", blocked: "Blocked", done: "Done" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `${n} more — open the calendar`,
-      viewAll: "View all",
     },
     calendarOutcomes: {
       fired: "Fired",
@@ -2690,8 +2691,9 @@ Scenarios:
       workspace: "Workspace",
       workspaceHint:
         "A sub-directory of the shared workspace (`.` for all of it), or an absolute path that already exists",
-      budget: "Monthly budget (USD)",
-      budgetHint: "Leave empty for unbounded; counts the employee plus every subordinate",
+      budget: "Monthly budget",
+      budgetHint:
+        "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
       hireConfirm: (name: string, manager: string): string =>
         `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
       hired: (name: string): string => `Hired ${name}`,

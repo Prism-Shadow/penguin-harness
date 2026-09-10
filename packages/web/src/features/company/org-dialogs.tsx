@@ -4,11 +4,12 @@
  * that name by the field's own button), a one-sentence mission with three examples under it,
  * the Project it belongs to when the user has several, the model its sessions run on (the
  * Project default unless chosen), the company workspace (the organization's own directory
- * unless one is picked) and the CEO's monthly budget, which is the whole company's — and an
- * organization's settings: name, mission, model, workspace, timezone, working language,
- * approval mode, and pause / resume — the one lifecycle control there is, since an
- * organization is never deleted through the App. Pause / resume writes its own PATCH the
- * moment it is clicked; everything else is a draft until Save.
+ * unless one is picked) and the CEO's monthly budget, which is the whole company's and is
+ * typed in the currency the reader reads money in but stored in USD — and an organization's
+ * settings: name, mission, model, workspace, timezone, working language, approval mode, and
+ * pause / resume — the one lifecycle control there is, since an organization is never deleted
+ * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
+ * else is a draft until Save.
  *
  * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
  * accidental close, a reload or a switch back to development mode does not cost the mission
@@ -39,6 +40,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
 import { projectDisplayName, useProject } from "../../state/project";
+import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -50,7 +52,8 @@ import { ICON_GAP } from "../../lib/icon-scale";
 import { modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
-import { ErrorLine, OrgStatusPill } from "./shared";
+import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
+import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { ORG_EXAMPLES } from "./org-examples";
 import { SemanticIdField } from "./semantic-id-field";
 import {
@@ -73,11 +76,12 @@ const ORG_LANGUAGES: readonly OrgLanguage[] = ["zh", "en"];
 const DEFAULT_ORG_LANGUAGE: OrgLanguage = "en";
 
 /**
- * The CEO's monthly budget the dialog offers, in USD. It is the whole company's ceiling: the
- * chart's budgets are cumulative over an employee and its subordinates, and everyone reports
- * to the CEO. The server applies the same default when the field is left empty.
+ * The CEO's monthly budget the dialog offers, in USD — the field shows it in the reader's own
+ * currency. It is the whole company's ceiling: the chart's budgets are cumulative over an
+ * employee and its subordinates, and everyone reports to the CEO. The server applies the same
+ * default when the field is left empty.
  */
-const DEFAULT_CEO_BUDGET = "100";
+const DEFAULT_CEO_BUDGET_USD = 100;
 
 /** The error codes that are about the id the user typed; every other failure is the form's. */
 const ID_ERROR_CODES = new Set(["org_exists", "invalid_org_id"]);
@@ -213,6 +217,10 @@ function WorkspaceField({
  * beside it. One line each — the mission is long enough that a card of it would push the
  * rest of the form off the dialog, so the row carries the names and the tooltips carry what
  * each one actually says.
+ *
+ * The row is rendered inside the mission field and sits against it, not a field's distance
+ * below: it fills that field in, and an unlabelled row a whole gap away reads as a field of
+ * its own with its title missing.
  */
 function MissionExamples({
   disabled,
@@ -222,7 +230,7 @@ function MissionExamples({
   onPick: (example: { name: string; mission: string }) => void;
 }) {
   return (
-    <div className="flex gap-1.5">
+    <div className="mt-1.5 flex gap-1.5">
       {ORG_EXAMPLES.map((example) => {
         const copy = S.company.missionExamples[example.id];
         return (
@@ -256,13 +264,14 @@ export function CreateOrganizationDialog({
 }) {
   const { projects, currentProject } = useProject();
   const { user } = useAuth();
+  const { currency } = useTheme();
   const [projectId, setProjectId] = useState("");
   const [orgId, setOrgId] = useState("");
   const [name, setName] = useState("");
   const [mission, setMission] = useState("");
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
-  const [ceoBudget, setCeoBudget] = useState(DEFAULT_CEO_BUDGET);
+  const [ceoBudget, setCeoBudget] = useState(() => fromStoredUsd(DEFAULT_CEO_BUDGET_USD, currency));
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
@@ -288,7 +297,9 @@ export function CreateOrganizationDialog({
     setMission(draft.mission);
     setModelRef(draft.model);
     setWorkspace(draft.workspace);
-    setCeoBudget(draft.ceoBudget === "" ? DEFAULT_CEO_BUDGET : draft.ceoBudget);
+    setCeoBudget(
+      draft.ceoBudget === "" ? fromStoredUsd(DEFAULT_CEO_BUDGET_USD, currency) : draft.ceoBudget,
+    );
     setIdError(undefined);
     setMissionError(undefined);
     setBudgetError(undefined);
@@ -356,7 +367,7 @@ export function CreateOrganizationDialog({
       setMissionError(S.common.requiredField);
       bad = true;
     }
-    if (budget !== "" && !(Number(budget) >= 0)) {
+    if (!isBudgetText(budget)) {
       setBudgetError(S.company.ceoBudgetHint);
       bad = true;
     }
@@ -364,14 +375,16 @@ export function CreateOrganizationDialog({
     setBusy(true);
     setFormError(null);
     try {
-      // An omitted budget is the server's own default (100 USD a month).
+      // An omitted budget is the server's own default (100 USD a month); what was typed is in
+      // the reader's currency and goes out in USD, which is what the chart file holds.
+      const ceoBudgetUsd = toStoredUsd(budget, currency);
       const body: OrganizationCreateRequest = {
         orgId: id,
         mission: mission.trim(),
         ...(name.trim() ? { name: name.trim() } : {}),
         ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
         ...(modelRef !== null ? { model: modelRef } : {}),
-        ...(budget !== "" ? { ceoBudget: Number(budget) } : {}),
+        ...(ceoBudgetUsd !== null ? { ceoBudget: ceoBudgetUsd } : {}),
       };
       const detail = await api.createOrganization(projectId, body);
       // The draft did its job: what it held is now an organization.
@@ -458,29 +471,31 @@ export function CreateOrganizationDialog({
             setIdError(undefined);
           }}
         />
-        <Textarea
-          label={S.company.mission}
-          required
-          size="sm"
-          rows={3}
-          value={mission}
-          error={missionError}
-          hint={S.company.missionHint}
-          placeholder={S.company.missionPlaceholder}
-          disabled={busy}
-          onChange={(e) => {
-            setMission(e.target.value);
-            setMissionError(undefined);
-          }}
-        />
-        <MissionExamples
-          disabled={busy}
-          onPick={(example) => {
-            setMission(example.mission);
-            setMissionError(undefined);
-            if (name.trim() === "") setName(example.name);
-          }}
-        />
+        <div>
+          <Textarea
+            label={S.company.mission}
+            required
+            size="sm"
+            rows={3}
+            value={mission}
+            error={missionError}
+            hint={S.company.missionHint}
+            placeholder={S.company.missionPlaceholder}
+            disabled={busy}
+            onChange={(e) => {
+              setMission(e.target.value);
+              setMissionError(undefined);
+            }}
+          />
+          <MissionExamples
+            disabled={busy}
+            onPick={(example) => {
+              setMission(example.mission);
+              setMissionError(undefined);
+              if (name.trim() === "") setName(example.name);
+            }}
+          />
+        </div>
         <ModelField
           models={models}
           loadError={modelsError}
@@ -489,19 +504,15 @@ export function CreateOrganizationDialog({
           disabled={busy}
         />
         <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
-        <Input
+        <MoneyPerMonthInput
           label={S.company.ceoBudget}
-          size="sm"
-          type="number"
-          min={0}
-          step="any"
-          inputMode="decimal"
+          currency={currency}
           value={ceoBudget}
           hint={S.company.ceoBudgetHint}
           {...(budgetError !== undefined ? { error: budgetError } : {})}
           disabled={busy}
-          onChange={(e) => {
-            setCeoBudget(e.target.value);
+          onChange={(text) => {
+            setCeoBudget(text);
             setBudgetError(undefined);
           }}
         />
