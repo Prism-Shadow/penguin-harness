@@ -22,6 +22,7 @@ import {
   imageUrlMessage,
   requestBegin,
   requestEnd,
+  approvalDecision,
   sessionMeta,
   subagentEvent,
   tokenUsage,
@@ -141,6 +142,8 @@ describe("messages windowed reads", () => {
       turns: 0,
       subagentTokens: 0,
       elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
       sessionTokens: 0,
       contextTokens: 0,
     });
@@ -574,10 +577,50 @@ describe("messages windowed reads", () => {
     expect(harness.shardReads.some((p) => p.includes(`${S}_001.jsonl`))).toBe(true);
   });
 
+  it("prior stats carry the elapsed breakdown, unioning parallel tools like trace-service does", async () => {
+    // The window scanner mirrors stream-model so a windowed reload lands on the same header
+    // figures as a full load. The breakdown has to be mirrored too: seeding a full elapsed time
+    // beside components covering only the loaded window would under-report against their total.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-20T10:00:00.000Z", userText("q1")),
+      at("2026-07-20T10:00:01.000Z", requestBegin()),
+      at("2026-07-20T10:00:02.000Z", toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" })),
+      at("2026-07-20T10:00:02.000Z", toolCall({ name: "read", arguments: "{}", toolCallId: "t2" })),
+      at("2026-07-20T10:00:03.000Z", approvalDecision("allow", "t1")),
+      at("2026-07-20T10:00:04.000Z", approvalDecision("allow", "t2")),
+      at("2026-07-20T10:00:05.000Z", requestEnd("completed")),
+      at("2026-07-20T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "t1" })),
+      at("2026-07-20T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "t2" })),
+      at("2026-07-20T10:00:11.000Z", requestBegin()),
+      at("2026-07-20T10:00:13.000Z", assistantText("a1")),
+      at("2026-07-20T10:00:13.000Z", requestEnd("completed")),
+      at("2026-07-20T10:00:13.500Z", tokenUsage(counts(1000), counts(100))),
+      ...turn(1, 2, 2000),
+    ]);
+
+    // A tail window holding only the SECOND turn: the first turn's figures ride prior.
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(tail.messages)).toEqual(["q2"]);
+    // API: 01→05 less the two approval waits (1s + 2s), plus 11→13.
+    expect(tail.prior.apiMs).toBe(1_000 + 2_000);
+    // Tools: the union of [03,09] and [04,11] — 8s of wall time, not 6s + 7s summed.
+    expect(tail.prior.toolMs).toBe(8_000);
+    expect(tail.prior.elapsedMs).toBe(13_000);
+  });
+
   it("cursor edge cases: unknown shard yields an empty end-of-history page; empty sessions page cleanly", async () => {
     expect(await service.readMessagesPage(P, A, S, { kind: "tail", limit: 5 })).toEqual({
       messages: [],
-      prior: { turns: 0, subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+      prior: {
+        turns: 0,
+        subagentTokens: 0,
+        elapsedMs: 0,
+        apiMs: 0,
+        toolMs: 0,
+        sessionTokens: 0,
+        contextTokens: 0,
+      },
     });
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),
