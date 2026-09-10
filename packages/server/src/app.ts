@@ -1,20 +1,17 @@
 /**
- * App assembly, both halves of it.
+ * The HMR layer's app assembly.
  *
- * The RUNTIME shell — `createHmrApp(deps)` — mounts the mechanism surface: the network
- * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
- * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
- * platform — which builds the business surface over those capabilities — and returns that
- * App's deps, read off the booted instance. Neither app listens on a port: tests inject
- * requests via `app.request()`, and the startup entry point is index.ts.
+ * `bootAppDeps(config)` builds the process's core (database, channels, HmrHost), publishes
+ * it into the resource registry (see hmr/capabilities.ts), boots the platform — which builds
+ * the business surface over what it claims there — and returns the boot. `createApp(boot)`
+ * mounts the layer's HTTP surface: the network guards, `/api/hmr`, the platform seam, and
+ * static hosting. Neither listens on a port: tests inject requests via `app.request()`, and
+ * the startup entry point is index.ts.
  *
- * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
- * file — is what a hot push replaces. Both are called from `platformImpl.create`
- * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
- * registry, so every business service and route travels with the platform version rather
- * than with this build. Swap semantics for anything they hold that is not parked is a
- * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
+ * Every other route is the platform's (http/app.ts, `HttpModule`), assembled at every App
+ * creation from `platformImpl.create` (hmr/platform.ts), so it travels with the platform
+ * version rather than with this build. Swap semantics for anything the platform holds that
+ * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
@@ -299,7 +296,7 @@ export async function bootAppDeps(
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
+export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
   const errors = tree.api<Errors>("ObservabilityModule", "Errors");
   const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
