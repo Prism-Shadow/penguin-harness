@@ -13,7 +13,15 @@
  * - the manifest reader/writer — what a committed version is, on disk.
  * - the interface diff — what a handshake reports when two generations disagree.
  */
-export { hmrMain, hmrControl } from "./main.js";
+export {
+  hmrMain,
+  hmrControl,
+  admitsUpgradeRoute,
+  parseUpgradeTarget,
+  upgradeEndpoint,
+  HMR_ROUTE_PREFIX,
+  HMR_UPGRADE_PATH,
+} from "./main.js";
 export type { Hmr, Replace } from "./main.js";
 export { HmrHost } from "./host.js";
 export type {

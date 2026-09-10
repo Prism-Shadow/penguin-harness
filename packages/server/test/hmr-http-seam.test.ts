@@ -88,16 +88,21 @@ describe("platform HTTP seam", () => {
     expect((await api.get("/api/me")).status).toBe(404);
   });
 
-  it("cannot claim the upgrade channel — one bad push must not lock the box out", async () => {
-    await pushPlatform(t.app, cookie, bundle);
-    // The fixture answers 418 for anything under /api/hmr; the runtime never offers
-    // it, so an unrouted path there is the runtime's own 404 rather than the
-    // platform's 418 — proof the claim was refused, not merely unmatched.
-    const probe = await api.get("/api/hmr/upgrade");
-    expect(probe.status).not.toBe(418);
-    expect(probe.status).toBe(404);
-    // …and the channel still accepts the next push, which is the property that matters.
+  it("a platform without the upgrade channel is refused — one bad push must not lock the box out", async () => {
+    // The channel is the platform's to serve, so a generation that hijacks it (or lacks it)
+    // would be committed, restored on every restart, and never replaceable. It is refused
+    // before commit instead: the push fails, the previous generation keeps serving, and the
+    // next good push lands.
+    const hijacker = platformServing(["/api/demo/x"], "hijacker").replace(
+      'if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);',
+      'if (pathname === "/api/hmr/upgrade") return new Response("hijacked", { status: 418 });',
+    );
+    const bad = await pushPlatform(t.app, cookie, hijacker);
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toMatch(/serves no \/api\/hmr\/upgrade/);
+    expect((await api.get("/api/demo/x")).status).toBe(404);
     expect((await pushPlatform(t.app, cookie, bundle)).status).toBe(200);
+    expect((await api.get("/api/demo/ping")).status).toBe(200);
   });
 
   it("a platform that throws answers 500 instead of quietly falling through", async () => {
@@ -139,12 +144,14 @@ const iface = {
 };
 const SERVED = ${JSON.stringify(paths)};
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (!SERVED.includes(pathname)) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)}, pathname }), {
           status: 200,
@@ -265,13 +272,15 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  async create(_ctx, context) {
+  async create(ctx, context) {
     await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== "/api/demo/version") return null;
         return new Response(JSON.stringify({ impl: ${JSON.stringify(id)} }), {
           status: 200,

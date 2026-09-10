@@ -12,6 +12,7 @@ import {
   RuntimeDb,
   RuntimeDesktop,
   RuntimeHmr,
+  RuntimeHmrControl,
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
@@ -23,6 +24,7 @@ import {
   Desktop,
   Lifecycle,
   Hmr,
+  HmrControl,
   Log,
   Paths,
   Proxy,
@@ -100,6 +102,7 @@ import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
 import { DesktopRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
+import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -194,6 +197,7 @@ export class Startup {
     RuntimeChannels,
     RuntimeProxy,
     RuntimeHmr,
+    RuntimeHmrControl,
     RuntimeDesktop,
     RuntimeAuthState,
     RuntimeLifecycle,
@@ -208,6 +212,7 @@ export class Startup {
     Channels,
     Proxy,
     Hmr,
+    HmrControl,
     Desktop,
     AuthState,
     Lifecycle,
@@ -350,6 +355,7 @@ export class MessagingHubModule {}
     WebModule,
     InstallRoutes,
     VersionRoutes,
+    HmrRoutes,
     DesktopRoutes,
     DesktopUpdateRoutes,
     PluginRoutes,
@@ -397,6 +403,7 @@ export function platformDef(
     [RuntimeChannels, new RuntimeChannels(caps)],
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
+    [RuntimeHmrControl, new RuntimeHmrControl(caps)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeLifecycle, new RuntimeLifecycle(caps)],

@@ -102,8 +102,9 @@ so the terminal WebSocket handshake reaches the App through in-process members i
 - **The capability list.** Which objects a platform may claim, and what each promises, is the
   server's contract (`packages/server/src/hmr/capabilities.ts`) — the registry here holds
   whatever it is handed.
-- **The HTTP surface.** `/api/hmr/*` is the server's (`packages/server/src/hmr/routes.ts`),
-  including who may push.
+- **The route.** `/api/hmr` is a route group the platform declares and gates
+  (`packages/server/src/hmr/routes.ts`: the network gate, who may push); this package owns
+  what the route answers, not that it exists.
 - **What "a version" contains.** The store keeps bytes and a manifest; that a version is a
   platform plus a cli plus a web bundle is the product's idea, expressed in what the server
   hands over.
@@ -112,7 +113,7 @@ so the terminal WebSocket handshake reaches the App through in-process members i
 
 | File             | What it is                                                              |
 | ---------------- | ----------------------------------------------------------------------- |
-| `main.ts`        | `hmrMain`: the entry — which generation a request goes to, how a push lands, what the product refreshes after |
+| `main.ts`        | `hmrMain`: the entry — which generation a request goes to, how a push lands, what a push is (`upgradeEndpoint`), why a generation without the channel is refused (`admitsUpgradeRoute`) |
 | `host.ts`        | `HmrHost`: store, commit, boot, upgrade, recovery                        |
 | `resources.ts`   | `HotResources`: the registry, and its disposal groups                    |
 | `manifest.ts`    | `harness.json` — read, write, materialize; importable with no host       |

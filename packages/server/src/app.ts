@@ -36,6 +36,7 @@ import {
   HMR_DESKTOP_RESOURCE_ID,
   HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
+  HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
@@ -119,7 +120,6 @@ import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import { packagedPlatform } from "./hmr/platform.js";
-import { hmrRoutes } from "./hmr/routes.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
   createPreviewTokenSigner,
@@ -284,6 +284,7 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
+  hmr.resources.register(HMR_CONTROL_RESOURCE_ID, ctl);
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
@@ -450,16 +451,11 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   });
   app.use("/api/*", jsonOnlyWrites);
 
-  // The layer's one API, with its own gate: the network gate, then the same auth middleware
-  // the platform uses (the boot's local API token as `Authorization: Bearer`, or an admin
-  // cookie session) with an admin check on top; see hmr/routes.ts.
-  app.route("/api/hmr", hmrRoutes(deps));
-
-  // THE seam: from here down, every route is one the platform may take over by push. Mounted
-  // after /api/hmr (which stays runtime-owned — see http-seam.ts) and before both the auth
-  // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
-  // ones, and decide its own authentication. Declining costs one property read and lands on
-  // the runtime's own routes below, which is what a platform without an `http` handler does.
+  // THE seam: every route is one the platform may take over by push — the upgrade channel
+  // included, which the platform declares and contributes like any other group
+  // (hmr/routes.ts; a generation without it is refused before commit, see packages/hmr's
+  // admitsUpgradeRoute). Declining costs one property read and lands on the layer's own
+  // tail below, which is what a platform without an `http` handler does.
   app.use("*", platformHttpSeam(deps.control));
 
   // Every route but /api/hmr is the platform's, served through the seam above. What follows

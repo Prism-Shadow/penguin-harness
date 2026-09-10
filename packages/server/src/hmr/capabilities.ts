@@ -27,7 +27,11 @@ import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
 import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
-import type { HmrHost } from "@prismshadow/penguin-hmr";
+import type { HmrHost, Hmr as HmrControlOf } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "./platform.js";
+
+/** The control object the entry built (hmrMain): `current()` and `upgrade()`. */
+export type HmrControlApi = HmrControlOf<PlatformApi>;
 import type { DesktopService } from "../services/desktop-service.js";
 import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -115,6 +119,7 @@ export const HMR_INTERFACES: HmrInterfaces = {
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
   hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
+  hmrControl: ["current", "upgrade", "endpoint"],
   // The replacement seam (Replacements): production publishes [], tests publish the nodes
   // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
@@ -175,6 +180,8 @@ export const HMR_DB_RESOURCE_ID = "platform.db";
 export const HMR_CHANNELS_RESOURCE_ID = "platform.channels";
 export const HMR_PROXY_RESOURCE_ID = "platform.proxyControl";
 export const HMR_HOST_RESOURCE_ID = "platform.host";
+/** The frozen operations over the host (packages/hmr's main.ts): what the upgrade route drives. */
+export const HMR_CONTROL_RESOURCE_ID = "platform.hmrControl";
 /**
  * Desktop mode's one service (one-shot login + shutdown token holder). Registered even
  * when null — the platform reads desktop-ness too (`/api/me`, single-user mode), so the
@@ -229,6 +236,7 @@ export interface HmrCapabilities {
   channels: ChannelHub;
   proxyControl: ProxyControl;
   hmr: HmrHost;
+  hmrControl: HmrControlApi;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
   lifecycle: LifecycleService;
@@ -280,8 +288,9 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   const channels = resources.claim<ChannelHub>(HMR_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
+  const hmrControl = resources.claim<HmrControlApi>(HMR_CONTROL_RESOURCE_ID);
   const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
+  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl || !lifecycle) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -305,6 +314,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
+    ["hmrControl", hmrControl],
     ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
@@ -318,7 +328,18 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, replacements },
+    caps: {
+      config,
+      db,
+      authState,
+      channels,
+      proxyControl,
+      hmr,
+      hmrControl,
+      desktop,
+      lifecycle,
+      replacements,
+    },
   };
 }
 
@@ -370,6 +391,18 @@ export abstract class Hmr extends Interface<{
   dispose(): void;
 }>() {}
 export type _HmrCheck = HmrHost extends Hmr ? true : never;
+
+/**
+ * The frozen operations (packages/hmr's main.ts), as the platform's routes drive them. The
+ * instance and the outcome are host objects to the contract, like `Hmr`'s.
+ */
+export abstract class HmrControl extends Interface<{
+  current(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  upgrade(
+    target: Opaque<"UpgradeAllTarget", Parameters<HmrHost["upgradeAll"]>[0]>,
+  ): Promise<Opaque<"UpgradeOutcome", Awaited<ReturnType<HmrHost["upgradeAll"]>>>>;
+  endpoint(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}>() {}
 
 export type DesktopApi = Pick<
   DesktopService,
@@ -466,6 +499,14 @@ export class RuntimeHmr {
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
     this.hmr = this.caps.hmr;
+  }
+}
+@Module()
+export class RuntimeHmrControl {
+  @Provide() hmrControl!: HmrControl;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.hmrControl = this.caps.hmrControl;
   }
 }
 @Module()

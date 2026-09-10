@@ -31,9 +31,6 @@ import type { MiddlewareHandler } from "hono";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi } from "./platform.js";
 
-/** Prefix the runtime keeps for itself, whatever the platform says. */
-const RESERVED_PREFIX = "/api/hmr";
-
 /**
  * A platform that wants to serve HTTP exposes this. Optional on purpose: a platform pushed
  * before the seam existed simply has no `http`, and everything falls through to the runtime's
@@ -54,7 +51,6 @@ export interface PlatformHttp {
  */
 export function platformHttpSeam(hmr: Hmr<PlatformApi>): MiddlewareHandler {
   return async (c, next) => {
-    if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
     // Which generation a request goes to — including waiting out an in-flight swap — is the
     // frozen operation `current()` (packages/hmr's main.ts); this seam only hands over.
     let handler: PlatformHttp["http"];

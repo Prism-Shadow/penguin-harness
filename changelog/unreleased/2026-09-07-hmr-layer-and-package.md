@@ -17,6 +17,8 @@ One purpose: make it hard to put product behaviour where only a reinstall can de
 
 **The platform hands the layer its log.** The layer's request line goes through `log` on the platform's api, resolved per line through the host, instead of a `Log` node looked up by name at boot and held across swaps.
 
+**The upgrade channel is a route the platform declares, with a protocol the mechanism owns.** `/api/hmr` is contributed to the platform's route table like any other group (network gate, then the platform's auth, then admin), and what a push is — its body, its answer — is `packages/hmr`'s `upgradeEndpoint`, reached through the control object any generation can claim. A generation that would not serve the channel is refused before commit (`admitsUpgradeRoute`): the previous one stays, and the installation can never be left with no way to push. The layer reserves nothing above the seam.
+
 **The frozen operations are `hmrMain`, in the package.** Which generation a request goes to (and the wait for an in-flight swap), how a push is applied and what happens when its boot fails, and what the product refreshes once a generation is current — the pushed one, or the previous one re-booted — are `packages/hmr`'s `main.ts`. The server's entry hands it the host, its refresh (the tree it resolves nodes from), and its own start; the seam and the upgrade route drive the control object, never the host.
 
 **The registry is the platform's state, and the ids say so.** Every entry reads `platform.<name>`. The registry is in-memory state, so the rename is a hard upgrade: a platform built with it needs a layer built with it, and the other way round.
