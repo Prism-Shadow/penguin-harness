@@ -38,6 +38,10 @@
 #   to immutable releases/<tag>/ keys in Alibaba Cloud OSS through GitHub OIDC. The GitHub Environment
 #   `oss-production` supplies the provider/role ARNs and OSS settings. latest.json is uploaded last and only
 #   when the tag is still GitHub's current latest Release. Manual retries also work after a Release exists.
+# - docker: build and push the official image (Docker Hub hiyouga/penguinharness, linux/amd64 +
+#   linux/arm64) from the tag's own source, independently of npm. The build/publish steps live in
+#   docker.yml, which the same PR-time smoke job exercises and which also publishes `latest` from
+#   every push to main; this workflow only decides when the release tags are published.
 name: Release
 
 on:
@@ -645,3 +649,20 @@ jobs:
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
+
+  # The image is built from the tag's source and installs nothing from npm, so this no longer waits
+  # for publish-npm. It is gated like mirror-oss, because a dispatch of an already-released tag must
+  # still be able to (re)publish the image: `release` skipped is as good as `release` succeeded.
+  docker:
+    name: Publish the official Docker image
+    needs: [check-release, release]
+    if: >-
+      ${{ always() && needs.check-release.result == 'success' &&
+          (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docker.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      push: true
+    secrets: inherit
