@@ -2,7 +2,7 @@
  * The node names an older runtime resolves in a pushed platform's tree.
  *
  * A tree node's NAME is a wire contract across generations, exactly like a resource id: the
- * runtime that boots a pushed platform looks nodes up by name (`createHmrApp` in app.ts), and
+ * runtime that boots a pushed platform looks nodes up by name (`createApp` in app.ts), and
  * a parked document is keyed by name too. Renaming one is therefore not a refactor — it is a
  * push that kills every older installation at boot.
  *
@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestApp } from "./helpers.js";
 
-/** What app.ts's createHmrApp resolves out of the tree, by name. */
+/** What app.ts's createApp resolves out of the tree, by name. */
 const RESOLVED_BY_THE_RUNTIME: ReadonlyArray<[module: string, api: string]> = [
   ["ObservabilityModule", "Errors"],
   ["RuntimeModule", "Log"],
