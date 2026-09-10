@@ -73,15 +73,16 @@ describe("platform HTTP seam", () => {
     expect(await (await api.get("/api/version")).json()).toEqual({ version: "from-platform" });
   });
 
-  it("a platform that declines /api/auth and /api/desktop lands on the layer's rollback copies", async () => {
+  it("the layer serves nothing but /api/hmr: what a platform declines is not found", async () => {
     await pushPlatform(t.app, cookie, bundle);
-    // The fixture declines both prefixes, as a platform older than the move that made them
-    // the platform's would: login still works because the layer keeps a copy below the
-    // seam, and the shell's shutdown answers the layer's own 404 outside desktop mode.
-    // Business routes are NOT rollback copies — /api/me travels with the platform, which
-    // this push replaced.
-    const login = await loginAdmin(t.app);
-    expect(login.user.userId).toBe("admin");
+    // The fixture declines /api/auth and /api/desktop; there is no copy below the seam to
+    // land on. A platform without a route is a platform without it.
+    const login = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId: "admin", password: "irrelevant" }),
+    });
+    expect(login.status).toBe(404);
     const shutdown = await t.app.request("/api/desktop/shutdown", { method: "POST" });
     expect(shutdown.status).toBe(404);
     expect((await api.get("/api/me")).status).toBe(404);
