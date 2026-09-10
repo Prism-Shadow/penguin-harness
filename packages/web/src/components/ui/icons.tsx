@@ -174,6 +174,20 @@ export const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
 export const FILE_WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
 export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
 
+/**
+ * Activity trace (a flat line with one tall beat in it): work still going on behind the
+ * conversation — the background-task mark on a session row, the matching count in the chat
+ * header, and the marker on a tool row whose call was made with `run_in_background`.
+ *
+ * A trace rather than the layered stack it replaces, which read as "layers" (a thing) instead
+ * of "still running" (an event), and whose two parallelograms sit ~2.5px apart at the row's
+ * 12px and merge into a smudge. One continuous stroke with a single tall beat keeps its shape
+ * at that size, and it is nobody else's shape in these rows: not the hourglass or the compress
+ * chevrons (`attention`, session activity), not the spinner ring or the circled check / cross
+ * (a tool row's own status), not the unread dot.
+ */
+export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
+
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 

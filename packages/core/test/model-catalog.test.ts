@@ -242,11 +242,14 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
     // The vision revision is a model of its own in both the direct group and on OpenRouter,
-    // and it is the only vision-capable DeepSeek row in either.
+    // and on OpenRouter it is the only vision-capable DeepSeek row. In the direct group the
+    // pre-registered deepseek-v4.1-flash reads images too, so the flag is per row rather than
+    // a property of the id's spelling.
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
     expect(
       catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
     ).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
@@ -295,6 +298,7 @@ describe("model-catalog", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
+      "google/gemini-3.8-flash",
       "google/gemini-3.7-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
@@ -406,6 +410,9 @@ describe("model-catalog", () => {
       ["kimi-k3", 1048576, true],
       ["qwen3.8-flash", 1000000, true],
       ["qwen3.8-max", 1000000, true],
+      ["seed-2.1-pro", 256000, true],
+      ["seed-2.1-turbo", 256000, true],
+      ["seed-evolving", 256000, true],
     ]);
     for (const m of td) {
       expect(m.clientType).toBe("openai-chat");
@@ -435,6 +442,9 @@ describe("model-catalog", () => {
       ["deepseek-v4-flash-0731", 0.5, [1.5, 4.5, 0.05]],
       ["kimi-k3", 0.2, [16, 80, 1.6]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
+      ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
+      ["seed-2.1-turbo", 0.5, [1.5, 7.5, 0.3]],
+      ["seed-evolving", 0.5, [3, 15, 0.6]],
     ];
     for (const [modelId, discount, cnyBilled] of discounted) {
       const entry = td.find((m) => m.modelId === modelId)!;
@@ -444,7 +454,7 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those six are promoted; every other row bills its list price unchanged.
+    // Exactly those nine are promoted; every other row bills its list price unchanged.
     expect(
       td
         .filter((m) => m.discount !== undefined)
@@ -582,8 +592,10 @@ describe("model-catalog", () => {
     const sonnet5 = catalogEntryFor("openrouter", "anthropic/claude-sonnet-5")!.pricing!;
     expect([sonnet5.cache_read, sonnet5.cache_write, sonnet5.output]).toEqual([0.2, 2.5, 10]);
     // Gemini 3.6 Flash and 3.5 Flash Lite: upstream publishes a cache-hit price, so cache_read
-    // stores the real discounted price (not the input price) — cache_read is its own billing
+    // stores the real cache-hit price (not the input price) — cache_read is its own billing
     // bucket in the cost center. cache_write repeats input (no per-token cache-write fee).
+    // What the 3.6 row stores is the LIST price; the launch discount it also declares, and
+    // the halved rate it bills today, are asserted with the rest of the 3.x Flash rows below.
     const g36 = catalogEntryFor("openrouter", "google/gemini-3.6-flash")!;
     expect([g36.contextWindow, g36.supportsVision]).toEqual([1048576, true]);
     expect([g36.pricing!.cache_read, g36.pricing!.cache_write, g36.pricing!.output]).toEqual([
@@ -620,6 +632,7 @@ describe("model-catalog", () => {
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
+      "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
@@ -635,20 +648,58 @@ describe("model-catalog", () => {
       "glm-5.1",
       "glm-5",
     ]);
-    // Gemini 3.7 Flash: the direct row stores Google's official list price (the launch
-    // discount that halves it through 2026-12-31 is not stored, matching the catalog's
-    // no-promotions policy), while the OpenRouter row stores what the gateway actually
-    // bills — a `discount: 0.75` off that same list price, i.e. a quarter of it.
-    const g37 = catalogEntryFor("google", "gemini-3.7-flash")!;
-    expect([g37.contextWindow, g37.supportsVision]).toEqual([1048576, true]);
-    expect([g37.pricing!.cache_read, g37.pricing!.cache_write, g37.pricing!.output]).toEqual([
-      0.15, 1.5, 7.5,
-    ]);
-    const g37or = catalogEntryFor("openrouter", "google/gemini-3.7-flash")!;
-    expect([g37or.contextWindow, g37or.supportsVision]).toEqual([1048576, true]);
-    expect([g37or.pricing!.cache_read, g37or.pricing!.cache_write, g37or.pricing!.output]).toEqual([
-      0.0375, 0.375, 1.875,
-    ]);
+    // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
+    // all six of their rows — direct and on OpenRouter — store Google's list price and
+    // declare that launch discount in `discount`, so the list survives the promotion and
+    // effectivePricing yields the 0.075/0.75/3.75 either seller bills today.
+    for (const [provider, modelId] of [
+      ["google", "gemini-3.8-flash"],
+      ["google", "gemini-3.7-flash"],
+      ["google", "gemini-3.6-flash"],
+      ["openrouter", "google/gemini-3.8-flash"],
+      ["openrouter", "google/gemini-3.7-flash"],
+      ["openrouter", "google/gemini-3.6-flash"],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect([row.contextWindow, row.supportsVision, row.discount], modelId).toEqual([
+        1048576,
+        true,
+        0.5,
+      ]);
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual([0.15, 1.5, 7.5]);
+      const billed = effectivePricing(row)!;
+      expect([billed.cache_read, billed.cache_write, billed.output], modelId).toEqual([
+        0.075, 0.75, 3.75,
+      ]);
+    }
+    // No other Gemini row carries a launch discount: Google's pricing page marks one on the
+    // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // bill exactly the list price they store. The numbers are pinned because none of them is
+    // the Flash list price above and each is a genuine other tier, not a hidden promotion —
+    // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite
+    // $0.30 / $2.50 / $0.03, 3.1 Flash-Lite $0.25 / $1.50 / $0.025, 3.1 Pro Preview ≤200K
+    // $2 / $12 / $0.20, the legacy 3 Flash Preview $0.50 / $3 / $0.05, and OpenRouter's default
+    // endpoints billing the 3.5 pair at exactly that list with `discount: 0`.
+    for (const [provider, modelId, list] of [
+      ["google", "gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["google", "gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
+      ["google", "gemini-3.1-flash-lite", [0.025, 0.25, 1.5]],
+      ["google", "gemini-3.1-pro-preview", [0.2, 2, 12]],
+      ["google", "gemini-3-flash-preview", [0.05, 0.5, 3]],
+      ["openrouter", "google/gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["openrouter", "google/gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect(row.discount, modelId).toBeUndefined();
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual(list);
+      expect(effectivePricing(row), modelId).toEqual(row.pricing);
+    }
     // GLM-5.3 is listed both directly and on OpenRouter; the gateway runs no discount, so
     // the two rows agree on price and differ only in context window and protocol pin.
     const glm53or = catalogEntryFor("openrouter", "z-ai/glm-5.3")!;
@@ -782,12 +833,13 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    // DeepSeek rows carry the official PEAK tier — re-read 2026-08-18 after the official price
-    // increase introduced time-based tiers. The off-peak tier is exactly half, and is applied
-    // from the row's schedule rather than stored (see the off-peak schedules block below).
+    // DeepSeek rows carry the official PEAK tier; the off-peak tier is exactly half, and is
+    // applied from the row's schedule rather than stored (see the off-peak schedules block
+    // below). The flash rows were re-read 2026-09-08 for the official price adjustment
+    // effective 2026-09-10; V4 Pro sits outside that adjustment.
     const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
-      0.1, 3, 9,
+      0.04, 2, 8,
     ]);
     const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
@@ -916,6 +968,9 @@ describe("model-catalog", () => {
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes on.
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
@@ -1210,11 +1265,11 @@ describe("off-peak schedules", () => {
         5,
       );
     }
-    // The published peak figures themselves: CNY 0.1 / 3 / 9 per million, at the catalog's 7:1
-    // display convention, which is DeepSeek's off-peak 0.05 / 1.5 / 4.5 doubled.
+    // The published peak figures themselves: CNY 0.04 / 2 / 8 per million, at the catalog's 7:1
+    // display convention, which is DeepSeek's off-peak 0.02 / 1 / 4 doubled.
     const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
     expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
-      0.014286, 0.428571, 1.285714,
+      0.005714, 0.285714, 1.142857,
     ]);
   });
 

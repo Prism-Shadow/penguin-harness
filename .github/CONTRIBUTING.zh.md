@@ -37,6 +37,12 @@ BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 +
 Vite 依赖缓存（`packages/web/node_modules/.vite`）——该缓存仅以 lockfile/配置为键，否则会继续把
 上一版 core 喂给浏览器。`dev:docs` / `dev:landing` 只跑安装检查（`--install-only`）。
 
+该预处理步骤还会构建 `packages/cli`：开发版 server 会把它所在检出的 CLI 交给它运行的 Agent——在
+`<root>/bin/penguin` 写下一个指向 `packages/cli/dist/penguin.js` 的启动脚本，并把该目录置于每条命令
+PATH 的最前。dev server 运行期间没有任何东西会重建那个文件（`tsx watch` 只覆盖 server 自身的源码），
+因此改完 CLI 源码后，要先跑 `pnpm --filter @prismshadow/penguin-cli build`（或重启 `pnpm dev`），
+再让 Agent 去用它。
+
 绕开 dev 命令时有一条规则：**通过 pnpm 重新构建 skills/core，并按此顺序**（`pnpm build`，或重启
 `pnpm dev`）——工作区使用注入式依赖（pnpm-workspace.yaml 中的 `injectWorkspacePackages`），因此
 web/server 消费的是快照副本，只有当该包的 `build` 脚本经由 pnpm 运行时才会重新同步

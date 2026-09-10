@@ -856,7 +856,7 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number): string =>
       `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
@@ -1573,6 +1573,10 @@ Scenarios:
     statusCompacting: "Compacting",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "Done, unread",
+    /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
+    backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
+    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
+    backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1703,7 +1707,7 @@ Scenarios:
     sessionStats: "Stats",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
-    copySessionId: "Copy Session id",
+    copySessionId: "Copy Session ID",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
@@ -1711,13 +1715,12 @@ Scenarios:
     processRemove: "Remove",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "Remove this entry — the output captured from it is discarded too",
-    /** Header chip title: count of the conversation's still-running background processes. */
-    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
@@ -2338,10 +2341,19 @@ Scenarios:
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "in the last hour",
+        "1d": "in the last 24 hours",
+        "7d": "in the last 7 days",
+        "30d": "in the last 30 days",
+        "90d": "in the last 90 days",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `between ${from} and ${to}`,
+    errorsClearScope: (count: number, range: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} ${range}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} ${range}. Other agents and records outside that range are kept.`,
     errorsClearIrreversible: "This cannot be undone.",
     errorsClearDone: (count: number): string =>
       `Deleted ${count} error record${count === 1 ? "" : "s"}`,
