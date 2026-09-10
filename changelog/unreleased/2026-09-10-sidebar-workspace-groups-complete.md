@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `web`, `server`
+- **PR:** [#663](https://github.com/Prism-Shadow/penguin-harness/pull/663)
 
 [中文版](2026-09-10-sidebar-workspace-groups-complete.zh.md)
 
