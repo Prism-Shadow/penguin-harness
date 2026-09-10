@@ -1,11 +1,12 @@
 /**
- * What this deployment installs, and what it is actually running.
+ * What this Project asks for, and what the process is actually running.
  *
- * Two facts the dialog keeps apart, because the difference is the thing people get wrong:
- * `plugins.json` is the INSTALLED list and can be edited here, while a plugin only becomes
- * ACTIVE when the server process loads it at start. So a row shows its state, an edited list
- * saves immediately, and the dialog says plainly that the change lands at the next restart —
- * rather than implying the running process changed.
+ * Two facts the dialog keeps apart: the LIST is the Project's (`plugins` in its
+ * `.project_config.toml`) and is edited here, while a plugin is RUNNING only once the process
+ * holds it. A write applies without a restart where the runtime can re-assemble the App; a
+ * row shows which of the two it is, and a load that failed shows why. Adding a plugin goes
+ * through the same verb as the catalogue row's Install (only a plugin the build ships), so
+ * the list can never name a package that is not on the machine.
  */
 import { useEffect, useState } from "react";
 import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
@@ -31,15 +32,9 @@ export function InstalledPluginsDialog({
   projectId: string | null;
 }) {
   const [data, setData] = useState<InstalledPluginsResponse | null>(null);
-  const [specifiers, setSpecifiers] = useState<string[]>([]);
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-
-  const adopt = (res: InstalledPluginsResponse) => {
-    setData(res);
-    setSpecifiers(res.plugins.map((p) => p.specifier));
-  };
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +44,7 @@ export function InstalledPluginsDialog({
     if (projectId === null) return;
     api.getInstalledPlugins(projectId).then(
       (res) => {
-        if (!cancelled) adopt(res);
+        if (!cancelled) setData(res);
       },
       (e: unknown) => {
         if (!cancelled) setFailure(apiErrorText(e));
@@ -60,13 +55,13 @@ export function InstalledPluginsDialog({
     };
   }, [open, projectId]);
 
-  const save = async (next: string[]) => {
-    if (busy) return;
+  /** One verb against the list — the same POST / DELETE the catalogue row uses. */
+  const run = async (call: (projectId: string) => Promise<InstalledPluginsResponse>) => {
+    if (busy || projectId === null) return;
     setBusy(true);
     setFailure(null);
     try {
-      if (projectId === null) return;
-      adopt(await api.putInstalledPlugins(projectId, next));
+      setData(await call(projectId));
       toastSuccess(S.common.saved);
     } catch (e) {
       setFailure(apiErrorText(e));
@@ -78,9 +73,9 @@ export function InstalledPluginsDialog({
 
   const add = () => {
     const value = adding.trim();
-    if (value === "" || specifiers.includes(value)) return;
+    if (value === "" || (data?.plugins ?? []).some((p) => p.specifier === value)) return;
     setAdding("");
-    void save([...specifiers, value]);
+    void run((p) => api.installPlugin(p, value));
   };
 
   const rows = data?.plugins ?? [];
@@ -137,7 +132,7 @@ export function InstalledPluginsDialog({
                     variant="secondary"
                     size="sm"
                     disabled={busy}
-                    onClick={() => void save(specifiers.filter((s) => s !== row.specifier))}
+                    onClick={() => void run((p) => api.uninstallPlugin(p, row.specifier))}
                   >
                     {S.plugins.uninstall}
                   </Button>

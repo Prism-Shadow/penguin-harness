@@ -1286,7 +1286,7 @@ export const en: Strings = {
   plugins: {
     installedTitle: "Installed plugins",
     installedDesc:
-      "What plugins.json lists, and which of them this process is running. Plugins load once when the server starts, so a change here takes effect at the next restart.",
+      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself.",
     installedEmpty: "No plugins installed yet.",
     stateActive: "running",
     builtin: "built in",
@@ -1295,15 +1295,16 @@ export const en: Strings = {
     installedRestart: "restart to load",
     stateInactive: "not loaded",
     replacesLabel: "replaces",
-    restartPending: "A plugin is installed but not loaded: restart the server to apply it.",
+    restartPending:
+      "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
     uninstall: "Remove",
     install: "Install",
     installing: "Installing…",
-    /** The deployment-level install: the package is on the machine, the process still runs the old set. */
-    deploymentInstalledToast: (name: string) =>
-      `Installed ${name}; it loads when the server restarts`,
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `Installed ${name}`,
     addLabel: "Add a plugin",
-    fileHint: (file: string) => `Written to ${file} in the data root`,
+    fileHint: (file: string) =>
+      `Only a plugin this build ships; written to the Project's ${file}`,
     pageTitle: "Plugin library",
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
@@ -1392,7 +1393,7 @@ export const en: Strings = {
   pluginRegistry: {
     pageTitle: "Plugins",
     empty: "No plugins yet",
-    specifierHint: "Package specifier for plugins.json",
+    specifierHint: "Package name, as a Project's plugin list names it",
     back: "Back to Plugins",
     readme: "Documentation",
     noReadme: "This plugin has no documentation yet.",
@@ -1403,7 +1404,8 @@ export const en: Strings = {
     license: "License",
     copySpecifier: "Copy specifier",
     copied: "Copied",
-    installHint: "To install, add the specifier to plugins.json under the data root.",
+    installHint:
+      "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },
 
   skills: {

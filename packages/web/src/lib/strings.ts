@@ -1261,7 +1261,7 @@ export const zh = {
   plugins: {
     installedTitle: "已安装的插件",
     installedDesc:
-      "plugins.json 列出的插件，以及本进程实际在跑的那些。插件在服务器启动时加载一次，所以改动会在下次重启后生效。",
+      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效。",
     installedEmpty: "还没有安装任何插件。",
     stateActive: "运行中",
     builtin: "内置",
@@ -1269,14 +1269,14 @@ export const zh = {
     installedRestart: "待重启",
     stateInactive: "未加载",
     replacesLabel: "替换",
-    restartPending: "有已安装但未加载的插件：重启服务器后生效。",
+    restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
     uninstall: "移除",
     install: "安装",
     installing: "安装中…",
-    /** The deployment-level install: the package is on the machine, the process still runs the old set. */
-    deploymentInstalledToast: (name: string) => `已安装 ${name}；重启服务器后加载`,
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     addLabel: "添加插件",
-    fileHint: (file: string) => `写入数据根目录下的 ${file}`,
+    fileHint: (file: string) => `仅限随本次构建发布的插件；写入该 Project 的 ${file}`,
     pageTitle: "插件库",
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
@@ -1365,7 +1365,7 @@ export const zh = {
     pageTitle: "插件市场",
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
-    specifierHint: "写入 plugins.json 的包名",
+    specifierHint: "包名，即 Project 插件列表里写的那串",
     back: "返回插件市场",
     readme: "说明文档",
     noReadme: "该插件暂无说明文档。",
@@ -1376,7 +1376,7 @@ export const zh = {
     license: "许可证",
     copySpecifier: "复制包名",
     copied: "已复制",
-    installHint: "安装方式：把包名写入数据目录下的 plugins.json。",
+    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
   skills: {

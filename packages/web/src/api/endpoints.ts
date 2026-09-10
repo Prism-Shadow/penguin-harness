@@ -1289,16 +1289,15 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: npm-installs the package into the data root, then lists it. Slow — a cold
- * registry fetch — and listing a package that is not on the machine means nothing, which is
- * why the two happen together.
+ * Admin only: asks this Project for a plugin the build ships — refused for one it does not,
+ * so the list never names a package that is not on the machine — then re-assembles the App.
  */
 export const installPlugin = (projectId: string, specifier: string) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
     method: "POST",
     body: { specifier },
   });
-/** Admin only: drops it from this Project's list, and from disk once no Project asks for it. */
+/** Admin only: drops it from this Project's list and re-assembles the App; nothing on disk changes. */
 export const uninstallPlugin = (projectId: string, specifier: string) =>
   apiFetch<InstalledPluginsResponse>(
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
