@@ -45,5 +45,5 @@ PenguinHarness 的能力围绕三个递进的概念展开——消息协议、SD
 
 ## 下一步
 
-- 跟随[快速开始](/quickstart)：桌面端、命令行、SDK 三条路线任选其一装好 PenguinHarness，跑通第一个 Task。
+- 跟随[快速开始](/quickstart)：桌面端、命令行、Docker、SDK 任选一条路线装好 PenguinHarness，跑通第一个 Task。
 - 从[架构总览](/architecture)进入设计文档，理解各组件如何协作。

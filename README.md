@@ -119,7 +119,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Start with the desktop app, or install the command line on a workstation or server. Both use the same `~/.penguin/data` root and can be mixed freely:
+Start with the desktop app, or install the command line on a workstation or server. Both use the same `~/.penguin/data` root and can be mixed freely; a server is also one `docker run` away:
 
 - **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
@@ -172,6 +172,15 @@ penguin web        # start the service and open http://127.0.0.1:7364
 npm install -g @prismshadow/penguin-cli
 penguin web        # start the service and open http://127.0.0.1:7364
 ```
+
+### 🐳 Docker
+
+```bash
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
+docker logs penguin       # the first-login link, openable as it stands on this machine
+```
+
+The official image runs the same server on `0.0.0.0:7364` with its data root on the `/data` volume, as an unprivileged user, for `linux/amd64` and `linux/arm64`. It is built from this repository's source: `latest` is rebuilt on every push to `main`, and `stable` follows the newest release. The example publishes the port on the host's loopback, so the Web App answers only on the machine running Docker (`http://localhost:7364`); to reach it from a network, publish on all interfaces instead (`-p 7364:7364`), preferably behind a reverse proxy that terminates TLS. Compose file and the full deployment notes — reverse proxies, upgrades, the rescue path — are in the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
 
 <details>
 <summary><b>📴 Offline install (air-gapped machines)</b></summary>
