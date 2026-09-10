@@ -3048,3 +3048,117 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(followUpTexts).not.toContain("[user_steering]");
   });
 });
+
+describe("ContextEngine tool-call loop detection", () => {
+  /**
+   * A fake LLM that always emits the same two tool calls, never a final reply —
+   * simulates a model stuck in a loop (issue: maxTurns defaults to -1 = unlimited).
+   */
+  class LoopingLLM implements LLMInterface {
+    calls = 0;
+
+    async *streamGenerate(
+      _params: GenerativeModelParameters,
+    ): AsyncGenerator<OmniMessage, LLMOutcome> {
+      this.calls += 1;
+      yield assistantText("looping...");
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWA111" }),
+        toolCallId: `call_a_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWB222" }),
+        toolCallId: `call_b_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield tokenUsage(emptyTokenCounts(), {
+        cache_read: 0,
+        cache_write: 0,
+        output: 5,
+        total: 12,
+      });
+      return { status: "completed" };
+    }
+  }
+
+  it("stops a run when the same tool calls repeat across consecutive turns", async () => {
+    const llm = new LoopingLLM();
+    const env = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment: env,
+      maxTurns: -1, // explicitly unlimited — loop detection must still fire
+    });
+
+    const { cutoff } = await collectRunWithReturn(
+      engine,
+      [userText("go")],
+      allowAll,
+    );
+
+    // The run must end with a tool_loop cutoff, not spin forever.
+    expect(cutoff).not.toBeNull();
+    expect(cutoff!.kind).toBe("tool_loop");
+
+    // It should have stopped well before 76 turns (the original bug).
+    // With TOOL_LOOP_REPEAT_WINDOW=3, it fires after 4 identical turns.
+    expect(llm.calls).toBeLessThanOrEqual(5);
+  });
+
+  it("does NOT flag a loop when tool calls differ across turns", async () => {
+    class VaryingLLM implements LLMInterface {
+      calls = 0;
+
+      async *streamGenerate(
+        _params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        if (this.calls >= 5) {
+          yield assistantText("done");
+          return { status: "completed" };
+        }
+        yield assistantText(`turn ${this.calls}`);
+        yield toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: `echo turn_${this.calls}` }),
+          toolCallId: `call_${this.calls}`,
+          stopReason: "completed",
+        });
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 5,
+          total: 12,
+        });
+        return { status: "completed" };
+      }
+    }
+
+    const llm = new VaryingLLM();
+    const env = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "no-loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment: env,
+      maxTurns: -1,
+    });
+
+    const { cutoff } = await collectRunWithReturn(
+      engine,
+      [userText("go")],
+      allowAll,
+    );
+
+    // Should run to completion (no cutoff) since tool calls vary.
+    expect(cutoff).toBeNull();
+    expect(llm.calls).toBe(5);
+  });
+});

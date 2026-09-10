@@ -309,6 +309,30 @@ export interface ContextEngineDeps {
 const isImageMessage = (m: OmniMessage): boolean =>
   (m.payload as { type?: string }).type === "image_url";
 
+/**
+ * Simple non-cyclic hash for a string — used to compare tool-call argument JSON.
+ * Not cryptographic; just needs to be stable and fast for short strings.
+ */
+function simpleHash(str: string): string {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h * 31 + str.charCodeAt(i)) | 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * Tool-call loop detection: when the model repeatedly issues identical tool calls across
+ * turns, the ReAct loop runs forever (maxTurns defaults to -1). We track a rolling window
+ * of per-turn "signatures" (sorted name+args digests). When the last REPEAT_WINDOW
+ * signatures are identical AND match the one immediately before them, we fire a tool_loop
+ * cutoff. A window of 3 means 3+1 = 4 consecutive identical turns triggers the cutoff —
+ * enough to avoid false positives on legitimate retries but tight enough to stop a stuck
+ * model within a few seconds.
+ */
+const TOOL_LOOP_WINDOW = 8;
+const TOOL_LOOP_REPEAT_WINDOW = 3;
+
 /** Whether a message carries steering of its own — an image, or text that isn't blank. */
 const carriesSteering = (m: OmniMessage): boolean => {
   const p = m.payload as { type?: string; text?: string };
@@ -496,6 +520,15 @@ export class ContextEngine {
   private steeringQueue: OmniMessage[][] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
+  /**
+   * Recent tool-call signatures, keyed by tool-call id set. Used to detect when the model
+   * repeatedly issues the same tool calls across turns — the ReAct loop would otherwise run
+   * those identical calls forever (issue: maxTurns defaults to -1 = unlimited). On every turn
+   * that produces tool_calls, the signature (sorted name+args digests) is pushed here, capped
+   * at `TOOL_LOOP_WINDOW` entries. When the last `TOOL_LOOP_REPEAT_WINDOW` signatures are
+   * identical AND match the one before them, a tool_loop cutoff fires.
+   */
+  private toolCallSignatures: string[] = [];
 
   /** Whether a `run` is in flight (the Session's notice routing keys on this: a running task delivers notices at the next boundary; an idle one goes through the host). */
   get isTaskRunning(): boolean {
@@ -951,6 +984,20 @@ export class ContextEngine {
       // No tool_call this turn and nothing injected -> the Task ends (the final reply has
       // already been streamed out). A compaction stash, if any, rides the next run.
       if (!midTask && injected.length === 0) return null;
+      // Tool-call loop detection: if the last few turns produced identical tool calls,
+      // the model is stuck — stop the run with a tool_loop cutoff.
+      const signature = this.computeSignature(turn.toolCalls);
+      this.toolCallSignatures.push(signature);
+      if (this.toolCallSignatures.length > TOOL_LOOP_WINDOW) {
+        this.toolCallSignatures.shift();
+      }
+      if (this.detectToolLoop()) {
+        yield* this.emitToolLoop(turn.toolCalls);
+        return {
+          kind: "tool_loop",
+          errorMessage: `tool loop detected: the same ${turn.toolCalls.length} tool calls repeated across consecutive turns`,
+        };
+      }
       // Anything a failed boundary compaction stashed (synthesized repair outputs from
       // rejected attempts) rides the very next request, ahead of the turn outputs so
       // tool_results stay contiguous and first.
@@ -1410,6 +1457,63 @@ export class ContextEngine {
       await this.write(failed);
       toolOutputs.push(failed);
     }
+  }
+
+  /**
+   * Computes a stable signature for a turn's tool calls: sorted list of
+   * `name:argsDigest` pairs joined by `|`. Turns with identical tool calls
+   * (regardless of order) produce identical signatures.
+   */
+  private computeSignature(toolCalls: OmniMessage<ToolCallPayload>[]): string {
+    const parts = toolCalls.map((tc) => {
+      const name = tc.payload.name;
+      const args = tc.payload.arguments;
+      // Simple hash of args for comparison
+      const digest = typeof args === "string" ? simpleHash(args) : "null";
+      return `${name}:${digest}`;
+    });
+    parts.sort();
+    return parts.join("|");
+  }
+
+  /**
+   * Detects a tool-call loop: the last `TOOL_LOOP_REPEAT_WINDOW` signatures are
+   * identical AND match the one immediately before them (i.e., at least
+   * `TOOL_LOOP_REPEAT_WINDOW + 1` consecutive identical turns).
+   */
+  private detectToolLoop(): boolean {
+    const sigs = this.toolCallSignatures;
+    if (sigs.length < TOOL_LOOP_REPEAT_WINDOW + 1) return false;
+    const last = sigs[sigs.length - 1];
+    // Must match the one before the repeat window (the "anchor")
+    if (sigs[sigs.length - 1 - TOOL_LOOP_REPEAT_WINDOW] !== last) return false;
+    // All in the repeat window must match
+    for (let i = sigs.length - TOOL_LOOP_REPEAT_WINDOW; i < sigs.length; i++) {
+      if (sigs[i] !== last) return false;
+    }
+    // Don't flag empty signatures (no tool calls = not a loop)
+    if (last === "") return false;
+    return true;
+  }
+
+  /** Tool loop detected: emits a failed notice for CLI/frontend rendering. */
+  private async *emitToolLoop(
+    toolCalls: OmniMessage<ToolCallPayload>[],
+  ): AsyncGenerator<OmniMessage> {
+    const names = toolCalls.map((tc) => tc.payload.name).join(", ");
+    const text = `[tool loop detected: the same tool calls (${names}) repeated across consecutive turns — stopping]`;
+    const partials = [
+      partialText("start"),
+      partialText("delta", text),
+      partialText("stop", "", "fatal"),
+    ];
+    for (const partial of partials) {
+      yield partial;
+      await this.write(partial);
+    }
+    const note = assistantText(text, "fatal");
+    yield note;
+    await this.write(note);
   }
 
   /** Max turns reached: emits a failed notice (streaming fragments + complete text) for CLI/frontend rendering. */
@@ -1874,6 +1978,8 @@ export class ContextEngine {
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
+    // Reset tool-call loop detection: a new context is a fresh start.
+    this.toolCallSignatures = [];
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
     // sessionTurns === 0, but they mean two completely different things to the user (being told
     // "no completed conversation turns yet" right after compacting is as good as saying nothing).
