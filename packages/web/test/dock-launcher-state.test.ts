@@ -1,14 +1,16 @@
 /**
  * The floating dock launcher's decisions (features/dock/dock-launcher-state.ts): when it
  * shows, how its resting position clamps to the chat body and round-trips through the
- * stored ratio, whether the user put it away, how a drag is bounded, and where on the arc
+ * stored ratio, whether the user put it away, how a drag is bounded, and where on the ring
  * its entries land.
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LAUNCHER_RATIO,
+  FAN_ENTRY_GAP,
   FAN_ENTRY_SIZE,
-  FAN_RADIUS,
+  FAN_MAX_RADIUS,
+  FAN_MIN_RADIUS,
   LAUNCHER_CAPTION_HEIGHT,
   LAUNCHER_EDGE_MARGIN,
   LAUNCHER_HIDDEN_KEY,
@@ -245,15 +247,30 @@ describe("fan layout", () => {
   /** The ball centred in a body tall enough for the whole semicircle. */
   const MIDDLE = TALL / 2 - LAUNCHER_SIZE / 2;
   const ENTRY_RADIUS = FAN_ENTRY_SIZE / 2;
+  /** The least distance two neighbouring entries' centres may be from each other. */
+  const MIN_SPACING = FAN_ENTRY_SIZE + FAN_ENTRY_GAP;
 
   /** The slot's angle on the arc: 0 straight up, pi/2 straight left, pi straight down. */
   const angleOf = (slot: FanSlot): number => Math.atan2(-slot.x, -slot.y);
+  /** The ring the slots were laid out on. */
+  const radiusOf = (slots: FanSlot[]): number => Math.hypot(slots[0]!.x, slots[0]!.y);
 
   function expectInside(slots: FanSlot[], top: number, bodyHeight: number): void {
     const centerY = top + LAUNCHER_SIZE / 2;
     for (const slot of slots) {
       expect(centerY + slot.y - ENTRY_RADIUS).toBeGreaterThanOrEqual(0);
       expect(centerY + slot.y + ENTRY_RADIUS).toBeLessThanOrEqual(bodyHeight);
+    }
+  }
+
+  /** No two entries closer than a diameter plus the gap — the rule the radius is solved for. */
+  function expectApart(slots: FanSlot[]): void {
+    for (let i = 1; i < slots.length; i += 1) {
+      const previous = slots[i - 1]!;
+      const slot = slots[i]!;
+      expect(Math.hypot(slot.x - previous.x, slot.y - previous.y)).toBeGreaterThanOrEqual(
+        MIN_SPACING - 1e-6,
+      );
     }
   }
 
@@ -267,36 +284,48 @@ describe("fan layout", () => {
     }
   });
 
-  it("puts every entry on the circle, left of the ball, in top-to-bottom order", () => {
+  it("puts every entry on one circle, left of the ball, in top-to-bottom order", () => {
     const slots = fanLayout(MIDDLE, TALL, COUNT);
     let previousY = -Infinity;
     for (const slot of slots) {
-      expect(Math.hypot(slot.x, slot.y)).toBeCloseTo(FAN_RADIUS, 6);
+      expect(Math.hypot(slot.x, slot.y)).toBeCloseTo(FAN_MIN_RADIUS, 6);
       expect(slot.x).toBeLessThanOrEqual(0);
       expect(slot.y).toBeGreaterThan(previousY);
       previousY = slot.y;
     }
+    expectApart(slots);
   });
 
-  it("stands the arc's end labels above and below it, and the rest beside", () => {
-    const sides = fanLayout(MIDDLE, TALL, COUNT).map((slot) => slot.labelSide);
-    expect(sides[0]).toBe("above");
-    expect(sides.at(-1)).toBe("below");
-    expect(sides.slice(1, -1)).toEqual(Array<string>(COUNT - 2).fill("left"));
+  it("rests at the smallest radius mid-body and widens only where the arc is trimmed", () => {
+    expect(radiusOf(fanLayout(MIDDLE, TALL, COUNT))).toBeCloseTo(FAN_MIN_RADIUS, 6);
+    // Against the body's top edge the usable arc is about half a semicircle, so the same
+    // entries need a wider ring to keep their spacing.
+    expect(radiusOf(fanLayout(LAUNCHER_EDGE_MARGIN, TALL, COUNT))).toBeGreaterThan(FAN_MIN_RADIUS);
   });
 
-  it("trims the arc's top near the body's top, keeping every entry inside", () => {
+  it("stops widening the ring in a body too short to space the entries at all", () => {
+    // A body barely taller than the entries has no radius that spaces them: the arc that
+    // still fits keeps a bounded length however far the ring is pushed out.
+    const short = 200;
+    const slots = fanLayout(clampLauncherTop(short / 2, short), short, COUNT);
+    expect(radiusOf(slots)).toBeLessThanOrEqual(FAN_MAX_RADIUS);
+    expectInside(slots, clampLauncherTop(short / 2, short), short);
+  });
+
+  it("trims the arc's top near the body's top, keeping every entry inside and apart", () => {
     const slots = fanLayout(LAUNCHER_EDGE_MARGIN, TALL, COUNT);
     expectInside(slots, LAUNCHER_EDGE_MARGIN, TALL);
+    expectApart(slots);
     // What is left runs from around straight left down to straight below the ball.
     expect(angleOf(slots[0]!)).toBeGreaterThan(Math.PI / 3);
     expect(angleOf(slots.at(-1)!)).toBeCloseTo(Math.PI, 6);
   });
 
-  it("trims the arc's bottom near the body's bottom, keeping every entry inside", () => {
+  it("trims the arc's bottom near the body's bottom, keeping every entry inside and apart", () => {
     const top = clampLauncherTop(TALL, TALL);
     const slots = fanLayout(top, TALL, COUNT);
     expectInside(slots, top, TALL);
+    expectApart(slots);
     expect(angleOf(slots[0]!)).toBeCloseTo(0, 6);
     expect(angleOf(slots.at(-1)!)).toBeLessThan(Math.PI - 0.1);
   });
@@ -304,7 +333,7 @@ describe("fan layout", () => {
   it("centres a lone entry on the span and puts a pair at its ends", () => {
     const [only] = fanLayout(MIDDLE, TALL, 1);
     expect(angleOf(only!)).toBeCloseTo(Math.PI / 2, 6);
-    expect(only!.labelSide).toBe("left");
+    expect(Math.hypot(only!.x, only!.y)).toBeCloseTo(FAN_MIN_RADIUS, 6);
     const pair = fanLayout(MIDDLE, TALL, 2);
     expect(pair.map(angleOf)).toEqual([expect.closeTo(0, 6), expect.closeTo(Math.PI, 6)]);
     expect(fanLayout(MIDDLE, TALL, 0)).toEqual([]);

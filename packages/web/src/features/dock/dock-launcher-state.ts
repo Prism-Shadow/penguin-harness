@@ -36,30 +36,38 @@ export const LAUNCHER_CAPTION_HEIGHT = 26;
 /** A fan entry's diameter (px), one rung under the ball so the fan reads as its offspring. */
 export const FAN_ENTRY_SIZE = 36;
 /**
- * The distance from the ball's centre to an entry's centre (px).
+ * The ring's radius at rest (px): how far an entry's centre sits from the ball's centre
+ * while the whole semicircle is available.
  *
- * Fixed by the tightest packing the arc can produce. Seven entries — five panel kinds, the
- * terminal, and the hide entry — spread evenly leave a chord of 2R·sin(step / 2) between
- * neighbours, and that has to clear the 36px entry diameter. The full semicircle is roomy:
- * step 30°, chord 2·150·sin 15° ≈ 78px. The tight case is the ball parked at the body's top
- * margin, where the arc trims to ≈ 94.6°: step 15.8°, chord 2·150·sin 7.9° ≈ 41px, some 5px
- * of air between circles. A shorter radius closes that gap — at 130px the two would overlap.
- * The ceiling is the narrow layout, where the arc plus a name has to fit the body's width:
- * 36 (the ball's centre from the edge) + 150 + 18 + 8 + a ~100px name ≈ 312px, inside the
- * ~360px a phone gives it.
+ * The floor is the tightest packing that arc produces. Seven entries — five panel kinds,
+ * the terminal, and the hide entry — spread evenly over a semicircle leave a chord of
+ * 2R·sin(step / 2) between neighbours, with step = pi / 6, so keeping FAN_ENTRY_GAP of air
+ * around the 36px circles needs 44 / (2·sin 15°) ≈ 85px. 92 is that with a few pixels to
+ * spare (a chord of ≈ 48px, some 12px of air), and it keeps the ring close enough to the
+ * ball to read as one object. The arc only ever grows from here, and only where a trimmed
+ * span would otherwise crowd the entries together.
  */
-export const FAN_RADIUS = 150;
+export const FAN_MIN_RADIUS = 92;
+/** Air kept between two neighbouring entries' circles (px). */
+export const FAN_ENTRY_GAP = 8;
+/**
+ * The widest the ring may grow (px). Real geometry never asks for this much — a ball parked
+ * against the body's top edge, the tightest span seven entries ever get, settles at ≈ 161px.
+ * It is there for a body barely taller than the entries themselves, where no radius can
+ * space them apart (the arc that fits keeps a bounded length however far the ring is pushed
+ * out) and the solver below would otherwise run away with them off the left of the screen.
+ * The ceiling is the narrow layout's width: on a ~320px phone the ball's centre sits 36px
+ * from the edge, so an entry's far side, R + 18, has to fit what is left.
+ */
+export const FAN_MAX_RADIUS = 240;
 /** Room kept between an entry and the body's top or bottom edge (px). */
 const FAN_EDGE_PAD = 4;
-/** Vertical room an "above" / "below" label needs beyond the entry itself (px). */
-const FAN_LABEL_ROOM = 28;
 /**
- * How close to straight up or straight down the arc's END entry must sit for its label to
- * leave its side and stand above or below it instead. Only the two ends are eligible: a
- * trimmed arc packs its entries closely enough that two labels stacked the same way at the
- * same end of it would run into each other.
+ * How many times the radius and the span are solved against each other before the last
+ * pass is taken as-is. Each depends on the other — a wider radius trims the span, a
+ * narrower span demands a wider radius — and the loop converges from below within three.
  */
-const FAN_LABEL_TURN = (26 * Math.PI) / 180;
+const FAN_RADIUS_PASSES = 6;
 
 /** How far the ball can be pulled off its edge mid-drag (px; the rubberband's asymptote). */
 const HORIZONTAL_REACH = 40;
@@ -247,16 +255,12 @@ export function dragPosition(
   return { x, top };
 }
 
-/** Which side of an entry its always-visible name is placed on. */
-export type FanLabelSide = "left" | "above" | "below";
-
-/** One entry's place on the arc: an offset from the ball's centre, and where its name goes. */
+/** One entry's place on the ring: an offset from the ball's centre. */
 export interface FanSlot {
   /** Horizontal offset (px). Never positive — the arc opens leftward, away from the edge. */
   x: number;
   /** Vertical offset (px); negative above the ball's centre. */
   y: number;
-  labelSide: FanLabelSide;
 }
 
 function clampUnit(value: number): number {
@@ -264,59 +268,68 @@ function clampUnit(value: number): number {
 }
 
 /**
+ * The stretch of the leftward semicircle a ring of this radius may use, as angles from 0 at
+ * straight up to pi at straight down: an entry may not rise above the body's top nor sink
+ * below its bottom, which bounds cos(angle) from both sides and trims the arc toward
+ * whichever end has room. A body shorter than one entry collapses the span to its midpoint.
+ */
+function fanSpan(
+  centerY: number,
+  bodyHeight: number,
+  radius: number,
+): { start: number; end: number } {
+  const half = FAN_ENTRY_SIZE / 2 + FAN_EDGE_PAD;
+  // acos decreases, so the upper bound on cos gives the smallest angle and vice versa.
+  const start = Math.acos(clampUnit((centerY - half) / radius));
+  const end = Math.acos(clampUnit((centerY + half - bodyHeight) / radius));
+  if (end < start) {
+    const mid = (start + end) / 2;
+    return { start: mid, end: mid };
+  }
+  return { start, end };
+}
+
+/**
+ * The radius the ring takes here. It rests at FAN_MIN_RADIUS and grows only as far as the
+ * entries need to stay apart: neighbours an angular step apart are a chord of
+ * 2R·sin(step / 2) from each other, which has to clear an entry's diameter plus the gap.
+ * Growing the radius trims the span, which widens the step it takes again, so the two are
+ * solved against each other — each pass starts from the radius the previous one asked for,
+ * and FAN_MAX_RADIUS stops a body too short for any spacing to work.
+ */
+function fanRadius(centerY: number, bodyHeight: number, count: number): number {
+  let radius = FAN_MIN_RADIUS;
+  for (let pass = 0; pass < FAN_RADIUS_PASSES; pass += 1) {
+    const { start, end } = fanSpan(centerY, bodyHeight, radius);
+    const step = (end - start) / (count - 1);
+    if (!(step > 0)) return radius;
+    const needed = (FAN_ENTRY_SIZE + FAN_ENTRY_GAP) / (2 * Math.sin(step / 2));
+    if (needed <= radius) return radius;
+    if (needed >= FAN_MAX_RADIUS) return FAN_MAX_RADIUS;
+    radius = needed;
+  }
+  return radius;
+}
+
+/**
  * Where the fan's entries sit, as offsets from the ball's centre.
  *
  * Angles run from 0 at straight up, through pi/2 at straight left, to pi at straight down,
  * so `x = -R·sin(angle)` and `y = -R·cos(angle)`. The usable span is the part of that
- * semicircle that fits inside the chat body: an entry may not rise above the body's top nor
- * sink below its bottom, which bounds `cos(angle)` from both sides and trims the arc toward
- * whichever end has room — near the body's top what is left is the stretch from straight
- * left round to below, near its bottom the stretch from above round to straight left, and
- * in between the whole semicircle. Entries divide that span evenly and come back in DOM
- * order from top to bottom, so keyboard order is visual order.
+ * semicircle that fits inside the chat body — near the body's top what is left is the
+ * stretch from straight left round to below, near its bottom the stretch from above round
+ * to straight left, and in between the whole semicircle. Entries divide that span evenly
+ * and come back in DOM order from top to bottom, so keyboard order is visual order.
  */
 export function fanLayout(top: number, bodyHeight: number, count: number): FanSlot[] {
   if (count <= 0) return [];
   const centerY = top + LAUNCHER_SIZE / 2;
-  const half = FAN_ENTRY_SIZE / 2 + FAN_EDGE_PAD;
-  // acos decreases, so the upper bound on cos gives the smallest angle and vice versa.
-  let start = Math.acos(clampUnit((centerY - half) / FAN_RADIUS));
-  let end = Math.acos(clampUnit((centerY + half - bodyHeight) / FAN_RADIUS));
-  if (end < start) {
-    // A body shorter than one entry: nothing fits, so collapse the span to its midpoint.
-    const mid = (start + end) / 2;
-    start = mid;
-    end = mid;
-  }
+  const radius = count > 1 ? fanRadius(centerY, bodyHeight, count) : FAN_MIN_RADIUS;
+  const { start, end } = fanSpan(centerY, bodyHeight, radius);
   const step = count > 1 ? (end - start) / (count - 1) : 0;
   const first = count > 1 ? start : (start + end) / 2;
   return Array.from({ length: count }, (_, index) => {
     const angle = first + index * step;
-    const x = -FAN_RADIUS * Math.sin(angle);
-    const y = -FAN_RADIUS * Math.cos(angle);
-    // Which end of the arc this entry is, if either — a lone entry is both, so it is
-    // neither, and takes the plain side label its mid-span angle calls for anyway.
-    const atEnd =
-      count === 1 ? "none" : index === 0 ? "top" : index === count - 1 ? "bottom" : "none";
-    return { x, y, labelSide: labelSideAt(angle, atEnd, centerY + y, bodyHeight) };
+    return { x: -radius * Math.sin(angle), y: -radius * Math.cos(angle) };
   });
-}
-
-/**
- * An entry's name radiates away from the ball: to the left along most of the arc, and above
- * or below at its ends — but only where the label's own height still fits inside the body,
- * since a span trimmed toward the top can end exactly where a label above it would not.
- */
-function labelSideAt(
-  angle: number,
-  atEnd: "top" | "bottom" | "none",
-  entryY: number,
-  bodyHeight: number,
-): FanLabelSide {
-  const reach = FAN_ENTRY_SIZE / 2 + FAN_LABEL_ROOM;
-  if (atEnd === "top" && angle <= FAN_LABEL_TURN && entryY - reach >= 0) return "above";
-  if (atEnd === "bottom" && angle >= Math.PI - FAN_LABEL_TURN && entryY + reach <= bodyHeight) {
-    return "below";
-  }
-  return "left";
 }

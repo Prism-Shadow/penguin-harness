@@ -111,12 +111,13 @@ export const zh = {
     killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
     /**
      * The floating launcher on the chat body's right edge while the right dock is hidden.
-     * `launcherCaption` is printed under the ball, so the accessible name opens with it.
+     * `launcherCaption` is printed under the ball at rest — the same words as the ball's
+     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
      */
-    launcher: "面板：打开侧边栏面板",
-    launcherCaption: "面板",
+    launcher: "打开面板",
+    launcherCaption: "打开面板",
     /** Its tooltip: the click and the drag in one line. */
-    launcherHint: "面板：打开侧边栏面板 · 可上下拖动",
+    launcherHint: "打开面板 · 可上下拖动",
     /** Appended to the launcher's accessible name while its amber dot shows. */
     launcherPending: "子智能体有待审批",
     /** The fan of panel entries the launcher opens (its accessible group name). */
