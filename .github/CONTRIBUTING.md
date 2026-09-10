@@ -162,9 +162,9 @@ pnpm test:e2e                                        # core live-model e2e, need
   GitHub's auto-generated notes.
 - **The official image is built from source**, by `.github/workflows/docker.yml`, and
   pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
-  push to `main` publishes that commit as `latest` and as `main-<sha7>`; the release
-  workflow's `docker` job builds the tag's own source and publishes `X.Y.Z`, `X.Y` and —
-  while the tag is the current latest Release — `stable`. A PR touching the `Dockerfile`,
+  push to `main` publishes that commit as `latest`, the only tag a push moves; the release
+  workflow's `docker` job builds the tag's own source and publishes the exact version
+  `X.Y.Z`, nothing else. A PR touching the `Dockerfile`,
   `docker/` or that workflow runs the same file as an amd64 smoke build. The push
   needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
   Docker Hub access token with read/write scope on that repository — and the Docker Hub

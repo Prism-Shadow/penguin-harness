@@ -257,6 +257,23 @@ export interface ContextEngineDeps {
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
   /**
+   * Live compaction settings, re-read at every point the engine consults them for a decision:
+   * the post-request checkpoint (threshold and turn count), and the start of a compaction
+   * (mode and prompt). This is what takes compaction configuration out of the strict tier —
+   * an edit saved to the Agent's config reaches a running Session at its next checkpoint
+   * instead of waiting for a rotation.
+   *
+   * Refreshes an existing baseline; it never creates one. An embedder that supplies only
+   * `compaction` keeps today's fixed-per-context behaviour, and one that supplies neither has
+   * no compaction at all — so whether compaction is *configured* stays a constant of the
+   * Session, which is what `compactability()` may answer synchronously.
+   *
+   * The provider is expected to be cheap enough to call once per checkpoint (the Agent's caches
+   * by the config file's identity on disk). A read that throws leaves the previous settings in
+   * force and is logged once: a config file that briefly cannot be read must not end a run.
+   */
+  readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
+  /**
    * The first context's session_meta message: written at the start of each Trace file a
    * compaction's rotation opens, until an `openNextContext` result brings the meta of the context
    * it opened — from then on that one is written, so every file's head describes its own
@@ -431,7 +448,10 @@ export function reconnectDelayMs(base: number, max: number, attempt: number): nu
 export class ContextEngine {
   /** Per-context settings: the first context's from the deps, then whatever each opened context brings (see `startNewContext`). */
   private maxTurns: number;
+  /** Compaction settings in force. Baseline per context (deps, then each opened context), and re-read from `deps.readCompaction` at every checkpoint in between. */
   private compaction: CompactionSettings | undefined;
+  /** Whether a `readCompaction` failure has already been reported; one line per Session, not one per checkpoint. */
+  private compactionReadWarned = false;
   private readonly maxReconnects: number;
   private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
@@ -856,6 +876,11 @@ export class ContextEngine {
       // applies mid-Task — when runTurn returns, all of this turn's
       // tool results are ready and paired with their tool_call.
       const midTask = turn.toolOutputs.length > 0;
+      // The checkpoint is where compaction configuration is consulted, so it is where it is
+      // re-read: the threshold and turn count `compactionTrigger` compares against, and the
+      // `mode` picked from the same settings immediately below, are the values on disk right
+      // now rather than the ones this context opened with.
+      await this.refreshCompaction();
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.compaction!.mode;
@@ -1001,6 +1026,9 @@ export class ContextEngine {
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+    // The manual entry into a compaction, and the second place the live settings decide
+    // something: the `mode` below, and the prompt summarizeContext reads from them.
+    await this.refreshCompaction();
     if (!this.compaction || !this.deps.openNextContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
@@ -1435,6 +1463,32 @@ export class ContextEngine {
   // -------------------------------------------------------------------------
 
   /**
+   * Re-reads the live compaction settings, if the host supplies a provider. Called at every
+   * point the engine is about to decide something from them — the post-request checkpoint and
+   * the two entries into a compaction — so a threshold, turn count, mode or prompt edited on
+   * disk applies to the conversation that is running.
+   *
+   * Only refreshes an existing baseline: a Session with no `compaction` in its deps has no
+   * compaction capability, and a provider must not conjure one mid-run (see
+   * ContextEngineDeps.readCompaction). A read that throws keeps the settings already in force
+   * and warns once — the alternative, failing the run because a config file was momentarily
+   * unreadable, is worse than compacting at the previous threshold.
+   */
+  private async refreshCompaction(): Promise<void> {
+    if (!this.compaction || !this.deps.readCompaction) return;
+    try {
+      this.compaction = await this.deps.readCompaction();
+    } catch (e) {
+      if (this.compactionReadWarned) return;
+      this.compactionReadWarned = true;
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(
+        `[penguin] compaction settings could not be re-read: ${message}; keeping the settings in force.\n`,
+      );
+    }
+  }
+
+  /**
    * Checks the compaction threshold: triggers once context usage (the most recent
    * token_usage's request.total) or the Session cumulative turn count **reaches** the threshold
    * (>=) — e.g. maxSessionTurns=1 compacts as soon as turn 1 completes, without waiting for the
@@ -1520,6 +1574,9 @@ export class ContextEngine {
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
   ): AsyncGenerator<OmniMessage, CompactionResult> {
+    // Already refreshed: both entries into a compaction — the post-request checkpoint and
+    // `compact()` — re-read the live settings before choosing the mode that lands here, so the
+    // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
@@ -1886,6 +1943,9 @@ export class ContextEngine {
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;
     if (opened.maxTurns !== undefined) this.maxTurns = opened.maxTurns;
+    // The new context's baseline. A `readCompaction` provider re-reads the same file at the
+    // next checkpoint and agrees with it; what this settles is the Session that has no
+    // provider, where the rotation is still the only way compaction settings change.
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;

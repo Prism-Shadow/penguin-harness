@@ -9,7 +9,7 @@ description: 运行官方 PenguinHarness 镜像——一个容器、一个卷，
 hiyouga/penguinharness
 ```
 
-`latest` 跟随 `main`——每次 push 都重新构建它，`main-<sha7>` 则是同一个镜像的不可变名字。`stable` 是最新的发布版；`X.Y.Z` 与 `X.Y` 用于钉住某个发布版。每个 tag 都由本仓库该 commit 的源码构建，也都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。下面的示例用 `latest`；只希望随发布版移动的部署应改用 `stable`。
+镜像只有两种 tag：`latest` 跟随 `main`——每次 push 都重新构建它；`X.Y.Z` 是某个发布版，由该 tag 自身的源码构建。没有 `main-<sha>`、`X.Y` 或 `stable` 之类会移动或重复的名字。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。下面的示例用 `latest`；只希望随发布版移动的部署应钉住某个版本号。
 
 ## 跑起来
 

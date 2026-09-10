@@ -102,6 +102,8 @@ export interface SessionConfig {
   createBareLLM?: () => LLMInterface;
   /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openNextContext`, and a context that one opens brings its own. */
   compaction?: CompactionSettings;
+  /** Live compaction settings, re-read at every compaction checkpoint (see ContextEngineDeps.readCompaction): what lets a threshold, mode or prompt edited on disk reach the conversation that is running. Session-lifetime, so a rotation does not replace it. */
+  readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
@@ -350,6 +352,7 @@ export class Session {
           }
         : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
+      ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
       // it through the same converter `runTask` uses, failures included: a scratchpad that

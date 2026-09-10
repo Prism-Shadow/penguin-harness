@@ -5,10 +5,10 @@
 #   container — readiness, sign-in, the healthcheck, the unprivileged user, a graceful stop and a
 #   restart onto the same data root. It builds the PR's own checkout, so it proves the Dockerfile
 #   against the code the PR carries.
-# - push to main: `publish` builds that commit and moves `latest`, alongside an immutable
-#   `main-<sha7>` twin. Every push, no path filter — `latest` follows main.
-# - workflow_call from release.yml's `docker` job: the same build at the tag, published as
-#   `X.Y.Z`, `X.Y` and `stable`.
+# - push to main: `publish` builds that commit and moves `latest`. Every push, no path filter —
+#   `latest` follows main, and it is the only tag a push moves.
+# - workflow_call from release.yml's `docker` job: the same build at the tag, published as the
+#   exact version `X.Y.Z` and nothing else.
 # - workflow_dispatch for a manual re-publish, mirroring release.yml's own dispatch input.
 name: Docker
 
@@ -198,16 +198,17 @@ jobs:
         with:
           ref: ${{ inputs.tag || '' }}
 
-      # Two tag policies.
+      # Two tag policies, one tag each.
       #
-      # A push to main publishes `latest` plus an immutable `main-<sha7>` twin, so `latest` always
-      # names the newest build and anyone who needs to pin one can.
+      # A push to main publishes `latest` and nothing else: `latest` always names the newest build
+      # of main. The image is still stamped with `main-<sha7>` as its version (the app's reported
+      # version and the OCI label), so a running container can say which commit it is.
       #
-      # A release publishes the exact version, `X.Y` for a plain X.Y.Z tag (a prerelease has no
-      # meaningful minor line to move), and `stable` — resolved in the next step — for readers who
-      # want releases only. The commit comes from the checkout rather than from github.sha, which
-      # on a dispatch names the branch the run was started on and not the tag.
-      - name: Resolve the version and its tags
+      # A release publishes the exact version, `X.Y.Z`, and nothing else — no moving `X.Y` or
+      # `stable` line: a deployment that wants a release pins its version, and `latest` is main.
+      # The commit comes from the checkout rather than from github.sha, which on a dispatch names
+      # the branch the run was started on and not the tag.
+      - name: Resolve the version and its tag
         id: version
         env:
           EVENT: ${{ github.event_name }}
@@ -217,35 +218,10 @@ jobs:
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = "push" ]; then
             echo "version=main-$(printf '%s' "$COMMIT" | cut -c1-7)" >> "$GITHUB_OUTPUT"
-            echo "minor=" >> "$GITHUB_OUTPUT"
-            echo "latest=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          V="${TAG#v}"
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "latest=false" >> "$GITHUB_OUTPUT"
-          if printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "minor=${V%.*}" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
-            echo "minor=" >> "$GITHUB_OUTPUT"
-            echo "$TAG is not a plain X.Y.Z tag; publishing the exact version only."
-          fi
-
-      # `stable` moves only when the tag is GitHub's current latest Release, so re-publishing an
-      # older tag cannot demote the newest release image.
-      - name: Determine whether the tag is the latest Release
-        id: stable
-        if: github.event_name != 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
-        run: |
-          LATEST_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
-          if [ "$TAG" = "$LATEST_TAG" ]; then
-            echo "update=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "update=false" >> "$GITHUB_OUTPUT"
-            echo "$TAG will be published without moving :stable (current latest: $LATEST_TAG)."
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG#v}" >> "$GITHUB_OUTPUT"
           fi
 
       # arm64 is emulated: the image is built on one x64 runner, and only the stage that compiles
@@ -269,10 +245,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ steps.version.outputs.minor }},enable=${{ steps.version.outputs.minor != '' }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.latest == 'true' }}
-            type=raw,value=stable,enable=${{ steps.stable.outputs.update == 'true' }}
+            type=raw,value=${{ steps.version.outputs.tag }}
 
       # provenance is off: the attestation manifest it attaches shows up in the package listing as
       # an "unknown/unknown" platform, which is worse for a reader than the attestation is worth.
