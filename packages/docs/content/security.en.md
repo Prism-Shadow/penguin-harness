@@ -43,7 +43,7 @@ Open it, land signed in, set a password. The link is not one-shot — a mail cli
 - The value it is compared against lives **in memory and is re-minted on every restart**. A link from an earlier run is refused; if you miss the notice, restart and read the new one.
 - A wrong token and an already-claimed server answer **identically** — a stale link cannot even reveal which of the two it is.
 
-In a container the notice goes to the container's log (`docker logs`), and the `localhost` in the link is the server's own view of itself — replace it with the host you reach the container on, and keep the token. `PENGUIN_SEED_ADMIN_PASSWORD` pins the password instead, but only on the first boot of an empty data root.
+In a container the notice goes to the container's log (`docker logs`), and the `localhost` in the link is the server's own view of itself — with the documented loopback publish that is your view too, so open it as it stands on the machine running Docker; a container published to a network needs `localhost` replaced with the host you reach it on. Keep the token either way. `PENGUIN_SEED_ADMIN_PASSWORD` pins the password instead, but only on the first boot of an empty data root.
 
 The session it grants carries `via: setup`. It has exactly one special allowance — setting a password without an old one, since no old one exists — and no more: in particular, none of the desktop-only routes.
 

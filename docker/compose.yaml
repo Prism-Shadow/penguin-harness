@@ -5,10 +5,12 @@
 # behind a reverse proxy, and the rescue path for a forgotten admin password.
 services:
   penguin:
-    image: ghcr.io/prism-shadow/penguin-harness:latest
+    image: hiyouga/penguinharness:latest
     restart: unless-stopped
     ports:
-      - "7364:7364"
+      # On the host's loopback: reachable only from the machine running Docker.
+      # To open it to a network, publish on all interfaces instead: "7364:7364".
+      - "127.0.0.1:7364:7364"
     volumes:
       - penguin-data:/data
     # Shutting down interrupts running Tasks and waits for them to wrap up, which can take

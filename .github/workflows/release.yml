@@ -38,7 +38,7 @@
 #   to immutable releases/<tag>/ keys in Alibaba Cloud OSS through GitHub OIDC. The GitHub Environment
 #   `oss-production` supplies the provider/role ARNs and OSS settings. latest.json is uploaded last and only
 #   when the tag is still GitHub's current latest Release. Manual retries also work after a Release exists.
-# - docker: build and push the official image (ghcr.io/prism-shadow/penguin-harness, linux/amd64 +
+# - docker: build and push the official image (Docker Hub hiyouga/penguinharness, linux/amd64 +
 #   linux/arm64) from the version publish-npm just landed. The build/publish steps live in
 #   docker.yml, which the same PR-time smoke job exercises; this workflow only decides when they run.
 name: Release
@@ -662,7 +662,6 @@ jobs:
           (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     permissions:
       contents: read
-      packages: write
     uses: ./.github/workflows/docker.yml
     with:
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}

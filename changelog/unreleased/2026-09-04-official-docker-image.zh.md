@@ -7,7 +7,7 @@
 
 [English](2026-09-04-official-docker-image.md)
 
-PenguinHarness 新增官方容器镜像 `ghcr.io/prism-shadow/penguin-harness`，由发布 workflow 中新增的 `docker` job 推出 `linux/amd64` 与 `linux/arm64` 两个架构，tag 为 `X.Y.Z`、`X.Y`，以及在该 tag 仍是 GitHub 当前 latest Release 时的 `latest`。它在 `0.0.0.0:7364` 上运行 `penguin server`，数据目录落在 `/data` 卷上，因此一次部署就是一个容器加一个卷。
+PenguinHarness 新增官方容器镜像 `hiyouga/penguinharness`（Docker Hub），由发布 workflow 中新增的 `docker` job 推出 `linux/amd64` 与 `linux/arm64` 两个架构，tag 为 `X.Y.Z`、`X.Y`，以及在该 tag 仍是 GitHub 当前 latest Release 时的 `latest`。它在 `0.0.0.0:7364` 上运行 `penguin server`，数据目录落在 `/data` 卷上，因此一次部署就是一个容器加一个卷。compose 文件与文档中的每一条 `docker run` 都把端口发布在宿主机回环上（`127.0.0.1:7364:7364`），新部署因此只在运行 Docker 的那台机器上可达；对外开放是一个明确的选择，与反向代理一节并列记录。
 
 ## 细节
 

@@ -6,7 +6,7 @@ description: Run the official PenguinHarness image — one container, one volume
 The official image runs the same server `penguin server` starts, with the Web App inside it. One container and one volume are the whole deployment, which makes it the shortest route onto a machine that is not your laptop.
 
 ```
-ghcr.io/prism-shadow/penguin-harness
+hiyouga/penguinharness
 ```
 
 Tags are `X.Y.Z` and `X.Y`, plus `latest` for the current release. Each tag is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference serves an x86 VPS and an arm64 one alike.
@@ -16,10 +16,10 @@ Tags are `X.Y.Z` and `X.Y`, plus `latest` for the current release. Each tag is a
 ```yaml tab="compose.yaml"
 services:
   penguin:
-    image: ghcr.io/prism-shadow/penguin-harness:latest
+    image: hiyouga/penguinharness:latest
     restart: unless-stopped
     ports:
-      - "7364:7364"
+      - "127.0.0.1:7364:7364"
     volumes:
       - penguin-data:/data
     stop_grace_period: 30s
@@ -31,15 +31,15 @@ volumes:
 ```bash tab="docker run"
 docker volume create penguin-data
 docker run -d --name penguin \
-  -p 7364:7364 \
+  -p 127.0.0.1:7364:7364 \
   -v penguin-data:/data \
   --restart unless-stopped \
-  ghcr.io/prism-shadow/penguin-harness:latest
+  hiyouga/penguinharness:latest
 ```
 
-With the compose file saved next to you, `docker compose up -d` starts it. Either way the Web App is then at `http://<host>:7364`.
+With the compose file saved next to you, `docker compose up -d` starts it. Either way the Web App is then at `http://localhost:7364`, on the machine running Docker.
 
-The container listens on `0.0.0.0` inside its own network namespace, so `-p 7364:7364` is what decides who can reach it. `-p 127.0.0.1:7364:7364` keeps it on the host's loopback, for a machine you reach over ssh or put behind a reverse proxy.
+Both examples publish the port on that machine's loopback, so a fresh deployment is reachable from nowhere else — from another machine, forward it over ssh (`ssh -L 7364:127.0.0.1:7364 <host>`). Exposing it to a network is a deliberate step: publish on all interfaces instead (`-p 7364:7364` or `-p 0.0.0.0:7364:7364`, `"7364:7364"` in compose), preferably behind a reverse proxy that terminates TLS — see [Behind a reverse proxy](#behind-a-reverse-proxy). The container itself always listens on `0.0.0.0` inside its own network namespace, which is what makes a publish work at all; the address in `-p` is the host's half of it.
 
 ## First sign-in
 
@@ -59,7 +59,7 @@ docker compose logs penguin        # or: docker logs penguin
 +----------------------------------------------------------------------------------------------+
 ```
 
-The `localhost` in that URL is the server's own view of itself; replace it with the host you actually reach the container on, keep the whole `?token=...`, and open it. You land signed in as `admin` and set a password. The link is re-minted on every start, so a restart invalidates the one you were looking at and prints a fresh one.
+The `localhost` in that URL is the server's own view of itself. With the loopback publish above it is also yours, so open the link as it stands on the machine running Docker; if you published the container to a network, replace `localhost` with the host you reach it on. Either way keep the whole `?token=...`. You land signed in as `admin` and set a password. The link is re-minted on every start, so a restart invalidates the one you were looking at and prints a fresh one.
 
 If reading a link out of a log does not suit your setup, pin the password instead — but do it **before the first start**:
 
@@ -97,7 +97,7 @@ Everything the agent's `exec_command` runs happens **inside this container**, on
 The image carries no compiler and no language runtimes beyond Node. `apt-get install` inside the container works for a one-off, but it is lost on the next `docker pull`; for anything you depend on, build a derived image:
 
 ```dockerfile
-FROM ghcr.io/prism-shadow/penguin-harness:latest
+FROM hiyouga/penguinharness:latest
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep \
     && rm -rf /var/lib/apt/lists/*
@@ -113,7 +113,7 @@ The full list is in the [Configuration Reference](/configuration); these are the
 | Variable | In this image |
 | --- | --- |
 | `PENGUIN_HOME` | `/data` — change it only if you also move the volume |
-| `HOST` | `0.0.0.0` — the container's own namespace, published by `-p` |
+| `HOST` | `0.0.0.0` — the container's own namespace; `-p` decides the host side, and the examples keep it on loopback |
 | `PORT` | `7364`; changing it moves the healthcheck with it |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Pins the initial admin password, first boot only (see above) |
 | `PENGUIN_TRUST_PROXY` | Set to `1` behind a TLS-terminating reverse proxy, so session cookies are marked `Secure` |

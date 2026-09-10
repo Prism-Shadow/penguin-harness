@@ -176,11 +176,11 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ### 🐳 Docker
 
 ```bash
-docker run -d --name penguin -p 7364:7364 -v penguin-data:/data ghcr.io/prism-shadow/penguin-harness:latest
-docker logs penguin       # 首次登录链接，把其中的 localhost 换成你的主机地址
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
+docker logs penguin       # 首次登录链接，在本机可原样打开
 ```
 
-官方镜像以非特权用户在 `0.0.0.0:7364` 上运行同一个服务端，数据目录落在 `/data` 卷上，提供 `linux/amd64` 与 `linux/arm64`。compose 文件与完整部署说明（反向代理、升级、救援路径）见 [Docker 快速开始](https://penguin.ooo/docs/quickstart-docker)。
+官方镜像以非特权用户在 `0.0.0.0:7364` 上运行同一个服务端，数据目录落在 `/data` 卷上，提供 `linux/amd64` 与 `linux/arm64`。示例把端口发布在宿主机回环上，因此 Web 应用只在运行 Docker 的那台机器上可达（`http://localhost:7364`）；要从网络访问，改为发布到所有接口（`-p 7364:7364`），并尽量置于终结 TLS 的反向代理之后。compose 文件与完整部署说明（反向代理、升级、救援路径）见 [Docker 快速开始](https://penguin.ooo/docs/quickstart-docker)。
 
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>

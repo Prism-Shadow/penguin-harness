@@ -2,9 +2,9 @@
 # Web App, with the data root at /data.
 #
 #   docker build --build-arg PENGUIN_VERSION=0.2.9 -t penguin-harness:dev .
-#   docker run -d -p 7364:7364 -v penguin-data:/data penguin-harness:dev
+#   docker run -d -p 127.0.0.1:7364:7364 -v penguin-data:/data penguin-harness:dev
 #
-# Published from .github/workflows/docker.yml as ghcr.io/prism-shadow/penguin-harness.
+# Published from .github/workflows/docker.yml to Docker Hub as hiyouga/penguinharness.
 # The user-facing contract (first sign-in, volumes, upgrades, reverse proxies) is
 # documented in packages/docs/content/quickstart-docker.en.md.
 #

@@ -6,7 +6,7 @@ description: 运行官方 PenguinHarness 镜像——一个容器、一个卷，
 官方镜像跑的就是 `penguin server` 启动的那个服务端，Web 应用在里面。整套部署只有一个容器和一个卷，因此它是把 PenguinHarness 装到自己电脑以外的机器上最短的一条路。
 
 ```
-ghcr.io/prism-shadow/penguin-harness
+hiyouga/penguinharness
 ```
 
 tag 为 `X.Y.Z` 与 `X.Y`，当前发布版另有 `latest`。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。
@@ -16,10 +16,10 @@ tag 为 `X.Y.Z` 与 `X.Y`，当前发布版另有 `latest`。每个 tag 都是�
 ```yaml tab="compose.yaml"
 services:
   penguin:
-    image: ghcr.io/prism-shadow/penguin-harness:latest
+    image: hiyouga/penguinharness:latest
     restart: unless-stopped
     ports:
-      - "7364:7364"
+      - "127.0.0.1:7364:7364"
     volumes:
       - penguin-data:/data
     stop_grace_period: 30s
@@ -31,15 +31,15 @@ volumes:
 ```bash tab="docker run"
 docker volume create penguin-data
 docker run -d --name penguin \
-  -p 7364:7364 \
+  -p 127.0.0.1:7364:7364 \
   -v penguin-data:/data \
   --restart unless-stopped \
-  ghcr.io/prism-shadow/penguin-harness:latest
+  hiyouga/penguinharness:latest
 ```
 
-把 compose 文件放在当前目录，`docker compose up -d` 即启动。两种方式启动后，Web 应用都在 `http://<host>:7364`。
+把 compose 文件放在当前目录，`docker compose up -d` 即启动。两种方式启动后，Web 应用都在运行 Docker 的那台机器的 `http://localhost:7364`。
 
-容器在自己的网络命名空间里监听 `0.0.0.0`，因此决定谁能访问它的是 `-p 7364:7364`。写成 `-p 127.0.0.1:7364:7364` 就只留在宿主机回环上，适合经 ssh 访问或放在反向代理之后的机器。
+两个示例都把端口发布在该机器的回环上，因此新部署在别处一概不可达——要从另一台机器访问，用 ssh 转发（`ssh -L 7364:127.0.0.1:7364 <host>`）。对外开放是一个明确的动作：改为发布到所有接口（`-p 7364:7364` 或 `-p 0.0.0.0:7364:7364`，compose 写 `"7364:7364"`），并尽量置于终结 TLS 的反向代理之后——见[反向代理之后](#反向代理之后)。容器自身始终在自己的网络命名空间里监听 `0.0.0.0`，这正是端口发布得以成立的前提；`-p` 里的地址是宿主机这一侧。
 
 ## 首次登录
 
@@ -59,7 +59,7 @@ docker compose logs penguin        # 或：docker logs penguin
 +----------------------------------------------------------------------------------------------+
 ```
 
-那条 URL 里的 `localhost` 是服务端对自己的称呼；把它换成你实际访问容器所用的主机名或 IP，保留整段 `?token=...` 再打开即可。落地即已登录为 `admin`，随即设置密码。链接在每次启动时重新铸造，所以一次重启就会作废你正看着的那条，并打印一条新的。
+那条 URL 里的 `localhost` 是服务端对自己的称呼。按上面的回环发布，它同时也是你的，因此在运行 Docker 的那台机器上原样打开即可；若你已把容器发布到网络上，则把 `localhost` 换成你实际访问它所用的主机名或 IP。两种情况都要保留整段 `?token=...`。落地即已登录为 `admin`，随即设置密码。链接在每次启动时重新铸造，所以一次重启就会作废你正看着的那条，并打印一条新的。
 
 如果从日志里读链接不适合你的场景，也可以直接把密码钉死——但必须**在首次启动之前**：
 
@@ -97,7 +97,7 @@ Agent 的 `exec_command` 跑的一切都发生在**这个容器内部**，用的
 镜像不带编译器，Node 之外也不带其他语言运行时。临时用一下，在容器里 `apt-get install` 是可行的，但下一次 `docker pull` 就没了；凡是要长期依赖的，构建一个派生镜像：
 
 ```dockerfile
-FROM ghcr.io/prism-shadow/penguin-harness:latest
+FROM hiyouga/penguinharness:latest
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep \
     && rm -rf /var/lib/apt/lists/*
@@ -113,7 +113,7 @@ USER penguin
 | 变量 | 在本镜像中 |
 | --- | --- |
 | `PENGUIN_HOME` | `/data`——除非同时改卷的挂载点，否则不要改 |
-| `HOST` | `0.0.0.0`——容器自己的命名空间，对外由 `-p` 决定 |
+| `HOST` | `0.0.0.0`——容器自己的命名空间；宿主机这一侧由 `-p` 决定，示例把它留在回环上 |
 | `PORT` | `7364`；改它会连带把健康检查一起移过去 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 钉死初始管理员密码，仅首次启动生效（见上文） |
 | `PENGUIN_TRUST_PROXY` | 在终结 TLS 的反向代理之后设为 `1`，使会话 Cookie 带上 `Secure` |

@@ -154,11 +154,12 @@ pnpm test:e2e                                        # core live-model e2e, need
   GitHub's auto-generated notes.
 - **The official image publishes from the release workflow**, in a `docker` job gated on
   `publish-npm`: it installs the tag's published `@prismshadow/penguin-cli` and pushes
-  `ghcr.io/prism-shadow/penguin-harness` for `linux/amd64` and `linux/arm64`. The build
-  and publish steps live in `.github/workflows/docker.yml`, which a PR touching the
-  `Dockerfile`, `docker/` or that workflow also runs as an amd64 smoke build. The GHCR
-  package is created private on its first push — link it to this repository and make it
-  public once, by hand.
+  Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. The build and
+  publish steps live in `.github/workflows/docker.yml`, which a PR touching the
+  `Dockerfile`, `docker/` or that workflow also runs as an amd64 smoke build. The push
+  needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets — the latter a
+  Docker Hub access token with read/write scope on that repository — and the Docker Hub
+  repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
   `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release

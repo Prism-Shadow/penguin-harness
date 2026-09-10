@@ -176,11 +176,11 @@ penguin web        # start the service and open http://127.0.0.1:7364
 ### 🐳 Docker
 
 ```bash
-docker run -d --name penguin -p 7364:7364 -v penguin-data:/data ghcr.io/prism-shadow/penguin-harness:latest
-docker logs penguin       # the first-login link, with localhost replaced by your host
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
+docker logs penguin       # the first-login link, openable as it stands on this machine
 ```
 
-The official image runs the same server on `0.0.0.0:7364` with its data root on the `/data` volume, as an unprivileged user, for `linux/amd64` and `linux/arm64`. Compose file and the full deployment notes — reverse proxies, upgrades, the rescue path — are in the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
+The official image runs the same server on `0.0.0.0:7364` with its data root on the `/data` volume, as an unprivileged user, for `linux/amd64` and `linux/arm64`. The example publishes the port on the host's loopback, so the Web App answers only on the machine running Docker (`http://localhost:7364`); to reach it from a network, publish on all interfaces instead (`-p 7364:7364`), preferably behind a reverse proxy that terminates TLS. Compose file and the full deployment notes — reverse proxies, upgrades, the rescue path — are in the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
 
 <details>
 <summary><b>📴 Offline install (air-gapped machines)</b></summary>

@@ -7,7 +7,7 @@
 
 [中文版](2026-09-04-official-docker-image.zh.md)
 
-PenguinHarness gained an official container image, `ghcr.io/prism-shadow/penguin-harness`, published for `linux/amd64` and `linux/arm64` by a new `docker` job in the release workflow and tagged `X.Y.Z`, `X.Y`, plus `latest` while the tag is GitHub's current latest Release. It runs `penguin server` on `0.0.0.0:7364` with the data root on a `/data` volume, so a deployment is one container and one volume.
+PenguinHarness gained an official container image, Docker Hub `hiyouga/penguinharness`, published for `linux/amd64` and `linux/arm64` by a new `docker` job in the release workflow and tagged `X.Y.Z`, `X.Y`, plus `latest` while the tag is GitHub's current latest Release. It runs `penguin server` on `0.0.0.0:7364` with the data root on a `/data` volume, so a deployment is one container and one volume. The compose file and every documented `docker run` publish the port on the host's loopback (`127.0.0.1:7364:7364`), which leaves a fresh deployment reachable only from the machine running Docker; opening it to a network is an explicit choice, documented alongside the reverse-proxy notes.
 
 ## Details
 
