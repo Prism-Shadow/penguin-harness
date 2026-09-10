@@ -207,7 +207,6 @@ export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
  */
 export const HMR_TEST_PLUGINS_RESOURCE_ID = "platform.pluginsInjected";
 
-
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
  * live-object contracts it parks by ID-prefix group (`terminal` covers every `terminal:*`
