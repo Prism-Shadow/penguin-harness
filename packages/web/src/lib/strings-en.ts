@@ -1185,7 +1185,6 @@ export const en: Strings = {
       "Publish the apps built in your conversations here; check their status, restart or stop them any time",
     /** Icon-only refresh button (re-probes every status). */
     refresh: "Refresh statuses",
-    create: "New app",
     searchPlaceholder: "Search apps",
     filterAll: "All",
     statusNames: {
@@ -1218,7 +1217,7 @@ export const en: Strings = {
       "The original session was deleted, so the request cannot be sent; register the app again from a new session",
     emptyTitle: "No apps in the App Center yet",
     emptyDesc:
-      "Apps built in conversations register themselves here through the app-center skill; you can also have the AI create one from scratch.",
+      "Apps built in conversations register themselves here through the app-center skill; you can also create one from scratch, or register one that is already running.",
     noMatch: "No apps match",
     invalidFiles: "Registry files that could not be parsed (skipped)",
     aiTitle: "Create an app with AI",

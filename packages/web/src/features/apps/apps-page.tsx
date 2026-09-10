@@ -40,7 +40,7 @@ import {
 } from "../../components/ui/session-row-menu";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { AiCreateButton, AiCreateModal, CreateMenuButton } from "../ai-create";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { AppFormModal } from "./app-form-modal";
 import {
   APP_KIND_ICONS,
@@ -173,11 +173,7 @@ export function AppsPage() {
               <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
             </Button>
             {isOwner && (
-              <CreateMenuButton
-                label={S.apps.create}
-                onAi={() => setAiOpen(true)}
-                onManual={() => setForm({ app: null })}
-              />
+              <CreateButtons onAi={() => setAiOpen(true)} onManual={() => setForm({ app: null })} />
             )}
           </div>
         </div>
@@ -216,7 +212,14 @@ export function AppsPage() {
             title={S.apps.emptyTitle}
             description={S.apps.emptyDesc}
             {...(isOwner
-              ? { action: <AiCreateButton variant="primary" onClick={() => setAiOpen(true)} /> }
+              ? {
+                  action: (
+                    <CreateButtons
+                      onAi={() => setAiOpen(true)}
+                      onManual={() => setForm({ app: null })}
+                    />
+                  ),
+                }
               : {})}
           />
         ) : visible.length === 0 ? (

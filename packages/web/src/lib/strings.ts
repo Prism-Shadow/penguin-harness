@@ -1155,7 +1155,6 @@ export const zh = {
     subtitle: "把会话里做出来的应用发布到这里，随时查看状态、重启或停止",
     /** Icon-only refresh button (re-probes every status). */
     refresh: "刷新状态",
-    create: "新建应用",
     searchPlaceholder: "搜索应用",
     filterAll: "全部",
     statusNames: {
@@ -1187,10 +1186,10 @@ export const zh = {
     sessionMissing: "原会话已删除，无法发送；请在新会话里重新登记该应用",
     emptyTitle: "应用中心还没有应用",
     emptyDesc:
-      "在对话里做出来的应用会通过 app-center 技能自动登记到这里；也可以让 AI 从头创建一个。",
+      "在对话里做出来的应用会通过 app-center 技能自动登记到这里；也可以在这里从头创建一个，或登记一个已经在跑的应用。",
     noMatch: "没有匹配的应用",
     invalidFiles: "无法解析的登记文件（已跳过）",
-    aiTitle: "让 AI 创建应用",
+    aiTitle: "用 AI 创建应用",
     aiDesc: "描述你想做的应用，智能体会在新对话里构建、运行并登记到应用中心。",
     aiPlaceholder: "描述你想做的应用…",
     aiExamples: [
