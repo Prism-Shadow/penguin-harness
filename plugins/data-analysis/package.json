@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/data-analysis",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
   "license": "Apache-2.0",
   "repository": {

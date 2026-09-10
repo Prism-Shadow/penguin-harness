@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.10: an upgraded file browser, adjustable compaction timing, hooks, and a Docker image"
+title: "PenguinHarness 0.2.11: an upgraded file browser, adjustable compaction timing, hooks, and a Docker image"
 date: 2026-09-10
 category: news
 excerpt: The conversation grew a workbench. The Files panel became a two-pane browser with in-place editing and version-checked saves, the context ring now measures against the point compaction actually fires and its threshold is a cutter you drag, a shortcuts ball fans the dock open from the edge of the chat, and scheduled tasks moved in beside it. Hooks became a capability of the loop itself, with goal mode and continual learning shipping as installable plugins. An official Docker image makes a server one `docker run`, and DeepSeek V4.1 Flash is the model a new Project starts on.
 ---
 
-PenguinHarness 0.2.10 turns the dock into a workbench: editable files, a movable compaction trigger, scheduled tasks, and an edge shortcut ball. Hooks become an agent-loop capability, an official container image simplifies server deployment, and the model catalog expands.
+PenguinHarness 0.2.11 turns the dock into a workbench: editable files, a movable compaction trigger, scheduled tasks, and an edge shortcut ball. Hooks become an agent-loop capability, an official container image simplifies server deployment, and the model catalog expands.
 
 ## The Files panel is a browser you can type into
 
@@ -117,4 +117,4 @@ penguin web
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-Full detail for every change is in [`changelog/0.2.10/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.10).
+0.2.11 is a rebuild of 0.2.10 with electron-builder 26.16.1, restoring signed macOS installer builds; 0.2.10 itself never received installers or a Release page. Full details for every change are in [`changelog/0.2.10/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.10).
