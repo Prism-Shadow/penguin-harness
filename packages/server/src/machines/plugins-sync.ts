@@ -19,8 +19,9 @@
  * WHAT A MACHINE IS HANDED is what the Project asks of THAT machine: the shared `[plugins]`
  * table plus the machine's own `[plugins.<machineId>]` table, its entry winning. Over there
  * it lands as the Project's shared table — the machine runs it, it does not re-share it. A
- * plugin the machine is not asked for is never sent there; one it is asked for and does not
- * list yet is added by that machine's own POST, which takes only what its build ships.
+ * plugin the machine is not asked for is never sent, so it is never downloaded there; one it
+ * is asked for and does not have is installed by that machine's own POST, which fetches it
+ * from npm unless its build ships it.
  *
  * The list travels inside the tunnel to the machine's own `PUT /plugins/installed`, an
  * ordinary authenticated call rather than a far-side script: that endpoint validates, writes
