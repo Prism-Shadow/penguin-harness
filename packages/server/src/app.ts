@@ -295,11 +295,28 @@ export async function bootAppDeps(
   return { config, db, channels, hmr, desktop, lifecycle, tree };
 }
 
+/**
+ * The layer's log handle: whichever platform is current writes the line, and the console
+ * does before there is one. Resolved per line through the host, so a swap changes where the
+ * lines go without the layer holding any generation's object.
+ */
+function platformLog(hmr: ServerHmrHost): (line: string) => void {
+  return (line) => {
+    void hmr
+      .ensure()
+      .then((instance) => {
+        if (typeof instance.api.log === "function") instance.api.log(line);
+        else console.log(line);
+      })
+      .catch(() => console.log(line));
+  };
+}
+
 /** Assembles the Hono app (does not listen on a port). */
 export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const { tree } = boot;
   const errors = tree.api<Errors>("ObservabilityModule", "Errors");
-  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
+  const log = platformLog(boot.hmr);
   const settings = tree.api<Settings>("SettingsModule", "Settings");
   const access = tree.api<Access>("ProjectsModule", "Access");
   const authService = tree.api<Auth>("IdentityModule", "Auth");
@@ -332,7 +349,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     const start = performance.now();
     await next();
     const ms = Math.round(performance.now() - start);
-    log.line(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
+    log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
