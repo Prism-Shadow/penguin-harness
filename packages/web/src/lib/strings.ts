@@ -1375,7 +1375,6 @@ export const zh = {
     authors: "作者",
     license: "许可证",
     copySpecifier: "复制包名",
-    copied: "已复制",
     installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
