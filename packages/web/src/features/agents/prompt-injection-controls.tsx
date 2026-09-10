@@ -1,24 +1,29 @@
 /**
- * Shared prompt-injection controls for the Skills / Vault / Schedules tabs, mirroring the
- * Memory tab's layout: an enable-switch card (label + switch, the memory tab's exact card
- * shape) that writes immediately (so toggling never drags an unfinished prompt edit along),
- * an amber alert when the template lacks the feature's section placeholder — with one-click
- * insert, or one-click migration when the template still carries the legacy hardcoded
- * section — and an editable prompt section (mono textarea + placeholder-chip reference +
- * confirm-first save). The toggle and prompt govern prompt injection only — the feature
- * itself keeps working with the switch off (vault values still reach subprocesses, tasks
- * still fire, skills stay invocable).
+ * Shared enable-switch (and, where the feature has one, prompt) controls for the Skills /
+ * Vault / Schedules / Hooks tabs, mirroring the Memory tab's layout: an enable-switch card
+ * (label + switch, the memory tab's exact card shape) that writes immediately (so toggling
+ * never drags an unfinished prompt edit along), an amber alert when the template lacks the
+ * feature's section placeholder — with one-click insert, or one-click migration when the
+ * template still carries the legacy hardcoded section — and an editable prompt section (mono
+ * textarea + placeholder-chip reference + confirm-first save). On the three prompt features
+ * the toggle and prompt govern prompt injection only — the feature itself keeps working with
+ * the switch off (vault values still reach subprocesses, tasks still fire, skills stay
+ * invocable). Hooks is the one switch-only feature: its packages are scripts run at the loop's
+ * hook points rather than text in the context, so it supplies no prompt strings and gets the
+ * card alone — and its switch does govern behavior, deciding whether a new Session assembles
+ * any hooks at all.
  *
  * Exposed as a hook returning render slots (the useSaveConfirm convention) because the pieces
  * straddle the host tab's own content: the switch and alert sit above it, the prompt editor
  * below. The hook owns the config state; the tab seeds it via `applyConfig` from the
  * getAgentConfig response it loads in parallel with its own data. `canEdit` carries the host
- * tab's permission model (member-level on Skills, owner-only on Vault / Schedules).
+ * tab's permission model (member-level on Skills, owner-only on Vault / Schedules / Hooks).
  */
 import { useCallback, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import type {
   AgentConfigDto,
+  AgentHooksConfigDto,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
@@ -35,11 +40,19 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 
-export type PromptInjectionFeature = "skills" | "vault" | "schedules";
+export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
-/** The strings each feature section supplies (S.skills / S.vault / S.schedule); migrate/legacyTemplate exist only where a legacy hardcoded section does. */
-interface PromptInjectionStrings {
+/** What every feature supplies: the switch card's label, plus the two strings a switch-only feature needs in place of the prompt section's own wording. */
+interface ToggleStrings {
   enable: string;
+  /** Disclosed beside the label ("?"): what the switch decides and when a change lands. Omitted where the tab's own description already says it. */
+  enableHint?: string;
+  /** Toast after a successful flip; defaults to the agent-config wording, whose compaction clause only fits a prompt section. */
+  savedToast?: string;
+}
+
+/** Adds what a feature with an editable prompt supplies (S.skills / S.vault / S.schedule); migrate/legacyTemplate exist only where a legacy hardcoded section does. */
+interface PromptInjectionStrings extends ToggleStrings {
   templateMissing: string;
   legacyTemplate?: string;
   insertPlaceholder: string;
@@ -50,11 +63,11 @@ interface PromptInjectionStrings {
   promptPlaceholders: ReadonlyArray<readonly [string, string]>;
 }
 
-/** The three feature DTOs share this shape; `legacySectionPresent` is absent on schedules (it never had a hardcoded section). */
+/** The feature DTOs share this shape; everything but `enabled` is absent on the switch-only feature, and `legacySectionPresent` also on schedules (it never had a hardcoded section). */
 interface SectionConfigState {
   enabled: boolean;
-  prompt: string;
-  templateHasPlaceholder: boolean;
+  prompt?: string;
+  templateHasPlaceholder?: boolean;
   legacySectionPresent?: boolean;
 }
 
@@ -91,7 +104,7 @@ export function usePromptInjection({
 }: {
   agentId: string;
   feature: PromptInjectionFeature;
-  strings: PromptInjectionStrings;
+  strings: ToggleStrings | PromptInjectionStrings;
   /** The host tab's permission model: false renders everything read-only (switch disabled, buttons hidden, prompt not saveable). */
   canEdit: boolean;
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
@@ -112,13 +125,18 @@ export function usePromptInjection({
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
+  // A switch-only feature supplies no prompt strings: it renders neither the template alert
+  // nor the prompt editor, and there is nothing for the placeholder endpoints to insert.
+  const promptStrings: PromptInjectionStrings | null = "promptSection" in strings ? strings : null;
+
   // Stable so the host tab's load() can list it as a dependency without re-triggering itself.
   const applyConfig = useCallback(
     (config: AgentConfigDto) => {
-      const dto: AgentVaultConfigDto | AgentSkillsConfigDto | AgentSchedulesConfigDto =
+      const dto:
+        AgentVaultConfigDto | AgentSkillsConfigDto | AgentSchedulesConfigDto | AgentHooksConfigDto =
         config[feature];
       setState(dto);
-      setPrompt(dto.prompt);
+      setPrompt("prompt" in dto ? dto.prompt : "");
     },
     [feature],
   );
@@ -129,7 +147,9 @@ export function usePromptInjection({
       ? { config: { skills: patch } }
       : feature === "vault"
         ? { config: { vault: patch } }
-        : { config: { schedules: patch } };
+        : feature === "schedules"
+          ? { config: { schedules: patch } }
+          : { config: { hooks: { enabled: patch.enabled } } };
 
   const toggleEnabled = async (next: boolean) => {
     if (!projectId) return;
@@ -137,7 +157,7 @@ export function usePromptInjection({
     try {
       const res = await api.putAgentConfig(projectId, agentId, featurePatch({ enabled: next }));
       applyConfig(res.config);
-      toastSuccess(S.agent.savedTakesEffect);
+      toastSuccess(strings.savedToast ?? S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -154,7 +174,11 @@ export function usePromptInjection({
         ? api.insertSkillsPlaceholder
         : feature === "vault"
           ? api.insertVaultPlaceholder
-          : api.insertSchedulesPlaceholder;
+          : feature === "schedules"
+            ? api.insertSchedulesPlaceholder
+            : null;
+    // Only the alert strip calls this, and a switch-only feature has no alert strip.
+    if (insert === null) return;
     try {
       const dto = await insert(projectId, agentId);
       setState(dto);
@@ -182,7 +206,13 @@ export function usePromptInjection({
 
   const toggleCard = state !== null && (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{strings.enable}</p>
+      {/* The "?" sits inside the label so it modifies a title rather than standing alone (see info-popover.tsx). */}
+      <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800 dark:text-gray-200">
+        {strings.enable}
+        {strings.enableHint !== undefined && (
+          <InfoPopover label={strings.enable}>{strings.enableHint}</InfoPopover>
+        )}
+      </p>
       <Switch
         checked={state.enabled}
         onChange={(v) => void toggleEnabled(v)}
@@ -194,30 +224,36 @@ export function usePromptInjection({
   // Legacy templates get the migration wording (and the legacy strings always exist for the
   // features that can report legacySectionPresent); everything else gets the plain insert.
   const legacy = state?.legacySectionPresent === true;
-  const alertStrip = state !== null && !state.templateHasPlaceholder && (
+  const alertStrip = promptStrings !== null && state !== null && !state.templateHasPlaceholder && (
     <div
       className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
     >
       <p className="text-xs">
-        {legacy ? (strings.legacyTemplate ?? strings.templateMissing) : strings.templateMissing}
+        {legacy
+          ? (promptStrings.legacyTemplate ?? promptStrings.templateMissing)
+          : promptStrings.templateMissing}
       </p>
       {canEdit && (
         <Button size="sm" className="shrink-0" onClick={() => void insertPlaceholder()}>
-          {legacy ? (strings.migrate ?? strings.insertPlaceholder) : strings.insertPlaceholder}
+          {legacy
+            ? (promptStrings.migrate ?? promptStrings.insertPlaceholder)
+            : promptStrings.insertPlaceholder}
         </Button>
       )}
     </div>
   );
 
-  const promptSection = state !== null && (
+  const promptSection = promptStrings !== null && state !== null && (
     <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
       <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
-        {strings.promptSection}
-        <InfoPopover label={strings.promptSection}>{strings.promptSectionHint}</InfoPopover>
+        {promptStrings.promptSection}
+        <InfoPopover label={promptStrings.promptSection}>
+          {promptStrings.promptSectionHint}
+        </InfoPopover>
       </h3>
       <Textarea
         ref={promptRef}
-        label={strings.promptLabel}
+        label={promptStrings.promptLabel}
         mono
         size="sm"
         rows={12}
@@ -229,7 +265,7 @@ export function usePromptInjection({
       <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
         <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
         <ul className="space-y-1">
-          {strings.promptPlaceholders.map(([token, desc]) => (
+          {promptStrings.promptPlaceholders.map(([token, desc]) => (
             <li key={token} className="flex items-center gap-3 text-xs">
               <button
                 type="button"

@@ -300,7 +300,7 @@ export function AgentSettingsPage() {
             </div>
           )}
           {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "hooks" && <HooksTab agentId={agentId} />}
+          {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "schedules" && (
             <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />

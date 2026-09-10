@@ -1289,8 +1289,6 @@ export const en: Strings = {
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop hook"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} hook`,
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
     detailSkills: "Skills",
@@ -1314,18 +1312,62 @@ export const en: Strings = {
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task; uninstalling deletes the whole package directory.",
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
     agentTabEmpty: "No hook packages installed yet",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+    exportHook: "Export",
+    importHook: "Import hook",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews every script and installs the package on this agent — more reliable than a bare upload.",
+    importSourceLabel: "Hook source",
+    importSourceHint:
+      "A URL, a GitHub repository, a local path, a description, or another tool's hook config (such as the hooks block of a Claude Code settings.json)",
+    importSourcePlaceholder:
+      'https://…, /path/to/hooks, or "write a stop hook that runs after every task…"',
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `Import ${s} as a hook package.`,
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a hook package zip",
+    importUploadDesc:
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An import takes effect at once: while this agent has hooks on, its scripts run on this machine at every hook point, so import only what you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Hook package installed",
+    importOverwriteTitle: "Overwrite installed hook package",
+    importOverwriteBody: (name: string): string =>
+      `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY-MM-DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "Enable hooks",
+      enableHint:
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+      savedToast: "Saved — takes effect from the next turn",
+    },
   },
 
   skills: {
@@ -2638,8 +2680,9 @@ Scenarios:
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
-        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
+      hook_too_large: "This hook package exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",

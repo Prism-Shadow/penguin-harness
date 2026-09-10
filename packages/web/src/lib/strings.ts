@@ -1264,8 +1264,6 @@ export const zh = {
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop 钩子"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} 钩子`,
     /** Search box of the create dialog's plugin picker. */
     searchPlaceholder: "搜索插件",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
@@ -1290,17 +1288,60 @@ export const zh = {
       `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后；卸载会删除整个钩子包目录。",
+      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
     agentTabEmpty: "尚未安装任何钩子包",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "启用钩子的开关仅 Project owner 可用。",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
+    exportHook: "打包导出",
+    importHook: "导入钩子",
+    importChatTitle: "推荐：让 Agent 在对话中导入",
+    importChatWhy:
+      "Agent 会通读来源、逐个审查脚本，再把钩子包安装到该 Agent 上，比直接上传更可靠。",
+    importSourceLabel: "钩子来源",
+    importSourceHint:
+      "支持 URL / GitHub 仓库 / 本地路径 / 一段描述，或其他工具的钩子配置（如 Claude Code settings.json 的 hooks 块）",
+    importSourcePlaceholder: "https://…、/path/to/hooks，或「写一个 stop 钩子：每次任务结束后…」",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<来源>",
+    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `把 ${s} 导入为钩子包。`,
+    importCopyPrompt: "复制 Prompt",
+    importOpenChat: "打开新对话",
+    importUploadTitle: "上传钩子包 zip",
+    importUploadDesc:
+      "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。导入即生效：只要该 Agent 启用了钩子，其脚本就会在本机的钩子点运行，请只导入可信的包。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "钩子包已安装",
+    importOverwriteTitle: "覆盖已安装钩子包",
+    importOverwriteBody: (name: string): string =>
+      `钩子包「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
+    importOverwriteAction: "覆盖安装",
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
+        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY-MM-DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。',
+        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点则是 scratchpad_dir 与 prompt；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
+        `把它安装到 Project「${projectId}」中 Agent「${agentId}」的 agent_state/hooks/<name>/ 目录（目录名即包名，须匹配 ^[A-Za-z0-9_-]+$），最后向我说明它做什么、在哪个钩子点触发。`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `确定从 ${agent} 卸载钩子包 ${name} 吗？其全部脚本（含本地改动）将被删除。`,
     uninstalledToast: (name: string, agent: string): string => `已从 ${agent} 卸载钩子包 ${name}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "启用钩子",
+      enableHint:
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+      savedToast: "已保存，自下一轮对话起生效",
+    },
   },
 
   skills: {
@@ -2598,8 +2639,10 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
-      goal_plugin_not_installed: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
+      goal_plugin_not_installed:
+        "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
+      hook_too_large: "该钩子包过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
       not_pending: "该插话已随本轮送达模型，无法撤回。",
       follow_up_started: "该跟进消息已开始发送，无法撤回。",

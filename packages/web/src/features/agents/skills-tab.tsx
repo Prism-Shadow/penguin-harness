@@ -19,7 +19,6 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useNavigate } from "react-router";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -40,14 +39,14 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { useAiBridge } from "../ai-create";
+import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 
-/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
-const UPLOAD_LABEL_CLASS =
+/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label; the Hooks tab's upload label borrows it. */
+export const UPLOAD_LABEL_CLASS =
   "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
   "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
   "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
@@ -71,10 +70,9 @@ export function SkillsTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const navigate = useNavigate();
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
-  const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
+  const { currentProject, agents, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
@@ -125,42 +123,11 @@ export function SkillsTab({
   const agent = agents.find((a) => a.agentId === agentId);
   const agentName = agent ? agentDisplayName(agent) : agentId;
 
-  /**
-   * "Export as zip": fetch the archive and save it via a temporary object-URL anchor.
-   * The codebase's other downloads are bare `<a href download>` anchors (snapshot export,
-   * trace download), but a bare anchor would save the error JSON as a file when the
-   * request fails — fetching first lets failures surface as a toast instead. The JSON-only
-   * api client can't carry binary, hence the raw fetch (errors re-wrapped as ApiError so
-   * apiErrorText localizes by code as usual).
-   */
+  /** "Export as zip": the shared archive download (archive-download.ts); a failure surfaces as a toast. */
   const exportSkill = async (name: string) => {
     if (!projectId) return;
     try {
-      const res = await fetch(api.agentSkillArchiveUrl(projectId, agentId, name));
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: { code?: string; message?: string };
-        } | null;
-        throw new ApiError(
-          res.status,
-          body?.error?.code ?? "unknown",
-          body?.error?.message ?? S.common.unknownError,
-        );
-      }
-      // The server's Content-Disposition is the authority on the filename (it appends
-      // -v<version> when the frontmatter declares one explicitly); <name>.zip is only
-      // the fallback for a missing/unparseable header.
-      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(
-        res.headers.get("content-disposition") ?? "",
-      )?.[1];
-      const url = URL.createObjectURL(await res.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = encoded ? decodeURIComponent(encoded) : `${name}.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name), name);
     } catch (e) {
       toastError(apiErrorText(e));
     }
@@ -203,18 +170,14 @@ export function SkillsTab({
   const promptCopy = useCopied();
 
   /**
-   * "Open a new chat" with this Agent: the same draft-state entry as the agents page
-   * "New Chat" button. A non-empty source goes through the AI bridge instead, which prefills
-   * the composer with the generated install prompt (parking typed-but-unsent draft text
-   * first) and clears a stale handoff target and skill pre-selection along with it.
+   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
+   * install prompt (parking typed-but-unsent draft text first) and clears a stale handoff
+   * target and skill pre-selection along with it. Disabled without a source, like the copy
+   * button — a blank chat would drop the prompt the dialog just built.
    */
   const openChat = () => {
-    if (trimmedSource) {
-      openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
-      return;
-    }
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+    if (trimmedSource === "") return;
+    openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
   };
 
   /**
@@ -394,7 +357,12 @@ export function SkillsTab({
                   {S.skills.importCopyPrompt}
                 </Button>
                 <CopiedStatus copied={promptCopy.copied} />
-                <Button size="sm" variant="primary" onClick={openChat}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={trimmedSource === ""}
+                  onClick={openChat}
+                >
                   {S.skills.importOpenChat}
                 </Button>
               </div>

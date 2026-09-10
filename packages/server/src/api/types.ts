@@ -968,6 +968,17 @@ export interface AgentSchedulesConfigDto {
   templateHasPlaceholder: boolean;
 }
 
+/**
+ * Hook config, edited on the Hooks tab. One Agent-level switch and no prompt: hook packages
+ * are scripts run at the loop's hook points, not text injected into the context. `enabled`
+ * reports the effective value (a config with no `hooks` section reads as enabled, matching
+ * core).
+ */
+export interface AgentHooksConfigDto {
+  /** Whether a Session created from now on runs the installed hook packages (they stay installed either way). */
+  enabled: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -988,6 +999,7 @@ export interface AgentConfigDto {
   vault: AgentVaultConfigDto;
   skills: AgentSkillsConfigDto;
   schedules: AgentSchedulesConfigDto;
+  hooks: AgentHooksConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -1042,6 +1054,8 @@ export interface AgentConfigUpdateRequest {
     vault?: { enabled?: boolean; prompt?: string };
     skills?: { enabled?: boolean; prompt?: string };
     schedules?: { enabled?: boolean; prompt?: string };
+    /** The Agent-level hook switch; it has no prompt half. */
+    hooks?: { enabled?: boolean };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
@@ -3241,6 +3255,21 @@ export interface AgentSkillsResponse {
 /** GET /api/projects/:p/agents/:a/hooks: hook packages installed on this Agent; DELETE …/hooks/:name uninstalls one (204). */
 export interface AgentHooksResponse {
   hooks: HookItem[];
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/hooks/archive: install one hook package from an uploaded zip.
+ * Layout: hooks.json and its scripts at the zip root, or exactly one top-level directory
+ * containing them (the directory name is then the package name). 201 returns the refreshed
+ * installed list (AgentHooksResponse); an already-installed name without `overwrite` is 409
+ * `hook_exists`. GET …/hooks/:name/archive is the matching export: the installed directory as
+ * a zip attachment, which round-trips through this POST.
+ */
+export interface HookArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace an installed package of the same name instead of answering 409. */
+  overwrite?: boolean;
 }
 
 /**

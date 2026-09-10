@@ -51,6 +51,7 @@ import type {
   AgentModelConfigDto,
   AgentCompactionConfigDto,
   AgentMemoryConfigDto,
+  AgentHooksConfigDto,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
@@ -149,6 +150,7 @@ export class AgentConfigService {
     const vault = asRecord(parsed.vault);
     const skills = asRecord(parsed.skills);
     const schedules = asRecord(parsed.schedules);
+    const hooks = asRecord(parsed.hooks);
     const tools = asRecord(parsed.tools);
 
     let agentsMd = "";
@@ -212,6 +214,9 @@ export class AgentConfigService {
       prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
       templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
     };
+    // The hook switch has no prompt half and no template fact: hook packages are scripts run
+    // at the loop's hook points, never text in the context.
+    const hooksDto: AgentHooksConfigDto = { enabled: hooks.enabled !== false };
     // Kernel stamp: reported literally (null = predates the mechanism), with the current
     // generation and the outdated verdict beside it, so the client renders the update hint
     // without knowing core's KERNEL_VERSION.
@@ -231,6 +236,7 @@ export class AgentConfigService {
       vault: vaultDto,
       skills: skillsDto,
       schedules: schedulesDto,
+      hooks: hooksDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
     };
@@ -370,6 +376,11 @@ export class AgentConfigService {
       const schedules = asRecord(cfg.schedules);
       setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
       setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
+    }
+    // The hook switch is the one section that governs behavior rather than the context: with
+    // it off a new Session assembles no hooks, while the packages stay installed on disk.
+    if (cfg.hooks !== undefined) {
+      setIfProvided(["hooks", "enabled"], optionalBoolean(asRecord(cfg.hooks), "enabled"));
     }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));

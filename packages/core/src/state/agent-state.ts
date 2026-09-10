@@ -647,6 +647,20 @@ export async function installPlugin(
   }
 }
 
+/** The manifest of the hook package directory `dir`, or null when there is no parseable `hooks.json` (then it is not a hook package). */
+async function readHookManifest(dir: string): Promise<HookManifest | null> {
+  try {
+    return JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8")) as HookManifest;
+  } catch {
+    return null;
+  }
+}
+
+/** Serializes a manifest the way every writer of `hooks.json` does (pretty-printed, trailing newline). */
+function hookManifestText(manifest: HookManifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
 /**
  * Installs a hook package as `hooks/<name>/`: the manifest as `hooks.json`, the plugin's
  * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
@@ -669,7 +683,7 @@ export async function installHook(
   for (const rel of Object.keys(files)) assertSafeSkillFile(rel);
   const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
   await replaceSkillDirectory(dir, [
-    ["hooks.json", `${JSON.stringify(manifest, null, 2)}\n`],
+    ["hooks.json", hookManifestText(manifest)],
     ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
     ...Object.entries(files),
   ]);
@@ -723,14 +737,8 @@ export async function listInstalledHooks(
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const dir = path.join(base, entry.name);
-    let manifest: HookManifest;
-    try {
-      manifest = JSON.parse(
-        await fs.readFile(path.join(dir, "hooks.json"), "utf8"),
-      ) as HookManifest;
-    } catch {
-      continue;
-    }
+    const manifest = await readHookManifest(dir);
+    if (manifest === null) continue;
     let icon: string | undefined;
     try {
       icon = await fs.readFile(path.join(dir, "icon.svg"), "utf8");

@@ -168,6 +168,7 @@ The four `compaction.*` fields are the one part of this file a running conversat
 | `skills.prompt` | built-in template | The `{{SKILLS}}` block, editable on the Skills tab — carries `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
 | `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
+| `hooks.enabled` | `true` | Whether a new Session runs the installed hook packages at the loop's hook points (with it off the packages stay installed and nothing consults them). The one section with no prompt half: hook packages are scripts, not context text |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that Server instead of trusting its `readOnlyHint`; see the MCP Servers section of [Tools & Approval](/tools) |
 

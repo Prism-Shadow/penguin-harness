@@ -186,6 +186,18 @@ export interface SchedulesConfig {
   prompt?: string;
 }
 
+/**
+ * Hook config (the `hooks` section of `system_config.yaml`). One Agent-level switch, toggled
+ * on the Web App's Hooks tab. No prompt: a hook package is scripts run at the loop's hook
+ * points, not text injected into the context. With it off the packages stay installed — listed
+ * and exportable — and a Session created from then on assembles no hooks at all.
+ * Docs: /docs/skills § "Hook packages".
+ */
+export interface HooksConfig {
+  /** Whether a new Session consults the installed hook packages; defaults to true. */
+  enabled?: boolean;
+}
+
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
 
@@ -397,6 +409,8 @@ export interface SystemConfig {
   skills?: SkillsConfig;
   /** Scheduled-tasks section injection (enabled by default; only reaches the prompt through `{{SCHEDULES}}`). */
   schedules?: SchedulesConfig;
+  /** Whether new Sessions run the installed hook packages (enabled by default; nothing prompt-side). */
+  hooks?: HooksConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
