@@ -25,7 +25,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import { publishCredentialsUpdated } from "./models.js";
+import { modelConfigChanged } from "./models.js";
 
 /** Flow ids are base64url (`randomBytes(32)`); reject anything else before it reaches the store. */
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -105,10 +105,13 @@ p { margin: 0; color: #4b5563; }
 `;
 }
 
-/** Credential change: same follow-up the models PUT performs, so live Sessions pick the key up. */
+/**
+ * Credential change: the same follow-up the models PUT performs — live Sessions pick the
+ * key up, open tabs unlock, and the machines this Project uses receive it. One helper for
+ * every write path, so a key minted here reaches a machine the same way one pasted does.
+ */
 function credentialsChanged(deps: AppDeps, projectId: string): void {
-  deps.manager.invalidateProjectRuntimes(projectId);
-  publishCredentialsUpdated(deps, projectId);
+  modelConfigChanged(deps, projectId);
 }
 
 /**

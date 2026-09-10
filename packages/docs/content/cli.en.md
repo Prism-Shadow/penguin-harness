@@ -309,6 +309,19 @@ Port / host priority: command-line option > the `PORT` / `HOST` env vars (includ
 
 Both run the service as a child process and stay behind as its supervisor: the terminal's Ctrl+C reaches the service, the command exits with the service's exit code, and when the service asks to be restarted — the Web App's **Restart and update** after `penguin update` has replaced the install — the supervisor relaunches it on the new release, printing a line as it does. A dev run through `tsx` cannot be relaunched by plain node and runs the service in-process instead; the Web App then tells the admin to restart by hand.
 
+### penguin server status
+
+Prints this data root's server state and the machine's own id, as one line of JSON. It answers whether or not a server is running — the data root is the source, not a live process:
+
+```bash
+penguin server status
+# {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
+```
+
+`running` requires both that the recorded pid is alive and that its port accepts a connection, so a recycled pid does not read as a live server. `machineId` is `null` until a server has started here at least once — the id is minted on first boot and never changes afterwards. The data root is selected by `PENGUIN_HOME` as usual.
+
+This is what the Machines page runs over ssh to ask a machine what it is doing, which is why the output is JSON rather than prose.
+
 ### penguin server reset-admin-password
 
 Offline rescue when the Web admin password is forgotten. Run it with the server stopped — it refuses while one is running on the data root:
@@ -318,6 +331,19 @@ penguin server reset-admin-password
 ```
 
 The built-in `admin` is returned to the unclaimed state — a random password nobody ever sees, and every one of admin's sessions revoked. Start the server again and open the first-login link it prints to set a new password; nothing is written down in the meantime. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
+
+### penguin server stop
+
+Stops the server on this data root and reports the outcome as one line of JSON:
+
+```bash
+penguin server stop
+# {"ok":true,"pid":41233}
+```
+
+A `SIGTERM` and a wait, never a `SIGKILL`: the server holds a database and may be finishing a task, and a caller deciding to destroy that on a timeout is not its call to make. A root with nothing serving it answers `{"ok":true}` — that is the outcome asked for, not a failure.
+
+The Machines page runs this over ssh when it restarts a machine. It is a command rather than a request to the server itself because the machine that needs stopping is usually the one whose platform is behind, and a platform route only exists once the machine already runs the build that has it.
 
 ## penguin version
 
