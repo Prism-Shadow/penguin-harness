@@ -3651,7 +3651,7 @@ export interface ContributionsResponse {
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
   specifier: string;
-  /** Whether the modules this package declares are all present in the running process. */
+  /** Whether the running process holds this package — its modules are in the tree. */
   active: boolean;
   /**
    * Where the package came from: shipped with the build (a hot push's assets, or the
@@ -3663,7 +3663,10 @@ export interface InstalledPlugin {
   modules: string[];
   /** Node names the package declares it stands in for. */
   replaces: string[];
-  /** Why the package could not be read at all (unresolvable, not a plugin package). */
+  /**
+   * Why the package is not running: unresolvable, not a plugin package, or a load that
+   * failed (an import that threw, a module name another plugin already took).
+   */
   error?: string;
 }
 
@@ -3676,6 +3679,6 @@ export interface InstalledPluginsResponse {
   shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
-  /** A listed plugin is not running: plugins load once per process, so a restart applies it. */
+  /** A listed plugin neither runs nor failed: this runtime could not re-assemble the App, so a restart applies it. */
   restartPending: boolean;
 }

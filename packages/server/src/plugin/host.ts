@@ -26,6 +26,8 @@ export interface LoadedPlugin {
 /** One host per server process; load order is the order the modules join the tree. */
 export class PluginHost {
   private readonly plugins: LoadedPlugin[] = [];
+  /** specifier → why a listed plugin is not here; what a surface reports beside its row. */
+  private readonly failures = new Map<string, string>();
 
   /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
   use(plugin: LoadedPlugin): void {
@@ -61,6 +63,16 @@ export class PluginHost {
   /** What is loaded, by specifier — how the next App reuses these objects instead of importing again. */
   entries(): ReadonlyMap<string, LoadedPlugin> {
     return new Map(this.plugins.map((e) => [e.specifier, e]));
+  }
+
+  /** Records why a listed plugin could not be loaded into this host. */
+  skip(specifier: string, reason: string): void {
+    this.failures.set(specifier, reason);
+  }
+
+  /** The listed plugins this host could not load, each with its reason. */
+  skipped(): ReadonlyMap<string, string> {
+    return this.failures;
   }
 
   /** Nothing to release at process exit: modules dispose with the App that created them. */

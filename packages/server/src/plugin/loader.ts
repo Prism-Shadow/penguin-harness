@@ -467,7 +467,11 @@ export async function loadPluginHost(
       result.failed.set(entry.specifier, err instanceof Error ? err.message : String(err));
     }
   }
+  // The reason stays on the host, not only in the log: the installed-plugins page reads it
+  // there, so a plugin that failed to load is shown with why rather than as a restart that
+  // would not help.
   for (const [specifier, reason] of result.failed) {
+    host.skip(specifier, reason);
     console.warn(`[plugins] skipped ${specifier}: ${reason}`);
   }
   return host;
