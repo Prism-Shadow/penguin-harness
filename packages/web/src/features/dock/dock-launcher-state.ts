@@ -67,7 +67,9 @@ const FAN_EDGE_PAD = 4;
  * pass is taken as-is. Each depends on the other — a wider radius trims the span, a
  * narrower span demands a wider radius — and the loop converges from below within three.
  */
-const FAN_RADIUS_PASSES = 6;
+const FAN_RADIUS_PASSES = 12;
+/** Growth below this (px) counts as converged: the ring then takes the radius the last pass asked for. */
+const FAN_RADIUS_TOLERANCE = 1e-3;
 
 /** How far the ball can be pulled off its edge mid-drag (px; the rubberband's asymptote). */
 const HORIZONTAL_REACH = 40;
@@ -304,8 +306,11 @@ function fanRadius(centerY: number, bodyHeight: number, count: number): number {
     const step = (end - start) / (count - 1);
     if (!(step > 0)) return radius;
     const needed = (FAN_ENTRY_SIZE + FAN_ENTRY_GAP) / (2 * Math.sin(step / 2));
-    if (needed <= radius) return radius;
     if (needed >= FAN_MAX_RADIUS) return FAN_MAX_RADIUS;
+    // The passes climb toward the fixed point from below, so the LAST radius asked for is the
+    // one to keep once the climb has all but stopped — returning the previous one would leave
+    // the chord a hair short of the gap.
+    if (needed <= radius + FAN_RADIUS_TOLERANCE) return Math.max(radius, needed);
     radius = needed;
   }
   return radius;

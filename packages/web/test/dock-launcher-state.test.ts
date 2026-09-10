@@ -269,7 +269,8 @@ describe("fan layout", () => {
       const previous = slots[i - 1]!;
       const slot = slots[i]!;
       expect(Math.hypot(slot.x - previous.x, slot.y - previous.y)).toBeGreaterThanOrEqual(
-        MIN_SPACING - 1e-6,
+        // The radius is solved iteratively; a thousandth of a pixel is the solver's own tolerance.
+        MIN_SPACING - 1e-3,
       );
     }
   }
