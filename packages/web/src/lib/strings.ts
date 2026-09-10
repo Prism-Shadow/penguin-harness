@@ -877,15 +877,14 @@ export const zh = {
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
     /**
-     * The header's "add models with AI" entry: the button label, the dialog's title and lead,
-     * the prompt box's placeholder, the examples and the fixed instruction tail. The tail
+     * The header's "Create with AI" entry: the dialog's title and lead, the prompt box's
+     * placeholder, the examples and the fixed instruction tail. The tail
      * follows the penguin-config skill — one `penguin config model add` per model with
      * `--provider` mandatory, the config file never touched by hand, `penguin config model list`
      * at the end — and carries the Project id and the data root, which the CLI would otherwise
      * take from its own defaults (the harness strips `PENGUIN_HOME` from a command's
      * environment, so the CLI's default root is not the one the server runs on).
      */
-    aiAdd: "让 AI 添加模型",
     aiAddTitle: "让 AI 添加模型分组",
     aiAddIntro:
       "把模型列表页的链接或服务信息交给智能体，它会用 penguin config 命令把这些模型加为一个分组。能直接列出模型的 OpenAI 兼容端点，用「新增分组 → 导入模型」更快。",

@@ -1,7 +1,7 @@
 /**
  * End-to-end test for seeding a new Agent with library plugins from the create dialog (locale
  * zh-CN):
- * - the Agents page's "创建 Agent" ("Create agent") dialog carries a Plugins field whose trigger
+ * - the Agents page's "手动创建" ("Create manually") dialog carries a Plugins field whose trigger
  *   reads as a placeholder until something is picked, and whose panel is the shared multi-select
  *   list — a search box, one toggle row per library plugin, and a bulk row with 全选 / 全不选
  *   ("select all" / "select none") beside the running count;
@@ -46,7 +46,7 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
   expect(libraryNames.length).toBeGreaterThan(2);
 
   await page.goto(`${BASE}/agents`);
-  await page.getByRole("button", { name: "创建 Agent" }).first().click();
+  await page.getByRole("button", { name: "手动创建", exact: true }).first().click();
 
   const idField = page.getByRole("textbox", { name: /^Agent id/ });
   await expect(idField).toBeVisible();
@@ -111,7 +111,7 @@ test("agent create: pick library plugins (select all / none, filtered) -> they a
 
   // —— Creating without picking anything leaves a plain Agent ——
   await page.goto(`${BASE}/agents`);
-  await page.getByRole("button", { name: "创建 Agent" }).first().click();
+  await page.getByRole("button", { name: "手动创建", exact: true }).first().click();
   await page.getByRole("textbox", { name: /^Agent id/ }).fill("plain_agent");
   await page.getByRole("button", { name: "创建", exact: true }).click();
   await page.waitForURL(/\/agents\/plain_agent$/);

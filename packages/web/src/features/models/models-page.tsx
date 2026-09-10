@@ -66,7 +66,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import { AiCreateButton, AiCreateModal } from "../ai-create";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -1032,9 +1032,10 @@ export function ModelsPage() {
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
               )}
             </h1>
-            {/* The header holds search plus the owner-only "sync presets" action (add-model
-                entry points live in each group header); on narrow screens (flex-wrap wraps it
-                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
+            {/* The header holds search, the owner-only "sync presets" action and the pair of
+                create buttons — the AI path and the group form, offered side by side (per-model
+                entry points still live in each group header); on narrow screens (flex-wrap wraps
+                it to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
             <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
               <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
                 <Input
@@ -1073,11 +1074,11 @@ export function ModelsPage() {
                 </Button>
               )}
               {isOwner && (
-                <AiCreateButton
+                <CreateButtons
                   size="sm"
-                  label={S.models.aiAdd}
                   disabled={rows === null}
-                  onClick={() => setAiAddOpen(true)}
+                  onAi={() => setAiAddOpen(true)}
+                  onManual={() => setAddGroupOpen(true)}
                 />
               )}
             </div>

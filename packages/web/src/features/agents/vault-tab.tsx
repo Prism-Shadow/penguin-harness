@@ -30,7 +30,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 import { toneStrip } from "../../lib/tone";
-import { AiCreateModal, AiWandButton } from "../ai-create";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -218,15 +218,15 @@ export function VaultTab({
         </div>
       )}
 
-      {/* Add entry points (owner): the form lives in a modal (submitting the same key name
-          overwrites the original value), and the wand beside it opens the AI path. */}
+      {/* Add entry points (owner): two separate buttons. The manual one opens the form in a modal
+          (submitting the same key name overwrites the original value), the AI one the prompt. */}
       {isOwner && entries !== null && (
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="primary" disabled={busy} onClick={openAdd}>
-            {S.vault.add}
-          </Button>
-          <AiWandButton disabled={busy} onClick={() => setAiAdding(true)} />
-        </div>
+        <CreateButtons
+          size="sm"
+          disabled={busy}
+          onAi={() => setAiAdding(true)}
+          onManual={openAdd}
+        />
       )}
 
       {promptSection}
@@ -283,13 +283,12 @@ export function VaultTab({
 
       {/* The AI path. Its lead is an honest warning: a value typed into the prompt is recorded in
           the conversation's Trace, whereas a value typed into the form never leaves the vault. The
-          footer follows that warning — "Edit in a new conversation" is the emphasised exit here, so
-          the prompt is read once more before it carries anything to a provider. */}
+          dialog's one exit already agrees with that warning — the prompt lands in a composer and is
+          read once more before anything carries it to a provider. */}
       <AiCreateModal
         open={aiAdding}
         onClose={() => setAiAdding(false)}
         title={S.vault.aiAddTitle}
-        primaryExit="edit"
         intro={
           <div className={`rounded-md border px-2.5 py-1.5 ${toneStrip.attention}`}>
             {S.vault.aiAddIntro}

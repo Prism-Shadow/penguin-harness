@@ -76,17 +76,13 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { Segmented } from "../../components/ui/segmented";
 import {
-  AiCreateButton,
   AiCreatePanel,
-  CreateMenuButton,
+  CreateButtons,
   composeAiPrompt,
   pickDefaultAgent,
   useAiBridge,
 } from "../ai-create";
-import type { CreateAction } from "../ai-create";
-import { recallCreateMode, rememberCreateMode, resolveCreateMode } from "./agent-create-mode";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -143,9 +139,9 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  /** Which path the create dialog shows: set on open (agent-create-mode.ts) and by the dialog's switch. */
-  const [createMode, setCreateMode] = useState<CreateAction>("manual");
-  /** The AI path's draft. The page owns it so a switch to the form and back keeps what was typed. */
+  /** Which path the create dialog shows: the button that opened it decides, and it stays there. */
+  const [createMode, setCreateMode] = useState<"manual" | "ai">("manual");
+  /** The AI path's draft, owned by the page so the dialog's reset on open is the only thing that clears it. */
   const [aiDraft, setAiDraft] = useState("");
   const { openAiChat } = useAiBridge();
   const [agentId, setAgentId] = useState("");
@@ -184,13 +180,12 @@ export function AgentsPage() {
   const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
 
   /**
-   * Open the create dialog in `mode` — an explicit choice is remembered for the session, no
-   * choice means the remembered one or the Project's first-run default (agent-create-mode.ts) —
-   * without keeping the previous draft: both paths always start empty.
+   * Open the create dialog on the path its button names. The dialog has no mode switch, so this
+   * is the only place `createMode` is set. Nothing carries over from a previous open: both paths
+   * always start empty.
    */
-  const openCreate = (mode?: CreateAction) => {
-    if (mode !== undefined) rememberCreateMode(mode);
-    setCreateMode(mode ?? resolveCreateMode(recallCreateMode(), agents));
+  const openCreate = (mode: "manual" | "ai") => {
+    setCreateMode(mode);
     setAiDraft("");
     setAgentId("");
     setName("");
@@ -207,23 +202,18 @@ export function AgentsPage() {
     setCreateOpen(true);
   };
 
-  const switchCreateMode = (mode: CreateAction) => {
-    rememberCreateMode(mode);
-    setCreateMode(mode);
-  };
-
   /**
-   * The AI path's two exits, the dialog's own footer: the draft plus the fixed tail goes to the
-   * Project's default agent in a new conversation, submitted on arrival or left in the composer.
+   * The AI path's one exit, the dialog's own footer: the draft plus the fixed tail lands in a new
+   * conversation's composer with the Project's default agent, and pressing Send stays the user's
+   * move on the next screen.
    */
   const aiTarget = pickDefaultAgent(agents);
   const aiReady = aiTarget !== null && aiDraft.trim() !== "";
-  const sendAiCreate = (autoSend: boolean) => {
+  const sendAiCreate = () => {
     if (aiTarget === null) return;
     openAiChat({
       agentId: aiTarget.agentId,
       text: composeAiPrompt(aiDraft, S.agent.aiCreateTail),
-      autoSend,
     });
     setCreateOpen(false);
   };
@@ -265,12 +255,13 @@ export function AgentsPage() {
   // Cross-page create intent (the sidebar's mode-dependent "new" button navigates here
   // with { create: true } route state — the chat draft's route-state idiom): open the
   // existing create dialog once, then strip the state so a refresh or back-nav doesn't
-  // reopen it.
+  // reopen it. That button names no path, so it opens the form; the AI path is one click
+  // away on the header the dialog sits over.
   const location = useLocation();
   const createIntent = (location.state as { create?: boolean } | null)?.create === true;
   useEffect(() => {
     if (!createIntent) return;
-    openCreate();
+    openCreate("manual");
     navigate(location.pathname, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createIntent]);
@@ -460,12 +451,7 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <CreateMenuButton
-              label={S.agent.create}
-              primaryAction={resolveCreateMode(recallCreateMode(), agents)}
-              onAi={() => openCreate("ai")}
-              onManual={() => openCreate("manual")}
-            />
+            <CreateButtons onAi={() => openCreate("ai")} onManual={() => openCreate("manual")} />
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -715,7 +701,12 @@ export function AgentsPage() {
               <EmptyState
                 title={S.agent.firstAgentTitle}
                 description={S.agent.firstAgentDesc}
-                action={<AiCreateButton variant="primary" onClick={() => openCreate("ai")} />}
+                action={
+                  <CreateButtons
+                    onAi={() => openCreate("ai")}
+                    onManual={() => openCreate("manual")}
+                  />
+                }
               />
             )}
           </div>
@@ -733,17 +724,11 @@ export function AgentsPage() {
               <Button size="sm" onClick={() => setCreateOpen(false)}>
                 {S.common.cancel}
               </Button>
-              <Button size="sm" disabled={!aiReady} onClick={() => sendAiCreate(false)}>
-                {S.aiCreate.editInChat}
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={!aiReady}
-                onClick={() => sendAiCreate(true)}
-              >
+              {/* One exit, naming where the prompt goes: the composer of a new conversation,
+                  where sending it is the user's own move. */}
+              <Button size="sm" variant="primary" disabled={!aiReady} onClick={sendAiCreate}>
                 <GlyphIcon d={MAGIC_WAND_ICON} />
-                {S.aiCreate.send}
+                {S.aiCreate.editInChat}
               </Button>
             </>
           ) : (
@@ -759,16 +744,8 @@ export function AgentsPage() {
         }
       >
         <div className="space-y-3">
-          {/* Both paths share one dialog, so a draft typed on the AI side survives a look at the form. */}
-          <Segmented
-            cols={2}
-            options={[
-              { value: "manual", label: S.aiCreate.manual },
-              { value: "ai", label: S.aiCreate.withAi },
-            ]}
-            value={createMode}
-            onChange={switchCreateMode}
-          />
+          {/* The dialog opens on the path its button named and stays there: no switch, so neither
+              path can be mistaken for a step of the other. */}
           {createMode === "ai" ? (
             <AiCreatePanel
               value={aiDraft}
