@@ -84,7 +84,10 @@ export function shortenPath(p: string): string {
  */
 export function previewArguments(name: string, argsJson: string): string {
   if (name === "exec_command") {
-    const cmd = extractStringField(argsJson, "cmd");
+    // The schema names `cmd`; core also runs a call carrying the text as `command` (its alias,
+    // see core's exec-command.ts), and a call that runs must preview — and be approved — as
+    // the command it is.
+    const cmd = extractStringField(argsJson, "cmd") ?? extractStringField(argsJson, "command");
     if (cmd !== null) return `$ ${cmd.value.replace(/\s+/g, " ").trim()}`;
   }
   const pathArg = pathArgument(name);

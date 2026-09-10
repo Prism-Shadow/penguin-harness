@@ -43,7 +43,7 @@ A tool only yields incremental `partial_tool_call_output` deltas; the Environmen
 - never-empty output (`[no output]` is substituted when a tool produced nothing);
 - `note` (e.g. the exit code) and images are appended outside the output budget, so the terminal marker survives even when long output is cut.
 
-Tools and the Environment never throw into the engine: errors collapse into `tool_call_output` messages the model can read and react to. See the [OmniMessage Protocol](/omni-message) for message structure.
+Tools and the Environment never throw into the engine: errors collapse into `tool_call_output` messages the model can read and react to. A call whose arguments do not fit the tool ends as `fatal` with a correction guide as its whole output: the fault, the argument names received with unknown ones called out, the tool's parameters restated from its schema, and the shape of a correct call — enough to repair the call from the output alone. See the [OmniMessage Protocol](/omni-message) for message structure.
 
 ### Recovering oversized output
 
@@ -112,7 +112,7 @@ The tools' arguments (explicit keys):
 ```ts
 // exec_command
 {
-  cmd: string;             // required: the shell command to run
+  cmd: string;             // required: the shell command to run (also accepted as `command`; the schema names only `cmd`)
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
   run_in_background?: boolean; // true = return process_id immediately; completion arrives as a user message

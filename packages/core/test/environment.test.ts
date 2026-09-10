@@ -185,6 +185,66 @@ describe("Environment.executeTool — basic file write", () => {
   });
 });
 
+describe("Environment.executeTool — exec_command reads `command` as `cmd`", () => {
+  it("runs a call that carries the shell text as `command`", async () => {
+    const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ command: "printf 'via-alias' > note.txt" }),
+          toolCallId: "call_alias",
+        }),
+      }),
+    );
+    const last = messages[messages.length - 1]!.payload as { type: string; stop_reason?: string };
+    expect(last.type).toBe("tool_call_output");
+    expect(last.stop_reason).toBe("completed");
+    expect(await readFileEventually(path.join(tmp, "note.txt"), "via-alias")).toBe("via-alias");
+    env.dispose();
+  });
+
+  it("runs `cmd` when both names are present", async () => {
+    const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({
+            cmd: "printf 'from-cmd' > note.txt",
+            command: "printf 'from-command' > note.txt",
+          }),
+          toolCallId: "call_both",
+        }),
+      }),
+    );
+    const last = messages[messages.length - 1]!.payload as { stop_reason?: string };
+    expect(last.stop_reason).toBe("completed");
+    expect(await readFileEventually(path.join(tmp, "note.txt"), "from-cmd")).toBe("from-cmd");
+    env.dispose();
+  });
+
+  it("explains a `command` of the wrong type as `cmd` received under its alias", async () => {
+    const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ command: 42 }),
+          toolCallId: "call_alias_type",
+        }),
+      }),
+    );
+    const last = messages[messages.length - 1]!.payload as { output: string; stop_reason?: string };
+    expect(last.stop_reason).toBe("fatal");
+    expect(last.output).toContain(
+      'argument "cmd" (received as "command") must be a string, but a number was received.',
+    );
+    expect(last.output).not.toContain("Not a parameter");
+    env.dispose();
+  });
+});
+
 describe("Environment.executeTool — vault env injection", () => {
   it("injects vault entries into the command env; hardened entries are not overridable", async () => {
     const env = new Environment({
@@ -1274,7 +1334,14 @@ describe("Environment.executeTool — robustness", () => {
     const last = messages[messages.length - 1]!;
     const payload = last.payload as { type: string; output: string };
     expect(payload.type).toBe("tool_call_output");
-    expect(payload.output).toContain("Missing required argument");
+    // The whole output is a correction guide: the fault, the names received, the schema's
+    // parameters, and the shape of a correct call (see tool-arguments.test.ts for the format).
+    expect(payload.output).toContain(
+      'exec_command was not run: required argument "cmd" is missing.',
+    );
+    expect(payload.output).toContain("Arguments received: workdir.");
+    expect(payload.output).toContain("- cmd (string, required");
+    expect(payload.output).toContain('Call exec_command again with "cmd" provided');
   });
 
   it("reports a non-zero exit code in the final output", async () => {

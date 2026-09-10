@@ -26,9 +26,27 @@ import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";
 import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { describeArgumentError, stringArgument } from "./tool-arguments.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
 export const EXEC_COMMAND_NAME = "exec_command";
+
+/**
+ * The argument names that carry the shell text, in the order the tool reads them: `cmd`, the
+ * schema's name, then `command`, accepted as an alias. Models trained on harnesses whose
+ * shell tool takes `command` emit that name even while reading a schema that says `cmd`, and
+ * a call rejected for it tends to be re-issued unchanged — the model believes it followed
+ * the schema — so one session can spend most of its calls on the same mistake. The schema
+ * itself keeps naming `cmd` alone. Every reader of the shell text goes through this list:
+ * the command policy screens exactly the text the tool runs (internal/command-policy.ts),
+ * and the Web App's and CLI's previews fall back to the alias the same way.
+ */
+export const EXEC_COMMAND_TEXT_ARGUMENTS: readonly string[] = ["cmd", "command"];
+
+/** The alias table for argument explanations: `command` is `cmd` under another name, not an unknown argument. */
+const EXEC_COMMAND_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  cmd: EXEC_COMMAND_TEXT_ARGUMENTS.slice(1),
+};
 
 /**
  * exec_command built-in tool: parses arguments, resolves workdir, and delegates to
@@ -61,11 +79,19 @@ export function createExecCommandTool(
         return { stopReason: "fatal" };
       }
 
-      const cmd = args["cmd"];
-      if (typeof cmd !== "string" || cmd.length === 0) {
-        yield delta(`Missing required argument "cmd" for ${definition.name}.`);
+      const text = stringArgument(args, EXEC_COMMAND_TEXT_ARGUMENTS);
+      if (text === undefined || text.value.length === 0) {
+        yield delta(
+          describeArgumentError(
+            definition,
+            args,
+            { argument: "cmd", kind: "missing" },
+            { aliases: EXEC_COMMAND_ALIASES },
+          ),
+        );
         return { stopReason: "fatal" };
       }
+      const cmd = text.value;
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.
       const rawWorkdir = args["workdir"];
       const workdir =
