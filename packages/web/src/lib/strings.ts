@@ -1742,20 +1742,17 @@ Benchmark：
     contextPartToolRequests: "工具请求",
     contextPartToolResults: "工具结果",
     contextTopTools: "工具用量 Top 5",
-    /** Panel header, under the used/threshold ratio: the model window, shown only when it is larger than the threshold. */
-    contextWindowIs: (n: string): string => `窗口 ${n}`,
+    /** Under the bar: the model window the bar is scaled to. */
+    contextWindowIs: (n: string): string => `最大上下文 ${n}`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
     contextTopFiles: "文件用量 Top 5",
     contextTopFilesHint:
-      "按每个文件经 read_file / edit_file / write_file 的调用与结果所占上下文排序（Workspace 内的文件按相对路径显示）",
-    /** The ranking switch's two segments, and the Files view's empty state. */
+      "按每个文件经 read_file / edit_file / write_file 的调用与结果所占上下文排序（悬停显示完整路径）",
+    /** The ranking switch: the group's accessible name, its two buttons, and the Files view's empty state. */
+    contextRankLabel: "切换排行",
     contextRankTools: "工具",
     contextRankFiles: "文件",
     contextNoFileTraffic: "本轮上下文没有文件读写",
-    /** Op counts beside a file row: how many calls of each file tool named it. */
-    contextFileReads: (n: number): string => `读取 ${n} 次`,
-    contextFileEdits: (n: number): string => `编辑 ${n} 次`,
-    contextFileWrites: (n: number): string => `写入 ${n} 次`,
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",
     contextBreakdownFailed: "读取上下文构成失败",

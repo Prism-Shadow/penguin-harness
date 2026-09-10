@@ -36,8 +36,8 @@
  * bar says how much model there is and where inside it the trigger sits — drawn as a dashed
  * cutter at the effective threshold. Making both read the threshold cost the bar its only
  * answer, since a bar that ends on the trigger point can no longer show the room past it. The
- * header carries the ring's figures (`used / threshold`, with the window named beside them when
- * it is larger), so nothing is lost by the bar keeping the other scale. While the panel is open
+ * header carries the ring's figures (`used / threshold`) and the bar names its own scale
+ * underneath itself, so neither number has to be inferred from the other. While the panel is open
  * the server's own reading of the threshold wins over the client's: both come from the same
  * derivation, so they differ only when the Agent's config changed after this page loaded. The
  * parts subdivide the filled run; their exact shares are the legend's job, since at low
@@ -61,15 +61,12 @@
  * the page, so there is never room below.
  */
 import { useEffect, useId, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
 import { getSessionContext } from "../../api/endpoints";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FILE_EDIT_ICON, FILE_ICON, FILE_WRITE_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import {
   MIN_COMPACTION_THRESHOLD,
@@ -82,12 +79,11 @@ import {
   thresholdFromPointer,
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { contextComposition } from "./context-parts";
-import type { ContextFileShare, ContextPartKey } from "./context-parts";
+import type { ContextPartKey } from "./context-parts";
 
 /**
  * Panel geometry. The width is applied inline rather than as a `w-*` class because the same
@@ -129,6 +125,12 @@ type RankingView = "tools" | "files";
  * a reader comparing contexts should not have to flip back to Files each time it opens.
  */
 let lastRankingView: RankingView = "tools";
+
+/** The switch's two buttons. The labels are thunks: `S` is a live binding swapped on locale change. */
+const RANKING_VIEWS: readonly { view: RankingView; label: () => string }[] = [
+  { view: "tools", label: () => S.chat.contextRankTools },
+  { view: "files", label: () => S.chat.contextRankFiles },
+];
 
 export function ContextGauge({
   now,
@@ -422,14 +424,6 @@ function ContextPanel({
           {unmeasured ? "—" : humanizeTokens(now)} / {humanizeTokens(basis)}
         </span>
       </div>
-      {/* The window, when the threshold does not reach it: the ratio above answers "how close to
-          compaction", and this answers "and how much model there is behind it" — a distinction
-          the header used to collapse by measuring against the window itself. */}
-      {windowTokens > basis && (
-        <p className="mt-0.5 text-right font-mono text-gray-400 dark:text-gray-500">
-          {S.chat.contextWindowIs(humanizeTokens(windowTokens))}
-        </p>
-      )}
 
       {unmeasured ? (
         <p className="mt-2 leading-relaxed text-gray-400 dark:text-gray-500">
@@ -490,8 +484,20 @@ function ContextPanel({
               />
             )}
           </div>
+          {/* The bar's scale, spelled out: the header's ratio is measured against the compaction
+              threshold, so without this the number the bar actually runs to appears nowhere. It
+              sits with the bar rather than with the legend below, and it goes invisible — not
+              away, so nothing shifts — while a threshold gesture is running, because the
+              cutter's pending value hangs into exactly this row. */}
+          <p
+            className={`mt-1 text-right font-mono text-gray-400 dark:text-gray-500 ${
+              pendingThreshold !== null ? "invisible" : ""
+            }`}
+          >
+            {S.chat.contextWindowIs(humanizeTokens(windowTokens))}
+          </p>
 
-          <ul className="mt-2 space-y-0.5">
+          <ul className="mt-1.5 space-y-0.5">
             {composition.parts.map((p) => (
               <ShareRow
                 key={p.key}
@@ -508,8 +514,9 @@ function ContextPanel({
           {composition.tools.length > 0 && (
             <>
               {/* The heading names the ranking on show and its tooltip says what it is ordered
-                  by; the switch beside it swaps both. A context with tool traffic but no file
-                  traffic keeps the switch, so the Files view can say so itself. */}
+                  by; the two text buttons beside it swap both, sized to the heading's own line so
+                  the switch reads as part of it. A context with tool traffic but no file traffic
+                  keeps the switch, so the Files view can say so itself. */}
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-gray-800">
                 <p
                   title={
@@ -519,16 +526,26 @@ function ContextPanel({
                 >
                   {ranking === "tools" ? S.chat.contextTopTools : S.chat.contextTopFiles}
                 </p>
-                <div className="w-24 shrink-0">
-                  <Segmented
-                    cols={2}
-                    value={ranking}
-                    onChange={pickRanking}
-                    options={[
-                      { value: "tools", label: S.chat.contextRankTools },
-                      { value: "files", label: S.chat.contextRankFiles },
-                    ]}
-                  />
+                <div
+                  role="group"
+                  aria-label={S.chat.contextRankLabel}
+                  className="flex shrink-0 items-center gap-0.5"
+                >
+                  {RANKING_VIEWS.map(({ view, label }) => (
+                    <button
+                      key={view}
+                      type="button"
+                      aria-pressed={ranking === view}
+                      onClick={() => pickRanking(view)}
+                      className={`rounded px-1 text-xs leading-4 transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 ${
+                        ranking === view
+                          ? "font-medium text-gray-700 dark:text-gray-200"
+                          : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      {label()}
+                    </button>
+                  ))}
                 </div>
               </div>
               {ranking === "tools" ? (
@@ -554,19 +571,11 @@ function ContextPanel({
                   {composition.files.map((f) => (
                     <ShareRow
                       key={f.path}
+                      label={f.name}
+                      // Two files can share a name; the path settles which is which on hover
+                      // rather than trailing after every row.
                       title={f.path}
-                      label={
-                        <>
-                          <span className="font-medium text-gray-700 dark:text-gray-200">
-                            {f.name}
-                          </span>
-                          {f.dir !== "" && (
-                            <span className="ml-1 text-gray-400 dark:text-gray-500">{f.dir}</span>
-                          )}
-                        </>
-                      }
                       mono
-                      meta={<FileOps ops={f.ops} />}
                       tokens={f.tokens}
                       percent={f.percent}
                       highlighted={hovered === `file:${f.path}`}
@@ -813,25 +822,22 @@ const PART_LABELS: Record<ContextPartKey, () => string> = {
   toolResults: () => S.chat.contextPartToolResults,
 };
 
-/** One `swatch · label · meta · ~tokens · percent` line, shared by the six parts and both rankings. */
+/** One `swatch · label · ~tokens · percent` line, shared by the six parts and both rankings. */
 function ShareRow({
   label,
   title,
   swatch,
-  meta,
   tokens,
   percent,
   mono = false,
   highlighted = false,
   onHover,
 }: {
-  label: ReactNode;
-  /** Tooltip of the label; a string label is its own. */
+  label: string;
+  /** Tooltip of the label, when it should say more than the label does; the label is its own otherwise. */
   title?: string;
   /** Legend colour of the matching bar segment; absent for the rankings, which have no segment. */
   swatch?: string;
-  /** A slot between the label and the figures: the file ranking's op counts. */
-  meta?: ReactNode;
   tokens: number;
   /** Already a whole percent (apportioned for the parts, rounded for the rankings) — not re-rounded here. */
   percent: number;
@@ -851,12 +857,11 @@ function ShareRow({
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
       )}
       <span
-        title={title ?? (typeof label === "string" ? label : undefined)}
+        title={title ?? label}
         className={`min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300 ${mono ? "font-mono" : ""}`}
       >
         {label}
       </span>
-      {meta}
       <span className="shrink-0 font-mono font-medium text-gray-900 dark:text-gray-100">
         ~{humanizeTokens(tokens)}
       </span>
@@ -864,31 +869,5 @@ function ShareRow({
         {percent}%
       </span>
     </li>
-  );
-}
-
-/**
- * The op counts beside a file row: a glyph and a count per file tool that named the file, zero
- * counts left out. The glyphs are the ones the file summary card and the memory-changes card
- * draw, so a read, an edit and a write look the same here as there.
- */
-function FileOps({ ops }: { ops: ContextFileShare["ops"] }) {
-  const counts = [
-    { key: "read", d: FILE_ICON, n: ops.read, title: S.chat.contextFileReads(ops.read) },
-    { key: "edit", d: FILE_EDIT_ICON, n: ops.edit, title: S.chat.contextFileEdits(ops.edit) },
-    { key: "write", d: FILE_WRITE_ICON, n: ops.write, title: S.chat.contextFileWrites(ops.write) },
-  ].filter((c) => c.n > 0);
-  return (
-    <span className="flex shrink-0 items-center gap-1.5 text-gray-400 dark:text-gray-500">
-      {counts.map((c) => (
-        <span key={c.key} title={c.title} className={`flex items-center ${ICON_GAP.tight}`}>
-          <GlyphIcon d={c.d} size={ICON_SIZE.inlineGlyph} />
-          <span aria-hidden className="font-mono">
-            {c.n}
-          </span>
-          <span className="sr-only">{c.title}</span>
-        </span>
-      ))}
-    </span>
   );
 }

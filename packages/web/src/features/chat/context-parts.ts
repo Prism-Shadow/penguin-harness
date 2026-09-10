@@ -58,10 +58,8 @@ export interface ContextToolShare extends ContextShare {
 export interface ContextFileShare extends ContextShare {
   /** The path as the server spells it: Workspace-relative inside the Workspace, else absolute with `~` for the home directory. */
   path: string;
-  /** The last segment of `path`, the row's lead. */
+  /** The last segment of `path`, and the whole of what the row prints — the path itself is the row's tooltip. */
   name: string;
-  /** Everything before `name`, without its trailing separator; empty for a bare file name. */
-  dir: string;
   /** How many `read_file` / `edit_file` / `write_file` calls named the file. */
   ops: { read: number; edit: number; write: number };
 }
@@ -107,7 +105,7 @@ export function contextComposition(
     tools: data.topTools.map((t) => ({ name: t.name, ...share(t.tokens) })),
     files: data.topFiles.map((f) => ({
       path: f.path,
-      ...splitFilePath(f.path),
+      name: splitFilePath(f.path).name,
       ops: f.ops,
       ...share(f.tokens),
     })),

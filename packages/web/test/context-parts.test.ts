@@ -89,7 +89,7 @@ describe("contextComposition", () => {
     expect(c.tools.reduce((n, t) => n + t.percent, 0)).toBeLessThan(100);
   });
 
-  it("scales the file ranking the same way and splits each path for display", () => {
+  it("scales the file ranking the same way and keeps each file's name for display", () => {
     const c = contextComposition(
       response({
         topFiles: [
@@ -103,7 +103,6 @@ describe("contextComposition", () => {
       {
         path: "src/state/config.ts",
         name: "config.ts",
-        dir: "src/state",
         ops: { read: 2, edit: 1, write: 0 },
         tokens: 12_500,
         percent: 25,
@@ -111,7 +110,6 @@ describe("contextComposition", () => {
       {
         path: "~/notes.md",
         name: "notes.md",
-        dir: "~",
         ops: { read: 1, edit: 0, write: 0 },
         tokens: 2500,
         percent: 5,

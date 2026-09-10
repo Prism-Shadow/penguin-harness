@@ -27,8 +27,8 @@ view, and the panel remembers the choice for the rest of the tab session.
   window for a model entry that declares none. 64k used against a 128k threshold on a 1M-window
   model now reads 50%, where it read 6% before. Amber past 80% and red past 95% follow the same
   basis.
-- The window has not disappeared from view: when it is larger than the threshold, the panel header
-  names it under the ratio.
+- The window has not disappeared from view: the bar names its own scale underneath itself, as
+  "Max context N", whenever the bar is drawn.
 - The panel's **bar** keeps the model window as its scale, because the two answer different
   questions: the ring says how close compaction is, the bar says how much model there is and
   where inside it the trigger sits. While the panel is open the server's own `compactionThreshold`
@@ -117,11 +117,13 @@ view, and the panel remembers the choice for the rest of the tab session.
   traffic.
 - A file inside the Session's Workspace is shown Workspace-relative; any other file is absolute,
   with the home directory shortened to `~`.
-- The Files view shows each file's name in bold with its directory muted and the full path on
-  hover, then how many reads, edits and writes named it, drawn with the file, pencil and page-plus
-  glyphs the file summary and memory-changes cards already use. Its token and percent columns are
-  the same shares of the whole context the Tools view shows. A context whose tools never touched a
-  file says "No file traffic in this context".
+- The Files view shows each file's name alone, in the same mono type as the Tools view; the full
+  path is the row's tooltip, which is what tells two files of the same name apart. Its token and
+  percent columns are the same shares of the whole context the Tools view shows. A context whose
+  tools never touched a file says "No file traffic in this context". The per-op counts stay in the
+  response and are not drawn.
+- The two views are picked by a pair of text buttons sitting on the ranking's heading line, sized
+  to it.
 - The six parts, `contextClosed` and `compactionThreshold` are unchanged.
 
 ## Core
