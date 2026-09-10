@@ -2512,6 +2512,16 @@ export interface TraceTaskStats {
    */
   tokens: { cacheRead: number; cacheWrite: number; output: number };
   /**
+   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
+   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
+   * price lookup the cost center applies to the usage row the same `token_usage` produced,
+   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
+   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
+   * no pricing or the file's head names no provider, and then absent from the response's
+   * total as well.
+   */
+  cost?: number;
+  /**
    * Total LLM generation duration for this turn (the denominator for output TPS; human
    * approval wait already deducted). The numerator is simply `tokens.output`: since
    * compaction forms its own turn, each turn's output tokens are just its own Requests'
@@ -2648,6 +2658,11 @@ export interface TraceAnalysisResponse {
    * see `TraceTaskStats.toolMs`.
    */
   toolMs: number;
+  /**
+   * The file's cost in USD: the sum of the turns' `cost` (compaction turns included, the
+   * scope every total here shares). Absent exactly when the turns carry no `cost`.
+   */
+  cost?: number;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
