@@ -300,7 +300,7 @@ export async function bootAppDeps(
  * does before there is one. Resolved per line through the host, so a swap changes where the
  * lines go without the layer holding any generation's object.
  */
-function platformLog(hmr: ServerHmrHost): (line: string) => void {
+export function platformLog(hmr: ServerHmrHost): (line: string) => void {
   return (line) => {
     void hmr
       .ensure()
