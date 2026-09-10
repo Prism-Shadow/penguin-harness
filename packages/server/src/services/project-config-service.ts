@@ -33,7 +33,8 @@ import {
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
-  parsePluginList,
+  parsePluginTable,
+  pluginTableToToml,
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
@@ -48,6 +49,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type {
+  PluginTable,
   CommandPolicyRule,
   LLMOutcome,
   ModelRef,
@@ -545,20 +547,20 @@ export class ProjectConfigService implements ProjectConfigStore {
     return this.getCommandPolicy(projectId);
   }
 
-  /** The plugin specifiers this Project asks for, in order; empty when it asks for none. */
-  async getPlugins(projectId: string): Promise<string[]> {
-    return parsePluginList((await this.readRaw(projectId)).plugins) ?? [];
+  /** The `[plugins]` table this Project asks for, in the file's order; empty when it asks for none. */
+  async getPlugins(projectId: string): Promise<PluginTable> {
+    return parsePluginTable((await this.readRaw(projectId)).plugins) ?? {};
   }
 
   /**
-   * Replaces this Project's plugin list (a declarative PUT, validated at the route).
-   * Read-modify-write like setCommandPolicy, so every other key survives. An empty list is
-   * written as an empty array rather than removed: "this Project asks for none" is a
+   * Replaces this Project's plugin table (a declarative PUT, validated at the route).
+   * Read-modify-write like setCommandPolicy, so every other key survives. An empty table is
+   * written as an empty table rather than removed: "this Project asks for none" is a
    * decision, and a reader cannot tell it from "never configured" if the key vanishes.
    */
-  async setPlugins(projectId: string, plugins: readonly string[]): Promise<string[]> {
+  async setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable> {
     const raw = await this.readRaw(projectId);
-    await this.writeRaw(projectId, { ...raw, plugins: parsePluginList([...plugins]) ?? [] });
+    await this.writeRaw(projectId, { ...raw, plugins: pluginTableToToml(plugins) });
     return this.getPlugins(projectId);
   }
 

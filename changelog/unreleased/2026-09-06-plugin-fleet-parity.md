@@ -12,7 +12,7 @@ Plugins were a per-deployment file that only took effect at process start. Neith
 
 ## The list belongs to a Project; the process runs the closure
 
-A Project's plugins live in its own config (`plugins` in `.project_config.toml`), beside its models — because machines are lent to Projects, so a Project's list is what says which machines a plugin has to reach. Loading is per process, though: there is one module tree. So what a deployment runs is the **closure**, the union over its Projects, and what a plugin contributes is visible to all of them. A row on the plugins page is therefore two facts joined: this Project asked for it, and the process has it.
+A Project's plugins live in its own config — the `[plugins]` table in `.project_config.toml`, package name → requirement in the shape of Cargo's `[dependencies]` (`"@scope/name" = "*"` for whatever the deployment ships, a version string, or `{ version = "…" }` where later fields go), beside its models — because machines are lent to Projects, so a Project's list is what says which machines a plugin has to reach. Loading is per process, though: there is one module tree. So what a deployment runs is the **closure**, the union over its Projects, and what a plugin contributes is visible to all of them. A row on the plugins page is therefore two facts joined: this Project asked for it, and the process has it.
 
 The routes move to `/api/projects/:projectId/plugins/installed`. A package is removed from disk only once no Project asks for it.
 
@@ -31,5 +31,7 @@ That has a cost worth knowing: a platform-specific sandbox backend is not in the
 ## Compatibility
 
 **The data root's `plugins.json` is no longer read, and nothing migrates it.** A deployment that had one starts with **no plugins**: sandbox backends, languages and session surfaces are all absent from the tree until each Project asks again on the plugins page. The old file is left on disk untouched, so rolling back to an earlier platform finds it exactly as it was.
+
+The same holds for the list form this key briefly had before release (`plugins = ["…"]`): it is not read, and such a Project asks for no plugins until its table is written again from the plugins page.
 
 There is no compatibility code to carry, and therefore nothing to remove later — which is why this route was chosen over a migration or a dual read.
