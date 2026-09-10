@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#665](https://github.com/Prism-Shadow/penguin-harness/pull/665)
 
 [中文版](2026-09-10-history-window-fifty-turns.zh.md)
 
