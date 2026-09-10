@@ -67,7 +67,7 @@ export class PluginHost {
  * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
  * from a push, and had to be restarted to pick up a plugin list.
  */
-export const PLUGINS_RESOURCE_ID = "platform:plugins";
+export const PLUGINS_RESOURCE_ID = "platform.plugins";
 
 /**
  * The host the runtime loaded (see ./loader.ts), or an empty one — the honest reading
