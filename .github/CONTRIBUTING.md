@@ -170,11 +170,19 @@ pnpm test:e2e                                        # core live-model e2e, need
   Docker Hub access token with read/write scope on that repository — and the Docker Hub
   repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
-  `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
-  `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
-  version. The release workflow refuses a tag push whose version does not match the
+  `changelog/unreleased/` also bumps the root, every `packages/*/package.json` and every
+  `plugins/*/package.json` `version`, plus core's `VERSION` constant
+  (`packages/core/src/index.ts`), to the release version. The release workflow refuses a tag push whose version does not match the
   repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a
   0.2.0 repo, and every dev build nagged about an update until the repo caught up).
+- **The release branch proves its installers before the tag.** Name the branch
+  `release/<version>`: every push to a `release/**` branch runs `desktop-build.yml` with macOS
+  and Windows signing required, the same call the release workflow makes, and CI never
+  exercises signing. Wait for that run on the branch's final commit before merging and
+  tagging; a tag is never moved, so a failure found after it costs a version (0.2.10 was
+  tagged on a green CI, lost its macOS installers to a runner-image change, and shipped again
+  as 0.2.11). To re-check outside a release branch:
+  `gh workflow run desktop-build.yml --ref <branch> -f require_macos_signing=true -f require_windows_signing=true`.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright

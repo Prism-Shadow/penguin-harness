@@ -137,10 +137,16 @@ pnpm test:e2e                                        # core 的真实模型 e2e�
   在发布准备期间撰写，并**在打 tag 之前提交**——发布工作流是从 tag 的 checkout 里读它的，事后添加的
   文件永远到不了 Release 页面。缺少它时，工作流退回到 GitHub 自动生成的说明。
 - **发布准备要提升仓库版本号**：那个把 `changelog/unreleased/` 改名的 `release: X.Y.Z` PR，同时也要把
-  根目录及每个 `packages/*/package.json` 的 `version`、以及 core 的 `VERSION` 常量
-  （`packages/core/src/index.ts`）提升到发布版本。发布工作流会拒绝版本号与仓库不一致的 tag 推送，
+  根目录、每个 `packages/*/package.json` 与每个 `plugins/*/package.json` 的 `version`、以及 core 的
+  `VERSION` 常量（`packages/core/src/index.ts`）提升到发布版本。发布工作流会拒绝版本号与仓库不一致的 tag 推送，
   因此漏掉提升会在发布任何东西之前就失败（v0.2.1 曾在仓库还是 0.2.0 时被打了 tag，此后每个开发构建
   都在提示有更新，直到仓库追上为止）。
+- **发布分支要在打 tag 之前证明安装包能出来。** 分支命名为 `release/<version>`：每次推送到
+  `release/**` 分支都会运行 `desktop-build.yml`，并要求 macOS 与 Windows 签名，与发布工作流的调用方式
+  一致；CI 从不演练签名。等分支最终 commit 上的这次运行通过后再合并、打 tag；tag 不会被移动，打完才发现
+  的问题要用掉一个版本号（0.2.10 在 CI 全绿时打了 tag，因运行器镜像变化丢了 macOS 安装包，只得以 0.2.11
+  重新发布）。在发布分支之外想补验一次：
+  `gh workflow run desktop-build.yml --ref <分支> -f require_macos_signing=true -f require_windows_signing=true`。
 - `assets/readme/` 下的 README 素材是生成物——基准测试图表由落地页的基准数据生成，演示截图由
   `node packages/landing/scripts/capture-readme-demo.mjs` 生成（需先构建；需要 Playwright chromium）。
   请重新生成，而不要手工编辑。
