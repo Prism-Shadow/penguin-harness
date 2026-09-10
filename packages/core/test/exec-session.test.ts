@@ -683,7 +683,11 @@ describe.skipIf(process.platform === "win32")(
     // The hosting server threads a pathPrepend getter through Environment ->
     // CommandSessionManager so a command an Agent runs reaches the harness's own `penguin`
     // rather than whatever the machine has installed globally.
-    const READ_PATH = `node -e "console.log('P=[' + process.env.PATH + ']')"`;
+    // A shell BUILTIN, deliberately: these cases run with PATH rewritten out from under
+    // them (that is the subject), so a reader that has to be found on PATH would be
+    // reporting on its own resolvability as much as on the value. `export` puts the same
+    // string in the environment any child would inherit.
+    const READ_PATH = 'echo "P=[$PATH]"';
     let shimDir: string;
     let prepend: string[];
     let prepared: Environment;
@@ -720,9 +724,10 @@ describe.skipIf(process.platform === "win32")(
     it("a vault PATH does not displace it", async () => {
       // The vault replaces the inherited PATH the harness prepared; the statement in front
       // of the command runs afterwards, so the harness's own directory leads either way.
-      // (The value still has to carry a shell: the session shell is spawned by bare name
-      // against this very PATH, so a vault entry without one is an ENOENT before any of
-      // this — long-standing behaviour of a vault PATH, not something prepending changes.)
+      // (The value still has to carry the session shell, which is spawned by bare name
+      // against this very PATH — a vault entry without one is an ENOENT before any of this,
+      // long-standing behaviour of a vault PATH rather than anything prepending changes.
+      // Nothing else has to be there: the command below is a builtin.)
       const vaultEnv = new Environment({
         workspaceDir: tmp,
         toolConfig: sessionConfig(),

@@ -59,6 +59,14 @@ describe("the launcher scripts", () => {
   });
 });
 
+/**
+ * POSIX permission bits are a POSIX fact: on win32 `chmod` only toggles the read-only
+ * attribute and `stat().mode` never reports an execute bit, so an `x`-bit assertion there
+ * says nothing about either the code or the platform. What the shim CONTAINS is asserted
+ * everywhere; whether it is marked executable is asserted where the mark exists.
+ */
+const POSIX_MODES = process.platform !== "win32";
+
 describe("ensureCliShim", () => {
   it("writes an executable shim into <root>/bin and reports what it wrote", async () => {
     const root = await tempRoot();
@@ -75,7 +83,7 @@ describe("ensureCliShim", () => {
     const shim = path.join(root, "bin", "penguin");
     expect(fs.readFileSync(shim, "utf8")).toContain("/repo/packages/cli/dist/penguin.js");
     // The whole point is that a shell can run it.
-    expect(fs.statSync(shim).mode & 0o111).toBe(0o111);
+    if (POSIX_MODES) expect(fs.statSync(shim).mode & 0o111).toBe(0o111);
   });
 
   it("rewrites a shim left by an earlier boot, executable bit included", async () => {
@@ -85,11 +93,11 @@ describe("ensureCliShim", () => {
     const shim = path.join(root, "bin", "penguin");
     // A checkout that moved, and a mode someone else narrowed: writeFileSync applies its
     // `mode` only when it creates the file, so the rewrite has to chmod as well.
-    fs.chmodSync(shim, 0o600);
+    if (POSIX_MODES) fs.chmodSync(shim, 0o600);
     ensureCliShim(root, "/new/penguin.js", opts);
     expect(fs.readFileSync(shim, "utf8")).toContain("/new/penguin.js");
     expect(fs.readFileSync(shim, "utf8")).not.toContain("/old/penguin.js");
-    expect(fs.statSync(shim).mode & 0o111).toBe(0o111);
+    if (POSIX_MODES) expect(fs.statSync(shim).mode & 0o111).toBe(0o111);
   });
 
   it("writes the .cmd half only on Windows, and removes both when there is no entry", async () => {
