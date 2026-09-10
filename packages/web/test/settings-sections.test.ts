@@ -58,7 +58,6 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
-      "sandbox",
       "users",
     ]);
   });
@@ -81,7 +80,6 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "proxy",
       "uploads",
-      "sandbox",
     ]);
   });
 
@@ -95,7 +93,6 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
-      "sandbox",
     ]);
   });
 });
