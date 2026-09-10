@@ -449,6 +449,18 @@ function OverviewTab({
             <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
           </p>
           <div className="flex shrink-0 items-center gap-2">
+            {/* The portable bundle first, then the snapshot pair: two exports with different
+                jobs, named apart — a bundle ports the Agent, a snapshot backs its state up. */}
+            {projectId && (
+              <a
+                href={api.agentBundleUrl(projectId, agentId)}
+                download
+                title={S.agent.exportAgentDesc}
+                className={SNAPSHOT_BUTTON_CLASS}
+              >
+                {S.agent.exportAgent}
+              </a>
+            )}
             {projectId && (
               <a
                 href={api.agentExportUrl(projectId, agentId)}

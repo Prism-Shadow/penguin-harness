@@ -155,6 +155,8 @@ penguin logs 402a2e24 -f
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent export helper --out ./exports
+penguin agent import ./exports/helper-export.zip --agent-id helper_2
 ```
 
 `agent ls` lists the project's agents (id, name, session count, description). `agent create` creates one:
@@ -164,6 +166,14 @@ penguin agent create --agent-id helper --name "Helper" --plugins software-develo
 | `--agent-id <id>` | Required; the agent id (directory name) |
 | `--name <s>` / `--description <s>` | Display name and description |
 | `--plugins <a,b>` | Comma-separated library plugin names to preinstall (each one's skills and hook package); unknown names are rejected before anything is created |
+| `--project-id <id>` / `--json` / `--server <url>` | As everywhere |
+
+`agent export <agent-id>` downloads the agent's portable bundle. `--kind api` (the default) writes `<agent-id>-export.zip`; `--kind docker` writes `<agent-id>-docker.zip`, a container that installs the CLI, imports the agent on first boot and serves the same API (fill in its `.env`, then `docker compose up --build`). Both carry the definition, skills and hooks, so either re-imports. The API bundle is `<agent-id>-export.zip`: `penguin-agent.json` (name, instructions, skills, hooks, tools, MCP entries with credential-looking `env` / `headers` values blanked, model preferences, vault key names), the installed `skills/` and `hooks/` directories, and an integration guide with the four API calls that run the agent plus runnable `curl` / Python / TypeScript clients. `agent import <file>` creates an agent from such a bundle or from a bare `penguin-agent.json`, installs the bundled skills and hooks, and prints what it could not apply and the vault keys to set. Neither is the Agent State snapshot (a backup of one existing agent): vault values, memory, Traces and schedules stay behind.
+
+| Option | Description |
+| --- | --- |
+| `export --out <file\|dir>` | Where to write the bundle (defaults to the current directory, under the server's file name) |
+| `import --agent-id <id>` | Id for the new agent (defaults to the id inside the file); a taken id is a 409 `agent_exists` |
 | `--project-id <id>` / `--json` / `--server <url>` | As everywhere |
 
 ## penguin project

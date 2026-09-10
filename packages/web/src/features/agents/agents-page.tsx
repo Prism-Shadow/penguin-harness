@@ -10,7 +10,8 @@
  * order.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" (deep links via
- * ?agentId= to the usage center) and "Delete" (with confirmation; built-in Agents show a
+ * ?agentId= to the usage center), "Export agent" (the portable bundle), "Export with AI" (the
+ * same export handed to an agent) and "Delete" (with confirmation; built-in Agents show a
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" fills in name + description and picks what the
  * new Agent starts with — plugins from the library (each one's skills and hook package), and
@@ -52,11 +53,21 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { CloseIcon, GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
+import {
+  CloseIcon,
+  GEAR_ICON,
+  HOOK_ICON,
+  MAGIC_WAND_ICON,
+  PLUGIN_ICON,
+} from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { ActivitySparkline } from "./activity-sparkline";
+import { AgentExportModal } from "./agent-export-modal";
+import { AgentImportModal } from "./agent-import-modal";
+import type { AgentImportMode } from "./agent-import-modal";
 import {
   SNAPSHOT_ACCEPT,
   SNAPSHOT_BUTTON_CLASS,
@@ -91,6 +102,8 @@ const CARD_ICONS = {
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  /** Export the portable agent bundle (arrow down into a tray) */
+  exportBundle: "M12 4v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
   /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
   memory:
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
@@ -125,6 +138,12 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** Which path the "Import agent" dialog is open on, or null (agent-import-modal.tsx). */
+  const [importMode, setImportMode] = useState<AgentImportMode | null>(null);
+  /** The Agent whose "Export agent" dialog is open, or null (agent-export-modal.tsx). */
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  /** The Agent whose "Export with AI" dialog is open, or null. */
+  const [aiExportingId, setAiExportingId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -409,9 +428,20 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <Button variant="primary" onClick={openCreate}>
-              {S.agent.create}
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Import (a bundle or another tool's setup) sits beside Create: it makes a new
+                  Agent too, unlike the snapshot import on the settings page. Its two paths are
+                  two buttons rather than a switch inside the dialog, so both are visible here. */}
+              <CreateButtons
+                aiLabel={S.agent.importWithAi}
+                manualLabel={S.agent.importManual}
+                onAi={() => setImportMode("ai")}
+                onManual={() => setImportMode("file")}
+              />
+              <Button variant="primary" onClick={openCreate}>
+                {S.agent.create}
+              </Button>
+            </div>
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -623,6 +653,33 @@ export function AgentsPage() {
                     >
                       <GlyphIcon
                         d={CARD_ICONS.usage}
+                        size={15}
+                        className="text-gray-600 dark:text-gray-300"
+                      />
+                    </Button>
+                    <Button
+                      size="icon"
+                      title={S.agent.exportAgent}
+                      aria-label={S.agent.exportAgent}
+                      onClick={() => setExportingId(a.agentId)}
+                    >
+                      <GlyphIcon
+                        d={CARD_ICONS.exportBundle}
+                        size={15}
+                        className="text-gray-600 dark:text-gray-300"
+                      />
+                    </Button>
+                    {/* Export's second path, beside the first rather than inside it. This row is
+                        icon-only past "Settings", so the wand joins it as an icon and names
+                        itself in its tooltip, where the page header can afford a labelled pair. */}
+                    <Button
+                      size="icon"
+                      title={S.agent.exportWithAi}
+                      aria-label={S.agent.exportWithAi}
+                      onClick={() => setAiExportingId(a.agentId)}
+                    >
+                      <GlyphIcon
+                        d={MAGIC_WAND_ICON}
                         size={15}
                         className="text-gray-600 dark:text-gray-300"
                       />
@@ -878,6 +935,48 @@ export function AgentsPage() {
             </ul>
           </div>
         </ConfirmModal>
+      )}
+
+      {/* Import agent (a bundle from disk, or the AI path): creates an Agent, so it sits beside
+          Create; the snapshot seed inside the create dialog restores state instead. */}
+      {projectId !== undefined && importMode !== null && (
+        <AgentImportModal
+          open
+          mode={importMode}
+          onClose={() => setImportMode(null)}
+          projectId={projectId}
+          agents={agents}
+          onImported={() => {
+            setImportMode(null);
+            reloadAgents().catch((e: unknown) => toastError(apiErrorText(e)));
+          }}
+        />
+      )}
+
+      {/* Export agent: the two shapes the server packs. */}
+      {projectId !== undefined && exportingId !== null && (
+        <AgentExportModal
+          open
+          onClose={() => setExportingId(null)}
+          projectId={projectId}
+          agentId={exportingId}
+        />
+      )}
+
+      {/* Export with AI: the shapes no bundle covers — an SDK, Kubernetes manifests, a handover
+          document — written by an agent from this Agent's own bundle. The prompt lands in a new
+          conversation's composer; sending it stays the user's move. */}
+      {projectId !== undefined && aiExportingId !== null && (
+        <AiCreateModal
+          open
+          onClose={() => setAiExportingId(null)}
+          title={`${S.agent.exportWithAi}：${aiExportingId}`}
+          intro={S.agent.aiExportIntro}
+          examples={[...S.agent.aiExportExamples]}
+          tail={S.agent.aiExportTail(projectId, aiExportingId)}
+          agents={agents}
+          allowAgentChoice
+        />
       )}
 
       {/* Delete confirmation (shared ConfirmModal) */}

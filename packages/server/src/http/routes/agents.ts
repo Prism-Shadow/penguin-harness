@@ -21,7 +21,7 @@ import { readArchiveBase64 } from "./agent-transfer.js";
 import type { AppDeps } from "../../app.js";
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
-const ACTIVITY_DAYS = 30;
+export const ACTIVITY_DAYS = 30;
 
 export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

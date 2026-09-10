@@ -1,21 +1,60 @@
 /**
- * `penguin agent` — list and create agents through the server.
+ * `penguin agent` — list, create, export and import agents through the server.
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>]
  *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *   penguin agent export <agent-id> [--out <file|dir>] [--project-id <id>] [--json] [--server <url>]
+ *   penguin agent import <file.zip|penguin-agent.json> [--agent-id <id>] [--project-id <id>] [--json] [--server <url>]
  *
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
  * and library plugins to seed (comma-separated names; unknown names are rejected by the
  * server before anything is created).
+ * `export` downloads the agent's portable bundle — `<agent-id>-export.zip`: the definition,
+ * its skills and hooks, and an integration guide — and `import` creates an agent from such a
+ * bundle or from a bare `penguin-agent.json`. Neither carries vault values. They are not the
+ * Agent State snapshot (a backup of one existing agent), which the Web App owns.
  * Docs: /docs/cli § "penguin agent".
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Command } from "commander";
-import type { AgentCreateResponse, AgentSummary } from "@prismshadow/penguin-server/api";
+import type {
+  AgentBundleImportResponse,
+  AgentCreateResponse,
+  AgentSummary,
+} from "@prismshadow/penguin-server/api";
 import { resolveConnection, resolveProjectId, ServerClient } from "../client.js";
 import { listAgents } from "../server-session.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
+
+/**
+ * Where `--out` puts the bundle: absent, the server's filename in the current directory; an
+ * existing directory (or a path written with a trailing separator), that directory; anything
+ * else, a file path whose parent is created.
+ *
+ * `fileName` comes from the server's Content-Disposition, so only its basename is used: a
+ * server answering `filename="../../.ssh/authorized_keys"` must not write outside `--out`.
+ */
+export async function resolveOutPath(out: string | undefined, name: string): Promise<string> {
+  const fileName = path.basename(name);
+  if (out === undefined || out === "") return path.resolve(fileName);
+  const target = path.resolve(out);
+  const isDir =
+    out.endsWith("/") ||
+    out.endsWith(path.sep) ||
+    (await fs.stat(target).then(
+      (s) => s.isDirectory(),
+      () => false,
+    ));
+  if (isDir) {
+    await fs.mkdir(target, { recursive: true });
+    return path.join(target, fileName);
+  }
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  return target;
+}
 
 export function registerAgentCommand(program: Command, t: Messages): void {
   const agent = program.command("agent").description(t.agent.desc);
@@ -82,5 +121,74 @@ export function registerAgentCommand(program: Command, t: Messages): void {
         return;
       }
       process.stdout.write(`${t.agent.created(res.agent.agentId, projectId)}\n`);
+    });
+
+  agent
+    .command("export <agent-id>")
+    .description(t.agent.exportDesc)
+    .option("--out <path>", t.agent.exportOut)
+    .option("--kind <kind>", t.agent.exportKind)
+    .option("--project-id <id>", t.common.projectId)
+    .option("--json", t.common.json)
+    .option("--server <url>", t.common.server)
+    .action(async (agentId: string, opts) => {
+      // Rejected here rather than passed through: the server would answer 400, but a typo is
+      // worth naming before a request goes out (the schedule commands reject their conflicting
+      // options the same way).
+      const kind = typeof opts.kind === "string" ? opts.kind : "api";
+      if (kind !== "api" && kind !== "docker") {
+        process.stderr.write(`${t.error(t.agent.exportKindInvalid())}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      const { bytes, fileName } = await client.download(
+        `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/bundle?kind=${kind}`,
+      );
+      const file = await resolveOutPath(
+        typeof opts.out === "string" ? opts.out : undefined,
+        fileName ?? `${agentId}-${kind === "docker" ? "docker" : "export"}.zip`,
+      );
+      await fs.writeFile(file, bytes);
+      if (opts.json === true) {
+        process.stdout.write(`${JSON.stringify({ agentId, projectId, file })}\n`);
+        return;
+      }
+      process.stdout.write(`${t.agent.exported(file)}\n`);
+    });
+
+  agent
+    .command("import <file>")
+    .description(t.agent.importDesc)
+    .option("--agent-id <id>", t.agent.importAgentId)
+    .option("--project-id <id>", t.common.projectId)
+    .option("--json", t.common.json)
+    .option("--server <url>", t.common.server)
+    .action(async (file: string, opts) => {
+      const client = new ServerClient(await resolveConnection({ server: opts.server }, t), t);
+      const projectId = resolveProjectId(opts.projectId);
+      const bytes = await fs.readFile(path.resolve(file));
+      const res = await client.request<AgentBundleImportResponse>(
+        "POST",
+        `/api/projects/${encodeURIComponent(projectId)}/agents/import`,
+        {
+          dataBase64: bytes.toString("base64"),
+          ...(opts.agentId !== undefined ? { agentId: String(opts.agentId) } : {}),
+        },
+      );
+      if (opts.json === true) {
+        process.stdout.write(`${JSON.stringify(res)}\n`);
+        return;
+      }
+      const lines = [
+        t.agent.imported(res.agent.agentId, projectId),
+        t.agent.importInstalled(res.installed.skills.length, res.installed.hooks.length),
+      ];
+      if (res.skipped.length > 0) {
+        lines.push(t.agent.importSkipped(), ...res.skipped.map((note) => `  - ${note}`));
+      }
+      if (res.vaultKeys.length > 0) lines.push(t.agent.importVaultKeys(res.vaultKeys.join(", ")));
+      process.stdout.write(`${lines.join("\n")}\n`);
     });
 }

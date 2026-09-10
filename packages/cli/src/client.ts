@@ -240,6 +240,23 @@ export class ServerClient {
     return (text === "" ? undefined : JSON.parse(text)) as T;
   }
 
+  /**
+   * One binary GET: the body as bytes plus the attachment filename the server named in
+   * Content-Disposition (null when the header names none). Same auth and error handling as
+   * `request`, without the JSON parse.
+   */
+  async download(apiPath: string): Promise<{ bytes: Buffer; fileName: string | null }> {
+    const res = await this.fetchAuthed(apiPath, { headers: this.headers() });
+    if (!res.ok) throw await this.toError(res);
+    const disposition = res.headers.get("content-disposition") ?? "";
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+    const plain = /filename="([^"]+)"/i.exec(disposition)?.[1];
+    return {
+      bytes: Buffer.from(await res.arrayBuffer()),
+      fileName: encoded !== undefined ? decodeURIComponent(encoded) : (plain ?? null),
+    };
+  }
+
   /** The authenticated fetch with the one-shot 401 file-token refresh. */
   private async fetchAuthed(apiPath: string, init: RequestInit): Promise<Response> {
     const res = await fetch(`${this.conn.baseUrl}${apiPath}`, init);

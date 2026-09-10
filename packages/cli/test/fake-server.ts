@@ -48,7 +48,7 @@ interface Subscriber {
 const encoder = new TextEncoder();
 
 export class FakeServer {
-  readonly requests: Array<{ method: string; path: string; body?: Json }> = [];
+  readonly requests: Array<{ method: string; path: string; query?: string; body?: Json }> = [];
   readonly sessions = new Map<string, FakeSessionState>();
   agents: Array<Json> = [
     {
@@ -90,6 +90,14 @@ export class FakeServer {
     models: [],
   };
   schedules: Json = { schedules: [], invalidFiles: [] };
+  /** Bytes GET .../agents/:a/bundle serves (the CLI only writes them to disk). */
+  bundle: Uint8Array = new TextEncoder().encode("PK-fake-bundle");
+  /** What POST .../agents/import reports beyond the created agent. */
+  importOutcome: {
+    installed: { skills: string[]; hooks: string[] };
+    skipped: string[];
+    vaultKeys: string[];
+  } = { installed: { skills: [], hooks: [] }, skipped: [], vaultKeys: [] };
   /** Named schedule store behind add/update/rm: name -> the stored item (single-agent tests). */
   readonly scheduleItems = new Map<string, Json>();
 
@@ -244,7 +252,12 @@ export class FakeServer {
     if (typeof init?.body === "string" && init.body.length > 0) {
       body = JSON.parse(init.body) as Json;
     }
-    this.requests.push({ method, path: apiPath, ...(body !== undefined ? { body } : {}) });
+    this.requests.push({
+      method,
+      path: apiPath,
+      ...(url.search !== "" ? { query: url.search } : {}),
+      ...(body !== undefined ? { body } : {}),
+    });
 
     // Session create
     let m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
@@ -271,6 +284,39 @@ export class FakeServer {
         )
         .map((s) => this.sessionInfo(s));
       return this.json({ sessions });
+    }
+
+    // Agent porting: the bundle download and the bundle import.
+    m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/bundle$/.exec(apiPath);
+    if (m && method === "GET") {
+      // Named after the requested kind, as the real route is: a fake that always answered
+      // `-export.zip` would hide a client that never sent the kind at all.
+      const kind = url.searchParams.get("kind");
+      if (kind !== null && kind !== "api" && kind !== "docker") {
+        return this.error(400, "bad_request", 'kind must be "api" or "docker".');
+      }
+      const suffix = kind === "docker" ? "docker" : "export";
+      return new Response(this.bundle, {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": `attachment; filename="${decodeURIComponent(m[2]!)}-${suffix}.zip"`,
+        },
+      });
+    }
+    m = /^\/api\/projects\/([^/]+)\/agents\/import$/.exec(apiPath);
+    if (m && method === "POST") {
+      const agentId = typeof body?.agentId === "string" ? body.agentId : "imported_agent";
+      const agent = {
+        agentId,
+        name: agentId,
+        description: "",
+        sessionCount: 0,
+        activeSessionCount: 0,
+        sessionActivity: [],
+      };
+      this.agents.push(agent);
+      return this.json({ agent, ...this.importOutcome }, 201);
     }
 
     m = /^\/api\/projects\/([^/]+)\/agents$/.exec(apiPath);
