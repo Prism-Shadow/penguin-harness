@@ -3,6 +3,8 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#667](https://github.com/Prism-Shadow/penguin-harness/pull/667)
+- **Issue:** [#668](https://github.com/Prism-Shadow/penguin-harness/issues/668)
 
 [中文版](2026-09-10-transition-chunk-order.zh.md)
 
@@ -11,4 +13,4 @@ The engine's event translator now orders the items of one provider chunk by gene
 ## Details
 
 - `packages/core/src/llm/generative-model.ts`: `inGenerationOrder` stable-partitions a chunk's items so every `thinking` item precedes the rest; applied in `EventTranslator.pushEvent`.
-- Regression test in `packages/core/test/llm.test.ts`: a three-chunk stream whose middle chunk carries both fields yields one thinking segment and one text segment, each complete.
+- Regression tests in `packages/core/test/llm.test.ts`: a three-chunk stream whose middle chunk carries both fields yields one thinking segment and one text segment, each complete — once with hand-built events and once with the events AgentHub's `openai-chat` client produces from raw `chat.completion.chunk` objects.

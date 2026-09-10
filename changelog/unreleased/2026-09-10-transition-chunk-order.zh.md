@@ -3,6 +3,8 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#667](https://github.com/Prism-Shadow/penguin-harness/pull/667)
+- **Issue:** [#668](https://github.com/Prism-Shadow/penguin-harness/issues/668)
 
 [English](2026-09-10-transition-chunk-order.md)
 
@@ -11,4 +13,4 @@
 ## Details
 
 - `packages/core/src/llm/generative-model.ts`：`inGenerationOrder` 对分片内条目做稳定分区，所有 `thinking` 条目排到最前；在 `EventTranslator.pushEvent` 中应用。
-- `packages/core/test/llm.test.ts` 新增回归测试：三个分片、中间分片同时携带两个字段的流，产出一个完整的 thinking 段和一个完整的 text 段。
+- `packages/core/test/llm.test.ts` 新增两个回归测试：三个分片、中间分片同时携带两个字段的流，产出一个完整的 thinking 段和一个完整的 text 段——一次用手工构造的事件，一次用 AgentHub `openai-chat` 客户端从原始 `chat.completion.chunk` 转换出的事件。
