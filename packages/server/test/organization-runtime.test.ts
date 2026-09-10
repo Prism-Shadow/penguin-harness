@@ -26,6 +26,7 @@ import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
+import type { UtilityCompletion } from "../src/services/project-config-service.js";
 import type { ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -35,6 +36,15 @@ const CEO = "acme_ceo";
 const HR = "acme_hr";
 const T0 = Date.parse("2026-09-01T01:00:00Z");
 const DAY = 86_400_000;
+
+/** The utility completion's three shapes, as the id proposals see them. */
+const NO_MODEL: UtilityCompletion = {
+  ok: false,
+  cause: "no_model",
+  error: "the Project names no default model",
+};
+const answered = (text: string): UtilityCompletion => ({ ok: true, text });
+const failed = (error: string): UtilityCompletion => ({ ok: false, cause: "failed", error });
 
 interface Started {
   sessionId: string;
@@ -63,8 +73,13 @@ describe("organization runtime", () => {
   let events: ServerEvent[];
   let errors: ErrorRecordArgs[];
   let companyMode: boolean;
-  /** The one-off utility completion behind semantic id proposals; null = no model answered. */
-  let completion: { answer: string | null; prompts: string[] };
+  /**
+   * The one-off utility completion behind semantic id proposals: the results it hands back in
+   * order, one per call, and every prompt it was given. An exhausted queue answers
+   * NO_MODEL — a Project with nothing configured is what "the model said nothing" means.
+   */
+  let completion: { answers: UtilityCompletion[]; prompts: string[] };
+  let deps: OrgDeps;
   let scheduler: OrganizationScheduler;
   let service: OrganizationService;
   let seq: number;
@@ -100,10 +115,10 @@ describe("organization runtime", () => {
     events = [];
     errors = [];
     companyMode = true;
-    completion = { answer: null, prompts: [] };
+    completion = { answers: [], prompts: [] };
     seq = 0;
     existingAgents = new Set<string>();
-    const deps: OrgDeps = {
+    deps = {
       root,
       store,
       cache,
@@ -160,7 +175,7 @@ describe("organization runtime", () => {
       projectConfig: new ProjectConfigService(root),
       completeOnce: async (_p, prompt) => {
         completion.prompts.push(prompt);
-        return completion.answer;
+        return completion.answers.shift() ?? NO_MODEL;
       },
       usage: {
         costBySession: async (_p, ids) => ({
@@ -532,36 +547,106 @@ describe("organization runtime", () => {
   });
 
   describe("semantic id proposals", () => {
+    /** `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>` for today, which is what a placeholder reads as. */
+    function placeholderFor(kind: "org" | "channel"): string {
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      return kind === "org" ? `co_org_${stamp}` : `ch_channel_${stamp}`;
+    }
+
     it("takes the model's answer, names the ids already taken, and never returns one of them", async () => {
-      completion.answer = "`research_paper_lab`\n";
+      completion.answers = [answered("`research_paper_lab`\n")];
       // The model answers the semantic core; the server puts the kind's prefix on it.
       expect(await service.suggestId(P, { name: "科研论文公司", kind: "org" })).toEqual({
         id: "co_research_paper_lab",
         source: "model",
       });
       expect(completion.prompts[0]).toContain("科研论文公司");
-      completion.answer = "site";
+      completion.answers = [answered("site")];
       expect(
         await service.suggestId(P, { name: "站点", kind: "channel", taken: ["ch_site"] }),
       ).toEqual({ id: "ch_site_2", source: "model" });
       expect(completion.prompts[1]).toContain("Those answers are taken, prefix included: ch_site.");
+      // One ask each: a usable answer is never second-guessed.
+      expect(completion.prompts).toHaveLength(2);
+      expect(errors).toEqual([]);
     });
 
-    it("falls back to the ASCII slug when the answer is unusable, and 422s when neither can name it", async () => {
-      completion.answer = "我建议叫「科研实验室」";
+    it("asks a second time, with the format spelled out, when the first answer is not an id", async () => {
+      completion.answers = [answered("我建议叫「科研实验室」"), answered("research_lab")];
+      expect(await service.suggestId(P, { name: "科研公司", kind: "org" })).toEqual({
+        id: "co_research_lab",
+        source: "model",
+      });
+      expect(completion.prompts).toHaveLength(2);
+      expect(completion.prompts[0]).not.toContain("Answer with the identifier only");
+      expect(completion.prompts[1]).toContain("Answer with the identifier only");
+      expect(errors).toEqual([]);
+    });
+
+    it("falls back to the ASCII slug when neither answer is usable, and records why", async () => {
+      completion.answers = [answered("我建议叫「科研实验室」"), answered("还是叫科研实验室吧")];
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
         id: "co_plugin_marketplace",
         source: "fallback",
       });
-      // No model at all (no default model, no credential, a failure) is the same case.
-      completion.answer = null;
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ source: "organization", code: "id_suggest_failed" });
+      expect(String((errors[0]?.err as Error).message)).toContain("还是叫科研实验室吧");
+    });
+
+    it("does not repeat a request that failed outright, and records the provider's reason", async () => {
+      completion.answers = [failed("401 invalid api key")];
       expect(await service.suggestId(P, { name: "Plugin Marketplace", kind: "org" })).toEqual({
         id: "co_plugin_marketplace",
         source: "fallback",
       });
-      await expect(service.suggestId(P, { name: "科研公司", kind: "org" })).rejects.toMatchObject({
-        status: 422,
-        code: "id_not_derivable",
+      expect(completion.prompts).toHaveLength(1);
+      expect(String((errors[0]?.err as Error).message)).toContain("401 invalid api key");
+    });
+
+    it("answers a dated placeholder, never a failure, when neither the model nor the name can name it", async () => {
+      // The model answered twice and neither answer was an id.
+      completion.answers = [answered("科研实验室"), answered("实验室")];
+      expect(await service.suggestId(P, { name: "科研公司", kind: "org" })).toEqual({
+        id: placeholderFor("org"),
+        source: "placeholder",
+        reason: "unusable_answer",
+      });
+      // Nothing to ask: the Project names no default model.
+      completion.answers = [];
+      expect(await service.suggestId(P, { name: "市场推广", kind: "channel" })).toEqual({
+        id: placeholderFor("channel"),
+        source: "placeholder",
+        reason: "no_default_model",
+      });
+      // The request failed on the wire.
+      completion.answers = [failed("connect ETIMEDOUT")];
+      expect(await service.suggestId(P, { name: "科研公司", kind: "org" })).toEqual({
+        id: placeholderFor("org"),
+        source: "placeholder",
+        reason: "model_failed",
+      });
+      // A placeholder still avoids the ids already in use.
+      completion.answers = [];
+      expect(
+        await service.suggestId(P, {
+          name: "科研公司",
+          kind: "org",
+          taken: [placeholderFor("org")],
+        }),
+      ).toMatchObject({ id: `${placeholderFor("org")}_2`, source: "placeholder" });
+    });
+
+    it("says no_ascii when there is no model to ask at all", async () => {
+      const noModelService = new OrganizationService(
+        { ...deps, completeOnce: undefined },
+        scheduler,
+      );
+      expect(await noModelService.suggestId(P, { name: "科研公司", kind: "org" })).toEqual({
+        id: placeholderFor("org"),
+        source: "placeholder",
+        reason: "no_ascii",
       });
     });
   });

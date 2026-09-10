@@ -72,7 +72,10 @@ export { modelVisiblePath } from "./internal/model-visible-path.js";
 // same way.
 export { atomicWriteFile } from "./internal/atomic-write.js";
 export type { AtomicWriteOptions } from "./internal/atomic-write.js";
-export { Agent, createAgent } from "./agent.js";
+// `metaMaxTokens` is the output cap every out-of-band meta request shares — a small budget,
+// tightened by the entry's pinned per-model cap. Exported so a host running its own one-off
+// requests on a Project's model sizes them the way the SDK sizes its own.
+export { Agent, createAgent, metaMaxTokens } from "./agent.js";
 export type {
   ControlEnvContext,
   CreateAgentOptions,

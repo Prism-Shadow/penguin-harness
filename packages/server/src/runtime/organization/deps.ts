@@ -11,7 +11,10 @@ import type { MembersRepo } from "../../db/repos/members.js";
 import type { ProjectsRepo } from "../../db/repos/projects.js";
 import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { OrgStore } from "../../organization/store.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
+import type {
+  ProjectConfigService,
+  UtilityCompletion,
+} from "../../services/project-config-service.js";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */
@@ -88,11 +91,12 @@ export interface OrgDeps {
   projectConfig: ProjectConfigService;
   /**
    * One short completion on the Project's default model, for the utility asks that are not a
-   * Session's work — today the semantic id a display name is translated into. Null whenever
-   * the model cannot answer (no default model, no credential, any failure): every caller
-   * carries an answer that works without it. Optional so a test binds a double or nothing.
+   * Session's work — today the semantic id a display name is translated into. A failure comes
+   * back as `{ ok: false }` with the reason rather than as a bare "no answer", so the caller
+   * can both record it and tell the user which way the ask fell through; every caller still
+   * carries an answer that works without the model. Optional so a test binds a double or nothing.
    */
-  completeOnce?: (projectId: string, prompt: string) => Promise<string | null>;
+  completeOnce?: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
   usage: OrgUsageGateway;
   errors: ErrorSink;
   /** Company-mode notifications go to the Project's owner and members (app.ts binds the user channels). */

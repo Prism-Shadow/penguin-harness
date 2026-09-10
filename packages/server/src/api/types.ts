@@ -3946,7 +3946,9 @@ export interface OrganizationPatchRequest {
  * A semantic id proposed for a display name — the organization and channel dialogs let the
  * user name the thing first and derive the id from that name. The server asks the Project's
  * default model for a short English snake_case id (a Chinese name has no mechanical
- * transliteration), falling back to an ASCII slug of the name when the model is unavailable.
+ * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
+ * and to a dated placeholder when neither can name it. The request never fails for a name it
+ * cannot translate: a dialog that asked for an id always gets one back.
  */
 export interface SemanticIdSuggestRequest {
   /** The display name typed so far (or the mission, when nothing else names the thing). */
@@ -3957,11 +3959,23 @@ export interface SemanticIdSuggestRequest {
   taken?: string[];
 }
 
+/**
+ * Why a proposal fell all the way through to a placeholder — what the client tells the user to
+ * explain the id it was just handed. `no_default_model`: the Project has no default model to
+ * ask. `model_failed`: it was asked and the request failed (no credential, a rejection, a
+ * timeout). `unusable_answer`: it answered twice and neither answer yielded an id.
+ * `no_ascii`: no model was consulted at all and the name carries no ASCII to transliterate.
+ */
+export type SemanticIdSuggestReason =
+  "no_default_model" | "model_failed" | "unusable_answer" | "no_ascii";
+
 export interface SemanticIdSuggestResponse {
   /** A valid semantic id (`^[a-z][a-z0-9_]{1,63}$`), not in `taken`. */
   id: string;
-  /** Whether a model produced it or the ASCII fallback did. */
-  source: "model" | "fallback";
+  /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */
+  source: "model" | "fallback" | "placeholder";
+  /** Present only with `source: "placeholder"`: why the two real paths produced nothing. */
+  reason?: SemanticIdSuggestReason;
 }
 
 export interface OrgHireRequest {
