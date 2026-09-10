@@ -65,6 +65,8 @@ export interface SessionStreamState {
   queuedFollowUps: number;
   /** Steering messages queued on the server but not yet delivered (from task_state events): keeps the composer's hint and its content across reloads. */
   pendingSteering: PendingSteeringInfo[];
+  /** Steering a finished run never delivered (from task_state events): the composer takes each back into its draft, so an interrupt never eats the typed message. */
+  returnedSteering: PendingSteeringInfo[];
   /** Queued follow-up tasks (from task_state events): per-entry content + recall handle; empty on old servers (the count above still renders a plain hint). */
   pendingFollowUps: PendingFollowUpInfo[];
   /**
@@ -109,6 +111,7 @@ export function useSessionStream(
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
   const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
+  const [returnedSteering, setReturnedSteering] = useState<PendingSteeringInfo[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
   const [subagents, setSubagents] = useState<SubagentRuntimeInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +192,7 @@ export function useSessionStream(
       setTaskState("idle");
       setQueuedFollowUps(0);
       setPendingSteering([]);
+      setReturnedSteering([]);
       setPendingFollowUps([]);
       setSubagents([]);
       setLoading(false);
@@ -207,6 +211,7 @@ export function useSessionStream(
     setGoal(null);
     setQueuedFollowUps(0);
     setPendingSteering([]);
+    setReturnedSteering([]);
     setPendingFollowUps([]);
     setSubagents([]);
     setPendingTick((t) => t + 1);
@@ -236,6 +241,7 @@ export function useSessionStream(
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
+      onReturnedSteering: setReturnedSteering,
       onPendingFollowUps: setPendingFollowUps,
       onSubagents: setSubagents,
       onLoading: setLoading,
@@ -313,6 +319,7 @@ export function useSessionStream(
     taskState,
     queuedFollowUps,
     pendingSteering,
+    returnedSteering,
     pendingFollowUps,
     subagents,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,

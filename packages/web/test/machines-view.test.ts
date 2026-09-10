@@ -9,11 +9,7 @@
  * stop looking installed as soon as anything else was installed.
  */
 import { describe, expect, it } from "vitest";
-import type {
-  MachineInfo,
-  MachineInstallJob,
-  MachinesResponse,
-} from "@prismshadow/penguin-server/api";
+import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
 import {
   installButtonState,
   installedMachines,
@@ -22,15 +18,23 @@ import {
 
 const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 
-const fresh = (alias: string): MachineInfo => ({ id: `ssh:${alias}`, alias, installed: null });
-const carrying = (alias: string): MachineInfo => ({
+/** A remote row as the list answers it: no probe taken, no id heard yet. */
+const remote = (alias: string, installed: MachineInfo["installed"]): MachineInfo => ({
   id: `ssh:${alias}`,
   alias,
-  installed: INSTALLED,
+  machineId: null,
+  installed,
+  local: false,
+  connection: null,
+  api: null,
+  status: null,
 });
 
+const fresh = (alias: string): MachineInfo => remote(alias, null);
+const carrying = (alias: string): MachineInfo => remote(alias, INSTALLED);
+
 function response(
-  job: MachineInstallJob | null,
+  job: MachineJob | null,
   opts: { imageVersion?: string | null; machines?: MachineInfo[] } = {},
 ): MachinesResponse {
   return {
@@ -40,8 +44,9 @@ function response(
   };
 }
 
-function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
+function job(over: Partial<MachineJob> = {}): MachineJob {
   return {
+    kind: "install",
     machineId: "ssh:nas",
     alias: "nas",
     running: true,
@@ -51,7 +56,10 @@ function job(over: Partial<MachineInstallJob> = {}): MachineInstallJob {
   };
 }
 
-const done = job({ running: false, result: { ok: true, kind: "installed", version: "9.9.9" } });
+const done = job({
+  running: false,
+  result: { ok: true, installed: "installed", version: "9.9.9" },
+});
 
 describe("verdictOf", () => {
   it("is null while the job runs", () => {
@@ -62,7 +70,10 @@ describe("verdictOf", () => {
     expect(verdictOf(done)).toEqual({ kind: "installed", version: "9.9.9" });
     expect(
       verdictOf(
-        job({ running: false, result: { ok: true, kind: "already-installed", version: "9.9.9" } }),
+        job({
+          running: false,
+          result: { ok: true, installed: "already-installed", version: "9.9.9" },
+        }),
       ),
     ).toEqual({ kind: "already-installed", version: "9.9.9" });
   });
@@ -131,7 +142,7 @@ describe("installButtonState", () => {
       machineId: "ssh:build-box",
       alias: "build-box",
       running: false,
-      result: { ok: true, kind: "installed", version: "9.9.9" },
+      result: { ok: true, installed: "installed", version: "9.9.9" },
     });
     expect(installButtonState(carrying("nas"), response(elsewhere), false)).toEqual({
       action: "reinstall",
@@ -173,10 +184,10 @@ describe("installedMachines", () => {
 
   it("keeps only the installed ones, most recent first", () => {
     const machines: MachineInfo[] = [
-      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
-      { id: "ssh:b", alias: "b", installed: null },
-      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
-      { id: "ssh:d", alias: "d", installed: at("2026-08-22T00:00:00.000Z") },
+      remote("a", at("2026-08-20T00:00:00.000Z")),
+      remote("b", null),
+      remote("c", at("2026-08-24T00:00:00.000Z")),
+      remote("d", at("2026-08-22T00:00:00.000Z")),
     ];
     expect(installedMachines(response(null, { machines })).map((m) => m.alias)).toEqual([
       "c",
@@ -187,11 +198,7 @@ describe("installedMachines", () => {
 
   it("keeps the config's order among installs sharing a timestamp, so the list does not shuffle between polls", () => {
     const same = at("2026-08-24T00:00:00.000Z");
-    const machines: MachineInfo[] = [
-      { id: "ssh:x", alias: "x", installed: same },
-      { id: "ssh:y", alias: "y", installed: same },
-      { id: "ssh:z", alias: "z", installed: same },
-    ];
+    const machines: MachineInfo[] = [remote("x", same), remote("y", same), remote("z", same)];
     const order = () => installedMachines(response(null, { machines })).map((m) => m.alias);
     expect(order()).toEqual(["x", "y", "z"]);
     expect(order()).toEqual(order());
@@ -199,11 +206,30 @@ describe("installedMachines", () => {
 
   it("does not mutate the response's own machine order (the picker reads it too)", () => {
     const machines: MachineInfo[] = [
-      { id: "ssh:a", alias: "a", installed: at("2026-08-20T00:00:00.000Z") },
-      { id: "ssh:c", alias: "c", installed: at("2026-08-24T00:00:00.000Z") },
+      remote("a", at("2026-08-20T00:00:00.000Z")),
+      remote("c", at("2026-08-24T00:00:00.000Z")),
     ];
     const state = response(null, { machines });
     installedMachines(state);
     expect(state.machines.map((m) => m.alias)).toEqual(["a", "c"]);
+  });
+});
+
+describe("this machine in the list", () => {
+  /** The entry the server puts first: the host serving this page. */
+  const here = (): MachineInfo => ({
+    id: "local",
+    alias: "workstation",
+    machineId: "LNrJdHAZJ91G58i0",
+    installed: INSTALLED,
+    local: true,
+    connection: null,
+    api: null,
+    status: { state: "running", checkedAt: INSTALLED.at, port: 7364 },
+  });
+
+  it("is never one of the installed remotes: there is nothing to reinstall from here", () => {
+    const listed = installedMachines(response(null, { machines: [here(), carrying("nas")] }));
+    expect(listed.map((m) => m.id)).toEqual(["ssh:nas"]);
   });
 });

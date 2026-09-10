@@ -13,8 +13,8 @@
  * everything rides the ONE connection ssh-session.ts holds per machine: commands, the
  * installer and the store on its stdin, every TCP connection through its SOCKS port. A POSIX
  * install is therefore the installer going in on that stdin, the same shape as the documented
- * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup disappear
- * entirely.
+ * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup
+ * disappear entirely.
  *
  * Two further rules encoded here:
  * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
@@ -40,9 +40,6 @@ export function cmdQuote(value: string): string {
   return `"${value}"`;
 }
 
-export const quoteFor = (platform: RemotePlatform, value: string): string =>
-  platform === "win32" ? cmdQuote(value) : shQuote(value);
-
 export interface RemoteTarget {
   /** Alias as written in ~/.ssh/config — what the user picked. */
   alias: string;
@@ -58,6 +55,56 @@ function connectionOptions(target: RemoteTarget): string[] {
     "ConnectTimeout=10",
     ...(target.user === "" ? [] : ["-o", `User=${target.user}`]),
   ];
+}
+
+/**
+ * The far side's program directory, and the launcher inside it that everything here runs.
+ * Absolute, because sshd's non-login shell has no `~/.local/bin` on PATH — the symlink the
+ * installer drops there is for a person at a terminal, not for us.
+ *
+ * `$HOME/.penguin` is where install.sh puts it (`PENGUIN_INSTALL_DIR`, defaulting there),
+ * laid out as bin/ lib/ web/ node/, with the launcher exec'ing `node/bin/node lib/dist/…`
+ * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
+ * a non-interactive ssh, so the default is the only thing this side can assume — the same
+ * assumption detect.ts makes to find the manifest.
+ */
+export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
+
+/**
+ * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
+ *
+ * `bin/penguin` is the released program, and a release only carries the subcommands this
+ * side asks for (`server status`, `auth token`, `server --detach`) once a release has
+ * shipped them. Reaching a machine would then be impossible until the next release —
+ * including for the build that introduces reaching machines at all.
+ *
+ * `dist/penguin-hmr.js` is the entry that loads the CLI out of that machine's own hmr store
+ * (packages/cli/src/penguin-hmr.ts), which is the CLI this server pushed there. It has
+ * shipped in the archive since long before any of this, so a machine installed by any
+ * release can run the current CLI. What it cannot do is run one that was never pushed: a
+ * machine with an empty store answers `no CLI pushed to <root>`, and the remedy is to
+ * install — which replicates the store on its way through (install-server.ts).
+ *
+ * Invoked through the bundled runtime rather than the launcher, because there is no
+ * launcher for this entry. Machines installed from here always carry that runtime: the
+ * install runs install.sh without `--universal`, which is the only mode that omits it.
+ */
+export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
+
+/**
+ * The same program directory as cmd.exe names it. A Windows sshd hands a command to cmd.exe,
+ * where `$HOME` is four literal characters and the bundled runtime is `node\node.exe`
+ * (scripts/launchers/penguin.cmd) — so the POSIX form above is not "not found" there, it is
+ * a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
+ */
+export const REMOTE_PROGRAM_DIR_WINDOWS = "%USERPROFILE%\\.penguin";
+
+/** The pushed CLI, invoked in the dialect of the shell that will read the command. */
+export function remotePenguin(platform: "linux" | "darwin" | "win32"): string {
+  if (platform === "win32") {
+    return `"${REMOTE_PROGRAM_DIR_WINDOWS}\\node\\node.exe" "${REMOTE_PROGRAM_DIR_WINDOWS}\\lib\\dist\\penguin-hmr.js"`;
+  }
+  return REMOTE_PENGUIN;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
@@ -127,6 +174,24 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
 
+/**
+ * Starts the installed server in the background and returns at once; readiness is the
+ * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
+ * and the log is the far side's own words when it comes up and dies.
+ */
+export function startServerCommand(port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
+  // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
+  // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
+  // every interface. This side only ever reaches it as a channel inside the ssh session, at
+  // loopback on the far end, so binding wider is exposure with nothing asking for it.
+  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --host 127.0.0.1 --port ${port} >> ${log} 2>&1 < /dev/null &`;
+}
+
+/** The last lines of that log, for a start that did not answer. */
+export const SERVER_LOG_TAIL = `tail -n 20 "${REMOTE_PROGRAM_DIR}/data/server.log" 2>/dev/null`;
+
 // --- tunnelling to that server ---------------------------------------------------------------
 
 /**
@@ -156,4 +221,29 @@ export function sessionArgs(target: RemoteTarget, socksPort: number): string[] {
     target.alias,
     "sh",
   ];
+}
+
+/** Marker separating the resolved path from the entries in a directory listing. */
+export const DIR_LIST_MARK = "---penguin-dirs---";
+
+/**
+ * Lists the subdirectories of `dir` on the far side, plus the path it actually resolved to.
+ *
+ * An empty `dir` means that machine's home, which is the picker's starting point. The path
+ * is resolved over THERE (`cd` + `pwd -P`) because only that machine can say what `~` or a
+ * symlink means on it — resolving here would be this machine answering a question about
+ * another one's filesystem.
+ *
+ * Hidden directories are dropped, matching what the local browser shows, and everything is
+ * quoted for the remote shell by the caller's quoting rules.
+ */
+export function listDirsCommand(dir: string): string {
+  const target = dir === "" ? '"$HOME"' : shQuote(dir);
+  return [
+    `cd ${target} 2>/dev/null || exit 3`,
+    `pwd -P`,
+    `echo ${DIR_LIST_MARK}`,
+    // -1 one per line, trailing slash marks directories, then keep only those.
+    `ls -1p 2>/dev/null | grep '/$' | sed 's:/$::' | grep -v '^\\.' || true`,
+  ].join("; ");
 }

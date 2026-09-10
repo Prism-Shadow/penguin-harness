@@ -11,8 +11,11 @@ import { stringify as stringifyToml } from "smol-toml";
 import { atomicWriteFile, resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
-import type { ScheduleDefinition } from "./schedule-file.js";
-import { parseScheduleFile, type ScheduleParseResult } from "./schedule-file.js";
+import {
+  parseScheduleFile,
+  type ScheduleDefinition,
+  type ScheduleParseResult,
+} from "./schedule-file.js";
 
 export interface ScheduleFileEntry {
   name: string;
