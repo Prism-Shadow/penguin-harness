@@ -6,11 +6,16 @@
  * one-line detail changing. Duration sits right after the detail like the group header's
  * count+duration slots (LiveDuration ticking while running, the settled span with
  * decimals once finished); the flexible spacer keeps the chevron pinned at the right
- * edge. A body (e.g. the discovered-tool groups) makes the row expandable, collapsed by
- * default; collapsing while the sticky header is stuck scrolls the row back into view —
- * the exact behavior of the work-group header.
+ * edge. A body (e.g. the discovered-tool groups) makes the row expandable; collapsing while
+ * the sticky header is stuck scrolls the row back into view — the exact behavior of the
+ * work-group header.
+ *
+ * Expand policy, also the work group's (work-group.tsx): the body opens while the step runs,
+ * so its rows are visible as they are appended, and closes itself once the step settles —
+ * leaving the one-line summary the row exists to be. The body's own rows never open with it:
+ * the reader is shown that they are there, not their contents.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { humanizeDuration } from "../../lib/format";
 import { Chevron } from "../../components/ui/chevron";
@@ -36,13 +41,21 @@ export function StepBanner({
   liveSinceMs?: number;
   /** Settled wall time once finished. */
   durationMs?: number;
-  /** Expandable body; its presence adds the chevron (collapsed by default, streaming included). */
+  /** Expandable body; its presence adds the chevron (open while running, closed once settled). */
   children?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const running = state === "running";
+  const [open, setOpen] = useState(running);
+  const userToggled = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const expandable = children !== undefined && children !== null;
+
+  // Before any manual toggle, follow "is this step still running". Afterwards the row is the
+  // reader's: a later auto transition never fights them, so a finished row they opened to read
+  // stays open, and one they closed mid-run stays closed.
+  useEffect(() => {
+    if (!userToggled.current) setOpen(running);
+  }, [running]);
 
   const header = (
     <>
@@ -94,6 +107,7 @@ export function StepBanner({
           type="button"
           aria-expanded={open}
           onClick={() => {
+            userToggled.current = true;
             // Collapsing while the header is stuck: bring the (now header-only) card back
             // into view once React commits — `nearest` makes every other case a no-op.
             const willClose = open;
