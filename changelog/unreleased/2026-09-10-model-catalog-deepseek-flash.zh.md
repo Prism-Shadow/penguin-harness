@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** feature
 - **Scope:** `core`, `cli`, `docs`, `skills`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#662](https://github.com/Prism-Shadow/penguin-harness/pull/662)
 
 [English](2026-09-10-model-catalog-deepseek-flash.md)
 
