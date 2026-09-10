@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#659](https://github.com/Prism-Shadow/penguin-harness/pull/659)
 
 [中文版](2026-09-10-trace-panel-tiered-cost.zh.md)
 
