@@ -4,7 +4,6 @@
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
 import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
-import { claimAny } from "../hmr/capabilities.js";
 
 /** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
 export interface LoadedPlugin {
@@ -97,5 +96,5 @@ export const PLUGINS_RESOURCE_ID = "platform.plugins";
  * on the first hot push.
  */
 export function pluginHostFrom(resources: Resources): PluginHost {
-  return claimAny<PluginHost>(resources, PLUGINS_RESOURCE_ID) ?? new PluginHost();
+  return resources.claim<PluginHost>(PLUGINS_RESOURCE_ID) ?? new PluginHost();
 }
