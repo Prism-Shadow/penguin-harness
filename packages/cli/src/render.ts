@@ -1026,6 +1026,10 @@ export class StreamRenderer {
   }
 
   private handlePartialThinking(p: PartialThinkingPayload): void {
+    // Between the paired compaction events the stream carries the compaction request's
+    // thinking as ordinary partial_thinking, beside its summary (see handlePartialText): the
+    // CLI keeps its one-line compaction progress and prints none of it.
+    if (this.compactionActive) return;
     if (p.event_type === "stop") {
       this.finishLine();
       return;

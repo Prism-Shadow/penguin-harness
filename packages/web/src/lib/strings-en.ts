@@ -1830,6 +1830,9 @@ Scenarios:
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
+    compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionResult: "Result",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";

@@ -1802,8 +1802,13 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    /** The bare mode word — the Trace view's round badge, the failed row's title, and the stem of the two state titles below — so a `discard` is never announced as compaction: it clears the context rather than compacting it. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
+    /** The row's title doubles as its status, the work-group header's idiom (`workRunning` / `workDone`): 压缩中 / 清空中 while the step runs, 压缩完毕 / 清空完毕 once it settles. With mode and state both in the title nothing is left for a detail line on either side — a `summarize` shows its summary in its own expandable body — so only `compactionFailed` keeps the detail slot, carrying the one thing a title cannot. */
+    compactionRunning: (mode: string): string => (mode === "discard" ? "清空中" : "压缩中"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
+    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    compactionResult: "压缩结果",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -2330,7 +2335,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
