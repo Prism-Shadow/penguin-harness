@@ -715,7 +715,7 @@ export function DraftView({
   const composerRef = useRef<ComposerControl | null>(null);
   const fillExample = useCallback((task: ExampleTask) => {
     // S is a live binding swapped on locale change: read the prompt at click time, not at render.
-    composerRef.current?.fillExample(S.chat.exampleTasks[task.id].prompt, task.skills);
+    composerRef.current?.fillPrompt(S.chat.exampleTasks[task.id].prompt, task.skills);
   }, []);
   /**
    * A saved shortcut takes the same path with no Skills to pin: its prompt is the user's own text,
@@ -723,7 +723,7 @@ export function DraftView({
    * empty pin list leaves the composer's Skill selection exactly as the user set it.
    */
   const fillShortcut = useCallback((prompt: string) => {
-    composerRef.current?.fillExample(prompt, []);
+    composerRef.current?.fillPrompt(prompt, []);
   }, []);
 
   /**
@@ -808,7 +808,7 @@ export function DraftView({
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
-            the composer with the prompt and the user sends it (see fillExample). The last folder
+            the composer with the prompt and the user sends it (see fillPrompt). The last folder
             is the user's own saved prompts (see shortcuts-folder.tsx).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
             previous, and the open one cannot be collapsed. The block is therefore four folder

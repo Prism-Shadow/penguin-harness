@@ -148,7 +148,7 @@ describe("the example row's click path", () => {
   it("cannot send: the handler neither posts a task nor creates a Session", () => {
     const handler = declaration("fillExample");
     expect(handler, "the fillExample handler").not.toBeNull();
-    expect(handler).toContain("composerRef.current?.fillExample");
+    expect(handler).toContain("composerRef.current?.fillPrompt");
     expect(handler).not.toContain("onSend");
     expect(handler).not.toContain("api.");
   });

@@ -81,6 +81,7 @@ import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -110,6 +111,8 @@ import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
+import { SchedulePanel } from "../schedules/schedule-panel";
+import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
@@ -780,8 +783,23 @@ export function ChatPage() {
       // the turn appended its own record to it. Same edge, same guard — a phantom "idle"
       // from a detaching stream never reaches here.
       setSettledTurnSignal((n) => n + 1);
+      // The turn may equally have created a scheduled task, switched one off, or consumed a
+      // one-off — so the schedule directory is re-read on this same edge, the way the Files
+      // and Trace panels re-read theirs. One store refresh serves both surfaces: the store
+      // notifies its subscribers, so the dock's schedules panel and the sidebar row's alarm
+      // clock come from the same list and cannot disagree.
+      if (projectId !== null && selectedAgentId !== null) {
+        noteScheduleEvent(projectId, selectedAgentId);
+      }
     }
-  }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
+  }, [
+    stream.taskState,
+    selectedSessionId,
+    selectedAgentId,
+    projectId,
+    reloadSessions,
+    reloadAgents,
+  ]);
 
   // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
   // again when a run finishes under the user's eyes, so the sidebar row left behind is not
@@ -1240,6 +1258,18 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  /**
+   * The scheduled-tasks panel's exit: the composed prompt lands in this conversation's composer
+   * and stops there. Nothing is posted — pressing Send stays the user's move, and the composer
+   * then routes it the way it routes anything typed (a steering message while a Task runs, a
+   * task otherwise), so this path needs no delivery rules of its own.
+   */
+  const composerRef = useRef<ComposerControl | null>(null);
+  const prefillComposer = useCallback((text: string) => {
+    // An empty pin list: a schedule prompt names no Skills, so the composer's own selection stands.
+    composerRef.current?.fillPrompt(text, []);
+  }, []);
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1561,7 +1591,14 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
+    if (!selected)
+      return (
+        <EmptyState
+          title={panelLabel(kind)}
+          // The schedules tab says what the first message unlocks; the other tabs share one line.
+          description={kind === "schedules" ? S.schedule.panelDraftEmpty : S.dock.draftEmpty}
+        />
+      );
     switch (kind) {
       case "agents":
         return (
@@ -1619,6 +1656,15 @@ export function ChatPage() {
       case "messaging":
         return (
           <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
+        );
+      case "schedules":
+        return (
+          <SchedulePanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            onPrefillComposer={prefillComposer}
+          />
         );
     }
   };
@@ -1687,6 +1733,7 @@ export function ChatPage() {
   // /model forks the conversation onto another model.
   const input = selected && (
     <ChatInput
+      controlRef={composerRef}
       status={stream.taskState}
       onSend={onSend}
       onSteer={onSteer}
