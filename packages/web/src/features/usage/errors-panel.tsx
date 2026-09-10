@@ -28,24 +28,38 @@ type ErrorKindKey = "unexpected" | "expected";
 export interface ErrorsFilters {
   from?: string;
   to?: string;
+  /** The trailing window narrowing those dates (the two "last …" presets); both or neither. */
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
 }
+
+/** The quick range presets the clear confirmation names by name; a custom range is named by its dates. */
+export type ErrorsRangePreset = "1h" | "1d" | "7d" | "30d" | "90d";
 
 /**
  * The one sentence the clear confirmation has to get right: exactly which rows will go.
  *
  * The delete is scoped to the filter on screen, so a dialog naming a wider set (the Project's
  * whole history) or a narrower one (this page of rows) would misdescribe what the button does
- * — which is the entire failure a confirmation exists to prevent. Pure and exported so that is
- * asserted directly: this package's vitest runs in `node`, so an opened dialog is not
- * something a test can inspect.
+ * — which is the entire failure a confirmation exists to prevent. The range is named the way
+ * the picker names it — "the last 7 days", not the two dates standing for it, which a reader
+ * would have to work back from — and only a custom range, which has no other name, is spelled
+ * as its dates. Pure and exported so that is asserted directly: this package's vitest runs in
+ * `node`, so an opened dialog is not something a test can inspect.
  */
-export function errorsClearScopeText(filters: ErrorsFilters, count: number): string {
-  const from = filters.from ?? "";
-  const to = filters.to ?? "";
+export function errorsClearScopeText(
+  filters: ErrorsFilters,
+  preset: ErrorsRangePreset | undefined,
+  count: number,
+): string {
+  const range =
+    preset !== undefined
+      ? S.usage.errorsClearRangePreset(preset)
+      : S.usage.errorsClearRangeCustom(filters.from ?? "", filters.to ?? "");
   return filters.agentId !== undefined && filters.agentId !== ""
-    ? S.usage.errorsClearScopeAgent(count, from, to, filters.agentId)
-    : S.usage.errorsClearScope(count, from, to);
+    ? S.usage.errorsClearScopeAgent(count, range, filters.agentId)
+    : S.usage.errorsClearScope(count, range);
 }
 
 /**
@@ -133,6 +147,7 @@ export function ErrorsPanel({
   errors,
   projectId,
   filters,
+  preset,
   canClear,
   onCleared,
 }: {
@@ -143,6 +158,8 @@ export function ErrorsPanel({
    * Memoize it at the call site: the fetch effect depends on the object's identity.
    */
   filters: ErrorsFilters;
+  /** The quick preset `filters` stands for, named as such in the clear confirmation; absent for a custom range. */
+  preset?: ErrorsRangePreset;
   /**
    * Whether this viewer may empty the table (Project owner). A member can read the panel but
    * not clear it, and the route enforces that on its own; hiding the button keeps the panel
@@ -152,7 +169,7 @@ export function ErrorsPanel({
   /** Reload the dashboard after a clear — the stats above the table are the caller's data. */
   onCleared: () => void;
 }) {
-  const { total, clearable, unexpected, topCode, recent } = errors;
+  const { total, unexpected, topCode, recent } = errors;
   // Page size is read off the first page rather than duplicating the server's ERROR_RECENT_N:
   // whenever a second page exists at all, `recent` is exactly that many rows, so the two cannot
   // drift apart into skipping or repeating rows. (Empty means a single empty page anyway.)
@@ -327,10 +344,9 @@ export function ErrorsPanel({
           The pager itself still appears only once there is more than one page. */}
       {(items.length > 0 || page > 0) && (
         <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          {/* Offered on what the clear can really take: `clearable` excludes the unattributed
-              rows an admin's read includes but no Project-scoped delete removes, so a window
-              holding only those shows no button rather than one that deletes nothing. */}
-          {canClear && clearable > 0 && clearableFilter(filters) && (
+          {/* Offered while there is something to take: the clear reaches exactly the rows the
+              panel lists — for an admin, the unattributed rows an admin's read includes too. */}
+          {canClear && total > 0 && clearableFilter(filters) && (
             <button
               type="button"
               disabled={clearing}
@@ -375,7 +391,7 @@ export function ErrorsPanel({
         onConfirm={() => void runClear()}
       >
         <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
-          <p className="break-words">{errorsClearScopeText(filters, clearable)}</p>
+          <p className="break-words">{errorsClearScopeText(filters, preset, total)}</p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {S.usage.errorsClearIrreversible}
           </p>

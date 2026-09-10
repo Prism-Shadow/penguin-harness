@@ -10,9 +10,8 @@ import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { EXTENSIONS_RESOURCE_ID, ExtensionHost, extensionHostFrom } from "../src/extension/host.js";
-import type { PenguinContext, PenguinInterface } from "../src/extension/index.js";
+import type { PenguinContext, PenguinInterface, WorkflowFactory } from "../src/extension/index.js";
 import { instantiateWorkflows, WorkflowFactories } from "../src/extension/workflow.js";
-import type { WorkflowFactory } from "../src/extension/index.js";
 
 function emptyIface(): PenguinInterface {
   // The registry, not a bare Map: that IS the surface an extension gets (see platform.ts).

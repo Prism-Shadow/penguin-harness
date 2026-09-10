@@ -112,18 +112,32 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/machines | The host aliases of the SERVER's own `~/.ssh/config`, the version this server would install, and the running or last install job: `{machines: [{id, alias, installed}], imageVersion, job}` |
-| POST | /api/machines/:machineId/install | Start installing this build on that host; `202` with the same body, the job now running |
+| GET | /api/projects/:projectId/machines | This machine and the host aliases of the SERVER's own `~/.ssh/config` with what THIS PROJECT has installed on each, the last status probed for each, the version this server would install, and the running or last job: `{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}`. `elsewhere` is a host another Project installed — a machine to adopt rather than install |
+| POST | /api/projects/:projectId/machines/probe | Ask this Project's installed machines what they are doing (one ssh round trip each, five at a time) and answer the list with the fresh statuses |
+| POST | /api/projects/:projectId/machines/:machineId/install | Start installing this build on that host and give it to this Project; `202` with the same body, the job now running. Body `{replaceProgram: true}` answers a job that came back asking for it: install the program even though its version already matches, and restart it |
+| POST | /api/projects/:projectId/machines/:machineId/connect | Bring that machine's server up and HOLD the one connection to it — an `ssh -T -D` session that never idles out, is re-established on its own if it drops, and is restored after a restart or a hot push; `202` with the same body, the connect job now running. A Windows machine is `409` `connect_unsupported`: there is no shell to hold a session on |
+| POST | /api/projects/:projectId/machines/:machineId/disconnect | Drop the connection. The remote server is left running — it is that machine's own, and other people may be on it |
+| POST | /api/projects/:projectId/machines/:machineId/restart | Stop that machine's server and start it again on the same port; `202`, or `409` while a job runs. Its own control because a machine's FILES can be brought forward while it runs, and only a restart makes the process match them |
+| GET | /api/projects/:projectId/machines/:machineId/dirs?path= | The subdirectories of `path` on that machine, over the held connection — what the workspace picker browses. Addressed by the machine's OWN id, like the proxy. `404` when the machine is not connected: a read never opens ssh on its own |
+| POST | /api/projects/:projectId/machines/:machineId/release | Drop that machine from this Project; the install on it stays |
 
-Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config — it is read, and `ssh -G` resolves an alias only at install time, so a config declaring hundreds of hosts costs one file read.
+Admin only on a personal server as much as a multi-user one: the install spawns ssh with the **server account's** keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. Nothing writes to the ssh config, and nothing resolves it: the list is the config's text (one file read, however many hosts it declares), and an alias is handed to ssh as written — what it means is ssh's to apply, from its own config, every time.
 
 `imageVersion` is what would be pushed, or `null` when this server has no image at all (a development checkout that has never been hot-pushed to is the one such shape) — every install then refuses with `409` `no_install_image`. The version is the running install's own: a hot-pushed server sends the bundle it runs (`0.0.0-hmr.<cli>.<web>`), a tarball or packaged one sends its own tree, so the two ends match by construction.
 
 `installed` is the last install THIS server carried out on that machine — `{version, at}`, or `null` when it never has. It is persisted under the data root, so it survives a restart, a hot push, and installing on some other machine; a record of what was done rather than a survey of the far side, so a machine wiped by hand still reads as installed until the next install corrects it. A failed install records nothing.
 
-An install is a job, not a request: it probes the far side, may fetch and verify a Node runtime, and copies an image over scp — minutes in the bad case. `POST` starts it and returns at once; the client polls `GET` for `job.log`, which carries the far side's own words (ssh's diagnostics, the remote installer's output). `job.result` is `null` while running, then `{ok: true, kind: "installed" | "already-installed", version}` or `{ok: false, step, message}`. One job at a time; the job lives in memory and does not survive a hot push or a restart, and re-running is the recovery — every step is idempotent.
+`machineId` is that machine's OWN id — 16 base64url characters minted by the server running there (its `machine` table), stable across renames, re-aliasing and reinstalls, and the thing stored references should point at. It is `null` until a server has started on that machine, since nothing has minted one yet; it is learned on the same round trip as `status` and remembered beside the install record. Two aliases for one host report the same `machineId`.
 
-Refusals decided before any ssh runs have their own codes: `409` `install_running`, `404` `unknown_machine`, `409` `no_install_image`, `502` `unresolvable_host`.
+`local` marks the machine this server runs on. It is always listed, always installed, always running — it is the thing answering — and is never an install target: `POST …/install` on it is `409` `self_install`.
+
+`status` is `{state, checkedAt, port?, detail?}` with `state` one of `running` / `stopped` / `unreachable`, or `null` when that machine has not been probed. There is no separate ssh status: ssh is the transport, so a machine it cannot reach is `unreachable` and carries OpenSSH's own message in `detail`. `GET` never probes — it reports the last answer — because a probe is an ssh round trip per machine while the list itself is only the config's text. `POST /api/machines/probe` is what spends them, and only on machines something was installed on.
+
+A connected machine's API is reachable at `/server/<machineId>/api/…` on THIS origin, dialled through the one ssh session this server holds to it — a channel inside that session, via its SOCKS port, never a second connection. Addressed by the machine's own id rather than the ssh alias it was reached through: an alias lives in one config file, so keying on it would change a machine's URLs the moment someone renamed a host — and being base64url, an id needs no percent-encoding in a path. **Admin only**, and one identity: the request is made over there as that machine's admin, with a session this server mints through its own ssh access (`penguin auth token` on the machine) — the browser's cookies never cross, and the machine's never come back. Only `/api` is forwarded — the frontend stays local.
+
+An install is a job, not a request: it probes the far side, may fetch and verify a Node runtime, and copies an image over scp — minutes in the bad case. `POST` starts it and returns at once; the client polls `GET` for `job.log`, which carries the far side's own words (ssh's diagnostics, the remote installer's output). A connect (`POST …/connect`) and a restart (`POST …/restart`) are jobs of the same shape, `job.kind` (`install` / `connect` / `restart`) telling them apart. `job.result` is `null` while running, then `{ok: true, installed: "installed" | "already-installed", version}` for an install, `{ok: true, connected: true}` for a connect or a restart, or `{ok: false, step, message, canReplaceProgram?}` — `canReplaceProgram` marks a failure whose next step is installing the program anyway (`POST …/install` with `{replaceProgram: true}`), offered rather than done because it restarts a server other people may be using. One job at a time; the job lives in memory and does not survive a hot push or a restart, and re-running is the recovery — every step is idempotent.
+
+Refusals decided before any ssh runs have their own codes: `409` `install_running`, `404` `unknown_machine`, `409` `no_install_image`, and `409` `self_install` — this server will not push this build over the program directory it is running from. Besides the `local` row, that covers an alias pointing back home (`Host localhost`, a second name for this host) once a probe has heard this server's own id from it.
 
 ### Version and Self-Update
 
@@ -245,8 +259,8 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /usage | Usage statistics; query parameters `from`, `to`, `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`), `groupBy`, `granularity` (`minute` / `hour` / `day` / `week` / `month` time-series precision, default `day`; oversized range × precision combinations are rejected), `agentId`, `provider`, `modelId` |
-| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
-| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `agentId`, the same pair the reads take (no `kind` — the panel offers no such control) → `{deleted}`. Project owner only; errors with no Project attribution are outside every clear, admin included |
+| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
+| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `fromTs` / `toTs` / `agentId`, the same set the reads take (no `kind` — the panel offers no such control) → `{deleted}`. `from` and `to` are both required here (400 otherwise) — an open bound would be the whole history rather than a filter. Project owner only; the clear reaches exactly what the caller's reads reach, so an admin's clear also takes the unattributed rows an admin's read shows, and a member's never does |
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |
@@ -426,7 +440,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two channels (the 
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | GET /api/sessions/:sessionId/stream | The Session's message stream and run events |
-| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / schedule_fired / schedule_queued / session_created) |
+| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / session_background / schedule_fired / schedule_queued / session_created) |
 
 ### Wire Format
 
@@ -438,6 +452,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -452,6 +467,7 @@ export type ServerEvent =
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
 | session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
+| session_background | A Session's background-task counts changed — a command promoted past its yield window or launched with `run_in_background`, a process that exited or was stopped, a background subagent starting, settling or being released. Carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = promoted subagent sessions mid-round), zeros included so a list can clear its mark without refetching; the list row and the single-session GET omit the field at zero. Same audience as `session_state` |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`, or a completed key-minting flow): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |

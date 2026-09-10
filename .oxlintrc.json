@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import"],
+
+  // Every rule is off unless it is named below. oxlint's default `correctness` category
+  // reports ~127 findings here — unused variables, useless spreads, control characters in
+  // the terminal's regexes (deliberate), generators that never yield (test doubles). Each
+  // is its own conversation, and a gate that starts noisy gets ignored or disabled, so
+  // this one starts at what the repo is already clean under and tightens from there.
+  "categories": { "correctness": "off" },
+
+  "rules": {
+    // The rule this linter was added for: prettier formats import statements but never
+    // merges them, so a module imported twice in one file went unnoticed indefinitely.
+    // A value import beside an `import type` from the same module is still fine.
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "import/no-empty-named-blocks": "error"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/build/**",
+    "**/node_modules/**",
+    "packages/desktop/release/**",
+    "packages/landing/.blog-assets/**",
+    "packages/web/dist-app/**"
+  ]
+}

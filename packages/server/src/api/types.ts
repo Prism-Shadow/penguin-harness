@@ -431,7 +431,7 @@ export interface ModelInfo {
 export interface ModelsResponse {
   /** Paired reference to the default Model. */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
+  /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
   /**
    * When the Project's model/credential config last changed (ISO; the config file's mtime,
@@ -479,7 +479,7 @@ export interface ModelUpdateEntry {
 export interface ModelsUpdateRequest {
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image: must be included in models and not annotated vision=false; omitted keeps the existing value. */
+  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
   models: ModelUpdateEntry[];
 }
@@ -1234,6 +1234,24 @@ export interface SessionInfo {
   tracePath?: string;
   /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
   messagingChannel?: MessagingChannel;
+  /**
+   * Background work the Session's loaded runtime still owns: command sessions running past
+   * their yield window (`exec_command` promotions and `run_in_background` launches) and
+   * background subagent sessions mid-round. Read from the runtime's in-memory registries —
+   * no Trace is consulted — and present only while at least one count is non-zero, so a
+   * Session that is not loaded (a resumed entry starts with empty registries) and one with
+   * nothing running both omit it. Changes are pushed as `session_background` on the user
+   * channel; list rows and the single-session GET carry the same field.
+   */
+  backgroundTasks?: SessionBackgroundTasks;
+}
+
+/** The background-task counts of one Session (see SessionInfo.backgroundTasks). */
+export interface SessionBackgroundTasks {
+  /** Background command sessions whose process is still running. */
+  processes: number;
+  /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
+  subagents: number;
 }
 
 /**
@@ -1409,6 +1427,14 @@ export interface MessagesPageInfo {
   prior: {
     subagentTokens: number;
     elapsedMs: number;
+    /**
+     * Model-API time and tool wall time accrued before this window, the breakdown of
+     * `elapsedMs` the chat header shows under it. Seeded together with their total: seeding
+     * one alone would put a full elapsed time beside components covering only the window.
+     * The two may overlap and do not partition `elapsedMs` (see `TraceTaskStats.toolMs`).
+     */
+    apiMs: number;
+    toolMs: number;
     sessionTokens: number;
     contextTokens: number;
   };
@@ -2201,6 +2227,13 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /**
+       * Steering the run ended without delivering (absent = none) — an interrupt while a tool
+       * was running is the ordinary way to produce one. Handed back rather than discarded: the
+       * composer recalls each by the same handle and restores it into the draft, so the typed
+       * message returns to the input box instead of being lost.
+       */
+      returnedSteering?: PendingSteeringInfo[];
       /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
       pendingFollowUps?: PendingFollowUpInfo[];
       /**
@@ -2238,6 +2271,14 @@ export type ServerEvent =
       lastActiveAt: string;
       hasTrace: boolean;
     }
+  /**
+   * A Session's background-task counts changed: a command promoted to the background, a
+   * process that exited or was stopped, a background subagent starting or settling a round,
+   * a released session. The counts are the row's `backgroundTasks` as they stand after the
+   * change — zeros included, so a list can clear its mark without refetching. Published to
+   * the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -2453,12 +2494,37 @@ export interface TraceTaskStats {
    */
   tokens: { cacheRead: number; cacheWrite: number; output: number };
   /**
+   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
+   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
+   * price lookup the cost center applies to the usage row the same `token_usage` produced,
+   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
+   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
+   * no pricing or the file's head names no provider, and then absent from the response's
+   * total as well.
+   */
+  cost?: number;
+  /**
    * Total LLM generation duration for this turn (the denominator for output TPS; human
    * approval wait already deducted). The numerator is simply `tokens.output`: since
    * compaction forms its own turn, each turn's output tokens are just its own Requests'
    * output — there's no second figure to reconcile.
    */
   llmMs: number;
+  /**
+   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
+   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
+   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
+   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
+   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
+   * still running when the file ended, or interrupted — contributes nothing rather than being
+   * extrapolated to now.
+   *
+   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
+   * model decodes. They are two measured components of the turn's duration, not a partition of
+   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
+   * to neither). Never derive one by subtracting the other from the duration.
+   */
+  toolMs: number;
 }
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
@@ -2562,6 +2628,23 @@ export interface TraceAnalysisResponse {
    * frontend's events are paginated, so self-aggregation would undercount.
    */
   elapsedMs: number;
+  /**
+   * The file's model-API time: the sum of the turns' `llmMs` (human approval wait deducted,
+   * compaction requests included, so the scope matches `elapsedMs`).
+   */
+  apiMs: number;
+  /**
+   * The file's tool wall time: the sum of the turns' `toolMs` (parallel tools counted once
+   * within a turn). Summed per turn rather than unioned across the file, so the global figure
+   * stays the sum of the per-turn figures, exactly as `elapsedMs` is. May overlap `apiMs` —
+   * see `TraceTaskStats.toolMs`.
+   */
+  toolMs: number;
+  /**
+   * The file's cost in USD: the sum of the turns' `cost` (compaction turns included, the
+   * scope every total here shares). Absent exactly when the turns carry no `cost`.
+   */
+  cost?: number;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
@@ -2790,16 +2873,8 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
+  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
-  /**
-   * How many of {@link total} a clear would actually take (see {@link UsageErrorsClearResponse}).
-   *
-   * The same as `total` for an ordinary member, and smaller for an admin, whose reads include
-   * unattributed rows that no Project-scoped clear removes. The confirmation is the only place
-   * this matters, and it is the place it matters most: an irreversible delete has to name the
-   * number that will really go, not the number on screen.
-   */
-  clearable: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
@@ -2812,8 +2887,9 @@ export interface UsageErrors {
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
  * first. The dashboard response above already carries the first page; this exists so
  * "show me earlier ones" does not have to refetch the whole aggregate. It takes the same
- * date/agent filter as the dashboard, so a page never widens what the summary counted, plus
- * an optional `kind` ({@link UsageErrorKind}) narrowing to one of the two categories — which
+ * date/agent filter as the dashboard (`fromTs`/`toTs` narrow it to a trailing window, both
+ * or neither), so a page never widens what the summary counted, plus an optional `kind`
+ * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
  * with `limit=1` instead of pulling the whole dashboard aggregate.
  */
@@ -2825,11 +2901,15 @@ export interface UsageErrorsPage {
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
- * panel is showing (its date range and Agent), Project owner only.
+ * panel is showing (its date range, the trailing window when one is on, and Agent), Project
+ * owner only.
  *
  * Scoped to the filter rather than the Project's whole history, so a clear takes exactly the
- * rows on screen. Errors with no Project attribution are never included, whoever asks: they
- * belong to no Project and are surfaced in every Project's admin view.
+ * rows on screen — for an admin, the unattributed rows an admin's panel shows included; a
+ * member's panel never shows them and a member's clear never takes them.
+ *
+ * `from` and `to` are both required (400 otherwise), where the reads treat them as optional:
+ * an absent bound is unbounded on that side, which is the whole history rather than a filter.
  */
 export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */
@@ -3393,9 +3473,9 @@ export interface MachineInfo {
    */
   alias: string;
   /**
-   * The last install THIS server carried out there, remembered on disk so it survives a
-   * restart, a hot push, and installing on some other machine. Null when this server has
-   * never installed there.
+   * The last install THIS server carried out there FOR THIS PROJECT, remembered in web.db so
+   * it survives a restart, a hot push, and installing on some other machine. Null when this
+   * Project has never installed there — a host another Project did is `elsewhere` below.
    *
    * A record of what was done, not a survey of the far side: a machine wiped by hand still
    * reads as installed until the next install probes it and corrects the record. Asking the
@@ -3403,22 +3483,102 @@ export interface MachineInfo {
    * the config-text list exists to avoid.
    */
   installed: { version: string; at: string } | null;
+  /**
+   * Installed by this server, but not this Project's machine — another Project's, or nobody's
+   * since it was released — and so not a host nobody has touched either. Absent in every
+   * other case, including when it IS this Project's (where `installed` carries the same record).
+   *
+   * Reported rather than folded into `installed` because the two lead to different actions:
+   * one is a machine to use, the other is a machine to adopt, which costs a row and no ssh.
+   * Reported rather than hidden because a row that silently looked uninstalled would send
+   * someone to spend a 30 MB transfer re-doing what is already done.
+   */
+  elsewhere?: { version: string; at: string };
+  /**
+   * The machine's OWN id — 16 base64url characters minted by the server that runs there,
+   * stable across renames, re-aliasing and reinstalls. Null until a server has started on
+   * that machine, since nothing has minted one yet.
+   *
+   * This is what anything stored should point at; `id` above is an ADDRESS (`ssh:<alias>`),
+   * and `alias` is what people read. Two aliases for one host share a `machineId`, and an
+   * alias repointed at a different host answers a different one — an id never changes for a
+   * machine, so a change of id is a change of machine.
+   */
+  machineId: string | null;
+  /** The host this server itself runs on. Always present, always installed, never a target. */
+  local: boolean;
+  /**
+   * The connection this server holds to it — the one ssh session everything to the machine
+   * rides (machines/transport/ssh-session.ts): a fact about a process on THIS side, which
+   * outlives the far server. Present means `/server/<id>/api/…` has somewhere to go; whether
+   * a server ANSWERS over there is `status`'s word, from the last probe — and the two must not
+   * be read for each other: taking the connection for the machine's liveness is the mistake
+   * behind the connect loop (#561). Always null for `local`, which needs no connection.
+   */
+  connection: { pid: number } | null;
+  /**
+   * The machine's API as last seen by this server's proxy — stamped by traffic passing
+   * through, never by a probe of its own. `answeredAt` when the last forwarded request got
+   * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
+   * the transport's own words when the connection had nowhere to deliver. Null until a first
+   * request flows, and only as fresh as the last one — no traffic, no measurement, which is
+   * honest: nothing burns ssh for a page nobody is looking at. Always null for `local`;
+   * this server answering the request that fetched this list is that measurement.
+   */
+  api: { answeredAt: string } | { failedAt: string; detail: string } | null;
+  /**
+   * What the last probe found over there, or null when none has been taken. Never filled in
+   * at list time: a probe costs an ssh round trip per machine, so the list reports the last
+   * answer and the page asks for a fresh one when it wants one — on a widening schedule,
+   * since each probe is an ssh round trip while the list is only the config's text.
+   */
+  status: MachineServerStatus | null;
 }
 
 /**
- * The running or last install, polled by GET /api/machines while one runs. `log` carries the
- * far side's own words where there are any: ssh's diagnostics and the remote installer's
- * output say more about a refused key or an unusable Node than a paraphrase would.
+ * One machine's server state. There is deliberately no separate "ssh" status: ssh is the
+ * transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
+ * diagnostic in `detail` rather than as two statuses a reader has to combine.
  */
-export interface MachineInstallJob {
+export interface MachineServerStatus {
+  state: "running" | "stopped" | "unreachable";
+  /** ISO timestamp of the probe this answer came from. */
+  checkedAt: string;
+  /** The port it is serving on (`running`). */
+  port?: number;
+  /** Why the machine could not be reached (`unreachable`) — ssh's own words. */
+  detail?: string;
+}
+
+/**
+ * The running or last job on a machine — an install, or a connect — polled by GET
+ * /api/machines while one runs. One at a time. `log` carries the far side's own words where
+ * there are any: ssh's diagnostics and the remote installer's output say more about a
+ * refused key or an unusable Node than a paraphrase would.
+ */
+export interface MachineJob {
+  kind: "install" | "connect" | "restart";
   machineId: string;
   alias: string;
   running: boolean;
   log: string[];
   result:
     | null
-    | { ok: true; kind: "installed" | "already-installed"; version: string | null }
-    | { ok: false; step: string; message: string };
+    | { ok: true; installed: "installed" | "already-installed"; version: string | null }
+    | { ok: true; connected: true }
+    | {
+        ok: false;
+        step: string;
+        message: string;
+        /**
+         * The failure has a next step this side can take, and it needs saying yes to:
+         * installing the PROGRAM over there and restarting it. Set when a hot update could
+         * not be handed over — the machine's store holds no CLI this server can talk to, and
+         * installing is what replicates one. Offered rather than done, because it restarts a
+         * server this Project does not own alone.
+         */
+        canReplaceProgram?: true;
+      };
 }
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
@@ -3430,5 +3590,5 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
-  job: MachineInstallJob | null;
+  job: MachineJob | null;
 }

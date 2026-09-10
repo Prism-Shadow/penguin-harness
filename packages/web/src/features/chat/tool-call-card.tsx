@@ -27,6 +27,8 @@ import {
   DISCLOSURE_ROW_STICKY_CLASS,
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
+import { ICON_SIZE } from "../../lib/icon-scale";
+import { BackgroundTasksMark } from "../../components/ui/session-activity-icon";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
@@ -45,6 +47,21 @@ const DESCRIBED_TOOLS = new Set([
 
 /** The three file tools: previewed by their `file_path` argument. */
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
+/**
+ * Tool names Traces carried before `read_file` absorbed image reading (2026-09-02): their
+ * image argument was `source`, previewed here like a file path so an old Trace's card still
+ * reads sensibly. Display-only — nothing assembles these tools any more. Removable once
+ * Traces written before that date no longer need rendering.
+ */
+const LEGACY_IMAGE_TOOLS = new Set(["read_image", "describe_image"]);
+
+/** The path-like argument a tool is previewed by: `file_path` for the file tools, `source` for the historical image tools. */
+function pathArgument(name: string): string | null {
+  if (FILE_TOOLS.has(name)) return "file_path";
+  if (LEGACY_IMAGE_TOOLS.has(name)) return "source";
+  return null;
+}
 
 /**
  * Shortens a path for one-line display: at most one parent directory plus the filename
@@ -70,8 +87,9 @@ export function previewArguments(name: string, argsJson: string): string {
     const cmd = extractStringField(argsJson, "cmd");
     if (cmd !== null) return `$ ${cmd.value.replace(/\s+/g, " ").trim()}`;
   }
-  if (FILE_TOOLS.has(name)) {
-    const filePath = extractStringField(argsJson, "file_path");
+  const pathArg = pathArgument(name);
+  if (pathArg !== null) {
+    const filePath = extractStringField(argsJson, pathArg);
     if (filePath !== null) return shortenPath(filePath.value.replace(/\s+/g, " ").trim());
   }
   return argsJson.replace(/\s+/g, " ").trim();
@@ -106,8 +124,9 @@ export function headerSubtitle(name: string, argsJson: string, settled = true): 
     }
     if (DESCRIBED_TOOLS.has(name)) return null;
   }
-  if (FILE_TOOLS.has(name)) {
-    const filePath = extractStringField(argsJson, "file_path");
+  const pathArg = pathArgument(name);
+  if (pathArg !== null) {
+    const filePath = extractStringField(argsJson, pathArg);
     if (filePath !== null) {
       if (!filePath.complete && !settled) return null;
       const line = filePath.value.replace(/\s+/g, " ").trim();
@@ -115,6 +134,29 @@ export function headerSubtitle(name: string, argsJson: string, settled = true): 
     }
   }
   return null;
+}
+
+/**
+ * Whether this call was launched with `run_in_background: true` — the argument `exec_command`
+ * and `run_subagent` share, and the one that leaves work running after the tool has returned.
+ * The row marks those calls the way the session list marks their conversation.
+ *
+ * Read from the parsed arguments rather than the streamed prefix: the flag is last in both
+ * schemas, so it only exists once the call has closed, and an incomplete or malformed argument
+ * string simply reads as "not background" — the mark appears with the closing brace.
+ */
+export function isBackgroundCall(argsJson: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return false;
+  }
+  return (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    (parsed as Record<string, unknown>)["run_in_background"] === true
+  );
 }
 
 /**
@@ -146,6 +188,8 @@ export function pendingFilePayload(name: string, argsJson: string): string | nul
   if (name === "read_file") {
     push("offset", args["offset"]);
     push("limit", args["limit"]);
+    // The image branch's question is sent to the vision model, so it is part of what is approved.
+    push("prompt", args["prompt"]);
   } else if (name === "edit_file") {
     push("old_string", args["old_string"]);
     push("new_string", args["new_string"]);
@@ -326,6 +370,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
+        {/* Right of the duration, on a call made with run_in_background: the same mark the
+            session list draws on the conversation, so a backgrounded call and the row that
+            counts it read as one thing. It sits after the duration rather than beside the
+            name so it never competes with the truncating subtitle, and the row's own status
+            icon keeps saying what the CALL did — this says where its work went. */}
+        {isBackgroundCall(item.argumentsText) && (
+          <BackgroundTasksMark label={S.chat.backgroundCall} size={ICON_SIZE.inlineGlyph} />
+        )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
         <Chevron open={open} className="text-gray-400" />
@@ -381,7 +433,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>
           )}
-          {/* Tool output images (e.g. read_image): shown as thumbnails, click to zoom (ZoomableImage). */}
+          {/* Tool output images (e.g. read_file on an image): shown as thumbnails, click to zoom (ZoomableImage). */}
           {item.images && item.images.length > 0 && (
             <div className="flex flex-wrap gap-2 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
               {item.images.map((src, i) => (

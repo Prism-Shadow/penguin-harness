@@ -33,6 +33,19 @@ export function openExistingDatabase(dbPath: string): DatabaseSync {
   return db;
 }
 
+/**
+ * Opens an EXISTING database for reading only — SQLite refuses every write on the connection,
+ * so a reader cannot change the file even by mistake. For a question asked of a database some
+ * other process owns (`penguin server status`, run over ssh by a controller): the answer must
+ * not reshape that server's schema, and must not be able to. The caller has established that
+ * the file exists; a read-only open of a missing file is an error, not a creation.
+ */
+export function openDatabaseReadOnly(dbPath: string): DatabaseSync {
+  const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+  db.exec("PRAGMA busy_timeout = 5000;");
+  return db;
+}
+
 /** Open (creating if necessary) the database: ensure the parent directory exists, set PRAGMAs, run table creation. */
 export function openDatabase(dbPath: string): DatabaseSync {
   if (dbPath !== ":memory:") {

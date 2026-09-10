@@ -94,7 +94,7 @@ interface ToolCallOutputPayload {
   type: "tool_call_output";
   role: "user";
   output: string;
-  images?: string[];          // data:<mime>;base64,… URLs (e.g. read_image results)
+  images?: string[];          // data:<mime>;base64,… URLs (e.g. read_file's image results)
   tool_call_id: string;
   stop_reason?: StopReason;
 }

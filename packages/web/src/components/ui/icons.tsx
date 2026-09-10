@@ -164,6 +164,20 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
+/**
+ * Activity trace (a flat line with one tall beat in it): work still going on behind the
+ * conversation — the background-task mark on a session row, the matching count in the chat
+ * header, and the marker on a tool row whose call was made with `run_in_background`.
+ *
+ * A trace rather than the layered stack it replaces, which read as "layers" (a thing) instead
+ * of "still running" (an event), and whose two parallelograms sit ~2.5px apart at the row's
+ * 12px and merge into a smudge. One continuous stroke with a single tall beat keeps its shape
+ * at that size, and it is nobody else's shape in these rows: not the hourglass or the compress
+ * chevrons (`attention`, session activity), not the spinner ring or the circled check / cross
+ * (a tool row's own status), not the unread dot.
+ */
+export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
+
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 
@@ -203,7 +217,7 @@ export const PLUGIN_ICON =
 /**
  * Magic wand with sparkles (after lucide's wand-sparkles, reduced to two sparkles so it still
  * reads at 13px): the mark of "Create with AI" wherever an object can be described to the agent
- * instead of configured by hand — the split create button, its menu row and the dialog's send.
+ * instead of configured by hand — the AI half of the create pair and the dialog's exit.
  */
 export const MAGIC_WAND_ICON =
   "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72zM14 7l3 3M5 6v4M3 8h4M19 14v4M17 16h4";
@@ -214,6 +228,10 @@ export const MAGIC_WAND_ICON =
  */
 export const APP_CENTER_ICON =
   "M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM14 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM4 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM14 15a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z";
+
+/** An open hand — the "do it by hand" mark beside the wand, on the 24×24 grid. */
+export const HAND_ICON =
+  "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
 
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,

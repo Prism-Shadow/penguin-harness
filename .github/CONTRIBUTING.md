@@ -42,6 +42,14 @@ skills/core output, the prestep also clears the web app's Vite dep cache
 otherwise keep serving the browser the previous core. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
 
+The prestep also builds `packages/cli`, because a dev server hands the Agents it runs the
+CLI of the checkout it was started from: it writes a launcher at `<root>/bin/penguin`
+pointing at `packages/cli/dist/penguin.js` and puts that directory at the front of every
+command's PATH. Nothing rebuilds that file while a dev server runs — `tsx watch` covers the
+server's own sources only — so after editing the CLI, run
+`pnpm --filter @prismshadow/penguin-cli build` (or restart `pnpm dev`) before asking an
+Agent to use it.
+
 One rule when bypassing the dev commands: **rebuild skills/core through pnpm, in that
 order** (`pnpm build`, or restart `pnpm dev`) — the workspace uses injected dependencies
 (`injectWorkspacePackages` in pnpm-workspace.yaml), so web/server consume snapshot copies
@@ -152,6 +160,15 @@ pnpm test:e2e                                        # core live-model e2e, need
   before creating the tag** — the release workflow reads it from the tag's checkout, so a
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
+- **The official image is built from source**, by `.github/workflows/docker.yml`, and
+  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
+  push to `main` publishes that commit as `latest` and as `main-<sha7>`; the release
+  workflow's `docker` job builds the tag's own source and publishes `X.Y.Z`, `X.Y` and —
+  while the tag is the current latest Release — `stable`. A PR touching the `Dockerfile`,
+  `docker/` or that workflow runs the same file as an amd64 smoke build. The push
+  needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
+  Docker Hub access token with read/write scope on that repository — and the Docker Hub
+  repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
   `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
