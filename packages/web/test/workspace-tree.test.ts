@@ -1,33 +1,46 @@
 /**
  * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the keyboard step over those rows, where a drop lands, the narrow-layout decision, which
- * files count as text (by name, or by their bytes when the name says nothing), the
- * tree-visibility preference's tolerant parse, and when leaving the editor has to ask.
+ * the search box's filter over them, the keyboard step over those rows, where a drop lands,
+ * the narrow-layout decision and the tree pane's width bounds, how much of a path the
+ * toolbar can show, which files count as text (by name, or by their bytes when the name says
+ * nothing), the preferences' tolerant parses, and when leaving the editor has to ask.
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import {
+  PREVIEW_MIN_WIDTH,
   TREE_LAYOUT_MIN_WIDTH,
+  TREE_MIN_WIDTH,
   ancestorDirs,
   canEditPreview,
+  clampTreeWidth,
+  defaultTreeWidth,
   dropTargetDir,
   expandTo,
+  filterTreeRows,
   flattenTree,
   isDirty,
   isNarrowLayout,
   looksLikeText,
+  maxTreeWidth,
   needsDiscardConfirm,
   parentDir,
+  parseEditorWrap,
   parseTreeVisible,
+  parseTreeWidth,
   previewKindFor,
+  readEditorWrap,
   readTreeVisible,
+  readTreeWidth,
   sortEntries,
   treeKeyStep,
-  treePaneWidth,
   upsertEntry,
   utf8Complete,
+  visibleCrumbSegments,
   withExpanded,
+  writeEditorWrap,
   writeTreeVisible,
+  writeTreeWidth,
 } from "../src/lib/workspace-tree";
 import type { Listings } from "../src/lib/workspace-tree";
 
@@ -181,10 +194,76 @@ describe("layout", () => {
     expect(isNarrowLayout(TREE_LAYOUT_MIN_WIDTH)).toBe(false);
   });
 
-  it("gives the tree about a third of the panel within readable bounds", () => {
-    expect(treePaneWidth(480)).toBe(173);
-    expect(treePaneWidth(320)).toBe(168);
-    expect(treePaneWidth(1200)).toBe(256);
+  it("gives an undragged tree about a third of the panel within readable bounds", () => {
+    expect(defaultTreeWidth(480)).toBe(173);
+    expect(defaultTreeWidth(320)).toBe(168);
+    expect(defaultTreeWidth(1200)).toBe(256);
+  });
+
+  it("clamps a dragged width to the tree's minimum and the preview's room", () => {
+    expect(clampTreeWidth(300, 1000)).toBe(300);
+    expect(clampTreeWidth(40, 1000)).toBe(TREE_MIN_WIDTH);
+    expect(clampTreeWidth(900, 1000)).toBe(1000 - PREVIEW_MIN_WIDTH);
+    // A panel with no room for both still has bounds, just no range between them.
+    expect(maxTreeWidth(300)).toBe(TREE_MIN_WIDTH);
+    expect(clampTreeWidth(300, 300)).toBe(TREE_MIN_WIDTH);
+    // Unmeasured (0, before the first ResizeObserver callback): no ceiling to apply yet.
+    expect(clampTreeWidth(400, 0)).toBe(400);
+    expect(clampTreeWidth(Number.NaN, 1000)).toBe(TREE_MIN_WIDTH);
+  });
+});
+
+describe("filterTreeRows", () => {
+  /** Every listed directory walked open, which is what the panel filters over. */
+  const all = flattenTree(LISTINGS, new Set(LISTINGS.keys()));
+
+  it("keeps a match with the ancestors it hangs under, and nothing else", () => {
+    expect(filterTreeRows(all, "y").map((r) => r.path)).toEqual(["a", "a/y.md"]);
+  });
+
+  it("shows a matching directory with its loaded children", () => {
+    expect(filterTreeRows(all, "a").map((r) => r.path)).toEqual(["a", "a/b", "a/y.md"]);
+  });
+
+  it("matches the name case-insensitively, keeps everything for an empty query, and drops everything for a miss", () => {
+    expect(filterTreeRows(all, "X.TXT").map((r) => r.path)).toEqual(["x.txt"]);
+    expect(filterTreeRows(all, "  ").map((r) => r.path)).toEqual(all.map((r) => r.path));
+    expect(filterTreeRows(all, "nothing-like-this")).toEqual([]);
+  });
+});
+
+describe("visibleCrumbSegments", () => {
+  /** A fixed advance per character, so the fit is arithmetic rather than a font. */
+  const measure = (text: string): number => text.length * 10;
+
+  it("shows the whole path when it fits", () => {
+    expect(visibleCrumbSegments(["root", "aa", "bb"], 1000, measure)).toEqual({
+      visible: ["root", "aa", "bb"],
+      collapsed: false,
+    });
+    expect(visibleCrumbSegments([], 1000, measure)).toEqual({ visible: [], collapsed: false });
+  });
+
+  it("drops leading segments until the rest fit, pricing in the ellipsis they become", () => {
+    // "cc" 20 + "bb" 20 + the ellipsis still ahead of them 10 = 50, within 60; "aa" would
+    // make it 70.
+    expect(visibleCrumbSegments(["root", "aa", "bb", "cc"], 60, measure)).toEqual({
+      visible: ["bb", "cc"],
+      collapsed: true,
+    });
+    // At 100 the first segment fits too, and with nothing left ahead of it there is no
+    // ellipsis to pay for.
+    expect(visibleCrumbSegments(["root", "aa", "bb", "cc"], 100, measure)).toEqual({
+      visible: ["root", "aa", "bb", "cc"],
+      collapsed: false,
+    });
+  });
+
+  it("always keeps the current directory, however little room there is", () => {
+    expect(visibleCrumbSegments(["root", "aa", "bb"], 0, measure)).toEqual({
+      visible: ["bb"],
+      collapsed: true,
+    });
   });
 });
 
@@ -245,6 +324,68 @@ describe("editing", () => {
   });
 });
 
+/** In-memory stand-in for localStorage, and one that throws the way blocked site data does. */
+function memPreferences(): {
+  getItem: (k: string) => string | null;
+  setItem: (k: string, v: string) => void;
+} {
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+  };
+}
+
+const brokenPreferences = {
+  getItem: (): string | null => {
+    throw new Error("blocked");
+  },
+  setItem: (): void => {
+    throw new Error("blocked");
+  },
+};
+
+describe("tree width preference", () => {
+  it("takes a positive integer and treats everything else as unset", () => {
+    expect(parseTreeWidth(null)).toBeNull();
+    expect(parseTreeWidth(" 220 ")).toBe(220);
+    expect(parseTreeWidth("240px")).toBe(240);
+    expect(parseTreeWidth("garbage")).toBeNull();
+    expect(parseTreeWidth("0")).toBeNull();
+    expect(parseTreeWidth("-40")).toBeNull();
+  });
+
+  it("round-trips through storage and reads as unset when storage throws", () => {
+    const storage = memPreferences();
+    expect(readTreeWidth(storage)).toBeNull();
+    writeTreeWidth(233.4, storage);
+    expect(readTreeWidth(storage)).toBe(233);
+    expect(readTreeWidth(brokenPreferences)).toBeNull();
+    expect(() => writeTreeWidth(200, brokenPreferences)).not.toThrow();
+  });
+});
+
+describe("editor wrap preference", () => {
+  it("wraps only on an explicit on value", () => {
+    expect(parseEditorWrap(null)).toBe(false);
+    expect(parseEditorWrap("0")).toBe(false);
+    expect(parseEditorWrap("garbage")).toBe(false);
+    expect(parseEditorWrap("1")).toBe(true);
+    expect(parseEditorWrap(" TRUE ")).toBe(true);
+  });
+
+  it("round-trips through storage and reads as off when storage throws", () => {
+    const storage = memPreferences();
+    expect(readEditorWrap(storage)).toBe(false);
+    writeEditorWrap(true, storage);
+    expect(readEditorWrap(storage)).toBe(true);
+    writeEditorWrap(false, storage);
+    expect(readEditorWrap(storage)).toBe(false);
+    expect(readEditorWrap(brokenPreferences)).toBe(false);
+    expect(() => writeEditorWrap(true, brokenPreferences)).not.toThrow();
+  });
+});
+
 describe("tree visibility preference", () => {
   it("shows the tree unless an explicit off value is stored", () => {
     expect(parseTreeVisible(null)).toBe(true);
@@ -255,25 +396,13 @@ describe("tree visibility preference", () => {
   });
 
   it("round-trips through storage and defaults to shown when storage throws", () => {
-    const store = new Map<string, string>();
-    const storage = {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
-    };
+    const storage = memPreferences();
     expect(readTreeVisible(storage)).toBe(true);
     writeTreeVisible(false, storage);
     expect(readTreeVisible(storage)).toBe(false);
     writeTreeVisible(true, storage);
     expect(readTreeVisible(storage)).toBe(true);
-    const broken = {
-      getItem: (): string | null => {
-        throw new Error("blocked");
-      },
-      setItem: (): void => {
-        throw new Error("blocked");
-      },
-    };
-    expect(readTreeVisible(broken)).toBe(true);
-    expect(() => writeTreeVisible(false, broken)).not.toThrow();
+    expect(readTreeVisible(brokenPreferences)).toBe(true);
+    expect(() => writeTreeVisible(false, brokenPreferences)).not.toThrow();
   });
 });

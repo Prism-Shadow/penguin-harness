@@ -2241,11 +2241,19 @@ Benchmark：
     treeLabel: "文件树",
     showTree: "显示文件树",
     hideTree: "隐藏文件树",
+    /** The divider between the tree and the preview: drag, or nudge with the arrow keys. */
+    treeWidth: "调整文件树宽度",
+    /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
+    searchPlaceholder: "搜索文件",
+    searchClear: "清除搜索",
+    searchNoMatch: "已加载的目录中没有匹配项",
     selectFile: "选择一个文件以预览",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `编辑 ${name}`,
+    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
+    editorWrap: "自动换行",
     unsaved: "有未保存的修改",
     saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",

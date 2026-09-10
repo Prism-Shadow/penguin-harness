@@ -260,6 +260,25 @@
   animation: msg-in 180ms ease-out both;
 }
 
+/* Files panel: the rows a directory reveals when it opens, entering once. Transform and
+   opacity only, so the reduced-motion rule above resolves it to the row's base state —
+   in place, fully opaque — rather than to a hidden row. Collapsing reveals nothing and
+   animates nothing. The per-row delay is inline (capped at a few rows, see
+   workspace-tree-view.tsx); it is inert once `animation: none` applies. */
+@keyframes tree-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-tree-row {
+  animation: tree-row-in 150ms ease-out both;
+}
+
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
    conversation-outline.tsx to the [data-outline-anchor] wrapper via classList — deliberately
    outside React's managed props, so stream re-renders don't strip it mid-flash. */

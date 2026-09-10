@@ -5,11 +5,15 @@
  *     row list the tree renders from the two;
  *   - the keyboard step over those rows (the WAI-ARIA tree pattern: up/down move, right
  *     opens a directory or steps into it, left closes it or steps out to its parent);
+ *   - the search box's filter over the rows that are loaded;
  *   - which directory a dropped batch lands in;
- *   - when the panel is too narrow for a tree beside a preview;
+ *   - when the panel is too narrow for a tree beside a preview, and how wide the tree pane
+ *     may be dragged when it is not;
+ *   - how many breadcrumb segments fit on the toolbar's single row;
  *   - which files count as text — by extension, or by looking at their first bytes when
  *     the extension says nothing — and so can be previewed as text and edited in place;
- *   - the persisted tree-visibility preference and the unsaved-changes decision.
+ *   - the persisted preferences (tree visibility, tree width, editor soft wrap) and the
+ *     unsaved-changes decision.
  */
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { joinWorkspacePath } from "./file-path";
@@ -28,9 +32,33 @@ export function isNarrowLayout(panelWidth: number): boolean {
   return panelWidth > 0 && panelWidth < TREE_LAYOUT_MIN_WIDTH;
 }
 
-/** The tree pane's width beside a preview: about a third of the panel, clamped so names stay readable and the preview keeps its room. */
-export function treePaneWidth(panelWidth: number): number {
+/** Narrowest the tree pane may be dragged: below this a nested name is all ellipsis. */
+export const TREE_MIN_WIDTH = 160;
+
+/** Room the preview keeps whatever the tree is dragged to. */
+export const PREVIEW_MIN_WIDTH = 240;
+
+/**
+ * The tree pane's width until the user drags the divider: about a third of the panel,
+ * within bounds that keep names readable and leave the preview its room.
+ */
+export function defaultTreeWidth(panelWidth: number): number {
   return Math.max(168, Math.min(256, Math.round(panelWidth * 0.36)));
+}
+
+/** Widest the tree pane may be dragged at this panel width — never below the tree's own minimum, so a panel with no room for both still has a draggable range of zero rather than an inverted one. */
+export function maxTreeWidth(panelWidth: number): number {
+  return Math.max(TREE_MIN_WIDTH, panelWidth - PREVIEW_MIN_WIDTH);
+}
+
+/**
+ * A tree-pane width brought within this panel's bounds. An unmeasured panel (0, before the
+ * first ResizeObserver callback) has no ceiling to apply: clamping against it would size
+ * the pane to the minimum for one frame and then jump.
+ */
+export function clampTreeWidth(width: number, panelWidth: number): number {
+  const requested = Math.max(TREE_MIN_WIDTH, Math.round(Number.isFinite(width) ? width : 0));
+  return panelWidth <= 0 ? requested : Math.min(maxTreeWidth(panelWidth), requested);
 }
 
 // -------------------------------------------------------------------------------- paths
@@ -163,6 +191,33 @@ export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): 
   return rows;
 }
 
+/**
+ * The rows left by the search box, or all of them for an empty query. Matching is a
+ * case-insensitive substring of the entry's own name; the panel hands in rows walked with
+ * every LISTED directory open, so what can be searched is exactly what has been loaded.
+ *
+ * A kept row is one of three things: a match; an ancestor of a match, without which the
+ * match would have nothing to hang under; or anything inside a directory that matched,
+ * since a directory that matched is being shown as a directory, with its contents.
+ */
+export function filterTreeRows(rows: readonly TreeRow[], query: string): TreeRow[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [...rows];
+  const matched = new Set<string>();
+  const keep = new Set<string>();
+  for (const row of rows) {
+    if (!row.name.toLowerCase().includes(needle)) continue;
+    matched.add(row.path);
+    keep.add(row.path);
+    for (const dir of ancestorDirs(row.path)) if (dir !== "") keep.add(dir);
+  }
+  if (matched.size === 0) return [];
+  return rows.filter(
+    (row) =>
+      keep.has(row.path) || ancestorDirs(row.path).some((dir) => dir !== "" && matched.has(dir)),
+  );
+}
+
 /** What one navigation key does to the tree: move focus, open a directory, or close one. */
 export interface TreeKeyAction {
   focus?: string;
@@ -212,6 +267,45 @@ export function treeKeyStep(
     default:
       return null;
   }
+}
+
+// -------------------------------------------------------------------------- breadcrumbs
+
+/** The single item a run of dropped leading segments collapses into. */
+export const CRUMB_ELLIPSIS = "…";
+
+/** What of a path the toolbar can show: the trailing segments that fit, and whether anything was dropped ahead of them. */
+export interface CrumbLayout {
+  visible: string[];
+  collapsed: boolean;
+}
+
+/**
+ * Which breadcrumb segments fit across `availablePx`, tail first. The current directory —
+ * the last segment — is always kept, however long it is; leading segments are taken while
+ * they fit and the rest collapse into one ellipsis item, so the toolbar's actions never get
+ * pushed onto a second row. `measure` gives a rendered item's width in px, ellipsis item
+ * included, which is what lets a test state a fixed per-character width.
+ */
+export function visibleCrumbSegments(
+  segments: readonly string[],
+  availablePx: number,
+  measure: (text: string) => number,
+): CrumbLayout {
+  if (segments.length === 0) return { visible: [], collapsed: false };
+  const last = segments.length - 1;
+  const visible = [segments[last]!];
+  let used = measure(segments[last]!);
+  for (let i = last - 1; i >= 0; i -= 1) {
+    // Taking this segment still leaves an ellipsis ahead of it unless it is the first one,
+    // so the ellipsis is priced into every step but the last.
+    const ellipsis = i > 0 ? measure(CRUMB_ELLIPSIS) : 0;
+    const width = measure(segments[i]!);
+    if (used + width + ellipsis > availablePx) break;
+    visible.unshift(segments[i]!);
+    used += width;
+  }
+  return { visible, collapsed: visible.length < segments.length };
 }
 
 // --------------------------------------------------------------------------------- drop
@@ -388,8 +482,10 @@ export interface TreePreferenceStorage {
   setItem(key: string, value: string): void;
 }
 
-/** One global preference, not per Session: whether the tree pane is shown. */
+/** Global preferences, not per Session: whether the tree pane is shown, how wide it is, and whether the editor soft-wraps. */
 export const TREE_VISIBLE_KEY = "penguin.files.treeVisible";
+export const TREE_WIDTH_KEY = "penguin.files.treeWidth";
+export const EDITOR_WRAP_KEY = "penguin.files.editorWrap";
 
 /** Tolerant parse: only an explicit "off" spelling hides the tree; nothing stored or anything unrecognized shows it (the default). */
 export function parseTreeVisible(raw: string | null): boolean {
@@ -411,6 +507,56 @@ export function readTreeVisible(storage?: TreePreferenceStorage): boolean {
 export function writeTreeVisible(visible: boolean, storage?: TreePreferenceStorage): void {
   try {
     (storage ?? localStorage).setItem(TREE_VISIBLE_KEY, visible ? "1" : "0");
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+/**
+ * Tolerant parse of the stored tree width: null for nothing stored and for anything that is
+ * not a positive number, which is what makes the caller fall back to the width the pane had
+ * before it was ever dragged.
+ */
+export function parseTreeWidth(raw: string | null): number | null {
+  if (raw === null) return null;
+  const value = Number.parseInt(raw.trim(), 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function readTreeWidth(storage?: TreePreferenceStorage): number | null {
+  try {
+    return parseTreeWidth((storage ?? localStorage).getItem(TREE_WIDTH_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function writeTreeWidth(width: number, storage?: TreePreferenceStorage): void {
+  try {
+    (storage ?? localStorage).setItem(TREE_WIDTH_KEY, String(Math.round(width)));
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+/** Tolerant parse of the editor's soft-wrap preference: OFF unless an explicit on spelling is stored — long lines scrolling sideways is the default a code editor has. */
+export function parseEditorWrap(raw: string | null): boolean {
+  if (raw === null) return false;
+  const value = raw.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+
+export function readEditorWrap(storage?: TreePreferenceStorage): boolean {
+  try {
+    return parseEditorWrap((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
+  } catch {
+    return false;
+  }
+}
+
+export function writeEditorWrap(wrap: boolean, storage?: TreePreferenceStorage): void {
+  try {
+    (storage ?? localStorage).setItem(EDITOR_WRAP_KEY, wrap ? "1" : "0");
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }

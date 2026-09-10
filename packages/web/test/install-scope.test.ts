@@ -79,6 +79,9 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.sidebarSortMode": "manual",
     "penguin.sidebarNavGroupCollapsed": "collapsed",
     "penguin.steerMode": "followup",
+    "penguin.files.treeVisible": "0",
+    "penguin.files.treeWidth": "220",
+    "penguin.files.editorWrap": "1",
   });
 }
 
@@ -100,6 +103,9 @@ const PREFERENCE_KEYS = [
   "penguin.sidebarSortMode",
   "penguin.sidebarNavGroupCollapsed",
   "penguin.steerMode",
+  "penguin.files.treeVisible",
+  "penguin.files.treeWidth",
+  "penguin.files.editorWrap",
 ];
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));

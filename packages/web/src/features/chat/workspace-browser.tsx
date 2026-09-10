@@ -8,15 +8,34 @@
  * lost. OS files dropped anywhere on the panel upload into the current directory — onto a
  * folder row, into that folder.
  *
- * The tree can be hidden (toolbar toggle, shown by default, one preference in localStorage).
+ * A search box above the tree filters the rows the lazy tree has already loaded. The tree
+ * can be hidden (toolbar toggle, shown by default), and the divider between the two panes
+ * sets its width; both, and the editor's soft-wrap toggle, are browser preferences.
  * The panel's width is the dock's, which may be far narrower than the viewport, so the
  * layout follows a measured width rather than a viewport breakpoint: below
  * TREE_LAYOUT_MIN_WIDTH the panes stop sharing the row and the tree and the preview show
- * one at a time — selecting a file replaces the tree, Back returns to it. Path scoping is
- * the server's job (including creating missing parent directories inside the sandbox).
+ * one at a time — selecting a file replaces the tree, Back returns to it, and the divider
+ * has nothing to divide. Path scoping is the server's job (including creating missing
+ * parent directories inside the sandbox).
+ *
+ * The toolbar is one row that never wraps: the breadcrumbs read the current path (the tree
+ * beside them is what navigates), and when the path outgrows the space its leading segments
+ * collapse into a single "…" so Details / Refresh / Upload keep their places.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent as ReactDragEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type {
+  ChangeEvent,
+  DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -30,27 +49,37 @@ import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
+  CRUMB_ELLIPSIS,
   TEXT_PREVIEW_LIMIT,
+  TREE_MIN_WIDTH,
   WORKSPACE_UPLOAD_LIMIT_MB,
   ancestorDirs,
   baseName,
   canEditPreview,
+  clampTreeWidth,
+  defaultTreeWidth,
   dropTargetDir,
   expandTo,
   extOf,
+  filterTreeRows,
   flattenTree,
   isDirty,
   isNarrowLayout,
   looksLikeText,
+  maxTreeWidth,
   needsDiscardConfirm,
   parentDir,
   previewKindFor,
+  readEditorWrap,
   readTreeVisible,
-  treePaneWidth,
+  readTreeWidth,
   upsertEntry,
   utf8Complete,
+  visibleCrumbSegments,
   withExpanded,
+  writeEditorWrap,
   writeTreeVisible,
+  writeTreeWidth,
 } from "../../lib/workspace-tree";
 import type { EditorState, Listings } from "../../lib/workspace-tree";
 import { Button } from "../../components/ui/button";
@@ -59,6 +88,8 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
+import { CloseIcon } from "../../components/ui/icons";
+import { noAutofill } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -66,6 +97,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
+import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { CodeBlock } from "./code-block";
 import { languageForExtension } from "./code-languages";
@@ -253,8 +285,37 @@ function pickDroppedFiles(data: DataTransfer): { files: File[]; dirs: string[] }
   return files.length + dirs.length > 0 ? { files, dirs } : { files: [...data.files], dirs };
 }
 
+/** ArrowLeft / ArrowRight on the focused divider, in px: coarse enough to get somewhere, fine enough to land. */
+const TREE_WIDTH_STEP = 16;
+
+/**
+ * A breadcrumb item's rendered width, approximated: the toolbar has no text metrics to
+ * measure against, so one character at the toolbar's text size costs CRUMB_CHAR_PX (a
+ * wide character — CJK, full-width punctuation — two of those) and the item itself costs
+ * its padding plus the separator drawn before it. Erring wide is the safe direction: it
+ * collapses one segment early rather than letting the row outgrow its space.
+ */
+const CRUMB_CHAR_PX = 7;
+const CRUMB_ITEM_PX = 16;
+const WIDE_CHAR_RE =
+  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/;
+
+function crumbItemWidth(text: string): number {
+  let cells = 0;
+  for (const ch of text) cells += WIDE_CHAR_RE.test(ch) ? 2 : 1;
+  return CRUMB_ITEM_PX + cells * CRUMB_CHAR_PX;
+}
+
 const ghostActionClass =
   "inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+
+/** The same action, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
+const toggleActionClass = (on: boolean): string =>
+  `inline-flex shrink-0 items-center rounded-md border border-transparent px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
+    on
+      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+      : "bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+  }`;
 
 export function WorkspaceBrowser({
   session,
@@ -301,6 +362,10 @@ export function WorkspaceBrowser({
   /** The file chosen in the tree; the preview follows it once loaded. */
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<{ path: string } | null>(null);
+  /** The search box's text. Deliberately not persisted: a filter is a thing you are doing, not a setting. */
+  const [query, setQuery] = useState("");
+  /** The directory whose last opening revealed rows, so the tree animates exactly those once. */
+  const [revealedDir, setRevealedDir] = useState<string | null>(null);
   // -------------------------------------------------------------------- preview / editor
   const [preview, setPreview] = useState<Preview | null>(null);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
@@ -332,8 +397,16 @@ export function WorkspaceBrowser({
   // ----------------------------------------------------------------------------- chrome
   const [showPath, setShowPath] = useState(false);
   const [treeVisible, setTreeVisible] = useState(() => readTreeVisible());
+  /** The dragged tree width, or null while the user has never dragged it (the computed default stands). */
+  const [treeWidthPref, setTreeWidthPref] = useState<number | null>(() => readTreeWidth());
+  const [resizingTree, setResizingTree] = useState(false);
+  const [editorWrap, setEditorWrap] = useState(() => readEditorWrap());
   const [width, setWidth] = useState(0);
+  /** The breadcrumb strip's own width: it is `flex-1` over a zero basis, so it measures the space left by the actions and never its own content — no feedback loop. */
+  const [crumbsWidth, setCrumbsWidth] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const treePaneRef = useRef<HTMLDivElement | null>(null);
+  const crumbsRef = useRef<HTMLDivElement | null>(null);
 
   // Mirrors for the async flows and stable callbacks below, which must read the latest
   // value without re-creating themselves on every change.
@@ -369,6 +442,8 @@ export function WorkspaceBrowser({
     setCurrentDir("");
     setSelectedPath(null);
     setScrollTo(null);
+    setQuery("");
+    setRevealedDir(null);
     setPreview(null);
     setSourceError(null);
     setEditor(null);
@@ -399,6 +474,24 @@ export function WorkspaceBrowser({
     return () => observer.disconnect();
   }, []);
   const narrow = isNarrowLayout(width);
+
+  // The breadcrumb strip is measured separately: how much room it has is what the
+  // toolbar's actions leave over, which the panel's own width does not say.
+  useLayoutEffect(() => {
+    const el = crumbsRef.current;
+    if (!el) return;
+    const measure = () => setCrumbsWidth(Math.round(el.getBoundingClientRect().width));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // The tree pane's width: dragged if it ever was, otherwise the computed default, and
+  // either way within the bounds this panel width allows.
+  const treeWidth = clampTreeWidth(treeWidthPref ?? defaultTreeWidth(width), width);
+  const treeWidthRef = useRef(treeWidth);
+  treeWidthRef.current = treeWidth;
 
   // --------------------------------------------------------------------------- loading
 
@@ -759,29 +852,29 @@ export function WorkspaceBrowser({
       setCurrentDir(dir);
       const open = !expandedRef.current.has(dir);
       setExpanded((s) => withExpanded(s, dir, open));
+      // The rows this open reveals are the ones that animate in — they may arrive with the
+      // listing rather than in this commit, so the mark stands until the next open. Closing
+      // reveals nothing and clears it.
+      setRevealedDir(open ? dir : null);
       if (open && !listingsRef.current.has(dir)) void loadDir(dir);
     },
     [loadDir],
   );
 
-  /** A breadcrumb: makes that directory current and brings it on screen; in the narrow layout that means leaving the preview for the tree. */
-  const goToDir = (dir: string): void => {
-    const land = () => {
+  /**
+   * A directory row's click while the search box holds a query. Every listed directory is
+   * already shown open there, so a click cannot mean "collapse this" — it makes the
+   * directory current and, when it has never been listed, lists it, which is how the search
+   * is extended past what the tree has loaded so far.
+   */
+  const openDirForFilter = useCallback(
+    (dir: string) => {
       setCurrentDir(dir);
       setExpanded((s) => withExpanded(s, dir, true));
-      if (dir !== "" && !listingsRef.current.has(dir)) void loadDir(dir);
-      setScrollTo({ path: dir });
-    };
-    if (narrow && selectedPath !== null) {
-      void navigateGuarded(null, () => {
-        setSelectedPath(null);
-        setPreview(null);
-        land();
-      });
-    } else {
-      land();
-    }
-  };
+      if (!listingsRef.current.has(dir)) void loadDir(dir);
+    },
+    [loadDir],
+  );
 
   const backToTree = (): void => {
     void navigateGuarded(null, () => {
@@ -793,6 +886,44 @@ export function WorkspaceBrowser({
   const setTree = (visible: boolean): void => {
     setTreeVisible(visible);
     writeTreeVisible(visible);
+  };
+
+  const setWrap = (wrap: boolean): void => {
+    setEditorWrap(wrap);
+    writeEditorWrap(wrap);
+  };
+
+  // ------------------------------------------------------------------------- tree width
+  // The divider between the two panes. The width follows the pointer against the tree
+  // pane's own left edge rather than an accumulated delta, so a drag that outruns the
+  // clamp comes back in step instead of offset by however far it overshot.
+  const treeResizeProps = usePointerDrag<object>({
+    threshold: 0,
+    begin: (event) => {
+      event.preventDefault(); // no text selection while the divider is dragged
+      setResizingTree(true);
+      return {};
+    },
+    onMove: (event) => {
+      const rect = treePaneRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setTreeWidthPref(clampTreeWidth(event.clientX - rect.left, width));
+    },
+    onEnd: () => {
+      setResizingTree(false);
+      writeTreeWidth(treeWidthRef.current); // once per drag, not per frame
+    },
+    onCancel: () => setResizingTree(false),
+  });
+
+  const onDividerKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const delta =
+      e.key === "ArrowLeft" ? -TREE_WIDTH_STEP : e.key === "ArrowRight" ? TREE_WIDTH_STEP : 0;
+    if (delta === 0) return;
+    e.preventDefault();
+    const next = clampTreeWidth(treeWidthRef.current + delta, width);
+    setTreeWidthPref(next);
+    writeTreeWidth(next);
   };
 
   // ----------------------------------------------------------------------------- editing
@@ -1039,9 +1170,26 @@ export function WorkspaceBrowser({
 
   // ------------------------------------------------------------------------------ render
 
-  const rows = useMemo(() => flattenTree(listings, expanded), [listings, expanded]);
+  const filter = query.trim();
+  const rows = useMemo(() => {
+    if (filter === "") return flattenTree(listings, expanded);
+    // A filter walks every LISTED directory, whatever the user left open: the search
+    // reaches exactly as far as the lazy tree has loaded, and a match is only reachable
+    // with its ancestors open above it.
+    return filterTreeRows(flattenTree(listings, new Set(listings.keys())), filter);
+  }, [listings, expanded, filter]);
   const rootListing = listings.get("");
-  const crumbs = currentDir === "" ? [] : currentDir.split("/");
+  const crumbSegments =
+    currentDir === "" ? [S.files.root] : [S.files.root, ...currentDir.split("/")];
+  const crumbPath = currentDir === "" ? S.files.root : `${S.files.root}/${currentDir}`;
+  // An unmeasured strip (before the first ResizeObserver callback) shows the whole path:
+  // the actions cannot be pushed off the row either way — they are shrink-0 and the strip
+  // clips — and a "…" for one frame on a path that fits reads as a flicker.
+  const crumbFit = visibleCrumbSegments(
+    crumbSegments,
+    crumbsWidth > 0 ? crumbsWidth : Number.POSITIVE_INFINITY,
+    crumbItemWidth,
+  );
   const showTree = narrow ? selectedPath === null : treeVisible;
   const showPreview = narrow ? selectedPath !== null : true;
   const canEdit = preview !== null && editor === null && canEditPreview(preview);
@@ -1049,9 +1197,39 @@ export function WorkspaceBrowser({
 
   const tree = (
     <div
+      ref={treePaneRef}
       className={`flex min-h-0 flex-col ${narrow ? "flex-1" : "shrink-0 border-r border-gray-200 dark:border-gray-800"}`}
-      style={narrow ? undefined : { width: treePaneWidth(width) }}
+      style={narrow ? undefined : { width: treeWidth }}
     >
+      {/* Search: filters the rows already loaded. Esc clears it rather than reaching the
+          dock or a dialog above, which is what an Esc in a non-empty box means here. */}
+      <div className="relative shrink-0 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Escape" || query === "") return;
+            e.preventDefault();
+            e.stopPropagation();
+            setQuery("");
+          }}
+          placeholder={S.files.searchPlaceholder}
+          aria-label={S.files.searchPlaceholder}
+          {...noAutofill}
+          className="w-full rounded border border-gray-200 bg-transparent py-1 pl-2 pr-7 text-xs text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+        />
+        {query !== "" && (
+          <button
+            type="button"
+            aria-label={S.files.searchClear}
+            title={S.files.searchClear}
+            onClick={() => setQuery("")}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          >
+            <CloseIcon size={12} />
+          </button>
+        )}
+      </div>
       {rootError !== null ? (
         <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{rootError}</p>
       ) : rootListing === undefined ? (
@@ -1065,11 +1243,36 @@ export function WorkspaceBrowser({
           dropTargetDir={drag.active ? drag.targetDir : null}
           scrollTo={scrollTo}
           rootEmpty={rootListing.length === 0}
-          onToggleDir={toggleDir}
+          filtering={filter !== ""}
+          revealedDir={filter === "" ? revealedDir : null}
+          onToggleDir={filter === "" ? toggleDir : openDirForFilter}
           onOpenFile={openFile}
         />
       )}
     </div>
+  );
+
+  // The divider: a real layout sibling, so the two panes always add up to the panel.
+  const treeDivider = (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={S.files.treeWidth}
+      aria-valuenow={treeWidth}
+      aria-valuemin={TREE_MIN_WIDTH}
+      // Before the first measurement there is no ceiling yet (clampTreeWidth applies none),
+      // so the current width is the honest maximum for that frame.
+      aria-valuemax={Math.max(maxTreeWidth(width), treeWidth)}
+      title={S.files.treeWidth}
+      tabIndex={0}
+      {...treeResizeProps}
+      onKeyDown={onDividerKey}
+      className={`w-1.5 shrink-0 cursor-col-resize outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+        resizingTree
+          ? "bg-gray-300 dark:bg-gray-600"
+          : "bg-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
+      }`}
+    />
   );
 
   const richToggle = preview !== null && (preview.kind === "html" || preview.kind === "md") && (
@@ -1104,6 +1307,7 @@ export function WorkspaceBrowser({
           <WorkspaceFileEditor
             path={editor.path}
             value={editor.draft}
+            wrap={editorWrap}
             onChange={updateDraft}
             onSave={requestSave}
           />
@@ -1329,6 +1533,16 @@ export function WorkspaceBrowser({
                 {dirty && (
                   <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
                 )}
+                {/* Soft wrap: off is the editor's own default — long lines scroll sideways,
+                    as code should — and the choice is remembered for every file after. */}
+                <button
+                  type="button"
+                  aria-pressed={editorWrap}
+                  onClick={() => setWrap(!editorWrap)}
+                  className={toggleActionClass(editorWrap)}
+                >
+                  {S.files.editorWrap}
+                </button>
                 <Button size="sm" onClick={cancelEdit} disabled={saving}>
                   {S.common.cancel}
                 </Button>
@@ -1400,8 +1614,10 @@ export function WorkspaceBrowser({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* Toolbar: tree toggle + breadcrumbs of the current directory + actions */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
+      {/* Toolbar: tree toggle + the current directory's path + actions. One row that never
+          wraps — the path strip absorbs the pressure (it clips, and its leading segments
+          collapse), the actions keep their width. */}
+      <div className="flex shrink-0 flex-nowrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
         {!narrow && (
           // Static accessible name, state on aria-pressed alone: a name that swaps Show/Hide
           // beside it reads as "Hide file tree, pressed", saying the state twice and
@@ -1421,60 +1637,73 @@ export function WorkspaceBrowser({
             <GlyphIcon d={PANEL_LEFT_ICON} size={ICON_SIZE.iconButton} />
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => goToDir("")}
-          className="rounded px-1.5 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+        {/* The path, read out and not navigable: the tree beside it is what navigates, and a
+            second way in would only be a second thing to keep in step with the editor's
+            unsaved-changes guard. */}
+        <div
+          ref={crumbsRef}
+          title={crumbPath}
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden px-1 text-sm"
         >
-          {S.files.root}
-        </button>
-        {crumbs.map((seg, i) => (
-          <span key={i} className="flex items-center gap-1">
-            <span className="text-gray-300 dark:text-gray-700">/</span>
-            <button
-              type="button"
-              onClick={() => goToDir(crumbs.slice(0, i + 1).join("/"))}
-              className="max-w-32 truncate rounded px-1 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {seg}
-            </button>
-          </span>
-        ))}
-        <span className="flex-1" />
-        {/* Details: a popup card showing the full absolute Workspace path (break-all wraps in full, never truncated). */}
-        <Dropdown
-          open={showPath}
-          setOpen={setShowPath}
-          menuClass="right-0 top-full mt-1 w-max max-w-72 origin-top-right"
-          button={
-            <Button
-              size="sm"
-              variant={showPath ? "primary" : "ghost"}
-              onClick={() => setShowPath((v) => !v)}
-            >
-              {S.files.details}
-            </Button>
-          }
-        >
-          <div className="px-3.5 py-2.5">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {S.files.workspacePath}
-            </p>
-            <p className="mt-1 break-all font-mono text-xs leading-5">{session.workspace}</p>
-          </div>
-        </Dropdown>
-        <Button size="sm" variant="ghost" onClick={refreshAll}>
-          {S.files.refresh}
-        </Button>
-        {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Buttons (Details/Refresh): no border, light background on hover. */}
-        <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
-          <HiddenFileInput multiple onChange={onPick} disabled={uploading !== null} />
-          {uploading !== null ? S.files.uploading(uploading.done, uploading.total) : S.files.upload}
-        </label>
+          {crumbFit.collapsed && (
+            <span className="shrink-0 text-gray-400 dark:text-gray-500">{CRUMB_ELLIPSIS}</span>
+          )}
+          {crumbFit.visible.map((seg, i) => (
+            <Fragment key={`${i}-${seg}`}>
+              {(crumbFit.collapsed || i > 0) && (
+                <span className="shrink-0 text-gray-300 dark:text-gray-700">/</span>
+              )}
+              <span
+                className={
+                  i === crumbFit.visible.length - 1
+                    ? "min-w-0 truncate font-medium text-gray-700 dark:text-gray-200"
+                    : "shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400"
+                }
+              >
+                {seg}
+              </span>
+            </Fragment>
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Details: a popup card showing the full absolute Workspace path (break-all wraps in full, never truncated). */}
+          <Dropdown
+            open={showPath}
+            setOpen={setShowPath}
+            menuClass="right-0 top-full mt-1 w-max max-w-72 origin-top-right"
+            button={
+              <Button
+                size="sm"
+                variant={showPath ? "primary" : "ghost"}
+                onClick={() => setShowPath((v) => !v)}
+              >
+                {S.files.details}
+              </Button>
+            }
+          >
+            <div className="px-3.5 py-2.5">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {S.files.workspacePath}
+              </p>
+              <p className="mt-1 break-all font-mono text-xs leading-5">{session.workspace}</p>
+            </div>
+          </Dropdown>
+          <Button size="sm" variant="ghost" onClick={refreshAll}>
+            {S.files.refresh}
+          </Button>
+          {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Buttons (Details/Refresh): no border, light background on hover. */}
+          <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
+            <HiddenFileInput multiple onChange={onPick} disabled={uploading !== null} />
+            {uploading !== null
+              ? S.files.uploading(uploading.done, uploading.total)
+              : S.files.upload}
+          </label>
+        </div>
       </div>
 
       <div className="relative flex min-h-0 flex-1">
         {showTree && tree}
+        {!narrow && showTree && treeDivider}
         {showPreview && previewPane}
         {/* Drop feedback: a dashed frame over the panel and a label naming the directory the
             files will land in. Pure feedback — pointer-events-none keeps the hit test on the

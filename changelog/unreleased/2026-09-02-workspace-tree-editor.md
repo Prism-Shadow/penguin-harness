@@ -15,17 +15,27 @@ drag-and-drop upload from the desktop.
 
 - Tree: a directory lists its contents the first time it opens; expand/collapse chevrons,
   folder and file glyphs, the selected file highlighted, arrow-key navigation (up/down move,
-  right opens or steps in, left closes or steps out). The breadcrumbs above the panes name the
-  current directory. A toolbar toggle hides or shows the tree — shown by default, remembered
-  under one browser-local key (`penguin.files.treeVisible`, parsed tolerantly). Below 480px
-  of panel width the panel falls back to one column: the tree until a file is chosen, then
-  the preview with a Back button. A message file card's click still lands on its file, now by
+  right opens or steps in, left closes or steps out), and the rows a directory reveals enter
+  with a short entrance while collapsing stays immediate. A search box above the tree filters
+  the rows already loaded — the name matched case-insensitively, a match keeping and opening
+  its ancestors, a matching directory shown with its loaded children, and an empty result
+  saying that nothing *loaded* matches. The breadcrumbs above the panes read out the current
+  directory as plain text rather than links (the tree beside them is what navigates), and a
+  path too long for the toolbar collapses its leading segments into a `…` so Details, Refresh
+  and Upload stay on the row. A toolbar toggle hides or shows the tree — shown by default,
+  remembered under one browser-local key (`penguin.files.treeVisible`, parsed tolerantly) —
+  and the divider between the two panes sets its width by drag or arrow key, remembered under
+  `penguin.files.treeWidth`. Below 480px of panel width the panel falls back to one column:
+  the tree until a file is chosen, then the preview with a Back button; the divider has
+  nothing to divide there. A message file card's click still lands on its file, now by
   opening the tree down to it.
 - Preview: the same rendering as before (Markdown / HTML rendered with a source toggle, text
   highlighted, PDF embedded); images now zoom on click, and a file whose extension says
   nothing about its type is read as text when its first bytes look like text. Text reads stop
   at the 256KB cap instead of downloading the whole file.
-- Editing: an **Edit** action on text files swaps the preview for a monospace text box;
+- Editing: an **Edit** action on text files swaps the preview for a monospace text box, with a
+  **Wrap** toggle in the header — off by default, so long lines scroll sideways as they would
+  in a code editor, remembered under `penguin.files.editorWrap`;
   **Save** (Ctrl+S / Cmd+S) confirms, then writes through the existing
   `PUT /api/sessions/:id/files/content` endpoint and refreshes the row's size and time. A
   truncated preview stays read-only, and a save over the 14MB write limit is refused before

@@ -2288,11 +2288,19 @@ Scenarios:
     treeLabel: "File tree",
     showTree: "Show file tree",
     hideTree: "Hide file tree",
+    /** The divider between the tree and the preview: drag, or nudge with the arrow keys. */
+    treeWidth: "Resize the file tree",
+    /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
+    searchPlaceholder: "Search files",
+    searchClear: "Clear search",
+    searchNoMatch: "Nothing loaded matches",
     selectFile: "Select a file to preview",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `Editing ${name}`,
+    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
+    editorWrap: "Wrap",
     unsaved: "Unsaved changes",
     saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",

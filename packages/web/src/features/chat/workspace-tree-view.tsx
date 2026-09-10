@@ -11,12 +11,16 @@
  * While OS files are dragged over the panel, the folder row that would receive them is
  * highlighted; the rows carry `data-tree-path` / `data-tree-kind` so the panel's drop
  * handling can resolve the row under the pointer.
+ *
+ * Opening a directory brings its rows in with one short entrance (`.anim-tree-row`), the
+ * first few staggered; the rows to animate are the ones directly inside the directory the
+ * panel says was just opened, so a re-render, a filter or a collapse animates nothing.
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
-import { treeKeyStep } from "../../lib/workspace-tree";
+import { parentDir, treeKeyStep } from "../../lib/workspace-tree";
 import type { TreeRow } from "../../lib/workspace-tree";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -27,6 +31,12 @@ import { FILE_ICON } from "./message-files-card";
 /** Indent per nesting level, in px. */
 const INDENT_PX = 14;
 
+/** Entrance stagger per revealed row, and how many rows still get one: past a handful the
+ *  wave reads as lag rather than as motion, and a large directory would finish long after
+ *  the row the user is reaching for. */
+const REVEAL_STAGGER_MS = 20;
+const REVEAL_STAGGER_ROWS = 4;
+
 export function WorkspaceTreeView({
   rows,
   selectedPath,
@@ -35,6 +45,8 @@ export function WorkspaceTreeView({
   dropTargetDir,
   scrollTo,
   rootEmpty,
+  filtering,
+  revealedDir,
   onToggleDir,
   onOpenFile,
 }: {
@@ -50,6 +62,10 @@ export function WorkspaceTreeView({
   scrollTo: { path: string } | null;
   /** The root listing arrived and holds nothing. */
   rootEmpty: boolean;
+  /** The search box holds a query, so no rows means "nothing loaded matches" rather than "empty". */
+  filtering: boolean;
+  /** The directory whose opening last revealed rows; its own children animate in. Null: nothing to animate. */
+  revealedDir: string | null;
   onToggleDir: (dir: string) => void;
   onOpenFile: (path: string) => void;
 }) {
@@ -110,7 +126,9 @@ export function WorkspaceTreeView({
       className="min-h-0 flex-1 overflow-auto py-1"
     >
       {rows.length === 0 ? (
-        rootEmpty ? (
+        filtering ? (
+          <p className="px-3 py-2 text-sm text-gray-400">{S.files.searchNoMatch}</p>
+        ) : rootEmpty ? (
           <p className="px-3 py-2 text-sm text-gray-400">{S.files.empty}</p>
         ) : null
       ) : (
@@ -124,6 +142,10 @@ export function WorkspaceTreeView({
             row.kind === "file"
               ? `${row.path} · ${formatBytes(row.sizeBytes)} · ${formatDateTime(row.mtime)}`
               : row.path;
+          // posInSet is the row's place among its own directory's entries, which is exactly
+          // the order the entrance should follow.
+          const revealed = revealedDir !== null && parentDir(row.path) === revealedDir;
+          const revealDelay = Math.min(row.posInSet - 1, REVEAL_STAGGER_ROWS) * REVEAL_STAGGER_MS;
           return (
             // A fragment, not a wrapper element: `role="tree"` owns `treeitem` children
             // directly, and a generic box between the two hides them from that ownership.
@@ -142,8 +164,13 @@ export function WorkspaceTreeView({
                 title={detail}
                 onClick={() => activate(row)}
                 onFocus={() => setFocused(row.path)}
-                style={{ paddingLeft: 6 + row.depth * INDENT_PX }}
+                style={{
+                  paddingLeft: 6 + row.depth * INDENT_PX,
+                  ...(revealed ? { animationDelay: `${revealDelay}ms` } : {}),
+                }}
                 className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+                  revealed ? "anim-tree-row" : ""
+                } ${
                   dropHere
                     ? "bg-sky-50 ring-2 ring-inset ring-sky-500/60 dark:bg-sky-950/40"
                     : selected
