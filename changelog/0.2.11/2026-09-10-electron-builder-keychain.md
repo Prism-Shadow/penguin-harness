@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `desktop`, `ci`
-- **PR:** PR_PLACEHOLDER
+- **PR:** [#669](https://github.com/Prism-Shadow/penguin-harness/pull/669)
 
 [中文版](2026-09-10-electron-builder-keychain.zh.md)
 
