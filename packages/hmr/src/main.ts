@@ -23,6 +23,8 @@ import type { HmrHost, UpgradeAllTarget, UpgradeOutcome } from "./host.js";
 /** Where a push arrives. The product declares and contributes the route like any other; the protocol behind it is this file's. */
 export const HMR_ROUTE_PREFIX = "/api/hmr";
 export const HMR_UPGRADE_PATH = `${HMR_ROUTE_PREFIX}/upgrade`;
+/** Names the blobs a pusher holds; answers which of them this store lacks, so the push carries only those. */
+export const HMR_PROBE_PATH = `${HMR_ROUTE_PREFIX}/assets/probe`;
 
 /** What the product does with a generation once it is current. */
 export type Replace<Api extends Park> = (instance: Instance<Api>) => void;
@@ -44,10 +46,11 @@ export interface Hmr<Api extends Park> {
    */
   upgrade(target: UpgradeAllTarget): Promise<UpgradeOutcome>;
   /**
-   * The upgrade endpoint over `upgrade`: a Request in, a Response out — what the route the
-   * product declares for it answers with. Any generation may serve the route by handing
-   * the request here, which is how one without a platform of its own still carries the
-   * channel.
+   * The channel's endpoints, framework-free: a Request in, a Response out — what the routes
+   * the product declares under HMR_ROUTE_PREFIX answer with. HMR_UPGRADE_PATH is the push;
+   * HMR_PROBE_PATH names blobs and answers which ones the store lacks. Any generation may
+   * serve the routes by handing the request here, which is how one without a platform of
+   * its own still carries the channel.
    */
   endpoint(
     request: Request,
@@ -58,7 +61,10 @@ export interface Hmr<Api extends Park> {
 /** The control object alone, for a product that boots its first generation some other way (tests). */
 export function hmrControl<Api extends Park>(host: HmrHost<Api>, replace: Replace<Api>): Hmr<Api> {
   const hmr: Hmr<Api> = {
-    endpoint: (request, onLanded) => upgradeEndpoint(hmr, request, onLanded),
+    endpoint: (request, onLanded) =>
+      new URL(request.url).pathname === HMR_PROBE_PATH
+        ? probeEndpoint(host, request)
+        : upgradeEndpoint(hmr, request, onLanded),
     current: async () => {
       await host.waitIdle();
       return host.ensure();
@@ -134,7 +140,12 @@ export function parseUpgradeTarget(contentType: string | null, body: Buffer): Up
     platform?: string;
     cli?: string;
     web?: { files?: Record<string, string> };
-    assets?: { files?: Record<string, string>; exec?: string[] };
+    assets?: {
+      files?: Record<string, string>;
+      manifest?: Record<string, { sha: string }>;
+      blobs?: Record<string, string>;
+      exec?: string[];
+    };
     source?: { repo: string; revision: string };
   };
   try {
@@ -154,11 +165,15 @@ export function parseUpgradeTarget(contentType: string | null, body: Buffer): Up
     cli: payload.cli,
     web: payload.web.files,
     // Optional: a push that needs no real files on disk (no native module, no helper
-    // binary) simply omits it, and older pushers keep working unchanged.
-    ...(payload.assets?.files
+    // binary) simply omits it, and older pushers keep working unchanged. Two shapes:
+    // every file inline (`files`), or a manifest of hashes plus only the blobs this
+    // store said it was missing (`manifest` + `blobs`, after HMR_PROBE_PATH).
+    ...(payload.assets?.files || payload.assets?.manifest
       ? {
           assets: {
-            files: payload.assets.files,
+            ...(payload.assets.files ? { files: payload.assets.files } : {}),
+            ...(payload.assets.manifest ? { manifest: payload.assets.manifest } : {}),
+            ...(payload.assets.blobs ? { blobs: payload.assets.blobs } : {}),
             ...(payload.assets.exec ? { exec: payload.assets.exec } : {}),
           },
         }
@@ -183,6 +198,22 @@ export function parseUpgradeTarget(contentType: string | null, body: Buffer): Up
  * of the upgrade ladder, so clients keep one parsing path. `onLanded` runs for a push that
  * landed: what the product tells its clients (a reload), not what the layer does.
  */
+export async function probeEndpoint(
+  host: Pick<HmrHost, "missingBlobs">,
+  request: Request,
+): Promise<Response> {
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const bad = (message: string) => json(400, { error: { code: "bad_request", message } });
+  const body = (await request.json().catch(() => null)) as { hashes?: unknown } | null;
+  const hashes = body?.hashes;
+  if (!Array.isArray(hashes) || hashes.some((h) => typeof h !== "string")) {
+    return bad("expected { hashes: string[] }");
+  }
+  if (hashes.length > 50_000) return bad("too many hashes in one probe");
+  return json(200, { missing: host.missingBlobs(hashes as string[]) });
+}
+
 export async function upgradeEndpoint<Api extends Park>(
   hmr: Hmr<Api>,
   request: Request,
