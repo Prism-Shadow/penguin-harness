@@ -49,15 +49,15 @@ export function isOwnRun(sender: string, me: string): boolean {
 export interface BubbleShape {
   /** The reader's own message: the right-hand side, without an avatar or a name above it. */
   own: boolean;
-  /** First of the run — the bubble the sender's name sits above. */
+  /** First of the run — the bubble under the header the sender's name and avatar share. */
   first: boolean;
-  /** Last of the run — the bubble the avatar is bottom-aligned to, and whose near corner is squared. */
+  /** Last of the run — the run's tail, the bubble whose corner nearest its side is squared. */
   last: boolean;
 }
 
 /**
  * How the bubble at `index` of a run is drawn. A run of one message is both its first and its
- * last bubble, so it carries the name, the avatar and the squared corner all at once.
+ * last bubble, so it sits under the name and carries the squared corner at once.
  */
 export function bubbleShape(
   run: { sender: string; messages: readonly OrgChannelMessage[] },

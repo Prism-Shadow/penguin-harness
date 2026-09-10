@@ -3023,7 +3023,6 @@ Scenarios:
       streamLabel: (name: string): string => `Messages in ${name}`,
       purpose: "Purpose",
       purposeEmpty: "No purpose written yet",
-      allHandsPurpose: "Everyone in the organization is here; the board reads here.",
       memberCount: (n: number): string => `${n} member${n === 1 ? "" : "s"}`,
       memberList: "Channel members",
       invite: "Invite",
@@ -3052,7 +3051,7 @@ Scenarios:
       notMemberNotice: "You are not in this channel yet. Join it to post.",
       channelLoadFailed: "Could not load the channel",
       allHandsInfo:
-        "The all-hands channel is created with the organization: every employee and every Project member is in it, nobody can leave it and it cannot be archived. System notices — budget alerts and the like — are posted here.",
+        "The all-hands channel is created with the organization: everyone in the organization is here — every employee, every Project member, and you, reading along — nobody can leave it and it cannot be archived. System notices — budget alerts and the like — are posted here.",
       channelInfo:
         "An invitation-only channel: an employee joins only when a member invites it, and an @ delivers within the channel's membership. People may join any channel themselves, and can read every channel.",
       createTitle: "New channel",

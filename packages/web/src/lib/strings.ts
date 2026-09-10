@@ -2938,8 +2938,6 @@ Benchmark：
       streamLabel: (name: string): string => `「${name}」的消息`,
       purpose: "主题",
       purposeEmpty: "还没有写主题",
-      /** The all-hands channel is seeded with no purpose; this line stands in for one. */
-      allHandsPurpose: "组织里的每个人都在这里；董事会也在这里看。",
       memberCount: (n: number): string => `${n} 人`,
       memberList: "频道成员",
       invite: "邀请",
@@ -2969,7 +2967,7 @@ Benchmark：
       channelLoadFailed: "频道加载失败",
       /** The "?" beside the channel name, in its two kinds. */
       allHandsInfo:
-        "全员频道随组织一起创建：每位员工和每位 Project 成员都在其中，谁也不能退出，也不能归档；预算告警等系统通知都发在这里。",
+        "全员频道随组织一起创建：组织里的每个人都在这里——每位员工、每位 Project 成员，你也在这里看——谁也不能退出，也不能归档；预算告警等系统通知都发在这里。",
       channelInfo:
         "受邀频道：员工只能由成员邀请进来，@ 也只在频道成员之间送达；人可以自行加入，并且可以阅读任何频道。",
       /** The new-channel dialog. */
