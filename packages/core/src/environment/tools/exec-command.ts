@@ -61,9 +61,16 @@ export function createExecCommandTool(
         return { stopReason: "fatal" };
       }
 
-      const cmd = args["cmd"];
+      // `command` is accepted as a legacy/foreign alias for `cmd`: some agentic models that
+      // were also trained on Claude-Code-style shell tool definitions (where the parameter is
+      // named `command`) emit `command` even when the schema says `cmd`. `cmd` wins when both
+      // are present; if only `command` arrived, it is honoured so the call executes instead of
+      // failing validation in a retry loop.
+      const aliasCmd = typeof args["cmd"] === "string" ? args["cmd"] : args["command"];
+      const cmd = typeof aliasCmd === "string" ? aliasCmd : undefined;
       if (typeof cmd !== "string" || cmd.length === 0) {
-        yield delta(`Missing required argument "cmd" for ${definition.name}.`);
+        const got = "command" in args ? ` (received argument "command" instead of "cmd")` : "";
+        yield delta(`Missing required argument "cmd" for ${definition.name}${got}.`);
         return { stopReason: "fatal" };
       }
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.

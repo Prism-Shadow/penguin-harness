@@ -66,6 +66,11 @@ export interface GenerativeModelConfig {
    */
   requestTimeoutMs?: number;
   /**
+   * Stable session id for this conversation, threaded to the model client so gateways that
+   * require it (e.g. OpenCode Go's `x-opencode-session`) can optimize / validate requests.
+   */
+  sessionId?: string;
+  /**
    * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new
    * GenerativeModel on compaction so the uniqueness scope covers the whole Session; defaults to a fresh
    * one. See llm/tool-call-ids.ts.
