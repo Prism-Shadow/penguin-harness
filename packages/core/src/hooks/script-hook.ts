@@ -23,6 +23,7 @@
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { prependPathEnv } from "../environment/tools/command/path-prepend.js";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
 import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
 import type { UserPromptHook, UserPromptHookInput, UserPromptHookResult } from "./prompt-hook.js";
@@ -38,6 +39,13 @@ export interface RunHookScriptOptions {
   cwd?: string;
   timeoutS?: number;
   signal?: AbortSignal;
+  /**
+   * Directories put at the front of the script's PATH (see
+   * {@link CreateAgentOptions.pathPrepend}), so a hook that shells out to `penguin` reaches
+   * the harness running it. Only the environment is involved here: a hook is spawned as
+   * `node <script>`, with no shell to re-order PATH afterwards.
+   */
+  pathPrepend?: readonly string[];
 }
 
 /**
@@ -58,7 +66,7 @@ export async function runHookScript(
       // In the desktop app process.execPath is the Electron binary: without this flag the
       // spawn boots a whole Electron app (GPU process and all) instead of running the
       // script, and dies on machines where that fails. A plain Node execPath ignores it.
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: prependPathEnv({ ...process.env, ELECTRON_RUN_AS_NODE: "1" }, opts.pathPrepend ?? []),
     });
     let stdout = "";
     let stderr = "";
@@ -180,6 +188,7 @@ function scriptRunner(
   dir: string,
   command: string,
   timeoutS: number | undefined,
+  pathPrepend: (() => string[]) | undefined,
 ): (input: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<unknown> {
   const script = path.resolve(dir, command);
   return (input, signal) =>
@@ -187,6 +196,9 @@ function scriptRunner(
       cwd: dir,
       ...(timeoutS !== undefined ? { timeoutS } : {}),
       ...(signal ? { signal } : {}),
+      // Re-read per call, like the command-spawn side: the host may point it somewhere else
+      // without the Session being rebuilt.
+      ...(pathPrepend ? { pathPrepend: pathPrepend() } : {}),
     });
 }
 
@@ -196,8 +208,9 @@ export function scriptUserPromptHook(
   dir: string,
   command: string,
   timeoutS?: number,
+  pathPrepend?: () => string[],
 ): UserPromptHook {
-  const run = scriptRunner(dir, command, timeoutS);
+  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
   return {
     name,
     async run(input: UserPromptHookInput): Promise<UserPromptHookResult | undefined> {
@@ -223,8 +236,9 @@ export function scriptPreToolUseHook(
   dir: string,
   command: string,
   timeoutS?: number,
+  pathPrepend?: () => string[],
 ): PreToolUseHook {
-  const run = scriptRunner(dir, command, timeoutS);
+  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
   return {
     name,
     async run(input: PreToolUseHookInput): Promise<PreToolUseHookResult | undefined> {
@@ -251,8 +265,9 @@ export function scriptStopHook(
   dir: string,
   command: string,
   timeoutS?: number,
+  pathPrepend?: () => string[],
 ): StopHook {
-  const run = scriptRunner(dir, command, timeoutS);
+  const run = scriptRunner(dir, command, timeoutS, pathPrepend);
   return {
     name,
     async run(input: StopHookInput): Promise<StopHookResult | undefined> {

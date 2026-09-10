@@ -11,6 +11,7 @@
  */
 import { statSync } from "node:fs";
 import { ManagedSession } from "./session.js";
+import { prependPathEnv } from "./path-prepend.js";
 import { BackgroundRegistry } from "../background/index.js";
 import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
 
@@ -210,6 +211,14 @@ export class CommandSessionManager {
    * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
    */
   private readonly controlEnv: (() => Record<string, string>) | undefined;
+  /**
+   * Directories the host puts at the front of PATH for every command (see
+   * {@link EnvironmentConfig.pathPrepend}): the hosting server points this at the shim
+   * directory holding its own `penguin`, so an Agent's `penguin` is the harness it is
+   * running inside rather than whatever the machine has installed globally. A getter like
+   * `proxyEnv`, re-read at every spawn. Absent, or returning nothing = untouched PATH.
+   */
+  private readonly pathPrepend: (() => string[]) | undefined;
   /** Single change listener (see onChange); null until the Environment subscribes. */
   private changeListener: (() => void) | null = null;
 
@@ -217,10 +226,12 @@ export class CommandSessionManager {
     vault?: Record<string, string>;
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: () => Record<string, string>;
+    pathPrepend?: () => string[];
   }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
     this.controlEnv = opts?.controlEnv;
+    this.pathPrepend = opts?.pathPrepend;
     this.registry.onChange(() => this.changeListener?.());
   }
 
@@ -250,9 +261,17 @@ export class CommandSessionManager {
       throw new Error("command session manager disposed");
     }
     assertUsableCwd(opts.cwd);
+    // The host's directories go onto the INHERITED PATH, before the vault is spread over
+    // it below: a vault `PATH` is an explicit per-Agent decision and still replaces the
+    // whole value, prepended directories included. The same list is handed to the session
+    // so the command string can re-assert it after the login profile has run — that is the
+    // half that actually decides which `penguin` a command resolves (see ManagedSession).
+    const prepend = this.pathPrepend?.() ?? [];
+    const hostEnv = prependPathEnv(hostEnvForChild(this.proxyEnv?.() ?? null), prepend);
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
+      ...(prepend.length > 0 ? { pathPrepend: prepend } : {}),
       // Spread order is priority: vault overrides host variables of the same name; the
       // host's control variables (controlEnv) override the vault — they are the hosting
       // server's own wiring (API URL/token, Session coordinates) and a vault entry must
@@ -271,7 +290,7 @@ export class CommandSessionManager {
       // values rather than as surviving copies. Pinned by the "an explicit injection
       // layered after the strip wins" test.
       env: {
-        ...hostEnvForChild(this.proxyEnv?.() ?? null),
+        ...hostEnv,
         ...this.vault,
         ...(this.controlEnv?.() ?? {}),
         ...HARDENED_ENV,

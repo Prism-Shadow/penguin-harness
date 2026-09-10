@@ -174,6 +174,7 @@ export class Environment implements EnvironmentInterface {
       ...(config.vault !== undefined ? { vault: config.vault } : {}),
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
       ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
+      ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
