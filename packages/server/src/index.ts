@@ -20,7 +20,7 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createApp } from "./app.js";
+import { bootAppDeps, createApp, platformLog } from "./app.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -48,13 +48,41 @@ async function main(): Promise<void> {
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
-  await server.loadPlugins();
-  await server.buildDeps();
-  server.applyPersistedProxy();
-  server.buildApp();
-  await server.seedAdmin();
-  server.listen();
-  server.installProcessHandlers();
+  await hmrMain(server.listen(), server.getLogger(), async () => {
+    await server.loadPlugins();
+    await server.buildDeps();
+    server.applyPersistedProxy();
+    server.buildApp();
+    await server.seedAdmin();
+    server.installProcessHandlers();
+    await server.printFirstLoginNotice();
+  });
+}
+
+/** What the layer serves: the listening port's fetch, pointed at whatever is current. */
+export interface HttpHandle {
+  fetch(request: Request): Promise<Response> | Response;
+}
+
+/** Where the layer writes: the current platform's log, the console before there is one. */
+export interface LogHandle {
+  line(text: string): void;
+}
+
+/**
+ * The HMR layer's entry (PRFC-0013). The layer holds two handles — the HTTP face it serves
+ * and the log it writes through — and everything else is `start`: the platform, built
+ * inside it, is what the handles come to point at. The port is open before `start` runs
+ * and answers 503 until the platform is up; a push later replaces the platform behind the
+ * same two handles without the layer changing.
+ */
+export async function hmrMain(
+  http: HttpHandle,
+  log: LogHandle,
+  start: () => Promise<void>,
+): Promise<void> {
+  log.line("[server] starting the platform");
+  await start();
 }
 
 /**
@@ -78,6 +106,9 @@ class PenguinServer {
   private app!: ReturnType<typeof createApp>;
   /** Assigned by listen(). */
   private httpServer!: ReturnType<typeof serve>;
+  /** Resolves with the port the OS actually bound, once the listener is up. */
+  private bound!: Promise<number>;
+  private resolveBound!: (port: number) => void;
 
   /** The `::1` companion listener, when one was opened — see openIpv6Loopback(). */
   private ipv6Loopback: ReturnType<typeof serve> | null = null;
@@ -180,9 +211,30 @@ class PenguinServer {
     });
   }
 
-  /** Assembles the runtime shell's middleware and routes. Nothing is listening yet. */
+  /**
+   * Assembles the layer's middleware and routes; from here the listening port answers
+   * with them. The terminal stream is a WebSocket upgrade, which never reaches the fetch
+   * handler — it is bound on each Node listener here, once the platform it asks exists.
+   */
   buildApp(): void {
     this.app = createApp(this.deps);
+    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    if (this.ipv6Loopback !== null) {
+      attachTerminalWebSocket(
+        this.ipv6Loopback as unknown as HttpServer,
+        this.terminalWebSocketDeps(),
+      );
+    }
+  }
+
+  /** The layer's log handle: the current platform's log once there is a platform, the console before. */
+  getLogger(): LogHandle {
+    return {
+      line: (text) => {
+        if (this.deps === undefined) console.log(text);
+        else platformLog(this.deps.hmr)(text);
+      },
+    };
   }
 
   /**
@@ -213,15 +265,30 @@ class PenguinServer {
   }
 
   /**
-   * Opens the HTTP listener. Everything that needs the port the OS actually handed out
-   * (PORT=0 asks for an ephemeral one) waits for onListening().
+   * Opens the HTTP listener and returns its handle. The port is bound before the platform
+   * exists: until buildApp() the handle answers 503, so a client that arrives early sees
+   * "starting" rather than a refused connection. Everything that needs the port the OS
+   * actually handed out (PORT=0 asks for an ephemeral one) waits for onListening().
    */
-  listen(): void {
+  listen(): HttpHandle {
+    // The listener's callback records this process as the root's server (the lock, the
+    // port file); the root has to exist for that, and the database that used to create it
+    // is now opened later, inside start.
+    fs.mkdirSync(this.config.root, { recursive: true });
+    this.bound = new Promise((resolve) => {
+      this.resolveBound = resolve;
+    });
+    const handle: HttpHandle = {
+      fetch: (request) =>
+        this.app === undefined
+          ? new Response("penguin-server is starting", { status: 503 })
+          : this.app.fetch(request),
+    };
     this.httpServer = serve(
-      { fetch: this.app.fetch, hostname: this.config.host, port: this.config.port },
+      { fetch: handle.fetch, hostname: this.config.host, port: this.config.port },
       (info) => this.onListening(info.port),
     );
-    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    return handle;
   }
 
   /**
@@ -317,20 +384,25 @@ class PenguinServer {
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);
     }
-    // Last, so the link is what a console is left showing rather than something scrolled
-    // past — and here rather than in seedAdmin() because the URL needs the port the OS
-    // actually handed out, which PORT=0 only settles at this point.
-    if (this.pendingFirstLoginNotice) {
-      // Minting here rather than at seed time is what keeps "exists" and "was printed" the
-      // same thing for a setup session: the modes that decline to print never ask for one.
-      const link = this.auth().mintFirstLogin();
-      if (link !== null) {
-        const token = encodeURIComponent(link);
-        console.log(
-          renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
-        );
-      }
-    }
+    this.resolveBound(port);
+  }
+
+  /**
+   * The one-time sign-in link, last in the startup sequence so it is what a console is
+   * left showing rather than something scrolled past. Minting here rather than at seed
+   * time is what keeps "exists" and "was printed" the same thing for a setup session: the
+   * modes that decline to print never ask for one. The URL needs the port the OS actually
+   * handed out, which PORT=0 only settles once the listener is up.
+   */
+  async printFirstLoginNotice(): Promise<void> {
+    if (!this.pendingFirstLoginNotice) return;
+    const port = await this.bound;
+    const link = this.auth().mintFirstLogin();
+    if (link === null) return;
+    const token = encodeURIComponent(link);
+    console.log(
+      renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
+    );
   }
 
   /**
@@ -360,17 +432,26 @@ class PenguinServer {
    * every preview URL (same port, counterpart host) would refuse connections.
    */
   private openIpv6Loopback(port: number): void {
-    const loopback = serve({ fetch: this.app.fetch, hostname: "::1", port });
+    const loopback = serve({
+      fetch: (request: Request) =>
+        this.app === undefined
+          ? new Response("penguin-server is starting", { status: 503 })
+          : this.app.fetch(request),
+      hostname: "::1",
+      port,
+    });
     this.ipv6Loopback = loopback;
     loopback.on("error", (err: NodeJS.ErrnoException) => {
       console.warn(
         `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
       );
     });
-    // The terminal stream is a WebSocket upgrade, which never reaches the Hono fetch
-    // handler — it has to be bound on each Node listener, this one included, or the
-    // terminal only works on whichever address the browser happened to resolve.
-    attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    // The terminal stream is bound on every listener in buildApp(), this one included, or
+    // the terminal only works on whichever address the browser happened to resolve; a
+    // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
+    if (this.app !== undefined) {
+      attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    }
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
