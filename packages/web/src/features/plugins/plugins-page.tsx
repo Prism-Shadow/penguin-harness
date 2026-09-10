@@ -79,7 +79,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
 /**
- * What one Agent has installed, by name → the installed copy's version (`vYYYY.MM.DD.N`, or ""
+ * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
  * when the files carry none): its skills and its hook packages, the two lists a plugin is
  * spread over.
  */
@@ -153,7 +153,7 @@ export function installedPluginVersion(
  * Agents the server says are behind the library on plugin `name` (the update reminder's data
  * source): read off `AgentSummary.pluginUpdates`, the same field the plugins gate counts, so
  * the card, the notice and the nav dot cannot disagree — and so the web never compares
- * version strings itself. Not-installed Agents are never listed there.
+ * `YYYY.MM.DD.N` strings itself. Not-installed Agents are never listed there.
  */
 export function outdatedAgentIds(
   agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "pluginUpdates">>,
@@ -651,13 +651,13 @@ function PluginCard({
   // when missing (per UI language); title carries the full description for hover reading.
   const description = localizedShortText(locale, plugin);
   const fullDescription = localizedText(locale, plugin.description, plugin.descriptionZh);
-  // Metadata line: version (`vYYYY.MM.DD.N`, omitted when the manifest carries none — and
-  // printed as it stands, the `v` being part of it) · how long ago that version's date is ·
-  // usage count — plain readable phrases, no badges.
-  const versionMatch = /^v(\d{4})\.(\d{2})\.(\d{2})\./.exec(plugin.version);
+  // Metadata line: version (`YYYY.MM.DD.N`, omitted when the manifest carries none, displayed
+  // with a `v` in front) · how long ago that version's date is · usage count — plain readable
+  // phrases, no badges.
+  const versionMatch = /^(\d{4})\.(\d{2})\.(\d{2})\./.exec(plugin.version);
   const versionDate = versionMatch ? versionMatch.slice(1, 4).join("-") : null;
   const meta = [
-    plugin.version || null,
+    plugin.version ? `v${plugin.version}` : null,
     versionDate ? formatRelativeDate(versionDate, locale) : null,
     S.plugins.usedByAgents(installedCount),
   ]

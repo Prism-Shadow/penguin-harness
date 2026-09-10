@@ -101,14 +101,14 @@ and `penguin agent create` takes `--plugins`. A clean rename, no alias: a script
 `skills` gets an Agent with nothing preinstalled (the field is ignored), a script still passing
 `--skills` gets the CLI's unknown-option error. Update the call.
 
-## Plugin versions read `v2026.09.10.1`, and the old spelling still reads as the same version
+## Plugin versions read `2026.09.10.1`, and the old spelling still reads as the same version
 
-A library manifest's dated version is now spelled `vYYYY.MM.DD.N` — `v2026.09.10.1` — where it
+A library manifest's dated version is now spelled `YYYY.MM.DD.N` — `2026.09.10.1` — where it
 was `YYYY-MM-DD.N` (this is the plugin's own content version in `plugin.json`, not the npm
 version of its package, which follows the release). Copies already installed into an Agent's
 `agent_state/` carry the old spelling: a skill's `SKILL.md` frontmatter and a hook package's
 generated `hooks.json`. The loader reads both. `parsePluginVersion` maps `2026-09-02.1` and
-`v2026.09.02.1` to the same date and sequence number, so an installed copy stamped before this
+`2026.09.02.1` to the same date and sequence number, so an installed copy stamped before this
 release compares **equal** to the library's copy of that same version, and the rename raises no
 update badge anywhere.
 
@@ -117,7 +117,7 @@ spelling it was stamped with until the plugin is reinstalled from the library, w
 act that writes the new one. Only a library `plugin.json` must carry the new spelling — the
 manifest check rejects anything else. **A user does nothing.** (`continual-learning` does move
 in this release, for its own reason: its stop-hook prompt now tells the agent to bump a SKILL.md
-version in the new format, so the plugin's version rises to `v2026.09.10.1` and its installs are
+version in the new format, so the plugin's version rises to `2026.09.10.1` and its installs are
 reported as updatable — an ordinary content update, not the rename.)
 
 This one **is** a shim with an expiry. It can go once no installed copy predates 0.2.10 — a

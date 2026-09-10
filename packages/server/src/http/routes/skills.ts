@@ -159,8 +159,8 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
 
 /**
  * Version for the export filename: only a frontmatter `version:` that is a real version
- * (`vYYYY.MM.DD.N`, or the legacy spelling an older installed copy carries) yields a
- * `-<version>` filename suffix — a missing or malformed field (the parser reads either as "")
+ * (`YYYY.MM.DD.N`, or the legacy spelling an older installed copy carries) yields a
+ * `-v<version>` filename suffix — a missing or malformed field (the parser reads either as "")
  * must not be baked into a filename as if declared.
  */
 function explicitSkillVersion(skillMd: string): string | null {
@@ -258,11 +258,10 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
       throw new HttpError(404, "not_found", `Skill is not installed: ${name}`);
     }
     const archiveFiles = await collectSkillArchive(dir, name);
-    // A -<version> suffix only when the frontmatter declares one explicitly (the header
+    // A -v<version> suffix only when the frontmatter declares one explicitly (the header
     // is the authority on the filename — the web tab reads it from Content-Disposition).
-    // The version carries its own `v`, so the suffix adds none.
     const version = explicitSkillVersion(strFromU8(archiveFiles[`${name}/SKILL.md`]!));
-    const fileName = version === null ? `${name}.zip` : `${name}-${version}.zip`;
+    const fileName = version === null ? `${name}.zip` : `${name}-v${version}.zip`;
     const zip = zipSync(archiveFiles);
     return new Response(new Uint8Array(zip), {
       headers: {

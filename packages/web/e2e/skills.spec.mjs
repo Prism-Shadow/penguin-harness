@@ -5,7 +5,7 @@
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
  *   English by default); cards carry a custom icon (the plugin's first skill's icon.svg,
- *   sanitized then inlined, not the book fallback), with metadata showing the `vYYYY.MM.DD.N`
+ *   sanitized then inlined, not the book fallback), with metadata showing the `YYYY.MM.DD.N`
  *   version and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
@@ -116,7 +116,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   for (const s of PLUGINS) {
     await expect(page.getByText(s, { exact: true })).toBeVisible();
   }
-  // Card metadata is worded semantically: `vYYYY.MM.DD.N` + how long ago that date is +
+  // Card metadata is worded semantically: `v<YYYY.MM.DD.N>` + how long ago that date is +
   // usage count (default_agent has every preinstalled plugin -> at least 1 in use).
   await expect(
     page.getByText(/v\d{4}\.\d{2}\.\d{2}\.\d+ · .*更新 · .*Agent 在用/).first(),

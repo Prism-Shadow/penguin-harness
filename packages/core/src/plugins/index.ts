@@ -15,7 +15,7 @@
  * path — never a silently smaller library. Only the category manifest (id and titles) is
  * code; install / uninstall / scan live in core's state layer.
  *
- * Versions are dates with a sequence number, `vYYYY.MM.DD.N` (see PLUGIN_VERSION_PATTERN,
+ * Versions are dates with a sequence number, `YYYY.MM.DD.N` (see PLUGIN_VERSION_PATTERN,
  * parsePluginVersion and comparePluginVersions). plugin.json is the single metadata holder: a library SKILL.md's frontmatter
  * carries only `name` and `description`, and the loader stamps the plugin's version and UI short
  * descriptions into each skill's metadata and installable content (the installed copy carries the
@@ -39,7 +39,7 @@ export interface SkillMetadata {
   shortDescription?: string;
   /** Chinese short description (frontmatter `short_description_zh`, optional). */
   shortDescriptionZh?: string;
-  /** Version, `vYYYY.MM.DD.N` (an installed copy may still carry the legacy `YYYY-MM-DD.N`); an absent or malformed frontmatter version reads as "" (older than any real version). */
+  /** Version, `YYYY.MM.DD.N` (an installed copy may still carry the legacy `YYYY-MM-DD.N`); an absent or malformed frontmatter version reads as "" (older than any real version). */
   version: string;
 }
 
@@ -103,7 +103,7 @@ export interface LibraryPlugin {
   /** UI short descriptions (plugin.json `short_description(_zh)`, optional). */
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `vYYYY.MM.DD.N`. */
+  /** `YYYY.MM.DD.N`. */
   version: string;
   /** Category id (see PLUGIN_CATEGORIES); absent or unknown → the "other" group. */
   category?: string;
@@ -130,14 +130,14 @@ export interface ResolvedPluginGroup extends PluginCategory {
 /** Character rule for plugin, skill and hook names (directory names): prevents path traversal (exported for the server's archive-install validation). */
 export const PLUGIN_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-/** Version format: a `v`, a dotted date and a sequence number, e.g. `v2026.08.29.1`. What a library manifest must carry. */
-export const PLUGIN_VERSION_PATTERN = /^v\d{4}\.\d{2}\.\d{2}\.\d+$/;
+/** Version format: a dotted date and a sequence number, e.g. `2026.08.29.1`. What a library manifest must carry. */
+export const PLUGIN_VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 
 /** The spelling used before this format, `2026-08-29.1`: still read wherever an installed copy carries it (see parsePluginVersion). */
 const LEGACY_PLUGIN_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 
 /**
- * Reads either spelling of a version — the current `vYYYY.MM.DD.N` and the legacy
+ * Reads either spelling of a version — the current `YYYY.MM.DD.N` and the legacy
  * `YYYY-MM-DD.N` — into the date and sequence number both denote, or null when the string is
  * not a version at all. The two spellings of one version parse to the same key, so a copy
  * installed before the rename compares equal to the library's copy of that same version:
@@ -145,11 +145,11 @@ const LEGACY_PLUGIN_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
  * would put noise in the update badges instead of information.
  */
 export function parsePluginVersion(version: string): { date: string; seq: number } | null {
-  const current = PLUGIN_VERSION_PATTERN.test(version);
-  if (!current && !LEGACY_PLUGIN_VERSION_PATTERN.test(version)) return null;
-  const body = current ? version.slice(1) : version;
-  const dot = body.lastIndexOf(".");
-  return { date: body.slice(0, dot).replace(/-/g, "."), seq: Number(body.slice(dot + 1)) };
+  if (!PLUGIN_VERSION_PATTERN.test(version) && !LEGACY_PLUGIN_VERSION_PATTERN.test(version)) {
+    return null;
+  }
+  const dot = version.lastIndexOf(".");
+  return { date: version.slice(0, dot).replace(/-/g, "."), seq: Number(version.slice(dot + 1)) };
 }
 
 /**
@@ -172,7 +172,7 @@ export function comparePluginVersions(a: string, b: string): number {
  * first `---` block (split on the first colon, value trimmed, values may themselves contain colons);
  * all fields are scalars, no YAML dependency needed.
  * Error tolerance: returns null if the `---` block or name is missing; a version in neither the
- * current `vYYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` spelling reads as "".
+ * current `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` spelling reads as "".
  */
 export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   // Strip a possible UTF-8 BOM (may be introduced by editors when manually editing an installed SKILL.md); CRLF is handled by \r?\n.
@@ -333,7 +333,7 @@ interface PluginManifestFile {
   description_zh?: string;
   short_description?: string;
   short_description_zh?: string;
-  /** `vYYYY.MM.DD.N` — the library's manifests carry the current spelling only. */
+  /** `YYYY.MM.DD.N` — the library's manifests carry the current spelling only. */
   version: string;
   category?: string;
   /** Default true. */
@@ -351,7 +351,7 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
   const manifestFile = path.join(dir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as PluginManifestFile;
   if (!PLUGIN_VERSION_PATTERN.test(manifest.version)) {
-    throw new Error(`${manifestFile}: version must be vYYYY.MM.DD.N, got ${manifest.version}`);
+    throw new Error(`${manifestFile}: version must be YYYY.MM.DD.N, got ${manifest.version}`);
   }
   const {
     description,

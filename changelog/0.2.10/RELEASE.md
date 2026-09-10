@@ -106,7 +106,7 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 
 - **The docs gained a Security Model page** organized by user scenarios in order, ending on leak response: a leaked data-root backup is a credential-rotation incident for model keys, not a forged-session incident.
 
-- **Plugin versions read `v2026.09.10.1`.** The dated version in a plugin's manifest is spelled with a leading `v` and dots throughout; a copy installed under the old `2026-09-10.1` spelling is read as the same version, so nothing is reported as needing an update over the rename.
+- **Plugin versions read `2026.09.10.1`.** The dated version in a plugin's manifest is spelled with dots throughout instead of dashes; a copy installed under the old `2026-09-10.1` spelling is read as the same version, so nothing is reported as needing an update over the rename.
 
 - **A conversation opens on its latest 50 turns** instead of the whole transcript; earlier turns load as you scroll up, so a long Session no longer stalls on open.
 

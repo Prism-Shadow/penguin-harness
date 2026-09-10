@@ -116,7 +116,7 @@ describe("continual-learning stop.mjs", () => {
     expect(prompt).toContain("[tool_output c2 · fatal] boom");
     expect(prompt).toContain("[user] skip the tests");
     expect(prompt).not.toContain("[use_skills]");
-    expect(prompt).toContain("vYYYY.MM.DD.N");
+    expect(prompt).toContain("YYYY.MM.DD.N");
   });
 
   it("windows per task: a new input resets the count, and it never fires without skills", async () => {

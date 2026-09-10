@@ -5,7 +5,7 @@
  * file when the request fails — fetching first lets a failure surface as a toast instead. The
  * JSON-only api client can't carry binary, hence the raw fetch (errors re-wrapped as ApiError
  * so apiErrorText localizes by code as usual). The server's Content-Disposition is the
- * authority on the filename (it appends -<version> when the installed copy declares one);
+ * authority on the filename (it appends -v<version> when the installed copy declares one);
  * `<fallbackName>.zip` covers a missing or unparseable header.
  */
 import { ApiError } from "../../api/client";

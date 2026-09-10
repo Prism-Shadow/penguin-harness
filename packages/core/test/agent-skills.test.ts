@@ -53,12 +53,12 @@ describe("installSkill / removeSkill", () => {
     // Content without a trailing newline gets one appended; reinstalling overwrites.
     await install(
       "penguin-config",
-      "---\nname: penguin-config\nversion: v2026.08.01.2\n---\n\nNew body",
+      "---\nname: penguin-config\nversion: 2026.08.01.2\n---\n\nNew body",
     );
     expect(await fs.readFile(skillMd("penguin-config"), "utf8")).toBe(
-      "---\nname: penguin-config\nversion: v2026.08.01.2\n---\n\nNew body\n",
+      "---\nname: penguin-config\nversion: 2026.08.01.2\n---\n\nNew body\n",
     );
-    expect((await list()).map((s) => s.version)).toEqual(["v2026.08.01.2"]);
+    expect((await list()).map((s) => s.version)).toEqual(["2026.08.01.2"]);
   });
 
   it("writes an install's icon.svg alongside SKILL.md, and reinstalling without one removes it", async () => {
@@ -144,15 +144,15 @@ describe("listInstalledSkills", () => {
   it("parses frontmatter and sorts by name", async () => {
     await install(
       "zeta",
-      "---\nname: zeta\ndescription: Z skill.\nversion: v2026.07.16.3\n---\n\nBody\n",
+      "---\nname: zeta\ndescription: Z skill.\nversion: 2026.07.16.3\n---\n\nBody\n",
     );
     await install(
       "alpha",
-      "---\nname: alpha\ndescription: A skill.\nversion: v2026.07.16.1\n---\n\nBody\n",
+      "---\nname: alpha\ndescription: A skill.\nversion: 2026.07.16.1\n---\n\nBody\n",
     );
     expect(await list()).toEqual([
-      { name: "alpha", description: "A skill.", version: "v2026.07.16.1" },
-      { name: "zeta", description: "Z skill.", version: "v2026.07.16.3" },
+      { name: "alpha", description: "A skill.", version: "2026.07.16.1" },
+      { name: "zeta", description: "Z skill.", version: "2026.07.16.3" },
     ]);
   });
 
@@ -160,22 +160,22 @@ describe("listInstalledSkills", () => {
     const icon = '<svg viewBox="0 0 24 24"><path d="M4 4h16" /></svg>\n';
     await install(
       "with-extras",
-      "---\nname: with-extras\ndescription: Long description here.\nshort_description: Short one.\nshort_description_zh: 短描述。\nversion: v2026.07.17.1\n---\n\nBody\n",
+      "---\nname: with-extras\ndescription: Long description here.\nshort_description: Short one.\nshort_description_zh: 短描述。\nversion: 2026.07.17.1\n---\n\nBody\n",
       icon,
     );
     await install(
       "plain",
-      "---\nname: plain\ndescription: Plain skill.\nversion: v2026.07.17.1\n---\n\nBody\n",
+      "---\nname: plain\ndescription: Plain skill.\nversion: 2026.07.17.1\n---\n\nBody\n",
     );
     const skills = await list();
     expect(skills).toEqual([
-      { name: "plain", description: "Plain skill.", version: "v2026.07.17.1" },
+      { name: "plain", description: "Plain skill.", version: "2026.07.17.1" },
       {
         name: "with-extras",
         description: "Long description here.",
         shortDescription: "Short one.",
         shortDescriptionZh: "短描述。",
-        version: "v2026.07.17.1",
+        version: "2026.07.17.1",
         icon,
       },
     ]);
@@ -191,10 +191,10 @@ describe("listInstalledSkills", () => {
     // and Prompt lookup, so the listing must follow it (frontmatter fields are display-only).
     await install(
       "local-name",
-      "---\nname: upstream-name\ndescription: Fetched skill.\nversion: v2026.07.01.2\n---\n\nBody\n",
+      "---\nname: upstream-name\ndescription: Fetched skill.\nversion: 2026.07.01.2\n---\n\nBody\n",
     );
     expect(await list()).toEqual([
-      { name: "local-name", description: "Fetched skill.", version: "v2026.07.01.2" },
+      { name: "local-name", description: "Fetched skill.", version: "2026.07.01.2" },
     ]);
   });
 
@@ -222,7 +222,7 @@ describe("skillMetadataSection / assembleSystemPrompt injection", () => {
     expect(skillMetadataSection([])).toBe("");
     expect(
       skillMetadataSection([
-        { name: "a", description: "Does A.", version: "v2026.07.16.1" },
+        { name: "a", description: "Does A.", version: "2026.07.16.1" },
         { name: "b", description: "", version: "" },
       ]),
     ).toBe("- `a` — Does A.\n- `b`");
@@ -242,7 +242,7 @@ describe("skillMetadataSection / assembleSystemPrompt injection", () => {
       agentsMd: "# Agent Rules",
     };
     const prompt = assembleSystemPrompt(state, undefined, undefined, [
-      { name: "demo", description: "Demo skill.", version: "v2026.07.16.1" },
+      { name: "demo", description: "Demo skill.", version: "2026.07.16.1" },
     ]);
     expect(prompt).toBe(["before", "# Agent Rules", "- `demo` — Demo skill.", "after"].join("\n"));
     // Not provided / empty list: the placeholder is replaced with an empty string, no residue left.

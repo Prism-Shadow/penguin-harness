@@ -55,7 +55,7 @@ describe("hooks api", () => {
     name: "zip-hook",
     description: "Zip demo hook",
     description_zh: "示例钩子",
-    version: "v2026.09.02.1",
+    version: "2026.09.02.1",
     stop: [{ command: "stop.mjs", timeout: 5 }],
     pre_tool_use: [],
     user_prompt: [],
@@ -130,7 +130,7 @@ describe("hooks api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentHooksResponse;
     expect(body.hooks.map((h) => [h.name, h.version, h.events])).toEqual([
-      ["dir-hook", "v2026.09.02.1", ["stop"]],
+      ["dir-hook", "2026.09.02.1", ["stop"]],
     ]);
     expect(body.hooks[0]!.descriptionZh).toBe("示例钩子");
     const dir = path.join(hooksDir(t.root, projectId, "zip_agent"), "dir-hook");
@@ -150,7 +150,7 @@ describe("hooks api", () => {
         "hooks.json": strToU8(
           manifestText({
             name: "root-hook",
-            version: "v2026.09.02.2",
+            version: "2026.09.02.2",
             user_prompt: [{ command: "expand.mjs" }],
           }),
         ),
@@ -163,7 +163,7 @@ describe("hooks api", () => {
     expect(both.hooks[1]).toMatchObject({ description: "", events: ["user_prompt"] });
     expect(JSON.parse(await fs.readFile(manifestFile("zip_agent", "root-hook"), "utf8"))).toEqual({
       name: "root-hook",
-      version: "v2026.09.02.2",
+      version: "2026.09.02.2",
       user_prompt: [{ command: "expand.mjs" }],
       description: "",
       stop: [],
@@ -322,14 +322,14 @@ describe("hooks api", () => {
     // overwrite: true replaces the whole directory: old.txt is gone, new.txt appears.
     const res = await member.post(url, {
       dataBase64: zipB64({
-        ...packageFiles("zip-hook", { ...MANIFEST, version: "v2026.09.02.3" }),
+        ...packageFiles("zip-hook", { ...MANIFEST, version: "2026.09.02.3" }),
         "zip-hook/new.txt": strToU8("new\n"),
       }),
       overwrite: true,
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentHooksResponse;
-    expect(body.hooks.find((h) => h.name === "zip-hook")!.version).toBe("v2026.09.02.3");
+    expect(body.hooks.find((h) => h.name === "zip-hook")!.version).toBe("2026.09.02.3");
     const dir = path.join(hooksDir(t.root, projectId, "zip_over_agent"), "zip-hook");
     expect(await fs.readFile(path.join(dir, "new.txt"), "utf8")).toBe("new\n");
     await expect(fs.access(path.join(dir, "old.txt"))).rejects.toThrow();

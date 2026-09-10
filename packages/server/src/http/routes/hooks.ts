@@ -331,10 +331,9 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     const name = requireValidId(c, "name");
     const dir = await requireInstalled(projectId, agentId, name);
     const archiveFiles = await collectHookArchive(dir, name);
-    // A -<version> suffix only when the manifest carries a real version — in the current
-    // `vYYYY.MM.DD.N` spelling, which carries its own `v`, or the legacy one an older
-    // installed copy has (the header is the authority on the filename — the web tab reads it
-    // from Content-Disposition).
+    // A -v<version> suffix only when the manifest carries a real version — in the current
+    // `YYYY.MM.DD.N` spelling or the legacy one an older installed copy has (the header is the
+    // authority on the filename — the web tab reads it from Content-Disposition).
     let version = "";
     try {
       const manifest = JSON.parse(strFromU8(archiveFiles[`${name}/hooks.json`]!)) as {
@@ -345,7 +344,7 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
       // An unparseable manifest still exports (the files are what the user asked for); it just gets the bare filename.
     }
     const fileName =
-      parsePluginVersion(version) !== null ? `${name}-${version}.zip` : `${name}.zip`;
+      parsePluginVersion(version) !== null ? `${name}-v${version}.zip` : `${name}.zip`;
     const zip = zipSync(archiveFiles);
     return new Response(new Uint8Array(zip), {
       headers: {

@@ -3,6 +3,6 @@
   "description_zh": "闭环的 Agent 调优：依据需求初始化 Agent、设计并校准能力 Benchmark、隔离执行与评分、再根据测得结果改进 Agent。",
   "short_description": "Initialize, benchmark, evaluate and improve agents.",
   "short_description_zh": "初始化、评测、评分与改进 Agent。",
-  "version": "v2026.09.02.1",
+  "version": "2026.09.02.1",
   "category": "ai-app-development"
 }
