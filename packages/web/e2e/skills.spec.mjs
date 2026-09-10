@@ -1,6 +1,6 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件库" ("Plugin library"), and the page renders the library's plugin
+ * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
@@ -102,7 +102,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
 
   // —— Plugin library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件库" });
+  const navLink = page.getByRole("link", { name: "插件市场" });
   await expect(navLink).toBeVisible();
   await navLink.click();
   await expect(page).toHaveURL(/\/plugins$/);
