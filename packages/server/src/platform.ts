@@ -104,6 +104,7 @@ import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
+import { SandboxConfig, SandboxSettingsStore } from "./sandbox/settings-store.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
@@ -120,6 +121,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { AdminSandboxRoutes } from "./http/routes/admin-sandbox.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
@@ -335,6 +337,16 @@ export class SettingsModule {}
 })
 export class PluginConfigModule {}
 
+/**
+ * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
+ * floor, and what persists its settings needs the database, so the store sits above it.
+ */
+@Module({
+  children: [SandboxSettingsStore],
+  exports: [SandboxConfig],
+})
+export class SandboxSettingsModule {}
+
 @Module({
   children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
@@ -411,6 +423,7 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     InstalledPluginRoutes,
     SuggestIdRoutes,
+    AdminSandboxRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })
@@ -433,6 +446,7 @@ export class ApiModule {}
     CompanyModule,
     ApiModule,
     SandboxModule,
+    SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     Startup,
