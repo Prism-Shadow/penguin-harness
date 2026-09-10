@@ -481,6 +481,23 @@ export const zh = {
     later: "稍后再说",
   },
 
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  aiCreate: {
+    withAi: "用 AI 创建",
+    manual: "手动创建",
+    editInChat: "在新对话中编辑",
+    copyPrompt: "复制提示词",
+    examplesTitle: "试试这些示例",
+    fullPrompt: "完整提示词",
+    /** Who does the work, and where: the panel's lead line. */
+    byAgent: (name: string): string => `将由「${name}」在新对话中完成`,
+    chooseAgent: "执行的智能体",
+    placeholder: "描述你想要什么，越具体越好",
+    /** Accessible name of the prompt box (it has no visible label). */
+    promptLabel: "提示词",
+    noAgent: "当前 Project 还没有智能体",
+  },
+
   agent: {
     /**
      * Toast after a save on this page: when the change reaches a Session. Core assembles the

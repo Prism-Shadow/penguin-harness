@@ -97,6 +97,10 @@ Because the Agent writes to the same Workspace, a file can change while you are 
 
 Uploads go into the current directory (the toolbar's **Upload** button, several files at a time), or files can be **dragged from the desktop onto the panel**: a dashed frame names the directory they will land in, dropping onto a folder row uploads into that folder (the row highlights while the drag is over it), and the first uploaded file opens afterwards. Each file is limited to 14MB — oversize picks are named and skipped before anything is read — and a same-named file in the target directory is overwritten after confirmation. Download is in the preview header.
 
+## Create with AI
+
+Everything the Web App creates from a form — an agent, a model group, a Benchmark, a scheduled task, a vault secret, a hook import, an app, an agent import — can also be described to an agent instead. Each page offers two buttons side by side: **Create with AI** with the magic wand, and **Create manually** with the hand, so both paths are visible at once. The prompt box comes with clickable examples that fill the draft, and a folded **Full prompt** preview shows the fixed instructions that travel with what you typed, with a copy button. There is one way out, **Edit in a new conversation**: it opens a new conversation with the Project's `default_agent` (the first agent when there is none) and prefills the composer with the prompt — whether to send it is yours to decide. A prefilled prompt is not something the browser holds on to: leave the page without editing or sending it and it is dropped, so it cannot resurface in a later conversation. Type into it and it becomes an ordinary draft, kept like anything else you write.
+
 ## Agent Management (/agents)
 
 The list page creates and deletes Agents — the create dialog can initialize the new agent from an exported Agent State snapshot package (name and description left empty keep the package's values, and plugin picking is unavailable then, since the package carries its own skills and hooks) — and clicking through opens the `/agents/:agentId` settings page, organized into tabs:
