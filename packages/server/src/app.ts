@@ -115,7 +115,8 @@ import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HmrHost } from "@prismshadow/penguin-hmr";
+import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import { packagedPlatform } from "./hmr/platform.js";
 import { hmrRoutes } from "./hmr/routes.js";
@@ -183,6 +184,8 @@ export interface ServerBoot {
   db: DatabaseSync;
   channels: ChannelHub;
   hmr: ServerHmrHost;
+  /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
+  control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
   /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
   lifecycle: LifecycleService;
@@ -203,14 +206,26 @@ export async function bootAppDeps(
   config: ServerConfig,
   replacements: Replacements = [],
   plugins?: PluginHost,
+  host?: ServerHmrHost,
+  control?: Hmr<PlatformApi>,
 ): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
 
   const usersRepo = wire(UsersRepo, { db: db });
 
   // Hoisted above the services so its registry can be populated before anything boots
-  // against it.
-  const hmr = new HmrHost<PlatformApi>(config.root, packagedPlatform);
+  // against it. index.ts builds both and hands them in (hmrMain owns them there); a test
+  // that boots without an entry gets the same pair here.
+  const hmr = host ?? new HmrHost<PlatformApi>(config.root, packagedPlatform);
+  // The default replace does what index.ts's does: point the boot's tree at the new
+  // generation, so what createApp resolves from it is the current generation's.
+  let booted: ServerBoot | null = null;
+  const ctl =
+    control ??
+    hmrControl(hmr, (instance) => {
+      const next = typeof instance.api.business === "function" ? instance.api.business() : null;
+      if (next !== null && booted !== null) booted.tree = next;
+    });
 
   // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
   // business question: the App installs the answer itself via setActivityProbe at every
@@ -292,7 +307,8 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, lifecycle, tree };
+  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  return booted;
 }
 
 /**
@@ -314,17 +330,34 @@ export function platformLog(hmr: ServerHmrHost): (line: string) => void {
 
 /** Assembles the Hono app (does not listen on a port). */
 export function createApp(boot: ServerBoot): Hono<AppEnv> {
-  const { tree } = boot;
-  const errors = tree.api<Errors>("ObservabilityModule", "Errors");
+  // Resolved on use, from the CURRENT generation's tree — the entry's replace hook points
+  // `boot.tree` at each new one — so a node is never the first generation's for the life
+  // of the process. A generation that has no tree to resolve from (a pushed fixture, a
+  // bare kernel, a tree mid-dispose) keeps the last one resolved, as a captured node did.
+  const current = <T>(resolve: () => T): (() => T) => {
+    let last = resolve();
+    return () => {
+      try {
+        last = resolve();
+      } catch {
+        // The tree is mid-swap or belongs to a generation without one: the last node stands.
+      }
+      return last;
+    };
+  };
+  const errors = current(() => boot.tree.api<Errors>("ObservabilityModule", "Errors"));
   const log = platformLog(boot.hmr);
-  const settings = tree.api<Settings>("SettingsModule", "Settings");
-  const access = tree.api<Access>("ProjectsModule", "Access");
-  const authService = tree.api<Auth>("IdentityModule", "Auth");
+  const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
+  const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
+  const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
-    authService,
+    get authService() {
+      return authService();
+    },
     hmr: boot.hmr,
+    control: boot.control,
     channels: boot.channels,
   };
   const app = new Hono<AppEnv>();
@@ -334,8 +367,8 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // exceptions are logged with a stack trace and collapsed to 500), and recording
   // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, { access });
-    errors.record({
+    const projectId = attributedProjectId(c, { access: access() });
+    errors().record({
       source: "http",
       err,
       ...(projectId !== undefined ? { ctx: { projectId } } : {}),
@@ -395,7 +428,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // size so the steady state allocates nothing.
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings.getAttachmentLimitsMb());
+    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -427,7 +460,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
   // ones, and decide its own authentication. Declining costs one property read and lands on
   // the runtime's own routes below, which is what a platform without an `http` handler does.
-  app.use("*", platformHttpSeam(deps.hmr));
+  app.use("*", platformHttpSeam(deps.control));
 
   // Every route but /api/hmr is the platform's, served through the seam above. What follows
   // is the layer's own tail: static hosting and the SPA fallback.

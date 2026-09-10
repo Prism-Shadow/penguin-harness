@@ -5,12 +5,16 @@
  * states the rule and the reason it is enforced by a package boundary rather than by
  * discipline. The four exports below are the whole mechanism:
  *
+ * - {@link hmrMain} — the layer's entry: the frozen operations (which generation a request
+ *   goes to, how a push is applied, what the product refreshes once one is current).
  * - {@link HmrHost} — the version store, the atomic `harness.json` commit, and the
  *   park → boot → swap it drives (with recovery when a boot fails).
  * - {@link HotResources} — the registry live objects ride across a swap in.
  * - the manifest reader/writer — what a committed version is, on disk.
  * - the interface diff — what a handshake reports when two generations disagree.
  */
+export { hmrMain, hmrControl } from "./main.js";
+export type { Hmr, Replace } from "./main.js";
 export { HmrHost } from "./host.js";
 export type {
   PlatformBundle,
