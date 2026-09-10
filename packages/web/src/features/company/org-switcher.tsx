@@ -247,7 +247,10 @@ export function NoOrganizationsSidebar({ onNavigate }: { onNavigate?: () => void
   return (
     <div className="mt-3 space-y-2 px-2.5 pt-2">
       <p className="text-xs text-gray-400 dark:text-gray-500">{S.company.noOrganizations}</p>
-      <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
+      {/* A quiet secondary button: every empty page beside this list (the landing, the
+          organization-gone page) carries the primary "New organization" itself, so this one
+          only covers the pages that do not. */}
+      <Button size="sm" onClick={() => setCreateOpen(true)}>
         {S.company.createOrg}
       </Button>
       <CreateOrganizationDialog
