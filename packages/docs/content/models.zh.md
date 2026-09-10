@@ -30,7 +30,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 内联凭证，可留空；留空时 AgentHub 回退读环境变量 |
 
-新建 Project 的默认模型是 deepseek-v4-flash-vision-exp，它自己就能读图。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
+新建 Project 的默认模型是 deepseek-v4-flash-vision-exp，它自己就能读图。另可配置一条 `vision_model`，作为 text-only 模型用 `read_file` 读图时的代读模型(见 [工具与审批](/tools))；默认不配置。
 
 文件形态(示意):
 
@@ -51,7 +51,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-对标注 `vision = false` 的模型(如 `deepseek-v4-flash`，即默认模型的纯文本同族)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；读图工具切换为 `describe_image`。
+对标注 `vision = false` 的模型(如 `deepseek-v4-flash`，即默认模型的纯文本同族)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；`read_file` 读图时改为交给 `vision_model` 代读、不再返回图片。
 
 ## 内置 Provider 分组
 
@@ -171,7 +171,7 @@ DeepSeek V4 只接受 `low`/`high`/`max`，服务端会把 `medium` 与 `xhigh` 
 
 如果请求最终仍到达了拒绝 `fast_mode` 的 client，AgentHub 会在**发起网络请求之前**拒绝：该轮会话立即结束，错误信息带上厂商原文与设置入口指引，确定性的拒绝不会重试。若某个条目在不支持的模型上存有 `fast_mode = true`，弹窗仍会显示该开关并标注不支持，以便随时关闭。
 
-连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`describe_image` 代读）不携带快速模式——只有会话自身的请求携带。
+连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`read_file` 的视觉模型代读）不携带快速模式——只有会话自身的请求携带。
 
 ## 模型与 Agent 解耦
 

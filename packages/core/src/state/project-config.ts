@@ -94,9 +94,9 @@ export interface ModelEntry {
   /**
    * Whether image input is supported (vision/multimodal); defaults to supported. For a model
    * tagged `false` (e.g. DeepSeek): images from conversation input are saved to the session
-   * scratchpad and handed over as a file path spliced into the text, and the image-reading tool
-   * switches to describe_image (a vision model reads on its behalf) — the image never directly
-   * enters that session's history.
+   * scratchpad and handed over as a file path spliced into the text, and read_file has the
+   * Project's vision model read an image on its behalf instead of returning it — the image
+   * never directly enters that session's history.
    */
   vision?: boolean;
   /**
@@ -173,7 +173,7 @@ export interface ProjectConfig {
   /** Paired reference to the default Model; must point to an entry in `models`. */
   default_model?: ModelRef;
   /**
-   * The vision model used by read_image to read on behalf of a session model (when a session
+   * The vision model used by read_file to read images on behalf of a session model (when a session
    * model with `vision=false` reads an image, it's handed to this model to describe and the tool
    * returns text); must point to an entry in `models` (a paired reference). Unconfigured by
    * default — models that don't support images won't be able to read images.
@@ -589,7 +589,7 @@ export async function setDefaultModel(
 }
 
 /**
- * Sets the vision model used to read images on behalf of read_image, and saves. The target
+ * Sets the vision model used to read images on behalf of read_file, and saves. The target
  * reference must exist in `models` and not be tagged `vision=false` (a model that doesn't support
  * images can't read on someone's behalf); throws otherwise.
  */
