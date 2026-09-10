@@ -42,6 +42,14 @@ skills/core output, the prestep also clears the web app's Vite dep cache
 otherwise keep serving the browser the previous core. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
 
+The prestep also builds `packages/cli`, because a dev server hands the Agents it runs the
+CLI of the checkout it was started from: it writes a launcher at `<root>/bin/penguin`
+pointing at `packages/cli/dist/penguin.js` and puts that directory at the front of every
+command's PATH. Nothing rebuilds that file while a dev server runs — `tsx watch` covers the
+server's own sources only — so after editing the CLI, run
+`pnpm --filter @prismshadow/penguin-cli build` (or restart `pnpm dev`) before asking an
+Agent to use it.
+
 One rule when bypassing the dev commands: **rebuild skills/core through pnpm, in that
 order** (`pnpm build`, or restart `pnpm dev`) — the workspace uses injected dependencies
 (`injectWorkspacePackages` in pnpm-workspace.yaml), so web/server consume snapshot copies

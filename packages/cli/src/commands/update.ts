@@ -56,11 +56,10 @@
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { realpathSync } from "node:fs";
 import { VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
 import type { InstallerSource, Messages } from "../i18n.js";

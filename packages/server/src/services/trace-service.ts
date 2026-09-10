@@ -61,6 +61,7 @@ import {
   encodeCursor,
   finalizeScan,
   initialScanState,
+  mergedIntervalMs,
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
@@ -204,6 +205,24 @@ function subagentPointer(msg: OmniMessage): string | null {
     return null;
   }
   return p.session_id;
+}
+
+/**
+ * The interval a tool span actually spent **executing**, as epoch milliseconds, or null when
+ * it never produced one.
+ *
+ * Starts at the approval moment when there was one and at the call otherwise, so the human
+ * approval wait stays out; the argument-generation segment is before `callTs` entirely and is
+ * model time, counted in the turn's `llmMs`. A span with no `outputTs` never finished within
+ * this file — still running when it ended, or interrupted — and contributes nothing rather
+ * than being extrapolated to the present.
+ */
+export function toolExecutionInterval(span: TraceToolSpan): [number, number] | null {
+  if (span.outputTs === undefined) return null;
+  const end = Date.parse(span.outputTs);
+  const start = Date.parse(span.approvalTs ?? span.callTs);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return [start, Math.max(start, end)];
 }
 
 /**
@@ -896,6 +915,7 @@ export class TraceService {
           endTs: "",
           tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
           llmMs: 0,
+          toolMs: 0,
         };
         taskStats.set(ti, t);
       }
@@ -1325,8 +1345,26 @@ export class TraceService {
       const span = Date.parse(t.endTs) - Date.parse(t.startTs);
       return sum + (Number.isFinite(span) ? Math.max(0, span) : 0);
     }, 0);
+    // Tool wall time per turn: the union of that turn's execution intervals, so tools running
+    // in parallel are counted once. `llmMs` is already accumulated per turn as each Request
+    // ends, so the two components need no second pass here.
+    const toolIntervalsByTask = new Map<number, Array<[number, number]>>();
+    for (const span of toolSpans) {
+      const interval = toolExecutionInterval(span);
+      if (interval === null) continue;
+      const list = toolIntervalsByTask.get(span.taskIndex);
+      if (list === undefined) toolIntervalsByTask.set(span.taskIndex, [interval]);
+      else list.push(interval);
+    }
+    for (const t of tasks) t.toolMs = mergedIntervalMs(toolIntervalsByTask.get(t.taskIndex) ?? []);
+    // Both global figures are the sum of the per-turn figures, the same convention `elapsedMs`
+    // follows above, so a reader adding up the turn cards lands on the totals.
+    const apiMs = tasks.reduce((sum, t) => sum + t.llmMs, 0);
+    const toolMs = tasks.reduce((sum, t) => sum + t.toolMs, 0);
     return {
       elapsedMs,
+      apiMs,
+      toolMs,
       requests,
       tasks,
       toolCalls,

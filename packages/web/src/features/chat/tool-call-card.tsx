@@ -27,6 +27,8 @@ import {
   DISCLOSURE_ROW_STICKY_CLASS,
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
+import { ICON_SIZE } from "../../lib/icon-scale";
+import { BackgroundTasksMark } from "../../components/ui/session-activity-icon";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
@@ -115,6 +117,29 @@ export function headerSubtitle(name: string, argsJson: string, settled = true): 
     }
   }
   return null;
+}
+
+/**
+ * Whether this call was launched with `run_in_background: true` — the argument `exec_command`
+ * and `run_subagent` share, and the one that leaves work running after the tool has returned.
+ * The row marks those calls the way the session list marks their conversation.
+ *
+ * Read from the parsed arguments rather than the streamed prefix: the flag is last in both
+ * schemas, so it only exists once the call has closed, and an incomplete or malformed argument
+ * string simply reads as "not background" — the mark appears with the closing brace.
+ */
+export function isBackgroundCall(argsJson: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return false;
+  }
+  return (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    (parsed as Record<string, unknown>)["run_in_background"] === true
+  );
 }
 
 /**
@@ -326,6 +351,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
+        {/* Right of the duration, on a call made with run_in_background: the same mark the
+            session list draws on the conversation, so a backgrounded call and the row that
+            counts it read as one thing. It sits after the duration rather than beside the
+            name so it never competes with the truncating subtitle, and the row's own status
+            icon keeps saying what the CALL did — this says where its work went. */}
+        {isBackgroundCall(item.argumentsText) && (
+          <BackgroundTasksMark label={S.chat.backgroundCall} size={ICON_SIZE.inlineGlyph} />
+        )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
         <Chevron open={open} className="text-gray-400" />

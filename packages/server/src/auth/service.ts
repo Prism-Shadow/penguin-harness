@@ -12,9 +12,8 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
-import type { SessionViaValue } from "../db/repos/auth-sessions.js";
+import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;

@@ -311,6 +311,17 @@ export interface EnvironmentConfig {
    * is injected (SDK/CLI standalone use).
    */
   controlEnv?: () => Record<string, string>;
+  /**
+   * Directories put at the FRONT of PATH for exec_command / input_command subprocesses
+   * (see {@link CreateAgentOptions.pathPrepend}). Applied in two places, because one is
+   * not enough: onto the inherited PATH of the child environment — before the vault, so a
+   * vault `PATH` still replaces the whole inherited value — and as a statement in front of
+   * the command string, which is what survives a login profile rewriting PATH after the
+   * child environment was set. The statement runs last, so these directories lead whatever
+   * PATH the shell ended up with, a vault `PATH` included. Re-read at every spawn like
+   * `proxyEnv`. Absent, or a getter returning nothing = PATH is untouched.
+   */
+  pathPrepend?: () => string[];
 }
 
 /**
@@ -462,6 +473,15 @@ export interface EnvironmentInterface {
    * Optional, same single-listener pattern as setBackgroundTaskListener.
    */
   setSubagentStateListener?(listener: () => void): void;
+  /**
+   * Attaches the single listener for background-task state changes: a command session
+   * promoted to the background, exited, stopped or removed; a subagent session promoted,
+   * starting or settling a round, or released. Payload-free — the host re-reads
+   * `listBackgroundCommands` / `listBackgroundSubagents` on each ping, and reads them once
+   * when it attaches (pings before that are not buffered). Optional, same single-listener
+   * pattern as setSubagentStateListener.
+   */
+  setBackgroundStateListener?(listener: () => void): void;
   /**
    * Attaches the host's session-lifetime fallback approval sink for child sessions: a child
    * approval with no window sink (an active run_subagent/input_subagent call) and no
