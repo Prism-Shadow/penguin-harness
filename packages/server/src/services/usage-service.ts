@@ -30,7 +30,11 @@ import type {
   UsageSeriesPoint,
 } from "../api/types.js";
 import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
-import { offPeakScheduledRefs } from "@prismshadow/penguin-core/model-catalog";
+import {
+  catalogEntryFor,
+  offPeakAt,
+  offPeakScheduledRefs,
+} from "@prismshadow/penguin-core/model-catalog";
 import type {
   UsageRepo,
   UsageModelSums,
@@ -130,15 +134,43 @@ export interface UsageErrorsClearQuery {
   agentId?: string;
 }
 
-/** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
-function costOf(sums: UsageModelSums, tiered: TieredRates): number {
-  const rates = sums.peak ? tiered.peak : tiered.offPeak;
+/** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
+export function requestCostUsd(
+  counts: { cacheRead: number; cacheWrite: number; output: number },
+  rates: PricingRates,
+): number {
   return (
-    (sums.cacheRead * rates.cacheRead +
-      sums.cacheWrite * rates.cacheWrite +
-      sums.output * rates.output) /
+    (counts.cacheRead * rates.cacheRead +
+      counts.cacheWrite * rates.cacheWrite +
+      counts.output * rates.output) /
     1e6
   );
+}
+
+/**
+ * The rates one usage record is billed at, decided from the record's own timestamp: the
+ * off-peak tier when the reference carries a catalog schedule and `at` falls outside its peak
+ * windows, the peak tier otherwise. For a reference with no schedule, or whose stored price is
+ * no longer the catalog's, the two tiers are the same figure (see project-config-service's
+ * `tieredRates`), so the decision changes nothing there. `peakExpr` in the usage repo is this
+ * rule written in SQL for the aggregations; the two must agree record for record, which is why
+ * an unreadable timestamp — which the repo never stores — takes the peak tier rather than
+ * inventing a discount.
+ */
+export function ratesAt(
+  tiered: TieredRates,
+  provider: string,
+  modelId: string,
+  at: Date,
+): PricingRates {
+  const schedule = catalogEntryFor(provider, modelId)?.offPeakDiscount;
+  if (schedule === undefined || Number.isNaN(at.getTime())) return tiered.peak;
+  return offPeakAt(schedule, at) ? tiered.offPeak : tiered.peak;
+}
+
+/** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
+function costOf(sums: UsageModelSums, tiered: TieredRates): number {
+  return requestCostUsd(sums, sums.peak ? tiered.peak : tiered.offPeak);
 }
 
 /** In-process Map key for a paired reference (\0-separated, the same style as session-manager's agentKey; never persisted). */
