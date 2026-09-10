@@ -15,7 +15,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  hookPackageEnabled,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
   type HookManifest,
@@ -667,8 +666,7 @@ function hookManifestText(manifest: HookManifest): string {
  * `icon.svg` when it has one (the installed package shows its plugin's icon, the way an
  * installed skill does), plus the package's files (relative path → content, subdirectories
  * preserved), replacing the whole directory like a skill install does. Each file path is
- * checked to stay within the directory. A package that was switched off stays off across
- * the reinstall: a library update replaces the content, not the user's switch.
+ * checked to stay within the directory.
  * Docs: /docs/skills § "Hooks".
  */
 export async function installHook(
@@ -684,41 +682,11 @@ export async function installHook(
   assertValidId("skill_name", manifest.name);
   for (const rel of Object.keys(files)) assertSafeSkillFile(rel);
   const dir = path.join(hooksDir(root, projectId, agentId), manifest.name);
-  const previous = await readHookManifest(dir);
-  const written =
-    previous !== null && !hookPackageEnabled(previous) ? { ...manifest, enabled: false } : manifest;
   await replaceSkillDirectory(dir, [
-    ["hooks.json", hookManifestText(written)],
+    ["hooks.json", hookManifestText(manifest)],
     ...(icon !== undefined ? ([["icon.svg", icon]] as Array<[string, string]>) : []),
     ...Object.entries(files),
   ]);
-}
-
-/**
- * Switches an installed hook package off (`enabled: false` written into its `hooks.json`) or
- * back on (the field removed again — an absent field is the installer's own output and means
- * enabled, so a package that was never touched and one switched back on read the same). The
- * rest of the directory is untouched. Throws when the package is not installed.
- */
-export async function setHookEnabled(
-  root: string,
-  projectId: string,
-  agentId: string,
-  name: string,
-  enabled: boolean,
-): Promise<void> {
-  assertValidId("project_id", projectId);
-  assertValidId("agent_id", agentId);
-  assertValidId("skill_name", name);
-  const dir = path.join(hooksDir(root, projectId, agentId), name);
-  const manifest = await readHookManifest(dir);
-  if (manifest === null) throw new Error(`Hook package is not installed: ${name}`);
-  const { enabled: _current, ...rest } = manifest;
-  await atomicWriteFile(
-    path.join(dir, "hooks.json"),
-    hookManifestText(enabled ? rest : { ...rest, enabled: false }),
-    { followSymlinks: true },
-  );
 }
 
 /** Uninstalls a hook package: deletes the entire `hooks/<name>/` directory; idempotent. */

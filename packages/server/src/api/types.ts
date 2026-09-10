@@ -968,6 +968,17 @@ export interface AgentSchedulesConfigDto {
   templateHasPlaceholder: boolean;
 }
 
+/**
+ * Hook config, edited on the Hooks tab. One Agent-level switch and no prompt: hook packages
+ * are scripts run at the loop's hook points, not text injected into the context. `enabled`
+ * reports the effective value (a config with no `hooks` section reads as enabled, matching
+ * core).
+ */
+export interface AgentHooksConfigDto {
+  /** Whether a Session created from now on runs the installed hook packages (they stay installed either way). */
+  enabled: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -988,6 +999,7 @@ export interface AgentConfigDto {
   vault: AgentVaultConfigDto;
   skills: AgentSkillsConfigDto;
   schedules: AgentSchedulesConfigDto;
+  hooks: AgentHooksConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -1042,6 +1054,8 @@ export interface AgentConfigUpdateRequest {
     vault?: { enabled?: boolean; prompt?: string };
     skills?: { enabled?: boolean; prompt?: string };
     schedules?: { enabled?: boolean; prompt?: string };
+    /** The Agent-level hook switch; it has no prompt half. */
+    hooks?: { enabled?: boolean };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
@@ -3140,8 +3154,6 @@ export interface HookItem {
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
-  /** `false` when the manifest says `enabled: false`: the package stays installed, but no Session created from then on consults it (PATCH …/hooks/:name switches it). */
-  enabled: boolean;
   /** The plugin's raw icon.svg, written beside the manifest at install time; absent when the plugin ships none (the frontend draws the hook glyph). */
   icon?: string;
 }
@@ -3209,11 +3221,6 @@ export interface AgentSkillsResponse {
 /** GET /api/projects/:p/agents/:a/hooks: hook packages installed on this Agent; DELETE …/hooks/:name uninstalls one (204). */
 export interface AgentHooksResponse {
   hooks: HookItem[];
-}
-
-/** PATCH /api/projects/:p/agents/:a/hooks/:name (owner only): switch one installed package on or off. 200 returns the updated HookItem; 404 when it is not installed. */
-export interface HookUpdateRequest {
-  enabled: boolean;
 }
 
 /**

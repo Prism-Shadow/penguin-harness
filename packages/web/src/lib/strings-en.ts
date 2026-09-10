@@ -1209,18 +1209,12 @@ export const en: Strings = {
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. A switched-off package stays on disk, but new Sessions no longer consult it; uninstalling deletes the whole package directory.",
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
     agentTabEmpty: "No hook packages installed yet",
     /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "Only the Project owner can switch hook packages on or off.",
+    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
-    /** Accessible name of a row's enable switch. */
-    enableSwitch: (name: string): string => `Enable the ${name} hook package`,
-    /** Badge on a switched-off row for members (owners see the switch itself). */
-    disabledBadge: "Disabled",
-    enabledToast: (name: string): string => `Enabled the ${name} hook package`,
-    disabledToast: (name: string): string => `Disabled the ${name} hook package`,
     exportHook: "Export",
     importHook: "Import hook",
     importChatTitle: "Recommended: import it by chatting with the agent",
@@ -1240,7 +1234,7 @@ export const en: Strings = {
     importOpenChat: "Open a new chat",
     importUploadTitle: "Upload a hook package zip",
     importUploadDesc:
-      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An imported package is switched on: its scripts run on this machine at every hook point, so import only what you trust.",
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An import takes effect at once: while this agent has hooks on, its scripts run on this machine at every hook point, so import only what you trust.",
     importUploadAction: "Choose zip file",
     importUploading: "Uploading…",
     importDoneToast: "Hook package installed",
@@ -1261,6 +1255,13 @@ export const en: Strings = {
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "Enable hooks",
+      enableHint:
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+      savedToast: "Saved — takes effect from the next turn",
+    },
   },
 
   skills: {

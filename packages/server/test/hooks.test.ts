@@ -1,15 +1,15 @@
 /**
- * Integration tests for the hook package routes: the installed list carrying the switch, the
- * owner-only PATCH that writes `enabled: false` into hooks.json (and removes it again, and
- * survives a library reinstall), the zip archive install (layouts, manifest validation,
- * zip-slip, 409 hook_exists + overwrite) and the byte-identical export round-trip.
+ * Integration tests for the hook package routes: the installed list, the zip archive install
+ * (layouts, manifest validation, zip-slip, 409 hook_exists + overwrite) and the byte-identical
+ * export round-trip. Whether Sessions run hooks at all is the Agent-level `hooks.enabled`
+ * switch, tested with the rest of the Agent config (prompt-sections.test.ts).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hooksDir } from "@prismshadow/penguin-core";
-import type { AgentHooksResponse, HookItem, ProjectCreateResponse } from "../src/api/types.js";
+import type { AgentHooksResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -105,39 +105,13 @@ describe("hooks api", () => {
     return { zip, method };
   };
 
-  it("lists installed packages with the switch on; PATCH is the owner's and writes enabled into hooks.json", async () => {
+  it("lists what a library install wrote, and the installer writes no switch into the manifest", async () => {
     await createPlainAgent("sw_agent");
     expect((await member.post(plugins("sw_agent"), { names: ["goal"] })).status).toBe(201);
     const list = (await (await member.get(base("sw_agent"))).json()) as AgentHooksResponse;
-    expect(list.hooks.map((h) => [h.name, h.enabled, h.events])).toEqual([
-      ["goal", true, ["user_prompt", "stop"]],
-    ]);
-
-    // Members read the state but cannot flip it; an outsider never sees the Project.
-    expect((await member.patch(`${base("sw_agent")}/goal`, { enabled: false })).status).toBe(403);
-    expect((await outsider.patch(`${base("sw_agent")}/goal`, { enabled: false })).status).toBe(404);
-    // The body must carry a boolean; a package that is not installed is 404.
-    expect((await owner.patch(`${base("sw_agent")}/goal`, {})).status).toBe(400);
-    expect((await owner.patch(`${base("sw_agent")}/goal`, { enabled: "no" })).status).toBe(400);
-    expect((await owner.patch(`${base("sw_agent")}/nope`, { enabled: false })).status).toBe(404);
-
-    const off = await owner.patch(`${base("sw_agent")}/goal`, { enabled: false });
-    expect(off.status).toBe(200);
-    expect((await off.json()) as HookItem).toMatchObject({ name: "goal", enabled: false });
-    const file = manifestFile("sw_agent", "goal");
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toMatchObject({ enabled: false });
-    const after = (await (await member.get(base("sw_agent"))).json()) as AgentHooksResponse;
-    expect(after.hooks[0]!.enabled).toBe(false);
-
-    // A library reinstall (an update) replaces the content and keeps the switch off.
-    expect((await member.post(plugins("sw_agent"), { names: ["goal"] })).status).toBe(201);
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toMatchObject({ enabled: false });
-
-    // Switching back on removes the field: the manifest reads as the installer wrote it.
-    const on = await owner.patch(`${base("sw_agent")}/goal`, { enabled: true });
-    expect(on.status).toBe(200);
-    expect(((await on.json()) as HookItem).enabled).toBe(true);
-    expect("enabled" in JSON.parse(await fs.readFile(file, "utf8"))).toBe(false);
+    expect(list.hooks.map((h) => [h.name, h.events])).toEqual([["goal", ["user_prompt", "stop"]]]);
+    const manifest = JSON.parse(await fs.readFile(manifestFile("sw_agent", "goal"), "utf8"));
+    expect("enabled" in manifest).toBe(false);
   });
 
   it("archive: the single-top-dir layout installs under the directory name, the root layout under the manifest's; uninstall works on it", async () => {
@@ -155,8 +129,8 @@ describe("hooks api", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentHooksResponse;
-    expect(body.hooks.map((h) => [h.name, h.version, h.events, h.enabled])).toEqual([
-      ["dir-hook", "2026-09-02.1", ["stop"], true],
+    expect(body.hooks.map((h) => [h.name, h.version, h.events])).toEqual([
+      ["dir-hook", "2026-09-02.1", ["stop"]],
     ]);
     expect(body.hooks[0]!.descriptionZh).toBe("示例钩子");
     const dir = path.join(hooksDir(t.root, projectId, "zip_agent"), "dir-hook");
@@ -242,7 +216,6 @@ describe("hooks api", () => {
         packageFiles("h", { ...MANIFEST, stop: [{ command: "stop.mjs", timeout: 0 }] }),
       ],
       ["no commands at all", packageFiles("h", { ...MANIFEST, stop: [] })],
-      ["a non-boolean enabled", packageFiles("h", { ...MANIFEST, enabled: "yes" })],
       ["a non-string description", packageFiles("h", { ...MANIFEST, description: 1 })],
     ];
     for (const [label, files] of cases) {
@@ -362,7 +335,7 @@ describe("hooks api", () => {
     await expect(fs.access(path.join(dir, "old.txt"))).rejects.toThrow();
   });
 
-  it("archive export: single-top-dir zip round-trips byte-identically, the switch travels with it; a non-installed name is 404", async () => {
+  it("archive export: a single-top-dir zip round-trips byte-identically; a non-installed name is 404", async () => {
     await createPlainAgent("zip_export_agent");
     const url = base("zip_export_agent");
     const files: Record<string, Uint8Array> = {
@@ -386,15 +359,7 @@ describe("hooks api", () => {
       expect(Buffer.from(entries[name]!), name).toEqual(Buffer.from(data));
     }
 
-    // Switched off, the package exports with `enabled: false` and re-imports switched off.
-    expect((await owner.patch(`${url}/zip-hook`, { enabled: false })).status).toBe(200);
-    const off = await member.get(`${url}/zip-hook/archive`);
-    const offEntries = unzipSync(new Uint8Array(await off.arrayBuffer()));
-    expect(
-      JSON.parse(Buffer.from(offEntries["zip-hook/hooks.json"]!).toString("utf8")),
-    ).toMatchObject({
-      enabled: false,
-    });
+    // The export re-imports on another Agent unchanged.
     await createPlainAgent("zip_import_agent");
     const moved = await member.post(`${base("zip_import_agent")}/archive`, {
       dataBase64: Buffer.from(
@@ -403,7 +368,7 @@ describe("hooks api", () => {
     });
     expect(moved.status).toBe(201);
     expect(((await moved.json()) as AgentHooksResponse).hooks).toMatchObject([
-      { name: "zip-hook", enabled: false },
+      { name: "zip-hook" },
     ]);
 
     // Not installed → 404 (the same criterion as uninstall); no real version → bare filename.

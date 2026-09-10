@@ -1,18 +1,19 @@
 /**
  * An Agent's installed hook packages:
  *   GET    /api/projects/:p/agents/:a/hooks               # installed packages (any member)
- *   PATCH  /api/projects/:p/agents/:a/hooks/:name         # switch one on or off (owner only)
  *   POST   /api/projects/:p/agents/:a/hooks/archive       # install one package from an uploaded zip (any member)
  *   GET    /api/projects/:p/agents/:a/hooks/:name/archive # export one installed package as a zip (any member)
  *   DELETE /api/projects/:p/agents/:a/hooks/:name         # uninstall (any member)
+ * Whether a Session runs hooks at all is not decided here: that is the Agent-level
+ * `hooks.enabled` switch, written through the config route.
  * Installing from the library goes through the plugin routes (plugins.ts), which write a
  * plugin's hook package to agent_state/hooks/<plugin>/ (hooks.json + scripts). The archive
  * routes are the skills routes' pair: POST writes every zip file under hooks/<name>/ (replace
  * semantics with `overwrite`), GET packs the whole directory back under a single top-level
- * <name>/ so the download round-trips through the POST unchanged. Every mutation here — the
- * switch, an import, an uninstall — invalidates the Agent's cached runtimes: hook packages are
- * bound when a core Session is built (skills are read from disk on demand, hooks are not), so a
- * runtime that outlived the change would keep running the old set until it was evicted.
+ * <name>/ so the download round-trips through the POST unchanged. Every mutation here
+ * invalidates the Agent's cached runtimes: hook packages are bound when a core Session is
+ * built (skills are read from disk on demand, hooks are not), so a runtime that outlived the
+ * change would keep running the old set until it was evicted.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -25,20 +26,13 @@ import {
   listInstalledHooks,
   removeHook,
   replaceSkillDirectory,
-  setHookEnabled,
 } from "@prismshadow/penguin-core";
 import type { HookCommand, HookManifest } from "@prismshadow/penguin-core";
 import type { AgentHooksResponse, HookItem } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
 import { HttpError } from "../errors.js";
-import {
-  badRequest,
-  optionalBoolean,
-  readJson,
-  requireString,
-  requireValidId,
-} from "../validate.js";
+import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { toHookItem } from "../../services/plugin-library.js";
 import {
   MAX_ARCHIVE_FILES,
@@ -70,11 +64,12 @@ function isSafeCommandPath(command: string): boolean {
 /**
  * Validates an uploaded manifest against the files beside it and returns the one that is
  * written: the upload with its unknown fields kept (an export re-imports as it was), `name`
- * set to the package's name, the hook-point lists defaulted so the loader and the Session
- * always find arrays, and `enabled` kept only as the `false` the switch writes. What is
- * checked is what those readers rely on: a name in the directory-name character set, string
- * display fields, a boolean `enabled`, and every command a relative path to a file inside the
- * archive — a package whose scripts are missing or point outside its directory is refused.
+ * set to the package's name, and the hook-point lists defaulted so the loader and the Session
+ * always find arrays. What is checked is what those readers rely on: a name in the
+ * directory-name character set, string display fields, and every command a relative path to a
+ * file inside the archive — a package whose scripts are missing or point outside its directory
+ * is refused. A stray `enabled` (a package exported while the per-package switch existed) is
+ * dropped: hooks are switched at the Agent level now, and the field means nothing on disk.
  */
 function normalizeHookManifest(
   raw: unknown,
@@ -95,9 +90,6 @@ function normalizeHookManifest(
     if (manifest[key] !== undefined && typeof manifest[key] !== "string") {
       throw badRequest(`hooks.json ${key} must be a string.`);
     }
-  }
-  if (manifest.enabled !== undefined && typeof manifest.enabled !== "boolean") {
-    throw badRequest("hooks.json enabled must be a boolean.");
   }
   const lists: Record<(typeof HOOK_POINTS)[number], HookCommand[]> = {
     stop: [],
@@ -127,14 +119,13 @@ function normalizeHookManifest(
     lists[point] = list as HookCommand[];
   }
   if (commands === 0) throw badRequest("hooks.json lists no hook-point commands.");
-  const { enabled, ...rest } = manifest;
+  const { enabled: _dropped, ...rest } = manifest;
   return {
     ...rest,
     name: resolved,
     description: typeof manifest.description === "string" ? manifest.description : "",
     version: typeof manifest.version === "string" ? manifest.version : "",
     ...lists,
-    ...(enabled === false ? { enabled: false } : {}),
   } as HookManifest;
 }
 
@@ -257,7 +248,7 @@ async function collectHookArchive(dir: string, name: string): Promise<Record<str
   return out;
 }
 
-/** /api/projects/:p/agents/:a/hooks: read, import/export and uninstall are Project-member operations; the switch is the owner's. */
+/** /api/projects/:p/agents/:a/hooks: read, import/export and uninstall are all Project-member operations. */
 export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -363,27 +354,6 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
         "X-Content-Type-Options": "nosniff",
       },
     });
-  });
-
-  // Switch one package on or off. Owner only: the switch decides what runs on every member's
-  // Sessions, the way the Project's policy settings do; members read the state.
-  app.patch("/:name", async (c) => {
-    const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
-    const name = requireValidId(c, "name");
-    const enabled = optionalBoolean(await readJson(c), "enabled");
-    if (enabled === undefined) throw badRequest("enabled must be a boolean.");
-    await requireInstalled(projectId, agentId, name);
-    await setHookEnabled(deps.config.root, projectId, agentId, name, enabled);
-    deps.manager.invalidateAgentRuntimes(projectId, agentId);
-    // Read back for the icon and the display fields the list carries; only a concurrent
-    // uninstall can make it absent by now, which reads as the 404 this route already answers.
-    const item = (await installedItems(projectId, agentId)).find((h) => h.name === name);
-    if (item === undefined) {
-      throw new HttpError(404, "not_found", `Hook package is not installed: ${name}`);
-    }
-    return c.json(item);
   });
 
   app.delete("/:name", async (c) => {

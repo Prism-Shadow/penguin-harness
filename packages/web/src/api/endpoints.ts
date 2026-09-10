@@ -132,8 +132,6 @@ import type {
   RestartResponse,
   DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
-  HookItem,
-  HookUpdateRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
   UsageErrorsPage,
@@ -1085,19 +1083,6 @@ export const uninstallAgentHook = (projectId: string, agentId: string, name: str
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/${encodeURIComponent(name)}`,
     { method: "DELETE" },
-  );
-
-/** Switches one installed hook package on or off (owner only — 403 owner_required otherwise): writes `enabled` into its hooks.json and rebuilds the Agent's cached runtimes; 200 returns the updated item. */
-export const setAgentHookEnabled = (
-  projectId: string,
-  agentId: string,
-  name: string,
-  enabled: boolean,
-) =>
-  apiFetch<HookItem>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/hooks/${encodeURIComponent(name)}`,
-    { method: "PATCH", body: { enabled } satisfies HookUpdateRequest },
   );
 
 /** Installs one hook package from an uploaded zip (base64); 409 hook_exists unless overwrite; 201 returns the latest installed list. */

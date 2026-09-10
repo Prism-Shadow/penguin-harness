@@ -1,24 +1,24 @@
 /**
- * The switch on installed hook packages — `enabled` in hooks.json. An absent field means
- * enabled (hookPackageEnabled), setHookEnabled writes `false` and removes it again, a
- * reinstall keeps a switched-off package off, and a Session built on the Agent leaves a
- * switched-off package out (its user_prompt hook is not found) while an enabled one answers.
+ * The Agent-level hook switch — `hooks.enabled` in `system_config.yaml`. Absent means on, and
+ * `false` leaves a new Session with no hooks at all while the packages stay installed. The
+ * manifest loader is tolerant of a stray `enabled` key (a package exported while the switch
+ * was per-package): it loads, and nothing reads the field.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   createAgent,
-  hookPackageEnabled,
   hooksDir,
   installHook,
   listInstalledHooks,
-  setHookEnabled,
+  systemConfigPath,
 } from "../src/index.js";
-import type { HookManifest } from "../src/index.js";
+import type { HookManifest, SystemConfig } from "../src/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
 let tmpRoot: string;
@@ -40,7 +40,7 @@ afterEach(async () => {
 });
 
 const MANIFEST: HookManifest = {
-  name: "switchable",
+  name: "expander",
   description: "Answers at the user_prompt point.",
   version: "2026-09-02.1",
   stop: [],
@@ -51,68 +51,59 @@ const FILES = {
   "expand.mjs": 'process.stdout.write(JSON.stringify({ context: "expanded" }));\n',
 };
 const ids = [DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID] as const;
-const manifestFile = (): string => path.join(hooksDir(tmpRoot, ...ids), "switchable", "hooks.json");
-const readManifest = async (): Promise<Record<string, unknown>> =>
-  JSON.parse(await fs.readFile(manifestFile(), "utf8")) as Record<string, unknown>;
 
-describe("hookPackageEnabled", () => {
-  it("reads only an explicit false as off", () => {
-    expect(hookPackageEnabled({})).toBe(true);
-    expect(hookPackageEnabled({ enabled: true })).toBe(true);
-    expect(hookPackageEnabled({ enabled: false })).toBe(false);
-  });
-});
+/** Writes the Agent's `hooks.enabled` (a Session reads the config on disk, not a snapshot). */
+async function setHooksEnabled(enabled: boolean): Promise<void> {
+  const file = systemConfigPath(tmpRoot, ...ids);
+  const cfg = parseYaml(await fs.readFile(file, "utf8")) as SystemConfig;
+  cfg.hooks = { enabled };
+  await fs.writeFile(file, stringifyYaml(cfg), "utf8");
+}
 
-describe("setHookEnabled", () => {
-  it("writes enabled: false, keeps it across a reinstall, and removes it again", async () => {
+describe("installed hook packages", () => {
+  it("loads a manifest carrying a stray enabled field and ignores it", async () => {
     await createAgent();
     await installHook(tmpRoot, ...ids, MANIFEST, FILES);
-    expect("enabled" in (await readManifest())).toBe(false);
+    // Written by hand: the installer never emits the field, but a package exported while the
+    // switch was per-package still carries it, and such a directory must keep loading.
+    const file = path.join(hooksDir(tmpRoot, ...ids), "expander", "hooks.json");
+    await fs.writeFile(file, `${JSON.stringify({ ...MANIFEST, enabled: false }, null, 2)}\n`);
 
-    await setHookEnabled(tmpRoot, ...ids, "switchable", false);
-    expect(await readManifest()).toMatchObject({ name: "switchable", enabled: false });
-    // Still listed: switched off is not uninstalled (the default Agent's preinstalled packages sit beside it).
     const listed = await listInstalledHooks(tmpRoot, ...ids);
-    expect(hookPackageEnabled(listed.find((h) => h.name === "switchable")!)).toBe(false);
-
-    // A reinstall (a library update) replaces the content and keeps the switch.
-    await installHook(tmpRoot, ...ids, { ...MANIFEST, version: "2026-09-02.2" }, FILES);
-    expect(await readManifest()).toMatchObject({ version: "2026-09-02.2", enabled: false });
-
-    await setHookEnabled(tmpRoot, ...ids, "switchable", true);
-    expect("enabled" in (await readManifest())).toBe(false);
-
-    await expect(setHookEnabled(tmpRoot, ...ids, "absent", true)).rejects.toThrow(/not installed/);
+    expect(listed.map((h) => h.name)).toContain("expander");
   });
 });
 
-describe("Session hooks and the switch", () => {
-  it("leaves a switched-off package out of a new Session and consults it again once switched on", async () => {
+describe("the Agent-level hook switch", () => {
+  it("gives a new Session no hooks while it is off, and the packages back once it is on", async () => {
     const agent = await createAgent();
     await installHook(tmpRoot, ...ids, MANIFEST, FILES);
     const ws = path.join(tmpRoot, "ws");
     await fs.mkdir(ws, { recursive: true });
 
+    // Absent section: hooks are on.
     const on = await agent.createSession({ workspaceDir: ws });
     try {
-      expect(await on.runUserPromptHook("switchable", "hi")).toEqual({ context: "expanded" });
+      expect(await on.runUserPromptHook("expander", "hi")).toEqual({ context: "expanded" });
     } finally {
       on.dispose();
     }
 
-    await setHookEnabled(tmpRoot, ...ids, "switchable", false);
+    await setHooksEnabled(false);
     const off = await agent.createSession({ workspaceDir: ws });
     try {
-      // Switched off reads to a Session exactly like not installed: no such hook.
-      expect(await off.runUserPromptHook("switchable", "hi")).toBeNull();
+      // Off reads to a Session exactly like nothing installed: no such hook.
+      expect(await off.runUserPromptHook("expander", "hi")).toBeNull();
     } finally {
       off.dispose();
     }
+    // The package itself is untouched.
+    expect((await listInstalledHooks(tmpRoot, ...ids)).map((h) => h.name)).toContain("expander");
 
-    await setHookEnabled(tmpRoot, ...ids, "switchable", true);
+    await setHooksEnabled(true);
     const again = await agent.createSession({ workspaceDir: ws });
     try {
-      expect(await again.runUserPromptHook("switchable", "hi")).toEqual({ context: "expanded" });
+      expect(await again.runUserPromptHook("expander", "hi")).toEqual({ context: "expanded" });
     } finally {
       again.dispose();
     }

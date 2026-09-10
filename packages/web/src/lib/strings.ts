@@ -1181,18 +1181,12 @@ export const zh = {
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。关闭开关的钩子包仍保留在磁盘上，只是新 Session 不再咨询它；卸载会删除整个钩子包目录。",
+      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
     agentTabEmpty: "尚未安装任何钩子包",
     /** Members see the switch state but cannot flip it (appended to the tab description). */
-    readOnlyHint: "启停开关仅 Project owner 可用。",
+    readOnlyHint: "启用钩子的开关仅 Project owner 可用。",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
-    /** Accessible name of a row's enable switch. */
-    enableSwitch: (name: string): string => `启用钩子包 ${name}`,
-    /** Badge on a switched-off row for members (owners see the switch itself). */
-    disabledBadge: "已停用",
-    enabledToast: (name: string): string => `已启用钩子包 ${name}`,
-    disabledToast: (name: string): string => `已停用钩子包 ${name}`,
     exportHook: "打包导出",
     importHook: "导入钩子",
     importChatTitle: "推荐：让 Agent 在对话中导入",
@@ -1211,7 +1205,7 @@ export const zh = {
     importOpenChat: "打开新对话",
     importUploadTitle: "上传钩子包 zip",
     importUploadDesc:
-      "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。导入的钩子包默认启用：其脚本会在本机的每个钩子点运行，请只导入可信的包。",
+      "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。导入即生效：只要该 Agent 启用了钩子，其脚本就会在本机的钩子点运行，请只导入可信的包。",
     importUploadAction: "选择 zip 文件",
     importUploading: "上传中…",
     importDoneToast: "钩子包已安装",
@@ -1231,6 +1225,13 @@ export const zh = {
     uninstallConfirmBody: (name: string, agent: string): string =>
       `确定从 ${agent} 卸载钩子包 ${name} 吗？其全部脚本（含本地改动）将被删除。`,
     uninstalledToast: (name: string, agent: string): string => `已从 ${agent} 卸载钩子包 ${name}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "启用钩子",
+      enableHint:
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+      savedToast: "已保存，自下一轮对话起生效",
+    },
   },
 
   skills: {

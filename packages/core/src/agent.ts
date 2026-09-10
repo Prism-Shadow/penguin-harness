@@ -52,7 +52,6 @@ import {
 import { Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
-import { hookPackageEnabled } from "./plugins/index.js";
 import type { SessionConfig } from "./session.js";
 import {
   createTempWorkspace,
@@ -1166,24 +1165,28 @@ export class Agent {
 
   /**
    * The hooks of a top-level Session: every hook package installed in the Agent's
-   * `agent_state/hooks/` whose manifest does not switch it off (read fresh per Session, like
-   * skills), each command run as a script (hooks/script-hook.ts), plus the spawner that
-   * honors a hook's `subagent` answer —
+   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a script
+   * (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
    * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
    * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
    * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
    * Trace, and a child could not spawn a subagent anyway.
+   *
+   * `hooks.enabled: false` in the Agent's config switches all of them off at once: the
+   * packages stay installed, and this is the one place a Session's hooks are assembled.
    */
   private async sessionHooks(
     runner: SubagentRunner,
     child: boolean,
   ): Promise<SessionHooks | undefined> {
     if (child) return undefined;
-    // A package switched off in its manifest stays installed — listed, exportable — but is
-    // left out here, the one place a Session's hooks are assembled.
-    const installed = (
-      await listInstalledHooks(this.state.root, this.state.projectId, this.state.agentId)
-    ).filter(hookPackageEnabled);
+    const { root, projectId, agentId } = this.state;
+    // Read from disk rather than from this Agent object's load-time snapshot: a long-lived
+    // Agent would otherwise keep building Sessions on a config edited since it was loaded
+    // (the same reason assembleContext re-loads the state).
+    const { systemConfig } = await loadAgentState({ root, projectId, agentId });
+    if (systemConfig.hooks?.enabled === false) return undefined;
+    const installed = await listInstalledHooks(root, projectId, agentId);
     // Hook scripts get the same PATH front as commands do (see
     // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
     // `node <script>` directly, with no shell and so no login profile to re-prepend
