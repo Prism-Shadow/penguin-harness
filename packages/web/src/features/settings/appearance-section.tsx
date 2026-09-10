@@ -3,10 +3,19 @@
  * user menu. Everything applies on the spot (the theme store persists per browser), so
  * there is no Save button. The terminal keeps its own theme row because plenty of people
  * pin a dark terminal inside a light app; it follows the app unless pinned (see
- * TerminalThemeMode).
+ * TerminalThemeMode). The floating panel launcher's row is here rather than with the chat's
+ * own settings because it is the same kind of choice: whether a piece of chrome is drawn.
  */
+import { useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import { Segmented } from "../../components/ui/segmented";
+import { Switch } from "../../components/ui/switch";
+import {
+  launcherHiddenVersion,
+  readLauncherHidden,
+  subscribeLauncherHidden,
+  writeLauncherHidden,
+} from "../dock/dock-launcher-state";
 import { useTheme } from "../../state/theme";
 import type { FontScale, TerminalThemeMode, ThemeMode } from "../../state/theme";
 import { AccentPicker, PrefRow } from "./setting-row";
@@ -22,6 +31,9 @@ export function AppearanceSection() {
     terminalMode,
     setTerminalMode,
   } = useTheme();
+  // The fan's "hide launcher" entry writes the same preference, so this row follows it.
+  useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
+  const launcherShown = !readLauncherHidden();
 
   const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
     { value: "light", label: S.settings.themeLight },
@@ -53,6 +65,9 @@ export function AppearanceSection() {
       </PrefRow>
       <PrefRow label={S.settings.accent} info={S.settings.accentInfo}>
         <AccentPicker value={accent} onChange={setAccent} />
+      </PrefRow>
+      <PrefRow label={S.settings.launcher} info={S.settings.launcherInfo}>
+        <Switch checked={launcherShown} onChange={(shown) => writeLauncherHidden(!shown)} />
       </PrefRow>
     </div>
   );

@@ -121,6 +121,9 @@ export const zh = {
     launcherPending: "子智能体有待审批",
     /** The fan of panel entries the launcher opens (its accessible group name). */
     launcherPanels: "侧边栏面板",
+    /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    launcherHide: "隐藏悬浮球",
+    launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -191,6 +194,9 @@ export const zh = {
     fontLarge: "大",
     accent: "主题色",
     accentInfo: "界面强调色。",
+    launcher: "浮动面板球",
+    launcherInfo:
+      "在对话正文右缘浮动的圆形按钮，展开后可打开侧边栏面板；这里关掉后它就不再出现，展开菜单里的「隐藏悬浮球」也会关掉它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {

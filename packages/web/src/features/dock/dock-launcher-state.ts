@@ -4,6 +4,10 @@
  * ball rests along the chat body's right edge (one global preference, stored as a ratio of
  * the body's height), how far a drag may pull it, and where on the arc its entries sit.
  *
+ * Two global preferences live here: `penguin.dock.launcherY` (where it rests) and
+ * `penguin.dock.launcherHidden` (whether the user put it away at all). Both are registered
+ * as browser preferences in lib/install-scope.ts, so switching data roots keeps them.
+ *
  * Coordinates are the ball's TOP offset within the chat body — the region between the
  * toolbar and the composer — and its horizontal offset from the resting edge: 0 on the
  * edge, negative when pulled into the conversation.
@@ -12,6 +16,10 @@ import { rubberband } from "../../lib/sheet-physics";
 
 /** localStorage key of the resting position: the ball's centre as a ratio of the body's height. */
 export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";
+/** localStorage key of the put-it-away preference; only LAUNCHER_HIDDEN_ON counts as hidden. */
+export const LAUNCHER_HIDDEN_KEY = "penguin.dock.launcherHidden";
+const LAUNCHER_HIDDEN_ON = "1";
+const LAUNCHER_HIDDEN_OFF = "0";
 /** The ball's diameter (px). */
 export const LAUNCHER_SIZE = 44;
 /** Room kept between the ball and the body's top and bottom edges (px). */
@@ -30,14 +38,17 @@ export const FAN_ENTRY_SIZE = 36;
 /**
  * The distance from the ball's centre to an entry's centre (px).
  *
- * Fixed by the tightest packing the arc can produce. Six entries — five panel kinds plus
- * the terminal — spread evenly leave a chord of 2R·sin(step / 2) between neighbours, and
- * that has to clear the 36px entry diameter. The full semicircle is roomy: step 36°, chord
- * 2·120·sin 18° ≈ 74px. The tight case is the ball parked at the body's top margin, where
- * the arc trims to ≈ 95.7°: step 19.1°, chord 2·120·sin 9.57° ≈ 40px, some 4px of air
- * between circles. A shorter radius closes that gap — at 104px the two would overlap.
+ * Fixed by the tightest packing the arc can produce. Seven entries — five panel kinds, the
+ * terminal, and the hide entry — spread evenly leave a chord of 2R·sin(step / 2) between
+ * neighbours, and that has to clear the 36px entry diameter. The full semicircle is roomy:
+ * step 30°, chord 2·150·sin 15° ≈ 78px. The tight case is the ball parked at the body's top
+ * margin, where the arc trims to ≈ 94.6°: step 15.8°, chord 2·150·sin 7.9° ≈ 41px, some 5px
+ * of air between circles. A shorter radius closes that gap — at 130px the two would overlap.
+ * The ceiling is the narrow layout, where the arc plus a name has to fit the body's width:
+ * 36 (the ball's centre from the edge) + 150 + 18 + 8 + a ~100px name ≈ 312px, inside the
+ * ~360px a phone gives it.
  */
-export const FAN_RADIUS = 120;
+export const FAN_RADIUS = 150;
 /** Room kept between an entry and the body's top or bottom edge (px). */
 const FAN_EDGE_PAD = 4;
 /** Vertical room an "above" / "below" label needs beyond the entry itself (px). */
@@ -58,16 +69,29 @@ const VERTICAL_REACH = 56;
 export interface LauncherVisibility {
   /** The right dock occupies its edge (open — showing its tabs or its picker). */
   rightDockVisible: boolean;
+  /** The bottom dock is open; below the breakpoint it is the surface both docks merge into. */
+  bottomDockVisible: boolean;
   /** Below the desktop breakpoint the docks merge into one bottom surface. */
   narrow: boolean;
+  /** The user put the launcher away (`penguin.dock.launcherHidden`). */
+  hidden: boolean;
 }
 
 /**
- * The launcher stands in for the hidden right dock, so it shows exactly while that dock's
- * edge is free: the dock not visible, and the layout wide enough to have a right dock.
+ * The launcher stands in for whichever dock surface is away, so it shows exactly while
+ * that surface's room is free. Wide: the right dock is the one it opens into, so only that
+ * dock's state counts. Narrow: the two docks render as ONE merged bottom surface, and the
+ * launcher would sit on top of it, so it shows only while neither dock is open. Either way
+ * the put-it-away preference wins over the layout.
  */
-export function shouldShowLauncher({ rightDockVisible, narrow }: LauncherVisibility): boolean {
-  return !rightDockVisible && !narrow;
+export function shouldShowLauncher({
+  rightDockVisible,
+  bottomDockVisible,
+  narrow,
+  hidden,
+}: LauncherVisibility): boolean {
+  if (hidden) return false;
+  return narrow ? !rightDockVisible && !bottomDockVisible : !rightDockVisible;
 }
 
 /**
@@ -141,6 +165,63 @@ export function writeLauncherRatio(
   } catch {
     // Private-mode storage failures only cost persistence.
   }
+}
+
+// ------------------------------------------------------------- put away, and brought back
+//
+// A tiny store rather than a plain read, because two places far apart render from it: the
+// launcher's own mount on the chat page, and the Appearance switch that turns it back on.
+// Either can write it, and both have to follow the other. The version counter is the
+// useSyncExternalStore snapshot; callers then read the value with readLauncherHidden().
+
+let hiddenVersion = 0;
+const hiddenListeners = new Set<() => void>();
+/**
+ * The live value, read from storage once and kept in memory afterwards: the launcher is
+ * rendered from the chat page, which re-renders on every streamed token, and that is no
+ * place for a synchronous storage read. Like the dock layout store, this means a change
+ * made in another tab is not seen until a reload.
+ */
+let hiddenCache: boolean | null = null;
+
+export function subscribeLauncherHidden(listener: () => void): () => void {
+  hiddenListeners.add(listener);
+  return () => void hiddenListeners.delete(listener);
+}
+
+export function launcherHiddenVersion(): number {
+  return hiddenVersion;
+}
+
+function hiddenIn(storage: LauncherStorage | null): boolean {
+  try {
+    return storage?.getItem(LAUNCHER_HIDDEN_KEY) === LAUNCHER_HIDDEN_ON;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the user put the launcher away. Only the stored "1" hides it; anything else —
+ * absent, stale, hand-edited — shows it. An explicit storage bypasses the cache.
+ */
+export function readLauncherHidden(storage?: LauncherStorage | null): boolean {
+  if (storage !== undefined) return hiddenIn(storage);
+  if (hiddenCache === null) hiddenCache = hiddenIn(defaultStorage());
+  return hiddenCache;
+}
+
+/** Puts the launcher away or brings it back, and tells everything rendering from it. */
+export function writeLauncherHidden(hidden: boolean, storage?: LauncherStorage | null): void {
+  const target = storage === undefined ? defaultStorage() : storage;
+  try {
+    target?.setItem(LAUNCHER_HIDDEN_KEY, hidden ? LAUNCHER_HIDDEN_ON : LAUNCHER_HIDDEN_OFF);
+  } catch {
+    // Private-mode storage failures only cost persistence; this session still updates.
+  }
+  if (storage === undefined) hiddenCache = hidden;
+  hiddenVersion += 1;
+  for (const listener of hiddenListeners) listener();
 }
 
 /**

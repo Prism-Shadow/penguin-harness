@@ -100,6 +100,8 @@ const PREFERENCE_KEYS = [
   "penguin.sidebarSortMode",
   "penguin.sidebarNavGroupCollapsed",
   "penguin.steerMode",
+  "penguin.dock.launcherY",
+  "penguin.dock.launcherHidden",
 ];
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));

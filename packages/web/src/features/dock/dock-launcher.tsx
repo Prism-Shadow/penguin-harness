@@ -1,13 +1,15 @@
 /**
- * The floating launcher for the right dock — an AssistiveTouch-style ball riding the chat
- * body's right edge while the right dock is hidden, so the dock's panels stay discoverable
- * for a user who never notices the toolbar's toggle. The ball carries a short caption, and
- * a click fans out one round button per panel kind (plus the terminal) onto an arc centred
- * on it and opening leftward, each entry showing its name beside it — a bare glyph does not
- * say what it opens. Picking one opens its panel in the right dock, which makes the dock
- * visible and unmounts the launcher. The ball drags along the edge — one global preference,
- * a ratio of the body's height — and springs back onto it when let go; Esc, a press
- * elsewhere or a scroll folds the fan.
+ * The floating launcher for the docks — an AssistiveTouch-style ball riding the chat body's
+ * right edge while no dock surface is up, so the dock's panels stay discoverable for a user
+ * who never notices the toolbar's toggle. The ball carries a short caption, and a click fans
+ * out one round button per panel kind (plus the terminal) onto an arc centred on it and
+ * opening leftward, each entry showing its name beside it — a bare glyph does not say what
+ * it opens. Picking one opens its panel: in the right dock on a wide window, in the merged
+ * bottom surface on a narrow one, which makes that surface visible and unmounts the
+ * launcher. The arc's last entry puts the launcher away for good, remembered as a global
+ * preference and turned back on from Appearance settings. The ball drags along the edge —
+ * another global preference, a ratio of the body's height — and springs back onto it when
+ * let go; Esc, a press elsewhere or a scroll folds the fan.
  *
  * Mounted inside the chat body, the region between the toolbar and the composer: clamping
  * to its own container is what keeps it off both, and its right edge is the chat column's
@@ -31,10 +33,11 @@ import type {
 } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS, PANEL_RIGHT_ICON } from "../../components/ui/icons";
+import { CloseIcon, NAV_ICONS, PANEL_RIGHT_ICON } from "../../components/ui/icons";
+import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneDot } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { scrollMovesAnchor } from "../../lib/context-menu";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";
@@ -57,10 +60,14 @@ import {
   clampLauncherTop,
   dragPosition,
   fanLayout,
+  launcherHiddenVersion,
   launcherRatioFromTop,
   launcherTopFromRatio,
+  readLauncherHidden,
   readLauncherRatio,
   shouldShowLauncher,
+  subscribeLauncherHidden,
+  writeLauncherHidden,
   writeLauncherRatio,
   type FanLabelSide,
 } from "./dock-launcher-state";
@@ -81,14 +88,26 @@ export interface DockLauncherProps {
   agentsPending: boolean;
 }
 
-/** Renders the ball while the right dock's edge is free (dock hidden, wide layout); nothing otherwise. */
+/** Renders the ball while no dock surface holds its room and the user has not put it away. */
 export function DockLauncher({ agentsPending }: DockLauncherProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
+  useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
-  if (!shouldShowLauncher({ rightDockVisible: isDockVisible("right"), narrow: isNarrow() })) {
-    return null;
-  }
-  return <LauncherBall agentsPending={agentsPending} terminalSupported={terminalSupported} />;
+  const narrow = isNarrow();
+  const visible = shouldShowLauncher({
+    rightDockVisible: isDockVisible("right"),
+    bottomDockVisible: isDockVisible("bottom"),
+    narrow,
+    hidden: readLauncherHidden(),
+  });
+  if (!visible) return null;
+  return (
+    <LauncherBall
+      agentsPending={agentsPending}
+      terminalSupported={terminalSupported}
+      narrow={narrow}
+    />
+  );
 }
 
 interface FanState {
@@ -133,9 +152,12 @@ const BALL_CLASS =
 function LauncherBall({
   agentsPending,
   terminalSupported,
+  narrow,
 }: {
   agentsPending: boolean;
   terminalSupported: boolean;
+  /** Below the breakpoint the docks merge, so an entry names no dock and lets the store pick. */
+  narrow: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
@@ -380,6 +402,10 @@ function LauncherBall({
 
   // ------------------------------------------------------------------------------ render
 
+  // Wide: the launcher stands in for the right dock, so it names that dock. Narrow: the two
+  // render as one merged surface, so it names none and the store lands the tab where the
+  // toolbar's own panel buttons land it.
+  const target = narrow ? undefined : "right";
   const entries: FanEntry[] = PANEL_KINDS.map((kind) => ({
     key: kind,
     label: panelLabel(kind),
@@ -387,7 +413,7 @@ function LauncherBall({
     badge: kind === "agents" && agentsPending,
     testId: `dock-launcher-open-${kind}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.
-    choose: () => openPanel(kind, "right"),
+    choose: () => openPanel(kind, target),
   }));
   if (terminalSupported) {
     entries.push({
@@ -400,10 +426,26 @@ function LauncherBall({
       // start one. Async, so the fan folds first.
       choose: () => {
         closeFan(false);
-        void openTerminalInDock("right");
+        void openTerminalInDock(target);
       },
     });
   }
+  entries.push({
+    key: "hide",
+    label: S.dock.launcherHide,
+    // The close cross at its own 14px grid — a two-stroke mark aliases when scaled off it —
+    // in the muted ink, so it reads as a lesser thing than the panels above it.
+    glyph: <CloseIcon className={toneInk.muted} />,
+    badge: false,
+    testId: "dock-launcher-hide",
+    // Writing the preference unmounts the launcher under its own click, so the toast is
+    // what is left on screen: it says where the ball comes back from.
+    choose: () => {
+      closeFan(false);
+      writeLauncherHidden(true);
+      toastInfo(S.dock.launcherHiddenToast);
+    },
+  });
 
   const label = agentsPending ? `${S.dock.launcher} · ${S.dock.launcherPending}` : S.dock.launcher;
   // Where each entry sits on the arc, for the geometry the fan opened with. The count is

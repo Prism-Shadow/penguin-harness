@@ -1,7 +1,8 @@
 /**
  * The floating dock launcher's decisions (features/dock/dock-launcher-state.ts): when it
  * shows, how its resting position clamps to the chat body and round-trips through the
- * stored ratio, how a drag is bounded, and where on the arc its entries land.
+ * stored ratio, whether the user put it away, how a drag is bounded, and where on the arc
+ * its entries land.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -10,19 +11,28 @@ import {
   FAN_RADIUS,
   LAUNCHER_CAPTION_HEIGHT,
   LAUNCHER_EDGE_MARGIN,
+  LAUNCHER_HIDDEN_KEY,
   LAUNCHER_SIZE,
   LAUNCHER_Y_KEY,
   clampLauncherTop,
   dragPosition,
   fanLayout,
+  launcherHiddenVersion,
   launcherRatioFromTop,
   launcherTopFromRatio,
   parseLauncherRatio,
+  readLauncherHidden,
   readLauncherRatio,
   shouldShowLauncher,
+  subscribeLauncherHidden,
+  writeLauncherHidden,
   writeLauncherRatio,
 } from "../src/features/dock/dock-launcher-state";
-import type { FanSlot, LauncherStorage } from "../src/features/dock/dock-launcher-state";
+import type {
+  FanSlot,
+  LauncherStorage,
+  LauncherVisibility,
+} from "../src/features/dock/dock-launcher-state";
 
 const BODY = 600;
 const MAX_TOP = BODY - LAUNCHER_SIZE - LAUNCHER_CAPTION_HEIGHT - LAUNCHER_EDGE_MARGIN;
@@ -39,17 +49,78 @@ function fakeStorage(initial: Record<string, string> = {}): LauncherStorage & {
 }
 
 describe("visibility", () => {
-  it("shows only while the right dock is hidden on a wide layout", () => {
-    expect(shouldShowLauncher({ rightDockVisible: false, narrow: false })).toBe(true);
+  const at = (v: Partial<LauncherVisibility>): boolean =>
+    shouldShowLauncher({
+      rightDockVisible: false,
+      bottomDockVisible: false,
+      narrow: false,
+      hidden: false,
+      ...v,
+    });
+
+  it("shows on a wide layout while the right dock — the one it opens into — is hidden", () => {
+    expect(at({})).toBe(true);
+    expect(at({ bottomDockVisible: true })).toBe(true);
   });
 
   it("hides while the right dock is on screen", () => {
-    expect(shouldShowLauncher({ rightDockVisible: true, narrow: false })).toBe(false);
+    expect(at({ rightDockVisible: true })).toBe(false);
   });
 
-  it("hides on a narrow layout, where the docks merge into the bottom surface", () => {
-    expect(shouldShowLauncher({ rightDockVisible: false, narrow: true })).toBe(false);
-    expect(shouldShowLauncher({ rightDockVisible: true, narrow: true })).toBe(false);
+  it("shows on a narrow layout while neither dock is up", () => {
+    expect(at({ narrow: true })).toBe(true);
+  });
+
+  it("hides behind the narrow merged surface, whichever dock put it there", () => {
+    expect(at({ narrow: true, rightDockVisible: true })).toBe(false);
+    expect(at({ narrow: true, bottomDockVisible: true })).toBe(false);
+  });
+
+  it("stays away once the user put it away, whatever the layout", () => {
+    expect(at({ hidden: true })).toBe(false);
+    expect(at({ hidden: true, narrow: true })).toBe(false);
+  });
+});
+
+describe("put away", () => {
+  it('hides only on the stored "1"; anything else — absent, stale, garbage — shows it', () => {
+    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "1" }))).toBe(true);
+    expect(readLauncherHidden(fakeStorage())).toBe(false);
+    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "0" }))).toBe(false);
+    expect(readLauncherHidden(fakeStorage({ [LAUNCHER_HIDDEN_KEY]: "yes" }))).toBe(false);
+  });
+
+  it("writes both states and notifies subscribers, so both renderers of it follow", () => {
+    const storage = fakeStorage();
+    let seen = 0;
+    const stop = subscribeLauncherHidden(() => {
+      seen += 1;
+    });
+    const before = launcherHiddenVersion();
+    writeLauncherHidden(true, storage);
+    expect(readLauncherHidden(storage)).toBe(true);
+    writeLauncherHidden(false, storage);
+    expect(readLauncherHidden(storage)).toBe(false);
+    expect(seen).toBe(2);
+    expect(launcherHiddenVersion()).toBe(before + 2);
+    stop();
+    writeLauncherHidden(true, storage);
+    expect(seen).toBe(2);
+  });
+
+  it("survives a storage that throws, and still tells this session", () => {
+    const broken: LauncherStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(readLauncherHidden(broken)).toBe(false);
+    const before = launcherHiddenVersion();
+    expect(() => writeLauncherHidden(true, broken)).not.toThrow();
+    expect(launcherHiddenVersion()).toBe(before + 1);
   });
 });
 
@@ -168,7 +239,8 @@ describe("drag", () => {
 });
 
 describe("fan layout", () => {
-  const COUNT = 6;
+  /** Five panel kinds, the terminal, and the hide entry. */
+  const COUNT = 7;
   const TALL = 900;
   /** The ball centred in a body tall enough for the whole semicircle. */
   const MIDDLE = TALL / 2 - LAUNCHER_SIZE / 2;

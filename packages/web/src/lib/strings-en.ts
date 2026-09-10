@@ -105,6 +105,8 @@ export const en: Strings = {
     launcherHint: "Panels: open a side panel · drag to move",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Side panels",
+    launcherHide: "Hide launcher",
+    launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
   tracePanel: {
@@ -177,6 +179,9 @@ export const en: Strings = {
     fontLarge: "L",
     accent: "Accent",
     accentInfo: "Interface accent color.",
+    launcher: "Floating panel launcher",
+    launcherInfo:
+      "The round button floating on the conversation's right edge that opens the side panels. Turning it off here removes it; the fan's \"Hide launcher\" entry turns it off too.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {

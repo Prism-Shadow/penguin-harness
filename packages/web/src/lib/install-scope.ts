@@ -145,6 +145,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.dock.launcherHidden",
+    scope: "browser",
+    why: "Whether the floating dock launcher shows at all; an appearance choice of this browser, and losing it would put a dismissed button back.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",
