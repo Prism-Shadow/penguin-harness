@@ -133,10 +133,8 @@ export function usePromptInjection({
   const applyConfig = useCallback(
     (config: AgentConfigDto) => {
       const dto:
-        | AgentVaultConfigDto
-        | AgentSkillsConfigDto
-        | AgentSchedulesConfigDto
-        | AgentHooksConfigDto = config[feature];
+        AgentVaultConfigDto | AgentSkillsConfigDto | AgentSchedulesConfigDto | AgentHooksConfigDto =
+        config[feature];
       setState(dto);
       setPrompt("prompt" in dto ? dto.prompt : "");
     },
