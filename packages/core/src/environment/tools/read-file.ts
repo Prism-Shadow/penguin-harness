@@ -1,14 +1,30 @@
 /**
- * read_file — text-file reading tool, a builtin tool implementation (BuiltinTool).
+ * read_file — file reading tool, a builtin tool implementation (BuiltinTool): a text file as
+ * a numbered window, an image as image content or as a vision model's description.
  *
- * Reads a text file and returns it in `cat -n` style (line number, tab, content), so the
- * model can quote exact lines back to edit_file. Relative paths resolve against the
- * Workspace; absolute paths are allowed (tools run with the user's full permissions, same
- * as the shell tool). An optional 1-based `offset` and a `limit` (default 2000 lines) form
- * a window for paging through long files.
+ * Text files come back in `cat -n` style (line number, tab, content), so the model can quote
+ * exact lines back to edit_file. Relative paths resolve against the Workspace; absolute
+ * paths are allowed (tools run with the user's full permissions, same as the shell tool). An
+ * optional 1-based `offset` and a `limit` (default 2000 lines) form a window for paging
+ * through long files.
+ *
+ * Images (png/jpeg/gif/webp, ≤5MB; `file_path` may also be an http(s) URL, which is only ever
+ * an image source) are recognized by magic number, then — for a URL — the response
+ * content-type, then the extension, and loaded through image-source.ts. What happens next is
+ * decided by the injected `services.visionDescriber`, present exactly when the session model
+ * does not accept images:
+ * - absent (the session model views images): yields a one-line `image/png, 123.4 kB` delta and
+ *   returns the image via `ToolResult.images` for Environment to attach (a single streaming
+ *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);
+ * - present: the image and the caller's `prompt` (default: a detailed description) go in one
+ *   one-off request to the Project's `vision_model`, whose text deltas stream back as this
+ *   tool's own output; nothing of that request (thinking, token_usage) leaks into the parent
+ *   session stream. Some providers flatly 400 on a tool_result carrying an image, which is why
+ *   a text-only session never gets the image itself. A describer without a model
+ *   (`modelId: null`) ends with a fatal explanation asking the user to configure one.
  *
  * Robustness properties:
- * - **Bounded read**: the file is scanned incrementally through a file handle, never loaded
+ * - **Bounded read**: a text file is scanned incrementally through a file handle, never loaded
  *   whole — a multi-GB log cannot balloon the process. A hard scan cap (8MB) turns
  *   pathological requests (offsets deeper than the cap, files with no newlines) into a
  *   clean failure with guidance; a window that already produced lines when the cap hits is
@@ -17,22 +33,31 @@
  *   maxOutputLength before Environment's front-keep truncation could cut the trailing
  *   continuation note — the note (and the shown range it reports) always survives.
  * - Overlong single lines are truncated with a marker; CRLF files display without the `\r`
- *   and get an explicit note; binary content (NUL bytes) is rejected with advice; the
- *   secret stores (.vault.toml / .project_config.toml) are refused outright.
+ *   and get an explicit note; binary content that is not a supported image (NUL bytes) is
+ *   rejected with advice; the secret stores (.vault.toml / .project_config.toml) are refused
+ *   outright.
  *
- * Division of responsibility with Environment (see environment.ts): non-streaming — yields
- * the whole numbered listing as one delta; failures (missing file, directory, binary
- * content, scan cap) are explanatory text finalized as `failed`; anything unexpected that
- * still throws is caught by Environment and likewise finalized as failed. If interrupted,
- * only reports `aborted` — the interruption note is appended by Environment.
+ * Division of responsibility with Environment (see environment.ts): a text read yields the
+ * whole numbered listing as one delta; failures (missing file, directory, binary content,
+ * scan cap, unsupported or oversized image, vision request failure) are explanatory text
+ * finalized as `failed`; anything unexpected that still throws is caught by Environment and
+ * likewise finalized as failed. If interrupted, only reports `aborted` — the interruption
+ * note is appended by Environment.
  * Docs: /docs/tools § "File tools".
  */
 import { modelVisiblePath } from "../../internal/model-visible-path.js";
 import path from "node:path";
 import { open, realpath, stat } from "node:fs/promises";
-import { partialToolCallOutput } from "../../omnimessage/index.js";
+import { imageUrlMessage, partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { ToolDefinitionConfig } from "../../interfaces/index.js";
+import type {
+  EnvironmentServices,
+  LLMInterface,
+  LLMOutcome,
+  ToolDefinitionConfig,
+  VisionDescriberService,
+} from "../../interfaces/index.js";
+import { formatSize, isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
 import { missingPathHint } from "./path-hint.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
@@ -48,6 +73,10 @@ export const MAX_LINE_LENGTH = 2000;
 /** Hard cap on bytes scanned per call: beyond it the tool stops instead of grinding through a huge file. */
 export const READ_FILE_SCAN_CAP_BYTES = 8 * 1024 * 1024;
 
+/** Question put to the vision model when an image is read on a text-only session without a caller `prompt`. */
+export const DEFAULT_IMAGE_PROMPT =
+  "Describe this image in detail, including any visible text, numbers, UI elements and layout.";
+
 /** Bytes read per file-handle read (scan granularity; also the abort-signal check interval). */
 const CHUNK_BYTES = 256 * 1024;
 
@@ -59,6 +88,15 @@ const NOTE_RESERVE = 256;
 
 /** Fallback output budget when the definition carries no maxOutputLength (mirrors the default config entry). */
 const DEFAULT_OUTPUT_BUDGET = 64000;
+
+/**
+ * Told to a text-only session whose Project names no usable vision model: the model is asked
+ * to have the user pick one, since nothing else can make the image readable.
+ */
+const NO_VISION_MODEL_MESSAGE =
+  "No vision model is configured for this project. The current model does not accept " +
+  "images; ask the user to pick a vision model in the model settings (vision_model) " +
+  "to enable image reading.";
 
 /**
  * Secret stores the system prompt bans the model from reading; read_file refuses them by
@@ -235,13 +273,115 @@ async function scanWindow(
   }
 }
 
+/** A describer that can actually describe: the Project names a vision model and the service builds its LLM. */
+interface ConfiguredDescriber {
+  modelId: string;
+  createLLM: () => LLMInterface;
+}
+
+function configuredDescriber(describer: VisionDescriberService): ConfiguredDescriber | null {
+  return describer.modelId !== null && describer.createLLM !== undefined
+    ? { modelId: describer.modelId, createLLM: describer.createLLM }
+    : null;
+}
+
 /**
- * read_file builtin tool: resolves the path against the Workspace, validates it is a
- * readable text file, and outputs the requested line window with line numbers.
- * `definition` is overridden by Environment at construction time with the same-named entry
- * from ToolConfig (description/arguments/permissions/limits).
+ * The image branch: loads and validates the image, then either returns it as image content
+ * (no describer: the session model views images) or streams the vision model's answer to
+ * `prompt` as text (describer present: the session model is text-only).
  */
-export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinTool {
+async function* readImageSource(
+  source: string,
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext,
+  describer: VisionDescriberService | undefined,
+  delta: (output: string) => OmniMessage,
+): AsyncGenerator<OmniMessage, ToolResult | void> {
+  const { signal } = ctx;
+  let proxy: ConfiguredDescriber | null = null;
+  if (describer !== undefined) {
+    proxy = configuredDescriber(describer);
+    if (proxy === null) {
+      // Checked before loading: an unreadable image is not what stands between this session
+      // and image reading, the missing vision model is.
+      yield delta(NO_VISION_MODEL_MESSAGE);
+      return { stopReason: "fatal" };
+    }
+  }
+
+  const res = await loadImage(source, ctx.workspaceDir, signal);
+  if (!res.ok) {
+    if (res.reason === "aborted") return { stopReason: "aborted" };
+    yield delta(res.message);
+    return { stopReason: "fatal" };
+  }
+  const dataUrl = `data:${res.mime};base64,${res.bytes.toString("base64")}`;
+
+  if (proxy === null) {
+    // The session model views images: a brief one-line description as the text delta (both
+    // in the streaming and complete message), the image itself via the return value for
+    // Environment to attach.
+    yield delta(`${res.mime}, ${formatSize(res.bytes.length)}`);
+    return { images: [dataUrl] };
+  }
+
+  const prompt =
+    typeof args["prompt"] === "string" && args["prompt"].trim().length > 0
+      ? args["prompt"]
+      : DEFAULT_IMAGE_PROMPT;
+
+  // One-off vision model request: prompt + image are merged into a single user message; its
+  // text deltas (partial_text delta) are forwarded in real time as this tool's own output
+  // delta — the description streams out piece by piece, not buffered as a whole. Partial
+  // concatenation == the full message (see generative-model.ts), so the full text is not
+  // forwarded again; other messages like thinking/token_usage are ignored, never leaked into
+  // the parent session.
+  const llm = proxy.createLLM();
+  const gen = llm.streamGenerate({
+    newMessages: [userText(prompt), imageUrlMessage(dataUrl)],
+    ...(signal ? { signal } : {}),
+  });
+  yield delta(`${res.mime}, ${formatSize(res.bytes.length)} — described by ${proxy.modelId}:\n`);
+  let streamedAny = false;
+  let outcome: LLMOutcome | undefined;
+  for (;;) {
+    const step = await gen.next();
+    if (step.done) {
+      outcome = step.value;
+      break;
+    }
+    const p = step.value.payload as { type?: string; event_type?: string; text?: string };
+    if (p.type === "partial_text" && p.event_type === "delta" && p.text) {
+      streamedAny = true;
+      yield delta(p.text);
+    }
+  }
+  if (signal?.aborted) return { stopReason: "aborted" };
+  if (!outcome || outcome.status !== "completed") {
+    const detail =
+      outcome && "errorMessage" in outcome && outcome.errorMessage
+        ? `: ${outcome.errorMessage}`
+        : "";
+    yield delta(
+      `${streamedAny ? "\n" : ""}Vision model (${proxy.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
+    );
+    return { stopReason: "fatal" };
+  }
+  if (!streamedAny) yield delta("[vision model returned no text]");
+}
+
+/**
+ * read_file builtin tool: resolves the path against the Workspace, then reads it as a text
+ * window or — for an image (or an http(s) URL) — through the image branch above.
+ * `definition` is overridden by Environment at construction time with the same-named entry
+ * from ToolConfig (description/arguments/permissions/limits). `services.visionDescriber`,
+ * when injected, marks the session model as text-only and supplies the proxy reader.
+ */
+export function createReadFileTool(
+  definition: ToolDefinitionConfig,
+  services?: EnvironmentServices,
+): BuiltinTool {
+  const describer = services?.visionDescriber;
   return {
     name: definition.name,
     definition,
@@ -272,6 +412,11 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         return { stopReason: "fatal" };
       }
       const limit = limitArg.value;
+
+      // A URL is only ever an image source: no path resolution, no text window.
+      if (isHttpUrl(filePath)) {
+        return yield* readImageSource(filePath, args, ctx, describer, delta);
+      }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
       // Secret stores are refused by name: read_file is auto-approved under read-only
@@ -319,6 +464,11 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         return;
       }
 
+      // Images take the image branch whatever offset/limit say; everything else is text.
+      if (await looksLikeImageFile(resolved)) {
+        return yield* readImageSource(filePath, args, ctx, describer, delta);
+      }
+
       let scan: ScanOutcome;
       try {
         scan = await scanWindow(resolved, offset, limit, signal);
@@ -331,7 +481,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
       if (scan.aborted || signal?.aborted) return { stopReason: "aborted" };
       if (scan.binary) {
         yield delta(
-          `"${filePath}" looks like a binary file (contains NUL bytes). Use shell commands to inspect it, or read_image if it is an image.`,
+          `"${filePath}" looks like a binary file (contains NUL bytes) and is not a supported image (png/jpeg/gif/webp). Use shell commands to inspect it.`,
         );
         return { stopReason: "fatal" };
       }

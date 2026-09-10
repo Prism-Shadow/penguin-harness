@@ -874,8 +874,8 @@ export const importAgentTrace = (projectId: string, agentId: string, body: Trace
 /**
  * One page of the cost center's error table (newest first). The dashboard response already
  * carries the first page; this is for paging back to earlier ones without refetching the
- * whole aggregate. Takes the dashboard's date/agent filter only — the model filter never
- * applied to errors.
+ * whole aggregate. Takes the dashboard's date/agent filter (and its trailing window, when one
+ * is on) only — the model filter never applied to errors.
  */
 export const getUsageErrors = (
   projectId: string,
@@ -884,6 +884,9 @@ export const getUsageErrors = (
     limit: number;
     from?: string;
     to?: string;
+    /** The trailing window narrowing those dates; both or neither. */
+    fromTs?: string;
+    toTs?: string;
     agentId?: string;
     /** Narrow to one category; the cost-center badge asks for `unexpected` with `limit: 1`. */
     kind?: UsageErrorKind;
@@ -895,25 +898,34 @@ export const getUsageErrors = (
       limit: String(params.limit),
       from: params.from,
       to: params.to,
+      fromTs: params.fromTs,
+      toTs: params.toTs,
       agentId: params.agentId,
       kind: params.kind,
     },
   });
 
 /**
- * Empties the cost center's error table for the filter the panel is showing — the same
- * date/agent pair the reads take, so what goes is what was on screen. Owner only, and errors
- * with no Project attribution are never included. Answers how many rows were deleted.
+ * Empties the cost center's error table for the filter the panel is showing — the same dates,
+ * trailing window and Agent the reads take, so what goes is what was on screen (for an admin,
+ * the unattributed rows an admin's panel shows included). Owner only. Answers how many rows
+ * were deleted.
  */
 export const clearUsageErrors = (
   projectId: string,
-  params: { from?: string; to?: string; agentId?: string },
+  params: { from?: string; to?: string; fromTs?: string; toTs?: string; agentId?: string },
 ) =>
   apiFetch<UsageErrorsClearResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/usage/errors`,
     {
       method: "DELETE",
-      query: { from: params.from, to: params.to, agentId: params.agentId },
+      query: {
+        from: params.from,
+        to: params.to,
+        fromTs: params.fromTs,
+        toTs: params.toTs,
+        agentId: params.agentId,
+      },
     },
   );
 

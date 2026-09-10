@@ -866,7 +866,7 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number): string =>
       `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
@@ -874,7 +874,7 @@ export const en: Strings = {
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
     setVisionModel: "Set as proxy vision model",
-    visionModelHint: "Describes images via describe_image for models without vision",
+    visionModelHint: "Describes images for models without vision when they read one with read_file",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -944,7 +944,7 @@ export const en: Strings = {
     },
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
-      `Make "${name}" the proxy vision model? Models without vision will read images through it via describe_image.`,
+      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
     confirmSaveTitle: "Save model settings",
     confirmSave: (name: string): string => `Save the changes to "${name}"?`,
     confirmDefaultTitle: "Set as default model",
@@ -1712,12 +1712,12 @@ Scenarios:
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
-      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
+      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
     infoPanel: "Session info",
     sessionStats: "Stats",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
-    copySessionId: "Copy Session id",
+    copySessionId: "Copy Session ID",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
@@ -1730,6 +1730,7 @@ Scenarios:
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
@@ -1839,6 +1840,9 @@ Scenarios:
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
+    compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionResult: "Result",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -2337,10 +2341,19 @@ Scenarios:
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "in the last hour",
+        "1d": "in the last 24 hours",
+        "7d": "in the last 7 days",
+        "30d": "in the last 30 days",
+        "90d": "in the last 90 days",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `between ${from} and ${to}`,
+    errorsClearScope: (count: number, range: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} ${range}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} ${range}. Other agents and records outside that range are kept.`,
     errorsClearIrreversible: "This cannot be undone.",
     errorsClearDone: (count: number): string =>
       `Deleted ${count} error record${count === 1 ? "" : "s"}`,
