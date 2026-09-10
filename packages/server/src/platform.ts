@@ -218,10 +218,6 @@ export class Startup {
   ],
 })
 export class RuntimeModule {}
-// NOT renamed with the rest of the layer (#636): the layer resolves nodes by name —
-// `tree.api("RuntimeModule", "Log")` in app.ts — and a parked document is keyed by it, so a
-// pushed platform that renamed one would fail the lookup at boot and orphan what the node
-// had parked.
 
 @Module({
   children: [
