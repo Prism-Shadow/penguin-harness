@@ -41,15 +41,19 @@ export function sessionSchedules(
 /**
  * The Sessions of one agent that have a task which will actually fire — the rows the sidebar
  * gives an alarm clock. Same binding rule as `sessionSchedules`, so the mark and the panel can
- * never disagree about which tasks belong to a conversation; the added condition is the switch
- * the user flips themselves, because a task that is bound but paused is an arrangement they
- * have already turned off and a mark for it would be noise. A set rather than a per-Session
- * predicate: the sidebar asks the same question of every row it draws.
+ * never disagree about which tasks belong to a conversation. Two added conditions, both about
+ * whether the arrangement still stands: the switch the user flips themselves (a bound but
+ * paused task is something they have already turned off, and a mark for it would be noise),
+ * and the end of the task's window — past `endAt` nothing more will fire. `now` is passed in
+ * rather than read here, so the rule stays pure and the caller decides how fresh it is. A set
+ * rather than a per-Session predicate: the sidebar asks the same question of every row it draws.
  */
-export function enabledScheduleSessions(items: readonly ScheduleItem[]): Set<string> {
+export function enabledScheduleSessions(items: readonly ScheduleItem[], now: number): Set<string> {
   const ids = new Set<string>();
   for (const item of items) {
-    if (item.enabled && item.sessionId !== undefined) ids.add(item.sessionId);
+    if (!item.enabled || item.sessionId === undefined) continue;
+    if (item.endAt !== undefined && Date.parse(item.endAt) <= now) continue;
+    ids.add(item.sessionId);
   }
   return ids;
 }

@@ -91,10 +91,10 @@ export function BackgroundTasksMark({ label, size }: { label: string; size: numb
 }
 
 /**
- * The scheduled-task mark: a session row wears an alarm clock while at least one ENABLED task
- * is bound to it (features/schedules' `enabledScheduleSessions`). A bound task the user has
- * switched off draws nothing — it is an arrangement they have already turned off, and the panel
- * is where it stays visible. `attention` ink, the tone for work waiting on time, which is what
+ * The scheduled-task mark: a session row wears an alarm clock while at least one bound task is
+ * enabled and still inside its end time (features/schedules' `enabledScheduleSessions`). A bound
+ * task the user has switched off, or one whose window has closed, draws nothing — nothing more
+ * will fire from it, and the panel is where it stays visible. `attention` ink, the tone for work waiting on time, which is what
  * a scheduled task is; the hourglass beside it shares the tone and differs in shape and motion,
  * as two marks in one row must.
  *

@@ -39,6 +39,8 @@ describe("sessionSchedules", () => {
 });
 
 describe("enabledScheduleSessions", () => {
+  const now = Date.parse("2026-09-10T00:00:00.000Z");
+
   it("marks only the Sessions holding a task that will actually fire", () => {
     const items = [
       item({ name: "here", sessionId: "s1" }),
@@ -48,8 +50,27 @@ describe("enabledScheduleSessions", () => {
       // An agent-wide task opens a new Session each run, so it marks no row.
       item({ name: "fresh" }),
     ];
-    expect([...enabledScheduleSessions(items)]).toEqual(["s1"]);
-    expect(enabledScheduleSessions([]).size).toBe(0);
+    expect([...enabledScheduleSessions(items, now)]).toEqual(["s1"]);
+    expect(enabledScheduleSessions([], now).size).toBe(0);
+  });
+
+  it("weighs the end time as well as the switch", () => {
+    // Open-ended, and running until a date still ahead: both still fire.
+    const open = [item({ name: "open", sessionId: "s1" })];
+    expect([...enabledScheduleSessions(open, now)]).toEqual(["s1"]);
+    const future = [item({ name: "until", sessionId: "s1", endAt: "2026-09-11T00:00:00.000Z" })];
+    expect([...enabledScheduleSessions(future, now)]).toEqual(["s1"]);
+    // Its window has closed: enabled or not, nothing more fires from it.
+    const past = [item({ name: "over", sessionId: "s1", endAt: "2026-09-09T00:00:00.000Z" })];
+    expect(enabledScheduleSessions(past, now).size).toBe(0);
+    const offAndFuture = item({
+      name: "off",
+      sessionId: "s1",
+      enabled: false,
+      status: "disabled",
+      endAt: "2026-09-11T00:00:00.000Z",
+    });
+    expect(enabledScheduleSessions([offAndFuture], now).size).toBe(0);
   });
 });
 

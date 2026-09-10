@@ -368,8 +368,12 @@ export function Sidebar({
     currentAgent?.agentId ?? null,
     activeSessionId ?? "",
   );
-  /** The Sessions of that Agent wearing the alarm clock: one enabled task bound to them is enough. */
-  const scheduledSessions = enabledScheduleSessions(agentSchedules ?? []);
+  // The Sessions of that Agent wearing the alarm clock: one bound task that is enabled and not
+  // yet past its end time is enough. `Date.now()` is read at render rather than held in state —
+  // the store re-renders these rows on every refresh (a navigation, a schedule event, a turn
+  // ending), and each of those re-reads the clock, which is what keeps an expired task's mark
+  // from lingering.
+  const scheduledSessions = enabledScheduleSessions(agentSchedules ?? [], Date.now());
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -2525,7 +2529,7 @@ function SessionRow({
   activity: SessionActivity;
   /** Background tasks the Session still owns (sessionBackgroundTasks); 0 draws no mark. */
   background: number;
-  /** An enabled scheduled task is bound to this Session (enabledScheduleSessions); false draws no mark. */
+  /** An enabled, unexpired scheduled task is bound to this Session (enabledScheduleSessions); false draws no mark. */
   scheduled: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
@@ -2684,8 +2688,9 @@ function SessionRow({
             />
           )}
           {/* Standing arrangement rather than live work: the row says this conversation will run
-              on its own, and the schedules panel says how often and what. A paused task draws
-              nothing — it is switched off, and a mark for it would be noise. */}
+              on its own, and the schedules panel says how often and what. A paused task, or one
+              past its end time, draws nothing — nothing more will fire from it, and a mark
+              would be noise. */}
           {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
