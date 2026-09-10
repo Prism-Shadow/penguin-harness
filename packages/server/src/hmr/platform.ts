@@ -57,6 +57,7 @@ import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
   claimHmrCapabilities,
+  Log,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
@@ -72,6 +73,8 @@ export type ServerHmrHost = HmrHost<PlatformApi>;
 
 export interface PlatformApi extends Park {
   info(): Json;
+  /** The platform's log. The layer writes its request lines through it while there is one. */
+  log(line: string): void;
   /**
    * The HTTP seam (hmr/http-seam.ts): every request is offered here first, and null
    * declines it to the runtime's own routes. This is how a business API ships by push
@@ -138,7 +141,7 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
       "modules?": { "[string]": "unknown" },
     }) as never,
   ),
-  methods: ["park", "info", "http", "terminals", "attachStream"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "log"],
 });
 
 /** The node names the two parking modules were keyed by before nodes were named by class. */
@@ -373,8 +376,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       "http",
     );
     const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
+    const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
 
     return {
+      log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),
       park: () => {
         const modules = tree.park();
         // The top-level fields are written for every platform that reads them: a bare
