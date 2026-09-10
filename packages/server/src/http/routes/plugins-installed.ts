@@ -3,8 +3,8 @@
  *
  *   GET    /                      this Project's list, joined with what the process runs,
  *                                 plus which plugins the build ships (any member)
- *   POST   / { specifier }        add a plugin the build ships to this Project's list, and
- *                                 apply (admin); nothing is fetched from anywhere
+ *   POST   / { specifier }        npm-install the package if the build does not ship it,
+ *                                 add it to this Project's list, and apply (admin)
  *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
  *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
  *
@@ -40,11 +40,18 @@ import type { Config, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabi
 import {
   discoverBuiltinPlugins,
   PACKAGE_NAME,
+  loadPlugins,
   PLUGINS_FILE,
   pluginBases,
+  readPluginClosure,
   readPluginDeclaration,
 } from "../../plugin/loader.js";
-import { pluginHostFrom } from "../../plugin/host.js";
+import {
+  installPluginPackage,
+  PluginInstallError,
+  removePluginPackage,
+} from "../../plugin/install.js";
+import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
 export interface InstalledPluginsDeps {
@@ -138,30 +145,31 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** A package name (scoped or not) — never a path, a URL or a version range. */
+  /** A package specifier, optionally with a version range — never a path or a URL. */
   const specifierOf = (value: unknown): string => {
     const s = typeof value === "string" ? value.trim() : "";
-    if (!PACKAGE_NAME.test(s)) {
-      throw new HttpError(400, "bad_request", "specifier must be a package name.");
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[^\s/]+)?$/.test(s)) {
+      throw new HttpError(400, "bad_request", "specifier must be an npm package name.");
     }
     return s;
   };
 
   /**
-   * Only a plugin the build ships can be asked for: it is already on the machine, so asking
-   * is consent, not a download. Nothing is fetched from a registry — a listed plugin that is
-   * not on disk is exactly the state these routes exist to avoid. One gate for every verb
-   * that adds a name, so a list rewrite cannot name what a single add could not.
+   * A name a list REWRITE adds must already be on this machine — shipped with the build or
+   * installed under the data root by POST, which is the verb that runs npm. Otherwise PUT
+   * would be the way to list a package that is not on disk, exactly the state these routes
+   * exist to avoid.
    */
-  const requireShipped = async (specifiers: readonly string[]) => {
-    if (specifiers.length === 0) return;
-    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
-    for (const specifier of specifiers) {
-      if (!shipped.includes(specifier)) {
+  const requireOnMachine = async (names: readonly string[]) => {
+    if (names.length === 0) return;
+    const bases = pluginBases(deps.root, deps.assetsDir());
+    for (const name of names) {
+      const declared = await readPluginDeclaration(name, bases);
+      if ("error" in declared) {
         throw new HttpError(
           400,
-          "plugin_not_shipped",
-          `'${specifier}' does not ship with this build; only builtin plugins can be installed.`,
+          "plugin_not_installed",
+          `'${name}' is not installed on this machine; install it with POST first.`,
         );
       }
     }
@@ -191,9 +199,32 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf((await readJson(c)).specifier);
-    await requireShipped([specifier]);
+    // A plugin the build ships is already on the machine: asking for it is consent, not a
+    // download. Everything else goes through npm — the package first, the list second, since
+    // a listed plugin that is not on disk is exactly the state this route exists to avoid,
+    // and npm failing must leave the deployment unchanged.
+    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
+    if (!shipped.includes(specifier)) {
+      try {
+        await installPluginPackage(deps.root, specifier);
+      } catch (err) {
+        if (err instanceof PluginInstallError) {
+          throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+        }
+        throw err;
+      }
+    }
+    // `pkg@1.2.3` installs that version, and the table records it as what this Project asks
+    // of the package; the key is the bare name, which is what the loader resolves.
+    const at = specifier.lastIndexOf("@");
+    const name = at > 0 ? specifier.slice(0, at) : specifier;
+    const version = at > 0 ? specifier.slice(at + 1) : undefined;
     await deps.apply(
-      edit(projectId, (listed) => (specifier in listed ? listed : { ...listed, [specifier]: {} })),
+      edit(projectId, (listed) =>
+        listed[name] !== undefined && listed[name].version === version
+          ? listed
+          : { ...listed, [name]: version === undefined ? {} : { version } },
+      ),
     );
     return c.json(await view(projectId));
   });
@@ -209,6 +240,19 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         return kept;
       }),
     );
+    // The package goes too — but only once NO Project asks for it. The prefix is the
+    // harness's to keep tidy; removing it while another Project still lists it would break
+    // that Project at the next load.
+    if (!(await readPluginClosure(deps.root)).includes(specifier)) {
+      try {
+        await removePluginPackage(deps.root, specifier);
+      } catch (err) {
+        if (err instanceof PluginInstallError) {
+          throw new HttpError(500, "plugin_remove_failed", `npm: ${err.message}`);
+        }
+        throw err;
+      }
+    }
     return c.json(await view(projectId));
   });
 
@@ -220,12 +264,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!Array.isArray(list)) {
       throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
     }
-    // Names only, over the wire — the same names POST accepts. A name the list already
-    // carries was consented to when it was written; a NEW one is gated exactly as POST
-    // gates it. A name that stays keeps what the file asked of it.
-    const names = list.map(specifierOf);
+    // Names only, over the wire — a version is asked with POST, which installs it. A name
+    // the list already carries was consented to when it was written and keeps what the
+    // file asked of it; a NEW one must be on the machine.
+    const names = list.map((value) => {
+      const s = typeof value === "string" ? value.trim() : "";
+      if (!PACKAGE_NAME.test(s)) {
+        throw new HttpError(400, "bad_request", "plugins must be an array of package names.");
+      }
+      return s;
+    });
     const already = await deps.projectConfig.getPlugins(projectId).catch(() => ({}));
-    await requireShipped(names.filter((s) => !(s in already)));
+    await requireOnMachine(names.filter((s) => !(s in already)));
     await deps.apply(
       edit(projectId, (listed) => Object.fromEntries(names.map((s) => [s, listed[s] ?? {}]))),
     );
