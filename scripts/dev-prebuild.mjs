@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Serialized dev prestep: ensure dependencies are installed, then build the workspace deps
- * the dev servers consume (skills, core).
+ * Serialized dev prestep: ensure dependencies are installed, then build what the dev
+ * servers consume: packages/core, and packages/cli for the `penguin` a dev server hands the
+ * Agents it runs (it writes a shim at `<root>/bin/penguin` pointing at
+ * `packages/cli/dist/penguin.js`, so that file has to exist and be current when the server
+ * starts — `tsx watch` never rebuilds it).
  *
  * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev
@@ -25,7 +28,7 @@
  *   re-invocation (from packages/server's dev script) is a no-op. The window is
  *   deliberately tiny so a human edit-then-restart cycle always rebuilds.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build skills/core) or
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build core/cli) or
  * `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
@@ -211,10 +214,12 @@ try {
       refreshViteCache();
       exitCode = 0;
     } else {
-      console.log("[dev-prebuild] building core...");
+      console.log("[dev-prebuild] building core and the CLI...");
+      // One pnpm invocation, so the two run in dependency order: the CLI bundle inlines
+      // core, and core has to be rebuilt first for it to inline the current one.
       const res = spawnSync(
         "pnpm",
-        ["--filter", "@prismshadow/penguin-core", "build"],
+        ["--filter", "@prismshadow/penguin-core", "--filter", "@prismshadow/penguin-cli", "build"],
         // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
         { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );

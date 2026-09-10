@@ -16,6 +16,13 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
+  /**
+   * True when we killed it for running past its budget. Worth its own flag because a
+   * timeout is otherwise INDISTINGUISHABLE from a refusal: the child is killed before it
+   * says anything, so the result is a non-zero code with empty stderr — which reads as
+   * "the remote said no" when the truth is "the remote never answered in time".
+   */
+  timedOut: boolean;
 }
 
 /** Enough for a payload transfer over a slow link, short enough to not hang a menu forever. */
@@ -38,7 +45,15 @@ export function run(
             : error
               ? 1
               : 0;
-        resolve({ code, stdout: String(stdout), stderr: String(stderr) });
+        // execFile signals a timeout by killing the child: `killed` is set and there is no
+        // numeric exit code of its own.
+        const killed = (error as (Error & { killed?: boolean }) | null)?.killed === true;
+        resolve({
+          code,
+          stdout: String(stdout),
+          stderr: String(stderr),
+          timedOut: killed && error !== null,
+        });
       },
     );
   });
@@ -66,9 +81,17 @@ export function runWithInput(
     let stdout = "";
     let stderr = "";
     let pending = "";
-    const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    child.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    // Decoding is the stream's, not each chunk's: a multibyte character whose bytes land in
+    // two `data` events would otherwise become two replacement characters. This path carries
+    // the Windows installer's own output, which is where a localized far side puts non-ASCII.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (text: string) => {
       stdout += text;
       if (opts.onLine === undefined) return;
       pending += text;
@@ -79,16 +102,16 @@ export function runWithInput(
         if (trimmed !== "") opts.onLine(trimmed);
       }
     });
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+    child.stderr.on("data", (chunk: string) => (stderr += chunk));
     child.on("close", (code) => {
       clearTimeout(timer);
       // Whatever the last chunk left without a newline is still a line the far side wrote.
       if (pending.trim() !== "") opts.onLine?.(pending.trim());
-      resolve({ code: code ?? 1, stdout, stderr });
+      resolve({ code: code ?? 1, stdout, stderr, timedOut });
     });
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ code: 1, stdout, stderr: `${stderr}${err.message}\n` });
+      resolve({ code: 1, stdout, stderr: `${stderr}${err.message}\n`, timedOut });
     });
     // A remote that never reads stdin (a refused connection) closes the pipe under us.
     child.stdin.on("error", () => {});
@@ -96,62 +119,33 @@ export function runWithInput(
   });
 }
 
-/**
- * `producer | consumer`, without a shell: the producer's stdout is piped straight into the
- * consumer's stdin — how the hmr store crosses to the remote (local tar → ssh). Failure of
- * EITHER side fails the pair, with both stderr streams in the result; a broken pipe from a
- * dead consumer must not read as a successful transfer.
- */
-export function runPiped(
-  producer: { file: string; args: string[] },
-  consumer: { file: string; args: string[] },
-  opts: { timeoutMs?: number } = {},
-): Promise<ExecResult> {
+/** A local helper's stdout as bytes — a tarball to hand to a machine as a heredoc. */
+export function runBytes(
+  file: string,
+  args: string[],
+): Promise<{ code: number; stdout: Buffer; stderr: string }> {
   return new Promise((resolve) => {
-    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const a = spawn(producer.file, producer.args, { stdio: ["ignore", "pipe", "pipe"] });
-    const b = spawn(consumer.file, consumer.args, { stdio: ["pipe", "pipe", "pipe"] });
-    a.stdout.pipe(b.stdin);
-    // A consumer that dies mid-stream closes the pipe; without this the producer's EPIPE
-    // would surface as an unhandled stream error instead of the consumer's own exit below.
-    b.stdin.on("error", () => a.kill());
-    let stdout = "";
-    let stderr = "";
-    b.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
-    a.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
-    b.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
-    let aCode: number | null = null;
-    let bCode: number | null = null;
-    let settled = false;
-    const timer = setTimeout(() => {
-      a.kill();
-      b.kill();
-    }, timeoutMs);
-    const finish = () => {
-      if (settled || aCode === null || bCode === null) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ code: aCode !== 0 ? aCode : bCode, stdout, stderr });
-    };
-    a.on("close", (code) => {
-      aCode = code ?? 1;
-      finish();
-    });
-    b.on("close", (code) => {
-      bCode = code ?? 1;
-      finish();
-    });
-    a.on("error", (err) => {
-      aCode = 1;
-      stderr += `${err.message}\n`;
-      finish();
-    });
-    b.on("error", (err) => {
-      bCode = 1;
-      stderr += `${err.message}\n`;
-      finish();
-    });
+    execFile(
+      file,
+      args,
+      { encoding: "buffer", timeout: DEFAULT_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const code =
+          error && typeof (error as NodeJS.ErrnoException & { code?: number }).code === "number"
+            ? ((error as NodeJS.ErrnoException & { code: number }).code as number)
+            : error
+              ? 1
+              : 0;
+        resolve({ code, stdout: Buffer.from(stdout), stderr: String(stderr) });
+      },
+    );
   });
+}
+
+/** What a failed ExecResult says, in the transport's words; `whenSilent` when it said nothing. */
+export function execFailureText(result: ExecResult, whenSilent: string): string {
+  if (result.timedOut) return "the machine did not answer in time";
+  return result.stderr.trim() || whenSilent;
 }
 
 /** True when the failure is "ssh could not authenticate without asking" — the BatchMode wall. */

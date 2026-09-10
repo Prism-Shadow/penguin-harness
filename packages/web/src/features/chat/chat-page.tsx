@@ -41,7 +41,7 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { sessionActivity } from "../../lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -52,7 +52,11 @@ import {
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
+import {
+  bucketCostUsd,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
@@ -111,9 +115,10 @@ import { wantsScheduleAi } from "../schedules/schedule-route";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
-import { adoptDockScope } from "../dock/dock-state";
+// importing it also registers the global Ctrl+` hotkey with the app bundle
 import { setDockCwd } from "../dock/dock-terminal";
 import {
+  adoptDockScope,
   dockViews,
   dockVersion,
   isTabShown,
@@ -122,7 +127,6 @@ import {
   subscribeDock,
   type PanelKind,
 } from "../dock/dock-state";
-import "../dock/dock-terminal"; // registers the global Ctrl+` hotkey with the app bundle
 import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
@@ -131,7 +135,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { INFO_ICON } from "../../components/ui/icons";
+import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -209,6 +213,12 @@ interface HeaderStats {
   /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
   elapsedNode: ReactNode;
+  /**
+   * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
+   * component has anything to report yet (a conversation that has not run shows the bare
+   * time rather than a row of zeroes).
+   */
+  elapsedSplit: string | null;
 }
 
 /**
@@ -234,7 +244,25 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
         taskStartLocalMs={model.taskStartLocalMs}
       />
     ),
+    elapsedSplit: elapsedSplitText(stats),
   };
+}
+
+/**
+ * The parenthesised API / tool breakdown of the elapsed time, or null when both components are
+ * still zero. A component that is genuinely zero beside a non-zero one still prints: "no tool
+ * time" is worth reading. Unlike the total beside it this does not tick — it advances as each
+ * Request and tool closes, so mid-turn it trails the running total, and the two components can
+ * also overlap each other. Both are why it is rendered as two measurements, not as a split of
+ * the total (see sessionElapsedBreakdown).
+ */
+function elapsedSplitText(stats: TaskStatsTracker): string | null {
+  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
+  if (apiMs <= 0 && toolMs <= 0) return null;
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
 }
 
 /**
@@ -289,9 +317,8 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  // Background processes the conversation started (details popover list + the header's
-  // running-services count), refreshed by the polling effect below; procBusy marks the
-  // row whose stop request is in flight.
+  // Background processes the conversation started (the details popover list), refreshed by
+  // the polling effect below; procBusy marks the row whose stop request is in flight.
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
   const [procBusy, setProcBusy] = useState<string | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
@@ -854,6 +881,10 @@ export function ChatPage() {
   const runningProcessCount = processes.filter((p) => p.running).length;
   const processesCanChange =
     stream.taskState !== "idle" || runningProcessCount > 0 || (infoOpen && processes.length > 0);
+  // The row's own count moves the moment the server sees a process promoted or gone (the
+  // user channel's session_background), so a change there re-reads the list at once instead
+  // of a poll interval later — the popover stays in step with the header's count.
+  const backgroundProcessCount = selected?.backgroundTasks?.processes ?? 0;
   useEffect(() => {
     if (!selectedSessionId) return;
     let cancelled = false;
@@ -876,7 +907,7 @@ export function ChatPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selectedSessionId, stream.taskState, processesCanChange]);
+  }, [selectedSessionId, stream.taskState, processesCanChange, backgroundProcessCount]);
 
   /**
    * Shared body of the per-row process actions (Stop / Remove): one request at a time
@@ -1683,6 +1714,7 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      returnedSteering={stream.returnedSteering}
       onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
@@ -1737,6 +1769,8 @@ export function ChatPage() {
    */
   const headerActivity =
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
+  /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
+  const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -1824,17 +1858,21 @@ export function ChatPage() {
                   <StatChip
                     icon={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
-                    label={S.chat.statElapsed}
+                    label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
-                  {/* Right of the time, only while the conversation has live background
-                      processes: their count, in the live-status green. */}
-                  {runningProcessCount > 0 && (
+                  {/* Right of the time, only while the conversation still owns background
+                      work — command processes past their yield window, background subagents
+                      mid-round: their count, in the live-status green, the same figure and
+                      glyph as the session row's mark and read live off the row. Bare ink like
+                      the chips beside it, not a tinted pill: this is one more reading in the
+                      stat row, not a badge that should out-weigh them. */}
+                  {backgroundCount > 0 && (
                     <span
-                      title={S.chat.runningServices(runningProcessCount)}
+                      title={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={STAT_ICONS.services} />
-                      {runningProcessCount}
+                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      {backgroundCount}
                     </span>
                   )}
                 </span>
@@ -1911,6 +1949,7 @@ export function ChatPage() {
                   )}
                   <li>
                     {S.chat.statElapsed} {hs.elapsedNode}
+                    {hs.elapsedSplit}
                   </li>
                 </ul>
               </div>

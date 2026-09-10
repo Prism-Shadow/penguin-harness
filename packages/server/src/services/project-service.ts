@@ -306,7 +306,7 @@ export class ProjectService {
         new Promise<void>((resolve) => setTimeout(resolve, ABORT_SETTLE_TIMEOUT_MS).unref?.()),
       ]);
     }
-    this.deps.projects.delete(projectId); // project_members cascade-deleted
+    this.deps.projects.delete(projectId); // project_members and machine_project cascade-deleted
     this.deps.agents.deleteByProject(projectId);
     this.deps.sessions.deleteByProject(projectId);
     this.deps.usage.deleteByProject(projectId);

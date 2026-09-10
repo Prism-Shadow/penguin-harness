@@ -932,9 +932,10 @@ export function assembleSystemPrompt(
 /**
  * Filters builtin tool entries by the session model's type: entries with `forModel: "vision"` are
  * only used for models that support images (vision models), `forModel: "text-only"` is only for
- * text-only models (e.g. choosing between read_image / describe_image); unlabeled entries are
- * available to all models.
- * Docs: /docs/tools § "Image tools".
+ * text-only models; unlabeled entries are available to all models. The built-in defaults label
+ * no entry (read_file serves both classes), so this only acts on configs that declare their own
+ * per-class entries.
+ * Docs: /docs/tools § "Configuration fields".
  */
 export function selectBuiltinToolsForModel(
   tools: ToolDefinitionConfig[],

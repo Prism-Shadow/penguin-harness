@@ -162,6 +162,18 @@ describe("script hooks", () => {
     expect(await runHookScript(quiet, {})).toBeUndefined();
   });
 
+  it("pathPrepend puts the host's directories at the front of the script's PATH", async () => {
+    // A hook is spawned as `node <script>` — no shell, so nothing re-orders PATH after
+    // this. It is the same directory commands get (the harness's own CLI shim), so a hook
+    // that shells out to `penguin` reaches the harness running it.
+    const readPath = await write("path.mjs", answering("{ path: process.env.PATH }"));
+    const out = (await runHookScript(readPath, {}, { pathPrepend: ["/opt/penguin/bin"] })) as {
+      path: string;
+    };
+    expect(out.path.startsWith(`/opt/penguin/bin${path.delimiter}`)).toBe(true);
+    expect(out.path).toContain(process.env.PATH ?? "");
+  });
+
   it("a non-zero exit, non-JSON stdout, and a timeout each fail with a reason", async () => {
     const crash = await write("crash.mjs", 'process.stderr.write("kaboom\\n"); process.exit(3);\n');
     await expect(runHookScript(crash, {})).rejects.toThrow(/exit 3: kaboom/);

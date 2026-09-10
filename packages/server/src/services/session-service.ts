@@ -67,6 +67,11 @@ export interface SessionServiceDeps {
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
   /**
+   * PATH threading (same getter the session loader passes): the shim directory holding
+   * this harness's own `penguin`, put in front of every command an Agent runs.
+   */
+  pathPrepend?: () => string[];
+  /**
    * The channel of the Session's ENABLED messaging binding, or null when none is enabled
    * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
    * disabled configs stay off the row). A lookup lambda rather than the repo, so the
@@ -88,6 +93,7 @@ export class SessionService {
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -107,6 +113,7 @@ export class SessionService {
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
 
@@ -351,6 +358,7 @@ export class SessionService {
       agentId: args.agentId,
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
+      ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
     });
     let session;
     try {

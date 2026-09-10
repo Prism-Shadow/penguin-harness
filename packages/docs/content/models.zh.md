@@ -30,7 +30,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 内联凭证，可留空；留空时 AgentHub 回退读环境变量 |
 
-新建 Project 的默认模型是 deepseek-v4-flash-vision-exp，它自己就能读图。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
+新建 Project 的默认模型是 deepseek-v4-flash-vision-exp，它自己就能读图。另可配置一条 `vision_model`，作为 text-only 模型用 `read_file` 读图时的代读模型(见 [工具与审批](/tools))；默认不配置。
 
 文件形态(示意):
 
@@ -51,7 +51,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-对标注 `vision = false` 的模型(如 `deepseek-v4-flash`，即默认模型的纯文本同族)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；读图工具切换为 `describe_image`。
+对标注 `vision = false` 的模型(如 `deepseek-v4-flash`，即默认模型的纯文本同族)：对话输入中的图片会保存到 Session scratchpad，以文件路径形式拼入文本；`read_file` 读图时改为交给 `vision_model` 代读、不再返回图片。
 
 ## 内置 Provider 分组
 
@@ -78,9 +78,9 @@ api_key = "sk-..."
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的条目记录官方高峰档，并声明其空闲时段规则：在北京时间周一至周五 9:00–12:00、14:00–18:00 之外，各档价格减半——模型页以 `-50%` 标记，成本中心按此计价。存盘的始终是高峰价，因此磁盘上的数字不会随 Project 创建或同步预置的时刻而变。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格：每一条都记录各自卖家的收费，因此促销期间三者不同。
+预置目录中的部分模型：deepseek-v4.1-flash / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(其中 deepseek-v4.1-flash 与 deepseek-v4-flash-vision-exp 是 DeepSeek 分组中支持图像输入的两条)、MiniMax-M3、gemini-3.8-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-6-astra / gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash、seed-2.1-pro / seed-2.1-turbo / seed-evolving 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的条目记录官方高峰档，并声明其空闲时段规则：在北京时间周一至周五 9:00–12:00、14:00–18:00 之外，各档价格减半——模型页以「省 50%」徽标标记，成本中心按此计价。存盘的始终是高峰价，因此磁盘上的数字不会随 Project 创建或同步预置的时刻而变。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格：每一条都记录各自卖家的收费，因此促销期间三者不同。
 
-TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折扣率。当前有六个模型处于折扣中——`deepseek-v4-flash-0731`、`deepseek-v4-pro-0813` 与 `glm-5.3-flash` 五折，`kimi-k3` 八折，`glm-5.3` 与 `qwen3.8-max` 九折。它们的模型卡片显示当前实际计费的那个价格，并以徽标标出折扣率；新建 Project 预置的是**折后价**，因此成本中心按网关实际收费计价。自行修改过价格的条目不再显示折扣标记：此时那个数字属于你，而不是网关。
+TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折扣率。当前有九个模型处于折扣中——`deepseek-v4-flash-0731`、`deepseek-v4-pro-0813`、`glm-5.3-flash` 与三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）五折，`kimi-k3` 八折，`glm-5.3` 与 `qwen3.8-max` 九折。它们的模型卡片显示当前实际计费的那个价格，并以徽标标出折扣率；新建 Project 预置的是**折后价**，因此成本中心按网关实际收费计价。自行修改过价格的条目不再显示折扣标记：此时那个数字属于你，而不是网关。
 
 ## 应用归因
 
@@ -171,7 +171,7 @@ DeepSeek V4 只接受 `low`/`high`/`max`，服务端会把 `medium` 与 `xhigh` 
 
 如果请求最终仍到达了拒绝 `fast_mode` 的 client，AgentHub 会在**发起网络请求之前**拒绝：该轮会话立即结束，错误信息带上厂商原文与设置入口指引，确定性的拒绝不会重试。若某个条目在不支持的模型上存有 `fast_mode = true`，弹窗仍会显示该开关并标注不支持，以便随时关闭。
 
-连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`describe_image` 代读）不携带快速模式——只有会话自身的请求携带。
+连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`read_file` 的视觉模型代读）不携带快速模式——只有会话自身的请求携带。
 
 ## 模型与 Agent 解耦
 

@@ -174,8 +174,19 @@ export class Environment implements EnvironmentInterface {
       ...(config.vault !== undefined ? { vault: config.vault } : {}),
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
       ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
+      ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
+    // Background-task liveness fans in from both registries and from the subagent run-state
+    // pings: the host's background-state listener hears every change of "what is still
+    // running in the background", while its run-state listener hears only the rounds.
+    this.commandSessions.onChange(() => this.emitBackgroundState());
+    this.subagentSessions.onChange(() => this.emitBackgroundState());
+    this.subagentSessions.setStateListener(() => {
+      if (this.bgDisposed) return;
+      this.subagentStateListener?.();
+      this.emitBackgroundState();
+    });
     this.subagentRunner = config.services?.subagentRunner ?? null;
     this.services = {
       ...config.services,
@@ -265,6 +276,15 @@ export class Environment implements EnvironmentInterface {
   private bgListener: ((event: BackgroundTaskDoneEvent) => void) | null = null;
   private bgBuffer: BackgroundTaskDoneEvent[] = [];
   private bgDisposed = false;
+  /** Host subagent run-state listener (see setSubagentStateListener); null until a host subscribes. */
+  private subagentStateListener: (() => void) | null = null;
+  /** Host background-task state listener (see setBackgroundStateListener); null until a host subscribes. */
+  private bgStateListener: (() => void) | null = null;
+
+  private emitBackgroundState(): void {
+    if (this.bgDisposed) return;
+    this.bgStateListener?.();
+  }
 
   private emitBackgroundDone(event: BackgroundTaskDoneEvent): void {
     if (this.bgDisposed) return;
@@ -411,11 +431,14 @@ export class Environment implements EnvironmentInterface {
     return this.subagentSessions.bySessionId(childSessionId)?.setThinkingLevel(level) ?? false;
   }
 
-  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener). */
+  /** Attaches the single subagent run-state listener (see EnvironmentInterface.setSubagentStateListener); the manager's own listener is installed at construction and fans out to it. */
   setSubagentStateListener(listener: () => void): void {
-    this.subagentSessions.setStateListener(() => {
-      if (!this.bgDisposed) listener();
-    });
+    this.subagentStateListener = listener;
+  }
+
+  /** Attaches the single background-task state listener (see EnvironmentInterface.setBackgroundStateListener). Not buffered: the ping carries nothing, and a host reads the registries when it attaches. */
+  setBackgroundStateListener(listener: () => void): void {
+    this.bgStateListener = listener;
   }
 
   /** Attaches the host's session-lifetime fallback approval sink for child sessions (see EnvironmentInterface.setSubagentApprovalFallback). */
@@ -449,9 +472,10 @@ export class Environment implements EnvironmentInterface {
    * Only lists tools that have been assembled (i.e. supported by the registry) — tool names
    * unrecognized in config are not exposed to the LLM (consistent with the constructor);
    * the definition (description/parameters) treats **the config entry as the single source of
-   * truth** — factories must not rewrite the definition at runtime; where a differentiated
-   * implementation is needed, use a separate explicit tool-name entry with a `forModel`
-   * annotation (e.g. read_image / describe_image).
+   * truth** — factories must not rewrite the definition at runtime; a tool whose behavior
+   * depends on the session model reads the injected services instead (read_file consults
+   * `services.visionDescriber`), and a config that wants separate entries per model class
+   * annotates them with `forModel`.
    * Only exposes `{name, description, parameters}`, dropping permission/maxOutputLength.
    * MCP Server tools follow the builtin list: the first call connects the configured
    * servers and appends their discovered tools as `mcp__<server>__<tool>` entries

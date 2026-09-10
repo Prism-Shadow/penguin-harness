@@ -45,6 +45,7 @@ import {
   getModel,
   loadAgentVault,
   loadProjectConfig,
+  providerClientType,
   providerInfo,
   removeModel,
   removeVaultEntry,
@@ -155,16 +156,19 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       const before = await loadProjectConfig(root, opts.projectId);
       const existed = getModel(before, ref) !== undefined;
       // client_type default rule, only injected for new entries (updating an
-      // existing entry never overrides an explicit config): not set for first-party
-      // vendor groups (AgentHub auto-routes by upstream id, with env fallback keyed on
-      // id); defaults to openai-chat for custom / self-hosted / gateway groups, with the
-      // gateway's endpoint base URL pre-filled as well. (An explicit --client-type is
-      // passed through; core's addModel normalizes the deprecated bare "openai" alias.)
+      // existing entry never overrides an explicit config): a group that pins a protocol
+      // (vLLM) gets that pin, whatever the id; otherwise not set for first-party vendor
+      // groups (AgentHub auto-routes by upstream id, with env fallback keyed on id), and
+      // openai-chat for custom / user-defined / gateway groups, with the gateway's endpoint
+      // base URL pre-filled as well. (An explicit --client-type is passed through; core's
+      // addModel normalizes the deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
       const openAiDefault =
         pInfo === undefined || pInfo.id === "custom" || pInfo.gatewayBaseUrl !== undefined;
+      const groupClientType = providerClientType(provider);
+      const defaultClientType = groupClientType ?? (openAiDefault ? "openai-chat" : undefined);
       const clientType: string | undefined =
-        opts.clientType ?? (!existed && openAiDefault ? "openai-chat" : undefined);
+        opts.clientType ?? (!existed ? defaultClientType : undefined);
       const baseUrl: string | undefined =
         opts.baseUrl ?? (!existed ? pInfo?.gatewayBaseUrl : undefined);
       // Only collect explicitly given price fields, letting addModel merge them with the existing pricing per-field.

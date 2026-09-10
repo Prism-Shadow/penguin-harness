@@ -55,12 +55,15 @@ import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import type { SessionSources } from "../runtime/session-sources.js";
+import { ratesAt, requestCostUsd } from "./usage-service.js";
+import type { PricingLookup, TieredRates } from "./usage-service.js";
 import {
   cloneScanState,
   deserializePrefix,
   encodeCursor,
   finalizeScan,
   initialScanState,
+  mergedIntervalMs,
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
@@ -207,6 +210,24 @@ function subagentPointer(msg: OmniMessage): string | null {
 }
 
 /**
+ * The interval a tool span actually spent **executing**, as epoch milliseconds, or null when
+ * it never produced one.
+ *
+ * Starts at the approval moment when there was one and at the call otherwise, so the human
+ * approval wait stays out; the argument-generation segment is before `callTs` entirely and is
+ * model time, counted in the turn's `llmMs`. A span with no `outputTs` never finished within
+ * this file — still running when it ended, or interrupted — and contributes nothing rather
+ * than being extrapolated to the present.
+ */
+export function toolExecutionInterval(span: TraceToolSpan): [number, number] | null {
+  if (span.outputTs === undefined) return null;
+  const end = Date.parse(span.outputTs);
+  const start = Date.parse(span.approvalTs ?? span.callTs);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return [start, Math.max(start, end)];
+}
+
+/**
  * Read-only slice of the Session index the paginated listing consults (SessionsRepo
  * structurally satisfies it; injected so service tests need no full app): one indexed
  * query answers title / archived / workspace / client for every DB-tracked Session of
@@ -227,6 +248,13 @@ export interface TraceServiceDeps {
   sessions?: TraceSessionIndex;
   /** Optional (narrow tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
   sources?: SessionSources;
+  /**
+   * Optional (narrow tests may omit): the Project's current price for a paired reference —
+   * the same lookup the cost center prices `usage_records` with, so the analysis' per-turn
+   * cost and the toolbar's figure come from one price table. Absent, the analysis carries no
+   * cost at all.
+   */
+  lookupPricing?: PricingLookup;
   /**
    * Test observability: called with the path of every Trace shard this service reads
    * from disk (windowed-read tests assert an old-window request never touches the
@@ -823,6 +851,32 @@ export class TraceService {
     };
   }
 
+  /**
+   * The price table the analysis costs a file's Requests against: the Project's current rates
+   * for the model named by the file's own `session_meta` head, in both tiers. Null when there
+   * is no lookup, when the model has no pricing, and for a head that names no provider — such
+   * a Trace is legacy data (core refuses to resume it), and the id alone can exist under
+   * several providers at different prices, so nothing is priced rather than a first match.
+   */
+  private async filePricing(
+    projectId: string,
+    messages: OmniMessage[],
+  ): Promise<{ provider: string; modelId: string; rates: TieredRates } | null> {
+    if (this.deps.lookupPricing === undefined) return null;
+    const meta = messages.find(
+      (m) => isSessionMeta(m) && (m.origin === undefined || m.origin.length === 0),
+    );
+    if (meta === undefined) return null;
+    const { provider, model_id: modelId } = meta.payload as {
+      provider?: unknown;
+      model_id?: unknown;
+    };
+    if (typeof provider !== "string" || provider === "") return null;
+    if (typeof modelId !== "string" || modelId === "") return null;
+    const rates = await this.deps.lookupPricing(projectId, provider, modelId);
+    return rates === undefined ? null : { provider, modelId, rates };
+  }
+
   /** Performance analysis: derived from a single Trace file. */
   async analyze(
     projectId: string,
@@ -831,6 +885,7 @@ export class TraceService {
     index: number,
   ): Promise<TraceAnalysisResponse> {
     const messages = await this.readFileByIndex(projectId, agentId, sessionId, index);
+    const pricing = await this.filePricing(projectId, messages);
 
     const requests: RequestSpan[] = [];
     let openRequest: RequestSpan | null = null;
@@ -895,7 +950,11 @@ export class TraceService {
           startTs: "",
           endTs: "",
           tokens: { cacheRead: 0, cacheWrite: 0, output: 0 },
+          // A priced file states a cost for every turn, a turn with no Request included: the
+          // card then reads $0 rather than "no price", which is what an absent field means.
+          ...(pricing !== null ? { cost: 0 } : {}),
           llmMs: 0,
+          toolMs: 0,
         };
         taskStats.set(ti, t);
       }
@@ -1172,6 +1231,26 @@ export class TraceService {
             t.tokens.cacheRead += request?.cache_read ?? 0;
             t.tokens.cacheWrite += request?.cache_write ?? 0;
             t.tokens.output += request?.output ?? 0;
+            if (pricing !== null) {
+              // Priced per Request, at the tier this Request's own timestamp fell in — the
+              // rule the cost center applies to the usage row this same event produced, so
+              // the two figures for one request are the same figure.
+              t.cost =
+                (t.cost ?? 0) +
+                requestCostUsd(
+                  {
+                    cacheRead: request?.cache_read ?? 0,
+                    cacheWrite: request?.cache_write ?? 0,
+                    output: request?.output ?? 0,
+                  },
+                  ratesAt(
+                    pricing.rates,
+                    pricing.provider,
+                    pricing.modelId,
+                    new Date(msg.timestamp),
+                  ),
+                );
+            }
             if (!compactionActive) {
               // The context snapshot only takes non-compaction Requests: tokens
               // consumed by compaction aren't the post-compaction context
@@ -1325,8 +1404,28 @@ export class TraceService {
       const span = Date.parse(t.endTs) - Date.parse(t.startTs);
       return sum + (Number.isFinite(span) ? Math.max(0, span) : 0);
     }, 0);
+    // Tool wall time per turn: the union of that turn's execution intervals, so tools running
+    // in parallel are counted once. `llmMs` is already accumulated per turn as each Request
+    // ends, so the two components need no second pass here.
+    const toolIntervalsByTask = new Map<number, Array<[number, number]>>();
+    for (const span of toolSpans) {
+      const interval = toolExecutionInterval(span);
+      if (interval === null) continue;
+      const list = toolIntervalsByTask.get(span.taskIndex);
+      if (list === undefined) toolIntervalsByTask.set(span.taskIndex, [interval]);
+      else list.push(interval);
+    }
+    for (const t of tasks) t.toolMs = mergedIntervalMs(toolIntervalsByTask.get(t.taskIndex) ?? []);
+    // Both global figures are the sum of the per-turn figures, the same convention `elapsedMs`
+    // follows above, so a reader adding up the turn cards lands on the totals.
+    const apiMs = tasks.reduce((sum, t) => sum + t.llmMs, 0);
+    const toolMs = tasks.reduce((sum, t) => sum + t.toolMs, 0);
+    const cost = pricing !== null ? tasks.reduce((sum, t) => sum + (t.cost ?? 0), 0) : undefined;
     return {
       elapsedMs,
+      apiMs,
+      toolMs,
+      ...(cost !== undefined ? { cost } : {}),
       requests,
       tasks,
       toolCalls,
