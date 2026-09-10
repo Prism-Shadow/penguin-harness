@@ -1,8 +1,8 @@
 /**
  * The plugins a PROJECT asks for, and which of them this process is actually running:
  *
- *   GET    /                      this Project's list, joined with what loaded (any member)
- *   GET    /?shipped=1             …plus which plugins the build ships (a tag)
+ *   GET    /                      this Project's list, joined with what the process runs,
+ *                                 plus which plugins the build ships (any member)
  *   POST   / { specifier }        add a plugin the build ships to this Project's list, and
  *                                 apply (admin); nothing is fetched from anywhere
  *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
