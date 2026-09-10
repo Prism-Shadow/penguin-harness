@@ -208,15 +208,19 @@ jobs:
       # `stable` line: a deployment that wants a release pins its version, and `latest` is main.
       # The commit comes from the checkout rather than from github.sha, which on a dispatch names
       # the branch the run was started on and not the tag.
+      #
+      # The two are told apart by the `tag` input, not by the event name: a workflow_call from
+      # release.yml runs under the caller's event, which for a tag push is `push` as well, so an
+      # event test sent the v0.2.10 and v0.2.11 release builds to `latest` and published no
+      # version tag. The input is required on both call paths and absent on a push to main.
       - name: Resolve the version and its tag
         id: version
         env:
-          EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
         run: |
           COMMIT="$(git rev-parse HEAD)"
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = "push" ]; then
+          if [ -z "$TAG" ]; then
             echo "version=main-$(printf '%s' "$COMMIT" | cut -c1-7)" >> "$GITHUB_OUTPUT"
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
