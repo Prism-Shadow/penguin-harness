@@ -28,7 +28,8 @@
  * (`terminals()`, `attachStream()`) instead.
  */
 import type { MiddlewareHandler } from "hono";
-import type { ServerHmrHost } from "./platform.js";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "./platform.js";
 
 /** Prefix the runtime keeps for itself, whatever the platform says. */
 const RESERVED_PREFIX = "/api/hmr";
@@ -51,20 +52,14 @@ export interface PlatformHttp {
  * `hmr.ensure()` returns the already-booted instance after the first call, so this costs a
  * property read per request once the platform is up.
  */
-export function platformHttpSeam(hmr: ServerHmrHost): MiddlewareHandler {
+export function platformHttpSeam(hmr: Hmr<PlatformApi>): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
-    // Wait out any in-flight swap FIRST, same as /api/hmr/*'s own gate (routes.ts): the
-    // kernel's upgrade() disposes the old tree before it awaits the new one's boot, and for
-    // that whole window `hmr.ensure()` still resolves synchronously to the OLD instance —
-    // it only reassigns once the swap is done. Without this wait, a request landing in that
-    // window would be handed to an already-disposed tree instead of observing the freeze as
-    // latency (see host.ts's module doc: "a client never observes the stop-the-world
-    // window").
-    await hmr.waitIdle();
+    // Which generation a request goes to — including waiting out an in-flight swap — is the
+    // frozen operation `current()` (packages/hmr's main.ts); this seam only hands over.
     let handler: PlatformHttp["http"];
     try {
-      const instance = await hmr.ensure();
+      const instance = await hmr.current();
       handler = (instance.api as PlatformHttp).http?.bind(instance.api);
     } catch {
       // The platform cannot boot: the runtime's own routes are the fallback, and the

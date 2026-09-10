@@ -112,6 +112,7 @@ so the terminal WebSocket handshake reaches the App through in-process members i
 
 | File             | What it is                                                              |
 | ---------------- | ----------------------------------------------------------------------- |
+| `main.ts`        | `hmrMain`: the entry — which generation a request goes to, how a push lands, what the product refreshes after |
 | `host.ts`        | `HmrHost`: store, commit, boot, upgrade, recovery                        |
 | `resources.ts`   | `HotResources`: the registry, and its disposal groups                    |
 | `manifest.ts`    | `harness.json` — read, write, materialize; importable with no host       |

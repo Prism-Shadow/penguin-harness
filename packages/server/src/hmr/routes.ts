@@ -19,14 +19,19 @@
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import type { ServerConfig } from "../config.js";
-import type { ServerHmrHost } from "./platform.js";
+import type { PlatformApi, ServerHmrHost } from "./platform.js";
+import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { ChannelHub } from "../runtime/channel.js";
 
 /** What the hot-update routes reach: runtime capabilities and the current App's auth. */
 export interface HmrRouteDeps {
   hmr: ServerHmrHost;
-  authService: Auth;
+  /** The frozen operations (packages/hmr's main.ts): a push goes through `upgrade`, never the host. */
+  control: Hmr<PlatformApi>;
+  /** The CURRENT generation's auth — a getter on the caller's side, so a swap is seen. */
+  readonly authService: Auth;
   config: ServerConfig;
   channels: ChannelHub;
 }
@@ -44,8 +49,9 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   // Mounted BEFORE the global cookie-auth middleware (see app.ts): this gate
   // does its own auth (admin cookie only — see the network gate above for the
   // other half) rather than relying on the generic middleware being mounted
-  // later.
-  const cookieAuth = authMiddleware(deps.authService, deps.config.trustProxy);
+  // later. Built per request: the auth is the current generation's.
+  const cookieAuth = (c: Parameters<MiddlewareHandler<AppEnv>>[0], next: () => Promise<void>) =>
+    authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback
@@ -157,7 +163,7 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
     }
     let outcome;
     try {
-      outcome = await hmr.upgradeAll({
+      outcome = await deps.control.upgrade({
         platform: payload.platform,
         cli: payload.cli,
         web: payload.web.files,
