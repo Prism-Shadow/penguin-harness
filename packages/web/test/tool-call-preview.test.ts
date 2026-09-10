@@ -22,6 +22,12 @@ describe("previewArguments", () => {
     expect(previewArguments("exec_command", '{"cmd":"echo h')).toBe("$ echo h");
   });
 
+  it("previews exec_command's shell text under the `command` alias core also runs", () => {
+    expect(previewArguments("exec_command", '{"command":"ls -la"}')).toBe("$ ls -la");
+    // `cmd` is what runs when both are present, so it is what the approval row shows.
+    expect(previewArguments("exec_command", '{"cmd":"pwd","command":"ls"}')).toBe("$ pwd");
+  });
+
   it("renders the file tools by their shortened file_path", () => {
     expect(previewArguments("read_file", '{"file_path":"src/app.py","offset":3}')).toBe(
       "src/app.py",

@@ -43,6 +43,7 @@ import {
 } from "./subagent/index.js";
 import { collectWindow } from "./subagent/collect.js";
 import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const SUBAGENT_NAME = "run_subagent";
@@ -84,7 +85,9 @@ export function createSubagentTool(
       }
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (prompt.trim().length === 0) {
-        yield* fail("[run_subagent error: missing required string argument `prompt`]");
+        yield* fail(
+          describeArgumentError(definition, args, { argument: "prompt", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;

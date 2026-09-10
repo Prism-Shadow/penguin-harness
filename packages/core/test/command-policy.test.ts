@@ -267,6 +267,19 @@ describe("vetoForToolCall", () => {
     expect(vetoForToolCall("mcp__server__shell", json({ cmd: "rm -rf /" }))).toBeNull();
   });
 
+  it("screens the shell text under exec_command's `command` alias, reading it as the tool does", () => {
+    // The alias is what the tool runs, so it is what the policy sees — a launch is never
+    // waved through for arriving under the other accepted name.
+    expect(vetoForToolCall("exec_command", json({ command: "rm -rf /" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+    // Both present: `cmd` is the one the tool runs, and the one screened.
+    expect(vetoForToolCall("exec_command", json({ cmd: "ls", command: "rm -rf /" }))).toBeNull();
+    expect(vetoForToolCall("exec_command", json({ cmd: "rm -rf /", command: "ls" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+  });
+
   it("exempts the lone Ctrl-C, which the tool turns into SIGINT rather than typed text", () => {
     const interrupt = String.fromCharCode(3);
     expect(

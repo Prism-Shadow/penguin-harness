@@ -59,6 +59,7 @@ import type {
 } from "../../interfaces/index.js";
 import { formatSize, isHttpUrl, loadImage, looksLikeImageFile } from "./image-source.js";
 import { missingPathHint } from "./path-hint.js";
+import { describeArgumentError } from "./tool-arguments.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -395,19 +396,31 @@ export function createReadFileTool(
 
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
-        yield delta(`Missing required argument "file_path" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       const offsetArg = coerceCount(args["offset"], 1);
       if (!offsetArg.ok) {
-        yield delta(`Invalid "offset": expected a number (got ${JSON.stringify(args["offset"])}).`);
+        yield delta(
+          describeArgumentError(definition, args, {
+            argument: "offset",
+            kind: "invalid",
+            detail: `expected a number (got ${JSON.stringify(args["offset"])})`,
+          }),
+        );
         return { stopReason: "fatal" };
       }
       const offset = Math.max(1, offsetArg.value);
       const limitArg = coerceCount(args["limit"], DEFAULT_READ_FILE_LIMIT);
       if (!limitArg.ok || limitArg.value <= 0) {
         yield delta(
-          `Invalid "limit": expected a positive number (got ${JSON.stringify(args["limit"])}).`,
+          describeArgumentError(definition, args, {
+            argument: "limit",
+            kind: "invalid",
+            detail: `expected a positive number (got ${JSON.stringify(args["limit"])})`,
+          }),
         );
         return { stopReason: "fatal" };
       }
