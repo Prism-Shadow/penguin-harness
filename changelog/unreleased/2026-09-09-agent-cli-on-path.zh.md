@@ -3,7 +3,7 @@
 - **Date:** 2026-09-09
 - **Type:** feature
 - **Scope:** `core`, `server`, `desktop`, `tooling`, `docs`
-- **PR:** #TBD
+- **PR:** [#658](https://github.com/Prism-Shadow/penguin-harness/pull/658)
 
 [English](2026-09-09-agent-cli-on-path.md)
 
