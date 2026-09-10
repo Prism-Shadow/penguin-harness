@@ -84,9 +84,9 @@ api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
-cache_read = 0.003571
-cache_write = 0.428571
-output = 0.857143
+cache_read = 0.005714
+cache_write = 0.285714
+output = 1.142857
 ```
 
 `pricing.unit` is currently always `usd_per_mtok` (USD per million tokens); the three buckets map onto `token_usage`'s three counters.

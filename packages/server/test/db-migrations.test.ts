@@ -63,6 +63,9 @@ function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec(GOAL_STATE_DDL);
+  // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
+  // migration 4 is what adds them. Without this the fixture is a database no release made.
+  db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
   db.exec("PRAGMA user_version = 2");
   return db;
 }
@@ -142,6 +145,7 @@ describe("migration mechanism", () => {
         "messaging-bindings",
         "messaging-delivery-flags",
         "drop-goal-state",
+        "machines",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -200,6 +204,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
       expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "messaging-bindings",
         "messaging-delivery-flags",
+        "machines",
       ]);
     } finally {
       db.close();
@@ -219,6 +224,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-bindings",
         "messaging-delivery-flags",
         "drop-goal-state",
+        "machines",
       ]);
     } finally {
       db.close();
@@ -242,12 +248,12 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state"]);
+      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines"]);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state"]);
+      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines"]);
     } finally {
       db.close();
       fresh.close();
@@ -336,12 +342,16 @@ describe("rollbackTo", () => {
       const r = rollbackTo(db, LATEST_VERSION - 2);
       expect(r.from).toBe(LATEST_VERSION);
       expect(r.to).toBe(LATEST_VERSION - 2);
-      expect(r.reverted).toEqual(["drop-goal-state", "messaging-delivery-flags"]);
-      const cols = (
-        db.prepare("PRAGMA table_info(messaging_bindings)").all() as { name: string }[]
-      ).map((c) => c.name);
-      expect(cols).not.toContain("render_markdown");
-      expect(cols).not.toContain("final_reply_only");
+      // Newest first: the machines tables go, then goal_state comes back.
+      expect(r.reverted).toEqual(["machines", "drop-goal-state"]);
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+          name: string;
+        }[]
+      ).map((t) => t.name);
+      expect(tables).not.toContain("machines");
+      expect(tables).not.toContain("machine_project");
+      expect(tables).toContain("goal_state");
     } finally {
       db.close();
     }
@@ -372,6 +382,7 @@ describe("rollbackTo", () => {
       migrate(db);
       const r = rollbackTo(db, 0);
       expect(r.reverted).toEqual([
+        "machines",
         "drop-goal-state",
         "messaging-delivery-flags",
         "messaging-bindings",

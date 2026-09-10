@@ -10,11 +10,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment } from "../src/environment/index.js";
 import { armCommandDoneReport } from "../src/environment/tools/exec-command.js";
-import { ManagedSession } from "../src/environment/tools/command/index.js";
+import {
+  ManagedSession,
+  DEFAULT_EMPTY_POLL_YIELD_MS,
+} from "../src/environment/tools/command/index.js";
 import { createSubagentTool } from "../src/environment/tools/run-subagent.js";
 import { createInputSubagentTool } from "../src/environment/tools/input-subagent.js";
 import { SubagentSessionManager } from "../src/environment/tools/subagent/index.js";
-import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import {
   requestEnd,

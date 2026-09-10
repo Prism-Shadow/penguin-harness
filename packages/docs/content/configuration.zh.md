@@ -84,9 +84,9 @@ api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
-cache_read = 0.003571
-cache_write = 0.428571
-output = 0.857143
+cache_read = 0.005714
+cache_write = 0.285714
+output = 1.142857
 ```
 
 `pricing.unit` 目前固定为 `usd_per_mtok`（USD 每百万 Token）；三档对应 `token_usage` 的三个计数桶。
