@@ -61,13 +61,15 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
         );
       }
     }
-    // Then the platform's cookie / API-token gate, and admin on top.
-    await authMiddleware(deps.auth, deps.config.trustProxy)(c, async () => {
-      if (!c.var.user.isAdmin) {
-        throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
-      }
-      await next();
-    });
+    await next();
+  });
+  // Then the platform's cookie / API-token gate, and admin on top.
+  routes.use("*", authMiddleware(deps.auth, deps.config.trustProxy));
+  routes.use("*", async (c, next) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
+    }
+    await next();
   });
 
   // THE ONE upgrade endpoint: platform + cli + web move together, atomically — there is no
