@@ -89,7 +89,7 @@ describe("skills api", () => {
     const plugins = body.groups.flatMap((g) => g.plugins);
     for (const plugin of plugins) {
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.version, plugin.name).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+      expect(plugin.version, plugin.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
