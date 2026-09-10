@@ -431,7 +431,7 @@ export interface ModelInfo {
 export interface ModelsResponse {
   /** Paired reference to the default Model. */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
+  /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
   /**
    * When the Project's model/credential config last changed (ISO; the config file's mtime,
@@ -479,7 +479,7 @@ export interface ModelUpdateEntry {
 export interface ModelsUpdateRequest {
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image: must be included in models and not annotated vision=false; omitted keeps the existing value. */
+  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
   models: ModelUpdateEntry[];
 }

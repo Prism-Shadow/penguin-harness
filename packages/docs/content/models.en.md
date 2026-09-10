@@ -30,7 +30,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
 
-A fresh Project defaults to deepseek-v4-flash-vision-exp, which reads images itself. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
+A fresh Project defaults to deepseek-v4-flash-vision-exp, which reads images itself. A `vision_model` entry can additionally designate the proxy model through which `read_file` reads images for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
 
 File shape (illustrative):
 
@@ -51,7 +51,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-For a model tagged `vision = false` (e.g. `deepseek-v4-flash`, the text-only sibling of the default), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and the image-reading tool switches to `describe_image`.
+For a model tagged `vision = false` (e.g. `deepseek-v4-flash`, the text-only sibling of the default), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and `read_file` hands an image to the `vision_model` for description instead of returning it.
 
 ## Built-in provider groups
 
@@ -171,7 +171,7 @@ Two things the toggle cannot check for you:
 
 If a request does reach a client that rejects `fast_mode`, AgentHub refuses it **before any network request**: the session ends that turn immediately with the provider's message plus a pointer to the setting, and a deterministic rejection is never retried. An entry that stores `fast_mode = true` on a model that cannot serve it keeps its toggle in the dialog, marked unsupported, so it can always be switched off.
 
-The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `describe_image` proxy reads) never carry fast mode — only the session's own requests do.
+The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `read_file`'s vision-model proxy reads) never carry fast mode — only the session's own requests do.
 
 ## Models decoupled from Agents
 
