@@ -217,17 +217,12 @@ export const PLUGIN_ICON =
 /**
  * Magic wand with sparkles (after lucide's wand-sparkles, reduced to two sparkles so it still
  * reads at 13px): the mark of "Create with AI" wherever an object can be described to the agent
- * instead of configured by hand — the split create button, its menu row and the dialog's send.
+ * instead of configured by hand — the AI half of the create pair and the dialog's exit.
  */
 export const MAGIC_WAND_ICON =
   "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72zM14 7l3 3M5 6v4M3 8h4M19 14v4M17 16h4";
 
-/**
- * Open hand (after lucide's hand: the palm's outline sweeping into the thumb, with three finger
- * strokes standing above it): the mark of "set this up by hand", opposite the magic wand — the
- * scheduled-tasks panel's manual create button. The fingers are drawn as separate strokes so the
- * mark keeps its silhouette at ICON_SIZE.iconButton, where a filled palm would blot together.
- */
+/** An open hand — the "do it by hand" mark beside the wand, on the 24×24 grid. */
 export const HAND_ICON =
   "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
 

@@ -2,8 +2,8 @@
  * The bridge from a "Create with AI" surface into a new conversation. The prompt is written into
  * the active new-chat draft (the cache draft-view reads on mount), the requested agent becomes
  * the current one, and the route jumps to the draft page with the request in location.state.
- * `autoSend` asks draft-view to submit the prefilled draft as soon as its send preconditions
- * hold (draft-view's auto-send effect); without it the draft is only prefilled.
+ * Nothing is ever submitted here: the prompt lands in the composer and sending stays the user's
+ * action, so what reaches the model is always something a person read and pressed Send on.
  *
  * Typed-but-unsent text in the active draft is parked first (draft-sessions.ts) rather than
  * overwritten by the canned prompt, and the model selection carries over, as it does across
@@ -29,15 +29,12 @@ export interface AiChatRequest {
   workspace?: string;
   /** Skills to preselect in the composer; absent or empty clears a stale selection. */
   skills?: string[];
-  /** Submit the draft on arrival instead of leaving it in the composer. */
-  autoSend?: boolean;
 }
 
 /** What the draft page finds in `location.state` after openAiChat. */
 export interface AiChatRouteState {
   agentId: string;
   workspace?: string;
-  autoSend?: true;
 }
 
 /**
@@ -59,12 +56,11 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
   return draft;
 }
 
-/** The route state carried to the draft page: only what was asked for, so a plain request leaves no `autoSend` key behind. */
+/** The route state carried to the draft page: only what was asked for, so a request that pins no Workspace leaves no `workspace` key behind. */
 export function aiChatRouteState(req: AiChatRequest): AiChatRouteState {
   return {
     agentId: req.agentId,
     ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
-    ...(req.autoSend ? { autoSend: true as const } : {}),
   };
 }
 

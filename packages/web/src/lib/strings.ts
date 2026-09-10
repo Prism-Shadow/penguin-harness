@@ -464,11 +464,10 @@ export const zh = {
     later: "稍后再说",
   },
 
-  /** The "Create with AI" kit (features/ai-create): the create-button entries, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
   aiCreate: {
-    withAi: "让 AI 创建",
-    manual: "手动配置",
-    send: "发送给智能体",
+    withAi: "用 AI 创建",
+    manual: "手动创建",
     editInChat: "在新对话中编辑",
     copyPrompt: "复制提示词",
     examplesTitle: "试试这些示例",
@@ -480,8 +479,6 @@ export const zh = {
     /** Accessible name of the prompt box (it has no visible label). */
     promptLabel: "提示词",
     noAgent: "当前 Project 还没有智能体",
-    /** Accessible name of the split button's caret half. */
-    moreWays: "更多创建方式",
   },
 
   agent: {

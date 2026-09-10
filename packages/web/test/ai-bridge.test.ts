@@ -42,13 +42,10 @@ describe("buildAiDraft", () => {
 describe("aiChatRouteState", () => {
   it("carries only what was asked for", () => {
     expect(aiChatRouteState({ agentId: "a", text: "t" })).toEqual({ agentId: "a" });
-    expect(aiChatRouteState({ agentId: "a", text: "t", autoSend: false })).toEqual({
-      agentId: "a",
-    });
-    expect(aiChatRouteState({ agentId: "a", text: "t", workspace: "", autoSend: true })).toEqual({
+    // "" is the temporary Workspace — a pin, so it travels; an absent one leaves no key behind.
+    expect(aiChatRouteState({ agentId: "a", text: "t", workspace: "" })).toEqual({
       agentId: "a",
       workspace: "",
-      autoSend: true,
     });
   });
 });
