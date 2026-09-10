@@ -3,8 +3,8 @@
  *
  *   GET    /                      this Project's list, joined with what loaded (any member)
  *   GET    /?shipped=1             …plus which plugins the build ships (a tag)
- *   POST   / { specifier }        npm-install the package if the build does not ship it,
- *                                 add it to this Project's list, and apply (admin)
+ *   POST   / { specifier }        add a plugin the build ships to this Project's list, and
+ *                                 apply (admin); nothing is fetched from anywhere
  *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
  *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
  *
@@ -27,7 +27,7 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -35,18 +35,11 @@ import { readJson, requireValidId } from "../validate.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
-  loadPlugins,
   PLUGINS_FILE,
   pluginBases,
-  readPluginClosure,
   readPluginDeclaration,
 } from "../../plugin/loader.js";
-import {
-  installPluginPackage,
-  PluginInstallError,
-  removePluginPackage,
-} from "../../plugin/install.js";
-import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
+import { pluginHostFrom } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 
 export interface InstalledPluginsDeps {
@@ -136,11 +129,11 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** A package specifier, optionally with a version range — never a path or a URL. */
+  /** A package name (scoped or not) — never a path, a URL or a version range. */
   const specifierOf = (value: unknown): string => {
     const s = typeof value === "string" ? value.trim() : "";
-    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[^\s/]+)?$/.test(s)) {
-      throw new HttpError(400, "bad_request", "specifier must be an npm package name.");
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(s)) {
+      throw new HttpError(400, "bad_request", "specifier must be a package name.");
     }
     return s;
   };
@@ -149,27 +142,21 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf((await readJson(c)).specifier);
-    // A plugin the build ships is already on the machine: asking for it is consent, not a
-    // download. Everything else goes through npm — the package first, the list second, since
-    // a listed plugin that is not on disk is exactly the state this route exists to avoid,
-    // and npm failing must leave the deployment unchanged.
+    // Only a plugin the build ships can be asked for here: it is already on the machine, so
+    // asking is consent, not a download. Nothing is fetched from a registry — a listed plugin
+    // that is not on disk is exactly the state this route exists to avoid.
     const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
     if (!shipped.includes(specifier)) {
-      try {
-        await installPluginPackage(deps.root, specifier);
-      } catch (err) {
-        if (err instanceof PluginInstallError) {
-          throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
-        }
-        throw err;
-      }
+      throw new HttpError(
+        400,
+        "plugin_not_shipped",
+        `'${specifier}' does not ship with this build; only builtin plugins can be installed.`,
+      );
     }
-    // `pkg@1.2.3` installs that version but is LISTED by name: the list names what to load,
-    // and a pinned range in it would be read as part of the package name at load time.
-    const at = specifier.lastIndexOf("@");
-    const name = at > 0 ? specifier.slice(0, at) : specifier;
     const listed = await deps.projectConfig.getPlugins(projectId);
-    if (!listed.includes(name)) await deps.projectConfig.setPlugins(projectId, [...listed, name]);
+    if (!listed.includes(specifier)) {
+      await deps.projectConfig.setPlugins(projectId, [...listed, specifier]);
+    }
     await deps.apply();
     return c.json(await view(projectId));
   });
@@ -184,12 +171,6 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       listed.filter((s) => s !== specifier),
     );
     await deps.apply();
-    // The package goes too — but only once NO Project asks for it. The prefix is the
-    // harness's to keep tidy; removing it while another Project still lists it would break
-    // that Project at the next load.
-    if (!(await readPluginClosure(deps.root)).includes(specifier)) {
-      await removePluginPackage(deps.root, specifier);
-    }
     return c.json(await view(projectId));
   });
 
