@@ -37,12 +37,14 @@ const iface = {
 };
 const SERVED = ${JSON.stringify(paths)};
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (!SERVED.includes(pathname)) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)}, pathname }), {
           status: 200,
@@ -86,12 +88,14 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)}, n: context.n }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== "/api/demo/bump") return null;
         context.n += 1;
         return new Response(JSON.stringify({ n: context.n }), {
@@ -123,7 +127,7 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return { park: () => context, info: () => ({ impl: ${JSON.stringify(id)} }) };
   },
 };
@@ -718,7 +722,7 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     globalThis.__doubleFaultBoots = (globalThis.__doubleFaultBoots ?? 0) + 1;
     if (globalThis.__doubleFaultBoots > 1) throw new Error("re-boot refused");
     return {
@@ -726,6 +730,8 @@ const impl = {
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== ${JSON.stringify(path)}) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)} }), {
           status: 200,
@@ -786,8 +792,10 @@ describe("double fault: the upgrade channel survives a failed push whose recover
     expect(JSON.stringify(await bad.json())).toMatch(/failed to boot.*boom/);
     expect(warnings.join("")).toMatch(/boot-failure recovery failed too/);
 
-    // The claim under test: /api/hmr is runtime-owned, so it answers out of the runtime's
-    // own routes no matter what state the platform tree is in, and a good push repairs the
+    // The claim under test: the upgrade channel is the platform's now, but a platform whose
+    // recovery failed is left in place, disposed, and its routes still answer out of their
+    // closures — the half-dead state this warning names. The channel needs nothing of the
+    // stopped App (the control object is the layer's), so a good push repairs the
     // installation without a restart.
     const good = await pushPlatform(
       t.app,

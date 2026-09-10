@@ -1,57 +1,40 @@
 /**
- * /api/hmr/*: the hot-update surface.
+ * /api/hmr/*: the hot-update surface, declared and contributed like every other route group.
  *
- * The gate middleware is the runtime half of the stop-the-world protocol:
- * requests arriving during a swap are ENQUEUED on the host's operation queue
- * (awaiting waitIdle), never rejected — a client only ever observes latency,
- * not the freeze. The routes are runtime code: they orchestrate through the
- * platform api, so they survive impl swaps unchanged.
+ * What a push IS — its body, the outcome it answers with, what happens when the pushed
+ * generation cannot become current — is the mechanism's, in packages/hmr's main.ts
+ * (`upgradeEndpoint`). What is here is the product's: the network gate, who may push, and
+ * what clients are told when a version lands. The cookie / API-token gate is the platform's
+ * usual middleware, applied after the network gate; admin is checked on top.
  *
- * HMR LAYER — MECHANISM ONLY (see ./README.md). A new business API must NOT
- * become a route here. It is served by the platform itself, through the HTTP
- * seam (../hmr/http-seam.ts) that offers every request to the booted platform
- * before the runtime's own routes see it — a real route with its own path,
- * verb and status, rather than an RPC envelope clients would have to learn.
- *
- * What remains here is the upgrade channel and the status it needs, which is
- * the one thing the platform is never offered: it is how a broken platform
- * gets replaced.
+ * Because the group is the platform's, a generation that does not serve it would leave
+ * the installation with no way to push another — so a push is refused before commit when
+ * its generation does not answer here (`admitsUpgradeRoute`).
  */
-import zlib from "node:zlib";
 import { Hono } from "hono";
-import type { MiddlewareHandler } from "hono";
-import type { ServerConfig } from "../config.js";
-import type { PlatformApi, ServerHmrHost } from "./platform.js";
-import type { Hmr } from "@prismshadow/penguin-hmr";
-import type { ChannelHub } from "../runtime/channel.js";
-
-/** What the hot-update routes reach: runtime capabilities and the current App's auth. */
-export interface HmrRouteDeps {
-  hmr: ServerHmrHost;
-  /** The frozen operations (packages/hmr's main.ts): a push goes through `upgrade`, never the host. */
-  control: Hmr<PlatformApi>;
-  /** The CURRENT generation's auth — a getter on the caller's side, so a swap is seen. */
-  readonly authService: Auth;
-  config: ServerConfig;
-  channels: ChannelHub;
-}
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
-import { HttpError } from "../http/errors.js";
 import type { Auth } from "../mechanisms/identity.js";
+import { HttpError } from "../http/errors.js";
+import { Channels, Config, HmrControl } from "./capabilities.js";
+import type { ServerConfig } from "../config.js";
+import type { ChannelHub } from "../runtime/channel.js";
+import type { HmrControlApi } from "./capabilities.js";
 
 /** Bind addresses considered safe by default; anything else needs HTTPS. */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
+export interface HmrRouteDeps {
+  control: HmrControlApi;
+  /** The platform's auth, applied here after the network gate rather than by the group's `auth: "user"`, so a plaintext public bind is refused before any credential is looked at. */
+  auth: Auth;
+  config: Pick<ServerConfig, "host" | "trustProxy">;
+  channels: Pick<ChannelHub, "broadcast">;
+}
+
 export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
-  const hmr = deps.hmr;
-  // Mounted BEFORE the global cookie-auth middleware (see app.ts): this gate
-  // does its own auth (admin cookie only — see the network gate above for the
-  // other half) rather than relying on the generic middleware being mounted
-  // later. Built per request: the auth is the current generation's.
-  const cookieAuth = (c: Parameters<MiddlewareHandler<AppEnv>>[0], next: () => Promise<void>) =>
-    authMiddleware(deps.authService, deps.config.trustProxy)(c, next);
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback
@@ -78,134 +61,55 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
         );
       }
     }
-    const gated = async (): Promise<void> => {
-      // The upgrade endpoint enqueues internally; everything else waits out
-      // any in-flight swap here (unobservable freeze: latency, not errors).
-      if (!c.req.path.endsWith("/upgrade")) await hmr.waitIdle();
-      await next();
-    };
-    // Admin credential required. An earlier per-boot Bearer token published to
-    // $PENGUIN_HOME/hmr/api.json was removed over the on-disk-plaintext objection
-    // (readable by any process of the same OS user, agent shells included, and
-    // admin-equivalent). That objection has since been deliberately reversed as a
-    // product decision, harness-wide: agents driving their own server through the
-    // CLI is the feature, and local filesystem access to the data root is defined
-    // as admin authority (exactly the reset-admin-password rule). The mechanism now
-    // lives at the general auth layer instead of here: the per-boot local API token
-    // at <root>/api-token (auth/api-token.ts), which authMiddleware — reused below —
-    // accepts as `Authorization: Bearer` and authenticates as the admin. A local
-    // caller may therefore present either that token or an admin cookie session.
-    return cookieAuth(c, async () => {
-      if (!c.get("user").isAdmin) {
+    // Then the platform's cookie / API-token gate, and admin on top.
+    await authMiddleware(deps.auth, deps.config.trustProxy)(c, async () => {
+      if (!c.var.user.isAdmin) {
         throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
       }
-      await gated();
+      await next();
     });
   });
 
-  /**
-   * THE ONE upgrade endpoint: platform + cli + web move together, atomically —
-   * there is no route that updates any of the three alone (see host.ts's module
-   * doc). Content-Type application/gzip or application/octet-stream; the raw body
-   * is gzip(JSON.stringify({ platform, cli, web: { files }, source? })):
-   * - `platform` — the platform's single-file JS ESM source, inline (works over
-   *   HTTP alone, remote runtimes included); it must export `hotPlatform`.
-   * - `cli` — the CLI's own single-file JS ESM source, inline, a SEPARATE
-   *   artifact from `platform`; the server never imports or runs it, only
-   *   content-addresses it into the store for packages/cli's own loader.
-   * - `web.files` — a { relPath: base64 } manifest of the built web dist.
-   * - `source?` — optional provenance (repo + revision), recorded but not run.
-   * The server boots the platform AND installs the web dist in memory first;
-   * only once BOTH succeed does it persist the version — platform, cli, and web
-   * together (one atomic harness.json rename — see host.ts's persistVersion). A
-   * boot failure or a bad web manifest leaves the previously committed version
-   * untouched.
-   */
-  routes.post("/upgrade", async (c) => {
-    const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-    if (contentType !== "application/gzip" && contentType !== "application/octet-stream") {
-      throw new HttpError(
-        400,
-        "bad_request",
-        "expected a gzip(JSON.stringify({ platform, cli, web })) body " +
-          "(Content-Type application/gzip or application/octet-stream)",
-      );
-    }
-    let payload: {
-      platform?: string;
-      cli?: string;
-      web?: { files?: Record<string, string> };
-      assets?: { files?: Record<string, string>; exec?: string[] };
-      source?: { repo: string; revision: string };
-    };
-    try {
-      const gz = Buffer.from(await c.req.arrayBuffer());
-      payload = JSON.parse(zlib.gunzipSync(gz).toString("utf8"));
-    } catch (err) {
-      throw new HttpError(
-        400,
-        "bad_request",
-        `invalid gzip upgrade payload: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    if (typeof payload.platform !== "string") {
-      throw new HttpError(400, "bad_request", "payload has no `platform` (string)");
-    }
-    if (typeof payload.cli !== "string") {
-      throw new HttpError(400, "bad_request", "payload has no `cli` (string)");
-    }
-    if (typeof payload.web?.files !== "object" || payload.web.files === null) {
-      throw new HttpError(
-        400,
-        "bad_request",
-        "payload has no `web.files` (a { relPath: base64 } map)",
-      );
-    }
-    let outcome;
-    try {
-      outcome = await deps.control.upgrade({
-        platform: payload.platform,
-        cli: payload.cli,
-        web: payload.web.files,
-        // Optional: a push that needs no real files on disk (no native module, no helper
-        // binary) simply omits it, and older pushers keep working unchanged.
-        ...(payload.assets?.files
-          ? {
-              assets: {
-                files: payload.assets.files,
-                ...(payload.assets.exec ? { exec: payload.assets.exec } : {}),
-              },
-            }
-          : {}),
-        // Provenance is optional and, unlike the bundles, now outlives the request in
-        // harness.json — so it is accepted only fully formed. A half-filled or
-        // wrong-typed `source` is dropped rather than committed: readers already
-        // tolerate its absence, and a malformed record on disk would outlive the push
-        // that produced it.
-        ...(typeof payload.source?.repo === "string" &&
-        typeof payload.source.revision === "string" &&
-        payload.source.repo.length > 0 &&
-        payload.source.revision.length > 0
-          ? { source: { repo: payload.source.repo, revision: payload.source.revision } }
-          : {}),
-      });
-    } catch (err) {
-      throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
-    }
-    // Live clients (browser tabs AND the desktop window) reload to pick up the
-    // new web assets once a version actually lands.
-    if (outcome.status === "ok") {
+  // THE ONE upgrade endpoint: platform + cli + web move together, atomically — there is no
+  // route that updates any of the three alone. The body and the answer are the mechanism's
+  // (packages/hmr); live clients (browser tabs AND the desktop window) are told to reload
+  // once a version actually lands.
+  routes.post("/upgrade", (c) =>
+    deps.control.endpoint(c.req.raw, (outcome) =>
       deps.channels.broadcast(
         "user:",
         { type: "web_updated", rev: outcome.web.rev },
         "server_event",
-      );
-    }
-    // Blocked is a first-class outcome, not an HTTP error: the body carries
-    // status + the dropped/missing/invalid paths (input for the upper
-    // upgrade-ladder rungs), so clients keep one parsing path.
-    return c.json(outcome);
-  });
+      ),
+    ),
+  );
 
   return routes;
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      // Manifest data is literal (gen-ifaces reads it off the source): the same prefix packages/hmr exports as HMR_ROUTE_PREFIX.
+      // `auth: "none"` only in the manifest: the group gates itself, network first, then the
+      // platform's own auth middleware — the order the gate's tests pin.
+      { id: "HmrRoutes.routes", prefix: "/api/hmr", auth: "none", order: 5 },
+    ],
+  },
+})
+export class HmrRoutes {
+  @Use() private readonly control!: HmrControl;
+  @Use() private readonly auth!: Auth;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Bind("HmrRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = hmrRoutes({
+      // The node's contract keeps the instance and the outcome opaque; the routes speak the real types.
+      control: this.control as unknown as HmrControlApi,
+      auth: this.auth,
+      config: this.config,
+      channels: this.channels,
+    });
+  }
 }
