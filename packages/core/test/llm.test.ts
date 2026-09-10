@@ -2410,3 +2410,44 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
     expect(callIdsOf(out)).toEqual(["get_time#2"]);
   });
 });
+
+describe("translateEvents: a chunk carrying the reasoning tail and the answer head", () => {
+  // OpenAI-compatible gateways batch tokens per SSE chunk, and a chunk can carry both the
+  // last `reasoning_content` token and the first `content` token. The chat client emits the
+  // chunk's items as [text, thinking] (it reads `content` first), which is the reverse of the
+  // model's generation order. The translator must not take that order at face value.
+  it("keeps one thinking segment and one text segment, in generation order", () => {
+    const fidelity = { reasoning_field: "reasoning_content" };
+    const events: UniEvent[] = [
+      ev({ event_type: "start", content_items: [] }),
+      ev({
+        content_items: [{ type: "thinking", thinking: "Let me just reorgan", fidelity }],
+      }),
+      // The transition chunk: `content` and `reasoning_content` in the same delta.
+      ev({
+        content_items: [
+          { type: "text", text: "The wrapper layout" },
+          { type: "thinking", thinking: "ize.", fidelity },
+        ],
+      }),
+      ev({ content_items: [{ type: "text", text: " got flattened during copy." }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ];
+    const { messages } = translateEvents(events);
+    const complete = messages
+      .map((m) => m.payload as { type: string; thinking?: string; text?: string })
+      .filter((p) => p.type === "thinking" || p.type === "text")
+      .map((p) => [p.type, p.thinking ?? p.text]);
+    expect(complete).toEqual([
+      ["thinking", "Let me just reorganize."],
+      ["text", "The wrapper layout got flattened during copy."],
+    ]);
+
+    // The partial stream tells the same story: exactly one thinking start and one text start.
+    const starts = messages
+      .map((m) => m.payload as { type: string; event_type?: string })
+      .filter((p) => p.event_type === "start")
+      .map((p) => p.type);
+    expect(starts).toEqual(["partial_thinking", "partial_text"]);
+  });
+});

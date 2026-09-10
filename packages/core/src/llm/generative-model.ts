@@ -111,6 +111,26 @@ function fidelityEquals(a?: Fidelity, b?: Fidelity): boolean {
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
+/**
+ * One provider chunk can carry both the reasoning tail and the answer head: OpenAI-compatible
+ * gateways batch tokens per SSE chunk, and `reasoning_content` and `content` are two fields of
+ * one delta with no order between them. The chat client reads `content` first, so such a chunk
+ * arrives as [text, thinking] — the reverse of generation order. Taken literally, that closes
+ * the thinking segment on the text, then opens a second thinking segment for the tail and a
+ * second text segment for the rest, and the transcript shows the answer's first words wedged
+ * between two thinking blocks. Within one chunk, thinking precedes everything else: a reasoning
+ * model emits its reasoning before its answer. Chunks that carry a single kind pass through.
+ */
+function inGenerationOrder(items: UniEvent["content_items"]): UniEvent["content_items"] {
+  if (!items.some((i) => i.type === "thinking") || items.every((i) => i.type === "thinking")) {
+    return items;
+  }
+  return [
+    ...items.filter((i) => i.type === "thinking"),
+    ...items.filter((i) => i.type !== "thinking"),
+  ];
+}
+
 /** Spread helper: attach `fidelity` only when it carries at least one key. */
 function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
   return hasFidelity(fidelity) ? { fidelity } : {};
@@ -344,7 +364,7 @@ export class EventTranslator {
       this.requestTokens = this.usageOnce(event.usage_metadata);
     }
 
-    for (const item of event.content_items) {
+    for (const item of inGenerationOrder(event.content_items)) {
       switch (item.type) {
         case "text": {
           // Mirrors AgentHub baseClient text aggregation. A `fidelity.phase` marker can arrive
