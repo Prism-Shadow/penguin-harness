@@ -111,8 +111,6 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { SchedulePanel } from "../schedules/schedule-panel";
-import { boundScheduleCount } from "../schedules/schedule-panel-state";
-import { useAgentSchedules } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
@@ -136,7 +134,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON, SCHEDULE_ICON } from "../../components/ui/icons";
+import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -408,16 +406,6 @@ export function ChatPage() {
     if (draft) return;
     setDockCwd(selected?.workspace ?? null);
   }, [draft, selected?.workspace]);
-
-  // This agent's scheduled tasks, shared with the dock panel: the toolbar's alarm clock counts
-  // the ones bound to the Session on screen. Read here rather than in the panel alone, because
-  // the mark is what tells the user the panel is worth opening — it has to be right while the
-  // panel is closed. Re-read per Session, since two conversations of one agent share a list.
-  const { items: agentSchedules } = useAgentSchedules(
-    projectId,
-    selected?.agentId ?? null,
-    selected?.sessionId ?? "",
-  );
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -1735,11 +1723,6 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
   /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
   const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
-  /** Scheduled tasks bound to this conversation — exactly what the dock's schedules panel lists. */
-  const scheduleCount =
-    selected === null || agentSchedules === null
-      ? 0
-      : boundScheduleCount(agentSchedules, selected.sessionId);
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -1765,22 +1748,6 @@ export function ChatPage() {
                 <SessionActivityIcon activity={headerActivity} />
                 <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
-            )}
-            {/* Scheduled tasks bound to this conversation: the alarm clock and its count, in the
-                settled tone — the tasks are a standing arrangement, not something happening now.
-                It is a button because the only thing to do about it is to look: the click brings
-                the schedules panel up in the dock the tab already lives in. */}
-            {scheduleCount > 0 && (
-              <button
-                type="button"
-                title={S.chat.scheduledTasks(scheduleCount)}
-                aria-label={S.chat.scheduledTasks(scheduleCount)}
-                onClick={() => openPanel("schedules")}
-                className={`flex h-6 shrink-0 items-center rounded px-1 font-mono text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${ICON_GAP.tight} ${toneInk.muted}`}
-              >
-                <GlyphIcon d={SCHEDULE_ICON} />
-                {scheduleCount}
-              </button>
             )}
           </div>
 

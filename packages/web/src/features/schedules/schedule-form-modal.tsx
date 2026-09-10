@@ -326,7 +326,7 @@ function ScheduleFormDialog({
     try {
       if (form.editing !== null) await api.updateSchedule(projectId, agentId, form.editing, body);
       else await api.createSchedule(projectId, agentId, { name, ...body });
-      toastSuccess(S.agent.savedTakesEffect);
+      toastSuccess(S.schedule.toastSaved);
       onClose();
       onSaved();
     } catch (e) {

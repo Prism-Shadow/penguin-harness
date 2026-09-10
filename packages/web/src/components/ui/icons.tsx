@@ -229,7 +229,7 @@ export const HAND_ICON =
 /**
  * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
  * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
- * panel and the mark a conversation with bound tasks wears in the chat toolbar. Distinct from the
+ * panel and the mark a session row wears while an enabled task is bound to it. Distinct from the
  * plain clock face that means "most recent" in the list options.
  */
 export const SCHEDULE_ICON =

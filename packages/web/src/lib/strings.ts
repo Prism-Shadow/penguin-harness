@@ -1133,6 +1133,10 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
+    toastSaved: "已保存定时任务",
+    toastEnabled: "已启用定时任务",
+    toastDisabled: "已停用定时任务",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -1648,8 +1652,8 @@ Benchmark：
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
-    /** The chat header's alarm clock: scheduled tasks bound to the conversation on screen (click opens the dock's schedules panel). */
-    scheduledTasks: (n: number) => `${n} 个定时任务`,
+    /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
+    sessionScheduled: "有已启用的定时任务",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,

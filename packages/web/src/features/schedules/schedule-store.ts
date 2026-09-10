@@ -1,9 +1,9 @@
 /**
  * One agent's scheduled tasks, as a tiny module-level store shared by the two surfaces that
- * read them inside a conversation: the chat toolbar's alarm-clock mark (how many tasks are
- * bound to the Session on screen) and the dock's scheduled-tasks panel (the same tasks,
- * listed). They must never disagree about whether a conversation has tasks, so they read one
- * list rather than fetching one each.
+ * read them: the sidebar's alarm-clock mark (which of the listed Sessions have an enabled task
+ * bound to them) and the dock's scheduled-tasks panel (the conversation's own tasks, listed).
+ * They must never disagree about whether a conversation has tasks, so they read one list rather
+ * than fetching one each.
  *
  * The server has no per-Session schedule field and no push channel for the schedule
  * directory — an agent may write a task file at any moment — so the store decides *when* to
@@ -11,10 +11,11 @@
  * subscribed, on the `schedule_fired` / `schedule_queued` events (wired in state/sessions.tsx),
  * on the panel's slow poll while it is on screen, and after every mutation the panel makes.
  *
- * The scope is set, not stacked: every caller in a conversation names the same agent, so a
- * different agent replaces the cached list instead of keeping both. Readers ask for the scope
- * they want and get nothing until the store is actually pointed at it, which is what keeps the
- * previous conversation's count off screen for the frame after a navigation.
+ * The scope is set, not stacked: the sidebar names the current Agent and the panel names the
+ * open conversation's, which the chat page keeps in step, so a different agent replaces the
+ * cached list instead of keeping both. Readers ask for the scope they want and get nothing until
+ * the store is actually pointed at it, which is what keeps the previous agent's marks off screen
+ * for the frame after a navigation.
  */
 import { useEffect, useSyncExternalStore } from "react";
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
@@ -62,7 +63,7 @@ export function scheduleError(): string | null {
 
 /**
  * Points the store at an agent. A different agent drops the list at once — an alarm clock
- * carrying the previous conversation's count is worse than no mark at all.
+ * standing for the previous agent's tasks is worse than no mark at all.
  */
 export function scopeSchedules(projectId: string | null, agentId: string | null): void {
   if (schedulesScopedTo(projectId, agentId)) return;
@@ -128,7 +129,7 @@ export function subscribeSchedules(listener: () => void): () => void {
  * Subscribes to the store and points it at one agent, refetching whenever `refreshKey` changes
  * — the Session on screen, so two conversations of the same agent each get a fresh read. The
  * result is this agent's whole list; callers narrow it to a Session themselves
- * (`sessionSchedules` / `boundScheduleCount`).
+ * (`sessionSchedules` / `enabledScheduleSessions`).
  */
 export function useAgentSchedules(
   projectId: string | null,

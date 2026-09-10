@@ -190,7 +190,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         item.name,
         toggleBody(item, !item.enabled),
       );
-      toastSuccess(S.agent.savedTakesEffect);
+      toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await refreshSchedules();
     } catch (e) {
       toastError(apiErrorText(e));

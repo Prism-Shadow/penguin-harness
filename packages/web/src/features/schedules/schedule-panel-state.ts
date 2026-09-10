@@ -39,14 +39,19 @@ export function sessionSchedules(
 }
 
 /**
- * How many of an agent's tasks are bound to one Session — the figure the chat toolbar's alarm
- * clock carries. Same rule as `sessionSchedules`, counted rather than listed, so the mark and the
- * panel can never disagree about what "has scheduled tasks" means.
+ * The Sessions of one agent that have a task which will actually fire — the rows the sidebar
+ * gives an alarm clock. Same binding rule as `sessionSchedules`, so the mark and the panel can
+ * never disagree about which tasks belong to a conversation; the added condition is the switch
+ * the user flips themselves, because a task that is bound but paused is an arrangement they
+ * have already turned off and a mark for it would be noise. A set rather than a per-Session
+ * predicate: the sidebar asks the same question of every row it draws.
  */
-export function boundScheduleCount(items: readonly ScheduleItem[], sessionId: string): number {
-  let n = 0;
-  for (const item of items) if (item.sessionId === sessionId) n += 1;
-  return n;
+export function enabledScheduleSessions(items: readonly ScheduleItem[]): Set<string> {
+  const ids = new Set<string>();
+  for (const item of items) {
+    if (item.enabled && item.sessionId !== undefined) ids.add(item.sessionId);
+  }
+  return ids;
 }
 
 /** Case-insensitive match on the task's name and its prompt; a blank query matches everything. */

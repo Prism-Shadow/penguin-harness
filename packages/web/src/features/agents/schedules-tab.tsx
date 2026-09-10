@@ -116,7 +116,7 @@ export function SchedulesTab({
     setBusy(true);
     try {
       await api.updateSchedule(projectId, agentId, item.name, toggleBody(item, !item.enabled));
-      toastSuccess(S.agent.savedTakesEffect);
+      toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
       await load();
     } catch (e) {
       toastError(apiErrorText(e));

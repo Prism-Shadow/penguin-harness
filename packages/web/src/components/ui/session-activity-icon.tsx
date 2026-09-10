@@ -3,7 +3,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
 import { GlyphIcon } from "./glyph-icon";
-import { BACKGROUND_TASKS_ICON } from "./icons";
+import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "./icons";
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -30,7 +30,9 @@ type Activity = Exclude<SessionActivity, null>;
  *
  * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): an
  * activity trace in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
- * Session can still own a dev server or a background subagent, and the row says both.
+ * Session can still own a dev server or a background subagent, and the row says both. A standing
+ * scheduled task is a third such mark (ScheduleMark below), for the same reason: it says what
+ * the conversation will do without anyone opening it, not what it is doing now.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
  * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
@@ -84,6 +86,33 @@ export function BackgroundTasksMark({ label, size }: { label: string; size: numb
       className={`flex shrink-0 items-center ${toneInk.busy}`}
     >
       <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
+    </span>
+  );
+}
+
+/**
+ * The scheduled-task mark: a session row wears an alarm clock while at least one ENABLED task
+ * is bound to it (features/schedules' `enabledScheduleSessions`). A bound task the user has
+ * switched off draws nothing — it is an arrangement they have already turned off, and the panel
+ * is where it stays visible. `attention` ink, the tone for work waiting on time, which is what
+ * a scheduled task is; the hourglass beside it shares the tone and differs in shape and motion,
+ * as two marks in one row must.
+ *
+ * Icon only, no count: the row's job is to say that this conversation runs on its own, and how
+ * many tasks do it is the panel's business. The label is the only carrier of that meaning, so it
+ * is read here rather than passed in — unlike `BackgroundTasksMark`, this mark has one placement
+ * and one meaning, and a second wording for it would be a second meaning.
+ */
+export function ScheduleMark({ size }: { size: number }) {
+  const label = S.chat.sessionScheduled;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center ${toneInk.attention}`}
+    >
+      <GlyphIcon d={SCHEDULE_ICON} size={size} />
     </span>
   );
 }
