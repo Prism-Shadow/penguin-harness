@@ -2263,7 +2263,9 @@ Scenarios:
     previewNotIsolatedHint:
       "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",
     refresh: "Refresh",
-    root: "Workspace root",
+    /** The Workspace root, as the breadcrumbs and the drop overlay name it. "." is what a
+     *  shell calls the working directory, so it needs no translation. */
+    root: ".",
     empty: "Empty directory",
     previewUnsupported: "Preview not supported for this type; download instead",
     uploadedCount: (n: number): string => (n === 1 ? "1 file uploaded" : `${n} files uploaded`),
@@ -2279,8 +2281,6 @@ Scenarios:
       `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
-    details: "Details",
-    workspacePath: "Workspace path",
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",

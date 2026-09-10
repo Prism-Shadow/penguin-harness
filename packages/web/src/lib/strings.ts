@@ -2217,7 +2217,9 @@ Benchmark：
     previewNotIsolatedHint:
       "当前访问地址无法提供独立预览源，页面将以沙箱模式打开：localStorage、Cookie 与第三方 embed 不可用。经 127.0.0.1 或 localhost 访问，或配置 PENGUIN_PREVIEW_ORIGIN 即可解除。",
     refresh: "刷新",
-    root: "根目录",
+    /** The Workspace root, as the breadcrumbs and the drop overlay name it. "." is what a
+     *  shell calls the working directory, so it needs no translation. */
+    root: ".",
     empty: "空目录",
     previewUnsupported: "该类型不支持预览，请下载查看",
     uploadedCount: (n: number): string => `已上传 ${n} 个文件`,
@@ -2232,8 +2234,6 @@ Benchmark：
     overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
-    details: "详情",
-    workspacePath: "Workspace 路径",
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",

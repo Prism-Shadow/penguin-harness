@@ -20,7 +20,7 @@
  *
  * The toolbar is one row that never wraps: the breadcrumbs read the current path (the tree
  * beside them is what navigates), and when the path outgrows the space its leading segments
- * collapse into a single "…" so Details / Refresh / Upload keep their places.
+ * collapse into a single "…" so Refresh and Upload keep their places.
  */
 import {
   Fragment,
@@ -84,7 +84,6 @@ import {
 import type { EditorState, Listings } from "../../lib/workspace-tree";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
@@ -103,6 +102,7 @@ import { CodeBlock } from "./code-block";
 import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
 import { WorkspaceTreeView } from "./workspace-tree-view";
+import type { TreeToggle } from "./workspace-tree-view";
 
 /** Source highlighting cap: tokenizing the full preview cap's worth of content in one go would block the main thread, so beyond this it falls back to unhighlighted. */
 const HIGHLIGHT_LIMIT = 64 * 1024;
@@ -364,8 +364,8 @@ export function WorkspaceBrowser({
   const [scrollTo, setScrollTo] = useState<{ path: string } | null>(null);
   /** The search box's text. Deliberately not persisted: a filter is a thing you are doing, not a setting. */
   const [query, setQuery] = useState("");
-  /** The directory whose last opening revealed rows, so the tree animates exactly those once. */
-  const [revealedDir, setRevealedDir] = useState<string | null>(null);
+  /** The directory last opened or closed, so the tree animates exactly that subtree once. */
+  const [toggled, setToggled] = useState<TreeToggle | null>(null);
   // -------------------------------------------------------------------- preview / editor
   const [preview, setPreview] = useState<Preview | null>(null);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
@@ -395,7 +395,6 @@ export function WorkspaceBrowser({
     targetDir: "",
   });
   // ----------------------------------------------------------------------------- chrome
-  const [showPath, setShowPath] = useState(false);
   const [treeVisible, setTreeVisible] = useState(() => readTreeVisible());
   /** The dragged tree width, or null while the user has never dragged it (the computed default stands). */
   const [treeWidthPref, setTreeWidthPref] = useState<number | null>(() => readTreeWidth());
@@ -443,7 +442,7 @@ export function WorkspaceBrowser({
     setSelectedPath(null);
     setScrollTo(null);
     setQuery("");
-    setRevealedDir(null);
+    setToggled(null);
     setPreview(null);
     setSourceError(null);
     setEditor(null);
@@ -852,10 +851,10 @@ export function WorkspaceBrowser({
       setCurrentDir(dir);
       const open = !expandedRef.current.has(dir);
       setExpanded((s) => withExpanded(s, dir, open));
-      // The rows this open reveals are the ones that animate in — they may arrive with the
-      // listing rather than in this commit, so the mark stands until the next open. Closing
-      // reveals nothing and clears it.
-      setRevealedDir(open ? dir : null);
+      // The subtree this toggle moves is the one that animates. The serial makes toggling the
+      // same directory again a new event; the mark stands until the next toggle, since an
+      // opening directory's rows may arrive with the listing rather than in this commit.
+      setToggled((last) => ({ dir, open, serial: (last?.serial ?? 0) + 1 }));
       if (open && !listingsRef.current.has(dir)) void loadDir(dir);
     },
     [loadDir],
@@ -1244,7 +1243,7 @@ export function WorkspaceBrowser({
           scrollTo={scrollTo}
           rootEmpty={rootListing.length === 0}
           filtering={filter !== ""}
-          revealedDir={filter === "" ? revealedDir : null}
+          toggled={filter === "" ? toggled : null}
           onToggleDir={filter === "" ? toggleDir : openDirForFilter}
           onOpenFile={openFile}
         />
@@ -1666,32 +1665,10 @@ export function WorkspaceBrowser({
           ))}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {/* Details: a popup card showing the full absolute Workspace path (break-all wraps in full, never truncated). */}
-          <Dropdown
-            open={showPath}
-            setOpen={setShowPath}
-            menuClass="right-0 top-full mt-1 w-max max-w-72 origin-top-right"
-            button={
-              <Button
-                size="sm"
-                variant={showPath ? "primary" : "ghost"}
-                onClick={() => setShowPath((v) => !v)}
-              >
-                {S.files.details}
-              </Button>
-            }
-          >
-            <div className="px-3.5 py-2.5">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {S.files.workspacePath}
-              </p>
-              <p className="mt-1 break-all font-mono text-xs leading-5">{session.workspace}</p>
-            </div>
-          </Dropdown>
           <Button size="sm" variant="ghost" onClick={refreshAll}>
             {S.files.refresh}
           </Button>
-          {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Buttons (Details/Refresh): no border, light background on hover. */}
+          {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Refresh Button: no border, light background on hover. */}
           <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
             <HiddenFileInput multiple onChange={onPick} disabled={uploading !== null} />
             {uploading !== null

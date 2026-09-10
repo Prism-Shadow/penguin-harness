@@ -33,6 +33,7 @@ import {
   readTreeVisible,
   readTreeWidth,
   sortEntries,
+  subtreeEnd,
   treeKeyStep,
   upsertEntry,
   utf8Complete,
@@ -139,6 +140,18 @@ describe("flattenTree", () => {
     const rows = flattenTree(LISTINGS, new Set(["a", "a/b"]));
     expect(rows.find((r) => r.path === "a/b")).toMatchObject({ loaded: true, empty: true });
     expect(rows.find((r) => r.path === "a")).toMatchObject({ loaded: true, empty: false });
+  });
+});
+
+describe("subtreeEnd", () => {
+  it("ends a row's subtree at the next row no deeper than it", () => {
+    // root: a/ (b/ empty, y.md), x.txt — "a" owns rows 1..2, the nested "a/b" owns nothing,
+    // and "x.txt" after them is where both stop.
+    const rows = flattenTree(LISTINGS, new Set(["a", "a/b"]));
+    expect(rows.map((r) => r.path)).toEqual(["a", "a/b", "a/y.md", "x.txt"]);
+    expect(subtreeEnd(rows, 0)).toBe(3);
+    expect(subtreeEnd(rows, 1)).toBe(2);
+    expect(subtreeEnd(rows, 3)).toBe(4);
   });
 });
 

@@ -260,23 +260,41 @@
   animation: msg-in 180ms ease-out both;
 }
 
-/* Files panel: the rows a directory reveals when it opens, entering once. Transform and
-   opacity only, so the reduced-motion rule above resolves it to the row's base state —
-   in place, fully opaque — rather than to a hidden row. Collapsing reveals nothing and
-   animates nothing. The per-row delay is inline (capped at a few rows, see
-   workspace-tree-view.tsx); it is inert once `animation: none` applies. */
-@keyframes tree-row-in {
+/* Files panel: a directory's rows grow out of, and shrink back into, its row. Grid tracks
+   rather than height so the closed state needs no measurement; the inner box clips. Under
+   reduced motion the keyframes are off and each class rests at its own end state — open
+   at 1fr, closing at 0fr — and the view drops a closed group on a timer. Matches the
+   chevron's 200ms rotation. */
+.tree-group {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.tree-group > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.tree-group-open {
+  animation: tree-group-open 200ms ease-out;
+}
+.tree-group-close {
+  grid-template-rows: 0fr;
+  animation: tree-group-close 200ms ease-in;
+}
+@keyframes tree-group-open {
   from {
-    opacity: 0;
-    transform: translateY(-4px);
+    grid-template-rows: 0fr;
   }
   to {
-    opacity: 1;
-    transform: none;
+    grid-template-rows: 1fr;
   }
 }
-.anim-tree-row {
-  animation: tree-row-in 150ms ease-out both;
+@keyframes tree-group-close {
+  from {
+    grid-template-rows: 1fr;
+  }
+  to {
+    grid-template-rows: 0fr;
+  }
 }
 
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by

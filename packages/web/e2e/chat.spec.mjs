@@ -293,14 +293,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Rendered iframe present; the localStorage script ran on the preview origin → #shim-ok appended.
   await expect(page.locator("iframe")).toBeVisible();
   await expect(page.frameLocator("iframe").locator("#shim-ok")).toHaveText("1");
-  // The tree stays beside the open preview, and the toolbar (breadcrumbs + Details) sits
-  // above both — nothing to go back to.
+  // The tree stays beside the open preview, and the toolbar (breadcrumbs, Refresh, Upload)
+  // sits above both — nothing to go back to.
   await expect(page.getByText("demo.html").first()).toBeVisible();
-  // Workspace path is hidden until the 详情 ("Details") toggle is used.
+  // The absolute Workspace path is not on this panel; it belongs to the Session details card.
   const workspaceAbs = sess.session.workspace;
   await expect(page.getByText(workspaceAbs, { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "详情" }).click();
-  await expect(page.getByText(workspaceAbs, { exact: false }).first()).toBeVisible();
 
   // --- message files card: only files that really exist in the workspace make the card ---
   // The mock reply mentions two backtick paths: demo.html was truly uploaded above via

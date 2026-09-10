@@ -15,14 +15,16 @@ drag-and-drop upload from the desktop.
 
 - Tree: a directory lists its contents the first time it opens; expand/collapse chevrons,
   folder and file glyphs, the selected file highlighted, arrow-key navigation (up/down move,
-  right opens or steps in, left closes or steps out), and the rows a directory reveals enter
-  with a short entrance while collapsing stays immediate. A search box above the tree filters
+  right opens or steps in, left closes or steps out), and opening or closing a directory
+  grows its subtree out of its row, or shrinks it back into it, over about 200ms — the rows
+  stay on screen until the collapse finishes, and reduced motion makes it immediate. A search box above the tree filters
   the rows already loaded — the name matched case-insensitively, a match keeping and opening
   its ancestors, a matching directory shown with its loaded children, and an empty result
   saying that nothing *loaded* matches. The breadcrumbs above the panes read out the current
   directory as plain text rather than links (the tree beside them is what navigates), and a
-  path too long for the toolbar collapses its leading segments into a `…` so Details, Refresh
-  and Upload stay on the row. A toolbar toggle hides or shows the tree — shown by default,
+  path too long for the toolbar collapses its leading segments into a `…` so Refresh and
+  Upload stay on the row; the root segment reads `.`, and there is no Details button — the
+  Workspace's absolute path stays in the Session details card. A toolbar toggle hides or shows the tree — shown by default,
   remembered under one browser-local key (`penguin.files.treeVisible`, parsed tolerantly) —
   and the divider between the two panes sets its width by drag or arrow key, remembered under
   `penguin.files.treeWidth`. Below 480px of panel width the panel falls back to one column:

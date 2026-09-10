@@ -12,15 +12,19 @@
  * highlighted; the rows carry `data-tree-path` / `data-tree-kind` so the panel's drop
  * handling can resolve the row under the pointer.
  *
- * Opening a directory brings its rows in with one short entrance (`.anim-tree-row`), the
- * first few staggered; the rows to animate are the ones directly inside the directory the
- * panel says was just opened, so a re-render, a filter or a collapse animates nothing.
+ * The rows stay one flat list; what nests is the drawing. An open directory's descendants go
+ * in a `role="group"` box whose height is animated, so a subtree grows out of its directory's
+ * row and shrinks back into it. Only the directory the panel says was just toggled animates,
+ * so a re-render, a filter or an unrelated commit animates nothing. Closing is the awkward
+ * half: the rows are gone from `rows` by the time the view hears about it, so the view keeps
+ * the last committed rows and re-renders the closed directory's own descendants, inert, for
+ * as long as the shrink lasts.
  */
-import { Fragment, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
-import { parentDir, treeKeyStep } from "../../lib/workspace-tree";
+import { subtreeEnd, treeKeyStep } from "../../lib/workspace-tree";
 import type { TreeRow } from "../../lib/workspace-tree";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -31,11 +35,19 @@ import { FILE_ICON } from "./message-files-card";
 /** Indent per nesting level, in px. */
 const INDENT_PX = 14;
 
-/** Entrance stagger per revealed row, and how many rows still get one: past a handful the
- *  wave reads as lag rather than as motion, and a large directory would finish long after
- *  the row the user is reaching for. */
-const REVEAL_STAGGER_MS = 20;
-const REVEAL_STAGGER_ROWS = 4;
+/**
+ * How long a closing subtree is kept on screen when its animation never reports back. Under
+ * `prefers-reduced-motion` the keyframes are off, so no `animationend` ever arrives and this
+ * timer is the only thing that drops the retained rows. Comfortably past the 200ms shrink.
+ */
+const CLOSE_FALLBACK_MS = 260;
+
+/** The directory whose open or close the tree should animate. `serial` makes toggling the same directory again a new event. */
+export interface TreeToggle {
+  dir: string;
+  open: boolean;
+  serial: number;
+}
 
 export function WorkspaceTreeView({
   rows,
@@ -46,7 +58,7 @@ export function WorkspaceTreeView({
   scrollTo,
   rootEmpty,
   filtering,
-  revealedDir,
+  toggled,
   onToggleDir,
   onOpenFile,
 }: {
@@ -64,13 +76,69 @@ export function WorkspaceTreeView({
   rootEmpty: boolean;
   /** The search box holds a query, so no rows means "nothing loaded matches" rather than "empty". */
   filtering: boolean;
-  /** The directory whose opening last revealed rows; its own children animate in. Null: nothing to animate. */
-  revealedDir: string | null;
+  /** The directory last opened or closed, whose subtree animates. Null: nothing to animate. */
+  toggled: TreeToggle | null;
   onToggleDir: (dir: string) => void;
   onOpenFile: (path: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
+
+  // The descendants of directories that have just closed, by directory path. They are no
+  // longer in `rows` — the panel closed the directory in the same commit that reported the
+  // toggle — so they are captured from the previous commit's rows and drawn until the shrink
+  // is over. They are never in `rows`, and so never in treeKeyStep, the tab stop or onScreen.
+  const [closing, setClosing] = useState<ReadonlyMap<string, readonly TreeRow[]>>(() => new Map());
+  // The serial of the toggle already acted on. The serial, not the object: a filter hands the
+  // prop null and then hands the very same toggle back when it is cleared, and replaying that
+  // close would shrink a ghost subtree out of a directory the user never touched.
+  const [seenSerial, setSeenSerial] = useState<number>(toggled?.serial ?? 0);
+  const prevRowsRef = useRef<readonly TreeRow[]>(rows);
+
+  if (toggled === null) {
+    // A filter redraws the tree from a different row set; nothing left over belongs to it.
+    if (closing.size > 0) setClosing(new Map());
+  } else if (toggled.serial !== seenSerial) {
+    // Adjusting state during render rather than in an effect: the retained rows have to be in
+    // the same paint that dropped them, or the subtree blinks out and then shrinks from nothing.
+    setSeenSerial(toggled.serial);
+    if (toggled.open) {
+      // Re-opened while shrinking: the live group takes over, animating open from where it is.
+      if (closing.has(toggled.dir)) {
+        const next = new Map(closing);
+        next.delete(toggled.dir);
+        setClosing(next);
+      }
+    } else {
+      const prev = prevRowsRef.current;
+      const at = prev.findIndex((r) => r.path === toggled.dir);
+      const kept = at < 0 ? [] : prev.slice(at + 1, subtreeEnd(prev, at));
+      if (kept.length > 0) setClosing(new Map(closing).set(toggled.dir, kept));
+    }
+  }
+
+  useEffect(() => {
+    prevRowsRef.current = rows;
+  }, [rows]);
+
+  const dropClosing = (dir: string): void => {
+    setClosing((prev) => {
+      if (!prev.has(dir)) return prev;
+      const next = new Map(prev);
+      next.delete(dir);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (closing.size === 0) return;
+    const timers = [...closing.keys()].map((dir) =>
+      setTimeout(() => dropClosing(dir), CLOSE_FALLBACK_MS),
+    );
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [closing]);
 
   const rowElement = (path: string): HTMLElement | null =>
     containerRef.current?.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(path)}"]`) ??
@@ -117,6 +185,131 @@ export function WorkspaceTreeView({
       ? selectedPath
       : (rows[0]?.path ?? null);
 
+  /** One row. A retained row is a leftover of a closing subtree: it draws, and does nothing else. */
+  const renderRow = (row: TreeRow, retained: boolean): ReactNode => {
+    const selected =
+      !retained &&
+      (row.path === selectedPath ||
+        (selectedPath === null && row.kind === "dir" && row.path === currentDir));
+    const dropHere = !retained && row.kind === "dir" && row.path === dropTargetDir;
+    const loading = row.kind === "dir" && loadingDirs.has(row.path);
+    const detail =
+      row.kind === "file"
+        ? `${row.path} · ${formatBytes(row.sizeBytes)} · ${formatDateTime(row.mtime)}`
+        : row.path;
+    return (
+      <div
+        key={row.path}
+        role="treeitem"
+        tabIndex={retained || row.path !== tabStop ? -1 : 0}
+        aria-level={row.depth + 1}
+        aria-posinset={row.posInSet}
+        aria-setsize={row.setSize}
+        aria-selected={selected}
+        {...(row.kind === "dir" ? { "aria-expanded": row.expanded } : {})}
+        aria-busy={loading || undefined}
+        // A retained row carries no path: rowElement() and the drop hit test both resolve a
+        // row by this attribute, and neither may land on one that is on its way out.
+        {...(retained ? {} : { "data-tree-path": row.path, "data-tree-kind": row.kind })}
+        title={detail}
+        {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
+        style={{ paddingLeft: 6 + row.depth * INDENT_PX }}
+        className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+          dropHere
+            ? "bg-sky-50 ring-2 ring-inset ring-sky-500/60 dark:bg-sky-950/40"
+            : selected
+              ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+              : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50"
+        } ${loading ? "opacity-60" : ""}`}
+      >
+        <span className="flex w-3.5 shrink-0 justify-center text-gray-400" aria-hidden>
+          {row.kind === "dir" && <Chevron open={row.expanded} size={ICON_SIZE.chevronDense} />}
+        </span>
+        <GlyphIcon
+          d={row.kind === "dir" ? (row.expanded ? FOLDER_OPEN_ICON : FOLDER_ICON) : FILE_ICON}
+          size={ICON_SIZE.rowLead}
+          className="text-gray-400"
+        />
+        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+        {row.kind === "file" && (
+          <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+            {formatBytes(row.sizeBytes)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  /** An open directory with nothing in it says so, in place of the children it lacks. */
+  const renderEmptyLine = (row: TreeRow): ReactNode => (
+    <p
+      key={`empty:${row.path}`}
+      className="py-1 pr-2 text-xs text-gray-400"
+      style={{ paddingLeft: 6 + (row.depth + 1) * INDENT_PX + 14 }}
+    >
+      {S.files.empty}
+    </p>
+  );
+
+  /**
+   * The rows of `list` in `[start, end)`, with each open directory's descendants nested in a
+   * group below it. `retained` marks a closing subtree, which draws its own nested groups but
+   * animates nothing and takes no part in interaction.
+   */
+  const renderRange = (
+    list: readonly TreeRow[],
+    start: number,
+    end: number,
+    retained: boolean,
+  ): ReactNode[] => {
+    const out: ReactNode[] = [];
+    let i = start;
+    while (i < end) {
+      const row = list[i]!;
+      out.push(renderRow(row, retained));
+      if (row.kind !== "dir") {
+        i += 1;
+        continue;
+      }
+      const childrenEnd = subtreeEnd(list, i);
+      if (row.expanded && row.loaded) {
+        // The group mounts only once the listing is there, so a first open of an unloaded
+        // directory animates when its rows arrive rather than around an empty box.
+        const opening = !retained && toggled !== null && toggled.open && toggled.dir === row.path;
+        out.push(
+          <div
+            key={`group:${row.path}`}
+            role="group"
+            aria-label={row.name}
+            className={`tree-group ${opening ? "tree-group-open" : ""}`}
+          >
+            <div>
+              {row.empty ? renderEmptyLine(row) : renderRange(list, i + 1, childrenEnd, retained)}
+            </div>
+          </div>,
+        );
+      } else if (!retained && closing.has(row.path)) {
+        const kept = closing.get(row.path)!;
+        out.push(
+          <div
+            key={`closing:${row.path}`}
+            role="group"
+            aria-hidden
+            inert
+            className="tree-group tree-group-close"
+            onAnimationEnd={(e) => {
+              if (e.target === e.currentTarget) dropClosing(row.path);
+            }}
+          >
+            <div>{renderRange(kept, 0, kept.length, true)}</div>
+          </div>,
+        );
+      }
+      i = childrenEnd;
+    }
+    return out;
+  };
+
   return (
     <div
       ref={containerRef}
@@ -132,83 +325,10 @@ export function WorkspaceTreeView({
           <p className="px-3 py-2 text-sm text-gray-400">{S.files.empty}</p>
         ) : null
       ) : (
-        rows.map((row) => {
-          const selected =
-            row.path === selectedPath ||
-            (selectedPath === null && row.kind === "dir" && row.path === currentDir);
-          const dropHere = row.kind === "dir" && row.path === dropTargetDir;
-          const loading = row.kind === "dir" && loadingDirs.has(row.path);
-          const detail =
-            row.kind === "file"
-              ? `${row.path} · ${formatBytes(row.sizeBytes)} · ${formatDateTime(row.mtime)}`
-              : row.path;
-          // posInSet is the row's place among its own directory's entries, which is exactly
-          // the order the entrance should follow.
-          const revealed = revealedDir !== null && parentDir(row.path) === revealedDir;
-          const revealDelay = Math.min(row.posInSet - 1, REVEAL_STAGGER_ROWS) * REVEAL_STAGGER_MS;
-          return (
-            // A fragment, not a wrapper element: `role="tree"` owns `treeitem` children
-            // directly, and a generic box between the two hides them from that ownership.
-            <Fragment key={row.path}>
-              <div
-                role="treeitem"
-                tabIndex={row.path === tabStop ? 0 : -1}
-                aria-level={row.depth + 1}
-                aria-posinset={row.posInSet}
-                aria-setsize={row.setSize}
-                aria-selected={selected}
-                {...(row.kind === "dir" ? { "aria-expanded": row.expanded } : {})}
-                aria-busy={loading || undefined}
-                data-tree-path={row.path}
-                data-tree-kind={row.kind}
-                title={detail}
-                onClick={() => activate(row)}
-                onFocus={() => setFocused(row.path)}
-                style={{
-                  paddingLeft: 6 + row.depth * INDENT_PX,
-                  ...(revealed ? { animationDelay: `${revealDelay}ms` } : {}),
-                }}
-                className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
-                  revealed ? "anim-tree-row" : ""
-                } ${
-                  dropHere
-                    ? "bg-sky-50 ring-2 ring-inset ring-sky-500/60 dark:bg-sky-950/40"
-                    : selected
-                      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                      : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50"
-                } ${loading ? "opacity-60" : ""}`}
-              >
-                <span className="flex w-3.5 shrink-0 justify-center text-gray-400" aria-hidden>
-                  {row.kind === "dir" && (
-                    <Chevron open={row.expanded} size={ICON_SIZE.chevronDense} />
-                  )}
-                </span>
-                <GlyphIcon
-                  d={
-                    row.kind === "dir" ? (row.expanded ? FOLDER_OPEN_ICON : FOLDER_ICON) : FILE_ICON
-                  }
-                  size={ICON_SIZE.rowLead}
-                  className="text-gray-400"
-                />
-                <span className="min-w-0 flex-1 truncate">{row.name}</span>
-                {row.kind === "file" && (
-                  <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
-                    {formatBytes(row.sizeBytes)}
-                  </span>
-                )}
-              </div>
-              {/* An open directory with nothing in it says so, in place of the children it lacks. */}
-              {row.kind === "dir" && row.expanded && row.empty && (
-                <p
-                  className="py-1 pr-2 text-xs text-gray-400"
-                  style={{ paddingLeft: 6 + (row.depth + 1) * INDENT_PX + 14 }}
-                >
-                  {S.files.empty}
-                </p>
-              )}
-            </Fragment>
-          );
-        })
+        // `role="group"` is the tree pattern's own container for one level, so the rows inside
+        // one are still `treeitem`s of this tree and keep stating their own aria-level,
+        // aria-posinset and aria-setsize.
+        renderRange(rows, 0, rows.length, false)
       )}
     </div>
   );

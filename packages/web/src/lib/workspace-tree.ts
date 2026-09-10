@@ -143,8 +143,8 @@ export interface TreeRow {
   kind: "dir" | "file";
   /** Nesting depth; a root-level entry is 0. */
   depth: number;
-  /** 1-based position among its own directory's entries, and how many there are: the tree is
-   *  rendered flat (no per-level `role="group"`), so each row has to state its own set. */
+  /** 1-based position among its own directory's entries, and how many there are: the row list
+   *  is flat, so each row has to state its own set rather than infer it from its container. */
   posInSet: number;
   setSize: number;
   /** Directory rows: whether it is open. */
@@ -189,6 +189,18 @@ export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): 
   };
   walk("", 0);
   return rows;
+}
+
+/**
+ * Where the row at `i` stops owning what follows it: the index of the first later row at its
+ * own depth or shallower, or the end of the list. The rows in `(i, end)` are its descendants,
+ * which is what lets the flat row list be drawn as nested containers.
+ */
+export function subtreeEnd(rows: readonly TreeRow[], i: number): number {
+  const depth = rows[i]?.depth;
+  if (depth === undefined) return rows.length;
+  for (let j = i + 1; j < rows.length; j += 1) if (rows[j]!.depth <= depth) return j;
+  return rows.length;
 }
 
 /**
