@@ -822,6 +822,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         prior: {
           subagentTokens: result.prior.subagentTokens,
           elapsedMs: result.prior.elapsedMs,
+          apiMs: result.prior.apiMs,
+          toolMs: result.prior.toolMs,
           sessionTokens: result.prior.sessionTokens,
           contextTokens: result.prior.contextTokens,
         },

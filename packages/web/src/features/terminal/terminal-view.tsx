@@ -179,10 +179,23 @@ export interface TerminalViewProps {
   onInfo?: (info: TerminalInfo) => void;
   /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
   onTitle?: (title: string) => void;
+  /**
+   * Ctrl+W pressed inside this terminal. The host decides what a close is — the dock tab's
+   * confirm-then-kill, the standalone page's kill-then-close-window; with no handler the key
+   * goes to the shell like any other.
+   */
+  onCloseRequest?: () => void;
   className?: string;
 }
 
-export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: TerminalViewProps) {
+export function TerminalView({
+  ensure,
+  onStatus,
+  onInfo,
+  onTitle,
+  onCloseRequest,
+  className,
+}: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The terminal's OWN appearance setting (light / dark / follow the app, defaulting to
   // dark — see TerminalThemeMode), not the app's. It is repainted in place rather than
@@ -198,8 +211,8 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
   }, [terminalDark]);
   // Kept in refs so the (intentionally once-per-mount) effect always calls the latest
   // callbacks without re-running when a parent re-renders with a new closure.
-  const callbacks = useRef({ ensure, onStatus, onInfo, onTitle });
-  callbacks.current = { ensure, onStatus, onInfo, onTitle };
+  const callbacks = useRef({ ensure, onStatus, onInfo, onTitle, onCloseRequest });
+  callbacks.current = { ensure, onStatus, onInfo, onTitle, onCloseRequest };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -363,6 +376,19 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
           (!event.ctrlKey && event.shiftKey && event.key === "Insert");
         if (pasteCombo) {
           return false; // native paste path (see above)
+        }
+        // Ctrl+W closes this terminal when the host offers a close (the dock tab's ×, the
+        // standalone page). Consumed here so it never reaches the shell, where it is
+        // readline's delete-word, and seen only by the terminal that has focus — xterm hands
+        // this handler its own textarea's events and nothing else, so no window-level
+        // listener is involved. Browsers keep Ctrl+W for closing the browser tab and may act
+        // first; the desktop shell delivers it here.
+        const closeCombo =
+          event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && key === "w";
+        if (closeCombo && callbacks.current.onCloseRequest) {
+          event.preventDefault();
+          callbacks.current.onCloseRequest();
+          return false;
         }
         return true;
       });

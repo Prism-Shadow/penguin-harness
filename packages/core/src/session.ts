@@ -111,7 +111,7 @@ export interface SessionConfig {
   /**
    * This Session's scratchpad directory: where an input image is saved when it becomes an
    * `[attached image: <path>]` line instead of riding the request as an image. The model
-   * reads it back with describe_image / read_image, and the Web turns the path into a
+   * reads it back with read_file, and the Web turns the path into a
    * thumbnail again. Always set — each input path decides on its own whether to use it.
    */
   imagesDir: string;
@@ -924,6 +924,11 @@ export class Session {
   /** Attaches the single listener for subagent run-state changes; the host re-reads `listBackgroundSubagents` on each ping (see EnvironmentInterface.setSubagentStateListener). */
   onSubagentState(listener: () => void): void {
     this.environment.setSubagentStateListener?.(listener);
+  }
+
+  /** Attaches the single listener for background-task state changes; the host re-reads `listBackgroundCommands` / `listBackgroundSubagents` on each ping (see EnvironmentInterface.setBackgroundStateListener). */
+  onBackgroundState(listener: () => void): void {
+    this.environment.setBackgroundStateListener?.(listener);
   }
 
   /** Queues a background completion event; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */

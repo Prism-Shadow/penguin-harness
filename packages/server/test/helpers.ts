@@ -16,6 +16,7 @@ import { SessionSources } from "../src/runtime/session-sources.js";
 import { TraceIndexService } from "../src/services/trace-index.js";
 import { TraceService } from "../src/services/trace-service.js";
 import type { TraceSessionIndex } from "../src/services/trace-service.js";
+import type { PricingLookup } from "../src/services/usage-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
@@ -58,6 +59,9 @@ export function testConfig(root: string): ServerConfig {
     portFile: null,
     trustProxy: false,
     supervised: false,
+    // No CLI to offer: nothing is written into the temp root, and no directory is put on
+    // the PATH of whatever a test's Agent runs.
+    cliEntry: null,
   };
 }
 
@@ -207,7 +211,11 @@ export function apiClient(app: Hono<AppEnv>, cookie: string) {
  */
 export function makeTraceHarness(
   root: string,
-  opts: { sessions?: TraceSessionIndex; sources?: SessionSources } = {},
+  opts: {
+    sessions?: TraceSessionIndex;
+    sources?: SessionSources;
+    lookupPricing?: PricingLookup;
+  } = {},
 ): {
   traceIndex: TraceIndexService;
   service: TraceService;
@@ -223,6 +231,7 @@ export function makeTraceHarness(
   const service = new TraceService(root, {
     index: traceIndex,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
+    ...(opts.lookupPricing !== undefined ? { lookupPricing: opts.lookupPricing } : {}),
     sources,
     observeShardRead: (p) => shardReads.push(p),
   });

@@ -249,8 +249,8 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /usage | Usage statistics; query parameters `from`, `to`, `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`), `groupBy`, `granularity` (`minute` / `hour` / `day` / `week` / `month` time-series precision, default `day`; oversized range × precision combinations are rejected), `agentId`, `provider`, `modelId` |
-| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
-| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `agentId`, the same pair the reads take (no `kind` — the panel offers no such control) → `{deleted}`. Project owner only; errors with no Project attribution are outside every clear, admin included |
+| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
+| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `fromTs` / `toTs` / `agentId`, the same set the reads take (no `kind` — the panel offers no such control) → `{deleted}`. `from` and `to` are both required here (400 otherwise) — an open bound would be the whole history rather than a filter. Project owner only; the clear reaches exactly what the caller's reads reach, so an admin's clear also takes the unattributed rows an admin's read shows, and a member's never does |
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |
@@ -430,7 +430,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two channels (the 
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | GET /api/sessions/:sessionId/stream | The Session's message stream and run events |
-| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / schedule_fired / schedule_queued / session_created) |
+| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / session_background / schedule_fired / schedule_queued / session_created) |
 
 ### Wire Format
 
@@ -442,6 +442,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -456,6 +457,7 @@ export type ServerEvent =
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
 | session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
+| session_background | A Session's background-task counts changed — a command promoted past its yield window or launched with `run_in_background`, a process that exited or was stopped, a background subagent starting, settling or being released. Carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = promoted subagent sessions mid-round), zeros included so a list can clear its mark without refetching; the list row and the single-session GET omit the field at zero. Same audience as `session_state` |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`, or a completed key-minting flow): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |

@@ -37,7 +37,12 @@ import type {
 const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
+import { openDatabase } from "../src/db/database.js";
+import { ErrorsRepo } from "../src/db/repos/errors.js";
+import { UsageRepo } from "../src/db/repos/usage.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
+import { UsageService } from "../src/services/usage-service.js";
+import type { PricingLookup } from "../src/services/usage-service.js";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";
@@ -201,6 +206,135 @@ describe("trace-service", () => {
     ]);
   });
 
+  /** One completed text turn: Prompt, one Request, and its usage stamped at `ts` plus three seconds. */
+  const priceTurn = (ts: string, request: TokenCounts): OmniMessage[] => {
+    const t = Date.parse(ts);
+    const plus = (s: number) => new Date(t + s * 1000).toISOString();
+    return [
+      at(ts, userText("go")),
+      at(plus(1), requestBegin()),
+      at(plus(2), assistantText("ok")),
+      at(plus(3), requestEnd("completed")),
+      at(plus(3), tokenUsage(request, request)),
+    ];
+  };
+
+  it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows", async () => {
+    // A DeepSeek reference carries the catalog's Beijing-hours schedule; the lookup answers
+    // both tiers, as project-config-service does for a row still at the catalog's price.
+    const REF = { provider: "deepseek", model_id: "deepseek-v4-flash" };
+    const lookups: string[] = [];
+    const lookup: PricingLookup = async (projectId, provider, modelId) => {
+      lookups.push(`${projectId}/${provider}/${modelId}`);
+      return {
+        peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+        offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
+      };
+    };
+    const priced = makeTraceHarness(root, { lookupPricing: lookup });
+    const usage = buckets(10, 1, 5);
+    // Tuesday 10:30 Beijing (peak), Tuesday 21:00 Beijing (off-peak), Sunday 11:00 Beijing
+    // (an hour a weekday bills at peak, off-peak on a weekend).
+    const stamps = [
+      "2026-07-07T02:30:00.000Z",
+      "2026-07-07T13:00:00.000Z",
+      "2026-07-12T03:00:00.000Z",
+    ];
+    try {
+      await writeTraceFile(root, P, A, "2026-07-07", S, 1, [
+        sessionMeta(metaPayload(REF)),
+        ...stamps.flatMap((ts) => priceTurn(ts, usage)),
+      ]);
+      const a = await priced.service.analyze(P, A, S, 1);
+      const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
+      expect(a.tasks.map((t) => t.cost)).toEqual([peakCost, peakCost / 2, peakCost / 2]);
+      expect(a.cost).toBeCloseTo(peakCost * 2, 12);
+      expect(lookups).toEqual([`${P}/deepseek/deepseek-v4-flash`]);
+
+      // The same three requests as usage rows, priced by the cost center's session grouping —
+      // the figure the conversation toolbar shows — land on the file's total.
+      const db = openDatabase(":memory:");
+      try {
+        const rows = new UsageRepo(db);
+        for (const ts of stamps) {
+          const at = new Date(Date.parse(ts) + 3000).toISOString();
+          rows.insert({
+            ts: at,
+            date: at.slice(0, 10),
+            projectId: P,
+            agentId: A,
+            sessionId: S,
+            originSessionId: null,
+            provider: REF.provider,
+            modelId: REF.model_id,
+            cacheRead: usage.cache_read,
+            cacheWrite: usage.cache_write,
+            output: usage.output,
+            total: usage.total,
+          });
+        }
+        const center = new UsageService(rows, new ErrorsRepo(db), lookup, () => new Date());
+        const res = await center.query(P, { groupBy: "session" });
+        expect(res.groups.find((g) => g.key === S)?.cost).toBeCloseTo(a.cost!, 12);
+      } finally {
+        db.close();
+      }
+    } finally {
+      priced.close();
+    }
+  });
+
+  it("a model with no schedule bills every hour at its one rate; no pricing, or a head naming no provider, means no cost at all", async () => {
+    const lookups: string[] = [];
+    const priced = makeTraceHarness(root, {
+      lookupPricing: async (_projectId, provider, modelId) => {
+        lookups.push(`${provider}/${modelId}`);
+        // A second tier the schedule gate must never reach for an unscheduled reference.
+        return modelId === "m1"
+          ? {
+              peak: { cacheRead: 1, cacheWrite: 1, output: 1 },
+              offPeak: { cacheRead: 0, cacheWrite: 0, output: 0 },
+            }
+          : undefined;
+      },
+    });
+    try {
+      // Sunday 11:00 Beijing: off-peak for a scheduled model, just an hour for this one.
+      await writeTraceFile(root, P, A, "2026-07-12", S, 1, [
+        sessionMeta(metaPayload()),
+        ...priceTurn("2026-07-12T03:00:00.000Z", buckets(10, 1, 5)),
+        at("2026-07-12T03:01:00.000Z", userText("interrupted before any request")),
+      ]);
+      const flat = await priced.service.analyze(P, A, S, 1);
+      expect(flat.tasks.map((t) => t.cost)).toEqual([(10 + 1 + 5) / 1e6, 0]);
+      expect(flat.cost).toBeCloseTo((10 + 1 + 5) / 1e6, 12);
+
+      await writeTraceFile(root, P, A, "2026-07-12", S, 2, [
+        sessionMeta(metaPayload({ model_id: "m-unpriced" })),
+        ...priceTurn("2026-07-12T03:10:00.000Z", buckets(10, 1, 5)),
+      ]);
+      const unpriced = await priced.service.analyze(P, A, S, 2);
+      expect(unpriced.tasks.map((t) => t.cost)).toEqual([undefined]);
+      expect(unpriced.cost).toBeUndefined();
+
+      const legacy = metaPayload({ model_id: "m1" }) as Partial<SessionMetaPayload>;
+      delete legacy.provider;
+      await writeTraceFile(root, P, A, "2026-07-12", S, 3, [
+        sessionMeta(legacy as SessionMetaPayload),
+        ...priceTurn("2026-07-12T03:20:00.000Z", buckets(10, 1, 5)),
+      ]);
+      const noProvider = await priced.service.analyze(P, A, S, 3);
+      expect(noProvider.cost).toBeUndefined();
+      expect(lookups).toEqual(["custom/m1", "custom/m-unpriced"]);
+    } finally {
+      priced.close();
+    }
+    // The default harness has no lookup: nothing is priced.
+    const plain = await service.analyze(P, A, S, 1);
+    expect(plain.cost).toBeUndefined();
+    expect(plain.tasks.every((t) => t.cost === undefined)).toBe(true);
+  });
+
   it("the Task context snapshot takes the turn's last Request, not a sum across its Requests", async () => {
     // Two Requests within one Task (a tool call triggers another round): each
     // input **re-carries the entire history**, so 60k → 65k is the context
@@ -265,6 +399,69 @@ describe("trace-service", () => {
     expect(rq.activeMs).toBe(2_000); // generation: 1s→2s (emits tool_call) + 32s→33s (wrap-up)
     expect(a.tasks[0]!.llmMs).toBe(2_000); // the denominator uses only activeMs
     expect(a.tasks[0]!.tokens.output).toBe(1_000); // → 500 tok/s, not 31 tok/s
+  });
+
+  it("splits a turn's duration into API time and tool wall time, counting parallel tools once", async () => {
+    // Two tools run concurrently: 10:00:03→10:00:09 and 10:00:04→10:00:11. Summing their
+    // durations would claim 13s of tool work; the clock only ever spent 8s (03→11), which is
+    // what "wall time" has to mean once tools can overlap.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-05T10:00:00.000Z", userText("hi")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+      ),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "read_file", arguments: "{}", toolCallId: "tc-2" }),
+      ),
+      // Approvals land inside the Request span (core awaits them in the streaming loop), so the
+      // waits come off API time; execution then starts at each approval, not at the call.
+      at("2026-07-05T10:00:03.000Z", approvalDecision("allow", "tc-1")),
+      at("2026-07-05T10:00:04.000Z", approvalDecision("allow", "tc-2")),
+      at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "tc-1" })),
+      at("2026-07-05T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "tc-2" })),
+      at("2026-07-05T10:00:11.000Z", requestBegin()),
+      at("2026-07-05T10:00:13.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:13.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    const t = a.tasks[0]!;
+
+    // API: 01→05 minus the two approval waits (1s + 2s), plus 11→13.
+    expect(t.llmMs).toBe(1_000 + 2_000);
+    // Tools: the union of [03,09] and [04,11] — 8s, not the 6s + 7s the two spans add up to.
+    expect(t.toolMs).toBe(8_000);
+    // The components are measurements, not a partition: here they overlap nothing, but they
+    // still fall short of the turn's span, which also covers the gap the harness spent.
+    expect(t.llmMs + t.toolMs).toBeLessThanOrEqual(a.elapsedMs);
+    // The file-wide figures are the sum of the per-turn ones, exactly as elapsedMs is.
+    expect(a.apiMs).toBe(a.tasks.reduce((sum, x) => sum + x.llmMs, 0));
+    expect(a.toolMs).toBe(a.tasks.reduce((sum, x) => sum + x.toolMs, 0));
+  });
+
+  it("a tool still running when the trace ends contributes no tool time", async () => {
+    // No tool_call_output ever arrives: the execution has no measured end, and extrapolating it
+    // to "now" would grow a finished file's figures every time it is read.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-05T10:00:00.000Z", userText("hi")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+      ),
+      at("2026-07-05T10:00:03.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:03.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+
+    expect(a.tasks[0]!.toolMs).toBe(0);
+    expect(a.toolMs).toBe(0);
+    expect(a.tasks[0]!.llmMs).toBe(2_000);
   });
 
   it("compaction is its own turn: its TPS is its own and doesn't pollute user turns; the context snapshot still takes only non-compaction Requests", async () => {
