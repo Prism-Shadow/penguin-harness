@@ -158,7 +158,7 @@ pnpm test:e2e                                        # core live-model e2e, need
   workflow's `docker` job builds the tag's own source and publishes `X.Y.Z`, `X.Y` and —
   while the tag is the current latest Release — `stable`. A PR touching the `Dockerfile`,
   `docker/` or that workflow runs the same file as an amd64 smoke build. The push
-  needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets — the latter a
+  needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
   Docker Hub access token with read/write scope on that repository — and the Docker Hub
   repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames

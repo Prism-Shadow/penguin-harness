@@ -184,6 +184,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # The Docker Hub credentials live in the `docker` GitHub Environment, whose URL is the
+    # published repository, so they reach this job alone — the smoke job and the rest of CI
+    # never see them.
+    environment:
+      name: docker
+      url: https://hub.docker.com/r/hiyouga/penguinharness
     steps:
       # A release build must come from the TAG's source, not from whatever branch the run was
       # started on: `inputs.tag` is set for workflow_call and workflow_dispatch and empty for a
@@ -249,9 +255,9 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Docker Hub is the default registry, so the login needs no `registry:`. It reads two
-      # repository secrets: DOCKERHUB_USERNAME, and DOCKERHUB_TOKEN — a Docker Hub access token
-      # with read/write scope on that repository.
+      # Docker Hub is the default registry, so the login needs no `registry:`. The two secrets,
+      # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN — a Docker Hub access token with read/write scope
+      # on that repository — belong to the `docker` environment declared on this job.
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
