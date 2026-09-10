@@ -35,6 +35,12 @@ jobs:
       - name: Code style (Prettier)
         run: pnpm format:check
 
+      # oxlint gates a deliberately small rule set (see .oxlintrc.json): the import rules
+      # the repo is already clean under. Prettier formats imports but never merges them,
+      # so nothing caught a module being imported twice in one file until now.
+      - name: Lint (oxlint)
+        run: pnpm lint
+
       # A workflow that does not parse produces a run with zero jobs and no annotation
       # anywhere useful -- the failure this very file shipped once, over a double-quoted
       # string in a ${{ }} expression, where only single quotes are legal. Cheap to catch.

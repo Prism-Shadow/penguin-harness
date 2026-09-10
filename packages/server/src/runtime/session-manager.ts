@@ -422,6 +422,20 @@ interface RuntimeEntry {
    * every `task_state`; the rest is the recall handle (see recallSteering).
    */
   pendingSteering: PendingSteeringEntry[];
+  /**
+   * Steering the run ended without ever delivering — handed back to the user instead of
+   * discarded (#287 follow-up). An interrupt mid-tool-call is the ordinary way to get here:
+   * core drops its queue when the run exits, so the message would otherwise vanish with the
+   * text the user had already typed.
+   *
+   * Entries move here from `pendingSteering` when the run exits and stay recallable by the
+   * same handle, so the composer pulls them back into its draft (auto-recall on observing
+   * them, a reload included). They are deliberately NOT cleared when the next run starts:
+   * the message was never delivered whatever happens later, and dropping it there would
+   * reintroduce exactly the loss this list exists to prevent. Only a recall — or the entry's
+   * idle eviction — removes one.
+   */
+  returnedSteering: PendingSteeringEntry[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -587,6 +601,11 @@ export class SessionManager {
     return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
   }
 
+  /** Steering a finished run never delivered, waiting for the composer to take it back (see RuntimeEntry.returnedSteering). */
+  returnedSteeringOf(sessionId: string): PendingSteeringInfo[] {
+    return (this.entries.get(sessionId)?.returnedSteering ?? []).map((p) => p.info);
+  }
+
   /**
    * Live subagent children of an ACTIVE runtime entry (empty when the session is not loaded
    * — after a restart there is no in-process child left to report, so empty is the truth).
@@ -711,6 +730,7 @@ export class SessionManager {
       pendingInputs: [],
       pendingBootstrap: [],
       pendingSteering: [],
+      returnedSteering: [],
       lastActivityMs: Date.now(),
     });
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
@@ -1210,19 +1230,35 @@ export class SessionManager {
    */
   recallSteering(sessionId: string, steerId: string): RecallStore {
     const entry = this.entries.get(sessionId);
-    const i = entry?.pendingSteering.findIndex((p) => p.info.id === steerId) ?? -1;
-    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
-    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
-      throw new HttpError(
-        409,
-        "not_pending",
-        "This steering message was already delivered to the model and can no longer be recalled.",
-      );
+    if (entry) {
+      const queued = entry.pendingSteering.findIndex((p) => p.info.id === steerId);
+      if (queued >= 0) {
+        const pending = entry.pendingSteering[queued]!;
+        // Still queued on a live run: core decides, since the mirror can lag a delivery that
+        // has not reached the stream yet.
+        if (entry.session.unsteer?.(pending.input) ?? false) {
+          entry.pendingSteering.splice(queued, 1);
+          entry.lastActivityMs = Date.now();
+          this.publishState(entry, entry.status);
+          return pending.recall;
+        }
+      }
+      // Handed back when the run exited without delivering it: core's queue is gone, so there
+      // is nothing to unsteer and the mirror is the only authority left — it holds exactly
+      // what the drained stream never showed as delivered (see RuntimeEntry.returnedSteering).
+      const returned = entry.returnedSteering.findIndex((p) => p.info.id === steerId);
+      if (returned >= 0) {
+        const [taken] = entry.returnedSteering.splice(returned, 1);
+        entry.lastActivityMs = Date.now();
+        this.publishState(entry, entry.status);
+        return taken!.recall;
+      }
     }
-    entry.pendingSteering.splice(i, 1);
-    entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
-    return pending.recall;
+    throw new HttpError(
+      409,
+      "not_pending",
+      "This steering message was already delivered to the model and can no longer be recalled.",
+    );
   }
 
   /**
@@ -1596,6 +1632,7 @@ export class SessionManager {
       pendingInputs: [],
       pendingBootstrap: [],
       pendingSteering: [],
+      returnedSteering: [],
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
@@ -1831,9 +1868,15 @@ export class SessionManager {
       entry.abort = null;
       entry.running = null;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
-      // steeringQueue) — drop the mirror with it; the idle publish below broadcasts the
-      // now-empty state.
-      entry.pendingSteering = [];
+      // steeringQueue). What is still in the mirror was therefore never delivered — entries
+      // are shifted out as their `[user_steering]` message appears on the stream, and this
+      // runs after that stream is drained — so hand it back to the user rather than dropping
+      // it: the composer recalls it into its draft. Interrupting while a tool runs is the
+      // ordinary way to get here, and the typed message must survive it.
+      if (entry.pendingSteering.length > 0) {
+        entry.returnedSteering = [...entry.returnedSteering, ...entry.pendingSteering];
+        entry.pendingSteering = [];
+      }
       entry.lastActivityMs = Date.now();
       // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
       // every other write in this finally: what follows — the idle broadcast and the
@@ -1948,6 +1991,9 @@ export class SessionManager {
       queued: entry.followUps.length,
       ...(entry.pendingSteering.length > 0
         ? { pendingSteering: entry.pendingSteering.map((p) => p.info) }
+        : {}),
+      ...(entry.returnedSteering.length > 0
+        ? { returnedSteering: entry.returnedSteering.map((p) => p.info) }
         : {}),
       ...(entry.followUps.length > 0
         ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
