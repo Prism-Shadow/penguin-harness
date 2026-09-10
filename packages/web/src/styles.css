@@ -255,9 +255,79 @@
 .anim-fade {
   animation: fade-in 120ms ease-out both;
 }
+
+/* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
+   onto their places on the arc with a slight overshoot, and fold back into it without one.
+   Every entry's box sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from
+   there, set per entry, and that translate is also the entry's resting inline transform — so
+   the reduced-motion block below, which drops the animation outright, leaves each entry
+   standing on the arc instead of collapsed onto the ball or hidden. */
+@keyframes launcher-fan-in {
+  from {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
+  }
+}
+@keyframes launcher-fan-out {
+  from {
+    opacity: 1;
+    transform: translate(var(--fan-x, 0px), var(--fan-y, 0px));
+  }
+  to {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+}
+.launcher-fan-in {
+  animation: launcher-fan-in 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.launcher-fan-out {
+  animation: launcher-fan-out 140ms ease-in both;
+}
 /* Message item entrance. */
 .anim-msg {
   animation: msg-in 180ms ease-out both;
+}
+
+/* Files panel: a directory's rows grow out of, and shrink back into, its row. Grid tracks
+   rather than height so the closed state needs no measurement; the inner box clips. Under
+   reduced motion the keyframes are off and each class rests at its own end state — open
+   at 1fr, closing at 0fr — and the view drops a closed group on a timer. Matches the
+   chevron's 200ms rotation. */
+.tree-group {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.tree-group > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.tree-group-open {
+  animation: tree-group-open 200ms ease-out;
+}
+.tree-group-close {
+  grid-template-rows: 0fr;
+  animation: tree-group-close 200ms ease-in;
+}
+@keyframes tree-group-open {
+  from {
+    grid-template-rows: 0fr;
+  }
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+@keyframes tree-group-close {
+  from {
+    grid-template-rows: 1fr;
+  }
+  to {
+    grid-template-rows: 0fr;
+  }
 }
 
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by

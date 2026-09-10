@@ -72,17 +72,19 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
 | `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
-| `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |
+| `base_url` | 自定义 Base URL；内置目录会为网关，以及固定了 client 的直连条目——MiniMax M3 与 DeepSeek `deepseek-flash`——预置 |
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
@@ -155,6 +157,8 @@ enabled = false
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
+
+`compaction.*` 四项是本文件里唯一不必等待的部分：引擎在每个压缩检查点（每次请求回报 token 用量之后，以及手动 `/compact`）重读该节，保存后对已在运行的 Session 立即生效；其余各项都在模型上下文开启时读取，于下一次压缩生效。Web App 也可以直接在上下文构成面板里改阈值——拖动条形上的虚线切刀即可。
 | `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{WORKSPACE_MEMORY_INDEX}}` 与 `{{WORKSPACE_MEMORY_DIR}}` |
@@ -237,7 +241,7 @@ compaction:
 
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
-`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（见[上下文压缩](/agent-loop)）。
+`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（`compaction` 一节例外，见[上下文压缩](/agent-loop)）。
 
 Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
 

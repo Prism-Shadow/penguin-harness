@@ -60,6 +60,17 @@ describe("one glyph, one home", () => {
     expect(occurrences("M9 5l7 7-7 7")).toEqual(["components/ui/chevron.tsx"]);
   });
 
+  // The two dock edges are drawn from two places at once — the chat toolbar's pull-open
+  // buttons and the dock header's move-dock buttons — which is exactly how the marks above
+  // accumulated their copies.
+  it("draws the bottom-dock mark in exactly one place", () => {
+    expect(occurrences("M4 5h16v14H4zM4 14h16")).toEqual(["components/ui/icons.tsx"]);
+  });
+
+  it("draws the right-dock mark in exactly one place", () => {
+    expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual(["components/ui/icons.tsx"]);
+  });
+
   it("draws the background-task trace in exactly one place", () => {
     // Three surfaces draw it now — a session row, the chat header pill and a backgrounded
     // tool row — which is how the paths above ended up hand-typed five times each.

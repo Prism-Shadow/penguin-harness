@@ -357,7 +357,7 @@ describe("discountedPrice", () => {
   it("a synced row on a flat promotion reports the rate, and bills at the stored price", () => {
     const row = syncedRow("tokendance", "glm-5.3-flash");
     const found = discountedPrice(row)!;
-    expect(found.percent).toBe(50);
+    expect(found.percent).toBe(10);
     expect(found.scheduled).toBe(false);
     // A flat promotion is baked in at sync time, so what is billed is what is stored.
     expect(found.billed).toEqual({

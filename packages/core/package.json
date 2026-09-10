@@ -33,6 +33,10 @@
       "types": "./dist/extension/index.d.ts",
       "import": "./dist/extension/index.js"
     },
+    "./context-limits": {
+      "types": "./dist/llm/context-limits.d.ts",
+      "import": "./dist/llm/context-limits.js"
+    },
     "./model-catalog": {
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"

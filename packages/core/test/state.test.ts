@@ -1304,20 +1304,30 @@ describe("project-config round trip", () => {
     expect(entry?.vision).toBeUndefined();
   });
 
-  it("default config presets the full model catalog (default = deepseek deepseek-v4-flash-vision-exp)", () => {
+  it("default config presets the full model catalog (default = deepseek deepseek-flash)", () => {
     const cfg = defaultProjectConfig();
     expect(cfg.default_model).toEqual({
       provider: "deepseek",
-      model_id: "deepseek-v4-flash-vision-exp",
+      model_id: "deepseek-flash",
     });
     // The default has to be a model that can actually read an image: a new Project's first
-    // pasted screenshot goes to it, and the text-only sibling would decline one for a reason
+    // pasted screenshot goes to it, and a text-only model would decline one for a reason
     // nothing on screen explains.
     const chosen = MODEL_CATALOG.find(
       (m) =>
         m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
     );
     expect(chosen?.supportsVision).toBe(true);
+    // And it has to be routable as written. deepseek-flash carries no `deepseek-v4`
+    // substring, which is all AgentHub routes DeepSeek on, so the preset entry for the
+    // default must carry the catalog row's pinned client and endpoint — a default that
+    // resolved to no client would fail every first request.
+    const defaultEntry = cfg.models.find(
+      (m) =>
+        m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
+    );
+    expect(defaultEntry?.client_type).toBe("deepseek-v4");
+    expect(defaultEntry?.base_url).toBe("https://api.deepseek.com");
     // The catalog is presented in full: provider and model_id are separate columns, model_id
     // being the plain upstream id (vision is only persisted as false for models that don't
     // support images).

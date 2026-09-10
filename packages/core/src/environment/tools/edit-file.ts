@@ -30,6 +30,7 @@ import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { atomicWriteFile } from "../../internal/atomic-write.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
 import { missingPathHint } from "./path-hint.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const EDIT_FILE_NAME = "edit_file";
@@ -74,23 +75,36 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
 
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
-        yield delta(`Missing required argument "file_path" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       const oldString = args["old_string"];
       if (typeof oldString !== "string") {
-        yield delta(`Missing required argument "old_string" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "old_string", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       if (oldString.length === 0) {
         yield delta(
-          "old_string must not be empty — edit_file replaces existing text. To create a file or rewrite it wholesale, use write_file.",
+          describeArgumentError(
+            definition,
+            args,
+            { argument: "old_string", kind: "missing" },
+            {
+              hint: `${definition.name} replaces existing text; to create a file or rewrite it wholesale, use write_file.`,
+            },
+          ),
         );
         return { stopReason: "fatal" };
       }
       const newString = args["new_string"];
       if (typeof newString !== "string") {
-        yield delta(`Missing required argument "new_string" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "new_string", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       if (oldString === newString) {

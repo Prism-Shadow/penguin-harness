@@ -419,10 +419,14 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     await writeFile(path.join(tmp, "a.txt"), "x\n");
     const badOffset = await run(tool(), { file_path: "a.txt", offset: "abc" }, tmp);
     expect(badOffset.result?.stopReason).toBe("fatal");
-    expect(badOffset.text).toContain('Invalid "offset"');
+    expect(badOffset.text).toContain(
+      'read_file was not run: argument "offset" is invalid: expected a number (got "abc").',
+    );
     const badLimit = await run(tool(), { file_path: "a.txt", limit: 0 }, tmp);
     expect(badLimit.result?.stopReason).toBe("fatal");
-    expect(badLimit.text).toContain('Invalid "limit"');
+    expect(badLimit.text).toContain(
+      'read_file was not run: argument "limit" is invalid: expected a positive number (got 0).',
+    );
   });
 
   it("strips trailing \\r from displayed lines and notes CRLF line endings", async () => {
@@ -562,7 +566,7 @@ describe("edit_file — review follow-ups", () => {
       tmp,
     );
     expect(result?.stopReason).toBe("fatal");
-    expect(text).toContain("old_string must not be empty");
+    expect(text).toContain('required argument "old_string" is empty.');
     expect(text).toContain("write_file");
   });
 

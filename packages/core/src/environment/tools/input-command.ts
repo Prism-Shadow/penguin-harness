@@ -32,6 +32,7 @@ import {
   resultForExit,
 } from "./command/index.js";
 import { clampYield } from "./background/index.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant. */
 export const INPUT_COMMAND_NAME = "input_command";
@@ -62,7 +63,9 @@ export function createInputCommandTool(
 
       const processId = args["process_id"];
       if (typeof processId !== "string" || processId.length === 0) {
-        yield delta('Missing required argument "process_id" for input_command.');
+        yield delta(
+          describeArgumentError(definition, args, { argument: "process_id", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       const session = manager.get(processId);

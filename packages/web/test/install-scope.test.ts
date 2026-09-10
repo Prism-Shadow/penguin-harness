@@ -79,6 +79,11 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.sidebarSortMode": "manual",
     "penguin.sidebarNavGroupCollapsed": "collapsed",
     "penguin.steerMode": "followup",
+    "penguin.dock.launcherY": "0.25",
+    "penguin.dock.launcherHidden": "1",
+    "penguin.files.treeVisible": "0",
+    "penguin.files.treeWidth": "220",
+    "penguin.files.editorWrap": "1",
   });
 }
 
@@ -100,6 +105,11 @@ const PREFERENCE_KEYS = [
   "penguin.sidebarSortMode",
   "penguin.sidebarNavGroupCollapsed",
   "penguin.steerMode",
+  "penguin.dock.launcherY",
+  "penguin.dock.launcherHidden",
+  "penguin.files.treeVisible",
+  "penguin.files.treeWidth",
+  "penguin.files.editorWrap",
 ];
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));

@@ -165,6 +165,27 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
+ * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge
+ * everywhere.
+ */
+export const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
+export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
+
+/** A dashboard of four tiles: the workbench the floating launcher opens. */
+export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z";
+
+/**
+ * File glyphs, shared by every place a file operation is marked — the file summary card, the
+ * memory-changes card, the context panel's file ranking — so a read, an edit and a write look
+ * the same everywhere: a page with a folded corner, the same page with a plus (a full write),
+ * and a pencil (an in-place edit).
+ */
+export const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
+export const FILE_WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
+export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
+
+/**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the
  * conversation — the background-task mark on a session row, the matching count in the chat
  * header, and the marker on a tool row whose call was made with `run_in_background`.
@@ -225,6 +246,15 @@ export const MAGIC_WAND_ICON =
 /** An open hand — the "do it by hand" mark beside the wand, on the 24×24 grid. */
 export const HAND_ICON =
   "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
+
+/**
+ * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
+ * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
+ * panel and the mark a session row wears while an enabled task is bound to it. Distinct from the
+ * plain clock face that means "most recent" in the list options.
+ */
+export const SCHEDULE_ICON =
+  "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5";
 
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,

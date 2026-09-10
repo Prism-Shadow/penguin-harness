@@ -9,7 +9,7 @@ description: 运行官方 PenguinHarness 镜像——一个容器、一个卷，
 hiyouga/penguinharness
 ```
 
-`latest` 跟随 `main`——每次 push 都重新构建它，`main-<sha7>` 则是同一个镜像的不可变名字。`stable` 是最新的发布版；`X.Y.Z` 与 `X.Y` 用于钉住某个发布版。每个 tag 都由本仓库该 commit 的源码构建，也都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。下面的示例用 `latest`；只希望随发布版移动的部署应改用 `stable`。
+镜像只有两种 tag：`latest` 跟随 `main`——每次 push 都重新构建它；`X.Y.Z` 是某个发布版，由该 tag 自身的源码构建。没有 `main-<sha>`、`X.Y` 或 `stable` 之类会移动或重复的名字。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。下面的示例用 `latest`；只希望随发布版移动的部署应钉住某个版本号。
 
 ## 跑起来
 
@@ -76,7 +76,7 @@ PenguinHarness 不内置任何模型凭据。可以用 Web 应用的**模型**�
 
 ```bash
 docker compose exec -u penguin penguin \
-  penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+  penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 `-u penguin` 是必要的：`docker exec` 默认以 root 执行，它写进 `/data` 的文件会归 root 所有，而服务端是以 uid 1000 运行的。内置分组见[模型与 Provider](/models)。

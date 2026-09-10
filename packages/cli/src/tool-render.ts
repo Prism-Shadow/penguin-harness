@@ -240,7 +240,8 @@ export function renderPartialToolCall(
   if (name === "exec_command") {
     const desc = describedState(argsJson, opts);
     if (desc === "pending") return null;
-    const cmd = extractField(argsJson, "cmd");
+    // `command` is the alias core accepts for `cmd` (see core's exec-command.ts).
+    const cmd = extractField(argsJson, "cmd") ?? extractField(argsJson, "command");
     if (desc !== "none") {
       if (!desc.complete || cmd === null) return `${name} <- ${desc.text}`;
       return describedForm(name, desc.text, `$ ${toSingleLine(cmd.value)}`, cmd.complete);

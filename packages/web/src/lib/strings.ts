@@ -109,6 +109,20 @@ export const zh = {
     /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
     killConfirmTitle: "关闭此终端？",
     killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+    /**
+     * The floating launcher on the chat body's right edge while the right dock is hidden.
+     * `launcherCaption` is printed under the ball at rest — the same words as the ball's
+     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
+     */
+    launcher: "快捷方式",
+    launcherCaption: "快捷方式",
+    /** Appended to the launcher's accessible name while its amber dot shows. */
+    launcherPending: "子智能体有待审批",
+    /** The fan of entries the launcher opens (its accessible group name). */
+    launcherPanels: "快捷方式",
+    /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    launcherHide: "隐藏悬浮球",
+    launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -179,6 +193,9 @@ export const zh = {
     fontLarge: "大",
     accent: "主题色",
     accentInfo: "界面强调色。",
+    launcher: "快捷方式悬浮球",
+    launcherInfo:
+      "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
@@ -488,6 +505,8 @@ export const zh = {
      * next compaction; a new conversation starts with it.
      */
     savedTakesEffect: "已保存。新对话立即生效；进行中的对话在下一次压缩后生效。",
+    /** Save feedback when the change touched compaction settings only: the engine re-reads them at every compaction checkpoint, so a running conversation does not have to reach one first. */
+    savedTakesEffectNow: "已保存，立即生效（包括进行中的对话）。",
     /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
     takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
@@ -1133,6 +1152,97 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
+    toastSaved: "已保存定时任务",
+    toastEnabled: "已启用定时任务",
+    toastDisabled: "已停用定时任务",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
+    targetThisSession: "本对话",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "定时任务",
+    panelSubtitle: "让智能体按计划替你执行任务、发送提醒或监控更新",
+    panelSearchPlaceholder: "搜索定时任务",
+    filterAll: "全部",
+    filterActive: "生效中",
+    filterPaused: "已暂停",
+    filterCompleted: "已完成",
+    panelEmpty: "这段对话还没有定时任务",
+    panelNoMatch: "没有匹配的定时任务",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "发送第一条消息后即可为这段对话安排定时任务",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "更多操作",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `每天 ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `每${weekday} ${time}`,
+      everyDays: (n: number, time: string): string => `每 ${n} 天 ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "每小时" : `每 ${n} 小时`),
+      everyMinutes: (n: number): string => `每 ${n} 分钟`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `一次性 · ${when}`,
+      next: (when: string): string => `下次 ${when}`,
+      today: (time: string): string => `今天 ${time}`,
+      tomorrow: (time: string): string => `明天 ${time}`,
+      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay} ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${year} 年 ${monthDay} ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
+    aiCreateTitle: "用 AI 创建定时任务",
+    aiCreateInSessionDesc: "描述要安排的事，智能体会在这段对话里创建它，并确认设定的时间。",
+    aiCreateDesc: "描述要安排的事，智能体会在新对话里为该 Agent 创建它，并确认设定的时间。",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `将由「${name}」在本对话中完成`,
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "在本对话中编辑",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "请把上面的请求创建为绑定到本对话的定时任务：在 agent_state/schedule/ 下写一个 TOML 文件，`session_id` 取本对话的 Session ID（见 Environment 段），文件名取有意义的英文名，设置 `start_at`；需要重复执行时写 `period`，请求有自然终点时写 `end_at`。创建后用一行确认你设定的时间安排。",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "建议",
+    suggestions: {
+      dailyBrief: {
+        name: "每日简报",
+        hint: "每个工作日 08:00",
+        description: "汇总昨天的进展与今天的待办",
+        prompt: "每个工作日早上 8 点给我一份简报：昨天这段对话里的进展与今天的待办",
+        agentPrompt: "每个工作日早上 8 点生成一份简报：昨天的进展与今天的待办",
+      },
+      weeklyReview: {
+        name: "每周回顾",
+        hint: "每周五 16:00",
+        description: "把本周的工作整理成一份状态更新",
+        prompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+        agentPrompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+      },
+      followUp: {
+        name: "跟进提醒",
+        hint: "一次性",
+        description: "到点提醒你跟进某件事",
+        prompt: "明天 10:00 提醒我跟进 X",
+        agentPrompt: "明天 10:00 提醒我跟进 X",
+      },
+      monitor: {
+        name: "监控更新",
+        hint: "每 6 小时",
+        description: "定期检查一个页面或数据源的变化",
+        prompt: "每 6 小时检查 <url> 是否有更新并告诉我变化",
+        agentPrompt: "每 6 小时检查 <url> 是否有更新，有变化时告诉我",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "启用定时任务",
@@ -1602,6 +1712,8 @@ Benchmark：
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
+    sessionScheduled: "有待触发的定时任务",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
@@ -1798,12 +1910,36 @@ Benchmark：
     contextPartToolRequests: "工具请求",
     contextPartToolResults: "工具结果",
     contextTopTools: "工具用量 Top 5",
-    /** Tooltip of the dashed mark on the context bar; n = the humanized threshold. */
-    contextCompactAt: (n: string): string => `压缩阈值 ${n}`,
+    /** Under the bar: the model window the bar is scaled to. */
+    contextWindowIs: (n: string): string => `最大上下文 ${n}`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
+    contextTopFiles: "文件用量 Top 5",
+    contextTopFilesHint:
+      "按每个文件经 read_file / edit_file / write_file 的调用与结果所占上下文排序（悬停显示完整路径）",
+    /** The ranking switch: the group's accessible name, its two buttons, and the Files view's empty state. */
+    contextRankLabel: "切换排行",
+    contextRankTools: "工具",
+    contextRankFiles: "文件",
+    contextNoFileTraffic: "本轮上下文没有文件读写",
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",
     contextBreakdownFailed: "读取上下文构成失败",
+    /** The dashed cutter on the panel's bar: its accessible name, and its tooltip naming the threshold it stands on. */
+    contextThresholdCutter: "压缩阈值",
+    contextThresholdHover: (n: string): string => `压缩阈值 ${n}（拖动可调整）`,
+    /** Confirmation for a dragged (or arrowed) threshold: dialog name, body (agent name + the threshold being replaced), the editable field and its rejection, the note when the model window will cut the typed value down, and the toast on success. */
+    contextThresholdTitle: "修改压缩阈值",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `把 ${agentName} 的压缩阈值从 ${old} 改为下面的值？立即生效，包括正在进行的对话。`,
+    contextThresholdField: "压缩阈值（token）",
+    contextThresholdInvalid: "必须是大于 0 的整数",
+    contextThresholdCapped: (n: string): string => `超出模型窗口，实际生效的阈值是 ${n}`,
+    contextThresholdSaved: (n: string): string => `压缩阈值已改为 ${n}，立即生效`,
+    /** Composer notice: the model's window is below the Agent's configured compaction threshold; n = window, m = threshold. */
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
+    contextWindowUnderThresholdAction: "打开 Agent 设置",
+    contextWindowUnderThresholdDismiss: "忽略",
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -1860,8 +1996,13 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    /** The bare mode word — the Trace view's round badge, the failed row's title, and the stem of the two state titles below — so a `discard` is never announced as compaction: it clears the context rather than compacting it. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
+    /** The row's title doubles as its status, the work-group header's idiom (`workRunning` / `workDone`): 压缩中 / 清空中 while the step runs, 压缩完毕 / 清空完毕 once it settles. With mode and state both in the title nothing is left for a detail line on either side — a `summarize` shows its summary in its own expandable body — so only `compactionFailed` keeps the detail slot, carrying the one thing a title cannot. */
+    compactionRunning: (mode: string): string => (mode === "discard" ? "清空中" : "压缩中"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
+    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    compactionResult: "压缩结果",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -2275,20 +2416,60 @@ Benchmark：
     previewNotIsolatedHint:
       "当前访问地址无法提供独立预览源，页面将以沙箱模式打开：localStorage、Cookie 与第三方 embed 不可用。经 127.0.0.1 或 localhost 访问，或配置 PENGUIN_PREVIEW_ORIGIN 即可解除。",
     refresh: "刷新",
-    root: "根目录",
+    /** The Workspace root, as the breadcrumbs and the drop overlay name it. "." is what a
+     *  shell calls the working directory, so it needs no translation. */
+    root: ".",
     empty: "空目录",
     previewUnsupported: "该类型不支持预览，请下载查看",
-    uploaded: "已上传",
-    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    uploadedCount: (n: number): string => `已上传 ${n} 个文件`,
+    uploading: (done: number, total: number): string => `正在上传 ${done}/${total}…`,
+    /** Oversize picks are named and skipped before anything is read. */
+    uploadTooLarge: (names: string, mb: number): string =>
+      `超过 ${mb}MB 上传上限，已跳过：${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `不支持上传文件夹，已跳过：${names}`,
+    /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "覆盖同名文件",
-    overwriteConfirm: (n: number): string => `当前目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
+    overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
-    details: "详情",
-    workspacePath: "Workspace 路径",
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",
+    /** The tree pane: its accessible name and the toolbar toggle's two states. */
+    treeLabel: "文件树",
+    showTree: "显示文件树",
+    hideTree: "隐藏文件树",
+    /** The divider between the tree and the preview: drag, or nudge with the arrow keys. */
+    treeWidth: "调整文件树宽度",
+    /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
+    searchPlaceholder: "搜索文件",
+    searchClear: "清除搜索",
+    searchNoMatch: "已加载的目录中没有匹配项",
+    selectFile: "选择一个文件以预览",
+    /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
+    dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
+    /** In-place text editing. */
+    editorLabel: (name: string): string => `编辑 ${name}`,
+    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
+    editorWrap: "自动换行",
+    unsaved: "有未保存的修改",
+    saveTitle: "保存（Ctrl+S / ⌘S）",
+    saveConfirmTitle: "保存文件",
+    saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
+    editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
+    saveTooLarge: (mb: number): string => `内容超过 ${mb}MB 写入上限，未保存`,
+    discardTitle: "放弃未保存的修改",
+    discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
+    discard: "放弃",
+    unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "磁盘上已变更",
+    changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
+    conflictTitle: "文件在磁盘上已变更",
+    conflictBody: (name: string): string =>
+      `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
+    overwriteAnyway: "仍然覆盖",
   },
 
   usage: {
@@ -2388,7 +2569,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,

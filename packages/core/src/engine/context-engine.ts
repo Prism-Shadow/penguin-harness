@@ -257,6 +257,23 @@ export interface ContextEngineDeps {
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
   /**
+   * Live compaction settings, re-read at every point the engine consults them for a decision:
+   * the post-request checkpoint (threshold and turn count), and the start of a compaction
+   * (mode and prompt). This is what takes compaction configuration out of the strict tier —
+   * an edit saved to the Agent's config reaches a running Session at its next checkpoint
+   * instead of waiting for a rotation.
+   *
+   * Refreshes an existing baseline; it never creates one. An embedder that supplies only
+   * `compaction` keeps today's fixed-per-context behaviour, and one that supplies neither has
+   * no compaction at all — so whether compaction is *configured* stays a constant of the
+   * Session, which is what `compactability()` may answer synchronously.
+   *
+   * The provider is expected to be cheap enough to call once per checkpoint (the Agent's caches
+   * by the config file's identity on disk). A read that throws leaves the previous settings in
+   * force and is logged once: a config file that briefly cannot be read must not end a run.
+   */
+  readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
+  /**
    * The first context's session_meta message: written at the start of each Trace file a
    * compaction's rotation opens, until an `openNextContext` result brings the meta of the context
    * it opened — from then on that one is written, so every file's head describes its own
@@ -431,7 +448,10 @@ export function reconnectDelayMs(base: number, max: number, attempt: number): nu
 export class ContextEngine {
   /** Per-context settings: the first context's from the deps, then whatever each opened context brings (see `startNewContext`). */
   private maxTurns: number;
+  /** Compaction settings in force. Baseline per context (deps, then each opened context), and re-read from `deps.readCompaction` at every checkpoint in between. */
   private compaction: CompactionSettings | undefined;
+  /** Whether a `readCompaction` failure has already been reported; one line per Session, not one per checkpoint. */
+  private compactionReadWarned = false;
   private readonly maxReconnects: number;
   private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
@@ -856,6 +876,11 @@ export class ContextEngine {
       // applies mid-Task — when runTurn returns, all of this turn's
       // tool results are ready and paired with their tool_call.
       const midTask = turn.toolOutputs.length > 0;
+      // The checkpoint is where compaction configuration is consulted, so it is where it is
+      // re-read: the threshold and turn count `compactionTrigger` compares against, and the
+      // `mode` picked from the same settings immediately below, are the values on disk right
+      // now rather than the ones this context opened with.
+      await this.refreshCompaction();
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.compaction!.mode;
@@ -1001,6 +1026,9 @@ export class ContextEngine {
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+    // The manual entry into a compaction, and the second place the live settings decide
+    // something: the `mode` below, and the prompt summarizeContext reads from them.
+    await this.refreshCompaction();
     if (!this.compaction || !this.deps.openNextContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
@@ -1435,6 +1463,32 @@ export class ContextEngine {
   // -------------------------------------------------------------------------
 
   /**
+   * Re-reads the live compaction settings, if the host supplies a provider. Called at every
+   * point the engine is about to decide something from them — the post-request checkpoint and
+   * the two entries into a compaction — so a threshold, turn count, mode or prompt edited on
+   * disk applies to the conversation that is running.
+   *
+   * Only refreshes an existing baseline: a Session with no `compaction` in its deps has no
+   * compaction capability, and a provider must not conjure one mid-run (see
+   * ContextEngineDeps.readCompaction). A read that throws keeps the settings already in force
+   * and warns once — the alternative, failing the run because a config file was momentarily
+   * unreadable, is worse than compacting at the previous threshold.
+   */
+  private async refreshCompaction(): Promise<void> {
+    if (!this.compaction || !this.deps.readCompaction) return;
+    try {
+      this.compaction = await this.deps.readCompaction();
+    } catch (e) {
+      if (this.compactionReadWarned) return;
+      this.compactionReadWarned = true;
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(
+        `[penguin] compaction settings could not be re-read: ${message}; keeping the settings in force.\n`,
+      );
+    }
+  }
+
+  /**
    * Checks the compaction threshold: triggers once context usage (the most recent
    * token_usage's request.total) or the Session cumulative turn count **reaches** the threshold
    * (>=) — e.g. maxSessionTurns=1 compacts as soon as turn 1 completes, without waiting for the
@@ -1498,9 +1552,10 @@ export class ContextEngine {
    * compaction request's raw messages are not pushed to the Human output stream, with two
    * exceptions between the paired compaction events: every attempt's `token_usage` (so the
    * frontend stats and the server's usage records count the compaction's true spend,
-   * rejected attempts included), and the summary text being generated, as ordinary
-   * `partial_text`/`text` messages (issue #290 — see runCompactionRequest); everything is
-   * written to the old Trace as before. Compaction succeeds only with a **valid summary** — non-empty extracted
+   * rejected attempts included), and the thinking and summary text being generated, as
+   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290 —
+   * see runCompactionRequest); everything is written to the old Trace as before. Compaction
+   * succeeds only with a **valid summary** — non-empty extracted
    * text and no tool calls in the response. Everything short of that is one kind of failure,
    * handled exactly like an ordinary LLM request's (issue #170): an unusable committed
    * response (empty summary, or tool calls — answered with synthesized failed outputs and
@@ -1519,6 +1574,9 @@ export class ContextEngine {
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
   ): AsyncGenerator<OmniMessage, CompactionResult> {
+    // Already refreshed: both entries into a compaction — the post-request checkpoint and
+    // `compact()` — re-read the live settings before choosing the mode that lands here, so the
+    // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
@@ -1720,11 +1778,12 @@ export class ContextEngine {
    * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
    * output; raw model messages are **not pushed to the Human output stream** (`token_usage`
    * is captured and handed back via the return value for summarizeContext to yield), with
-   * one exception: the text being generated rides the stream as its own ordinary
-   * `partial_text`/`text` messages (issue #290) so the frontend can show the summary while
-   * it is written — readers already treat model messages between the paired compaction
-   * events as compaction-internal, and history rebuild reads the identical text back from
-   * the span's complete assistant messages. Complete
+   * one exception: the thinking and the text being generated ride the stream as their own
+   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290)
+   * so the frontend can show the compaction request working while it runs — readers already
+   * treat model messages between the paired compaction events as compaction-internal, and
+   * history rebuild reads the identical content back from the span's complete assistant
+   * messages. Complete
    * messages and events are written to the old Trace; complete text segments are collected as
    * the compaction output, and `toolCalls` collects the response's real tool requests (never
    * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
@@ -1760,11 +1819,14 @@ export class ContextEngine {
     let text = "";
     const toolCalls: OmniMessage<ToolCallPayload>[] = [];
     let usage: OmniMessage | null = null;
-    // Whether this attempt streamed any partial_text content: real LLM objects stream the
-    // summary as partial fragments (forwarded verbatim), and the complete text message that
-    // follows must then stay off the stream or consumers would see the content twice; an
-    // implementation that yields only complete messages streams those instead.
+    // Whether this attempt streamed any partial_text / partial_thinking content: real LLM
+    // objects stream the summary (and the thinking ahead of it) as partial fragments
+    // (forwarded verbatim), and the complete message that follows must then stay off the
+    // stream or consumers would see the content twice; an implementation that yields only
+    // complete messages streams those instead. Tracked per kind, so a model that streams its
+    // thinking but delivers its text whole still gets that text forwarded once.
     let sawPartialText = false;
+    let sawPartialThinking = false;
     for (;;) {
       const res = await gen.next();
       if (res.done) {
@@ -1807,20 +1869,24 @@ export class ContextEngine {
       // Stamped with the Session series before the write, exactly like a turn's (runTurn).
       if (this.observeTokenUsage(msg)) usage = msg;
       await this.write(msg);
-      // Streamed compaction progress (issue #290): the summary's own text rides the output
-      // stream between the paired compaction events — partial_text fragments verbatim (all
-      // three phases, so the server's live tail opens and closes its fragment and a join
-      // mid-compaction is seeded with the accumulated prefix), or the complete text when no
-      // partial carried content (implementations that yield only complete messages) — never
-      // both, so consumers see each character once. The request's other raw messages
-      // (thinking, the compaction Prompt, request events) stay Trace-only as before.
-      // Rejected attempts stream too: the frontend shows whatever the compaction request is
-      // really producing, and history rebuild reads the same text back from the span's
-      // complete assistant messages.
+      // Streamed compaction progress (issue #290): the request's thinking and the summary's
+      // own text ride the output stream between the paired compaction events —
+      // partial_thinking / partial_text fragments verbatim (all three phases, so the server's
+      // live tail opens and closes its fragment and a join mid-compaction is seeded with the
+      // accumulated prefix), or the complete thinking / text when no partial of that kind
+      // carried content (implementations that yield only complete messages) — never both,
+      // so consumers see each character once. The request's other raw messages (the
+      // compaction Prompt, request events) stay Trace-only as before. Rejected attempts
+      // stream too: the frontend shows whatever the compaction request is really producing,
+      // and history rebuild reads the same content back from the span's complete assistant
+      // messages.
       {
-        const p = msg.payload as { type?: string; text?: string };
+        const p = msg.payload as { type?: string; text?: string; thinking?: string };
         if (p.type === "partial_text") {
           if (typeof p.text === "string" && p.text !== "") sawPartialText = true;
+          yield msg;
+        } else if (p.type === "partial_thinking") {
+          if (typeof p.thinking === "string" && p.thinking !== "") sawPartialThinking = true;
           yield msg;
         }
       }
@@ -1829,6 +1895,12 @@ export class ContextEngine {
           const body = (msg.payload as TextPayload).text;
           text += body;
           if (!sawPartialText && body !== "") yield msg;
+        } else if (msg.payload.type === "thinking") {
+          // Forwarded for the banner only — the thinking is never summary material (the
+          // extraction reads `text` alone) — and a fidelity-only blank body has nothing to
+          // show.
+          const body = (msg.payload as ThinkingPayload).thinking;
+          if (!sawPartialThinking && body !== "") yield msg;
         } else if (msg.payload.type === "tool_call") {
           // Same filter as the turn loop: a tool_call synthesized to close out an interruption
           // carries a non-completed stop_reason — it is structural closure, not a real request,
@@ -1871,6 +1943,9 @@ export class ContextEngine {
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;
     if (opened.maxTurns !== undefined) this.maxTurns = opened.maxTurns;
+    // The new context's baseline. A `readCompaction` provider re-reads the same file at the
+    // next checkpoint and agrees with it; what this settles is the Session that has no
+    // provider, where the rotation is still the only way compaction settings change.
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;

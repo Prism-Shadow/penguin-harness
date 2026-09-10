@@ -211,7 +211,16 @@ export function AgentSettingsPage() {
       try {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
-        toastSuccess(S.agent.savedTakesEffect);
+        // Compaction is the one section core re-reads at every compaction checkpoint, so a save
+        // that changed nothing else lands on a running conversation right away; everything else
+        // still waits for that conversation's next context. The test is "only compaction", not
+        // "compaction among others" — a mixed save is only as immediate as its slowest field.
+        const changed = update.config ?? {};
+        const compactionOnly =
+          update.agentsMd === undefined &&
+          Object.keys(changed).length === 1 &&
+          changed.compaction !== undefined;
+        toastSuccess(compactionOnly ? S.agent.savedTakesEffectNow : S.agent.savedTakesEffect);
         // Name/description changes affect the breadcrumb and list display; a builtin-tools
         // change moves the card's tool count.
         if (
