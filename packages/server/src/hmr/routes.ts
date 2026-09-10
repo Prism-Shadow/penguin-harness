@@ -72,6 +72,11 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
     await next();
   });
 
+  // What the store lacks of these blobs, so the push that follows carries only those. A
+  // pusher that gets a 404 here is talking to a generation older than the probe and sends
+  // everything inline, as it always did. The answer is the mechanism's, like the push's.
+  routes.post("/assets/probe", (c) => deps.control.endpoint(c.req.raw));
+
   // THE ONE upgrade endpoint: platform + cli + web move together, atomically — there is no
   // route that updates any of the three alone. The body and the answer are the mechanism's
   // (packages/hmr); live clients (browser tabs AND the desktop window) are told to reload
