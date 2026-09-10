@@ -79,6 +79,8 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.sidebarSortMode": "manual",
     "penguin.sidebarNavGroupCollapsed": "collapsed",
     "penguin.steerMode": "followup",
+    "penguin.dock.launcherY": "0.25",
+    "penguin.dock.launcherHidden": "1",
   });
 }
 
