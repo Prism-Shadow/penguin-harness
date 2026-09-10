@@ -475,11 +475,10 @@ export const en: Strings = {
     later: "Later",
   },
 
-  /** The "Create with AI" kit (features/ai-create): the create-button entries, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
   aiCreate: {
     withAi: "Create with AI",
-    manual: "Set up manually",
-    send: "Send to agent",
+    manual: "Create manually",
     editInChat: "Edit in a new conversation",
     copyPrompt: "Copy prompt",
     examplesTitle: "Try an example",
@@ -491,8 +490,6 @@ export const en: Strings = {
     /** Accessible name of the prompt box (it has no visible label). */
     promptLabel: "Prompt",
     noAgent: "This Project has no agent yet",
-    /** Accessible name of the split button's caret half. */
-    moreWays: "More ways to create",
   },
 
   agent: {
