@@ -21,6 +21,8 @@ export {
   upgradeEndpoint,
   HMR_ROUTE_PREFIX,
   HMR_UPGRADE_PATH,
+  HMR_PROBE_PATH,
+  probeEndpoint,
 } from "./main.js";
 export type { Hmr, Replace } from "./main.js";
 export { HmrHost } from "./host.js";

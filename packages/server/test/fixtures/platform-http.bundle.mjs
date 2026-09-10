@@ -66,7 +66,7 @@ const impl = {
         if (url.pathname === "/api/demo/boom") {
           throw new Error("deliberate platform failure");
         }
-        if (url.pathname === "/api/hmr/upgrade") {
+        if (url.pathname.startsWith("/api/hmr/")) {
           // The upgrade channel is the platform's to serve; a generation without it is
           // refused before commit (admitsUpgradeRoute). The protocol is the mechanism's,
           // claimed off the registry — that is how this bundle carries it without a platform.

@@ -94,7 +94,7 @@ describe("platform HTTP seam", () => {
     // before commit instead: the push fails, the previous generation keeps serving, and the
     // next good push lands.
     const hijacker = platformServing(["/api/demo/x"], "hijacker").replace(
-      'if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);',
+      'if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);',
       'if (pathname === "/api/hmr/upgrade") return new Response("hijacked", { status: 418 });',
     );
     const bad = await pushPlatform(t.app, cookie, hijacker);
@@ -151,7 +151,7 @@ const impl = {
       http(request) {
         const { pathname } = new URL(request.url);
         // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
-        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
+        if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (!SERVED.includes(pathname)) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)}, pathname }), {
           status: 200,
@@ -280,7 +280,7 @@ const impl = {
       http(request) {
         const { pathname } = new URL(request.url);
         // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
-        if (pathname === "/api/hmr/upgrade") return ctx.resources.claim("platform.hmrControl").endpoint(request);
+        if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== "/api/demo/version") return null;
         return new Response(JSON.stringify({ impl: ${JSON.stringify(id)} }), {
           status: 200,
