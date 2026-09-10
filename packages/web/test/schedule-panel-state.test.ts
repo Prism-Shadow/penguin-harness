@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import {
   SCHEDULE_FILTERS,
+  boundScheduleCount,
   filterBucket,
   filterSchedules,
   matchesQuery,
@@ -34,6 +35,23 @@ describe("sessionSchedules", () => {
       item({ name: "fresh" }),
     ];
     expect(sessionSchedules(items, "s1").map((i) => i.name)).toEqual(["here"]);
+  });
+});
+
+describe("boundScheduleCount", () => {
+  it("counts what sessionSchedules lists, so the chat header's mark and the panel agree", () => {
+    const items = [
+      item({ name: "here", sessionId: "s1" }),
+      item({ name: "also-here", sessionId: "s1", status: "disabled", enabled: false }),
+      item({ name: "elsewhere", sessionId: "s2" }),
+      item({ name: "fresh" }),
+    ];
+    expect(boundScheduleCount(items, "s1")).toBe(sessionSchedules(items, "s1").length);
+    expect(boundScheduleCount(items, "s1")).toBe(2);
+    // A conversation nothing is bound to wears no mark — including a Session with no tasks at
+    // all and one whose agent's tasks all open a new Session each run.
+    expect(boundScheduleCount(items, "s3")).toBe(0);
+    expect(boundScheduleCount([], "s1")).toBe(0);
   });
 });
 

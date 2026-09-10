@@ -38,6 +38,17 @@ export function sessionSchedules(
   return items.filter((item) => item.sessionId === sessionId);
 }
 
+/**
+ * How many of an agent's tasks are bound to one Session — the figure the chat toolbar's alarm
+ * clock carries. Same rule as `sessionSchedules`, counted rather than listed, so the mark and the
+ * panel can never disagree about what "has scheduled tasks" means.
+ */
+export function boundScheduleCount(items: readonly ScheduleItem[], sessionId: string): number {
+  let n = 0;
+  for (const item of items) if (item.sessionId === sessionId) n += 1;
+  return n;
+}
+
 /** Case-insensitive match on the task's name and its prompt; a blank query matches everything. */
 export function matchesQuery(item: Pick<ScheduleItem, "name" | "prompt">, query: string): boolean {
   const q = query.trim().toLowerCase();

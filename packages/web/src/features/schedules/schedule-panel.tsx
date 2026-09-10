@@ -3,16 +3,19 @@
  * agent's schedules filtered to this Session — new-Session tasks belong to the agent and live
  * on its settings tab), searchable and filtered by state, each row with its human schedule
  * line, an enable switch and an overflow menu (edit / delete); a suggestions list of everyday
- * schedules; and the split create button — "Create with AI" sends the request INTO this
- * Session (ScheduleAiModal, through the page's send path), "Set up manually" opens the shared
- * form pinned to it. The list refetches when the tab comes to the front, when the window
- * regains focus, every 30 s while visible, and after every mutation: the agent may write a
- * task file at any moment, and the server re-reads the directory on its own cadence.
+ * schedules; and the two create buttons in the header — "Create with AI" sends the request INTO
+ * this Session (ScheduleAiModal, through the page's send path), "Create manually" opens the
+ * shared form pinned to it. This panel is the only place a task bound to a conversation is
+ * created.
+ *
+ * The list is the shared store's (schedule-store.ts), narrowed to this Session, so the chat
+ * toolbar's alarm-clock mark counts exactly what is listed here. This panel adds the one
+ * refresh trigger the store cannot know about: a slow poll while the tab is actually on screen.
  *
  * Readable by any member; the switch, edit and delete are owner-only, like the settings tab,
  * while the AI path stays open to everyone — asking the agent is a message, not a write.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ScheduleItem, SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -22,12 +25,13 @@ import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Icon } from "../../components/ui/group-list";
-import { INFO_ICON } from "../../components/ui/icons";
+import { HAND_ICON, INFO_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import {
@@ -41,7 +45,6 @@ import {
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { AiCreateButton, CreateMenuButton } from "../ai-create";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import type { SessionSendOutcome } from "./schedule-ai-modal";
@@ -53,6 +56,7 @@ import {
   sessionSchedules,
 } from "./schedule-panel-state";
 import type { ScheduleFilter } from "./schedule-panel-state";
+import { refreshSchedules, useAgentSchedules } from "./schedule-store";
 import { ScheduleSuggestions } from "./schedule-suggestions";
 import { toggleBody } from "./schedule-upsert";
 
@@ -130,22 +134,25 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
 
 export interface SchedulePanelProps {
   session: SessionInfo;
-  /** Whether this tab is the one on screen (the dock keeps hidden tabs mounted): a hidden tab neither fetches nor polls. */
+  /** Whether this tab is the one on screen (the dock keeps hidden tabs mounted): a hidden tab does not poll. */
   active: boolean;
-  /** A fresh object per request to open the AI dialog — the Session row menu's "Create with AI", arriving through the chat page. */
-  aiRequest: { key: string } | null;
   /** The chat page's delivery into this Session (see ScheduleAiModal). */
   onSendToSession: (text: string) => Promise<SessionSendOutcome>;
 }
 
-export function SchedulePanel({ session, active, aiRequest, onSendToSession }: SchedulePanelProps) {
+export function SchedulePanel({ session, active, onSendToSession }: SchedulePanelProps) {
   const { currentProject, agents, reloadAgents } = useProject();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  const [items, setItems] = useState<ScheduleItem[] | null>(null);
-  // Only the initial load's failure shows in place; a refetch keeps the list it has, and row actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  // The shared store's list, narrowed to this conversation; only the first load's failure shows
+  // in place, and row actions report via toast.
+  const { items: agentItems, error } = useAgentSchedules(
+    projectId,
+    session.agentId,
+    session.sessionId,
+  );
+  const items = agentItems === null ? null : sessionSchedules(agentItems, session.sessionId);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ScheduleFilter>("all");
   const [busy, setBusy] = useState(false);
@@ -156,43 +163,20 @@ export function SchedulePanel({ session, active, aiRequest, onSendToSession }: S
   // AI dialog: non-null means open, seeded with a suggestion's prompt or nothing.
   const [ai, setAi] = useState<{ initial: string } | null>(null);
 
-  const load = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const res = await api.listSchedules(projectId, session.agentId);
-      setItems(sessionSchedules(res.schedules, session.sessionId));
-      setError(null);
-    } catch (e) {
-      setError(apiErrorText(e));
-    }
-  }, [projectId, session.agentId, session.sessionId]);
-
-  // Fetch while on screen: on coming to the front, whenever the window regains focus or the
-  // document becomes visible again, and on a timer in between. A hidden tab does none of it.
+  // On coming to the front, and on a timer while it stays there. Focus and visibility are the
+  // store's own business (it refreshes for the toolbar mark too); a hidden tab adds no poll.
   useEffect(() => {
     if (!active) return;
-    void load();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    window.addEventListener("focus", onVisible);
-    document.addEventListener("visibilitychange", onVisible);
-    const timer = window.setInterval(onVisible, REFRESH_MS);
-    return () => {
-      window.removeEventListener("focus", onVisible);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.clearInterval(timer);
-    };
-  }, [active, load]);
-
-  // The row menu's "Create with AI" lands here as a request object: each one opens the dialog once.
-  useEffect(() => {
-    if (aiRequest !== null) setAi({ initial: "" });
-  }, [aiRequest]);
+    void refreshSchedules();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshSchedules();
+    }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [active]);
 
   /** After a create or delete: the list, and the agent card's schedule count. */
   const changed = () => {
-    void load();
+    void refreshSchedules();
     void reloadAgents();
   };
 
@@ -208,7 +192,7 @@ export function SchedulePanel({ session, active, aiRequest, onSendToSession }: S
         toggleBody(item, !item.enabled),
       );
       toastSuccess(S.agent.savedTakesEffect);
-      await load();
+      await refreshSchedules();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -244,7 +228,13 @@ export function SchedulePanel({ session, active, aiRequest, onSendToSession }: S
   return (
     <div className="h-full overflow-y-auto p-3">
       <div className="space-y-3">
-        <div className="flex items-start justify-between gap-2">
+        {/* The two create paths, on a row of their own under the title rather than beside it.
+            This panel lives in a dock whose width the user drags, and a title block that may
+            shrink to nothing (min-w-0, which the subtitle needs) can never push a neighbour on
+            to a second line — so a side-by-side header squeezes the buttons instead of wrapping
+            them, and at the right dock's usual width they clip. A row of their own costs one
+            line at every width and clips at none. */}
+        <div className="space-y-2">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               {S.schedule.panelTitle}
@@ -253,15 +243,17 @@ export function SchedulePanel({ session, active, aiRequest, onSendToSession }: S
               {S.schedule.panelSubtitle}
             </p>
           </div>
-          <div className="shrink-0">
-            {isOwner ? (
-              <CreateMenuButton
-                size="sm"
-                onAi={() => openAi("")}
-                onManual={() => setForm({ editing: null })}
-              />
-            ) : (
-              <AiCreateButton size="sm" variant="primary" onClick={() => openAi("")} />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Open to every member: asking the agent for a task is a message, not a write. */}
+            <Button size="sm" variant="primary" onClick={() => openAi("")}>
+              <GlyphIcon d={MAGIC_WAND_ICON} />
+              {S.schedule.createWithAi}
+            </Button>
+            {isOwner && (
+              <Button size="sm" variant="secondary" onClick={() => setForm({ editing: null })}>
+                <GlyphIcon d={HAND_ICON} />
+                {S.schedule.createManual}
+              </Button>
             )}
           </div>
         </div>

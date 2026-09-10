@@ -1161,9 +1161,14 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
-    /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
-    createAction: "Schedule a task",
-    /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
+    /**
+     * The panel header's two create buttons. Deliberately not the split create button's
+     * aiCreate.withAi / aiCreate.manual: those name the halves of one control, while these are
+     * two peer buttons that have to read as a pair — same verb, different means.
+     */
+    createWithAi: "Create with AI",
+    createManual: "Create manually",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
     panelTitle: "Scheduled tasks",
@@ -1690,6 +1695,8 @@ Scenarios:
     statusCompletedUnread: "Done, unread",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
+    /** The chat header's alarm clock: scheduled tasks bound to the conversation on screen (click opens the dock's schedules panel). */
+    scheduledTasks: (n: number) => (n === 1 ? "1 scheduled task" : `${n} scheduled tasks`),
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,

@@ -1136,9 +1136,14 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
-    /** The Session row menu's entry, and the header of the two-way chooser it opens (features/schedules/schedule-create-chooser.tsx). */
-    createAction: "创建定时任务",
-    /** The form's target line when it is pinned to one Session (the chat dock panel and the row menu). */
+    /**
+     * The panel header's two create buttons. Deliberately not the split create button's
+     * aiCreate.withAi / aiCreate.manual: those name the halves of one control, while these are
+     * two peer buttons that have to read as a pair — same verb, different means.
+     */
+    createWithAi: "用 AI 创建",
+    createManual: "手动创建",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
     panelTitle: "定时任务",
@@ -1654,6 +1659,8 @@ Benchmark：
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The chat header's alarm clock: scheduled tasks bound to the conversation on screen (click opens the dock's schedules panel). */
+    scheduledTasks: (n: number) => `${n} 个定时任务`,
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
