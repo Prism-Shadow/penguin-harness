@@ -13,7 +13,7 @@
  * instead of a rebuild. Worth remembering when something looks like it must
  * live in the shell: this code runs INSIDE the server process, so in-process
  * effects (e.g. extending process.env for the shells agents spawn) are
- * deliverable from boot() with no runtime change. See ../hmr/README.md.
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
  *
  * This packaged platform carries the WHOLE business surface (see app.ts):
  * every business service and route is assembled inside create() over the runtime's

@@ -1,5 +1,5 @@
 /**
- * The pure half of the machines capability (platform code — see ../src/hmr/README.md):
+ * The pure half of the machines capability (platform code — see packages/hmr/README.md):
  * reading ~/.ssh/config for its aliases, reading what the identity probe answered, choosing
  * the Node runtime to send, the container the image travels in, finding the running
  * server's own pushable image, and the exact ssh/scp commands all of that turns into.
