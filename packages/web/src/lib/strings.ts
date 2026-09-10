@@ -464,7 +464,7 @@ export const zh = {
     later: "稍后再说",
   },
 
-  /** The "Create with AI" kit (features/ai-create): the split create button, the prompt panel and the bridge into a new chat with the Project's default agent. */
+  /** The "Create with AI" kit (features/ai-create): the create-button entries, the prompt panel and the bridge into a new conversation with the Project's default agent. */
   aiCreate: {
     withAi: "让 AI 创建",
     manual: "手动配置",
