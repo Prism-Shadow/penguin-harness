@@ -9,7 +9,7 @@
  * boot — a swap that forgot it would 401 every CLI and every command subprocess still
  * holding the file's value.
  *
- * That is the state layer of the four-layer model (hmr/README.md): a runtime resource the
+ * That is the state layer of the four-layer model (packages/hmr/README.md): a runtime resource the
  * platform claims, riding across swaps and never across restarts. The holder is deliberately
  * a plain mutable bag rather than a service — it carries no behaviour to go stale, so a
  * platform newer than its runtime can still use one an older runtime published.
