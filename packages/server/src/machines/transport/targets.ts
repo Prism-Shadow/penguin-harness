@@ -1,18 +1,16 @@
 /**
- * Turning `~/.ssh/config` into a list of targets the menu can show, and one target into what
- * ssh actually resolved. The parsing is in ssh-config.ts; this file owns the I/O — reading
- * files, expanding `Include` globs, and asking ssh itself with `ssh -G`.
+ * Turning `~/.ssh/config` into the list of aliases the menu can show. The parsing is in
+ * ssh-config.ts; this file owns the I/O — reading files and expanding `Include` globs.
  *
- * An unreadable config, a missing config or an ssh that will not answer all degrade to "no
- * targets" rather than to an error: this list is a convenience, and a user with no ssh setup
- * should simply not see the feature offer them anything.
+ * Nothing here resolves an alias: what it means is ssh's business, applied by ssh itself
+ * every time it is handed one. An unreadable or missing config degrades to "no targets"
+ * rather than to an error: this list is a convenience, and a user with no ssh setup should
+ * simply not see the feature offer them anything.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run } from "./exec.js";
-import { machineIdentity, parseHostAliases, parseSshSettings } from "./ssh-config.js";
-import type { SshSettings } from "./ssh-config.js";
+import { parseHostAliases } from "../ssh-config.js";
 
 const SSH_DIR = () => path.join(os.homedir(), ".ssh");
 
@@ -57,18 +55,4 @@ export function listHostAliases(): string[] {
   } catch {
     return [];
   }
-}
-
-/**
- * What ssh resolves an alias to, via `ssh -G` — Match blocks, Include and wildcard
- * inheritance included, because ssh does the resolving, not us. Null when ssh cannot be run
- * or refuses the alias.
- */
-export async function resolveTarget(
-  alias: string,
-): Promise<{ alias: string; settings: SshSettings; machine: string } | null> {
-  const result = await run("ssh", ["-G", alias], { timeoutMs: 15_000 });
-  if (result.code !== 0 && result.stdout.trim() === "") return null;
-  const settings = parseSshSettings(result.stdout, alias);
-  return { alias, settings, machine: machineIdentity(alias, settings.user) };
 }

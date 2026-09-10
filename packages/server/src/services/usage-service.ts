@@ -30,7 +30,11 @@ import type {
   UsageSeriesPoint,
 } from "../api/types.js";
 import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
-import { offPeakScheduledRefs } from "@prismshadow/penguin-core/model-catalog";
+import {
+  catalogEntryFor,
+  offPeakAt,
+  offPeakScheduledRefs,
+} from "@prismshadow/penguin-core/model-catalog";
 import type {
   UsageRepo,
   UsageModelSums,
@@ -111,6 +115,9 @@ export interface UsageErrorsQuery {
   limit: number;
   from?: string;
   to?: string;
+  /** The trailing window narrowing those dates (see {@link UsageQuery}); both or neither. */
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
   /** Narrow to one category — `unexpected` (500s / runtime exceptions) or `expected`; absent counts both. */
   kind?: string;
@@ -119,26 +126,58 @@ export interface UsageErrorsQuery {
 }
 
 /**
- * What a clear removes (see {@link UsageService.clearErrors}): the panel's own date range and
- * Agent, and nothing else. No `kind` — the panel offers no such control, so a clear has no
- * narrowing the reader could have seen — and no `includeGlobalErrors`, since unattributed rows
- * are never a Project's to delete.
+ * What a clear removes (see {@link UsageService.clearErrors}): the panel's own range — dates,
+ * and the trailing window when one is on — and Agent, read with the same admin visibility the
+ * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
+ * reader could have seen.
  */
 export interface UsageErrorsClearQuery {
   from?: string;
   to?: string;
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
+  /** Admin only, the value the caller's reads carry: an admin's clear takes the unattributed rows an admin's panel shows. */
+  includeGlobalErrors?: boolean;
+}
+
+/** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
+export function requestCostUsd(
+  counts: { cacheRead: number; cacheWrite: number; output: number },
+  rates: PricingRates,
+): number {
+  return (
+    (counts.cacheRead * rates.cacheRead +
+      counts.cacheWrite * rates.cacheWrite +
+      counts.output * rates.output) /
+    1e6
+  );
+}
+
+/**
+ * The rates one usage record is billed at, decided from the record's own timestamp: the
+ * off-peak tier when the reference carries a catalog schedule and `at` falls outside its peak
+ * windows, the peak tier otherwise. For a reference with no schedule, or whose stored price is
+ * no longer the catalog's, the two tiers are the same figure (see project-config-service's
+ * `tieredRates`), so the decision changes nothing there. `peakExpr` in the usage repo is this
+ * rule written in SQL for the aggregations; the two must agree record for record, which is why
+ * an unreadable timestamp — which the repo never stores — takes the peak tier rather than
+ * inventing a discount.
+ */
+export function ratesAt(
+  tiered: TieredRates,
+  provider: string,
+  modelId: string,
+  at: Date,
+): PricingRates {
+  const schedule = catalogEntryFor(provider, modelId)?.offPeakDiscount;
+  if (schedule === undefined || Number.isNaN(at.getTime())) return tiered.peak;
+  return offPeakAt(schedule, at) ? tiered.offPeak : tiered.peak;
 }
 
 /** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
 function costOf(sums: UsageModelSums, tiered: TieredRates): number {
-  const rates = sums.peak ? tiered.peak : tiered.offPeak;
-  return (
-    (sums.cacheRead * rates.cacheRead +
-      sums.cacheWrite * rates.cacheWrite +
-      sums.output * rates.output) /
-    1e6
-  );
+  return requestCostUsd(sums, sums.peak ? tiered.peak : tiered.offPeak);
 }
 
 /** In-process Map key for a paired reference (\0-separated, the same style as session-manager's agentKey; never persisted). */
@@ -266,11 +305,13 @@ export class UsageService {
           ...ts,
         })
       : seriesRows;
-    // Error statistics: likewise not affected by the model filter (HTTP / process errors have no Model dimension), but still affected by the date + agent filter.
+    // Error statistics: likewise not affected by the model filter (HTTP / process errors have no Model dimension), but still affected by the date + agent filter — and by the trailing window, like every other range-scoped aggregate.
     const errorFilter: ErrorFilter = {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
+      ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
       // Unattributed errors are visible only to admins (regular members only see errors within their own Project, see the ErrorsRepo file header).
       ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
     };
@@ -323,6 +364,8 @@ export class UsageService {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
+      ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
       ...(q.kind !== undefined ? { kind: q.kind } : {}),
       ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
     };
@@ -335,20 +378,21 @@ export class UsageService {
   /**
    * Empties the error table for the filter the panel is showing, and answers how many rows went.
    *
-   * The filter is the same date range and Agent the dashboard and the paged route take, so a
-   * clear removes exactly the set the caller was looking at and never a row outside it: a
-   * reader who has narrowed to one Agent and one week does not lose the rest of the year to a
-   * button that said "clear".
-   *
-   * Unattributed rows are outside every clear (see ErrorsRepo.deleteFiltered): they carry no
-   * Project, so they are not this Project's to remove, and the delete's scope is therefore
-   * strictly narrower than what any caller — admin included — is allowed to read.
+   * The filter is the same range (dates, and the trailing window when one is on) and Agent
+   * the dashboard and the paged route take, read with the same admin visibility, so a clear
+   * removes exactly the set the caller was looking at and never a row outside it: a reader
+   * who has narrowed to one Agent and one week does not lose the rest of the year to a button
+   * that said "clear", and an admin whose panel showed unattributed rows is not left holding
+   * them after clearing it (see ErrorsRepo.deleteFiltered).
    */
   clearErrors(projectId: string, q: UsageErrorsClearQuery): number {
     return this.errors.deleteFiltered(projectId, {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
+      ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
+      ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
     });
   }
 
@@ -357,13 +401,6 @@ export class UsageService {
     const { total, unexpected } = this.errors.summary(projectId, f);
     return {
       total,
-      // Counted the way deleteFiltered selects — without the unattributed rows an admin's read
-      // includes — so the clear confirmation states what will really go rather than what is on
-      // screen. Identical to `total` for everyone whose read did not include them.
-      clearable:
-        f.includeGlobal === true
-          ? this.errors.summary(projectId, { ...f, includeGlobal: false }).total
-          : total,
       unexpected,
       topCode: this.errors.topCode(projectId, f),
       recent: this.errors.recent(projectId, f, ERROR_RECENT_N),

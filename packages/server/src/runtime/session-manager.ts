@@ -59,6 +59,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
+  SessionBackgroundTasks,
   SessionStatus,
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
@@ -196,6 +197,8 @@ export interface RuntimeSession {
   setBackgroundSubagentThinkingLevel?(childSessionId: string, level: ThinkingLevelName): boolean;
   /** Subscribes subagent run-state changes (core `Session.onSubagentState`): the manager republishes `task_state` with the fresh live listing. Optional. */
   onSubagentState?(listener: () => void): void;
+  /** Subscribes background-task state changes (core `Session.onBackgroundState`): the manager re-counts the live registries and publishes `session_background` when the counts moved. Optional. */
+  onBackgroundState?(listener: () => void): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -219,7 +222,9 @@ export interface SessionLoader {
  * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
  * address, or null = pass the environment through). `opts.controlEnv` threads the
  * harness-control injection the same way (the server's API URL/token plus the Session's
- * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv).
+ * coordinates; core evaluates it per Session — see CreateAgentOptions.controlEnv), and
+ * `opts.pathPrepend` the directories every command of a resumed Session finds at the front
+ * of its PATH (the harness's own CLI shim — see CreateAgentOptions.pathPrepend).
  */
 export function createCoreSessionLoader(
   root: string,
@@ -227,6 +232,7 @@ export function createCoreSessionLoader(
   opts: {
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+    pathPrepend?: () => string[];
   } = {},
 ): SessionLoader {
   return {
@@ -237,6 +243,7 @@ export function createCoreSessionLoader(
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
+        ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -422,8 +429,29 @@ interface RuntimeEntry {
    * every `task_state`; the rest is the recall handle (see recallSteering).
    */
   pendingSteering: PendingSteeringEntry[];
-  /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
+  /**
+   * Steering the run ended without ever delivering — handed back to the user instead of
+   * discarded (#287 follow-up). An interrupt mid-tool-call is the ordinary way to get here:
+   * core drops its queue when the run exits, so the message would otherwise vanish with the
+   * text the user had already typed.
+   *
+   * Entries move here from `pendingSteering` when the run exits and stay recallable by the
+   * same handle, so the composer pulls them back into its draft (auto-recall on observing
+   * them, a reload included). They are deliberately NOT cleared when the next run starts:
+   * the message was never delivered whatever happens later, and dropping it there would
+   * reintroduce exactly the loss this list exists to prevent. Only a recall — or the entry's
+   * idle eviction — removes one.
+   */
+  returnedSteering: PendingSteeringEntry[];
+  /** Timestamp of last activity (refreshed on load / status flip / drive completion / background-task change), used for idle-eviction checks. */
   lastActivityMs: number;
+  /**
+   * Background-task counts as last read from the runtime — at entry creation, then on every
+   * background-state ping. The baseline `session_background` is published against: a ping
+   * that leaves the counts where they were (a foreground-window child settling, an exited
+   * process being removed from the list) publishes nothing.
+   */
+  backgroundTasks: SessionBackgroundTasks;
 }
 
 /** Active-table idle eviction: same convention as the SSE channel (an idle entry with no activity for 30 minutes releases its memory). */
@@ -433,6 +461,22 @@ const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
+}
+
+/**
+ * The runtime's background-task counts, read live from its registries: command sessions
+ * whose process is still running (exited rows stay listed until removed and do not count),
+ * and subagent sessions that hold a `subagent_id` — promoted to the background by a yield
+ * window expiring or a `run_in_background` launch — and are mid-round. A child still inside
+ * a foreground collect window has no id yet and is the running Task's own work, not
+ * background work.
+ */
+function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
+  const processes = session.listBackgroundCommands?.().filter((p) => p.running).length ?? 0;
+  const subagents =
+    session.listBackgroundSubagents?.().filter((s) => s.running && s.subagentId !== null).length ??
+    0;
+  return { processes, subagents };
 }
 
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
@@ -582,9 +626,26 @@ export class SessionManager {
     return this.entries.get(sessionId)?.followUps.length ?? 0;
   }
 
+  /**
+   * Background-task counts of a LOADED session, read live (see SessionInfo.backgroundTasks);
+   * undefined when the session is not in the active table or nothing is running — the list
+   * row and the single GET omit the field in both cases.
+   */
+  backgroundTasksOf(sessionId: string): SessionBackgroundTasks | undefined {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return undefined;
+    const counts = backgroundTaskCounts(entry.session);
+    return counts.processes > 0 || counts.subagents > 0 ? counts : undefined;
+  }
+
   /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
   pendingSteeringOf(sessionId: string): PendingSteeringInfo[] {
     return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
+  }
+
+  /** Steering a finished run never delivered, waiting for the composer to take it back (see RuntimeEntry.returnedSteering). */
+  returnedSteeringOf(sessionId: string): PendingSteeringInfo[] {
+    return (this.entries.get(sessionId)?.returnedSteering ?? []).map((p) => p.info);
   }
 
   /**
@@ -711,7 +772,9 @@ export class SessionManager {
       pendingInputs: [],
       pendingBootstrap: [],
       pendingSteering: [],
+      returnedSteering: [],
       lastActivityMs: Date.now(),
+      backgroundTasks: backgroundTaskCounts(session),
     });
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
@@ -728,7 +791,10 @@ export class SessionManager {
    *   same feed SSE relays) and recorded for usage — a background child streams to the
    *   frontend in real time past the launching turn's end, until its terminal state;
    * - subagent run-state changes, republished as `task_state` so the panel's running
-   *   marks track child rounds structurally instead of parsing tool-output text.
+   *   marks track child rounds structurally instead of parsing tool-output text;
+   * - background-task state changes (a command promoted or exited, a subagent promoted,
+   *   settling or released), re-counted and published as `session_background` on the user
+   *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
     session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
@@ -737,6 +803,7 @@ export class SessionManager {
       const entry = this.entries.get(sessionId);
       if (entry) this.publishState(entry, entry.status);
     });
+    session.onBackgroundState?.(() => this.publishBackgroundTasks(sessionId));
     // The entry-lifetime approve doubles as the children's fallback approval sink: a child
     // approval with no window and no background-launch standing sink escalates to the user
     // (SSE approval_request) instead of parking until the model's next poll — the parent
@@ -1210,19 +1277,35 @@ export class SessionManager {
    */
   recallSteering(sessionId: string, steerId: string): RecallStore {
     const entry = this.entries.get(sessionId);
-    const i = entry?.pendingSteering.findIndex((p) => p.info.id === steerId) ?? -1;
-    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
-    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
-      throw new HttpError(
-        409,
-        "not_pending",
-        "This steering message was already delivered to the model and can no longer be recalled.",
-      );
+    if (entry) {
+      const queued = entry.pendingSteering.findIndex((p) => p.info.id === steerId);
+      if (queued >= 0) {
+        const pending = entry.pendingSteering[queued]!;
+        // Still queued on a live run: core decides, since the mirror can lag a delivery that
+        // has not reached the stream yet.
+        if (entry.session.unsteer?.(pending.input) ?? false) {
+          entry.pendingSteering.splice(queued, 1);
+          entry.lastActivityMs = Date.now();
+          this.publishState(entry, entry.status);
+          return pending.recall;
+        }
+      }
+      // Handed back when the run exited without delivering it: core's queue is gone, so there
+      // is nothing to unsteer and the mirror is the only authority left — it holds exactly
+      // what the drained stream never showed as delivered (see RuntimeEntry.returnedSteering).
+      const returned = entry.returnedSteering.findIndex((p) => p.info.id === steerId);
+      if (returned >= 0) {
+        const [taken] = entry.returnedSteering.splice(returned, 1);
+        entry.lastActivityMs = Date.now();
+        this.publishState(entry, entry.status);
+        return taken!.recall;
+      }
     }
-    entry.pendingSteering.splice(i, 1);
-    entry.lastActivityMs = Date.now();
-    this.publishState(entry, entry.status);
-    return pending.recall;
+    throw new HttpError(
+      409,
+      "not_pending",
+      "This steering message was already delivered to the model and can no longer be recalled.",
+    );
   }
 
   /**
@@ -1536,6 +1619,8 @@ export class SessionManager {
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
+    /** Background-task counts the discarded runtime last reported (see the publish below). */
+    let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
     if (existing) {
       if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
         return existing;
@@ -1552,6 +1637,7 @@ export class SessionManager {
         return existing;
       }
       this.entries.delete(sessionId);
+      discardedBackgroundTasks = existing.backgroundTasks;
     }
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
@@ -1596,10 +1682,18 @@ export class SessionManager {
       pendingInputs: [],
       pendingBootstrap: [],
       pendingSteering: [],
+      returnedSteering: [],
       lastActivityMs: Date.now(),
+      // Baselined on the DISCARDED runtime's counts when there was one: the replacement
+      // resumes with empty registries, so a client that saw the old counts would keep its
+      // background-task mark with no ping left to clear it. Publishing against that baseline
+      // below reports whatever the fresh runtime actually owns — nothing, in every case the
+      // discard path produces today.
+      backgroundTasks: discardedBackgroundTasks ?? backgroundTaskCounts(session),
     };
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
+    if (discardedBackgroundTasks !== undefined) this.publishBackgroundTasks(currentId);
     return entry;
   }
 
@@ -1831,9 +1925,15 @@ export class SessionManager {
       entry.abort = null;
       entry.running = null;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
-      // steeringQueue) — drop the mirror with it; the idle publish below broadcasts the
-      // now-empty state.
-      entry.pendingSteering = [];
+      // steeringQueue). What is still in the mirror was therefore never delivered — entries
+      // are shifted out as their `[user_steering]` message appears on the stream, and this
+      // runs after that stream is drained — so hand it back to the user rather than dropping
+      // it: the composer recalls it into its draft. Interrupting while a tool runs is the
+      // ordinary way to get here, and the typed message must survive it.
+      if (entry.pendingSteering.length > 0) {
+        entry.returnedSteering = [...entry.returnedSteering, ...entry.pendingSteering];
+        entry.pendingSteering = [];
+      }
       entry.lastActivityMs = Date.now();
       // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
       // every other write in this finally: what follows — the idle broadcast and the
@@ -1949,6 +2049,9 @@ export class SessionManager {
       ...(entry.pendingSteering.length > 0
         ? { pendingSteering: entry.pendingSteering.map((p) => p.info) }
         : {}),
+      ...(entry.returnedSteering.length > 0
+        ? { returnedSteering: entry.returnedSteering.map((p) => p.info) }
+        : {}),
       ...(entry.followUps.length > 0
         ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
         : {}),
@@ -1992,6 +2095,31 @@ export class SessionManager {
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {
     this.deps.channels.get(entry.sessionId).publish(event, "server_event");
+  }
+
+  /**
+   * Re-counts a loaded session's background tasks and, when the counts moved, publishes
+   * `session_background` on the user channel (the list's mark is a user-channel affair like
+   * `session_state`; the open conversation reads the same row). A change is Session
+   * activity for the idle sweep: the entry stays loaded for the usual idle window after its
+   * last background task ends, so the finished process list can still be read. An entry
+   * that already left the table (a delete disposing its runtime) publishes nothing — its
+   * row is gone as well.
+   */
+  private publishBackgroundTasks(sessionId: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    const counts = backgroundTaskCounts(entry.session);
+    const last = entry.backgroundTasks;
+    if (counts.processes === last.processes && counts.subagents === last.subagents) return;
+    entry.backgroundTasks = counts;
+    entry.lastActivityMs = Date.now();
+    this.deps.notifyProjectUsers?.(entry.projectId, {
+      type: "session_background",
+      sessionId: entry.sessionId,
+      processes: counts.processes,
+      subagents: counts.subagents,
+    });
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */
