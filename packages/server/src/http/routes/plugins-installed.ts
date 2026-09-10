@@ -27,7 +27,6 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -46,8 +45,8 @@ export interface InstalledPluginsDeps {
   root: string;
   /** The current version's assets, where the builtin plugins a push carried live. */
   assetsDir: () => string | null;
-  /** Every module the process's plugin host holds, by name. */
-  loadedModules: () => ReadonlySet<string>;
+  /** What the process's plugin host holds, by specifier, and what it could not load, with why. */
+  running: () => { loaded: ReadonlySet<string>; skipped: ReadonlyMap<string, string> };
   projectConfig: ProjectConfigStore;
   access: Access;
   /**
@@ -79,11 +78,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         `${projectId}: ${PLUGINS_FILE} could not be read: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
-    const loaded = deps.loadedModules();
+    const { loaded, skipped } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
     // Exactly what this Project lists: a plugin the build ships is not asked for until a
     // Project says so. `builtin` on a row is where the package CAME FROM, a tag, not a
-    // second way of being asked for.
+    // second way of being asked for. What the package declares is read from its files;
+    // whether the process holds it, and why not, is the host's — a load that failed says
+    // so, rather than passing as a restart that would not help.
     const plugins: InstalledPlugin[] = [];
     for (const specifier of listed) {
       const declared = await readPluginDeclaration(specifier, bases);
@@ -98,15 +99,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         });
         continue;
       }
-      const names = [...declared.modules, ...declared.replaces];
+      const active = loaded.has(specifier);
+      const failure = skipped.get(specifier);
       plugins.push({
         specifier,
-        // A package that declares nothing cannot be shown as active by its modules; it is
-        // asked for and contributes nothing, which is what the row then says.
-        active: names.length > 0 && names.every((n) => loaded.has(n)),
+        active,
         builtin: declared.builtin,
         modules: declared.modules,
         replaces: declared.replaces,
+        ...(!active && failure !== undefined ? { error: failure } : {}),
       });
     }
     return {
@@ -115,8 +116,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       // and asking for one is a list edit rather than a download.
       shipped: await discoverBuiltinPlugins(bases),
       file: PLUGINS_FILE,
-      // A listed plugin that is not active and did not fail to resolve is waiting for a
-      // runtime that can re-assemble the App — otherwise applying already loaded it.
+      // A listed plugin that neither runs nor failed is waiting for a runtime that can
+      // re-assemble the App — otherwise applying already loaded it.
       restartPending: plugins.some((p) => !p.active && p.error === undefined),
     };
   };
@@ -236,12 +237,10 @@ export class InstalledPluginRoutes {
       assetsDir: () => hmr.assetsDir(),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.
-      loadedModules: () =>
-        new Set(
-          pluginHostFrom(hmr.resources)
-            .modules()
-            .map((m: ModuleDef) => m.manifest.name),
-        ),
+      running: () => {
+        const host = pluginHostFrom(hmr.resources);
+        return { loaded: new Set(host.entries().keys()), skipped: host.skipped() };
+      },
       projectConfig: this.projectConfig,
       access: this.access,
       apply: () => applyPluginClosure(root, hmr),
