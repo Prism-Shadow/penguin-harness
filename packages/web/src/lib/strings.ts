@@ -1133,13 +1133,6 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
-    /**
-     * The panel header's two create buttons. Deliberately not the split create button's
-     * aiCreate.withAi / aiCreate.manual: those name the halves of one control, while these are
-     * two peer buttons that have to read as a pair — same verb, different means.
-     */
-    createWithAi: "用 AI 创建",
-    createManual: "手动创建",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -1174,15 +1167,14 @@ export const zh = {
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${year} 年 ${monthDay} ${time}`,
     },
-    /** The "Create with AI" surfaces: the dock panel sends into the current Session, the settings tab into a new one. */
-    aiCreateTitle: "让 AI 创建定时任务",
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
+    aiCreateTitle: "用 AI 创建定时任务",
     aiCreateInSessionDesc: "描述要安排的事，智能体会在这段对话里创建它，并确认设定的时间。",
     aiCreateDesc: "描述要安排的事，智能体会在新对话里为该 Agent 创建它，并确认设定的时间。",
     /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
     byAgentInSession: (name: string): string => `将由「${name}」在本对话中完成`,
-    sendToSession: "发送到本对话",
-    sentToSession: "已发送到本对话",
-    steeredToSession: "已作为插话发送给运行中的任务",
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "在本对话中编辑",
     /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
     aiCreateInSessionTail:
       "请把上面的请求创建为绑定到本对话的定时任务：在 agent_state/schedule/ 下写一个 TOML 文件，`session_id` 取本对话的 Session ID（见 Environment 段），文件名取有意义的英文名，设置 `start_at`；需要重复执行时写 `period`，请求有自然终点时写 `end_at`。创建后用一行确认你设定的时间安排。",

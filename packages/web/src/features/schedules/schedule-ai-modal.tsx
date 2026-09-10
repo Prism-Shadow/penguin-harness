@@ -1,11 +1,11 @@
 /**
  * "Create with AI" for the conversation on screen: AiCreatePanel with the schedule examples
- * and the in-Session instruction tail, sent INTO the current Session rather than to a new one
- * — the built-in Scheduled Tasks guidance binds a task created from inside a conversation to
- * that conversation by default, so the agent that already holds the context is the one asked.
- * Delivery is the chat page's (a task when idle, a steering message while a Task runs — its
- * approval and queue rules apply unchanged); the dialog only composes the prompt (the
- * panel's own fold is where it is copied from). Mounted fresh on every open, like AiCreateModal.
+ * and the in-Session instruction tail, prefilled into THIS conversation's composer rather than
+ * a new one's — the built-in Scheduled Tasks guidance binds a task created from inside a
+ * conversation to that conversation by default, so the agent that already holds the context is
+ * the one asked. Like every other "Create with AI" surface, the dialog composes the prompt and
+ * stops there (the panel's own fold is where it is copied from): pressing Send is the user's
+ * move, on text they have read. Mounted fresh on every open, like AiCreateModal.
  */
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -15,12 +15,8 @@ import { Button } from "../../components/ui/button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
-import { toastSuccess } from "../../components/ui/toast";
 import { AiCreatePanel, composeAiPrompt } from "../ai-create";
 import { scheduleExamples } from "./schedule-suggestions";
-
-/** How the chat page delivered the prompt: as a new task, as a steering message into the running one, or not at all (the page has toasted the error). */
-export type SessionSendOutcome = "sent" | "steered" | "failed";
 
 export interface ScheduleAiModalProps {
   open: boolean;
@@ -30,8 +26,8 @@ export interface ScheduleAiModalProps {
   agents: readonly AgentSummary[];
   /** The Session's own agent: no choice is offered, the task lands in this conversation. */
   agentId: string;
-  /** The chat page's delivery into the current Session. */
-  onSend: (text: string) => Promise<SessionSendOutcome>;
+  /** Writes the composed prompt into this conversation's composer (the chat page's ComposerControl). */
+  onPrefill: (text: string) => void;
 }
 
 export function ScheduleAiModal(props: ScheduleAiModalProps) {
@@ -45,24 +41,15 @@ function ScheduleAiDialog({
   initialValue,
   agents,
   agentId,
-  onSend,
+  onPrefill,
 }: ScheduleAiModalProps) {
   const [value, setValue] = useState(initialValue ?? "");
-  const [sending, setSending] = useState(false);
   const tail = S.schedule.aiCreateInSessionTail;
-  const prompt = composeAiPrompt(value, tail);
   const filled = value.trim() !== "";
   const agent = agents.find((a) => a.agentId === agentId) ?? null;
 
-  const send = async () => {
-    setSending(true);
-    const outcome = await onSend(prompt);
-    if (outcome === "failed") {
-      // The page has toasted the error; the draft stays for another try.
-      setSending(false);
-      return;
-    }
-    toastSuccess(outcome === "steered" ? S.schedule.steeredToSession : S.schedule.sentToSession);
+  const go = () => {
+    onPrefill(composeAiPrompt(value, tail));
     onClose();
   };
 
@@ -75,11 +62,14 @@ function ScheduleAiDialog({
       footer={
         <>
           <Button onClick={onClose}>{S.common.cancel}</Button>
-          {/* Copying lives on the prompt fold's own CopyButton (AiCreatePanel), which flips
-              its glyph in place; a second copy control here would answer with a toast instead. */}
-          <Button variant="primary" disabled={!filled || sending} onClick={() => void send()}>
+          {/*
+            One exit, and its label says where the prompt goes rather than what happens to it.
+            Copying lives on the prompt fold's own CopyButton (AiCreatePanel), which flips its
+            glyph in place; a second copy control here would answer with a toast instead.
+          */}
+          <Button variant="primary" disabled={!filled} onClick={go}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
-            {S.schedule.sendToSession}
+            {S.schedule.editInSession}
           </Button>
         </>
       }
@@ -95,7 +85,6 @@ function ScheduleAiDialog({
         agents={agents}
         agentId={agentId}
         byLine={agent !== null ? S.schedule.byAgentInSession(agentDisplayName(agent)) : null}
-        disabled={sending}
       />
     </Modal>
   );

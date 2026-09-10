@@ -3,10 +3,10 @@
  * agent's schedules filtered to this Session — new-Session tasks belong to the agent and live
  * on its settings tab), searchable and filtered by state, each row with its human schedule
  * line, an enable switch and an overflow menu (edit / delete); a suggestions list of everyday
- * schedules; and the two create buttons in the header — "Create with AI" sends the request INTO
- * this Session (ScheduleAiModal, through the page's send path), "Create manually" opens the
- * shared form pinned to it. This panel is the only place a task bound to a conversation is
- * created.
+ * schedules; and the two create buttons in the header — "Create with AI" composes the request
+ * and prefills THIS conversation's composer with it (ScheduleAiModal), "Create manually" opens
+ * the shared form pinned to this Session. This panel is the only place a task bound to a
+ * conversation is created.
  *
  * The list is the shared store's (schedule-store.ts), narrowed to this Session, so the chat
  * toolbar's alarm-clock mark counts exactly what is listed here. This panel adds the one
@@ -25,13 +25,12 @@ import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Icon } from "../../components/ui/group-list";
-import { HAND_ICON, INFO_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
+import { INFO_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import {
@@ -45,9 +44,9 @@ import {
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
+import { CreateButtons } from "../ai-create";
 import { describeSchedule } from "./schedule-describe";
 import { ScheduleAiModal } from "./schedule-ai-modal";
-import type { SessionSendOutcome } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";
 import {
   SCHEDULE_FILTERS,
@@ -136,11 +135,11 @@ export interface SchedulePanelProps {
   session: SessionInfo;
   /** Whether this tab is the one on screen (the dock keeps hidden tabs mounted): a hidden tab does not poll. */
   active: boolean;
-  /** The chat page's delivery into this Session (see ScheduleAiModal). */
-  onSendToSession: (text: string) => Promise<SessionSendOutcome>;
+  /** Writes the AI dialog's prompt into this conversation's composer (see ScheduleAiModal). */
+  onPrefillComposer: (text: string) => void;
 }
 
-export function SchedulePanel({ session, active, onSendToSession }: SchedulePanelProps) {
+export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePanelProps) {
   const { currentProject, agents, reloadAgents } = useProject();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
@@ -243,19 +242,13 @@ export function SchedulePanel({ session, active, onSendToSession }: SchedulePane
               {S.schedule.panelSubtitle}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Open to every member: asking the agent for a task is a message, not a write. */}
-            <Button size="sm" variant="primary" onClick={() => openAi("")}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
-              {S.schedule.createWithAi}
-            </Button>
-            {isOwner && (
-              <Button size="sm" variant="secondary" onClick={() => setForm({ editing: null })}>
-                <GlyphIcon d={HAND_ICON} />
-                {S.schedule.createManual}
-              </Button>
-            )}
-          </div>
+          {/* The AI half is open to every member — asking the agent for a task is a message,
+              not a write — while the form writes files and stays with the owner. */}
+          <CreateButtons
+            size="sm"
+            onAi={() => openAi("")}
+            {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
+          />
         </div>
 
         <Input
@@ -351,7 +344,7 @@ export function SchedulePanel({ session, active, onSendToSession }: SchedulePane
         initialValue={ai?.initial ?? ""}
         agents={agents}
         agentId={session.agentId}
-        onSend={onSendToSession}
+        onPrefill={onPrefillComposer}
         onClose={() => setAi(null)}
       />
 

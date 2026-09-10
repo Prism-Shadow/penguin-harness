@@ -35,7 +35,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { AiCreateButton, AiCreateModal, CreateMenuButton } from "../ai-create";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
@@ -159,18 +159,14 @@ export function SchedulesTab({
       {alertStrip}
 
       {/* Create entry point at the head of the table, right-aligned (the skills tab's slot): the
-          split button offers the AI path and the form; a member, who cannot write files here,
-          still gets the AI path — asking the agent is a message, not a write. */}
+          two buttons offer the AI path and the form side by side; a member, who cannot write
+          files here, gets the AI button alone — asking the agent is a message, not a write. */}
       <div className="flex justify-end">
-        {isOwner ? (
-          <CreateMenuButton
-            size="sm"
-            onAi={() => openAi("")}
-            onManual={() => setForm({ editing: null })}
-          />
-        ) : (
-          <AiCreateButton size="sm" variant="primary" onClick={() => openAi("")} />
-        )}
+        <CreateButtons
+          size="sm"
+          onAi={() => openAi("")}
+          {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
+        />
       </div>
 
       {data === null ? (

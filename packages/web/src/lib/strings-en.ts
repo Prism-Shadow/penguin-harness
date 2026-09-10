@@ -1158,13 +1158,6 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
-    /**
-     * The panel header's two create buttons. Deliberately not the split create button's
-     * aiCreate.withAi / aiCreate.manual: those name the halves of one control, while these are
-     * two peer buttons that have to read as a pair — same verb, different means.
-     */
-    createWithAi: "Create with AI",
-    createManual: "Create manually",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "This conversation",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -1200,7 +1193,7 @@ export const en: Strings = {
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${monthDay}, ${year}, ${time}`,
     },
-    /** The "Create with AI" surfaces: the dock panel sends into the current Session, the settings tab into a new one. */
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
     aiCreateTitle: "Create a scheduled task with AI",
     aiCreateInSessionDesc:
       "Describe what to schedule; the agent creates it in this conversation and confirms the time it set.",
@@ -1208,9 +1201,8 @@ export const en: Strings = {
       "Describe what to schedule; the agent creates it for this agent in a new conversation and confirms the time it set.",
     /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
     byAgentInSession: (name: string): string => `Done by "${name}" in this conversation`,
-    sendToSession: "Send to this conversation",
-    sentToSession: "Sent to this conversation",
-    steeredToSession: "Sent to the running task as a steering message",
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "Edit in this conversation",
     /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
     aiCreateInSessionTail:
       "Create the request above as a scheduled task bound to this Session: write a TOML file under agent_state/schedule/ with `session_id` set to this Session's id (see the Environment section), a semantic file name and `start_at`; add `period` when it repeats and `end_at` when the request has a natural end. Then confirm the schedule you set in one line.",

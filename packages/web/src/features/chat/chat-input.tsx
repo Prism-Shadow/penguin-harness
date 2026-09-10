@@ -51,8 +51,8 @@
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
- * selects it. The draft screen's example cards reach in through `controlRef` to fill the text
- * body and preselect their skills — a fill, never a send: the user presses Send.
+ * selects it. The draft screen's example cards and the scheduled-tasks panel's AI dialog reach
+ * in through `controlRef` to fill the text body — a fill, never a send: the user presses Send.
  * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
  * an empty composer shows Stop (abort), and typing turns that same button into Send, which
  * follows the remembered mid-run send mode — steer (delivered between turns as a
@@ -750,16 +750,17 @@ function appendAttachmentParts(
 
 /**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * One entry so far: the draft screen's example cards fill this composer instead of submitting
- * on their own.
+ * One entry so far: a surface that composes a prompt puts it in this composer instead of
+ * submitting it on its own.
  */
 export interface ComposerControl {
   /**
-   * Put an example's prompt in the text body and preselect the skills it pins — without
-   * sending anything. `exampleSkills` is the example's full list; names the current Agent
-   * has not installed are dropped here, where the installed list already lives.
+   * Put a composed prompt in the text body and preselect the skills it pins — without sending
+   * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
+   * installed are dropped here, where the installed list already lives. Pass an empty list to
+   * leave the composer's own Skill selection untouched.
    */
-  fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
+  fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
 }
 
 export function ChatInput({
@@ -1357,16 +1358,16 @@ export function ChatInput({
   );
 
   /**
-   * Fill from a draft-screen example card, without sending (see ComposerControl): the prompt
-   * REPLACES the text body — any draft is cleared first — and the example's installed skills
-   * join the selection, so pressing Send builds exactly the `[use_skills]` message the card
-   * used to submit on its own. Why text replaces while skills merge is buildExampleFill.
+   * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
+   * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
+   * skills join the selection, so pressing Send builds exactly the `[use_skills]` message the
+   * caller used to submit on its own. Why text replaces while skills merge is buildExampleFill.
    */
-  const fillExample = useCallback(
-    (prompt: string, exampleSkills: readonly string[]) => {
+  const fillPrompt = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
-        exampleSkills,
+        exampleSkills: pinnedSkills,
         installedSkills: skills.map((s) => s.name),
         selectedSkills,
       });
@@ -1393,7 +1394,7 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  useImperativeHandle(controlRef, () => ({ fillExample }), [fillExample]);
+  useImperativeHandle(controlRef, () => ({ fillPrompt }), [fillPrompt]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);

@@ -80,6 +80,7 @@ import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -110,7 +111,6 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { SchedulePanel } from "../schedules/schedule-panel";
-import type { SessionSendOutcome } from "../schedules/schedule-ai-modal";
 import { boundScheduleCount } from "../schedules/schedule-panel-state";
 import { useAgentSchedules } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
@@ -1204,38 +1204,16 @@ export function ChatPage() {
   );
 
   /**
-   * The scheduled-tasks panel's "Send to this conversation": text alone, delivered the way
-   * the composer would deliver it — a steering message while a Task runs, otherwise a task
-   * posted with queueIfBusy (it starts at once when idle, and queues behind a run the steer
-   * call found already ending). The composer's own draft is left alone: this is not the
-   * user's typed message. Errors toast here; the outcome tells the dialog whether to close.
+   * The scheduled-tasks panel's exit: the composed prompt lands in this conversation's composer
+   * and stops there. Nothing is posted — pressing Send stays the user's move, and the composer
+   * then routes it the way it routes anything typed (a steering message while a Task runs, a
+   * task otherwise), so this path needs no delivery rules of its own.
    */
-  const sendTextToSession = useCallback(
-    async (text: string): Promise<SessionSendOutcome> => {
-      if (!selected) return "failed";
-      try {
-        if (stream.taskState === "running") {
-          try {
-            await api.postSteer(selected.sessionId, { text });
-            return "steered";
-          } catch (e) {
-            // 409: the run ended between the state event and the call — post it as a task.
-            if (!(e instanceof ApiError && e.status === 409)) throw e;
-          }
-        }
-        const res = await api.postTask(selected.sessionId, {
-          input: [{ type: "text", text }],
-          queueIfBusy: true,
-        });
-        await syncHealedSessionId(selected.sessionId, res.sessionId);
-        return "sent";
-      } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
-        return "failed";
-      }
-    },
-    [selected, stream.taskState, syncHealedSessionId],
-  );
+  const composerRef = useRef<ComposerControl | null>(null);
+  const prefillComposer = useCallback((text: string) => {
+    // An empty pin list: a schedule prompt names no Skills, so the composer's own selection stands.
+    composerRef.current?.fillPrompt(text, []);
+  }, []);
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
@@ -1622,7 +1600,7 @@ export function ChatPage() {
             key={selected.sessionId}
             session={selected}
             active={active}
-            onSendToSession={sendTextToSession}
+            onPrefillComposer={prefillComposer}
           />
         );
     }
@@ -1692,6 +1670,7 @@ export function ChatPage() {
   // /model forks the conversation onto another model.
   const input = selected && (
     <ChatInput
+      controlRef={composerRef}
       status={stream.taskState}
       onSend={onSend}
       onSteer={onSteer}

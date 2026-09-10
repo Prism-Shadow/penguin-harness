@@ -255,7 +255,7 @@ describe("clicking a shortcut", () => {
     const source = read("../src/features/chat/draft-view.tsx");
     const handler = /const fillShortcut = useCallback\(([\s\S]*?)\n  \}, \[\]\);/.exec(source);
     expect(handler, "the fillShortcut handler").not.toBeNull();
-    expect(handler?.[1]).toContain("composerRef.current?.fillExample(prompt, [])");
+    expect(handler?.[1]).toContain("composerRef.current?.fillPrompt(prompt, [])");
     expect(handler?.[1]).not.toContain("onSend");
     expect(handler?.[1]).not.toContain("api.");
   });
