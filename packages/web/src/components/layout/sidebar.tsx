@@ -51,7 +51,9 @@ import {
   SIDEBAR_PAGE_SIZE,
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  aggregateWorkspaceLatest,
   clampGroupPage,
+  completeWorkspaceGroups,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
@@ -336,6 +338,7 @@ export function Sidebar({
     byAgent,
     countsByAgent,
     workspaceCountsByAgent,
+    workspaceLatestByAgent,
     isLoadedFor,
     hasMoreFor,
     loadMoreFor,
@@ -500,16 +503,36 @@ export function Sidebar({
     setNavCollapsed(next);
   };
 
-  /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last, plus the manually-added Workspaces as empty groups on top (newest registration first). */
-  const workspaceGroups = useMemo(
-    () => mergeRegisteredWorkspaces(groupSessionsByWorkspace(sessions), registeredWorkspaces),
-    [sessions, registeredWorkspaces],
-  );
-
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
     () => aggregateWorkspaceCounts(workspaceCountsByAgent),
     [workspaceCountsByAgent],
+  );
+
+  /** Workspace-mode per-group newest-Session stamps (folded the same way): a group's recency before any of its rows are loaded. */
+  const workspaceGroupLatest = useMemo(
+    () => aggregateWorkspaceLatest(workspaceLatestByAgent),
+    [workspaceLatestByAgent],
+  );
+
+  /**
+   * Workspace groups (workspace mode): the loaded rows' groups, completed with every
+   * Workspace the server's counts know (empty until their rows page in — the initial load
+   * is each Agent's ten newest conversations, which touch only a few of dozens of
+   * Workspaces), by recency with the temp group last, plus the manually-added Workspaces
+   * as empty groups behind them (newest registration first).
+   */
+  const workspaceGroups = useMemo(
+    () =>
+      mergeRegisteredWorkspaces(
+        completeWorkspaceGroups(
+          groupSessionsByWorkspace(sessions),
+          workspaceGroupCounts,
+          workspaceGroupLatest,
+        ),
+        registeredWorkspaces,
+      ),
+    [sessions, workspaceGroupCounts, workspaceGroupLatest, registeredWorkspaces],
   );
 
   // Pinned groups first within each mode, then the manual drag order within each pin
@@ -895,6 +918,13 @@ export function Sidebar({
    *
    * Only the groups on screen ask — the pager bounds that to one page of groups — and a
    * search is left alone, since it renders loaded matches only and fetching cannot find more.
+   *
+   * The ask is marked in flight like a "More" click (pendingLoads), for two reasons: a group
+   * the counts know but no page has loaded rows of starts out empty, and its body must read
+   * as loading rather than as having no conversations; and the marker is what keeps this
+   * effect from asking twice — every landed page changes the group list and re-runs it, and
+   * an in-flight pair is still unloaded, so a second request would start its cursor over and
+   * the group would later skip a page.
    */
   useEffect(() => {
     if (groupMode !== "workspace" || searching) return;
@@ -908,7 +938,17 @@ export function Sidebar({
         ...new Set([...(counts?.agents.active ?? []), ...group.sessions.map((s) => s.agentId)]),
       ];
       const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
-      if (unloaded.length > 0) void loadMoreFor(unloaded, "active", group.key);
+      if (unloaded.length === 0) continue;
+      const key = loadKey(group.key, "active");
+      if (pendingLoads.has(key)) continue;
+      setPendingLoads((prev) => new Set(prev).add(key));
+      void loadMoreFor(unloaded, "active", group.key).finally(() => {
+        setPendingLoads((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      });
     }
   }, [
     groupMode,
@@ -918,6 +958,7 @@ export function Sidebar({
     workspaceGroupCounts,
     isLoadedFor,
     loadMoreFor,
+    pendingLoads,
   ]);
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
@@ -1384,15 +1425,19 @@ export function Sidebar({
     );
     const empty = parts.active.length === 0 && folders.every((f) => f === null);
     const activePending = pendingLoads.has(loadKey(groupKey, "active"));
+    // Rows the server counts that no page has loaded yet — a Workspace group known from
+    // the counts alone while its own first page is on its way (or, after a failed fetch,
+    // waiting on the reveal row below to be asked for again). Not "no conversations".
+    const awaitingRows = !searching && parts.active.length === 0 && hiddenActive > 0;
     return (
       <>
         {empty ? (
-          loading ? (
+          loading || (awaitingRows && activePending) ? (
             // The same window the chat pane's skeleton covers: the Agent groups render as
             // soon as the Agents arrive, but the session pages are still being fetched —
             // "no Sessions yet" is not the honest answer until they land.
             <SkeletonList rows={2} />
-          ) : (
+          ) : awaitingRows ? null : (
             <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
               {S.chat.noSessions}
             </p>

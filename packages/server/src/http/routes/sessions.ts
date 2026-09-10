@@ -446,20 +446,18 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
-    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
-      projectId,
-      agentId,
-      {
+    const { sessions, counts, workspaceCounts, workspaceLatest } =
+      await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
-      },
-    );
+      });
     return c.json({
       sessions,
       ...(counts ? { counts } : {}),
       ...(workspaceCounts ? { workspaceCounts } : {}),
+      ...(workspaceLatest ? { workspaceLatest } : {}),
     } satisfies SessionsResponse);
   });
 

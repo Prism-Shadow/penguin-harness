@@ -252,6 +252,26 @@ export function latestConversation(sessions: readonly SessionInfo[]): SessionInf
   return best;
 }
 
+/**
+ * Folds the per-Agent per-Workspace-path newest-Session stamps
+ * (SessionsResponse.workspaceLatest) into workspace-mode group keys: the newest across
+ * Agents, and across every temporary path for the merged temp group. createdAt is uniform
+ * ISO-8601 UTC, so the string maximum is the chronological one.
+ */
+export function aggregateWorkspaceLatest(
+  byAgent: ReadonlyMap<string, Readonly<Record<string, string>>>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const byWorkspace of byAgent.values()) {
+    for (const [workspace, createdAt] of Object.entries(byWorkspace)) {
+      const key = workspaceGroupKey(workspace);
+      const cur = out.get(key);
+      if (cur === undefined || createdAt > cur) out.set(key, createdAt);
+    }
+  }
+  return out;
+}
+
 export interface WorkspaceGroup<T = SessionInfo> {
   /** Stable group key: the Workspace path, or TEMP_WORKSPACE_GROUP_KEY for the merged temp group. */
   key: string;
@@ -304,6 +324,56 @@ export function groupSessionsByWorkspace<T extends { workspace: string; createdA
     return byCreatedDesc(a.sessions[0]?.createdAt ?? "", b.sessions[0]?.createdAt ?? "");
   });
   return groups;
+}
+
+/**
+ * Completes the session-derived grouping with every Workspace the server's counts know:
+ * a group the loaded pages touched no row of is added EMPTY (its rows page in down its own
+ * stream once it is on screen), and the named groups are re-sorted by recency — the newer
+ * of the group's newest loaded row and the server's `latest` stamp — with the merged temp
+ * group last, the order groupSessionsByWorkspace gives. Without this the group list was
+ * only as complete as each Agent's first page: a Workspace whose newest conversation was
+ * older than an Agent's ten newest never formed a group at all, which with dozens of
+ * Workspaces holding hundreds of conversations each is most of them.
+ *
+ * A counted key with no rows left in any category (its last conversation was deleted
+ * since the counts were taken) forms no group; a key already grouped keeps its loaded rows.
+ */
+export function completeWorkspaceGroups<T extends { createdAt: string }>(
+  groups: readonly WorkspaceGroup<T>[],
+  counts: ReadonlyMap<string, GroupCounts>,
+  latest: ReadonlyMap<string, string>,
+): WorkspaceGroup<T>[] {
+  const out = [...groups];
+  const existing = new Set(groups.map((g) => g.key));
+  for (const [key, { totals }] of counts) {
+    if (existing.has(key)) continue;
+    if (!ALL_CATEGORIES.some((category) => totals[category] > 0)) continue;
+    existing.add(key);
+    const temp = key === TEMP_WORKSPACE_GROUP_KEY;
+    out.push({
+      key,
+      label: temp ? "" : workspaceLabel(key),
+      fullPath: temp ? null : key,
+      temp,
+      sessions: [],
+    });
+  }
+  // A group's newest loaded row (groupSessionsByWorkspace sorts members newest first) or
+  // the server's stamp, whichever is newer: a row added locally since the counts were
+  // taken counts, and so does a stamp for rows not loaded.
+  const recency = (g: WorkspaceGroup<T>): string => {
+    const loaded = g.sessions[0]?.createdAt ?? "";
+    const stamped = latest.get(g.key) ?? "";
+    return loaded > stamped ? loaded : stamped;
+  };
+  out.sort((a, b) => {
+    if (a.temp !== b.temp) return a.temp ? 1 : -1;
+    const ra = recency(a);
+    const rb = recency(b);
+    return ra < rb ? 1 : ra > rb ? -1 : 0;
+  });
+  return out;
 }
 
 /**

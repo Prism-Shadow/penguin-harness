@@ -172,8 +172,10 @@ export class SessionService {
    * Trace-head read per row, cached in the sources registry); without `withCounts`
    * the walk stops as soon as the requested page is complete. `withCounts` classifies
    * every row and returns per-category totals over the whole list — plus the same
-   * totals broken down by Workspace path — so the sidebar can label the collapsed
-   * folders (and a workspace group can know its own share) without loading them.
+   * totals broken down by Workspace path, and each path's newest Session's `createdAt` —
+   * so the sidebar can label the collapsed folders, list every Workspace that holds
+   * Sessions (not only the ones its loaded pages happen to touch) and place the groups
+   * by recency, all without loading them.
    *
    * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
    * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
@@ -194,6 +196,7 @@ export class SessionService {
     sessions: SessionInfo[];
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
+    workspaceLatest?: Record<string, string>;
   }> {
     const { paging, category, workspaceGroup, withCounts } = opts;
     const rows = new Map(
@@ -235,6 +238,7 @@ export class SessionService {
     const want = paging ? paging.offset + paging.limit : Infinity;
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
+    const workspaceLatest: Record<string, string> = {};
     const matched: SessionRow[] = [];
     for (const row of sorted) {
       if (!withCounts && matched.length >= want) break;
@@ -248,6 +252,8 @@ export class SessionService {
           archived: 0,
         });
         ws[cat] += 1;
+        // The walk is newest-first, so a path's first row is its newest Session.
+        workspaceLatest[row.workspace] ??= row.createdAt;
       }
       const wanted =
         (category === undefined || cat === category) &&
@@ -255,7 +261,7 @@ export class SessionService {
       if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts } : { sessions };
+    return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
   }
 
   /**

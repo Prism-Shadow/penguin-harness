@@ -1289,6 +1289,13 @@ export interface SessionsResponse {
    * content that lives in other Workspaces.
    */
   workspaceCounts?: Record<string, SessionCategoryCounts>;
+  /**
+   * Present with `counts`: each Workspace path's newest Session (any category), as its
+   * `createdAt`. With `workspaceCounts` this is what lets the sidebar list every Workspace
+   * that holds Sessions and place the groups by recency before — or without — loading any
+   * of their rows.
+   */
+  workspaceLatest?: Record<string, string>;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
