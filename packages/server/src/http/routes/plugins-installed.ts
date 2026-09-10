@@ -8,7 +8,8 @@
  *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
  *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
  *
- * WHERE THE LIST LIVES. In the Project's own config (`plugins` in `.project_config.toml`),
+ * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
+ * package name → requirement, Cargo's `[dependencies]` shape),
  * beside its models — because machines are lent to Projects, so a Project's list is what
  * says which machines a plugin has to reach (PRFC-0010). The data root's old `plugins.json`
  * is not read any more, deliberately without a migration: a deployment that had one starts
@@ -86,7 +87,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // whether the process holds it, and why not, is the host's — a load that failed says
     // so, rather than passing as a restart that would not help.
     const plugins: InstalledPlugin[] = [];
-    for (const specifier of listed) {
+    for (const specifier of Object.keys(listed)) {
       const declared = await readPluginDeclaration(specifier, bases);
       if ("error" in declared) {
         plugins.push({
@@ -155,8 +156,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
     }
     const listed = await deps.projectConfig.getPlugins(projectId);
-    if (!listed.includes(specifier)) {
-      await deps.projectConfig.setPlugins(projectId, [...listed, specifier]);
+    if (!(specifier in listed)) {
+      await deps.projectConfig.setPlugins(projectId, { ...listed, [specifier]: {} });
     }
     await deps.apply();
     return c.json(await view(projectId));
@@ -166,11 +167,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf(c.req.query("specifier"));
-    const listed = await deps.projectConfig.getPlugins(projectId);
-    await deps.projectConfig.setPlugins(
-      projectId,
-      listed.filter((s) => s !== specifier),
-    );
+    const kept = { ...(await deps.projectConfig.getPlugins(projectId)) };
+    delete kept[specifier];
+    await deps.projectConfig.setPlugins(projectId, kept);
     await deps.apply();
     return c.json(await view(projectId));
   });
@@ -183,9 +182,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!Array.isArray(list) || list.some((s) => typeof s !== "string" || s.trim() === "")) {
       throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
     }
-    await deps.projectConfig.setPlugins(projectId, [
-      ...new Set((list as string[]).map((s) => s.trim())),
-    ]);
+    // Names only, over the wire; a name that stays keeps what the file asked of it.
+    const listed = await deps.projectConfig.getPlugins(projectId);
+    await deps.projectConfig.setPlugins(
+      projectId,
+      Object.fromEntries((list as string[]).map((s) => s.trim()).map((s) => [s, listed[s] ?? {}])),
+    );
     await deps.apply();
     return c.json(await view(projectId));
   });
