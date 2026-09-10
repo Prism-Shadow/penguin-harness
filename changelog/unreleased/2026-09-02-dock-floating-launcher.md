@@ -1,4 +1,4 @@
-# A floating launcher for the workbench
+# A floating shortcuts launcher
 
 - **Date:** 2026-09-02
 - **Type:** feature
@@ -9,7 +9,7 @@
 
 The chat page gained an AssistiveTouch-style floating launcher for the workbench: while no dock
 surface is up, a translucent round button floats just inside the right edge of the conversation
-body under a short "Open workbench" caption, and a click fans its entries out on a tight
+body under a short "Shortcuts" caption, and a click fans its entries out on a tight
 semicircular ring around it — one per dock panel plus a terminal, glyphs alone, their names read
 out by that same caption — and picking one opens that panel, at which point the launcher goes
 away. The workbench's panels had been reachable only through the toolbar's toggle, which a user
@@ -24,12 +24,11 @@ away for good, and an Appearance setting brings it back.
 - Resting: a 44px translucent circle with backdrop blur and a soft shadow, quiet until hovered or
   focused (a visible focus ring for keyboard users), showing a workbench glyph — a dashboard of
   four tiles — with its name printed under it on the same glass: a bare glyph does not say what it
-  opens, and the ball's accessible name is that same word. It rests 24px in from the body's right
-  edge, far enough to read as floating rather than pinned, and a caption too wide to stay centred
-  on the ball slides left so its end stays inside the body instead of being clipped by the edge.
-  Neither the ball nor an entry carries a tooltip: every name is already on screen. It sits inside
-  the chat body — between the toolbar and the composer — so neither it nor its caption ever covers
-  either.
+  opens, and the ball's accessible name is that same word. It rests 32px in from the body's right
+  edge, far enough to read as floating rather than pinned and far enough that the caption stays
+  centred under it, the longest name it shows included. Neither the ball nor an entry carries a
+  tooltip: every name is already on screen. It sits inside the chat body — between the toolbar and
+  the composer — so neither it nor its caption ever covers either.
 - Click, Enter or Space fans out round entries: every kind in `PANEL_KINDS` through the shared
   panel meta (a kind added later appears by itself), plus the terminal, which adopts a live shell
   no conversation holds or starts one, exactly like the dock picker, and a last "hide launcher"
@@ -47,7 +46,7 @@ away for good, and an Appearance setting brings it back.
   press elsewhere, or scrolling folds it.
 - "Hide launcher" folds the fan, writes `penguin.dock.launcherHidden` and unmounts the ball under
   its own click, leaving a toast that names where it comes back from. That preference is the one
-  the new **Workbench launcher** switch on the Appearance settings page reads and writes, so
+  the new **Shortcuts launcher** switch on the Appearance settings page reads and writes, so
   the fan's entry and the switch are two views of the same choice; both apply on the spot, through
   a small store the launcher's mount and the settings row subscribe to. A tolerant read means only
   a deliberate "1" hides it — an absent or hand-edited value shows the launcher.
@@ -56,9 +55,11 @@ away for good, and an Appearance setting brings it back.
 - The ball drags along the edge with a small movement threshold, so a press stays a click; it
   rubberbands off the edge and past the body's ends and springs back on release. The position is
   one global preference, `penguin.dock.launcherY`, stored as a ratio of the chat body's height with
-  a tolerant parse (anything unusable falls back to the centre). Pointer capture and
-  `touch-action: none` keep a touch drag from scrolling the page under it. Both preferences are
-  registered as browser preferences in `lib/install-scope.ts`, so switching data roots keeps them.
+  a tolerant parse (anything unusable falls back to the centre). The gesture is tracked on the
+  window, so it follows the pointer wherever it travels — over other controls included — instead
+  of stalling the moment pointer capture is lost; capture and `touch-action: none` are still what
+  keep a touch drag from scrolling the page under it. Both preferences are registered as browser
+  preferences in `lib/install-scope.ts`, so switching data roots keeps them.
 - `prefers-reduced-motion` disables the spring and the fan's animations: instant show and hide.
 - The decisions — visibility, clamping (which reserves the caption's height), the ratio round trip
   and its parse, drag bounds, the arc's geometry and trimming, and the put-away preference and its

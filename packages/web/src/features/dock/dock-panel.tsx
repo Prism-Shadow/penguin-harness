@@ -421,9 +421,13 @@ export function DockPanel({
       return id ? { id } : null;
     },
     onMove: (event, { id }) => {
+      // The gesture is tracked on the window, so the strip comes from its ref rather than
+      // from the event's target — which is wherever the pointer has travelled to.
+      const stripEl = stripRef.current;
+      if (!stripEl) return;
       // Out of the strip (with a little slack): the gesture becomes "move to the other
       // edge" — the same overlay as moving a dock, with the preview showing the landing.
-      const strip = event.currentTarget.getBoundingClientRect();
+      const strip = stripEl.getBoundingClientRect();
       if (event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20) {
         setTabDrag({ active: true, candidate: dockDropCandidate(event.clientX, event.clientY) });
         return;
@@ -431,7 +435,7 @@ export function DockPanel({
       setTabDrag({ active: false, candidate: null });
 
       // Within the strip: live reorder against the other tabs' midpoints.
-      const tabEls = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-tab-id]")];
+      const tabEls = [...stripEl.querySelectorAll<HTMLElement>("[data-tab-id]")];
       const currentIds = tabEls.map((el) => el.dataset.tabId as string);
       const others = tabEls.filter((el) => el.dataset.tabId !== id);
       let insertAt = others.length;

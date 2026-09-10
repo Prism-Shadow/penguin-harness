@@ -75,13 +75,13 @@ import {
 } from "./dock-launcher-state";
 
 /**
- * The ball's inset from the body's right edge (px): enough room to read as floating rather
- * than pinned to the edge, and enough for a caption up to
- * LAUNCHER_SIZE + 2·(EDGE_INSET − CAPTION_EDGE_MARGIN) wide to stay centred on the ball.
+ * The ball's inset from the body's right edge (px): the ball floats well clear of the edge
+ * rather than sitting against it, and that room is what keeps the caption centred. A caption
+ * centred under the ball may be up to LAUNCHER_SIZE + 2·EDGE_INSET − 12 ≈ 96px wide before
+ * it touches the body's edge — wider than the longest name it shows ("Hide launcher"), so
+ * nothing has to slide sideways to stay inside.
  */
-const EDGE_INSET = 24;
-/** Air the caption keeps from the body's right edge (px) once it is too wide to stay centred. */
-const CAPTION_EDGE_MARGIN = 6;
+const EDGE_INSET = 32;
 /** Movement that turns a press into a drag (px); under it the press is a click. */
 const DRAG_THRESHOLD = 4;
 /** The fan's exit animation, after which its entries unmount (`.launcher-fan-out` in styles.css). */
@@ -171,7 +171,6 @@ function LauncherBall({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ballRef = useRef<HTMLButtonElement | null>(null);
   const fanRef = useRef<HTMLDivElement | null>(null);
-  const captionRef = useRef<HTMLSpanElement | null>(null);
   /** The resting position — the stored preference — as a ratio of the body's height. */
   const ratioRef = useRef(readLauncherRatio());
   const bodyHeightRef = useRef(0);
@@ -284,20 +283,6 @@ function LauncherBall({
 
   // ----------------------------------------------------------------------------- caption
   const captionText = hoveredName ?? S.dock.launcherCaption;
-  /** How far left the caption is pulled off the ball's centre to stay inside the body (px). */
-  const [captionShift, setCaptionShift] = useState(0);
-  // The pill is exactly as wide as its text — a word or a short phrase, in either language —
-  // so how far it reaches is unknown until it has rendered, and it is measured rather than
-  // guessed. Centred on the ball it may reach LAUNCHER_SIZE + 2·(EDGE_INSET −
-  // CAPTION_EDGE_MARGIN) before its right end crosses the body's edge and is clipped; past
-  // that it slides left by exactly the overhang, so a short caption stays centred and a long
-  // one keeps CAPTION_EDGE_MARGIN of air inside the body. A language switch remounts the
-  // tree, so the new dictionary's caption is measured on its own mount.
-  useLayoutEffect(() => {
-    const width = captionRef.current?.offsetWidth ?? 0;
-    const overhang = width / 2 - LAUNCHER_SIZE / 2 - (EDGE_INSET - CAPTION_EDGE_MARGIN);
-    setCaptionShift(Math.max(0, overhang));
-  }, [captionText]);
 
   // The body's height bounds the travel: measured on mount and on every resize, and the
   // ball re-placed from its stored ratio (unless a drag is holding it) — a taller or
@@ -572,14 +557,11 @@ function LauncherBall({
             technology and never folded into the ball's. Its height is spelled from the
             constant the vertical clamp reserves, so the two cannot drift apart. */}
         <span
-          ref={captionRef}
           aria-hidden
-          className={`${CAPTION_CLASS} left-1/2`}
+          className={`${CAPTION_CLASS} left-1/2 -translate-x-1/2`}
           style={{
             top: LAUNCHER_SIZE + CAPTION_GAP,
             height: LAUNCHER_CAPTION_HEIGHT - CAPTION_GAP,
-            // Centring and the edge correction are one transform, so the two cannot fight.
-            transform: `translateX(calc(-50% - ${captionShift}px))`,
           }}
         >
           {captionText}

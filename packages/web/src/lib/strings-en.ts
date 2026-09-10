@@ -100,10 +100,10 @@ export const en: Strings = {
     killConfirmTitle: "Close this terminal?",
     killConfirmBody: (name: string): string =>
       `This ends the shell "${name}" — it cannot be restored.`,
-    launcher: "Open workbench",
-    launcherCaption: "Open workbench",
+    launcher: "Shortcuts",
+    launcherCaption: "Shortcuts",
     launcherPending: "a subagent awaits approval",
-    launcherPanels: "Workbench",
+    launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
@@ -178,9 +178,9 @@ export const en: Strings = {
     fontLarge: "L",
     accent: "Accent",
     accentInfo: "Interface accent color.",
-    launcher: "Workbench launcher",
+    launcher: "Shortcuts launcher",
     launcherInfo:
-      "The round button floating on the conversation's right edge that opens the workbench's panels. Turning it off here removes it; the fan's \"Hide launcher\" entry turns it off too.",
+      "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
