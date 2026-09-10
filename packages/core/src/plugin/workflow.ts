@@ -1,5 +1,5 @@
 /**
- * Workflows: the named units an extension registers and anyone can call.
+ * Workflows: the named units a plugin registers and anyone can call.
  *
  * Registration plus a plain JS call — nothing more. Anything needing a Session,
  * approval or streaming is a different capability and does not belong on this floor.

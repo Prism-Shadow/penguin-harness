@@ -93,6 +93,7 @@ import type {
   CommandPolicyConfig,
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
@@ -142,6 +143,14 @@ export interface CreateAgentOptions {
    * at every spawn. Absent = PATH is untouched (SDK/CLI standalone use).
    */
   pathPrepend?: () => string[];
+  /**
+   * Sandbox-confinement seam for the command subprocesses of every Session this Agent
+   * creates or resumes — and of its subagents' Sessions, which inherit the getter (see
+   * {@link SpawnConfiner}). Host policy exactly like `proxyEnv`: re-read at every
+   * spawn, so the hosting server can swap the active confiner without restarting
+   * Sessions. Absent = commands spawn unconfined.
+   */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 /** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
@@ -321,7 +330,14 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     init: {},
   });
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv, opts.pathPrepend);
+  return new Agent(
+    state,
+    projectConfig,
+    opts.proxyEnv,
+    opts.controlEnv,
+    opts.pathPrepend,
+    opts.confineSpawn,
+  );
 }
 
 export class Agent {
@@ -334,6 +350,8 @@ export class Agent {
     private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
     /** See {@link CreateAgentOptions.pathPrepend}; forwarded into every Session's Environment and hooks. */
     private readonly pathPrepend?: () => string[],
+    /** See {@link CreateAgentOptions.confineSpawn}; forwarded into every Session's Environment. */
+    private readonly confineSpawn?: () => SpawnConfiner | null,
   ) {}
 
   /**
@@ -900,14 +918,15 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-env and
-                // control-env policy getters are host policy, not Agent state: the
+                // A child Agent loads its own vault/config, but the proxy-env, control-env
+                // and spawn-confinement getters are host policy, not Agent state: the
                 // subagent's commands run in the same serving process, so they follow the
                 // same settings as the parent's — controlEnv is then evaluated with the
                 // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -956,6 +975,7 @@ export class Agent {
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -1114,6 +1134,7 @@ export class Agent {
           }
         : {}),
       ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
+      ...(this.confineSpawn ? { confineSpawn: this.confineSpawn } : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its

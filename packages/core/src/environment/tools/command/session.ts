@@ -80,6 +80,14 @@ export interface SpawnOptions {
    * is spawned exactly as given.
    */
   pathPrepend?: readonly string[];
+  /**
+   * Sandbox-confinement seam: receives the exact argv about to be spawned and returns
+   * the argv to spawn instead. A throw aborts the spawn — fail-closed — and surfaces as
+   * the command's spawn error. The manager binds the Session-level context (the
+   * Workspace root) before handing the confiner down, so this narrower shape only
+   * carries what the spawn itself knows (see `SpawnConfiner` in interfaces.ts).
+   */
+  confine?: (argv: readonly string[], opts: { cwd: string }) => readonly string[];
 }
 
 export class ManagedSession {
@@ -111,7 +119,17 @@ export class ManagedSession {
     // what the model is shown; only the string actually handed to the shell carries the
     // PATH statement in front of it.
     const prefix = pathPrependPrefix(shell.name, opts.pathPrepend ?? []);
-    this.child = spawn(shell.command, [...shell.args, prefix + opts.cmd], {
+    // The confinement seam runs BEFORE spawn on the exact argv (shell included), so a
+    // confiner that cannot enforce its policy aborts the spawn by throwing (fail-closed)
+    // rather than letting the command run unconfined. The rewritten argv is spawned in
+    // place of the original; env assembly is unaffected (the runner inherits it).
+    const argv = [shell.command, ...shell.args, prefix + opts.cmd];
+    const confined = opts.confine ? [...opts.confine(argv, { cwd: opts.cwd })] : argv;
+    const program = confined[0];
+    if (program === undefined) {
+      throw new Error("spawn confiner returned an empty argv");
+    }
+    this.child = spawn(program, confined.slice(1), {
       cwd: opts.cwd,
       env: opts.env,
       detached: SUPPORTS_PROCESS_GROUP, // Become the process-group leader, so the whole group can be signaled

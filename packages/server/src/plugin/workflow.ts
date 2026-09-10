@@ -1,13 +1,17 @@
 /**
  * Building the workflow instance view. The types are the SDK's contract
- * (`@prismshadow/penguin-core/extension`); this is the harness's implementation of it.
+ * (`@prismshadow/penguin-core/plugin`); this is the harness's implementation of it.
  */
-import type { WorkflowFactory, WorkflowInstance, WorkflowInstances } from "./index.js";
+import type {
+  WorkflowFactory,
+  WorkflowInstance,
+  WorkflowInstances,
+} from "@prismshadow/penguin-core/plugin";
 
 /**
- * The Map handed to extensions at `"initialize"` — `iface.workflow` itself — with the one
+ * The Map handed to plugins at `"initialize"` — `iface.workflow` itself — with the one
  * guarantee the contract states: a duplicate name is an ERROR, not a silent replacement.
- * A bare Map would make the winner depend on extensions.json ordering, and an extension could
+ * A bare Map would make the winner depend on plugins.json ordering, and a plugin could
  * take over a name another one already owns without either noticing.
  *
  * Named for what it holds rather than for the concept: a workflow REGISTRY is the App's
