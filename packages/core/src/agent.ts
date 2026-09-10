@@ -14,6 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   assertValidId,
   assembleSystemPrompt,
@@ -35,9 +36,11 @@ import {
   systemConfigPath,
   tracesDir,
   type AgentState,
+  type CompactionConfig,
   type ModelRef,
   type ModelEntry,
   type ProjectConfig,
+  type SystemConfig,
 } from "./state/index.js";
 import {
   DEFAULT_MAX_CONTEXT_LENGTH,
@@ -274,6 +277,31 @@ interface AssembledContext {
 // window arithmetic in llm/context-limits.ts; re-exported by llm/index.js.
 
 /**
+ * The Session's compaction settings as they follow from a `compaction` section: defaults
+ * filled in, the threshold capped by what the model's window leaves room for, and an unknown
+ * mode read as the default `summarize`.
+ *
+ * Stated once because two callers need the same answer from the same input — the context
+ * assembly below, and the live re-reader every checkpoint calls (see `compactionReader`). Two
+ * copies of the rule would let a running Session compact at a threshold no rotation would
+ * have chosen.
+ */
+function resolveCompaction(
+  config: CompactionConfig | undefined,
+  contextWindow: number | undefined,
+): CompactionSettings {
+  return {
+    maxContextLength: effectiveMaxContextLength(
+      config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
+      contextWindow,
+    ),
+    maxSessionTurns: config?.max_session_turns ?? -1,
+    mode: config?.mode === "discard" ? "discard" : "summarize",
+    prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+  };
+}
+
+/**
  * Output cap for meta requests (title generation / vision describing): these carry their own
  * small hardcoded budget, tightened further by the entry's per-model `max_tokens` when that is
  * smaller — a cap the user pinned below the budget must bind every request to that model. The
@@ -428,18 +456,13 @@ export class Agent {
     const thinkingLevel =
       pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state, projectConfig));
 
-    // Compaction config: defaults are filled in here; an unknown mode falls back to
-    // summarize (the default).
-    const compactionConfig = state.systemConfig.compaction;
-    const compaction: CompactionSettings = {
-      maxContextLength: effectiveMaxContextLength(
-        compactionConfig?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
-        spec.modelEntry.context_window,
-      ),
-      maxSessionTurns: compactionConfig?.max_session_turns ?? -1,
-      mode: compactionConfig?.mode === "discard" ? "discard" : "summarize",
-      prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
-    };
+    // Compaction config: this context's baseline. It is no longer the last word — the engine
+    // re-reads the section at every compaction checkpoint through `compactionReader` — but a
+    // context still opens on the configuration that was on disk when it opened.
+    const compaction = resolveCompaction(
+      state.systemConfig.compaction,
+      spec.modelEntry.context_window,
+    );
 
     // session_meta: this context's runtime configuration — the assembled prompt goes both to
     // the LLM and in here, so the Trace can audit the actual effective value and a resume
@@ -740,6 +763,49 @@ export class Agent {
   }
 
   /**
+   * The Session's live compaction reader: what takes `compaction` out of the set of settings
+   * a model context freezes when it opens. The engine calls it at every compaction checkpoint,
+   * so a threshold, turn count, mode or prompt saved to the Agent's `system_config.yaml`
+   * reaches the conversation that is running instead of waiting for the next rotation.
+   *
+   * Cached by the file's identity on disk, so an unchanged file costs one `stat` per checkpoint
+   * and nothing else. Three fields, because no one of them is enough: the inode number changes
+   * whenever the config is saved through `atomicWriteFile` (a temp file renamed over the name,
+   * which is also why a reader never sees a half-written config), while an in-place rewrite
+   * keeps the inode and is caught by the nanosecond mtime — `mtimeMs` alone cannot separate two
+   * saves inside the same millisecond, and a threshold dragged in the Web App can produce
+   * exactly that. Size is the cheap third opinion for a filesystem with a coarse clock.
+   *
+   * Only the `compaction` section is honoured here. Everything else in the config is strict
+   * tier and belongs to the context that was assembled from it; reading the file is not
+   * licence to apply the rest of it mid-context.
+   *
+   * The model's context window comes from the Session's own entry, which is fixed at creation
+   * (a mid-conversation model change opens a new Session), so one reader serves every context
+   * the Session opens. A parse that fails throws: the engine keeps the settings in force and
+   * warns once, which is the right answer for a file being rewritten badly.
+   */
+  private compactionReader(spec: SessionSpec): () => Promise<CompactionSettings> {
+    const { root, projectId, agentId } = this.state;
+    const configPath = systemConfigPath(root, projectId, agentId);
+    const contextWindow = spec.modelEntry.context_window;
+    let cachedKey: string | null = null;
+    let cached: CompactionSettings | null = null;
+    return async (): Promise<CompactionSettings> => {
+      const stat = await fs.stat(configPath, { bigint: true });
+      const key = `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
+      if (cached !== null && key === cachedKey) return cached;
+      const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
+      if (parsed === null || typeof parsed !== "object") {
+        throw new Error(`Invalid Agent State config: ${configPath} is empty or corrupted.`);
+      }
+      cached = resolveCompaction((parsed as SystemConfig).compaction, contextWindow);
+      cachedKey = key;
+      return cached;
+    };
+  }
+
+  /**
    * Constructs the Session for `spec` running on `context` — the one assembly behind
    * createSession and resumeSession, so initialization and resumption cannot drift apart.
    * `extras` carries the resume-only fields (its history-injecting bootstrap wrapper, the
@@ -763,6 +829,9 @@ export class Agent {
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
+      // Live tier: the baseline above is what this context opened on, and this is how every
+      // checkpoint after it asks the disk again.
+      readCompaction: this.compactionReader(spec),
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
       modelHasVision: spec.modelEntry.vision !== false,
