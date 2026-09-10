@@ -528,8 +528,9 @@ export const zh = {
     importAgent: "导入智能体",
     importAgentDesc:
       "把 Claude Code、Codex、Pi 的智能体设置，或 PenguinHarness 导出的智能体包，导入为本 Project 的一个新智能体。与「导入快照」不同：快照是备份与还原，这里是移植与接入。",
-    importModeFile: "从文件导入",
-    importModeAi: "让 AI 导入",
+    /** The page header's two import entries, each opening the dialog straight into its own path. */
+    importWithAi: "用 AI 导入",
+    importManual: "手动导入",
     importFileLabel: "包文件",
     importFilePick: "选择文件",
     importFileHint: "PenguinHarness 导出的 <id>-export.zip，或单独的 penguin-agent.json",
@@ -542,16 +543,16 @@ export const zh = {
     importAgentSkipped: (notes: string): string => `未映射：${notes}`,
     importAgentVaultKeys: (keys: string): string => `需要设置的密钥：${keys}`,
     exportAgent: "导出智能体",
+    /** The card's other export entry: the same agent, handed to an agent instead of packed here. */
+    exportWithAi: "用 AI 导出",
     exportAgentDesc:
-      "选择导出形态。三种都不含密钥值、记忆、Trace 与快照；前两种都带定义、技能与钩子，因此都能再导入回来。",
-    /** The three export shapes: two packed by the server, one written by an agent. */
+      "选择导出形态。两种都带定义、技能与钩子，因此都能再导入回来；都不含密钥值、记忆、Trace 与快照。",
+    /** The two shapes the server packs. */
     exportModeApi: "导出 API 调用示例",
     exportModeApiDesc: "定义、技能、钩子，加接入文档、端点说明与 curl / Python / TypeScript 示例",
     exportModeDocker: "导出 Docker 文件",
     exportModeDockerDesc:
       "Dockerfile、compose 文件、entrypoint 与 .env.example：容器起来即导入该智能体并对外提供同一套 API",
-    exportModeAi: "让 AI 导出",
-    exportModeAiDesc: "描述你要的形态，交给智能体生成——上面两种覆盖不到时用它",
     exportAction: "下载",
     exportBusy: "打包中…",
     aiExportIntro:

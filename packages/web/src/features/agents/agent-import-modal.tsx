@@ -1,9 +1,12 @@
 /**
- * The Agents page's "Import agent" dialog, in two segments: a portable bundle (or a bare
- * penguin-agent.json) picked from disk and posted to the import route, or a prompt handed to
- * the Project's default agent, which reads a Claude Code / Codex / Pi setup or a bundle with
- * the agent-porting skill and runs the import itself. Apart from the snapshot import on the
- * settings page on purpose: a snapshot restores one existing agent's state, this creates one.
+ * The Agents page's "Import agent" dialog, in one of two modes the page's two header buttons
+ * pick between: a portable bundle (or a bare penguin-agent.json) picked from disk and posted to
+ * the import route, or a prompt handed to the Project's default agent, which reads a Claude
+ * Code / Codex / Pi setup or a bundle with the agent-porting skill and runs the import itself.
+ * The mode is chosen before the dialog opens, so neither path hides inside the other, and the
+ * AI path never sends: it hands the prompt to a new conversation's composer. Apart from the
+ * snapshot import on the settings page on purpose: a snapshot restores one existing agent's
+ * state, this creates one.
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
@@ -20,16 +23,18 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { CloseIcon, MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Segmented } from "../../components/ui/segmented";
 import { toastInfo, toastSuccess } from "../../components/ui/toast";
 import { AiCreatePanel, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { AGENT_BUNDLE_ACCEPT, agentIdFromBundleName } from "./agent-bundle-file";
 import { SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 
-type ImportMode = "file" | "ai";
+/** Which path the dialog shows; the page's two header buttons each open one of them. */
+export type AgentImportMode = "file" | "ai";
 
 export interface AgentImportModalProps {
   open: boolean;
+  /** The path this dialog renders — there is no switch inside it. */
+  mode: AgentImportMode;
   onClose: () => void;
   projectId: string;
   agents: readonly AgentSummary[];
@@ -38,18 +43,18 @@ export interface AgentImportModalProps {
 }
 
 export function AgentImportModal(props: AgentImportModalProps) {
-  // Mounted only while open, so every open starts on the file segment with an empty form.
+  // Mounted only while open, so every open starts with an empty form and an empty draft.
   return props.open ? <AgentImportDialog {...props} /> : null;
 }
 
 function AgentImportDialog({
   open,
+  mode,
   onClose,
   projectId,
   agents,
   onImported,
 }: AgentImportModalProps) {
-  const [mode, setMode] = useState<ImportMode>("file");
   const [file, setFile] = useState<File | null>(null);
   const [agentId, setAgentId] = useState("");
   const [idError, setIdError] = useState<string | undefined>(undefined);
@@ -110,9 +115,9 @@ function AgentImportDialog({
     }
   };
 
-  const go = (autoSend: boolean) => {
+  const go = () => {
     if (aiAgentId === null) return;
-    openAiChat({ agentId: aiAgentId, text: composeAiPrompt(draft, tail), autoSend });
+    openAiChat({ agentId: aiAgentId, text: composeAiPrompt(draft, tail) });
     onClose();
   };
 
@@ -139,12 +144,10 @@ function AgentImportDialog({
         ) : (
           <>
             <Button onClick={onClose}>{S.common.cancel}</Button>
-            <Button disabled={!aiReady} onClick={() => go(false)}>
-              {S.aiCreate.editInChat}
-            </Button>
-            <Button variant="primary" disabled={!aiReady} onClick={() => go(true)}>
+            {/* One exit: the prompt lands in a new conversation's composer and pressing Send stays the user's own move. */}
+            <Button variant="primary" disabled={!aiReady} onClick={go}>
               <GlyphIcon d={MAGIC_WAND_ICON} />
-              {S.aiCreate.send}
+              {S.aiCreate.editInChat}
             </Button>
           </>
         )
@@ -152,15 +155,6 @@ function AgentImportDialog({
     >
       <div className="space-y-4">
         <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.importAgentDesc}</p>
-        <Segmented
-          cols={2}
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: "file", label: S.agent.importModeFile },
-            { value: "ai", label: S.agent.importModeAi },
-          ]}
-        />
         {mode === "file" ? (
           <div className="space-y-3">
             <div>

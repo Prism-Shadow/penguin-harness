@@ -94,7 +94,7 @@ The `docker` bundle carries `Dockerfile`, `docker-compose.yml`, `entrypoint.sh`,
 
 Four ways to use an export:
 
-- **Move the agent** to another PenguinHarness: `penguin agent import <id>-export.zip` there (or the Agents page's Import agent button), then set the vault keys.
+- **Move the agent** to another PenguinHarness: `penguin agent import <id>-export.zip` there (or the Agents page's **Import manually** button), then set the vault keys.
 - **Hand it to a coding agent**: unzip it and give that agent `README.md` and `examples/` — enough to call this agent from its own code. Point it at the server URL and give it a token (`~/.penguin/data/api-token` on the server's machine, or `penguin auth login --server <url>` from elsewhere); never paste a token into a file that gets committed.
 - **Publish the agent as an HTTP API**: the PenguinHarness server already is that API, and `api/ENDPOINTS.md` documents it for this agent. Run the server where the callers can reach it (`penguin server --host <address> --port <port>`, or behind a reverse proxy), hand out tokens, and keep `allow-all` or `read-only` approval for unattended callers.
 - **Ship it as a container**: `--kind docker`, fill in `.env`, `docker compose up --build`. The agent's tools then run inside the container with its permissions — which is the reason to containerise it — but it still reaches the network, and nothing in the bundle terminates TLS or authenticates anyone but the built-in admin. Put it behind something that does before exposing it.

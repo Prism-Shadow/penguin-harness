@@ -532,8 +532,9 @@ export const en: Strings = {
     importAgent: "Import agent",
     importAgentDesc:
       "Turn a Claude Code, Codex or Pi agent setup, or an agent bundle exported from PenguinHarness, into a new agent of this Project. Not the snapshot import: a snapshot backs up and restores, this ports and integrates.",
-    importModeFile: "From a file",
-    importModeAi: "Let AI import",
+    /** The page header's two import entries, each opening the dialog straight into its own path. */
+    importWithAi: "Import with AI",
+    importManual: "Import manually",
     importFileLabel: "Bundle file",
     importFilePick: "Choose a file",
     importFileHint: "An <id>-export.zip exported from PenguinHarness, or a bare penguin-agent.json",
@@ -546,17 +547,16 @@ export const en: Strings = {
     importAgentSkipped: (notes: string): string => `Not mapped: ${notes}`,
     importAgentVaultKeys: (keys: string): string => `Vault keys to set: ${keys}`,
     exportAgent: "Export agent",
+    /** The card's other export entry: the same agent, handed to an agent instead of packed here. */
+    exportWithAi: "Export with AI",
     exportAgentDesc:
-      "Pick a shape. None of them carry vault values, memory, Traces or snapshots; the first two both carry the definition, skills and hooks, so either re-imports.",
+      "Pick a shape. Both carry the definition, skills and hooks, so either re-imports; neither carries vault values, memory, Traces or snapshots.",
     exportModeApi: "API call examples",
     exportModeApiDesc:
       "Definition, skills and hooks, plus the integration guide, the endpoint reference and runnable curl / Python / TypeScript examples",
     exportModeDocker: "Docker files",
     exportModeDockerDesc:
       "Dockerfile, compose file, entrypoint and .env.example: the container imports this agent on first boot and serves the same API",
-    exportModeAi: "Let AI export it",
-    exportModeAiDesc:
-      "Describe the shape you want and an agent writes it — for what the two above do not cover",
     exportAction: "Download",
     exportBusy: "Packing…",
     aiExportIntro:
