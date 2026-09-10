@@ -72,17 +72,19 @@ Model entry (`[[models]]`) fields:
 | `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
-| `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |
+| `base_url` | Custom base URL; preset by the built-in catalog for gateways and for the direct rows that pin a client — MiniMax M3 and DeepSeek `deepseek-flash` |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
