@@ -208,7 +208,7 @@ What that route may do is bounded a second time: it stores the code on the flow 
 | PUT | /api/projects/:projectId/plugins/installed | `{plugins}` — rewrite this Project's list and apply (admin) |
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | Drop it from this Project's list and apply; nothing on disk changes (admin) |
 
-The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). The registry is discovery only and never imports plugin code; a Project asks for an entry through the routes above, and its list lives in its own `.project_config.toml` (`plugins`). The process runs the union over every Project's list.
+The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). The registry is discovery only and never imports plugin code; a Project asks for an entry through the routes above, and its list lives in its own `.project_config.toml` as the `[plugins]` table — package name → requirement, in the shape of Cargo's `[dependencies]` (`"@scope/name" = "*"`, a version string, or `{ version = "…" }`). The process runs the union over every Project's table.
 
 ### Agents
 

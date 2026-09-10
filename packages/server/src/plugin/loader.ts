@@ -2,7 +2,7 @@
  * Plugin loading: WHICH plugins a deployment runs is CONFIGURATION, not capability
  * baked into the platform.
  *
- * The configuration is per PROJECT (`plugins` in `.project_config.toml`), because machines
+ * The configuration is per PROJECT (the `[plugins]` table in `.project_config.toml`), because machines
  * are lent to Projects and that is what says which machines a plugin has to reach. Loading
  * is per PROCESS, though — there is one module tree — so what a deployment runs is the
  * CLOSURE: the union over its Projects. A plugin any Project asks for is in the tree, and
@@ -23,7 +23,7 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
-import { parsePluginList, projectConfigPath } from "@prismshadow/penguin-core";
+import { parsePluginTable, projectConfigPath } from "@prismshadow/penguin-core";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -94,7 +94,7 @@ export async function readProjectPluginList(root: string, projectId: string): Pr
     );
     return [];
   }
-  return parsePluginList((parsed as { plugins?: unknown }).plugins) ?? [];
+  return Object.keys(parsePluginTable((parsed as { plugins?: unknown }).plugins) ?? {});
 }
 
 /**

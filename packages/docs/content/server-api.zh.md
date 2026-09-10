@@ -208,7 +208,7 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用（管理员） |
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
 
-索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml`（`plugins`）里。进程运行的是所有 Project 列表的并集。
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml` 的 `[plugins]` 表里——包名 → 要求，形状同 Cargo 的 `[dependencies]`（`"@scope/name" = "*"`、版本字符串，或 `{ version = "…" }`）。进程运行的是所有 Project 表的并集。
 
 ### Agent
 

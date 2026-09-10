@@ -47,7 +47,7 @@ describe("installed plugins", () => {
   });
 
   it("says a listed plugin is not active, and why when it cannot even be read", async () => {
-    await fs.writeFile(listFile(), 'plugins = ["@acme/not-installed"]\nmodels = []\n');
+    await fs.writeFile(listFile(), 'models = []\n[plugins]\n"@acme/not-installed" = "*"\n');
     const res = await view();
     expect(res.plugins).toHaveLength(1);
     expect(res.plugins[0]).toMatchObject({ specifier: "@acme/not-installed", active: false });
@@ -61,12 +61,14 @@ describe("installed plugins", () => {
       plugins: ["@acme/one", "@acme/one"],
     });
     expect(saved.status).toBe(200);
-    // Written once: the list is a set, in the order given — and it lands in the Project's
-    // own config, beside its models, rather than in a file of its own.
+    // Written once: the table is keyed by name, in the order given — and it lands in the
+    // Project's own config, beside its models, rather than in a file of its own.
     expect(
       ((await saved.json()) as InstalledPluginsResponse).plugins.map((p) => p.specifier),
     ).toEqual(["@acme/one"]);
-    expect(await fs.readFile(listFile(), "utf8")).toContain('plugins = [ "@acme/one" ]');
+    const written = await fs.readFile(listFile(), "utf8");
+    expect(written).toContain("[plugins]");
+    expect(written).toContain('"@acme/one" = "*"');
 
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
     // The list is the PROJECT's now, so it is reachable only by that Project's people. An

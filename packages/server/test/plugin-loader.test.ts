@@ -28,10 +28,10 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** A Project asking for these plugins: its config file is what the closure is read from. */
-async function writeConfig(value: unknown, projectId = "p1"): Promise<void> {
-  const list = (value as { plugins?: unknown }).plugins;
-  await writeProject(projectId, `plugins = ${JSON.stringify(list ?? [])}\nmodels = []\n`);
+/** A Project asking for these plugins: its `[plugins]` table is what the closure is read from. */
+async function writeConfig(value: { plugins?: string[] }, projectId = "p1"): Promise<void> {
+  const rows = (value.plugins ?? []).map((s) => `${JSON.stringify(s)} = "*"`);
+  await writeProject(projectId, `models = []\n[plugins]\n${rows.join("\n")}\n`);
 }
 
 /** Raw config text, for the malformed cases. */
@@ -78,7 +78,7 @@ describe("plugin list", () => {
 
   it("a Project whose config will not parse is skipped, not fatal for the rest", async () => {
     // Its models are just as unreadable; the deployment still has to come up for everyone else.
-    await writeProject("broken", "plugins = [oops\n");
+    await writeProject("broken", "[plugins]\nx = [oops\n");
     await writeConfig({ plugins: ["a"] }, "p1");
     expect(await readProjectPluginList(root, "broken")).toEqual([]);
     expect(await readPluginClosure(root)).toEqual(["a"]);
@@ -93,10 +93,20 @@ describe("plugin list", () => {
     await expect(readProjectPluginList(root, "p1")).rejects.toThrow(/could not be read/);
   });
 
-  it("entries that are not package specifiers are dropped, not fatal", async () => {
-    // Leniency on purpose: a typo in this list must not take the Project's models with it.
-    await writeProject("p1", 'plugins = ["ok", "", 7]\nmodels = []\n');
-    expect(await readProjectPluginList(root, "p1")).toEqual(["ok"]);
+  it("entries that are not requirements are dropped, not fatal", async () => {
+    // Leniency on purpose: a typo in this table must not take the Project's models with it.
+    await writeProject(
+      "p1",
+      'models = []\n[plugins]\nok = "*"\npinned = "1.2.3"\ntabled = { version = "2" }\nbad = 7\nworse = { version = 3 }\n',
+    );
+    expect(await readProjectPluginList(root, "p1")).toEqual(["ok", "pinned", "tabled"]);
+  });
+
+  it("the list form this key once had is not read: such a Project asks for none", async () => {
+    // Deliberately no compatibility (PRFC-0010): a table replaced the list before release,
+    // and a file still carrying the list starts with no plugins until it is written again.
+    await writeProject("p1", 'plugins = ["@acme/old"]\nmodels = []\n');
+    expect(await readProjectPluginList(root, "p1")).toEqual([]);
   });
 });
 

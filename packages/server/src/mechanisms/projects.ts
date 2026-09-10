@@ -25,7 +25,12 @@ import type {
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { RawTable } from "../services/project-config-service.js";
-import type { ListEndpointModelsOptions, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
+import type {
+  ListEndpointModelsOptions,
+  ModelRef,
+  PluginTable,
+  ProjectConfig,
+} from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
 import type {
   ModelOAuthErrorCode,
@@ -101,8 +106,10 @@ export abstract class ProjectConfigStore extends Interface<{
   setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
   getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
-  getPlugins(projectId: string): Promise<string[]>;
-  setPlugins(projectId: string, plugins: readonly string[]): Promise<string[]>;
+  /** The `[plugins]` table this Project asks for: package name → requirement, in the file's order. */
+  getPlugins(projectId: string): Promise<PluginTable>;
+  /** Replaces the table (a declarative PUT); answers what was written. */
+  setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
   getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
   setCommandPolicy(
     projectId: string,

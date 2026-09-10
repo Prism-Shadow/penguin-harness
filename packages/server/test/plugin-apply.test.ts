@@ -28,7 +28,7 @@ async function rootAsking(specifiers: string[]): Promise<string> {
   await mkdir(path.join(root, "p1"), { recursive: true });
   await writeFile(
     path.join(root, "p1", ".project_config.toml"),
-    `plugins = ${JSON.stringify(specifiers)}\nmodels = []\n`,
+    `models = []\n[plugins]\n${specifiers.map((s) => `${JSON.stringify(s)} = "*"`).join("\n")}\n`,
     "utf8",
   );
   return root;
