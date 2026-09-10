@@ -81,9 +81,11 @@ async function killAllTerminals(request) {
     .toBe(0);
 }
 
+// A hidden dock stays in the DOM at zero size (its panels keep their state), so "on
+// screen" is data-open, not the node's presence.
 const dockAt = (page, position) =>
-  page.locator(`[data-testid="dock"][data-position="${position}"]`);
-const anyDock = (page) => page.locator('[data-testid="dock"]');
+  page.locator(`[data-testid="dock"][data-position="${position}"][data-open="true"]`);
+const anyDock = (page) => page.locator('[data-testid="dock"][data-open="true"]');
 const terminalBody = (page) => page.locator('[data-testid="dock-terminal-body"]:visible');
 const screenText = (page) => terminalBody(page).locator(".xterm-rows").innerText();
 
