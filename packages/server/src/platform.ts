@@ -218,12 +218,10 @@ export class Startup {
   ],
 })
 export class RuntimeModule {}
-// NOT renamed with the rest of the layer (#636): a tree node's NAME is a wire contract
-// across generations. The runtime resolves nodes by name — `tree.api("RuntimeModule",
-// "Log")` in app.ts — and a parked document is keyed by it, so a pushed platform that
-// renamed one would fail an older runtime's lookup at boot ("no api 'Log' on module
-// 'RuntimeModule'") and orphan whatever that node had parked. A node name has no alias
-// the way a resource id does (LEGACY_RESOURCE_IDS), so it stays.
+// NOT renamed with the rest of the layer (#636): the layer resolves nodes by name —
+// `tree.api("RuntimeModule", "Log")` in app.ts — and a parked document is keyed by it, so a
+// pushed platform that renamed one would fail the lookup at boot and orphan what the node
+// had parked.
 
 @Module({
   children: [

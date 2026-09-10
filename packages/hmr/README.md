@@ -56,10 +56,9 @@ platform that declines them can be rolled back to.
 What the resource registry holds is the **platform's**: the config the process started with,
 the open database, the channels, the hot host, the auth values, the plugin host's imported
 objects, the nodes a test stands in for. The process keeps them there for one reason — a swap
-must not lose them — and every id reads `platform.*`. An id is a wire contract between
-generations, so the `runtime:*` names the entries had before are registered and claimed as
-aliases until nothing installed predates the rename (`LEGACY_RESOURCE_IDS` in
-`packages/server/src/hmr/capabilities.ts`).
+must not lose them — and every id reads `platform.<name>`. The registry is in-memory state:
+a platform and the layer it runs on name the same ids, and a rename is a hard upgrade of
+both, never an alias.
 
 ## The test to apply BEFORE editing HMR-layer code
 

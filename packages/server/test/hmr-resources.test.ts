@@ -31,10 +31,7 @@ import {
   HMR_HOST_RESOURCE_ID,
   HMR_PROXY_RESOURCE_ID,
   HMR_AUTH_STATE_RESOURCE_ID,
-  LEGACY_RESOURCE_IDS,
-  claimAny,
   claimHmrCapabilities,
-  publish,
 } from "../src/hmr/capabilities.js";
 
 /**
@@ -380,44 +377,6 @@ describe("runtime capability handshake", () => {
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
     expect(claim.caps.authState).toEqual({ firstLoginToken: null, apiToken: null });
-  });
-
-  it("claims what an older layer registered under the runtime: ids", () => {
-    // Every entry under its legacy id only, the way a layer built before the rename
-    // publishes them; the platform must boot on it unchanged.
-    const r = new HotResources();
-    const legacy = (id: string) => LEGACY_RESOURCE_IDS[id]!;
-    const carrying = (name: string): Record<string, unknown> => {
-      const need = HMR_INTERFACES[name];
-      const obj: Record<string, unknown> = {};
-      if (Array.isArray(need)) for (const m of need) obj[m] = () => undefined;
-      return obj;
-    };
-    r.register(legacy(HMR_INTERFACES_RESOURCE_ID), HMR_INTERFACES);
-    r.register(legacy(HMR_CONFIG_RESOURCE_ID), carrying("config"));
-    r.register(legacy(HMR_DB_RESOURCE_ID), carrying("db"));
-    r.register(legacy(HMR_CHANNELS_RESOURCE_ID), carrying("channels"));
-    r.register(legacy(HMR_PROXY_RESOURCE_ID), () => {});
-    r.register(legacy(HMR_HOST_RESOURCE_ID), carrying("hmr"));
-    r.register(legacy(HMR_LIFECYCLE_RESOURCE_ID), carrying("lifecycle"));
-    const published = { firstLoginToken: "x", apiToken: null };
-    r.register(legacy(HMR_AUTH_STATE_RESOURCE_ID), published);
-    const claim = claimHmrCapabilities(r);
-    expect(claim).toMatchObject({ kind: "claimed" });
-    if (claim.kind !== "claimed") return;
-    expect(claim.caps.authState).toBe(published);
-  });
-
-  it("publishes under both ids, and the new id wins a claim", () => {
-    const r = new HotResources();
-    const fresh = { firstLoginToken: null, apiToken: null };
-    publish(r, HMR_AUTH_STATE_RESOURCE_ID, fresh);
-    expect(r.claim(HMR_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
-    expect(r.claim(LEGACY_RESOURCE_IDS[HMR_AUTH_STATE_RESOURCE_ID]!)).toBe(fresh);
-    // A stale legacy entry beside a current one is not what the platform reads.
-    const stale = { firstLoginToken: "old", apiToken: null };
-    r.register(LEGACY_RESOURCE_IDS[HMR_AUTH_STATE_RESOURCE_ID]!, stale);
-    expect(claimAny(r, HMR_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
   });
 
   it("fills the fields an older runtime's auth state lacks, in place", () => {
