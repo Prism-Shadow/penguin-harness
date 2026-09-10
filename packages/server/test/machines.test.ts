@@ -1,6 +1,6 @@
 /**
  * The pure half of the machines capability (platform code — see ../src/hmr/README.md):
- * reading ~/.ssh/config and `ssh -G`, reading what the identity probe answered, choosing
+ * reading ~/.ssh/config for its aliases, reading what the identity probe answered, choosing
  * the Node runtime to send, the container the image travels in, finding the running
  * server's own pushable image, and the exact ssh/scp commands all of that turns into.
  * No network, no ssh binary.
@@ -11,7 +11,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
+import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
+import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
+import {
+  parseProbe,
+  probeServerState,
+  readServerStateCommand,
+} from "../src/machines/server-state.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   cmdQuote,
@@ -20,6 +26,7 @@ import {
   scpArgs,
   shQuote,
   sshArgs,
+  sessionArgs,
 } from "../src/machines/commands.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
 
@@ -70,41 +77,8 @@ describe("parseHostAliases", () => {
   });
 });
 
-describe("parseSshSettings", () => {
-  it("reads what ssh resolved, keeping every identityfile", () => {
-    const settings = parseSshSettings(
-      [
-        "user deploy",
-        "hostname 10.0.0.4",
-        "port 2222",
-        "identityfile ~/.ssh/id_ed25519",
-        "identityfile ~/.ssh/id_rsa",
-        "proxyjump bastion",
-      ].join("\n"),
-      "build-box",
-    );
-    expect(settings).toEqual({
-      user: "deploy",
-      hostname: "10.0.0.4",
-      port: 2222,
-      identityFiles: ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"],
-      proxyJump: "bastion",
-    });
-  });
-
-  it("falls back to ssh's own defaults rather than throwing on a config it cannot read", () => {
-    const settings = parseSshSettings("garbage\nport not-a-number\nproxyjump none", "gpu-1");
-    expect(settings.hostname).toBe("gpu-1"); // the alias stands in
-    expect(settings.port).toBe(22);
-    expect(settings.user).toBe("");
-    expect(settings.proxyJump).toBeNull();
-  });
-});
-
 describe("machineIdentity", () => {
   it("is <user>@<alias>: the Linux account is part of the machine, the alias is the name", () => {
-    // Two accounts on one host are two machines — each has its own ~/.penguin, hence its
-    // own server and its own user table.
     expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
     expect(machineIdentity("build-box", "root")).toBe("root@build-box");
     expect(machineIdentity("build-box", "")).toBe("build-box");
@@ -113,8 +87,6 @@ describe("machineIdentity", () => {
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
-    // POSIX: `;` chains, $VAR expands, `cat` reads. Windows cmd: `&` chains, %VAR% expands,
-    // `type` reads. One command cannot do both, which is why there are two.
     expect(POSIX_PROBE).toContain("uname -s -m");
     expect(POSIX_PROBE).toContain('"$HOME/.penguin/lib/package.json"');
     expect(POSIX_PROBE).toContain(".penguin/data/hmr/harness.json");
@@ -194,6 +166,71 @@ describe("ssh / scp invocations", () => {
     expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
   });
 
+  it("holds ONE session per machine: no tty, a SOCKS listener on loopback, keepalives, sh", () => {
+    const args = sessionArgs(target, 49152).join(" ");
+    expect(args).toContain("-T");
+    expect(args).toContain("-D 127.0.0.1:49152");
+    expect(args).toContain("ExitOnForwardFailure=yes");
+    expect(args).toContain("ServerAliveInterval=15");
+    expect(args).toContain("BatchMode=yes");
+    expect(args).toContain("User=deploy");
+    expect(args.endsWith("build-box sh")).toBe(true);
+    // Nothing is forwarded by name: any port on the machine is a channel through -D.
+    expect(args).not.toContain("-L ");
+  });
+
+  it("refuses a SOCKS port that is not one", () => {
+    expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
+    expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
+  });
+
+  it("a 200 is not yet a yes: blocked is a refusal, and a swap not written down is not durable", () => {
+    // /api/hmr/upgrade answers 200 for `blocked` so clients keep one parsing path; the body
+    // names what would have been discarded. And `persisted: false` is the machine saying the
+    // swap is live and gone at its next restart.
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({
+          status: "blocked",
+          dropped: [],
+          missing: ["assets/spawn-helper"],
+          invalid: [],
+        }),
+      ),
+    ).toEqual({
+      kind: "refused",
+      detail: "it kept its current version — missing: assets/spawn-helper",
+    });
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({ status: "ok", persisted: false, web: { rev: "r" } }),
+      ),
+    ).toMatchObject({ kind: "upgraded", persisted: false });
+    expect(
+      classifyUpgradeAnswer(
+        200,
+        JSON.stringify({ status: "ok", persisted: true, web: { rev: "r" } }),
+      ),
+    ).toMatchObject({ kind: "upgraded", persisted: true });
+    expect(classifyUpgradeAnswer(200, "<html>")).toMatchObject({ kind: "refused" });
+  });
+
+  it("repeats the machine's own words when it refuses a build", () => {
+    expect(
+      refusalDetail(
+        409,
+        JSON.stringify({ error: { code: "hmr_refused", message: "this runtime is too old" } }),
+      ),
+    ).toBe("this runtime is too old");
+  });
+
+  it("falls back to whatever it did say, rather than inventing a reason", () => {
+    expect(refusalDetail(502, "<html>Bad Gateway</html>")).toBe("<html>Bad Gateway</html>");
+    expect(refusalDetail(403, "   ")).toContain("403");
+  });
+
   it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {
     const args = scpArgs(target, ["/local/image.pack"], "/tmp/penguin-abc123");
     expect(args.at(-1)).toBe("build-box:/tmp/penguin-abc123");
@@ -202,13 +239,10 @@ describe("ssh / scp invocations", () => {
   it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
     expect(shQuote("/tmp/it's here")).toBe(`'/tmp/it'\\''s here'`);
     expect(cmdQuote("C:\\Users\\First Last\\tmp")).toBe('"C:\\Users\\First Last\\tmp"');
-    // cmd.exe has no escape for a quote inside a quoted string: refuse rather than mangle.
     expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
 
   it("takes the installer on stdin, so a POSIX install costs ONE ssh handshake", () => {
-    // No path anywhere in it: nothing was copied, so nothing has to be placed or cleaned up.
-    // scriptOnStdin is the other half — the command alone would run an empty `sh -s`.
     expect(runInstallScriptCommand("v0.2.4", { platform: "linux" })).toEqual({
       command: "PENGUIN_VERSION='v0.2.4' sh -s",
       scriptOnStdin: true,
@@ -216,9 +250,6 @@ describe("ssh / scp invocations", () => {
   });
 
   it("runs a Windows remote's copy from a path, and deletes it in the same command", () => {
-    // PowerShell cannot take a param()-carrying script on stdin, so the file is real there —
-    // but the delete rides the same connection rather than costing another handshake, and the
-    // path is required to build the command at all rather than defaulting to an empty one.
     expect(
       runInstallScriptCommand("v0.2.4", {
         platform: "win32",
@@ -232,12 +263,16 @@ describe("ssh / scp invocations", () => {
     });
   });
 
-  it("unpacks the streamed store into the default data root", () => {
+  it("unpacks the streamed store into the hmr directory, the layer it was tarred from", () => {
+    // install-server.ts tars `-C <root>/hmr harness.json store`, so the members are named
+    // from THERE. Extracting into the data root instead lands them one directory above where
+    // hmr/host.ts reads them: the machine keeps answering with whatever it already had, and
+    // the replication reports success while achieving nothing.
     expect(unpackStoreCommand("linux")).toBe(
-      'mkdir -p "$HOME/.penguin/data" && tar -xzf - -C "$HOME/.penguin/data"',
+      'mkdir -p "$HOME/.penguin/data/hmr" && tar -xzf - -C "$HOME/.penguin/data/hmr"',
     );
     expect(unpackStoreCommand("win32")).toBe(
-      '(if not exist "%USERPROFILE%\\.penguin\\data" mkdir "%USERPROFILE%\\.penguin\\data") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data"',
+      '(if not exist "%USERPROFILE%\\.penguin\\data\\hmr" mkdir "%USERPROFILE%\\.penguin\\data\\hmr") & tar -xzf - -C "%USERPROFILE%\\.penguin\\data\\hmr"',
     );
   });
 });
@@ -292,7 +327,6 @@ describe("resolvePushPlan", () => {
   it("packaged desktop app: its own manifest names the release it shipped under", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
-      // What the app forks: <resources>/app/dist/server.js, one bundled file, asar off.
       const appDir = path.join(work, "resources", "app");
       fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
       fs.writeFileSync(
@@ -340,5 +374,209 @@ describe("shipping the installers", () => {
     if (!fs.existsSync(built)) return; // Not built in this run; `pnpm build` covers it in CI.
     const source = path.resolve(__dirname, "..", "..", "..", name);
     expect(fs.readFileSync(built, "utf8")).toBe(fs.readFileSync(source, "utf8"));
+  });
+});
+
+describe("asking `penguin server status` in the machine's own dialect", () => {
+  const target = { alias: "nas", user: "deploy" };
+  const answered = {
+    code: 0,
+    stdout: `${JSON.stringify({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })}\n`,
+    stderr: "",
+    timedOut: false,
+  };
+  // What cmd.exe says to `"$HOME/.penguin/node/bin/node"`: not "no such command", a path
+  // with four literal characters in it.
+  const cmdSaid = {
+    code: 1,
+    stdout: "The system cannot find the path specified.\r\n",
+    stderr: "",
+    timedOut: false,
+  };
+
+  it("speaks cmd.exe to a Windows machine: no $HOME, node.exe, backslashes", () => {
+    const command = readServerStateCommand("win32");
+    expect(command).toContain("%USERPROFILE%\\.penguin\\node\\node.exe");
+    expect(command).toContain("lib\\dist\\penguin-hmr.js");
+    expect(command).not.toContain("$HOME");
+    expect(readServerStateCommand("linux")).toContain("$HOME/.penguin/node/bin/node");
+  });
+
+  it("a machine whose platform is on record is asked once, in that dialect", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return answered;
+      },
+      "win32",
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("%USERPROFILE%");
+    expect(probe.state).toMatchObject({ kind: "running", port: 7364 });
+  });
+
+  it("a machine whose platform is unknown is asked the POSIX way, then the Windows way", async () => {
+    const asked: string[] = [];
+    const probe = await probeServerState(
+      target,
+      async (_t, command) => {
+        asked.push(command);
+        return command.includes("%USERPROFILE%") ? answered : cmdSaid;
+      },
+      null,
+    );
+    expect(asked).toHaveLength(2);
+    expect(probe).toMatchObject({ state: { kind: "running" }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("when neither dialect answers, what the POSIX attempt heard is what is reported", async () => {
+    const refused = {
+      code: 255,
+      stdout: "",
+      stderr: "ssh: connect to host nas port 22: Connection refused",
+      timedOut: false,
+    };
+    const probe = await probeServerState(target, async () => refused, null);
+    expect(probe.state).toMatchObject({
+      kind: "unreachable",
+      detail: expect.stringContaining("Connection refused"),
+    });
+  });
+});
+
+describe("reading what `penguin server status` answered", () => {
+  const answer = (o: Record<string, unknown>) => JSON.stringify(o);
+
+  it("takes the state and the id out of the machine's own JSON", () => {
+    expect(
+      parseProbe(answer({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })),
+    ).toEqual({ state: { kind: "running", port: 7364, pid: 42 }, machineId: "LNrJdHAZJ91G58i0" });
+  });
+
+  it("reads a machine with nothing serving, and one that has no id yet", () => {
+    expect(parseProbe(answer({ running: false, port: null, pid: null, machineId: null }))).toEqual({
+      state: { kind: "stopped" },
+      machineId: null,
+    });
+  });
+
+  it("finds the answer under a login shell's own banner", () => {
+    const said = `Welcome to build-box!\n{ not json }\n${answer({ running: false })}\n`;
+    expect(parseProbe(said).state).toEqual({ kind: "stopped" });
+  });
+
+  it("says it cannot tell rather than inventing a state out of a shape it does not know", () => {
+    // Neither of these is a state any machine reported; both would be made up on this side.
+    // A truthy string reads as up, and a claim of running carrying no port reads as down —
+    // the two directions this side could least afford to be wrong in.
+    const stringly = answer({ running: "false", port: 1, pid: 2 });
+    expect(parseProbe(stringly).state).toEqual({ kind: "unreachable", detail: stringly });
+    const portless = answer({ running: true, machineId: "LNrJdHAZJ91G58i0" });
+    expect(parseProbe(portless).state).toEqual({ kind: "unreachable", detail: portless });
+  });
+
+  it("says it cannot tell rather than 'stopped' when there is no answer at all", () => {
+    // A build too old for the subcommand prints an error. Reading that as a well-formed "no"
+    // would turn every such machine into a silently wrong one.
+    const said = "error: unknown command 'status'";
+    expect(parseProbe(said).state).toEqual({ kind: "unreachable", detail: said });
+  });
+});
+
+describe("readPushedBuild", () => {
+  it("hands on the native assets and the provenance, not only the three bundles", () => {
+    // A platform resolves node-pty out of its assets directory and nowhere else; a hand-over
+    // without them left every terminal on the machine failing with "no assets directory".
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
+    try {
+      const hmr = path.join(root, "hmr");
+      const assets = path.join(hmr, "store", "assets", "abc");
+      fs.mkdirSync(path.join(assets, "node_modules", "node-pty", "prebuilds", "darwin-arm64"), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(hmr, "store", "platform"), { recursive: true });
+      fs.mkdirSync(path.join(hmr, "store", "cli"), { recursive: true });
+      fs.mkdirSync(path.join(hmr, "store", "web"), { recursive: true });
+      fs.writeFileSync(path.join(hmr, "store", "platform", "p.mjs"), "platform");
+      fs.writeFileSync(path.join(hmr, "store", "cli", "c.mjs"), "cli");
+      fs.writeFileSync(
+        path.join(hmr, "store", "web", "w.webz"),
+        zlib.gzipSync(Buffer.from(JSON.stringify({ files: { "index.html": "aGk=" } }))),
+      );
+      const helper = path.join(
+        assets,
+        "node_modules",
+        "node-pty",
+        "prebuilds",
+        "darwin-arm64",
+        "spawn-helper",
+      );
+      fs.writeFileSync(helper, "bin");
+      fs.chmodSync(helper, 0o755);
+      fs.writeFileSync(path.join(assets, "node_modules", "node-pty", "package.json"), "{}");
+      fs.writeFileSync(path.join(assets, ".materialized"), "");
+      fs.writeFileSync(
+        path.join(hmr, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "store/platform/p.mjs" },
+          cli: { bundle: "store/cli/c.mjs" },
+          web: { manifest: "store/web/w.webz" },
+          assets: { dir: "store/assets/abc" },
+          source: { repo: "https://example.com/r.git", revision: "v1-3-gabc" },
+        }),
+      );
+
+      const body = readPushedBuild(root);
+      if (body === null) throw new Error("no body");
+      const payload = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as {
+        platform: string;
+        assets?: { files: Record<string, string>; exec: string[] };
+        source?: { repo: string; revision: string };
+      };
+      expect(payload.platform).toBe("platform");
+      expect(Object.keys(payload.assets?.files ?? {}).sort()).toEqual([
+        "node_modules/node-pty/package.json",
+        "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      ]);
+      // The marker is the host's bookkeeping, not an asset; the exec bit travels as a list —
+      // and the spawn-helper is on it by NAME, so a Windows sender, which has no exec bit to
+      // read, hands it over runnable too (the chmod above is a no-op there).
+      expect(payload.assets?.exec).toEqual([
+        "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+      ]);
+      expect(payload.source).toEqual({ repo: "https://example.com/r.git", revision: "v1-3-gabc" });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still hands on a build that was pushed without assets", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-handover-"));
+    try {
+      const hmr = path.join(root, "hmr");
+      fs.mkdirSync(path.join(hmr, "s"), { recursive: true });
+      fs.writeFileSync(path.join(hmr, "s", "p.mjs"), "p");
+      fs.writeFileSync(path.join(hmr, "s", "c.mjs"), "c");
+      fs.writeFileSync(
+        path.join(hmr, "s", "w.webz"),
+        zlib.gzipSync(Buffer.from(JSON.stringify({ files: {} }))),
+      );
+      fs.writeFileSync(
+        path.join(hmr, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "s/p.mjs" },
+          cli: { bundle: "s/c.mjs" },
+          web: { manifest: "s/w.webz" },
+        }),
+      );
+      const body = readPushedBuild(root);
+      if (body === null) throw new Error("no body");
+      const payload = JSON.parse(zlib.gunzipSync(body).toString("utf8")) as Record<string, unknown>;
+      expect("assets" in payload).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

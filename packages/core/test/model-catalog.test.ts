@@ -15,6 +15,7 @@ import {
   offPeakAt,
   DEEPSEEK_OFF_PEAK,
   presetModelEntries,
+  providerClientType,
   providerInfo,
   fastModeProtocol,
   resolveModelEnv,
@@ -30,9 +31,10 @@ describe("model-catalog", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
     // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
-    // first (the recommended group), DeepSeek next (the default model's provider) and custom
-    // always last. This is the page's DEFAULT only — a Project that has reordered its groups
-    // stores every key and keeps its own arrangement (web's model-group-order.ts).
+    // first (the recommended group), DeepSeek next (the default model's provider), vLLM last
+    // among the vendors (self-hosted, so nothing in it runs until the user names a server)
+    // and custom always last. This is the page's DEFAULT only — a Project that has reordered
+    // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
       "deepseek",
@@ -47,6 +49,7 @@ describe("model-catalog", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "vllm",
       "custom",
     ]);
     // Exactly one group is marked recommended, and it is the one that leads the default
@@ -73,12 +76,17 @@ describe("model-catalog", () => {
       expect(providerIds.has(m.provider)).toBe(true);
       expect(m.provider).not.toBe("custom");
     }
-    // Except for custom, every provider gives a console link to "get an API key" (shown in the
-    // frontend's group header) and a model list / docs link to "get a model id" (shown in the add-model dialog).
+    // Every provider gives a console link to "get an API key" (shown in the frontend's group
+    // header) and a model list / docs link to "get a model id" (shown in the add-model
+    // dialog) — except where there is no such page to link. custom has neither; vLLM has no
+    // console at all (the user runs the server), but its served ids are documented.
     for (const p of MODEL_PROVIDERS) {
       if (p.id === "custom") {
         expect(p.apiKeyUrl).toBeUndefined();
         expect(p.modelsUrl).toBeUndefined();
+      } else if (p.id === "vllm") {
+        expect(p.apiKeyUrl).toBeUndefined();
+        expect(p.modelsUrl).toBe("https://recipes.vllm.ai/");
       } else {
         expect(p.apiKeyUrl).toMatch(/^https:\/\//);
         expect(p.modelsUrl).toMatch(/^https:\/\//);
@@ -111,9 +119,11 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
-        // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
-        // $0 price (not "unknown"), so costs compute to 0.
+      if (m.provider === "vllm" || m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+        // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
+        // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
+        // per token for either — a vLLM deployment costs its operator hardware, which no
+        // catalog rate expresses.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -128,6 +138,77 @@ describe("model-catalog", () => {
       expect(Number.isInteger(m.contextWindow)).toBe(true);
       expect(m.contextWindow!).toBeGreaterThan(0);
     }
+  });
+
+  it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and carries no endpoint", () => {
+    const vllm = MODEL_CATALOG.filter((m) => m.provider === "vllm");
+    // Dictionary order by upstream id, case-insensitive (as in siliconflow): deepseek-ai/
+    // before Qwen/, and the flash revision before the vision revision it prefixes.
+    expect(vllm.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-ai/DeepSeek-V4-Flash", 1000000, false],
+      ["deepseek-ai/DeepSeek-V4-Flash-Vision-Exp", 1000000, true],
+      ["deepseek-ai/DeepSeek-V4-Pro", 1000000, false],
+      ["Qwen/Qwen3.5-0.8B", 262144, true],
+      ["Qwen/Qwen3.5-9B", 262144, true],
+      ["Qwen/Qwen3.6-35B-A3B", 262144, true],
+      ["Qwen/Qwen3.8-27B", 262144, true],
+      ["Qwen/Qwen3.8-Flash-Next", 262144, true],
+    ]);
+    for (const m of vllm) {
+      // The pin is load-bearing on every row: Qwen/* matches none of AutoLLMClient's rules
+      // and would be rejected, and deepseek-ai/DeepSeek-V4-* contains "deepseek-v4", which
+      // would reach DeepSeek's first-party Responses client pointed at a vLLM server.
+      expect(m.clientType, m.modelId).toBe("openai-chat-vllm-adapter");
+      // Nobody bills per token and there is no shared endpoint: the user runs the server and
+      // supplies its URL. Zero is a real rate here, not a missing one — see the pricing test.
+      expect([m.pricing?.cache_read, m.pricing?.cache_write, m.pricing?.output], m.modelId).toEqual(
+        [0, 0, 0],
+      );
+      expect(m.pricing!.unit, m.modelId).toBe("usd_per_mtok");
+      expect(m.baseUrl, m.modelId).toBeUndefined();
+      // Chat Completions on the wire, so the credential fallback is the OPENAI_* pair.
+      expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
+    }
+    // The upstream id survives verbatim, capitals and all — it is what the vLLM server was
+    // started with, and AgentHub's per-model thinking table lowercases it on its own side.
+    expect(catalogEntryFor("vllm", "Qwen/Qwen3.8-27B")?.displayName).toBe("Qwen 3.8 27B");
+    expect(catalogEntryFor("vllm", "qwen/qwen3.8-27b")).toBeUndefined();
+    // The same upstream ids are resold by SiliconFlow, and the pair lookup keeps the two
+    // apart: same id, different group, different protocol and endpoint.
+    expect(catalogEntryFor("siliconflow", "deepseek-ai/DeepSeek-V4-Pro")?.clientType).toBe(
+      "openai-chat",
+    );
+    // The group pin, read the one way every call site reads it.
+    expect(providerClientType("vllm")).toBe("openai-chat-vllm-adapter");
+    expect(providerInfo("vllm")!.gatewayBaseUrl).toBeUndefined();
+    // No group but vLLM declares one: the gateways derive openai-chat from their preset
+    // endpoint, and custom / user-defined groups leave the protocol to detection.
+    expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
+      "vllm",
+    ]);
+    expect(providerClientType("custom")).toBeUndefined();
+    expect(providerClientType("my-own-group")).toBeUndefined();
+    // Presets reach a Project with the pin and the zero rate, and without an endpoint: what a
+    // self-hosted deployment bills per token is nothing, and the Project stores that as a rate
+    // rather than as a gap (see the pricing test).
+    const preset = presetModelEntries().filter((e) => e.provider === "vllm");
+    expect(preset).toHaveLength(8);
+    for (const e of preset) {
+      expect(e.client_type, e.model_id).toBe("openai-chat-vllm-adapter");
+      expect(
+        [e.pricing?.cache_read, e.pricing?.cache_write, e.pricing?.output],
+        e.model_id,
+      ).toEqual([0, 0, 0]);
+      expect(e.base_url, e.model_id).toBeUndefined();
+    }
+    // Each preset id has a recipe page; an id the user serves themselves has none, so it
+    // falls back to the recipe index.
+    expect(modelHomepageUrl("vllm", "Qwen/Qwen3.8-27B")).toBe(
+      "https://recipes.vllm.ai/Qwen/Qwen3.8-27B",
+    );
+    expect(modelHomepageUrl("vllm", "my-own-finetune")).toBe("https://recipes.vllm.ai/");
+    // Fast mode rides on the client, and the vLLM client inherits openai_chat's mapping.
+    expect(fastModeProtocol("Qwen/Qwen3.8-27B", "openai-chat-vllm-adapter")).toBe("openai");
   });
 
   it("providerInfo matches by id; unknown ids return undefined", () => {
@@ -161,11 +242,14 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
     // The vision revision is a model of its own in both the direct group and on OpenRouter,
-    // and it is the only vision-capable DeepSeek row in either.
+    // and on OpenRouter it is the only vision-capable DeepSeek row. In the direct group the
+    // pre-registered deepseek-v4.1-flash reads images too, so the flag is per row rather than
+    // a property of the id's spelling.
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
     expect(
       catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
     ).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
@@ -200,8 +284,9 @@ describe("model-catalog", () => {
 
   it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
-    // Dictionary order, newer versions of a series first (gpt-5.6-* before gpt-5.5,
-    // opus-4.8 before 4.7) — precomputed in the catalog, no runtime sorting.
+    // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
+    // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
+    // runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
       "anthropic/claude-fable-5",
       "anthropic/claude-opus-5",
@@ -213,6 +298,7 @@ describe("model-catalog", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
+      "google/gemini-3.8-flash",
       "google/gemini-3.7-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
@@ -221,6 +307,7 @@ describe("model-catalog", () => {
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openai/gpt-6-astra",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
@@ -463,6 +550,7 @@ describe("model-catalog", () => {
       "tokendance",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
+      "vllm",
       "custom",
     ]) {
       expect(providerInfo(id)!.envKey).toBe("OPENAI_API_KEY");
@@ -504,8 +592,10 @@ describe("model-catalog", () => {
     const sonnet5 = catalogEntryFor("openrouter", "anthropic/claude-sonnet-5")!.pricing!;
     expect([sonnet5.cache_read, sonnet5.cache_write, sonnet5.output]).toEqual([0.2, 2.5, 10]);
     // Gemini 3.6 Flash and 3.5 Flash Lite: upstream publishes a cache-hit price, so cache_read
-    // stores the real discounted price (not the input price) — cache_read is its own billing
+    // stores the real cache-hit price (not the input price) — cache_read is its own billing
     // bucket in the cost center. cache_write repeats input (no per-token cache-write fee).
+    // What the 3.6 row stores is the LIST price; the launch discount it also declares, and
+    // the halved rate it bills today, are asserted with the rest of the 3.x Flash rows below.
     const g36 = catalogEntryFor("openrouter", "google/gemini-3.6-flash")!;
     expect([g36.contextWindow, g36.supportsVision]).toEqual([1048576, true]);
     expect([g36.pricing!.cache_read, g36.pricing!.cache_write, g36.pricing!.output]).toEqual([
@@ -542,6 +632,7 @@ describe("model-catalog", () => {
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
+      "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
@@ -557,20 +648,58 @@ describe("model-catalog", () => {
       "glm-5.1",
       "glm-5",
     ]);
-    // Gemini 3.7 Flash: the direct row stores Google's official list price (the launch
-    // discount that halves it through 2026-12-31 is not stored, matching the catalog's
-    // no-promotions policy), while the OpenRouter row stores what the gateway actually
-    // bills — a `discount: 0.75` off that same list price, i.e. a quarter of it.
-    const g37 = catalogEntryFor("google", "gemini-3.7-flash")!;
-    expect([g37.contextWindow, g37.supportsVision]).toEqual([1048576, true]);
-    expect([g37.pricing!.cache_read, g37.pricing!.cache_write, g37.pricing!.output]).toEqual([
-      0.15, 1.5, 7.5,
-    ]);
-    const g37or = catalogEntryFor("openrouter", "google/gemini-3.7-flash")!;
-    expect([g37or.contextWindow, g37or.supportsVision]).toEqual([1048576, true]);
-    expect([g37or.pricing!.cache_read, g37or.pricing!.cache_write, g37or.pricing!.output]).toEqual([
-      0.0375, 0.375, 1.875,
-    ]);
+    // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
+    // all six of their rows — direct and on OpenRouter — store Google's list price and
+    // declare that launch discount in `discount`, so the list survives the promotion and
+    // effectivePricing yields the 0.075/0.75/3.75 either seller bills today.
+    for (const [provider, modelId] of [
+      ["google", "gemini-3.8-flash"],
+      ["google", "gemini-3.7-flash"],
+      ["google", "gemini-3.6-flash"],
+      ["openrouter", "google/gemini-3.8-flash"],
+      ["openrouter", "google/gemini-3.7-flash"],
+      ["openrouter", "google/gemini-3.6-flash"],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect([row.contextWindow, row.supportsVision, row.discount], modelId).toEqual([
+        1048576,
+        true,
+        0.5,
+      ]);
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual([0.15, 1.5, 7.5]);
+      const billed = effectivePricing(row)!;
+      expect([billed.cache_read, billed.cache_write, billed.output], modelId).toEqual([
+        0.075, 0.75, 3.75,
+      ]);
+    }
+    // No other Gemini row carries a launch discount: Google's pricing page marks one on the
+    // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // bill exactly the list price they store. The numbers are pinned because none of them is
+    // the Flash list price above and each is a genuine other tier, not a hidden promotion —
+    // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite
+    // $0.30 / $2.50 / $0.03, 3.1 Flash-Lite $0.25 / $1.50 / $0.025, 3.1 Pro Preview ≤200K
+    // $2 / $12 / $0.20, the legacy 3 Flash Preview $0.50 / $3 / $0.05, and OpenRouter's default
+    // endpoints billing the 3.5 pair at exactly that list with `discount: 0`.
+    for (const [provider, modelId, list] of [
+      ["google", "gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["google", "gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
+      ["google", "gemini-3.1-flash-lite", [0.025, 0.25, 1.5]],
+      ["google", "gemini-3.1-pro-preview", [0.2, 2, 12]],
+      ["google", "gemini-3-flash-preview", [0.05, 0.5, 3]],
+      ["openrouter", "google/gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["openrouter", "google/gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
+    ] as const) {
+      const row = catalogEntryFor(provider, modelId)!;
+      expect(row.discount, modelId).toBeUndefined();
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual(list);
+      expect(effectivePricing(row), modelId).toEqual(row.pricing);
+    }
     // GLM-5.3 is listed both directly and on OpenRouter; the gateway runs no discount, so
     // the two rows agree on price and differ only in context window and protocol pin.
     const glm53or = catalogEntryFor("openrouter", "z-ai/glm-5.3")!;
@@ -677,6 +806,7 @@ describe("model-catalog", () => {
     // `gpt-5.6` id is the same tier OpenRouter spells `openai/gpt-5.6-sol`, so it displays
     // that codename too rather than leaving the variant unnamed.
     for (const [directProvider, directId, gatewayProvider, gatewayId] of [
+      ["openai", "gpt-6-astra", "openrouter", "openai/gpt-6-astra"],
       ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
       ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
@@ -703,12 +833,13 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    // DeepSeek rows carry the official PEAK tier — re-read 2026-08-18 after the official price
-    // increase introduced time-based tiers. The off-peak tier is exactly half, and is applied
-    // from the row's schedule rather than stored (see the off-peak schedules block below).
+    // DeepSeek rows carry the official PEAK tier; the off-peak tier is exactly half, and is
+    // applied from the row's schedule rather than stored (see the off-peak schedules block
+    // below). The flash rows were re-read 2026-09-08 for the official price adjustment
+    // effective 2026-09-10; V4 Pro sits outside that adjustment.
     const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
-      0.1, 3, 9,
+      0.04, 2, 8,
     ]);
     const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
@@ -749,6 +880,7 @@ describe("model-catalog", () => {
     // gains a model.
     const direct = MODEL_CATALOG.filter((m) => m.provider === "openai").map((m) => m.modelId);
     expect(direct).toEqual([
+      "gpt-6-astra",
       "gpt-5.6",
       "gpt-5.6-luna",
       "gpt-5.6-terra",
@@ -770,8 +902,9 @@ describe("model-catalog", () => {
     // Because it is that tier, the alias is labelled with the sol codename its siblings and
     // its gateway listing carry; the id users send stays bare.
     expect(catalogEntryFor("openai", "gpt-5.6")!.displayName).toBe("GPT-5.6 Sol");
-    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client); only the
-    // gateway rows pin a protocol, and they pin Responses.
+    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client, and its gpt6
+    // client for the gpt-6 ids from the release that ships it); only the gateway rows pin a
+    // protocol, and they pin Responses.
     for (const m of MODEL_CATALOG.filter((m) => m.provider === "openai")) {
       expect(m.clientType, m.modelId).toBeUndefined();
       expect(m.baseUrl, m.modelId).toBeUndefined();
@@ -783,6 +916,10 @@ describe("model-catalog", () => {
       const p = catalogEntryFor(provider, id)!.pricing!;
       return [p.cache_read, p.cache_write, p.output];
     };
+    // GPT-6 Astra's cache_write bucket carries OpenAI's published $12.5 cache-write price
+    // rather than the $10 input rate: the buckets have no slot for input that is never
+    // written to cache.
+    expect(price("openai", "gpt-6-astra")).toEqual([1, 12.5, 50]);
     expect(price("openai", "gpt-5.6")).toEqual([0.5, 5, 30]);
     expect(price("openai", "gpt-5.6-terra")).toEqual([0.2, 2, 12]);
     expect(price("openai", "gpt-5.6-luna")).toEqual([0.02, 0.2, 1.2]);
@@ -792,6 +929,10 @@ describe("model-catalog", () => {
     expect(price("openrouter", "openai/gpt-5.6-sol")).toEqual([0.25, 3.125, 15]);
     expect(price("openrouter", "openai/gpt-5.6-terra")).toEqual([0.2, 2.5, 12]);
     expect(price("openrouter", "openai/gpt-5.6-luna")).toEqual([0.02, 0.25, 1.2]);
+    // GPT-6 Astra runs no promotion (`discount: 0`) and its default endpoint is OpenAI's own,
+    // so every bucket matches the direct row.
+    expect(price("openrouter", "openai/gpt-6-astra")).toEqual([1, 12.5, 50]);
+    expect(catalogEntryFor("openrouter", "openai/gpt-6-astra")!.contextWindow).toBe(1050000);
     // The 5.4/5.5 rows run no promotion, so gateway and direct agree except on cache_write,
     // where the gateway publishes GPT's genuine 1.25x write premium and the direct rows use
     // the standard input price.
@@ -827,12 +968,18 @@ describe("model-catalog", () => {
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes on.
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gpt-5.5-pro")?.envKey).toBe("OPENAI_API_KEY");
     // The GPT-5.6 generation (agenthub 0.4.2) reads the same OPENAI_* pair.
     expect(resolveModelEnv("gpt-5.6-luna")?.envKey).toBe("OPENAI_API_KEY");
+    // So does the GPT-6 generation: agenthub routes the gpt-6 substring to its gpt6 client.
+    expect(resolveModelEnv("gpt-6-astra")?.envKey).toBe("OPENAI_API_KEY");
+    expect(resolveModelEnv("gpt-6-astra")?.envBaseUrlKey).toBe("OPENAI_BASE_URL");
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
     // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
     expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
@@ -959,6 +1106,8 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
     expect(fastModeProtocol("gpt-5.5-pro")).toBe("openai");
     expect(fastModeProtocol("gpt-5.4-mini")).toBe("openai");
     expect(fastModeProtocol("gpt-5.6")).toBe("openai");
+    // The gpt-6 branch sits alongside them: agenthub's gpt6 client maps fast mode too.
+    expect(fastModeProtocol("gpt-6-astra")).toBe("openai");
   });
 
   it("Anthropic-protocol clients carry it as speed=fast", () => {
@@ -1116,11 +1265,11 @@ describe("off-peak schedules", () => {
         5,
       );
     }
-    // The published peak figures themselves: CNY 0.1 / 3 / 9 per million, at the catalog's 7:1
-    // display convention, which is DeepSeek's off-peak 0.05 / 1.5 / 4.5 doubled.
+    // The published peak figures themselves: CNY 0.04 / 2 / 8 per million, at the catalog's 7:1
+    // display convention, which is DeepSeek's off-peak 0.02 / 1 / 4 doubled.
     const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
     expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
-      0.014286, 0.428571, 1.285714,
+      0.005714, 0.285714, 1.142857,
     ]);
   });
 

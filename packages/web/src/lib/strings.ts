@@ -707,6 +707,9 @@ export const zh = {
     /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
     vendorProtocolHint: (vendor: string): string =>
       `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
+    /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
+    addProtocolHintPinned: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
@@ -1539,6 +1542,10 @@ Benchmark：
     statusCompacting: "压缩中",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "运行完毕，未读",
+    /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
+    backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
+    backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1673,8 +1680,6 @@ Benchmark：
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
-    /** Header chip title: count of the conversation's still-running background processes. */
-    runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",

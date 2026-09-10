@@ -46,6 +46,7 @@ interface Harness {
   controller: StreamController;
   states: SessionStatus[];
   pendingSteering: PendingSteeringInfo[][];
+  returnedSteering: PendingSteeringInfo[][];
   pendingFollowUps: PendingFollowUpInfo[][];
   errors: Array<string | null>;
   loadings: boolean[];
@@ -73,6 +74,7 @@ function createHarness(): Harness {
   }> = [];
   const states: SessionStatus[] = [];
   const pendingSteering: PendingSteeringInfo[][] = [];
+  const returnedSteering: PendingSteeringInfo[][] = [];
   const pendingFollowUps: PendingFollowUpInfo[][] = [];
   const errors: Array<string | null> = [];
   const loadings: boolean[] = [];
@@ -92,6 +94,7 @@ function createHarness(): Harness {
       }),
     onTaskState: (s) => states.push(s),
     onPendingSteering: (items) => pendingSteering.push(items),
+    onReturnedSteering: (items) => returnedSteering.push(items),
     onPendingFollowUps: (items) => pendingFollowUps.push(items),
     onLoading: (l) => loadings.push(l),
     onError: (e) => errors.push(e),
@@ -103,6 +106,7 @@ function createHarness(): Harness {
     controller,
     states,
     pendingSteering,
+    returnedSteering,
     pendingFollowUps,
     errors,
     loadings,
@@ -217,6 +221,20 @@ describe("in-stream task_state is the authoritative running state (history-closi
     // A later event without the field means "none left" — reported as empty, not skipped.
     h.controller.handleServer({ type: "task_state", state: "running" });
     expect(h.pendingSteering).toEqual([[{ id: "st-1", text: "hold on", images: 0, files: 1 }], []]);
+  });
+
+  it("reports steering the run handed back, so the composer can take it into its draft", async () => {
+    const h = createHarness();
+    void h.controller.load();
+    // The interrupt case: the run went idle and reported the message it never delivered.
+    h.controller.handleServer({
+      type: "task_state",
+      state: "idle",
+      returnedSteering: [{ id: "st-1", text: "wait", images: 0, files: 1 }],
+    });
+    // Once the composer has taken it, the next event omits the field — reported as empty.
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    expect(h.returnedSteering).toEqual([[{ id: "st-1", text: "wait", images: 0, files: 1 }], []]);
   });
 
   it("reports the queued follow-up list from task_state, and its absence as empty", async () => {

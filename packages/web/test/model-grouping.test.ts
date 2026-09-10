@@ -98,6 +98,7 @@ describe("groupModelRows", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "vllm",
       "custom",
     ]);
     expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");
