@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { InstalledPluginsResponse } from "../src/api/types.js";
+import { writeClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -119,6 +120,27 @@ describe("installed plugins", () => {
       (await member.delete("/api/projects/default_project/plugins/installed?specifier=@acme/two"))
         .status,
     ).toBe(403);
+  });
+
+  it("reports why a listed plugin failed to load, not a restart that would not help", async () => {
+    // A package that resolves (the root's own prefix) but throws on import.
+    const prefix = path.join(t.root, "plugins");
+    const dir = path.join(prefix, "node_modules", "@acme", "broken");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
+    await writeClassPackage(dir, {
+      name: "@acme/broken",
+      module: "Broken",
+      index: 'throw new Error("deliberately broken");\n',
+    });
+    const saved = await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/broken"],
+    });
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as InstalledPluginsResponse;
+    expect(body.plugins[0]).toMatchObject({ specifier: "@acme/broken", active: false });
+    expect(body.plugins[0]!.error).toMatch(/deliberately broken/);
+    expect(body.restartPending).toBe(false);
   });
 
   it("reports a list file that cannot be read, rather than an empty deployment", async () => {
