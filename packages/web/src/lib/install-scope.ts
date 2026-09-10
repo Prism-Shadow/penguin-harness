@@ -139,6 +139,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.dock.launcherY",
+    scope: "browser",
+    why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.dock.launcherHidden",
+    scope: "browser",
+    why: "Whether the floating dock launcher shows at all; an appearance choice of this browser, and losing it would put a dismissed button back.",
+  },
+  {
+    kind: "exact",
     key: "penguin.files.treeVisible",
     scope: "browser",
     why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",

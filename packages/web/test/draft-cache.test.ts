@@ -66,6 +66,15 @@ describe("parseDraft (field-by-field validation)", () => {
     });
   });
 
+  it("the AI-prefill mark round-trips only as true, so nothing else can pass for it", () => {
+    // It decides whether the text is treated as the user's own (draft-view, draft-sessions):
+    // an "aiPrefill": "yes" left in storage must not read as a composed prompt.
+    expect(parseDraft(JSON.stringify({ text: "t", aiPrefill: true })).aiPrefill).toBe(true);
+    expect(parseDraft(JSON.stringify({ text: "t", aiPrefill: "yes" })).aiPrefill).toBeUndefined();
+    expect(parseDraft(JSON.stringify({ text: "t", aiPrefill: false })).aiPrefill).toBeUndefined();
+    expect(parseDraft(JSON.stringify({ text: "t" })).aiPrefill).toBeUndefined();
+  });
+
   it("wrongly typed fields are dropped, the rest kept", () => {
     const raw = JSON.stringify({
       text: 123,

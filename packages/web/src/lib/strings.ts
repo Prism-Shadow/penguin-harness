@@ -109,6 +109,20 @@ export const zh = {
     /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
     killConfirmTitle: "关闭此终端？",
     killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+    /**
+     * The floating launcher on the chat body's right edge while the right dock is hidden.
+     * `launcherCaption` is printed under the ball at rest — the same words as the ball's
+     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
+     */
+    launcher: "快捷方式",
+    launcherCaption: "快捷方式",
+    /** Appended to the launcher's accessible name while its amber dot shows. */
+    launcherPending: "子智能体有待审批",
+    /** The fan of entries the launcher opens (its accessible group name). */
+    launcherPanels: "快捷方式",
+    /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    launcherHide: "隐藏悬浮球",
+    launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -179,6 +193,9 @@ export const zh = {
     fontLarge: "大",
     accent: "主题色",
     accentInfo: "界面强调色。",
+    launcher: "快捷方式悬浮球",
+    launcherInfo:
+      "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
@@ -462,6 +479,23 @@ export const zh = {
     noCredentialBody: "当前 Project 的默认模型尚未配置 API key，发起对话前请先前往模型页配置。",
     goToModels: "前往模型页",
     later: "稍后再说",
+  },
+
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  aiCreate: {
+    withAi: "用 AI 创建",
+    manual: "手动创建",
+    editInChat: "在新对话中编辑",
+    copyPrompt: "复制提示词",
+    examplesTitle: "试试这些示例",
+    fullPrompt: "完整提示词",
+    /** Who does the work, and where: the panel's lead line. */
+    byAgent: (name: string): string => `将由「${name}」在新对话中完成`,
+    chooseAgent: "执行的智能体",
+    placeholder: "描述你想要什么，越具体越好",
+    /** Accessible name of the prompt box (it has no visible label). */
+    promptLabel: "提示词",
+    noAgent: "当前 Project 还没有智能体",
   },
 
   agent: {
@@ -1118,6 +1152,97 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
+    toastSaved: "已保存定时任务",
+    toastEnabled: "已启用定时任务",
+    toastDisabled: "已停用定时任务",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
+    targetThisSession: "本对话",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "定时任务",
+    panelSubtitle: "让智能体按计划替你执行任务、发送提醒或监控更新",
+    panelSearchPlaceholder: "搜索定时任务",
+    filterAll: "全部",
+    filterActive: "生效中",
+    filterPaused: "已暂停",
+    filterCompleted: "已完成",
+    panelEmpty: "这段对话还没有定时任务",
+    panelNoMatch: "没有匹配的定时任务",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "发送第一条消息后即可为这段对话安排定时任务",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "更多操作",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `每天 ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `每${weekday} ${time}`,
+      everyDays: (n: number, time: string): string => `每 ${n} 天 ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "每小时" : `每 ${n} 小时`),
+      everyMinutes: (n: number): string => `每 ${n} 分钟`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `一次性 · ${when}`,
+      next: (when: string): string => `下次 ${when}`,
+      today: (time: string): string => `今天 ${time}`,
+      tomorrow: (time: string): string => `明天 ${time}`,
+      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay} ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${year} 年 ${monthDay} ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
+    aiCreateTitle: "用 AI 创建定时任务",
+    aiCreateInSessionDesc: "描述要安排的事，智能体会在这段对话里创建它，并确认设定的时间。",
+    aiCreateDesc: "描述要安排的事，智能体会在新对话里为该 Agent 创建它，并确认设定的时间。",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `将由「${name}」在本对话中完成`,
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "在本对话中编辑",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "请把上面的请求创建为绑定到本对话的定时任务：在 agent_state/schedule/ 下写一个 TOML 文件，`session_id` 取本对话的 Session ID（见 Environment 段），文件名取有意义的英文名，设置 `start_at`；需要重复执行时写 `period`，请求有自然终点时写 `end_at`。创建后用一行确认你设定的时间安排。",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `请为 Agent「${agentId}」创建这个定时任务。可以执行 \`penguin schedule add <名称> --agent-id ${agentId} --prompt "<请求内容>" --start-at <ISO 8601 或 now>\`，需要重复执行时加 \`--period <30m | 12h | 7d>\`，请求有自然终点时加 \`--end-at <ISO 8601>\`——不写 \`--agent-id\` 时任务会落到运行本对话的那个 Agent 上，而不是它；也可以直接在该 Agent 的 agent_state/schedule/ 下写 TOML 文件，文件名取有意义的英文名，用 \`start_at\`、\`period\`、\`end_at\` 这几个键。除非用户指定了 Session，否则采用每次新建 Session 的模式。创建后用一行确认你设定的时间安排。`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "建议",
+    suggestions: {
+      dailyBrief: {
+        name: "每日简报",
+        hint: "每个工作日 08:00",
+        description: "汇总昨天的进展与今天的待办",
+        prompt: "每个工作日早上 8 点给我一份简报：昨天这段对话里的进展与今天的待办",
+        agentPrompt: "每个工作日早上 8 点生成一份简报：昨天的进展与今天的待办",
+      },
+      weeklyReview: {
+        name: "每周回顾",
+        hint: "每周五 16:00",
+        description: "把本周的工作整理成一份状态更新",
+        prompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+        agentPrompt: "每周五 16:00 把本周的工作整理成一份状态更新",
+      },
+      followUp: {
+        name: "跟进提醒",
+        hint: "一次性",
+        description: "到点提醒你跟进某件事",
+        prompt: "明天 10:00 提醒我跟进 X",
+        agentPrompt: "明天 10:00 提醒我跟进 X",
+      },
+      monitor: {
+        name: "监控更新",
+        hint: "每 6 小时",
+        description: "定期检查一个页面或数据源的变化",
+        prompt: "每 6 小时检查 <url> 是否有更新并告诉我变化",
+        agentPrompt: "每 6 小时检查 <url> 是否有更新，有变化时告诉我",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "启用定时任务",
@@ -1139,8 +1264,6 @@ export const zh = {
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop 钩子"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} 钩子`,
     /** Search box of the create dialog's plugin picker. */
     searchPlaceholder: "搜索插件",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
@@ -1165,17 +1288,60 @@ export const zh = {
       `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）将被删除。`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one Agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后；卸载会删除整个钩子包目录。",
+      "该 Agent 已安装的钩子包（agent_state/hooks/）：harness 在循环的钩子点运行的脚本，例如每个 Task 结束后。卸载会删除整个钩子包目录。",
     agentTabEmpty: "尚未安装任何钩子包",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "启用钩子的开关仅 Project owner 可用。",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => `${n} 个钩子包`,
+    exportHook: "打包导出",
+    importHook: "导入钩子",
+    importChatTitle: "推荐：让 Agent 在对话中导入",
+    importChatWhy:
+      "Agent 会通读来源、逐个审查脚本，再把钩子包安装到该 Agent 上，比直接上传更可靠。",
+    importSourceLabel: "钩子来源",
+    importSourceHint:
+      "支持 URL / GitHub 仓库 / 本地路径 / 一段描述，或其他工具的钩子配置（如 Claude Code settings.json 的 hooks 块）",
+    importSourcePlaceholder: "https://…、/path/to/hooks，或「写一个 stop 钩子：每次任务结束后…」",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<来源>",
+    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `把 ${s} 导入为钩子包。`,
+    importCopyPrompt: "复制 Prompt",
+    importOpenChat: "打开新对话",
+    importUploadTitle: "上传钩子包 zip",
+    importUploadDesc:
+      "zip 根目录为 hooks.json 与脚本，或仅含一个内含它们的顶层目录。导入即生效：只要该 Agent 启用了钩子，其脚本就会在本机的钩子点运行，请只导入可信的包。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "钩子包已安装",
+    importOverwriteTitle: "覆盖已安装钩子包",
+    importOverwriteBody: (name: string): string =>
+      `钩子包「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
+    importOverwriteAction: "覆盖安装",
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
+        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY-MM-DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。',
+        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点则是 scratchpad_dir 与 prompt；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
+        `把它安装到 Project「${projectId}」中 Agent「${agentId}」的 agent_state/hooks/<name>/ 目录（目录名即包名，须匹配 ^[A-Za-z0-9_-]+$），最后向我说明它做什么、在哪个钩子点触发。`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `确定从 ${agent} 卸载钩子包 ${name} 吗？其全部脚本（含本地改动）将被删除。`,
     uninstalledToast: (name: string, agent: string): string => `已从 ${agent} 卸载钩子包 ${name}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "启用钩子",
+      enableHint:
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+      savedToast: "已保存，自下一轮对话起生效",
+    },
   },
 
   skills: {
@@ -1546,6 +1712,8 @@ Benchmark：
     statusCompletedUnread: "运行完毕，未读",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => `${n} 个后台任务`,
+    /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
+    sessionScheduled: "有待触发的定时任务",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
@@ -2471,8 +2639,10 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
-      goal_plugin_not_installed: "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装。",
+      goal_plugin_not_installed:
+        "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
+      hook_too_large: "该钩子包过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
       not_pending: "该插话已随本轮送达模型，无法撤回。",
       follow_up_started: "该跟进消息已开始发送，无法撤回。",

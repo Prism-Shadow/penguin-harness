@@ -72,17 +72,19 @@ Model entry (`[[models]]`) fields:
 | `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
-| `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |
+| `base_url` | Custom base URL; preset by the built-in catalog for gateways and for the direct rows that pin a client — MiniMax M3 and DeepSeek `deepseek-flash` |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
@@ -166,6 +168,7 @@ The four `compaction.*` fields are the one part of this file a running conversat
 | `skills.prompt` | built-in template | The `{{SKILLS}}` block, editable on the Skills tab — carries `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
 | `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
+| `hooks.enabled` | `true` | Whether a new Session runs the installed hook packages at the loop's hook points (with it off the packages stay installed and nothing consults them). The one section with no prompt half: hook packages are scripts, not context text |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that Server instead of trusting its `readOnlyHint`; see the MCP Servers section of [Tools & Approval](/tools) |
 

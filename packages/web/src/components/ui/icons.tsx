@@ -165,6 +165,17 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
+ * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge
+ * everywhere.
+ */
+export const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
+export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
+
+/** A dashboard of four tiles: the workbench the floating launcher opens. */
+export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z";
+
+/**
  * File glyphs, shared by every place a file operation is marked — the file summary card, the
  * memory-changes card, the context panel's file ranking — so a read, an edit and a write look
  * the same everywhere: a page with a folded corner, the same page with a plus (a full write),
@@ -223,6 +234,27 @@ export const HOOK_ICON =
  */
 export const PLUGIN_ICON =
   "M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z";
+
+/**
+ * Magic wand with sparkles (after lucide's wand-sparkles, reduced to two sparkles so it still
+ * reads at 13px): the mark of "Create with AI" wherever an object can be described to the agent
+ * instead of configured by hand — the AI half of the create pair and the dialog's exit.
+ */
+export const MAGIC_WAND_ICON =
+  "M21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72zM14 7l3 3M5 6v4M3 8h4M19 14v4M17 16h4";
+
+/** An open hand — the "do it by hand" mark beside the wand, on the 24×24 grid. */
+export const HAND_ICON =
+  "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
+
+/**
+ * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
+ * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
+ * panel and the mark a session row wears while an enabled task is bound to it. Distinct from the
+ * plain clock face that means "most recent" in the list options.
+ */
+export const SCHEDULE_ICON =
+  "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5";
 
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,

@@ -142,7 +142,11 @@ import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { writeClipboard } from "../ui/copy-button";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
-import { BackgroundTasksMark, SessionActivityIcon } from "../ui/session-activity-icon";
+import {
+  BackgroundTasksMark,
+  ScheduleMark,
+  SessionActivityIcon,
+} from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -165,6 +169,8 @@ import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
+import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
@@ -353,6 +359,23 @@ export function Sidebar({
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
+  // The current Agent's scheduled tasks, shared with the dock's schedules panel through one
+  // store. The scope is the current Agent because that is the one the store can hold: the chat
+  // page keeps the current Agent in step with the open conversation, so the panel and these rows
+  // ask for the same list. In workspace or time grouping the list can also show OTHER Agents'
+  // Sessions, and those rows simply wear no mark — a row saying nothing is honest, a row
+  // answered from another Agent's list would not be. Re-read on every navigation: opening a
+  // conversation is the moment a task may just have been created or switched off.
+  const { items: agentSchedules } = useAgentSchedules(
+    currentProjectId,
+    currentAgent?.agentId ?? null,
+    activeSessionId ?? "",
+  );
+  // The Sessions of that Agent wearing the alarm clock: one bound task with a next fire time is
+  // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
+  // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
+  // task that fired for the last time loses its mark at the next refresh.
+  const scheduledSessions = pendingScheduleSessions(agentSchedules ?? []);
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -1225,6 +1248,7 @@ export function Sidebar({
             // the whole transition sequence is testable without a DOM.
             activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
             background={sessionBackgroundTasks(s)}
+            scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -2524,6 +2548,7 @@ function SessionRow({
   active,
   activity,
   background,
+  scheduled,
   pinned,
   canPin = false,
   lastActive,
@@ -2548,6 +2573,8 @@ function SessionRow({
   activity: SessionActivity;
   /** Background tasks the Session still owns (sessionBackgroundTasks); 0 draws no mark. */
   background: number;
+  /** A scheduled task still to fire is bound to this Session (pendingScheduleSessions); false draws no mark. */
+  scheduled: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2704,6 +2731,11 @@ function SessionRow({
               size={ICON_SIZE.rowMark}
             />
           )}
+          {/* Standing arrangement rather than live work: the row says this conversation will run
+              on its own, and the schedules panel says how often and what. A paused task, or one
+              past its end time, draws nothing — nothing more will fire from it, and a mark
+              would be noise. */}
+          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

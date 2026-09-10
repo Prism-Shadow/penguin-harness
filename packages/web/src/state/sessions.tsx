@@ -45,6 +45,7 @@ import {
   workspaceGroupKey,
   workspaceGroupQuery,
 } from "../lib/session-grouping";
+import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -642,9 +643,15 @@ export function applyUserEvent(
     void store.getState().reload();
     return;
   }
-  // A scheduled task firing may have created a new Session (new-session mode); reload the list
-  // so it appears immediately. schedule_queued doesn't change the list (the target Session
-  // already exists), so it is ignored, as is every other Session-scoped event.
+  // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
+  // one-off going done — so the conversation's schedule list is stale from here. The store
+  // decides for itself whether the agent is the one on screen.
+  if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
+    noteScheduleEvent(ev.projectId, ev.agentId);
+  }
+  // A scheduled task firing may also have created a new Session (new-session mode); reload the
+  // list so it appears immediately. schedule_queued doesn't change the list (the target Session
+  // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
   // The event carries projectId: a trigger from another Project is unrelated to the current list.
   if (ev.projectId === store.getState().projectId) void store.getState().reload();

@@ -23,7 +23,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, RefObject } from "react";
-import { useNavigate } from "react-router";
 import type {
   MemoryFileInfo,
   MemoryImportMode,
@@ -55,8 +54,7 @@ import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal"
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
@@ -139,10 +137,10 @@ export function MemoryTab({
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
   onConfigChanged?: () => void;
 }) {
-  const navigate = useNavigate();
+  const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, setCurrentAgentId, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;
   // the server enforces it either way, this only keeps the control out of a member's reach.
@@ -354,28 +352,15 @@ export function MemoryTab({
   const editCopy = useCopied();
 
   /**
-   * The bridge-to-chat jump shared by edit and add: prefill the draft (merging over what is
-   * already cached, clearing a stale `/agent` handoff chip that would forward the prompt to a
-   * different Agent), pin this Agent — and for a Workspace scope pin that Workspace too, so the
+   * The bridge-to-chat jump shared by edit and add: the AI bridge prefills the draft with the
+   * prompt and pins this Agent — and for a Workspace scope pins that Workspace too, so the
    * Session reads the very index it is about to change.
    */
   const openChatWithDraft = (text: string, workspacePath: string | undefined) => {
-    if (!userId || !projectId) return;
-    const key = draftKey(userId, projectId);
-    saveDraft(key, {
-      ...loadDraft(key),
+    openAiChat({
       agentId,
       text,
       ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
-      skills: [],
-      handoffAgentId: undefined,
-    });
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, {
-      state: {
-        agentId,
-        ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
-      },
     });
   };
 

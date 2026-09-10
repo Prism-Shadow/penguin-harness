@@ -78,7 +78,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 }
 ```
 
-装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包（正在运行的 Session 保持构建时的那套；安装或卸载钩子包后，服务端会在该 Agent 已缓存的运行时下次空闲访问时重建它们）。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
+装了即生效：Agent 的每个顶层 Session 都会在循环的钩子点上咨询已安装的钩子包（正在运行的 Session 保持构建时的那套；安装或卸载钩子包、以及下述开关变动后，服务端会在该 Agent 已缓存的运行时下次空闲访问时重建它们）。钩子的启停是整体的，不按单个包：`system_config.yaml` 的 `hooks.enabled`（缺省即启用）由 Hooks 标签页的开关（仅 Project owner）写入，关闭后新建的 Session 不组装任何钩子，已安装的包仍全部留在磁盘上。同一标签页可以把已装钩子包打包导出为 zip、再把这样的 zip 导入回来——`hooks.json` 与脚本在 zip 根目录，或在唯一的顶层目录内；清单列出的每条命令都必须指向压缩包内的文件——也可以把导入交给 Agent，由它通读来源、审查脚本后再安装。脚本是只用内置模块的纯 Node——harness 跑在哪它就跑在哪，以子进程方式运行，stdin 进 JSON、stdout 出 JSON 回答；契约见[运行循环](/agent-loop#stop-hook)。钩子包里的其他脚本由宿主按约定调用：goal 插件的 `start.mjs` 就是用户发起目标时服务端运行的那个（[目标模式](/goal-mode)）。
 
 ## 安装与存放
 

@@ -100,6 +100,12 @@ export const en: Strings = {
     killConfirmTitle: "Close this terminal?",
     killConfirmBody: (name: string): string =>
       `This ends the shell "${name}" — it cannot be restored.`,
+    launcher: "Shortcuts",
+    launcherCaption: "Shortcuts",
+    launcherPending: "a subagent awaits approval",
+    launcherPanels: "Shortcuts",
+    launcherHide: "Hide launcher",
+    launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
   tracePanel: {
@@ -172,6 +178,9 @@ export const en: Strings = {
     fontLarge: "L",
     accent: "Accent",
     accentInfo: "Interface accent color.",
+    launcher: "Shortcuts launcher",
+    launcherInfo:
+      "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -473,6 +482,23 @@ export const en: Strings = {
       "The default model of this Project has no API key yet. Configure it on the Models page before chatting.",
     goToModels: "Go to Models",
     later: "Later",
+  },
+
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  aiCreate: {
+    withAi: "Create with AI",
+    manual: "Create manually",
+    editInChat: "Edit in a new conversation",
+    copyPrompt: "Copy prompt",
+    examplesTitle: "Try an example",
+    fullPrompt: "Full prompt",
+    /** Who does the work, and where: the panel's lead line. */
+    byAgent: (name: string): string => `Done by ${name} in a new conversation`,
+    chooseAgent: "Agent that does the work",
+    placeholder: "Describe what you want — the more specific, the better",
+    /** Accessible name of the prompt box (it has no visible label). */
+    promptLabel: "Prompt",
+    noAgent: "This Project has no agent yet",
   },
 
   agent: {
@@ -1142,6 +1168,102 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
+    /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
+    toastSaved: "Scheduled task saved",
+    toastEnabled: "Scheduled task enabled",
+    toastDisabled: "Scheduled task disabled",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
+    targetThisSession: "This conversation",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "Scheduled tasks",
+    panelSubtitle:
+      "Ask the agent to run tasks, send reminders or monitor for updates on a schedule",
+    panelSearchPlaceholder: "Search scheduled tasks",
+    filterAll: "All",
+    filterActive: "Active",
+    filterPaused: "Paused",
+    filterCompleted: "Completed",
+    panelEmpty: "No scheduled tasks in this conversation yet",
+    panelNoMatch: "No matching scheduled tasks",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "Send the first message, then schedule tasks for this conversation",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "More actions",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `Every day at ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `Every ${weekday} at ${time}`,
+      everyDays: (n: number, time: string): string => `Every ${n} days at ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "Every hour" : `Every ${n} hours`),
+      everyMinutes: (n: number): string => `Every ${n} minutes`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `One-off · ${when}`,
+      next: (when: string): string => `Next: ${when}`,
+      today: (time: string): string => `today ${time}`,
+      tomorrow: (time: string): string => `tomorrow ${time}`,
+      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${monthDay}, ${year}, ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
+    aiCreateTitle: "Create a scheduled task with AI",
+    aiCreateInSessionDesc:
+      "Describe what to schedule; the agent creates it in this conversation and confirms the time it set.",
+    aiCreateDesc:
+      "Describe what to schedule; the agent creates it for this agent in a new conversation and confirms the time it set.",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `Done by "${name}" in this conversation`,
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "Edit in this conversation",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "Create the request above as a scheduled task bound to this Session: write a TOML file under agent_state/schedule/ with `session_id` set to this Session's id (see the Environment section), a semantic file name and `start_at`; add `period` when it repeats and `end_at` when the request has a natural end. Then confirm the schedule you set in one line.",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "Suggestions",
+    suggestions: {
+      dailyBrief: {
+        name: "Daily brief",
+        hint: "Weekdays at 08:00",
+        description: "Yesterday's progress and today's to-dos, summarized",
+        prompt:
+          "Every weekday at 8:00 AM, give me a brief: yesterday's progress in this conversation and today's to-dos",
+        agentPrompt:
+          "Every weekday at 8:00 AM, produce a brief: yesterday's progress and today's to-dos",
+      },
+      weeklyReview: {
+        name: "Weekly review",
+        hint: "Fridays at 16:00",
+        description: "Turn the week's work into a status update",
+        prompt: "Every Friday at 16:00, turn this week's work into a status update",
+        agentPrompt: "Every Friday at 16:00, turn this week's work into a status update",
+      },
+      followUp: {
+        name: "Follow-up reminder",
+        hint: "One-off",
+        description: "A reminder to follow up on something, at the time you name",
+        prompt: "Tomorrow at 10:00, remind me to follow up on X",
+        agentPrompt: "Tomorrow at 10:00, remind me to follow up on X",
+      },
+      monitor: {
+        name: "Monitor for updates",
+        hint: "Every 6 hours",
+        description: "Check a page or data source for changes on a schedule",
+        prompt: "Every 6 hours, check <url> for updates and tell me what changed",
+        agentPrompt: "Every 6 hours, check <url> for updates and report what changed",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "Enable schedules",
@@ -1167,8 +1289,6 @@ export const en: Strings = {
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop hook"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} hook`,
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
     detailSkills: "Skills",
@@ -1192,18 +1312,62 @@ export const en: Strings = {
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task; uninstalling deletes the whole package directory.",
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
     agentTabEmpty: "No hook packages installed yet",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+    exportHook: "Export",
+    importHook: "Import hook",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews every script and installs the package on this agent — more reliable than a bare upload.",
+    importSourceLabel: "Hook source",
+    importSourceHint:
+      "A URL, a GitHub repository, a local path, a description, or another tool's hook config (such as the hooks block of a Claude Code settings.json)",
+    importSourcePlaceholder:
+      'https://…, /path/to/hooks, or "write a stop hook that runs after every task…"',
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `Import ${s} as a hook package.`,
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a hook package zip",
+    importUploadDesc:
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An import takes effect at once: while this agent has hooks on, its scripts run on this machine at every hook point, so import only what you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Hook package installed",
+    importOverwriteTitle: "Overwrite installed hook package",
+    importOverwriteBody: (name: string): string =>
+      `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY-MM-DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "Enable hooks",
+      enableHint:
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+      savedToast: "Saved — takes effect from the next turn",
+    },
   },
 
   skills: {
@@ -1576,6 +1740,8 @@ Scenarios:
     statusCompletedUnread: "Done, unread",
     /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
+    /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
+    sessionScheduled: "Has a scheduled task still to fire",
     /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
     backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
@@ -2514,8 +2680,9 @@ Scenarios:
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
-        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
+      hook_too_large: "This hook package exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",

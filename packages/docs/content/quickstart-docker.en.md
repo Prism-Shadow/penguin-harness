@@ -76,7 +76,7 @@ PenguinHarness ships with no model credentials. Use the **Models** page in the W
 
 ```bash
 docker compose exec -u penguin penguin \
-  penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+  penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 The `-u penguin` matters: `docker exec` runs as root by default, and files it writes into `/data` would then be owned by root while the server runs as uid 1000. See [Models & Providers](/models) for the built-in groups.

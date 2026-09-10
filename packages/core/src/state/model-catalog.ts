@@ -13,8 +13,10 @@
  * effective 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the
  * pre-registered deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement;
  * the whole Gemini 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch
- * discounts declared, every other row re-read and unchanged: 2026-09-09 — per each
- * provider's docs).
+ * discounts declared, every other row re-read and unchanged: 2026-09-09; the direct DeepSeek
+ * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it), the
+ * OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions plus its
+ * Doubao Seed display names: 2026-09-10 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -55,8 +57,10 @@
  * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE).
- * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
- * endpoint.
+ * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
+ * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
+ * `deepseek-flash` pins `deepseek-v4` because AgentHub 0.4.11 routes DeepSeek on that
+ * substring alone and the released V4.1 Flash id no longer carries it.
  *
  * App attribution (`attributionHeaders`, bottom of this file) rides alongside the protocol
  * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
@@ -183,6 +187,7 @@ const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 /**
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
@@ -468,27 +473,44 @@ export function effectivePricing(
  * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
-  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices re-read
-  // 2026-09-08 from api-docs.deepseek.com/quick_start/pricing, covering the official price
-  // adjustment effective 2026-09-10 12:00 Beijing: the V4 Flash rows (flash and
-  // flash-vision-exp) are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak
-  // 0.02 / 1 / 4; deepseek-v4-pro sits outside that adjustment, at 0.3 / 9 / 27. The rows
-  // store the PEAK tier and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside
-  // Beijing weekday 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate
-  // actually in force, rather than one of them being approximated by the other.
-  // deepseek-v4.1-flash leads the group ahead of its launch: DeepSeek has announced it and
-  // does not serve it yet, and it carries the V4 Flash series price and schedule. --
+  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices and model
+  // names re-read 2026-09-10 from api-docs.deepseek.com/quick_start/pricing: the Flash rows
+  // are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak 0.02 / 1 / 4;
+  // deepseek-v4-pro sits outside that tier, at 0.3 / 9 / 27. The rows store the PEAK tier
+  // and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday
+  // 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate actually in force,
+  // rather than one of them being approximated by the other.
+  // V4.1 Flash ships under the bare name `deepseek-flash` and leads the group; the two V4
+  // Flash ids below are retired names the vendor still accepts and now serves from V4.1
+  // Flash at the Flash price. --
   {
-    // Announced for release after 2026-09-10 and not served yet as of 2026-09-09; the row is
-    // registered ahead of the launch. The announcement gives it image input by default, and
-    // the V4 Flash series price: the peak tier is stored and the schedule declared, exactly
-    // like its siblings. The context window is assumed equal to deepseek-v4-flash until the
-    // official model page lists one. Image parts reach it through @prismshadow/agenthub
-    // ^0.4.11, whose DeepSeek client forwards them to every id except the text-only
-    // deepseek-v4-flash and deepseek-v4-pro (0.4.10 forwarded them to ids containing
-    // "vision" alone).
-    modelId: "deepseek-v4.1-flash",
+    // DeepSeek's pricing page names this model `deepseek-flash` (model version
+    // DeepSeek-V4.1-Flash, released as of the 2026-09-10 read): 1M context, image input, and
+    // the Flash series peak price and off-peak schedule.
+    // The id carries no `deepseek-v4` substring, and that substring is the only thing
+    // AgentHub 0.4.11's AutoLLMClient routes DeepSeek on (it matches raw substrings against
+    // `client_type || model_id`), so the bare name would be rejected as unsupported. This
+    // direct-vendor row therefore pins the `deepseek-v4` client and inlines the vendor
+    // endpoint — the same shape the MiniMax row uses, and the one exception to direct rows
+    // leaving both unset. Drop the two fields once AgentHub routes the bare id.
+    modelId: "deepseek-flash",
     displayName: "DeepSeek V4.1 Flash",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "deepseek-v4",
+    baseUrl: DEEPSEEK_BASE_URL,
+  },
+  {
+    // Retired on 2026-09-10: DeepSeek still accepts the id and serves it from V4.1 Flash at
+    // the Flash price, so what answers here reads images — hence the flag. AgentHub 0.4.11's
+    // DeepSeek client still refuses image parts for this bare id (its text-only deny-list
+    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ predates the retirement), so until AgentHub
+    // relaxes that list an image sent to this id is rejected by the client, not by DeepSeek.
+    modelId: "deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
     pricing: cny(0.04, 2, 8),
@@ -496,17 +518,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
-    modelId: "deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash",
-    provider: "deepseek",
-    contextWindow: 1000000,
-    pricing: cny(0.04, 2, 8),
-    offPeakDiscount: DEEPSEEK_OFF_PEAK,
-    supportsVision: false,
-  },
-  {
-    // The experimental vision revision of V4 Flash (added 2026-08-21): image input on top of
-    // the base model's text capabilities, at the same published price.
+    // The experimental vision revision of V4 Flash (added 2026-08-21), retired on the same
+    // 2026-09-10 announcement: the id is still accepted and served from V4.1 Flash at the
+    // Flash price. Image input was already the point of this row, and it still holds.
     modelId: "deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
@@ -516,6 +530,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
+    // From 12:00 Beijing on 2026-09-14 and until V4.1 Pro is released, DeepSeek routes every
+    // request for this id to V4.1 Flash and bills it at the V4.1 Flash price. The row keeps
+    // the V4 Pro list price and its text-only flag: the id, the model behind it and the
+    // billing are the vendor's to change back, and this catalog records what it publishes
+    // for deepseek-v4-pro itself.
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
@@ -611,6 +630,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Listed 2026-09-10 from the models API: the base price is the PEAK tier and
+    // `pricing.overrides` bill exactly half on weekends and outside weekday UTC 01:00-04:00 /
+    // 06:00-10:00 — DeepSeek's own Beijing windows — so the row stores the peak price and
+    // declares DEEPSEEK_OFF_PEAK, exactly as the direct row does. Context window and image
+    // input from the same listing.
+    modelId: "deepseek/deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "deepseek/deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "openrouter",
@@ -633,8 +668,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // DeepSeek serves this one alone on OpenRouter, so the stored rates are its own published
     // USD list ($0.22 / $0.66 / $0.007 cache read), and the context window is that endpoint's
-    // 1,048,576. Like the direct group, the price is the OFF-PEAK tier: the models API exposes
-    // the peak windows as `pricing.overrides` billing exactly double.
+    // 1,048,576. The row keeps that flat price as the API lists it: as of the 2026-09-10 read
+    // the listing carries no `pricing.overrides`, so unlike the deepseek-v4.1-flash row above
+    // there is no peak/off-peak split to record here.
     modelId: "deepseek/deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "openrouter",
@@ -1218,21 +1254,24 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
   // vision flags and supported protocols from the public catalog API (GET
-  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-08-28);
+  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-09-10);
   // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
-  // (the detail pages need a signed-in session, so they cannot be re-read anonymously).
-  // TokenDance publishes an input price and a cache-hit price with no separate cache-write
-  // fee, so cache_write carries the input price.
+  // and last confirmed by the seller 2026-09-10 (the detail pages need a signed-in session,
+  // so they cannot be re-read anonymously). TokenDance publishes an input price and a
+  // cache-hit price with no separate cache-write fee, so cache_write carries the input price.
   //
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
   // groups below, and a promoted row declares its rate in `discount` rather than having its
   // price rewritten — a promotion that lapses is then one field to delete, with the rate to
   // return to still on the row. effectivePricing() applies it and presetModelEntries writes
   // that billed rate into a Project, so the cost center charges what the gateway charges.
-  // Nine rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813, glm-5.3-flash and
-  // the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50% off,
-  // kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so for them
-  // list price and billed rate coincide.
+  // Nine rows are promoted (rates re-confirmed 2026-09-10): deepseek-v4-flash-0731,
+  // deepseek-v4-pro-0813 and kimi-k3 at 20% off; glm-5.3, glm-5.3-flash and qwen3.8-max at
+  // 10%; the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%.
+  // Two more rows — deepseek-v4.1-flash and deepseek-v4-flash-vision-exp — carry no flat
+  // discount at all and instead follow the vendor's own peak/off-peak schedule
+  // (DEEPSEEK_OFF_PEAK), storing the peak price the way the direct DeepSeek rows do. The
+  // rest carry neither, so for them list price and billed rate coincide.
   //
   // A running promotion usually also shows up without a credential: the catalog API opens
   // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
@@ -1245,17 +1284,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1048576,
     pricing: cny(0.1, 3, 9),
-    discount: 0.5,
+    discount: 0.2,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Both DeepSeek Flash rows sold here follow the vendor's own peak/off-peak schedule
+    // rather than a flat gateway discount (seller's quote 2026-09-10): the row stores the
+    // peak tier CNY 0.04 / 2 / 8 and declares DEEPSEEK_OFF_PEAK, which halves every bucket
+    // outside Beijing weekday 09:00-12:00 and 14:00-18:00 — see the deepseek-v4.1-flash row
+    // below, priced identically.
     modelId: "deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1266,8 +1311,25 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.3, 9, 27),
-    discount: 0.5,
+    discount: 0.2,
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Listed 2026-09-10; the dotted id is the seller's spelling of the model DeepSeek serves
+    // directly as `deepseek-flash`. 1M context and native multimodality from the catalog
+    // API. Priced like the vision-exp row above: the peak tier, on the vendor's own
+    // schedule, no flat gateway discount (seller's quote 2026-09-10). Unlike the direct row
+    // this one needs no DeepSeek-specific pin — it is reached through this group's generic
+    // openai-chat client, which forwards image_url parts.
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
@@ -1287,12 +1349,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // openai-chat client forwards image_url parts, so image input works on this path. Its
     // supported_protocols is openai:chat-completions alone, so the openai-chat pin is the
     // only shape this id serves.
+    //
+    // The 50% promotion this row used to carry ran through 2026-09-09 24:00 (the catalog
+    // API's own description said so) and has been replaced by 10% off; the list price is
+    // unchanged, only the `discount` fraction moved.
     modelId: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.23, 0.8, 2.8),
-    discount: 0.5,
+    discount: 0.1,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1371,8 +1437,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // recorded is the one the seller confirmed. seed-2.1-pro and seed-2.1-turbo also list
     // openai:responses, so their openai-chat pin is the group's convention rather than the
     // only shape they serve; seed-evolving lists chat-completions alone.
+    //
+    // Display names are the seller's own, as the catalog API spells them (re-read
+    // 2026-09-10): Seed-2.1-Pro, Seed-2.1-Turbo, Seed-Evolving.
     modelId: "seed-2.1-pro",
-    displayName: "Doubao Seed 2.1 Pro",
+    displayName: "Seed-2.1-Pro",
     provider: "tokendance",
     contextWindow: 256000,
     pricing: cny(1.2, 6, 30),
@@ -1383,7 +1452,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     modelId: "seed-2.1-turbo",
-    displayName: "Doubao Seed 2.1 Turbo",
+    displayName: "Seed-2.1-Turbo",
     provider: "tokendance",
     contextWindow: 256000,
     pricing: cny(0.6, 3, 15),
@@ -1397,7 +1466,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // under one stable id — the same model as seed-2.1-pro at the time of reading — and
     // the seller prices it the same.
     modelId: "seed-evolving",
-    displayName: "Doubao Seed Evolving",
+    displayName: "Seed-Evolving",
     provider: "tokendance",
     contextWindow: 256000,
     pricing: cny(1.2, 6, 30),
@@ -2042,6 +2111,11 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   if (t === "minimax-m3" && modelId.toLowerCase() === "minimax-m3") {
     return env("MINIMAX");
   }
+  // AgentHub 0.4.11 routes DeepSeek on this substring alone, so the released V4.1 Flash id
+  // `deepseek-flash` matches nothing here and stays unroutable on its own — which is exactly
+  // why its catalog row pins client_type "deepseek-v4" and lands on this branch instead.
+  // Mirroring AgentHub is the contract; do not widen the test to the bare name until
+  // AgentHub itself does.
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
   // agenthub 0.4.2's generic Anthropic Messages protocol client reads the ANTHROPIC_* pair.
   // Order mirrors AutoLLMClient: ant-messages before the openai substring match.

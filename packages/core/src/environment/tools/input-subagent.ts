@@ -35,6 +35,7 @@ import {
 import { approvalHint } from "./run-subagent.js";
 import { collectWindow } from "./subagent/collect.js";
 import { clampYield } from "./background/index.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant. */
 export const INPUT_SUBAGENT_NAME = "input_subagent";
@@ -62,7 +63,9 @@ export function createInputSubagentTool(
 
       const subagentId = args["subagent_id"];
       if (typeof subagentId !== "string" || subagentId.length === 0) {
-        yield delta('Missing required argument "subagent_id" for input_subagent.');
+        yield delta(
+          describeArgumentError(definition, args, { argument: "subagent_id", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       let session = manager.get(subagentId);
