@@ -152,11 +152,12 @@ pnpm test:e2e                                        # core live-model e2e, need
   before creating the tag** — the release workflow reads it from the tag's checkout, so a
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
-- **The official image publishes from the release workflow**, in a `docker` job gated on
-  `publish-npm`: it installs the tag's published `@prismshadow/penguin-cli` and pushes
-  Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. The build and
-  publish steps live in `.github/workflows/docker.yml`, which a PR touching the
-  `Dockerfile`, `docker/` or that workflow also runs as an amd64 smoke build. The push
+- **The official image is built from source**, by `.github/workflows/docker.yml`, and
+  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
+  push to `main` publishes that commit as `latest` and as `main-<sha7>`; the release
+  workflow's `docker` job builds the tag's own source and publishes `X.Y.Z`, `X.Y` and —
+  while the tag is the current latest Release — `stable`. A PR touching the `Dockerfile`,
+  `docker/` or that workflow runs the same file as an amd64 smoke build. The push
   needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets — the latter a
   Docker Hub access token with read/write scope on that repository — and the Docker Hub
   repository is created public on the first push.

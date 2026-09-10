@@ -9,7 +9,7 @@ The official image runs the same server `penguin server` starts, with the Web Ap
 hiyouga/penguinharness
 ```
 
-Tags are `X.Y.Z` and `X.Y`, plus `latest` for the current release. Each tag is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference serves an x86 VPS and an arm64 one alike.
+`latest` follows `main` — every push rebuilds it, and `main-<sha7>` names that same image immutably. `stable` is the newest release; `X.Y.Z` and `X.Y` pin one. Every tag is built from this repository's source at that commit, and each is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference serves an x86 VPS and an arm64 one alike. The examples below use `latest`; a deployment that should move only when a version ships wants `stable` instead.
 
 ## Run it
 
