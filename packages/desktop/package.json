@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-desktop",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "private": true,
   "type": "module",
   "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE, no private IPC).",
@@ -35,7 +35,7 @@
     "@prismshadow/penguin-server": "workspace:*",
     "@types/node": "^24.0.0",
     "electron": "^43.2.0",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "^26.16.1",
     "electron-updater": "^6.8.9",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
