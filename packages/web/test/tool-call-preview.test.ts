@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   headerSubtitle,
+  isBackgroundCall,
   pendingFilePayload,
   previewArguments,
   shortenPath,
@@ -145,5 +146,27 @@ describe("pendingFilePayload", () => {
   it("returns null for non-file tools and incomplete JSON", () => {
     expect(pendingFilePayload("exec_command", '{"cmd":"ls"}')).toBeNull();
     expect(pendingFilePayload("edit_file", '{"file_path":"a.txt","old_str')).toBeNull();
+  });
+});
+
+describe("isBackgroundCall", () => {
+  it("marks exec_command and run_subagent launched with the flag", () => {
+    expect(isBackgroundCall('{"cmd":"pnpm dev","run_in_background":true}')).toBe(true);
+    expect(isBackgroundCall('{"prompt":"go","run_in_background":true}')).toBe(true);
+  });
+
+  it("leaves an ordinary call unmarked, flag absent or false", () => {
+    expect(isBackgroundCall('{"cmd":"ls"}')).toBe(false);
+    expect(isBackgroundCall('{"cmd":"ls","run_in_background":false}')).toBe(false);
+    // Only the real boolean counts: a string "true" is not the argument the tool acts on.
+    expect(isBackgroundCall('{"cmd":"ls","run_in_background":"true"}')).toBe(false);
+  });
+
+  it("reads nothing from a mid-stream or malformed argument string", () => {
+    // The flag is last in both schemas, so a still-growing call has not shown it yet — and a
+    // command that merely mentions it is not one that was launched with it.
+    expect(isBackgroundCall('{"cmd":"pnpm dev","run_in_background":tr')).toBe(false);
+    expect(isBackgroundCall('{"cmd":"grep run_in_background\\": true src"}')).toBe(false);
+    expect(isBackgroundCall("")).toBe(false);
   });
 });

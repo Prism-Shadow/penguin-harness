@@ -267,6 +267,69 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.tokens.output).toBe(1_000); // → 500 tok/s, not 31 tok/s
   });
 
+  it("splits a turn's duration into API time and tool wall time, counting parallel tools once", async () => {
+    // Two tools run concurrently: 10:00:03→10:00:09 and 10:00:04→10:00:11. Summing their
+    // durations would claim 13s of tool work; the clock only ever spent 8s (03→11), which is
+    // what "wall time" has to mean once tools can overlap.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-05T10:00:00.000Z", userText("hi")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+      ),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "read_file", arguments: "{}", toolCallId: "tc-2" }),
+      ),
+      // Approvals land inside the Request span (core awaits them in the streaming loop), so the
+      // waits come off API time; execution then starts at each approval, not at the call.
+      at("2026-07-05T10:00:03.000Z", approvalDecision("allow", "tc-1")),
+      at("2026-07-05T10:00:04.000Z", approvalDecision("allow", "tc-2")),
+      at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:09.000Z", toolCallOutput({ output: "a", toolCallId: "tc-1" })),
+      at("2026-07-05T10:00:11.000Z", toolCallOutput({ output: "b", toolCallId: "tc-2" })),
+      at("2026-07-05T10:00:11.000Z", requestBegin()),
+      at("2026-07-05T10:00:13.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:13.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    const t = a.tasks[0]!;
+
+    // API: 01→05 minus the two approval waits (1s + 2s), plus 11→13.
+    expect(t.llmMs).toBe(1_000 + 2_000);
+    // Tools: the union of [03,09] and [04,11] — 8s, not the 6s + 7s the two spans add up to.
+    expect(t.toolMs).toBe(8_000);
+    // The components are measurements, not a partition: here they overlap nothing, but they
+    // still fall short of the turn's span, which also covers the gap the harness spent.
+    expect(t.llmMs + t.toolMs).toBeLessThanOrEqual(a.elapsedMs);
+    // The file-wide figures are the sum of the per-turn ones, exactly as elapsedMs is.
+    expect(a.apiMs).toBe(a.tasks.reduce((sum, x) => sum + x.llmMs, 0));
+    expect(a.toolMs).toBe(a.tasks.reduce((sum, x) => sum + x.toolMs, 0));
+  });
+
+  it("a tool still running when the trace ends contributes no tool time", async () => {
+    // No tool_call_output ever arrives: the execution has no measured end, and extrapolating it
+    // to "now" would grow a finished file's figures every time it is read.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-05T10:00:00.000Z", userText("hi")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at(
+        "2026-07-05T10:00:02.000Z",
+        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+      ),
+      at("2026-07-05T10:00:03.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:03.100Z", tokenUsage(counts(1000), buckets(0, 0, 1_000))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+
+    expect(a.tasks[0]!.toolMs).toBe(0);
+    expect(a.toolMs).toBe(0);
+    expect(a.tasks[0]!.llmMs).toBe(2_000);
+  });
+
   it("compaction is its own turn: its TPS is its own and doesn't pollute user turns; the context snapshot still takes only non-compaction Requests", async () => {
     // Compaction's request_begin/end and token_usage all sit between
     // compaction_begin and compaction_end (see core's context-engine summarize

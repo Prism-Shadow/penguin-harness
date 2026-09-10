@@ -822,6 +822,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         prior: {
           subagentTokens: result.prior.subagentTokens,
           elapsedMs: result.prior.elapsedMs,
+          apiMs: result.prior.apiMs,
+          toolMs: result.prior.toolMs,
           sessionTokens: result.prior.sessionTokens,
           contextTokens: result.prior.contextTokens,
         },
@@ -852,6 +854,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
+    const returnedSteering = deps.manager.returnedSteeringOf(row.sessionId);
     const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
     const subagents = deps.manager.subagentsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
@@ -863,6 +866,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         // snapshot too, so the composer's queued hints and the panel's running marks
         // survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
+        // Undelivered steering handed back by a finished run rides the snapshot as well, so a
+        // reload still returns the message to the composer instead of stranding it.
+        ...(returnedSteering.length > 0 ? { returnedSteering } : {}),
         ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
         ...(subagents.length > 0 ? { subagents } : {}),
       },

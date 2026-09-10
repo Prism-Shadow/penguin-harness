@@ -22,8 +22,11 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | Any non-empty value stops the desktop app from importing the login shell's environment on macOS/Linux GUI launches (see [Desktop quickstart](/quickstart-desktop)) | unset — the import runs, filling only variables the launch left unset |
+| `PENGUIN_CLI_ENTRY` | The CLI entry script this installation offers the Agents it runs (see below) | set for you by `penguin server` / `penguin web` and by the desktop app; falls back to the checkout's own `packages/cli/dist/penguin.js` when the server was started from one |
 
-These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and the internal `PENGUIN_CLI_ENTRY` are **removed from the environment of commands the Agent runs** — otherwise a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own. The rest of the host environment passes through, with one further exception: `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` are always forced to fixed values, so that a command cannot hang waiting on an editor, a credential prompt or a pager. The Agent's [vault](#vault) is applied on top of the host environment — setting `PORT` there does reach commands — but not on top of those six.
+These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and `PENGUIN_CLI_ENTRY` are **removed from the environment of commands the Agent runs** — otherwise a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own. The rest of the host environment passes through, with one further exception: `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` are always forced to fixed values, so that a command cannot hang waiting on an editor, a credential prompt or a pager. The Agent's [vault](#vault) is applied on top of the host environment — setting `PORT` there does reach commands — but not on top of those six.
+
+One thing travels the other way: **this installation's own `penguin` is first on the PATH of every command an Agent runs**. At startup the server writes a launcher script at `<root>/bin/penguin` — it runs the CLI entry named above, on the server's own Node — and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the Agent is running in, whatever version happens to be installed globally on the machine. The directory is prepended inside the shell as well as in the environment, because commands run through a login shell whose profile routinely rewrites PATH afterwards; that also puts it ahead of a `PATH` set in the [vault](#vault), which otherwise replaces the inherited value outright. The launcher is rewritten at every start, so a moved installation is picked up by the next one, and when there is no entry to point at none is written and `penguin` resolves however it did before.
 
 `PENGUIN_PREVIEW_ORIGIN` must differ from the app's origin by **hostname**, not just port: cookies ignore ports, so a second port would still share the session cookie. Leave it unset for local use — the app is canonicalized onto `localhost` and previews are served from `127.0.0.1`, which needs no configuration and no DNS. Set it when the app is reached over a LAN address or a real domain; otherwise previews there fall back to a same-origin sandbox where `localStorage`, cookies and third-party embeds do not work. When you do set it on a real domain, keep the session cookie host-only (no `Domain=`), or a sibling subdomain shares it. An unparseable value is a startup error rather than a silent fallback.
 
@@ -84,9 +87,9 @@ api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
-cache_read = 0.003571
-cache_write = 0.428571
-output = 0.857143
+cache_read = 0.005714
+cache_write = 0.285714
+output = 1.142857
 ```
 
 `pricing.unit` is currently always `usd_per_mtok` (USD per million tokens); the three buckets map onto `token_usage`'s three counters.
