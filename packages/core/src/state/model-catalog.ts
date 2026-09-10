@@ -7,12 +7,14 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26; the vLLM group: 2026-09-03; the direct DeepSeek V4
- * Flash rows (flash and flash-vision-exp): 2026-09-08, for the official adjustment effective
- * 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the pre-registered
- * deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement; the whole Gemini
- * 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch discounts declared,
- * every other row re-read and unchanged: 2026-09-09 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the TokenDance Doubao Seed rows (seed-2.1-pro,
+ * seed-2.1-turbo, seed-evolving): 2026-09-02; the vLLM group: 2026-09-03; the direct DeepSeek
+ * V4 Flash rows (flash and flash-vision-exp): 2026-09-08, for the official adjustment
+ * effective 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the
+ * pre-registered deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement;
+ * the whole Gemini 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch
+ * discounts declared, every other row re-read and unchanged: 2026-09-09 — per each
+ * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1227,9 +1229,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // price rewritten — a promotion that lapses is then one field to delete, with the rate to
   // return to still on the row. effectivePricing() applies it and presetModelEntries writes
   // that billed rate into a Project, so the cost center charges what the gateway charges.
-  // Six rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813 and glm-5.3-flash at
-  // 50% off, kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so
-  // for them list price and billed rate coincide.
+  // Nine rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813, glm-5.3-flash and
+  // the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50% off,
+  // kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so for them
+  // list price and billed rate coincide.
   //
   // A running promotion usually also shows up without a credential: the catalog API opens
   // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
@@ -1354,6 +1357,51 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
     discount: 0.1,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The three Doubao Seed rows share this note. Priced 2026-09-02 from the seller's quoted
+    // 50%-off rates, doubled back to the list price a row stores; context windows and
+    // protocols from the catalog API, whose descriptions call the 2.1 models multimodal
+    // Coding/Agent models (this group's openai-chat client forwards image_url parts, so
+    // image input works on this path). That API tags the two 2.1 rows with a limited-time
+    // 20% line rather than the 50% here; as for every promoted row in this group, the rate
+    // recorded is the one the seller confirmed. seed-2.1-pro and seed-2.1-turbo also list
+    // openai:responses, so their openai-chat pin is the group's convention rather than the
+    // only shape they serve; seed-evolving lists chat-completions alone.
+    modelId: "seed-2.1-pro",
+    displayName: "Doubao Seed 2.1 Pro",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(1.2, 6, 30),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "seed-2.1-turbo",
+    displayName: "Doubao Seed 2.1 Turbo",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(0.6, 3, 15),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // A rolling id: the catalog API describes it as the newest Seed Coding/Agent model
+    // under one stable id — the same model as seed-2.1-pro at the time of reading — and
+    // the seller prices it the same.
+    modelId: "seed-evolving",
+    displayName: "Doubao Seed Evolving",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(1.2, 6, 30),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -2123,7 +2171,7 @@ export function presetModelEntries(): ModelEntry[] {
       ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
       ...(pricing ? { pricing: { ...pricing } } : {}),
       // ModelEntry.vision defaults to supported: only models that don't support images
-      // explicitly persist false (drives the read_image / describe_image choice and input
+      // explicitly persist false (drives read_file's hand-off of images to the vision model and input
       // image hand-off, see project-config.ts).
       ...(m.supportsVision ? {} : { vision: false }),
       ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
