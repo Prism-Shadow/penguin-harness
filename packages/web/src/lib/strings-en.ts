@@ -1303,8 +1303,7 @@ export const en: Strings = {
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     addLabel: "Add a plugin",
-    fileHint: (file: string) =>
-      `Only a plugin this build ships; written to the Project's ${file}`,
+    fileHint: (file: string) => `Only a plugin this build ships; written to the Project's ${file}`,
     pageTitle: "Plugin library",
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
