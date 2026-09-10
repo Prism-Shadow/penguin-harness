@@ -70,6 +70,12 @@ describe("one glyph, one home", () => {
   it("draws the right-dock mark in exactly one place", () => {
     expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual(["components/ui/icons.tsx"]);
   });
+
+  it("draws the background-task trace in exactly one place", () => {
+    // Three surfaces draw it now — a session row, the chat header pill and a backgrounded
+    // tool row — which is how the paths above ended up hand-typed five times each.
+    expect(occurrences("M2 12h4l3 9 6-18 3 9h4")).toEqual(["components/ui/icons.tsx"]);
+  });
 });
 
 describe("stroke weights", () => {
