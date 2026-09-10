@@ -21,9 +21,9 @@ import { unzipSync, strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
   PLUGIN_NAME_PATTERN,
-  PLUGIN_VERSION_PATTERN,
   hooksDir,
   listInstalledHooks,
+  parsePluginVersion,
   removeHook,
   replaceSkillDirectory,
 } from "@prismshadow/penguin-core";
@@ -331,7 +331,8 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     const name = requireValidId(c, "name");
     const dir = await requireInstalled(projectId, agentId, name);
     const archiveFiles = await collectHookArchive(dir, name);
-    // A -v<version> suffix only when the manifest carries a real version (the header is the
+    // A -v<version> suffix only when the manifest carries a real version — in the current
+    // `YYYY.MM.DD.N` spelling or the legacy one an older installed copy has (the header is the
     // authority on the filename — the web tab reads it from Content-Disposition).
     let version = "";
     try {
@@ -342,9 +343,8 @@ export function agentHooksRoutes(deps: AppDeps): Hono<AppEnv> {
     } catch {
       // An unparseable manifest still exports (the files are what the user asked for); it just gets the bare filename.
     }
-    const fileName = PLUGIN_VERSION_PATTERN.test(version)
-      ? `${name}-v${version}.zip`
-      : `${name}.zip`;
+    const fileName =
+      parsePluginVersion(version) !== null ? `${name}-v${version}.zip` : `${name}.zip`;
     const zip = zipSync(archiveFiles);
     return new Response(new Uint8Array(zip), {
       headers: {

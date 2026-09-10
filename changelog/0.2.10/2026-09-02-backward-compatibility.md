@@ -15,7 +15,8 @@ Agent does not have, the versions and icons of skills installed from the old lib
 `goal_finished` records and `[goal]` rounds in old Traces, the `@prismshadow/penguin-skills`
 package, and the `skills` field / `--skills` flag of Agent creation. Only the table needed a
 decision; the rest is recorded here too, so a reader asking "does my install need anything?"
-finds every answer in one place.
+finds every answer in one place. A later change in this release adds a seventh: the plugin
+version format.
 
 ## The `goal_state` table: dropped by migration 3, the first restart-only one
 
@@ -100,6 +101,32 @@ and `penguin agent create` takes `--plugins`. A clean rename, no alias: a script
 `skills` gets an Agent with nothing preinstalled (the field is ignored), a script still passing
 `--skills` gets the CLI's unknown-option error. Update the call.
 
+## Plugin versions read `2026.09.10.1`, and the old spelling still reads as the same version
+
+A library manifest's dated version is now spelled `YYYY.MM.DD.N` — `2026.09.10.1` — where it
+was `YYYY-MM-DD.N` (this is the plugin's own content version in `plugin.json`, not the npm
+version of its package, which follows the release). Copies already installed into an Agent's
+`agent_state/` carry the old spelling: a skill's `SKILL.md` frontmatter and a hook package's
+generated `hooks.json`. The loader reads both. `parsePluginVersion` maps `2026-09-02.1` and
+`2026.09.02.1` to the same date and sequence number, so an installed copy stamped before this
+release compares **equal** to the library's copy of that same version, and the rename raises no
+update badge anywhere.
+
+The tolerance is read-side only: nothing on disk is rewritten. An installed copy keeps the
+spelling it was stamped with until the plugin is reinstalled from the library, which is the same
+act that writes the new one. Only a library `plugin.json` must carry the new spelling — the
+manifest check rejects anything else. **A user does nothing.** (`continual-learning` does move
+in this release, for its own reason: its stop-hook prompt now tells the agent to bump a SKILL.md
+version in the new format, so the plugin's version rises to `2026.09.10.1` and its installs are
+reported as updatable — an ordinary content update, not the rename.)
+
+This one **is** a shim with an expiry. It can go once no installed copy predates 0.2.10 — a
+release after 0.3 at the earliest — and one thing gets deleted: the legacy arm of
+`parsePluginVersion` in `packages/core/src/plugins/index.ts` (its
+`LEGACY_PLUGIN_VERSION_PATTERN`). After that a legacy version reads as the empty string and the
+library reports each such install as updatable once, exactly as an old numeric version does
+today.
+
 ## Compatibility
 
 Upgrading asks one thing of one kind of user: whoever hot-pushes this platform onto a running
@@ -109,5 +136,6 @@ existed before this release needs the `goal` plugin installed once from the libr
 that create Agents with `skills` / `--skills` change to `plugins` / `--plugins`.
 
 Downgrading to 0.2.9 works on a migrated database (the table comes back empty at its open);
-finished goals' banners do not restore, nothing else is affected. None of the above is a shim
-with an expiry: there is nothing to remove in a later release.
+finished goals' banners do not restore, nothing else is affected. One item above is a shim with
+an expiry — the loader reading the old plugin-version spelling, removable once no installed copy
+predates 0.2.10; the rest leaves nothing to remove in a later release.

@@ -42,7 +42,7 @@ afterEach(async () => {
 const MANIFEST: HookManifest = {
   name: "expander",
   description: "Answers at the user_prompt point.",
-  version: "2026-09-02.1",
+  version: "2026.09.02.1",
   stop: [],
   pre_tool_use: [],
   user_prompt: [{ command: "expand.mjs", timeout: 5 }],

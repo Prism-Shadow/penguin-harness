@@ -1,8 +1,9 @@
 # 文档新增"安全模型"页面
 
-- **日期：** 2026-08-24
-- **类型：** docs
-- **范围：** `docs`
+- **Date:** 2026-08-24
+- **Type:** process
+- **Scope:** `docs`
+- **PR:** [#455](https://github.com/Prism-Shadow/penguin-harness/pull/455)
 
 [English](2026-08-24-security-docs.md)
 

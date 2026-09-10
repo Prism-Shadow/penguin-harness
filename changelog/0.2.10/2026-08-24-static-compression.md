@@ -1,8 +1,9 @@
 # The frontend is compressed on the way out
 
 - **Date:** 2026-08-24
-- **Type:** performance
+- **Type:** feature
 - **Scope:** `server`
+- **PR:** [#453](https://github.com/Prism-Shadow/penguin-harness/pull/453)
 
 [中文版](2026-08-24-static-compression.zh.md)
 

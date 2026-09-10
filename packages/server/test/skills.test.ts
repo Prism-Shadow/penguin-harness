@@ -89,7 +89,7 @@ describe("skills api", () => {
     const plugins = body.groups.flatMap((g) => g.plugins);
     for (const plugin of plugins) {
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.version, plugin.name).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+      expect(plugin.version, plugin.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
@@ -349,7 +349,7 @@ describe("skills api", () => {
   // ---- POST .../skills/archive: install one skill from an uploaded zip ----
 
   const ZIP_SKILL_MD =
-    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2026-08-01.2\n---\n\n# Zip skill\nBody.\n";
+    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2026.08.01.2\n---\n\n# Zip skill\nBody.\n";
 
   /** Builds an in-memory zip and returns it base64-encoded (the request wire format). */
   const zipB64 = (files: Record<string, Uint8Array>): string =>
@@ -404,7 +404,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual(["dir-skill"]);
-    expect(body.skills[0]!.version).toBe("2026-08-01.2");
+    expect(body.skills[0]!.version).toBe("2026.08.01.2");
     expect(body.skills[0]!.shortDescription).toBe("Zip demo");
     const dir = path.join(skillsDir(t.root, projectId, "zip_agent"), "dir-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(ZIP_SKILL_MD);
@@ -569,7 +569,7 @@ describe("skills api", () => {
     expect(err.error.message).toMatch(/: zip-skill$/);
 
     // overwrite: true replaces the whole directory: old.txt is gone, new.txt appears.
-    const updatedMd = ZIP_SKILL_MD.replace("version: 2026-08-01.2", "version: 2026-08-01.3");
+    const updatedMd = ZIP_SKILL_MD.replace("version: 2026.08.01.2", "version: 2026.08.01.3");
     const res = await member.post(url, {
       dataBase64: zipB64({
         "zip-skill/SKILL.md": strToU8(updatedMd),
@@ -579,7 +579,7 @@ describe("skills api", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe("2026-08-01.3");
+    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe("2026.08.01.3");
     const dir = path.join(skillsDir(t.root, projectId, "zip_over_agent"), "zip-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(updatedMd);
     expect(await fs.readFile(path.join(dir, "new.txt"), "utf8")).toBe("new\n");
@@ -603,7 +603,7 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''zip-skill-v2026-08-01.2.zip",
+      "attachment; filename*=UTF-8''zip-skill-v2026.08.01.2.zip",
     );
     const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
     // Single-top-dir layout with every installed file, byte-identical to the upload — the
@@ -662,7 +662,7 @@ describe("skills api", () => {
 
       // Age one installed copy: the library now carries a higher version than the disk does.
       // The update is reported once, by PLUGIN, however many of its skills lag.
-      await setInstalledVersion("bare_updates", "penguin-sdk", "2000-01-01.1");
+      await setInstalledVersion("bare_updates", "penguin-sdk", "2000.01.01.1");
       const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
       expect(behind.pluginUpdates).toEqual([
         { name: "agent-development", version: librarySkill("penguin-sdk")!.plugin.version },
@@ -674,6 +674,22 @@ describe("skills api", () => {
       expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.pluginUpdates).toEqual(
         [],
       );
+    });
+
+    it("reads a copy installed under the legacy version spelling as the same version", async () => {
+      await createPlainAgent("legacy_updates");
+      expect(
+        (await owner.post(plugins("legacy_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
+      // The library's own version as it was spelled before the rename: same date, same sequence
+      // number, so the installed copy is current and nothing is reported behind.
+      const legacy = librarySkill("penguin-sdk")!.plugin.version.replace(
+        /^(\d{4})\.(\d{2})\.(\d{2})\./,
+        "$1-$2-$3.",
+      );
+      await setInstalledVersion("legacy_updates", "penguin-sdk", legacy);
+      const agent = (await listAgents()).find((a) => a.agentId === "legacy_updates")!;
+      expect(agent.pluginUpdates).toEqual([]);
     });
 
     it("never lists a Skill the library does not carry, however old it looks", async () => {

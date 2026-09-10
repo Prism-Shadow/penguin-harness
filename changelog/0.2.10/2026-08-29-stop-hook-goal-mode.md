@@ -3,7 +3,8 @@
 - **Date:** 2026-08-29
 - **Type:** feature
 - **Scope:** `core`, `plugins`, `server`, `web`, `cli`, `desktop`, `docs`
-- **Breaking:** yes
+- **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
+- **Breaking:** yes — the `goal_state` table is dropped by the first restart-only migration, and built-in goal mode is replaced by the `goal` plugin
 
 [中文版](2026-08-29-stop-hook-goal-mode.zh.md)
 

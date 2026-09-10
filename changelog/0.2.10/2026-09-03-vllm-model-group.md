@@ -3,6 +3,7 @@
 - **Date:** 2026-09-03
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`
+- **PR:** [#606](https://github.com/Prism-Shadow/penguin-harness/pull/606)
 
 [中文版](2026-09-03-vllm-model-group.zh.md)
 

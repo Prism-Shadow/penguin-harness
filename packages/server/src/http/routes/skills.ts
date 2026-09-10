@@ -158,9 +158,10 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
 }
 
 /**
- * Version for the export filename: only a frontmatter `version:` that is a real
- * `YYYY-MM-DD.N` yields a `-v<version>` filename suffix — a missing or malformed field (the
- * parser reads either as "") must not be baked into a filename as if declared.
+ * Version for the export filename: only a frontmatter `version:` that is a real version
+ * (`YYYY.MM.DD.N`, or the legacy spelling an older installed copy carries) yields a
+ * `-v<version>` filename suffix — a missing or malformed field (the parser reads either as "")
+ * must not be baked into a filename as if declared.
  */
 function explicitSkillVersion(skillMd: string): string | null {
   return parseSkillFrontmatter(skillMd)?.version || null;

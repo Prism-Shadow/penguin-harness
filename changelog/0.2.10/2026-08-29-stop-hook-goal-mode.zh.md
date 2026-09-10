@@ -3,7 +3,8 @@
 - **Date:** 2026-08-29
 - **Type:** feature
 - **Scope:** `core`, `plugins`, `server`, `web`, `cli`, `desktop`, `docs`
-- **Breaking:** yes
+- **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
+- **Breaking:** yes — `goal_state` 表由首个仅重启生效的迁移删除，内置目标模式由 `goal` 插件取代
 
 [English](2026-08-29-stop-hook-goal-mode.md)
 
