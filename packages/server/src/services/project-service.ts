@@ -20,6 +20,7 @@ import type { MembersRepo } from "../db/repos/members.js";
 import type { ProjectRow, ProjectsRepo } from "../db/repos/projects.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import type { SchedulesRepo } from "../db/repos/schedules.js";
+import type { OrgCacheRepo } from "../db/repos/organizations.js";
 import type { UsageRepo } from "../db/repos/usage.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
 import type { SessionManager } from "../runtime/session-manager.js";
@@ -54,6 +55,7 @@ export interface ProjectServiceDeps {
   usage: UsageRepo;
   errors: ErrorsRepo;
   schedules: SchedulesRepo;
+  orgCache: OrgCacheRepo;
   projectConfig: ProjectConfigService;
   manager: SessionManager;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
@@ -312,6 +314,7 @@ export class ProjectService {
     this.deps.usage.deleteByProject(projectId);
     this.deps.errors.deleteByProject(projectId);
     this.deps.schedules.deleteByProject(projectId);
+    this.deps.orgCache.deleteProject(projectId);
     this.deps.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.deps.root, projectId), { recursive: true, force: true });
   }

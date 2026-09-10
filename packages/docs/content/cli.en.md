@@ -5,7 +5,7 @@ description: Complete reference for the penguin command, its subcommands, and op
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints the whole of it. A `.env` file in the working directory is loaded automatically on startup.
 
-The CLI is a thin client of the server: every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`) sends HTTP requests to a PenguinHarness server and renders the replies — tasks execute on the server, sessions live in its index, and the Web App sees everything the CLI creates (and vice versa). Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+The CLI is a thin client of the server: every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`, `org`) sends HTTP requests to a PenguinHarness server and renders the replies — tasks execute on the server, sessions live in its index, and the Web App sees everything the CLI creates (and vice versa). Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
 
 ## Server connection
 
@@ -214,6 +214,72 @@ penguin schedule rm daily-report
 | `--disabled` (`add`) | One deliberate divergence from the raw file: `add` creates the task **enabled** — you are adding a task to run — while the raw-file default of `enabled = false` stays for hand edits. `--disabled` opts out |
 | `--enable` / `--disable` (`update`) | Flip the enabled flag; `update` is read-modify-write against the stored item, so unspecified fields keep their values, and switching target kinds clears the other kind's fields |
 | `--project-id` / `--agent-id` / `--json` / `--server` | As everywhere; `rm` deletes without prompting (the server's owner authorization still applies) |
+
+## penguin org
+
+Company mode's command family — a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, calendar, tickets, channels) stay the single source of truth; every subcommand reads a projection of them or writes through the route that edits them, with the same validated-writer contract `schedule` has: API errors surface verbatim, so an agent gets synchronous validation instead of the reconcile lag a hand edit hits. Generated ids carry a prefix by convention — `co_` for an organization, `ch_` for a channel — which the server proposes but never enforces, so an id passed here is created exactly as typed.
+
+```bash
+penguin org ls [--project-id <id>] [--json]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # by convention `co_<slug>`
+penguin org show [--org-id <id>] [--json]                       # overview: working language, employees and states, board counts, spend against budget, pending items
+penguin org chart [--org-id <id>] [--json]                      # the employee tree
+penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
+penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
+penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
+penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)
+penguin org calendar ls [--agent-id <id>] [--json]
+penguin org calendar add <name> [--agent-id <id>] --prompt <s> --start-at <ISO|now> [--period <dur>] [--end-at <ISO>] [--title <s>] [--disabled]
+penguin org calendar update <name> [--agent-id <id>] [same fields] [--enable|--disable]
+penguin org calendar rm <name> [--agent-id <id>]
+penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
+penguin org ticket show <ticket_id> [--json]
+penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--initiator <principal>] [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
+penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # moving into rejected needs a reason
+penguin org ticket assign <ticket_id> --owner <principal>
+penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # the ticket stays in its column
+penguin org ticket unblock <ticket_id>
+penguin org ticket progress <ticket_id> -m <text>               # a progress entry, attributed to the calling session
+penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--agent-id <id>] [--json]   # a ticket session working on the ticket in the background; prints its id
+penguin org ticket attach <ticket_id> [--session <session_id>]   # an existing session as a contributor (default: the calling session)
+penguin org channel ls [--json]                                 # every channel for a person, its own for an employee
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holds only its creator; `ch_<slug>` by convention
+penguin org channel show <channel_id> [--json]                  # purpose, member count and the member list
+penguin org channel invite <channel_id> <principal>...          # any member invites; one POST per principal
+penguin org channel join <channel_id>                           # people only; an employee waits to be invited
+penguin org channel leave <channel_id>                          # self-removal
+penguin org channel remove <channel_id> <principal>             # people only
+penguin org channel archive <channel_id> | unarchive <channel_id>      # people only; read-only while archived
+penguin org channel tail [--channel <id>] [--date <d>] [-n <count>] [--json]
+penguin org channel send -m <text> [--channel <id>] [--ref-ticket <id>] [--ref-session <id>]
+penguin org handbook list [--json]
+penguin org handbook show [path] [--json]
+penguin org handbook write <path> (-m <text> | --file <file>)
+penguin org handbook rm <path>
+penguin org finance [--period <YYYY-MM>] [--json]
+```
+
+Every subcommand takes `--org-id <id>`, `--project-id`, `--json` and `--server`. **`--org-id` defaults to `PENGUIN_ORG_ID`**, the one variable company mode adds to the control environment described under "Server connection": the server injects it into every tool subprocess of a desk or ticket session, so an employee's own `penguin org` calls address its organization without naming it, while a person in a shell passes the flag. There is no default organization — with neither, the command fails before contacting any server. `create` is the exception: its `--org-id` is the id to create and never comes from the environment. `--json` prints the response as one line of JSON; the write commands otherwise print a one-line confirmation.
+
+The same environment identifies the caller inside a session:
+
+- `--agent-id` on the `calendar` commands and the positional of `desk` default to `PENGUIN_AGENT_ID` — an employee schedules its own events and renews its own desk. `calendar ls` without the flag lists every employee's events.
+- `ticket start` runs the ticket session as `--agent-id` when given, else `PENGUIN_AGENT_ID` when set, else the ticket's owner as the server picks it. It also carries `PENGUIN_SESSION_ID`, which is what lets the server apply the rule: **only the ticket's owner, or a person, starts its sessions** — an employee asking for anyone else's ticket (or for one with no employee owner) gets `403 not_ticket_owner`, printed verbatim, telling it to assign the ticket instead (`penguin org ticket assign <id> --owner agent:<employee>`) and let that desk pick it up in its next sweep. `--agent-id` is how the owner enlists a colleague on its own ticket.
+- The ticket writes (`create`, `assign`, `move`, `block`, `unblock`, `progress`) and the channel writes (`create`, `invite`, `join`, `archive`, `unarchive`, `send`) carry `PENGUIN_SESSION_ID` in their body, so the file records the session's employee rather than the token's user; `ticket attach` attaches that session when `--session` is omitted (a full id or a unique fragment, as everywhere).
+- The channel reads (`ls`, `show`, `tail`) and the member DELETE behind `leave` and `remove` have no body, so they carry the same session as `?sessionId=`. Without it the server answers an employee as the signed-in person, and `channel ls` would list every channel instead of the employee's own.
+
+`--channel` defaults to `default_channel`, the all-hands channel every employee and Project member is in; `ls` prints it first, under its localized label rather than its stored name. A new channel holds only its creator: an employee gets in when a member invites it, a person may `join` any channel and read every one of them. `join` and `leave` name the caller's own principal — the session's employee inside a desk or ticket session, the signed-in person outside one — so joining can never add somebody else. `join`, `remove`, `archive` and `unarchive` are people's actions, so inside a session the server answers them `403 not_a_member` — like every other API error, printed verbatim.
+
+Per group:
+
+- `ls` / `show` / `chart`: the project's organizations with employee, ticket and spend counts; one organization's overview — name, mission, status and working language, employees by state, tickets per column, the period's spend against the CEO's budget, and what waits for you (mentions, tickets to review, tickets blocked on you); and the reporting tree, indented by level, with each employee's title, live state, own and cumulative spend and budget. An organization or employee that fails validation is listed with `invalid: <reason>` rather than hidden.
+- `create`: `--ceo-budget` is the CEO's monthly budget in USD and defaults to **100**. Budgets are compared on the cumulative line — the employee plus every subordinate — so the CEO's is the whole company's: a new organization is capped rather than unbounded, and the initialization run's trigger block names the number so the CEO can size its hiring proposal to it. `0` is a real (zero) budget; clearing it again — back to unbounded — is `PATCH .../employees/<org_id>_ceo` with `budget: null`, which the Web App's employee editor sends. `--language zh|en` is the organization's working language; without it the mission decides it (one Han character anywhere makes it `zh`), and everything the organization writes — its handbook, the employee briefs, the CEO's initialization run, the desk session titles — follows.
+- `hire`: exactly one of `--agent-id` (an existing Agent) and `--new-agent` (creates it; `--name`, `--description` and `--skills` — the new Agent's library plugins, replacing the default `agent-company,agent-development` — describe it). `--workspace` is a sub-directory of the organization's shared workspace (`.` for all of it) or an absolute path, never resolved against the CLI's cwd. A relative sub-directory is normalized — `./hr`, `hr/` and `hr` are one partition — and created by the server as the hire is written, so `--workspace hr` is enough and nothing has to exist first; an absolute path names a directory of the user's and must already exist; a spec that climbs out of the shared workspace with `..` is refused with 400 `invalid_workspace`. `employee set --workspace` does the same, and a desk or ticket session creates the directory too when it opens. `--budget` is USD per month for the employee plus everyone below it. `employee set` changes only the given fields; the model pair is both-or-neither, as everywhere.
+- `calendar`: the same writer as `penguin schedule` — `add` is enabled by default with `--disabled` opting out, `--start-at now` is the current instant, `update` is read-modify-write, `rm` deletes without prompting. Events fire into the employee's desk session, and only while the organization and the employee are active; the status column says `paused` otherwise. `add` and `update` answer with the event plus the rota advice the write earned — another employee's recurring event on the same start minute, a second recurring event for the same employee on the same period, a recurring event started at `now` — printed one per line as `Rota notice: …`. They are advisory: the write always succeeds, and the lines stay in the server's English.
+- `ticket`: `ls` fetches the whole board and filters locally (`--status` is a column: `proposed`, `in_progress`, `review`, `done`, `rejected`); `show` prints the derived figures — column, running state, cost and rolled-up cost, contributing sessions, child tickets — then the ticket file itself. `create` takes either `--goal` (with `--criteria`) or the whole Markdown body from `--body-file`; the header is generated either way. Under `--json`, `ls` prints the filtered list as `{ tickets, invalidFiles }`. `start` prints the bare session id, like `run --background`, for `penguin logs` / `penguin input` to pick up. `--initiator <principal>` files the ticket in someone else's name — an employee (an Agent id or `agent:<id>`) or a Project member (`user:<id>`); it becomes the ticket's `Initiator`, the author of the `created the ticket` progress line and, when no `--notify` is given, the whole `Notify` list — but only when it is an employee: a person is not @-mentioned in the all-hands channel for a ticket they filed, and lists themselves in `--notify` to be told (the completion line is written either way). A write that claims work — `progress`, an edit of the body, `move --to review` — also books the calling session as one of the ticket's contributing sessions, so its cost is split onto the ticket; moving into any other column, `block` and `unblock` book nothing. `--goal`, `--criteria` and `progress -m` ask for every input, deliverable and file to be named by its full path.
+- `channel tail` prints the day's last 20 messages (`-n` changes the count, `--date` picks another day) as `time  sender  text` — under `--json`, the day's response with those messages; `channel send` posts one — `@agent:<id>` and `@all` mentions trigger the mentioned employees' desks. A `system` line carries a structured `notice` beside its English text, so `tail` renders it in the CLI's own language; a kind this build does not know keeps the English.
+- `finance`: the period's spend per employee (own and cumulative along the reporting line, against the budget, with `warned` / `paused` marks) and per ticket, then the total; when some usage ran on a model without pricing, a note on stderr says the figures are a lower bound.
 
 ## Approval modes (--approve)
 

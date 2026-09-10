@@ -116,6 +116,12 @@ export interface MeResponse {
    * just an admin's.
    */
   uploadLimits: UploadLimits;
+  /**
+   * Whether company mode is enabled server-wide (the admin switch in server settings, default
+   * on). Off hides the mode switch in every client and 404s every organization route; the
+   * user's own preference (`UiPrefs.companyMode`) only hides the switch for that user.
+   */
+  companyMode: boolean;
 }
 
 /**
@@ -216,6 +222,13 @@ export interface ServerSettings {
    * image and the JSON framing), which is why raising it needs no separate setting.
    */
   attachmentTotalMb: number;
+  /**
+   * Company mode master switch (default on). Off stops the organization scheduler (no
+   * calendar event or chat mention fires, nothing is backfilled when it is turned on again),
+   * every `/api/projects/:projectId/organizations` route answers 404, and `GET /api/me`
+   * reports it so clients hide the mode switch. Organizations on disk are untouched.
+   */
+  companyMode: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -226,6 +239,8 @@ export interface ServerSettingsResponse {
 export interface ServerSettingsUpdateRequest {
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
+  /** Company mode master switch; see `ServerSettings.companyMode`. */
+  companyMode?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -285,6 +300,12 @@ export interface UiPrefs {
    * known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
+  /** Personal company-mode switch (default on): off only hides this user's mode switch; organizations keep running. */
+  companyMode?: boolean;
+  /** The work mode the user last chose in the shell: development (default) or company. */
+  workMode?: "dev" | "company";
+  /** The organization last opened in company mode, as `<projectId>/<orgId>`. */
+  lastOrgKey?: string;
   [key: string]: unknown;
 }
 
@@ -1235,6 +1256,25 @@ export interface SessionInfo {
   /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
   messagingChannel?: MessagingChannel;
   /**
+   * Company mode: the organization that owns this Session — a desk session of one of its
+   * employees, or a session contributing to one of its tickets — read from the organization
+   * caches. Absent for every ordinary Session. Development mode's list and its time buckets
+   * hide every row that carries it (only while company mode is available to that user: it is
+   * stamped either way, and company mode is what lists these Sessions instead), and the
+   * company sidebar's 工位 / 工单会话 groups are where they are listed.
+   */
+  orgId?: string;
+  /**
+   * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
+   * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
+   * runtime (a desk or a ticket session), "web" otherwise. Absent only on a row that
+   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
+   * from the organization caches, so it disappears with the organization and is not read
+   * while company mode is off — this is a durable stamp on the row: development mode's list
+   * hides an "org" Session either way.
+   */
+  client?: "web" | "cli" | "org";
+  /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
    * background subagent sessions mid-round. Read from the runtime's in-memory registries —
@@ -1320,10 +1360,14 @@ export interface SessionCreateRequest {
   approvalMode?: ApprovalMode;
   /**
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
-   * Session through the API; defaults to "web". Informational provenance only — lists
-   * serve every row regardless of client.
+   * Session through the API, "org" when the organization runtime opened it (a desk or a
+   * ticket session — company mode's own, kept out of development mode's lists whether or
+   * not the organization still exists); defaults to "web". A REQUEST may send only "web" or
+   * "cli": the runtime writes "org" by calling the service directly, so no caller can claim
+   * an organization's provenance for its own Session. Lists serve every row regardless of
+   * client; only development mode's session list filters on it.
    */
-  client?: "web" | "cli";
+  client?: "web" | "cli" | "org";
 }
 
 export interface SessionCreateResponse {
@@ -2294,7 +2338,8 @@ export type ServerEvent =
       source: SessionSource;
     }
   | ScheduleServerEvent
-  | GoalServerEvent;
+  | GoalServerEvent
+  | CompanyServerEvent;
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -3466,3 +3511,694 @@ export interface MachinesResponse {
   imageVersion: string | null;
   job: MachineJob | null;
 }
+
+// ---------------------------------------------------------------------------
+// Company mode: organizations (files are the truth; every DTO here is a projection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Organization status: `paused` stops every automatic trigger; humans can still talk to any
+ * desk. These two values are the whole lifecycle — no route deletes an organization, so a
+ * paused one keeps its conversations, employees, desks and tickets.
+ */
+export type OrgStatus = "active" | "paused";
+/** Approval mode for desk and ticket sessions; unattended runs never get always-ask. */
+export type OrgApprovalMode = "allow-all" | "read-only" | "deny-all";
+/** The five kanban columns, each a directory under `tickets/<yyyy-mm>/`. */
+export type OrgTicketStatus = "proposed" | "in_progress" | "review" | "done" | "rejected";
+export type OrgTicketPriority = "P0" | "P1" | "P2";
+/** Live employee state: running when the desk or any ticket session has a Task in progress; paused when budget-paused. */
+export type OrgEmployeeState = "running" | "idle" | "paused";
+/**
+ * The trigger kinds an `[org_trigger]` block carries. `ticket_notice` is read-only: a ticket
+ * change starts no run of its own, so nothing writes that kind any more, and it stays in the
+ * union because Traces recorded while it did still carry it.
+ */
+export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
+/** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
+export type OrgTicketChange = "assigned" | "blocked" | "blocker_closed" | "done" | "rejected";
+/** What the last evaluation of a calendar event did. */
+export type OrgCalendarOutcome = "fired" | "queued" | "paused" | "missed" | "error";
+/**
+ * The organization's working language: the language its handbook, its CEO's initialization
+ * run, every employee brief and every desk and ticket run are written in. Detected from the
+ * mission at creation (CJK text → `zh`, anything else → `en`) unless the request names one.
+ */
+export type OrgLanguage = "zh" | "en";
+
+/** The organization's settings as `org_config.toml` records them. */
+export interface OrganizationSettings {
+  name: string;
+  mission: string;
+  status: OrgStatus;
+  /** IANA timezone: budget periods (natural months) and chat day files follow it. */
+  timezone: string;
+  approvalMode: OrgApprovalMode;
+  /** Chat @-chain limit: a message whose hop reaches it records its mentions without triggering anyone. */
+  mentionChainLimit: number;
+  budgetWarnRatio: number;
+  budgetPauseRatio: number;
+  createdBy: string;
+  /** The shared workspace root when it is not the organization's own `workspace/` (absolute path). */
+  workspace?: string;
+  /** The model desks and ticket sessions run on when the employee names none; absent = the Project default. */
+  model?: { provider: string; modelId: string };
+  /** The working language (`language` in `org_config.toml`); absent on an organization written before the field existed, which reads as `en`. */
+  language?: OrgLanguage;
+}
+
+/** Period spend against the CEO's budget (= the whole organization). */
+export interface OrgSpendSummary {
+  /** `yyyy-mm` in the organization's timezone. */
+  period: string;
+  cost: number;
+  budget?: number;
+  /** cost / budget; absent without a budget. */
+  ratio?: number;
+}
+
+export interface OrganizationSummary {
+  projectId: string;
+  orgId: string;
+  name: string;
+  mission: string;
+  status: OrgStatus;
+  employeeCount: number;
+  runningCount: number;
+  pausedCount: number;
+  /** proposed + in_progress + review. */
+  openTickets: number;
+  blockedTickets: number;
+  createdBy: string;
+  spend: OrgSpendSummary;
+  /** Present when `org_config.toml` / `org_chart.yaml` fail validation: the organization is listed but every automatic trigger is held until it is fixed. */
+  invalid?: string;
+}
+
+export interface OrganizationsResponse {
+  organizations: OrganizationSummary[];
+}
+
+export interface OrgEmployeeItem {
+  agentId: string;
+  /** Agent display name (system_config.yaml); falls back to the id. */
+  name: string;
+  title: string;
+  /** null for the CEO (the root). */
+  reportsTo: string | null;
+  duties?: string;
+  /** As written in the chart: a sub-directory of the shared workspace (`.` = all of it) or an absolute path. */
+  workspace: string;
+  /** Where that resolves to; absent when the directory does not exist (the entry is then invalid). */
+  resolvedWorkspace?: string;
+  /** Monthly budget in USD for this employee plus all subordinates; absent = unbounded. */
+  budget?: number;
+  model?: { provider: string; modelId: string };
+  state: OrgEmployeeState;
+  desk?: { sessionId: string; workspace: string; openedAt: string };
+  /** Period spend: own sessions, and cumulative (own + every subordinate). */
+  spend: { own: number; cumulative: number; ratio?: number };
+  /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
+  invalid?: string;
+}
+
+export interface OrgChartResponse {
+  ceoAgentId: string;
+  employees: OrgEmployeeItem[];
+}
+
+export interface OrgCalendarItem {
+  agentId: string;
+  name: string;
+  title?: string;
+  prompt: string;
+  enabled: boolean;
+  startAt: string;
+  period?: string;
+  endAt?: string;
+  status: ScheduleStatus;
+  invalidReason?: string;
+  nextFireAt?: string;
+  lastFiredAt?: string;
+  /** What the most recent evaluation did (absent until the event has been evaluated once). */
+  lastOutcome?: OrgCalendarOutcome;
+  /** The organization or this employee is paused, so due slots are skipped, not fired. */
+  paused: boolean;
+}
+
+export interface OrgCalendarResponse {
+  events: OrgCalendarItem[];
+  invalidFiles: Array<{ agentId: string; name: string; error: string }>;
+}
+
+export interface OrgTicketProgressEntry {
+  time: string;
+  /** The principal that wrote it (`agent:<id>` / `user:<id>`), as recorded. */
+  by: string;
+  text: string;
+  sessionId?: string;
+}
+
+export interface OrgTicketItem {
+  ticketId: string;
+  title: string;
+  status: OrgTicketStatus;
+  initiator: string;
+  owner?: string;
+  parent?: string;
+  notify: string[];
+  priority: OrgTicketPriority;
+  due?: string;
+  /** Non-empty = blocked; the ticket stays in its column. */
+  blocked?: string;
+  blockedBy?: string;
+  /** Contributing session ids, in the order they were attached. */
+  sessions: string[];
+  /** Any contributing session has a Task in progress. */
+  running: boolean;
+  /** Period cost of the contributing sessions (a session attached to n tickets counts 1/n here). */
+  cost: number;
+  /** Header/column disagreement or a duplicate id: shown with a danger mark, left where it is. */
+  invalid?: string;
+}
+
+export interface OrgTicketSessionItem {
+  sessionId: string;
+  agentId: string;
+  title?: string;
+  status: SessionStatus;
+  lastActiveAt?: string;
+}
+
+export interface OrgTicketDetail extends OrgTicketItem {
+  goal: string;
+  acceptanceCriteria: string;
+  progress: OrgTicketProgressEntry[];
+  result: string;
+  /** The whole file, for the Markdown view and for clients that prefer to edit it as text. */
+  body: string;
+  children: string[];
+  /** Own cost plus every descendant's along `Parent`. */
+  rolledUpCost: number;
+  sessionItems: OrgTicketSessionItem[];
+}
+
+export interface OrgTicketsResponse {
+  columns: Record<OrgTicketStatus, OrgTicketItem[]>;
+  /** Files that failed to parse (skipped; also recorded as errors). */
+  invalidFiles: Array<{ path: string; error: string }>;
+}
+
+/**
+ * What a `system` line records, structured: the kind of event and its parameters, so a client
+ * renders the sentence in the reader's language and with the principals' display names instead
+ * of showing the English `text` verbatim. `text` stays the English sentence (the CLI, older
+ * clients and the file itself read it); `notice` is the same fact for a client that can do better.
+ */
+export type OrgChannelNoticeKind =
+  | "employee_joined"
+  | "employee_left"
+  | "channel_created"
+  | "channel_archived"
+  | "channel_unarchived"
+  | "channel_joined"
+  | "channel_invited"
+  | "channel_left"
+  | "channel_removed"
+  | "budget_warned"
+  | "budget_paused"
+  | "ticket_blocked"
+  | "ticket_done"
+  | "ticket_rejected";
+
+/**
+ * The parameters each kind carries, all strings: principals as `agent:<id>` / `user:<id>`
+ * (`agent`, `principal`, `by`, `reportsTo`), a ticket as `ticket` + `title`, a budget event as
+ * `agent`, `period`, `percent`, `cost`, `budget`.
+ */
+export interface OrgChannelNotice {
+  kind: OrgChannelNoticeKind;
+  params: Record<string, string>;
+}
+
+export interface OrgChannelMessage {
+  id: string;
+  /** ISO 8601 UTC. */
+  time: string;
+  /** `agent:<id>` / `user:<id>` / `system`. */
+  sender: string;
+  hop: number;
+  text: string;
+  /** Principals mentioned, `all` included. */
+  mentions: string[];
+  refs?: { ticket?: string; session?: string; replyTo?: string };
+  /** Present on `system` lines the server wrote with a structured notice; absent on lines from before the field existed. */
+  notice?: OrgChannelNotice;
+}
+
+/**
+ * One channel as the API reports it. The all-hands channel (`default_channel`,
+ * `everyone: true`) exists for as long as the organization does and every employee and
+ * Project member is in it; every other channel carries the membership its members edit.
+ */
+export interface OrgChannelItem {
+  channelId: string;
+  /** As stored; the UI renders the all-hands channel's label itself. */
+  name: string;
+  /** "" when unset. */
+  purpose: string;
+  /** True only for `default_channel`: membership is implicit. */
+  everyone: boolean;
+  /** An archived channel is read-only and folded away. */
+  archived: boolean;
+  /** `user:<id>` / `agent:<id>` / `system`. */
+  createdBy: string;
+  /** ISO 8601 UTC. */
+  createdAt: string;
+  /** Implicit membership counted for the all-hands channel. */
+  memberCount: number;
+  /** Whether the caller (person or employee) is a member. */
+  isMember: boolean;
+  /** People only; 0 for an employee caller. */
+  unread: number;
+  /** People only; 0 for an employee caller. */
+  mentionsMe: number;
+  lastMessageAt: string | null;
+}
+
+export interface OrgChannelMember {
+  /** `agent:<id>` or `user:<id>`. */
+  principal: string;
+  name: string;
+  kind: "agent" | "user";
+}
+
+export interface OrgChannelDetail extends OrgChannelItem {
+  /** The all-hands channel resolves to every employee plus every Project member. */
+  members: OrgChannelMember[];
+}
+
+export interface OrgChannelsResponse {
+  /** `default_channel` first, then by name. */
+  channels: OrgChannelItem[];
+}
+
+export interface OrgChannelCreateRequest {
+  channelId: string;
+  name?: string;
+  purpose?: string;
+}
+
+export interface OrgChannelPatchRequest {
+  name?: string;
+  purpose?: string;
+  archived?: boolean;
+}
+
+export interface OrgChannelMemberRequest {
+  /** `agent:<id>` (an employee) or `user:<id>` (a Project member). */
+  principal: string;
+}
+
+export interface OrgChannelMessagesResponse {
+  /** The channel served. */
+  channelId: string;
+  /** The day file served (`yyyy-mm-dd` in the organization's timezone). */
+  date: string;
+  /** The days this channel has a file for, newest first, for paging back. */
+  days: string[];
+  messages: OrgChannelMessage[];
+  /** Messages of this channel after the caller's read cursor in it, across the recent days. */
+  unread: number;
+  /** Of those, the ones that mention the caller (or all). */
+  mentionsMe: number;
+  lastReadId?: string;
+}
+
+export interface OrgBudgetAlert {
+  agentId: string;
+  period: string;
+  warnedAt?: string;
+  pausedAt?: string;
+}
+
+export interface OrgFinanceEmployee {
+  agentId: string;
+  name: string;
+  title: string;
+  reportsTo: string | null;
+  own: number;
+  cumulative: number;
+  budget?: number;
+  ratio?: number;
+  warned: boolean;
+  paused: boolean;
+}
+
+export interface OrgFinanceTicket {
+  ticketId: string;
+  title: string;
+  status: OrgTicketStatus;
+  parent?: string;
+  cost: number;
+  rolledUp: number;
+}
+
+export interface OrgFinanceResponse {
+  period: string;
+  currency: "USD";
+  employees: OrgFinanceEmployee[];
+  tickets: OrgFinanceTicket[];
+  /** Daily cost of the organization's sessions over the period. */
+  daily: Array<{ date: string; cost: number }>;
+  alerts: OrgBudgetAlert[];
+  total: number;
+  /** Some usage ran on a model without pricing: tokens were counted, cost is a lower bound. */
+  unpriced: boolean;
+}
+
+export interface OrgDeskItem {
+  agentId: string;
+  name: string;
+  sessionId: string;
+  title?: string;
+  status: SessionStatus;
+  workspace: string;
+  lastActiveAt?: string;
+}
+
+export interface OrgSessionsResponse {
+  desks: OrgDeskItem[];
+  tickets: Array<{
+    ticketId: string;
+    title: string;
+    status: OrgTicketStatus;
+    sessions: OrgTicketSessionItem[];
+  }>;
+}
+
+export interface OrgDeskResponse {
+  agentId: string;
+  sessionId: string;
+  workspace: string;
+  openedAt: string;
+  /** True when this call created the desk session. */
+  created: boolean;
+}
+
+export interface OrganizationDetail extends OrganizationSummary {
+  settings: OrganizationSettings;
+  board: Record<OrgTicketStatus, number>;
+  /** Today's calendar events (organization timezone) with their outcomes. */
+  today: OrgCalendarItem[];
+  pending: {
+    /** Unread messages mentioning the caller (or all). */
+    mentions: number;
+    reviewTickets: OrgTicketItem[];
+    blockedByMe: OrgTicketItem[];
+  };
+  /** The last messages of the all-hands channel. */
+  recentMessages: OrgChannelMessage[];
+  alerts: OrgBudgetAlert[];
+  /** What the overview's inbox lists; absent only from a server older than the field. */
+  inbox?: OrgInbox;
+  /** The CEO's desk session once opened (creation opens it). */
+  ceoDeskSessionId?: string;
+}
+
+/**
+ * The overview's inbox: the three things a person is waited on or told about — messages
+ * that name them (or `@all`) in the all-hands channel, the tickets that are blocked (all of
+ * them, whoever they wait on), and the tickets closed as done this period. Newest first in
+ * each list; each capped at a page.
+ */
+export interface OrgInbox {
+  mentions: OrgChannelMessage[];
+  blockedTickets: OrgTicketItem[];
+  doneTickets: Array<OrgTicketItem & { closedAt?: string }>;
+}
+
+export interface OrganizationCreateRequest {
+  /** Semantic id, unique within the Project; also the directory name. */
+  orgId: string;
+  name?: string;
+  mission: string;
+  timezone?: string;
+  /** An existing absolute directory to use as the shared workspace; default = the organization's own `workspace/`. */
+  workspace?: string;
+  /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
+  model?: { provider: string; modelId: string };
+  /**
+   * The CEO's monthly budget in USD, written as the `budget` of its `org_chart.yaml` entry.
+   * Budgets are compared on the cumulative line, so the CEO's is the whole company's.
+   * Omitted = 100; 0 is a real (zero) budget, not "unbounded" — only clearing the field
+   * later (`PATCH …/employees/:agentId` with `budget: null`) leaves the CEO unbounded.
+   */
+  ceoBudget?: number;
+  /** The working language; omitted = detected from the mission. */
+  language?: OrgLanguage;
+}
+
+export interface OrganizationPatchRequest {
+  name?: string;
+  mission?: string;
+  status?: OrgStatus;
+  approvalMode?: OrgApprovalMode;
+  timezone?: string;
+  mentionChainLimit?: number;
+  budgetWarnRatio?: number;
+  budgetPauseRatio?: number;
+  /** null returns to the organization's own `workspace/`. */
+  workspace?: string | null;
+  /** null returns to the Project default. */
+  model?: { provider: string; modelId: string } | null;
+  language?: OrgLanguage;
+}
+
+/**
+ * A semantic id proposed for a display name — the organization and channel dialogs let the
+ * user name the thing first and derive the id from that name. The server asks the Project's
+ * default model for a short English snake_case id (a Chinese name has no mechanical
+ * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
+ * and to a dated placeholder when neither can name it. The request never fails for a name it
+ * cannot translate: a dialog that asked for an id always gets one back.
+ */
+export interface SemanticIdSuggestRequest {
+  /** The display name typed so far (or the mission, when nothing else names the thing). */
+  name: string;
+  /** What the id is for: decides the prompt's examples and the fallback's prefix. */
+  kind: "org" | "channel";
+  /** Ids already in use in the target scope; the proposal avoids them. */
+  taken?: string[];
+}
+
+/**
+ * Why a proposal fell all the way through to a placeholder — what the client tells the user to
+ * explain the id it was just handed. `no_default_model`: the Project has no default model to
+ * ask. `model_failed`: it was asked and the request failed (no credential, a rejection, a
+ * timeout). `unusable_answer`: it answered twice and neither answer yielded an id.
+ * `no_ascii`: no model was consulted at all and the name carries no ASCII to transliterate.
+ */
+export type SemanticIdSuggestReason =
+  "no_default_model" | "model_failed" | "unusable_answer" | "no_ascii";
+
+export interface SemanticIdSuggestResponse {
+  /** A valid semantic id (`^[a-z][a-z0-9_]{1,63}$`), not in `taken`. */
+  id: string;
+  /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */
+  source: "model" | "fallback" | "placeholder";
+  /** Present only with `source: "placeholder"`: why the two real paths produced nothing. */
+  reason?: SemanticIdSuggestReason;
+}
+
+export interface OrgHireRequest {
+  /** Employ an existing Agent … */
+  agentId?: string;
+  /** … or create one (the two are exclusive). Plugins default to agent-company + agent-development. */
+  newAgent?: { agentId: string; name?: string; description?: string; plugins?: string[] };
+  title: string;
+  reportsTo: string;
+  workspace?: string;
+  budget?: number;
+  duties?: string;
+  model?: { provider: string; modelId: string };
+}
+
+export interface OrgEmployeePatchRequest {
+  title?: string;
+  reportsTo?: string;
+  workspace?: string;
+  /** null clears the budget. */
+  budget?: number | null;
+  duties?: string;
+  /** null clears the model (back to the Project default). */
+  model?: { provider: string; modelId: string } | null;
+}
+
+export interface OrgCalendarUpsertRequest {
+  /** POST only: the employee the event belongs to. */
+  agentId?: string;
+  /** POST only: the file name. */
+  name?: string;
+  title?: string;
+  prompt: string;
+  enabled: boolean;
+  startAt: string;
+  period?: string;
+  endAt?: string;
+}
+
+/**
+ * What a calendar write answers: the stored event, plus advisory `warnings` — one line each —
+ * about the rota: another employee's recurring event on the same start minute, or the same
+ * employee already holding a recurring event (desks that fire together compete for the same
+ * budget minute and the same tickets). The write succeeds regardless; the CLI prints the
+ * lines so the scheduling employee can stagger.
+ */
+export interface OrgCalendarWriteResponse extends OrgCalendarItem {
+  warnings?: string[];
+}
+
+export interface OrgTicketCreateRequest {
+  title: string;
+  /**
+   * Who files the ticket, when it is not the caller: an employee's `agent:<id>` (or bare Agent
+   * id) or a member's `user:<id>`. Default = the caller — the session's employee inside a desk
+   * or ticket session, else the token's or cookie's user.
+   */
+  initiator?: string;
+  /** Overrides the slug derived from the title. */
+  slug?: string;
+  goal?: string;
+  acceptanceCriteria?: string;
+  /** The whole Markdown body instead of goal + acceptanceCriteria (the header is still generated). */
+  body?: string;
+  owner?: string;
+  parent?: string;
+  notify?: string[];
+  priority?: OrgTicketPriority;
+  due?: string;
+}
+
+export interface OrgTicketUpdateRequest {
+  title?: string;
+  owner?: string | null;
+  parent?: string | null;
+  notify?: string[];
+  priority?: OrgTicketPriority;
+  due?: string | null;
+  goal?: string;
+  acceptanceCriteria?: string;
+  result?: string;
+}
+
+export interface OrgTicketMoveRequest {
+  status: OrgTicketStatus;
+  /** Required when moving into rejected; recorded under Result. */
+  reason?: string;
+}
+
+export interface OrgTicketBlockRequest {
+  reason: string;
+  /** A ticket id or a principal. */
+  by?: string;
+}
+
+export interface OrgTicketProgressRequest {
+  text: string;
+  /**
+   * The calling session (CLI: PENGUIN_SESSION_ID); the entry is attributed to its Agent and
+   * carries `session:<id>`. Honoured only for a request carrying the local API token — the
+   * control environment's credential; a signed-in user's write is attributed to the user.
+   */
+  sessionId?: string;
+}
+
+export interface OrgTicketStartRequest {
+  /** The employee the ticket session runs as (CLI: PENGUIN_AGENT_ID); defaults to the ticket owner. */
+  agentId?: string;
+  message?: string;
+  /** Another directory inside the shared workspace; defaults to the employee's desk workspace. */
+  workspace?: string;
+}
+
+export interface OrgTicketStartResponse {
+  sessionId: string;
+}
+
+export interface OrgTicketAttachRequest {
+  sessionId: string;
+}
+
+export interface OrgChannelMessageSendRequest {
+  text: string;
+  refs?: { ticket?: string; session?: string; replyTo?: string };
+  /**
+   * The calling session (CLI: PENGUIN_SESSION_ID): the message is sent as its Agent and
+   * inherits its hop. Honoured only for a request carrying the local API token — the control
+   * environment's credential; a signed-in user's message is sent as the user, at hop 0.
+   */
+  sessionId?: string;
+}
+
+export interface OrgChannelReadRequest {
+  /** Mark everything up to this message id as read. */
+  upTo: string;
+}
+
+/** The handbook index (`handbook/README.md`), the file every work run reads first. */
+export interface OrgHandbookResponse {
+  content: string;
+}
+
+/** One file of the organization handbook (`handbook/`, the company's knowledge base); `path` is relative to that directory. */
+export interface OrgHandbookFile {
+  path: string;
+  size: number;
+  updatedAt: string;
+}
+
+export interface OrgHandbookFilesResponse {
+  /** The index first, then the other documents by path. */
+  files: OrgHandbookFile[];
+}
+
+export interface OrgHandbookFileResponse {
+  path: string;
+  content: string;
+}
+
+export interface OrgHandbookFileWriteRequest {
+  content: string;
+}
+
+/** Company-mode notifications on the user-level event stream (best effort; the query routes carry the durable state). */
+export type CompanyServerEvent =
+  /** A work run (desk session) or ticket session was started by the organization scheduler or a ticket start. */
+  | {
+      type: "org_run";
+      projectId: string;
+      orgId: string;
+      agentId: string;
+      sessionId: string;
+      kind: OrgTriggerKind;
+    }
+  /** A new channel message (mentions included, so the client can tell whether it is addressed). */
+  | {
+      type: "org_channel";
+      projectId: string;
+      orgId: string;
+      channelId: string;
+      message: OrgChannelMessage;
+    }
+  /** A ticket's status, owner, blocked state or contributing sessions changed. */
+  | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
+  /** Budget warning, pause or resume for an employee. */
+  | {
+      type: "org_budget";
+      projectId: string;
+      orgId: string;
+      agentId: string;
+      state: "warned" | "paused" | "resumed";
+      ratio: number;
+    };

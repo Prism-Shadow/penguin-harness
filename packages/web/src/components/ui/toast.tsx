@@ -9,15 +9,16 @@
  * interactive (clicking it dismisses immediately).
  *
  * Usage: call `toastSuccess("Saved")` / `toastInfo("Already up to date")` /
- * `toastError("Connection failed: ...")` from anywhere, no context needed — a
- * module-level store plus a single `<Toaster />` mounted at the app
- * root is all it takes.
+ * `toastAttention("Two desks share one minute")` / `toastError("Connection
+ * failed: ...")` from anywhere, no context needed — a module-level store plus a
+ * single `<Toaster />` mounted at the app root is all it takes.
  */
 import { createPortal } from "react-dom";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 
-type ToastKind = "success" | "error" | "info";
+/** `attention` is the advisory kind: the write went through, and something about it is worth a look. */
+type ToastKind = "success" | "error" | "info" | "attention";
 
 interface ToastItem {
   id: number;
@@ -27,8 +28,13 @@ interface ToastItem {
   leaving?: boolean;
 }
 
-/** Display duration: error messages are usually longer and more important to read, so give them more time; info sits in between. */
-const DURATION: Record<ToastKind, number> = { success: 2500, info: 4000, error: 6000 };
+/** Display duration: an error and an advisory both need reading, so they get the longest stay; info sits in between; a plain success is gone as soon as it is seen. */
+const DURATION: Record<ToastKind, number> = {
+  success: 2500,
+  info: 4000,
+  attention: 6000,
+  error: 6000,
+};
 
 const toastStore = createStore<{ items: ToastItem[] }>(() => ({ items: [] }));
 let nextId = 1;
@@ -58,6 +64,7 @@ function push(kind: ToastKind, text: string): void {
 export const toastSuccess = (text: string): void => push("success", text);
 export const toastError = (text: string): void => push("error", text);
 export const toastInfo = (text: string): void => push("info", text);
+export const toastAttention = (text: string): void => push("attention", text);
 
 const KIND_CLASS: Record<ToastKind, string> = {
   success:
@@ -65,6 +72,8 @@ const KIND_CLASS: Record<ToastKind, string> = {
   error:
     "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
   info: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200",
+  attention:
+    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
 };
 
 /** Toast container: mount once at the app root. */

@@ -37,6 +37,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
+import { isCompanyEvent, publishCompanyEvent } from "./company";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -634,6 +635,16 @@ export function applyUserEvent(
     void store.getState().reload();
     return;
   }
+  // Company-mode notifications fan out to the company store and any mounted organization page
+  // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
+  // not seen, so it refreshes like a schedule firing does.
+  if (isCompanyEvent(ev)) {
+    publishCompanyEvent(ev);
+    if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
+      void store.getState().reload();
+    }
+    return;
+  }
   // A scheduled task firing may have created a new Session (new-session mode); reload the list
   // so it appears immediately. schedule_queued doesn't change the list (the target Session
   // already exists), so it is ignored, as is every other Session-scoped event.
@@ -766,4 +777,18 @@ export function useSessions(): SessionsContextValue {
   const ctx = useContext(SessionsContext);
   if (!ctx) throw new Error("useSessions must be used within a SessionsProvider");
   return ctx;
+}
+
+/**
+ * Every loaded Session's run status by id — the user event channel's view of it, which is the
+ * only one that reports a run ENDING. Surfaces built on a server-side snapshot (company mode's
+ * desk and ticket rows, the org chart's state dots, the overview's employee counts) read this
+ * first and keep their snapshot for the rows this list has not loaded: their snapshots are
+ * re-read on organization events, and no event announces that a run finished.
+ *
+ * Memoized on the rows, so a consumer re-shapes only when a status (or the list) actually moves.
+ */
+export function useLiveSessionStatuses(): ReadonlyMap<string, SessionStatus> {
+  const { sessions } = useSessions();
+  return useMemo(() => new Map(sessions.map((s) => [s.sessionId, s.status])), [sessions]);
 }

@@ -6,6 +6,8 @@
  */
 import { S } from "../../lib/strings";
 import { Segmented } from "../../components/ui/segmented";
+import { Switch } from "../../components/ui/switch";
+import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -16,6 +18,7 @@ import { TraceImportRow } from "./trace-import-row";
 export function GeneralSection() {
   const { lang, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
+  const { serverEnabled, personalEnabled, setPersonalEnabled } = useCompany();
 
   const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
     { value: "en", label: S.settings.langEn },
@@ -35,6 +38,18 @@ export function GeneralSection() {
       <PrefRow label={S.models.currency} info={S.settings.currencyInfo}>
         <Segmented options={currencyOptions} value={currency} onChange={setCurrency} cols={2} />
       </PrefRow>
+      {/* The personal company-mode switch: off hides this user's mode switch and nothing else.
+          Offered only while the server allows company mode at all — a switch that changes
+          nothing would only invite the question of why. */}
+      {serverEnabled && (
+        <PrefRow label={S.settings.companyModePersonal} info={S.settings.companyModePersonalInfo}>
+          <Switch
+            checked={personalEnabled}
+            onChange={setPersonalEnabled}
+            aria-label={S.settings.companyModePersonal}
+          />
+        </PrefRow>
+      )}
       <TraceImportRow />
     </div>
   );

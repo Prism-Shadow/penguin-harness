@@ -121,6 +121,22 @@ describe("getMessages", () => {
       const hint = m.usage.hint("penguin schedule add", "[options] <name>");
       expect(hint).toContain("penguin schedule add [options] <name>");
       expect(hint).toContain("penguin schedule add --help");
+      // The company-mode family: descriptions, the control-environment default, confirmations.
+      expect(m.org.lsDesc.length).toBeGreaterThan(0);
+      expect(m.org.ticketCreateDesc.length).toBeGreaterThan(0);
+      expect(m.org.orgId).toContain("PENGUIN_ORG_ID");
+      expect(m.org.orgIdMissing()).toContain("PENGUIN_ORG_ID");
+      expect(m.org.hireTargetConflict()).toContain("--new-agent");
+      expect(m.org.statusInvalid("bogus")).toContain("bogus");
+      expect(m.org.created("acme", "session-x")).toContain("session-x");
+      expect(m.org.created("acme", undefined)).toContain("acme");
+      expect(m.org.hired("dev1", "Developer", "ceo")).toContain("ceo");
+      expect(m.org.ticketMoved("2026-09-02-site", "in_progress")).toContain("in_progress");
+      expect(m.org.calendarWritten("dev1", "standup", m.schedule.enabled(), undefined)).toContain(
+        "dev1/standup",
+      );
+      expect(m.org.ticketHead("2026-09-02-site", "review", false, "waiting")).toContain("waiting");
+      expect(m.org.financeTotal("2026-09", "$1.0000")).toContain("2026-09");
     }
     // Argument errors really are translated, not the English text twice.
     expect(getMessages("zh").usage.missingArgument("sessionId")).not.toBe(
@@ -131,6 +147,7 @@ describe("getMessages", () => {
     );
     // The dictionaries are genuinely two languages, not one copied twice.
     expect(getMessages("zh").ls.desc).not.toBe(getMessages("en").ls.desc);
+    expect(getMessages("zh").org.desc).not.toBe(getMessages("en").org.desc);
     expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
   });
 

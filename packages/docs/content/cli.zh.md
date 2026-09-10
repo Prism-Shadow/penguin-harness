@@ -5,7 +5,7 @@ description: penguin 命令的子命令与选项完整参考。
 
 CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带子命令执行 `penguin` 时打印帮助；`-v, --version` 打印当前构建的单行身份，`penguin version --json` 打印其完整信息。启动时自动加载工作目录下的 `.env`。
 
-CLI 是服务端的瘦客户端：所有会话相关命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`）都向 PenguinHarness 服务端发 HTTP 请求并渲染回复——Task 在服务端执行，Session 记录在服务端索引里，Web App 能看到 CLI 创建的一切（反之亦然）。只有 `config` 仍直接编辑 Project 配置文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务端的瘦客户端：所有会话相关命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`）都向 PenguinHarness 服务端发 HTTP 请求并渲染回复——Task 在服务端执行，Session 记录在服务端索引里，Web App 能看到 CLI 创建的一切（反之亦然）。只有 `config` 仍直接编辑 Project 配置文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
@@ -214,6 +214,72 @@ penguin schedule rm daily-report
 | `--disabled`（`add`） | 与原始文件的一处有意分歧：`add` 缺省即**启用**——添加任务就是要它运行——原始文件的 `enabled = false` 缺省仍留给手编。`--disabled` 关闭 |
 | `--enable` / `--disable`（`update`） | 翻转启用位；`update` 对存储项读改写：未指定的字段保留原值，切换目标类型时清掉另一类字段 |
 | `--project-id` / `--agent-id` / `--json` / `--server` | 同各处约定；`rm` 直接删除、不做确认（服务端的 owner 授权照旧生效） |
+
+## penguin org
+
+公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、频道）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。自动生成的 id 按约定带前缀——组织 `co_`、频道 `ch_`——服务端只提议、不强制，因此这里传入的 id 一律按原样创建。
+
+```bash
+penguin org ls [--project-id <id>] [--json]
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # 按约定取 `co_<slug>`
+penguin org show [--org-id <id>] [--json]                       # 概览：工作语言、员工与状态、看板计数、预算占用、待处理事项
+penguin org chart [--org-id <id>] [--json]                      # 员工树
+penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
+penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org leave <agent_id>                                    # 移出组织（CEO 不可），不删 Agent
+penguin org desk show [<agent_id>] [--json]                     # 工位会话 id 与 Workspace（尚无工位时开一个）
+penguin org desk renew [<agent_id>]                             # 换新的工位会话（重置上下文）
+penguin org calendar ls [--agent-id <id>] [--json]
+penguin org calendar add <name> [--agent-id <id>] --prompt <s> --start-at <ISO|now> [--period <dur>] [--end-at <ISO>] [--title <s>] [--disabled]
+penguin org calendar update <name> [--agent-id <id>] [<同上字段>] [--enable|--disable]
+penguin org calendar rm <name> [--agent-id <id>]
+penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
+penguin org ticket show <ticket_id> [--json]
+penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--initiator <principal>] [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
+penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # 移入 rejected 须给 reason
+penguin org ticket assign <ticket_id> --owner <principal>
+penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # 工单留在所在列
+penguin org ticket unblock <ticket_id>
+penguin org ticket progress <ticket_id> -m <text>               # 追加一条进展，记为当前会话所写
+penguin org ticket start <ticket_id> [-m <附言>] [--workspace <path>] [--agent-id <id>] [--json]   # 新开一个后台处理该工单的工单会话，打印会话 id
+penguin org ticket attach <ticket_id> [--session <session_id>]   # 把既有会话挂为贡献会话（缺省当前会话）
+penguin org channel ls [--json]                                 # 人看到全部频道，员工只看到自己所在的
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # 新频道只有创建者一人；按约定取 `ch_<slug>`
+penguin org channel show <channel_id> [--json]                  # 用途、成员数与成员清单
+penguin org channel invite <channel_id> <principal>...          # 任一成员可邀请；每个 principal 一次 POST
+penguin org channel join <channel_id>                           # 仅限人；员工只能等成员邀请
+penguin org channel leave <channel_id>                          # 移出自己
+penguin org channel remove <channel_id> <principal>             # 仅限人
+penguin org channel archive <channel_id> | unarchive <channel_id>      # 仅限人；归档期间只读
+penguin org channel tail [--channel <id>] [--date <d>] [-n <count>] [--json]
+penguin org channel send -m <text> [--channel <id>] [--ref-ticket <id>] [--ref-session <id>]
+penguin org handbook list [--json]
+penguin org handbook show [path] [--json]
+penguin org handbook write <path> (-m <text> | --file <file>)
+penguin org handbook rm <path>
+penguin org finance [--period <YYYY-MM>] [--json]
+```
+
+每个子命令都接受 `--org-id <id>`、`--project-id`、`--json` 与 `--server`。**`--org-id` 缺省取 `PENGUIN_ORG_ID`**——公司模式在「服务器连接」一节所述控制环境之外多注入的一个变量：服务端把它注入工位会话与工单会话的每个工具子进程，员工自己的 `penguin org` 调用因此无需点名组织；人类在 shell 里则显式给出。没有缺省组织——两者都没有时，命令在联系任何服务器之前即失败。`create` 是例外：它的 `--org-id` 是要创建的 id，绝不取自环境。`--json` 把响应以单行 JSON 打印；写入类命令否则打印一行确认。
+
+同一套环境在会话内标识调用方：
+
+- `calendar` 各命令的 `--agent-id` 与 `desk` 的位置参数缺省取 `PENGUIN_AGENT_ID`——员工安排自己的日程、换自己的工位。`calendar ls` 不带该选项时列出全部员工的日程项。
+- `ticket start` 给了 `--agent-id` 就用它，否则用设置了的 `PENGUIN_AGENT_ID`，再否则由服务端取工单负责人。它同时携带 `PENGUIN_SESSION_ID`，服务端据此施加规则：**一张工单的会话只能由它的负责人或人发起**——员工对别人的工单（或没有员工负责人的工单）发起会得到 `403 not_ticket_owner`，原样打印，提示改用改派（`penguin org ticket assign <id> --owner agent:<员工>`），由那名员工的工位在下一次巡检时接手。`--agent-id` 则是负责人把同事拉进自己名下工单的方式。
+- 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与频道写入（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
+- 频道读取（`ls`、`show`、`tail`）以及 `leave` 与 `remove` 背后的成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入。不带它，服务端会把员工当作登录的那个人来应答，`channel ls` 便会列出全部频道而非该员工自己的。
+
+`--channel` 缺省为 `default_channel`，即全体员工与全体 Project 成员都在其中的全员频道；`ls` 把它排在最前，并显示本地化名称而非其存储的 name。新频道只有创建者一人：员工要由成员邀请才能进入，人可以自行 `join` 任何频道，也能读到全部频道。`join` 与 `leave` 提交的都是调用方自己的 principal——在工位会话或工单会话内是该会话的员工，在会话外是登录的那个人——因此 `join` 绝不会把别人拉进频道。`join`、`remove`、`archive` 与 `unarchive` 是人的操作，因此在会话内执行时服务端返回 `403 not_a_member`——与其他 API 错误一样原样透出。
+
+分组说明：
+
+- `ls` / `show` / `chart`：Project 的组织及其员工、工单与支出计数；单个组织的概览——名称、使命、状态与工作语言，按状态分的员工数，各列工单数，本期支出对照 CEO 预算，以及等你处理的事（@我、待审核工单、等我的阻塞）；以及按层级缩进的汇报树，逐员工列出头衔、实时状态、自身与累计支出和预算。校验失败的组织或员工以 `invalid: <原因>` 列出，不隐藏。
+- `create`：`--ceo-budget` 是 CEO 的月预算（美元），缺省 **100**。预算按累计线比较——该员工及其全部下属——所以 CEO 的预算就是整家公司的：新组织一开始就有上限而非无限，初始化会话的触发块里也会带上这个数字，CEO 据此裁剪自己的招募方案。`0` 是真的零预算；要重新变回无限，用 `PATCH .../employees/<org_id>_ceo` 传 `budget: null`（Web App 的员工编辑即发此请求）。`--language zh|en` 指定组织的工作语言；不给则由使命决定（正文里出现任一汉字即为 `zh`），组织写下的一切——组织手册、员工简介、CEO 的初始化会话、工位会话标题——都随之而定。
+- `hire`：`--agent-id`（既有 Agent）与 `--new-agent`（新建）二选一；`--name`、`--description`、`--skills`（新 Agent 的插件库插件，替换缺省的 `agent-company,agent-development`）描述新 Agent。`--workspace` 是组织公共工作区的子目录（`.` 即整个工作区）或绝对路径，不按 CLI 的 cwd 解析。相对子目录会先归一化——`./hr`、`hr/` 与 `hr` 是同一个分区——并在写下这次招募时由服务端建好，因此 `--workspace hr` 就够了，无需事先存在；绝对路径指向用户自己的目录，必须已经存在；用 `..` 爬出公共工作区的写法直接以 400 `invalid_workspace` 拒收。`employee set --workspace` 同理，工位会话与工单会话打开时也会补建该目录。`--budget` 是该员工及其全部下属的月预算（美元）。`employee set` 只改给出的字段；模型对「都给或都不给」，同各处约定。
+- `calendar`：与 `penguin schedule` 同一套写入器——`add` 缺省启用、`--disabled` 关闭，`--start-at now` 即当前时刻，`update` 读改写，`rm` 不做确认。日程项一律发往员工的工位会话，且只在组织与该员工都处于运行状态时触发；否则状态列显示 `paused`。`add` 与 `update` 在返回事件之外附上本次写入引出的排班提醒——同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算——每条一行，以「排班提醒：」打印。它们只是建议：写入一律成功，提醒文本保持服务端的英文。
+- `ticket`：`ls` 取整个看板后在本地过滤（`--status` 为列名：`proposed`、`in_progress`、`review`、`done`、`rejected`）；`show` 先打印派生数据——所在列、运行状态、成本与含子工单成本、贡献会话数、子工单数——再打印工单文件本身。`create` 二选一：`--goal`（配合 `--criteria`）或以 `--body-file` 给出整个 Markdown 正文，头部都由服务端生成。`--json` 下 `ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。`start` 像 `run --background` 一样打印裸 session id，供 `penguin logs` / `penguin input` 接续。`--initiator <principal>` 以他人名义创建工单——组织的员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）；它成为工单的 `Initiator`、`created the ticket` 那条进展的作者，并在没有 `--notify` 时成为整个 `Notify`——但仅限发起人是员工：人不会因为自己开过的工单在完成时被全员频道 @，想收到通知就把自己写进 `--notify`（那条完成的系统消息无论如何都会写下）。声称做了活的写入——`progress`、正文编辑、`move --to review`——还会把调用方所在的会话记为该工单的贡献会话，其成本因此摊到工单上；移入其他列以及 `block`、`unblock` 都不记。`--goal`、`--criteria` 与 `progress -m` 要求把依赖的输入、预期交付物与涉及的文件一律写成完整路径。
+- `channel tail` 以 `time  sender  text` 打印当天最后 20 条消息（`-n` 改条数，`--date` 换一天），`--json` 下即当天的响应、只含这些消息；`channel send` 发一条——`@agent:<id>` 与 `@all` 会触发被提及员工的工位。`system` 消息在英文正文之外带一份结构化 `notice`，`tail` 因此按 CLI 自身的语言渲染；本版本不认识的种类保留英文原文。
+- `finance`：本期按员工（自身与沿汇报线累计，对照预算，附 `warned` / `paused` 标记）与按工单的支出，然后是合计；部分用量所用模型未配置价格时，stderr 上一行提示说明数字是下限。
 
 ## 审批模式（--approve）
 

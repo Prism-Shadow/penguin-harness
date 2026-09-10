@@ -36,6 +36,9 @@ import type { ProjectConfigService } from "./project-config-service.js";
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
 
+/** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
+const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
+
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
   const m = SESSION_ID_TS_RE.exec(sessionId);
@@ -79,6 +82,17 @@ export interface SessionServiceDeps {
    * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
+  /**
+   * Company mode: the organization owning a Session (a desk session, or a session
+   * contributing to a ticket), for `SessionInfo.orgId` — development mode's list hides
+   * those rows, the company sidebar groups them. Two shapes because the two flows cost
+   * differently: the single-Session GET asks about one id, a list asks once for the whole
+   * Project and looks its rows up in the returned map, so a long list never costs a query
+   * per row. Lambdas rather than the repo, so the service stays decoupled from the
+   * company-mode caches; absent (older assemblies/tests) means the field is never set.
+   */
+  orgIdOfSession?: (sessionId: string) => string | undefined;
+  orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
 }
 
 export class SessionService {
@@ -89,10 +103,18 @@ export class SessionService {
    * Async because `source` is derived from session_meta: a registry miss (Session predating
    * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
    * list flow's one-walk discovery result; without it a miss locates the shard itself.
+   *
+   * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
+   * organization is a point lookup, which is what the single-Session paths want.
    */
-  async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
+  async toInfo(
+    row: SessionRow,
+    hasTrace: boolean,
+    orgIds?: ReadonlyMap<string, string>,
+  ): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
@@ -113,6 +135,8 @@ export class SessionService {
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(orgId !== undefined ? { orgId } : {}),
+      ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
@@ -199,6 +223,10 @@ export class SessionService {
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
+    // One query for the whole Project's organization-owned sessions, looked up per row
+    // below: the company caches are small, and a lookup per row would put a statement
+    // behind every entry of a long sidebar list.
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
 
     let traces: ReadonlySet<string> | undefined;
     if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
@@ -221,7 +249,7 @@ export class SessionService {
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds)));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
@@ -324,10 +352,11 @@ export class SessionService {
     source?: "schedule";
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
-     * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer
-     * filter on it.
+     * "cli" from the CLI, defaulting to "web". "org" is not accepted over HTTP — the
+     * organization runtime calls this method directly and is the only caller that passes
+     * it, so no request can claim an organization's provenance for itself.
      */
-    client?: "web" | "cli";
+    client?: "web" | "cli" | "org";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -399,8 +428,8 @@ export class SessionService {
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
-      // otherwise "web" (schedule runs included). NULL means a legacy row, treated as
-      // web. Informational only — lists serve every row.
+      // "org" when the organization runtime opened a desk or a ticket session, otherwise
+      // "web" (schedule runs included). NULL means a legacy row, treated as web.
       client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,

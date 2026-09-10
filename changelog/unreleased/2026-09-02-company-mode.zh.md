@@ -1,0 +1,56 @@
+# 公司模式：由日程、工单看板与频道驱动的 Agent 组织
+
+- **Date:** 2026-09-02
+- **Type:** feature
+- **Scope:** `server`, `web`, `cli`, `core`, `skills`, `docs`
+- **PR:** [#587](https://github.com/Prism-Shadow/penguin-harness/pull/587)
+
+[English](2026-09-02-company-mode.md)
+
+Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent 组成一个**组织**：以 CEO 为根的汇报树，每位员工一个常设的**工位会话**，作为唯一周期性驱动的**日程**，承载工作的五列**工单看板**，只有 `@` 才会打扰到人的**频道**，以及按员工设定、80% 告警、100% 暂停该员工日程的月度**预算**。创建组织只需一句话使命，且只生成 CEO；CEO 在工位上的初始化会话里招募人事、财务与其余角色，划分公共工作区，为大家安排日程，开出首批工单。
+
+组织的每一部分都是 `<project>/organizations/<org_id>/` 下的文件：`org_config.toml`、`org_chart.yaml`（员工树，含各员工的预算、工作区与 Model）、`desks.toml`（服务端写入的工位台账）、`calendar/<agent_id>/<event>.toml`（去掉目标字段的定时任务格式）、`tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md`（取法 Agent Notes 的头部——Status、Initiator、Owner、Parent、Notify、Priority、Due、Blocked、Blocked-by、Sessions——以及 Goal、Acceptance criteria、Progress、Result 四节）、`channels/<channel_id>/`（一个频道一个目录：写有名称、用途与成员的 `channel.toml` 意图文件，以及按天分文件的 `<yyyy-mm-dd>.jsonl` 消息）与组织手册目录 `handbook/`（公司知识库，根部 `README.md` 是每轮触发先读的索引，其余文档在索引中列出、按需读取）。SQLite 只保存每轮对账都从这些文件重建的缓存（工位与工单会话的归属、日程运行状态、上次已通知的工单状态、各频道的扫描游标、预算标记）以及每个用户在各频道的已读游标。
+
+## 细节
+
+- 服务端：与定时任务调度器同构的组织调度器每 30 秒、以及每次 API 写入后立即对账每个组织——把台账与工单投影到缓存，为工作区被重新划分的员工换工位，把到期的日程项发往工位（工位忙则排队，组织或员工暂停时搁置，绝不补发），对工单变化只通知一次（指派、阻塞、阻塞解除、完成、拒绝——员工收到发往工位的通知，人收到全员频道里的系统消息），按组织的连锁上限投递频道内的 @ 提及，并重算预算。每次触发都是一条以 `[org_trigger]` 块开头的用户输入；工单会话是员工 Agent 的普通会话，会话 id 追加到工单头部的 `Sessions` 字段。支出按会话归属：员工成本 = 本人会话加全部下属，工单成本 = 其贡献会话在所服务工单之间均分后的份额，沿 `Parent` 上卷。
+- API：`/api/projects/:projectId/organizations` 及其子路由——员工树、员工、工位、手册、日程、工单（移列、阻塞、解除、进展、发起、挂接）、频道（成员、消息与已读游标）、财务与组织会话列表；用户级事件 `org_run`、`org_channel`、`org_ticket`、`org_budget`。Project 成员可读写，仅 owner 可删除。迁移 5 新增七张组织表。
+- 开关：管理员总开关（服务器设置的 `companyMode`，缺省开；关闭即停止调度器、组织路由回 404、隐藏模式切换，并由 `GET /api/me` 报告）、`ui_prefs` 里的个人开关，以及组织自己的 `status: paused`。
+- 控制环境：工位与工单会话的命令子进程额外获得 `PENGUIN_ORG_ID`，在会话内 `penguin org` 不必再传 `--org-id`。
+- Core：标记清单新增 `[org_trigger]`（与 `[scheduled_task]` 同属标题噪声），并提供 `buildOrgTriggerMessage` / `parseOrgTriggerMessage`。
+- CLI：`penguin org` 命令族——`ls`、`create`、`show`、`chart`、`hire`、`employee set`、`leave`、`desk show|renew`、`calendar ls|add|update|rm`、`ticket ls|show|create|move|assign|block|unblock|progress|start|attach`、`channel ls|create|show|invite|join|leave|remove|archive|unarchive|tail|send`（`--channel` 缺省 `default_channel`）、`handbook list|show|write|rm`、`finance`——作为 API 的瘦客户端，处处支持 `--json`。
+- Web：Project 切换器上方的「开发 | 公司」模式切换、带新建与设置的组织切换器、六个导航页面（概览、组织图、日历、工单、财务、手册——以文件列表加渲染正文呈现知识库，支持就地编辑、新建与删除）以及频道视图；开发模式列出会话的位置，公司模式列出「频道」（全员频道置顶、我的频道、其他频道带「加入」、已归档折叠），另有对话中的 `[org_trigger]` 横幅与设置页上的两个开关。频道列表之下是组织自身的两个分组：「工位」按组织图顺序一位员工一行，默认展开，点击打开该员工的工位会话——没有就现开一个；「工单会话」默认折叠，把挂在工单上的会话按最近活动排在前面，工单标题作为副标题。收起后的窄栏把工位画成头像，运行中的带一个圆点。工位会话与工单会话就是**普通对话**——消息列表、工具卡片、审批与输入区都与开发模式相同——外面套公司模式的侧栏，并在分组里标出当前那一行；公司模式没有自己的对话视图。这类对话打开时，侧栏显示的组织仍是当前组织，频道与工位不会在 `/chat/:sessionId` 上变空。新建组织对话框会把填过的内容按用户与 Project 存成 `localStorage` 草稿：误关、刷新或切换模式后重开即恢复，创建成功或点「清空草稿」后清除；对话框里还多了 CEO 预算字段。频道里，@到自己的消息只由提及标记标出（整行底色去掉），跳数标记从第 2 跳起才显示（第 1 跳是员工回应一次触发，说明不了什么），输入框与「发送」按钮等高同排、底边对齐，输入框变高时按钮仍贴着底边。
+- 创建选项：新建组织时可指定 **Model**（已配置的成对引用，员工条目未指定时工位与工单会话都用它）与**公司工作区**（一个已存在的绝对目录，替代组织目录内的 `workspace/` 作为公共工作区）；二者都是 `org_config.toml` 的字段，可在组织设置里修改，也可经 `penguin org create --workspace … --model-id … --provider …` 指定。
+- 决策关口：CEO 只提案、董事会拍板——初始化会话先发一份完整提案（使命理解、首批工单、招募角色及预算与 Model、工作区划分）并结束本轮；招募、预算、拒绝他人的工单、跳过审核关闭 P0/P1 工单、任何触及组织之外的动作以及结构变更都要等创建者在全员频道里确认。员工把这类事项上报给 CEO。写进 `company-ceo` / `company-employee` Skill、初始化会话与组织手册。
+- 组织手册是一个目录 `handbook/`，也是公司知识库：根部 `README.md` 是每次触发都指向的索引（目录布局、协议、职责约定，以及一份文档清单——每份一行，写明何时需要读）；董事会决策、约定与操作指南以 Markdown 文档放在旁边、按需读取。API 可列出、读写与删除文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事，Web App 的「手册」页可浏览、编辑与新建；索引不可删除。
+- 排班规则：CEO / 人事 Skill、初始化会话与组织手册把日程当作排班表——按角色定节奏（CEO 每日、人事每三天、财务每周）、每位员工各占一个时刻、每人只有一条常设日程项、绝不 `--start-at now`。
+- 插件：新增独立分类（Agent Company / Agent 公司）下的 `agent-company` 插件（`preinstall: false`），携带 `company-employee`、`company-ceo`、`company-hr`、`company-finance` 四个 Skill；CEO 与每位招募的 Agent 都会连同 `agent-development` 一起安装它。
+- 频道：组织的沟通是一组频道，每个频道是 `channels/` 下的一个目录，带一份 `channel.toml` 意图文件。`default_channel` 是随组织创建的全员频道，全体员工与全体 Project 成员隐式在其中，预算告警、发给人的工单通知与招募通知都落在这里。人和员工都可以再开频道；新频道只有创建者一人，员工只能由成员邀请进入，人可以自行加入任何频道并读到全部频道。投递遵循成员关系：`@agent:<id>` 只在频道成员范围内唤醒工位，`@all` 指该频道成员（不含发送者），提及非成员的消息在写入前即以 `mention_not_member` 拒收。`kind: mention` 的 `[org_trigger]` 块带一行 `channel:`，员工因此回到被 @ 的那个频道作答。归档（仅限人）使频道只读；全员频道不能归档、不能退出、成员不可编辑。扫描游标与每个人的已读游标都按频道计算——迁移 6 把两张表重建为 `org_channel_state` 与 `org_channel_reads`。CLI 侧是 `penguin org channel` 命令族；Web App 的公司模式以频道为主列表，工位会话与工单会话在其下各成一组。
+- CEO 预算：创建时把 CEO 的月预算写进 `org_chart.yaml`——不另行指定即为 100 美元（创建请求的 `ceoBudget`、`penguin org create` 的 `--ceo-budget`、创建对话框里的 CEO 预算字段）。预算按累计线比较，所以这一个数字从第一分钟起就是整家公司的上限，而不是任其无限；初始化会话的触发块会带上它，CEO 据此裁剪自己的招募方案。之后在组织图上随时可调高、调低或清除。
+- 引导式创建：`company-setup`——`agent-development` 插件下的一个 Skill，而 `default_agent` 本就装有该插件，于是「让通用 Agent 帮我开一家公司」成为一条创建路径。它用用户的语言一次只问一个问题，依次收集 id、名称、使命、公共工作区、Model 与 CEO 预算，给出一屏摘要，等到明确的确认后执行 `penguin org create`，再把用户交接给公司模式。它自己从不招募、不排日程、不开工单——那是 CEO 在董事会答复提案之后的事。
+- 组织的会话不进开发模式：会话 DTO 新增 `orgId`——工位会话，或参与该组织某个工单的会话，所属的组织，取自组织缓存（每次列表一次查询，而不是每行一次），会话列表与 `GET /api/sessions/:sessionId` 都带上它。开发模式的会话列表与时间分组一律隐藏带有该字段的会话，原先收纳它们的「组织」子夹随之删除——公司模式的「工位」「工单会话」分组才是它们的去处。隐藏以该用户能用公司模式为前提（管理员总开关与用户自己的开关）：`orgId` 无论开关如何都会写上，公司模式关闭时没有别的地方列出这些会话。分组标题与「还有 N 个」一并减去被隐藏的部分，分组不会承诺自己画不出来的行。
+- 文档：新增「公司模式」指南（含 Marketplace 案例走读）、`penguin org` 参考，以及服务端 API 参考里的组织路由。
+
+### 第一轮试用之后（2026-09-08）
+
+- 工作语言：`org_config.toml` 新增 `language`（`zh` / `en`），创建时若请求未指定则从使命判定（正文里出现任一汉字即 `zh`）——`POST /organizations` 与 `PATCH /:orgId` 的 `language`、`penguin org create --language <zh|en>`，以及 Web App 组织设置里的「工作语言」下拉；`penguin org show` 会打印它。组织手册索引、CEO 的初始化会话、员工简介（`AGENTS.md`）与工位会话标题都按它渲染，Skill 也要求每位员工用它写消息、工单、文档与汇报。该字段出现之前写下的组织没有存这一项，读作它使命本身的语言，未做任何迁移。
+- 相对工作区子目录会被创建：`hire` 与 `employee set` 的 `--workspace hr`（或 `./hr`）先归一化为 `hr`，缺失时在公共工作区下建出；绝对路径仍须已经存在；用 `..` 爬出公共工作区的写法回 400 `invalid_workspace`。打开工位会话与工单会话时同样会补建该目录，手工改过的员工树不会因为少一个目录而让员工无法开工。
+- `POST /api/projects/:projectId/organizations/suggest-id`——`{name, kind: "org" | "channel", taken?}` → `{id, source: "model" | "fallback"}`：Project 的缺省 Model 提出一个简短的英文 snake_case id，模型给不出时以名称的 ASCII slug 兜底，两条路都命名不了则回 422 `id_not_derivable`；该次补全不属于任何 Session，也不计量。Web App 的新建组织与新建频道对话框把显示名放在前面，并带一个据名称生成 id 的按钮。
+- 日程写入会附带排班建议：`POST /:orgId/calendar`、`PUT /:orgId/calendar/:agentId/:name` 与 `penguin org calendar add | update` 在写下的事件之外返回一组建议性的 `warnings`——同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算。CLI 以「排班提醒：」逐行打印，Web 的日历对话框在起始时间下给出错峰提示并把这些警告弹成 toast，CEO 与人事 Skill 要求把它们改掉而不是略过。
+- 工单：`--initiator <agent_id|principal>`（创建请求体的 `initiator`）可以以某位员工或某位 Project 成员的名义开工单——它成为 `Initiator`、「created the ticket」那条进展的作者，并在发起人是员工时成为缺省的 `Notify`：人开的工单在完成时不再 @ 他（想收到通知就把自己写进 `--notify`；那条完成的系统消息照样发进全员频道）。会话写下的一条进展、正文编辑或移入 `review`，会把该会话记为这张工单的贡献会话，成本因此落到工单上；接受、关闭、阻塞与解除阻塞都不记。`ticket_work` 会话以一行 `Workspace:` 与「一切引用与交付物都写完整路径」的规则开场，`assigned` 与 `blocker_closed` 两种通知则以下一步要执行的 `penguin org ticket start` 命令收尾。
+- 频道的 `system` 消息在英文 `text` 之外带一份结构化 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`、`ticket_blocked`、`ticket_done`、`ticket_rejected`）加一组字符串 `params`；Web App 与 `penguin org channel tail` 据此按读者的语言、用显示名渲染，客户端不认识的种类保留英文原文。频道消息正文在 Web App 里按 Markdown 渲染。
+- Web：组织打开时落在概览（`/org/:projectId/:orgId` 与组织切换器都到这里）；置顶的「新建频道」槽位改为频道列表标题旁的「+」；组织被删除后侧栏不再停在错误上（导航行置灰，并给出「新建组织」的入口，`/org` 解析到下一个组织或空态落地页——落地页现在垂直居中）；创建对话框给出三个使命示例与工作语言设置；概览折起使命，把整卡点击换成每张摘要卡自己的跳转按钮，并把收件箱（@ 我、待审核与被阻塞的工单、最近消息）、今日日程、告警三段通栏堆叠；空的日历与看板只留一个新建按钮，下方提示可永久关掉；财务页把 KPI 面板与趋势排成一行，支出树与工单表左右分列，告警放在最后；手册的文件清单改为资源管理器式的树，支持折叠文件夹、键盘导航、一键全部折叠，新建文档预填当前文件夹。
+- Skill：`company-ceo`、`company-hr`、`company-employee` 与 `company-setup` 重申——工位绝不亲自做工单（改为发起工单会话）、目标与验收标准与进展与结果里的文件一律写完整路径、排班警告必须改掉而不是略过、一切以组织的工作语言书写、相对工作区在指定时即被创建。
+
+### 第二轮试用之后（2026-09-09）
+
+- 工单的变化不再启动任何一轮运行。指派负责人、标记阻塞、阻塞解除、完成、拒绝，仍照旧记录——写进工单文件、该变化在全员频道有系统消息时写进全员频道、并发出 `org_ticket` 事件——同时排入相关员工的队列；每人的下一条日历事件在正文的 `## Since your last sweep` 一节里带上它们：一条变化一行，写明工单、标题、发生了什么，以及工单自身带的理由或阻塞方（文件已不在时写 `(ticket removed)`），最后一行说明该怎么决定——发起工单会话、核验后解除阻塞，或者放着不动。驱动工位会话的只有日程项、频道里的提及与直接找它说话的人，CEO 创建时的初始化运行是唯一例外。组织或员工处于暂停时队列照样写入，由此后真正触发的那次巡检送达；员工离职时，尚未送达的行随之删除。迁移 7 新增存放该队列的 `org_desk_notices` 表。`ticket_notice` 仍留在 `OrgTriggerKind` 中，因为它存在期间写下的 Trace 带着它；现在已没有任何地方再写出这种触发。Skill、组织手册模板、公司模式指南与服务端 API 参考都已照此叙述。
+
+### 第三轮试用之后（2026-09-09）
+
+- 公司模式的会话带上了持久标记。工位会话与工单会话在创建时就写下索引行的 `client: "org"`，`SessionInfo` 也开始返回该字段，于是无论组织是否还在、公司模式是否打开，开发模式的会话列表都能把这些行排除在外——与之并列的 `orgId` 是组织缓存的投影，模式关闭时不再读取。每一轮对账还会给组织文件点名的会话补上这个标记：工位台账里的当前会话与历史会话，以及各工单 `Sessions` 头部里的会话。因此已经存在的组织，其会话在下一轮对账时被标记，且无需迁移（该列本就存在，且是自由文本）。本次改动之前就已删除的组织，其会话不再被任何文件点名，因而保持未标记状态：它们读作开发模式自己的会话，只能靠归档或删除来清理。`POST .../sessions` 仍只接受 `"web"` 与 `"cli"`：`"org"` 由直接调用服务的组织运行时写入，任何请求都无法声称自己是它。回填与本轮容忍的其余旧形态见[向后兼容](2026-09-09-backward-compatibility.zh.md)。
+- 「用 AI 生成」一定给得出 id。`POST /organizations/suggest-id` 背后的一次性补全此前开着思考、输出上限只有 48 token，而推理模型的思考正是从同一个上限里扣的——请求在吐出第一个正文 token 之前就以 `finish_reason=length` 结束，中文名称的 ASCII 兜底又天然为空，于是回的是 `422 id_not_derivable`。该补全现在与 core 自己的带外请求一致：关闭思考，使用共享的元请求预算，并按条目上钉住的 per-model 上限收紧。回答仍拼不出 id 时，会带上「只回答标识符本身」的格式要求再问一次；Model 与 ASCII 兜底都命名不了的名称，则回一个 `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>`——`source: "placeholder"` 并附 `reason`（`no_default_model`、`model_failed`、`unusable_answer`、`no_ascii`），对话框据此在字段下方提示改成有含义的名字。422 与 `id_not_derivable` 这个 code 已移除。Model 一侧的每一次落空现在都会写入日志并记为 `organization` / `id_suggest_failed` 错误，不再被无声吞掉。
+- 自动生成的 id 带上了表明其所指的前缀：组织 `co_`，频道 `ch_`。`POST /organizations/suggest-id` 仍照旧向 Model 要语义词干，前缀由服务端自己补上——ASCII slug 兜底路径同样如此，都在截长度与避开 `taken` 之前进行；词干本就以该前缀开头时不会补第二遍。`company-setup` Skill 提议 `co_<slug>`，CEO 与员工 Skill 里的频道示例改为 `ch_site`、`ch_marketing`。前缀只是服务端提议、并不强制的约定：手工输入的 id 一律按原样创建，既有 id 继续有效。
+- 一张工单的会话只能由它的负责人或人发起。`POST /:orgId/tickets/:ticketId/start` 现在会看调用方：人可以为任何工单发起会话，用 `agentId` 指定员工；而以员工身份写入的调用方（工位会话或工单会话在请求体里带上自己的 `sessionId`）只能为自己名下的工单发起，对别人的工单——以及没有员工负责人的工单——一律回 `403 not_ticket_owner`，错误文案提示改用改派，由那名员工的工位在下一次巡检时接手。负责人仍可用 `agentId` 把同事拉进自己名下的工单，`penguin org ticket start` 为此新增了 `--agent-id`；该命令现在同时发送 `PENGUIN_SESSION_ID`，服务端据此识别背后的员工。CEO Skill、员工 Skill、组织手册模板、CEO 的初始化运行、公司模式指南、服务端 API 参考与 CLI 参考都已照此叙述。
+- 组织概览的详情新增 `inbox`：当日窗口内全员频道里 @ 了调用方或 `all` 的消息（最新在前，最多 20 条）、所有带 `Blocked` 理由的工单——无论它在等谁（最新在前），以及本预算周期内关闭的 `done` 工单（最新在前，最多 20 条），每条带上其最后一行「moved … → done」进展所记录的 `closedAt`。手工把文件移进 `done` 的工单没有这样一行，于是列出时不带 `closedAt`，而不是被隐藏。`pending` 与 `recentMessages` 保持不变。
+- 组织不再能通过产品删除。`DELETE /api/projects/:p/organizations/:orgId` 已移除——该路径对所有人（包括 owner）都回 404，于是仍在调用它的脚本会失败，而不是默默什么也没做——App 的组织设置对话框也去掉了删除按钮与那层确认。`status`（`active` / `paused`）就是它的全部生命周期：暂停会停止一切自动触发，而每个工位仍开着可以对话，暂停一行的「?」也照此说明。删除组织会把回到它的对话、员工、工位与工单的唯一入口一并丢掉。手工删掉组织目录是组织唯一的消失方式，这一情形不变：运行时在下一轮对账时不再看见它，App 给出新建一个的入口，Agent 与会话都保留——会话上「属于该组织」的标记仍在，因此不会回到开发模式的列表。公司模式指南与服务端 API 参考都已照此叙述。

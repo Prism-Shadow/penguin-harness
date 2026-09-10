@@ -72,6 +72,7 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
       proxyForAgent: deps.serverSettingsRepo.getProxyForAgent(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
+      companyMode: deps.serverSettingsRepo.getCompanyMode(),
     },
   });
 
@@ -83,6 +84,7 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
     // field must leave the others untouched too.
     const proxyForApp = optionalBoolean(body, "proxyForApp");
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
+    const companyMode = optionalBoolean(body, "companyMode");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -107,6 +109,9 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
         `attachmentTotalMb (${effectiveTotal}) must not be below attachmentMaxMb (${effectiveMax}).`,
       );
     }
+    // Read per tick by the organization scheduler and per request by the organization routes, so
+    // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
+    if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);

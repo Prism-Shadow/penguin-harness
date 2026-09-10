@@ -57,13 +57,14 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "company",
       "users",
     ]);
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
-    // Not "fewer pages" — the exact list. Proxy, upload limits and user management are
-    // admin surfaces, and the whole point of dropping them is that a non-admin is never
+    // Not "fewer pages" — the exact list. Proxy, upload limits, the company-mode master
+    // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
     expect(plain.map((s) => s.key)).toEqual(["general", "appearance", "account"]);
@@ -72,7 +73,13 @@ describe("visibleSettingsSections", () => {
   it("strips the desktop shell's window down to what a token session can use", () => {
     // No account page (no password to change — see offersChangePassword), no user
     // management (single-user server).
-    expect(shell.map((s) => s.key)).toEqual(["general", "appearance", "proxy", "uploads"]);
+    expect(shell.map((s) => s.key)).toEqual([
+      "general",
+      "appearance",
+      "proxy",
+      "uploads",
+      "company",
+    ]);
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
@@ -84,6 +91,7 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "company",
     ]);
   });
 });

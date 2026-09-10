@@ -40,7 +40,7 @@ export const DOCS_NAV: DocsSectionDef[] = [
       },
     ],
   },
-  { id: "guides", pages: pages("web-app", "goal-mode", "self-improvement") },
+  { id: "guides", pages: pages("web-app", "goal-mode", "company-mode", "self-improvement") },
   {
     id: "design",
     pages: pages(

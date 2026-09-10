@@ -28,14 +28,17 @@ export interface SessionRow {
   archivedAt?: string | null;
   /**
    * Creating client: "web" (created via the Web App), "cli" (created through the API by
-   * the CLI, or adopted from a Trace a legacy CLI-direct run left behind); NULL = legacy
-   * row from before the column existed, treated as web. Informational provenance only —
-   * no list filters on it. The schedule/subagent SOURCE is deliberately NOT a row field —
-   * core session_meta in the Trace stays the single source of truth for it
+   * the CLI, or adopted from a Trace a legacy CLI-direct run left behind), "org" (opened by
+   * the organization runtime — a desk or a ticket session); NULL = legacy row from before
+   * the column existed, treated as web. Free text in SQLite, so a new value needs no
+   * migration. Provenance that outlives its organization: development mode's list is the
+   * one reader that filters on it, and it hides "org" rows whether or not the organization
+   * still exists. The schedule/subagent SOURCE is deliberately NOT a row field — core
+   * session_meta in the Trace stays the single source of truth for it
    * (runtime/session-sources.ts); `client` is a separate, DB-only axis that meta never
    * records.
    */
-  client?: "web" | "cli" | null;
+  client?: "web" | "cli" | "org" | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
   hasTrace?: boolean;
   /**
@@ -62,7 +65,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     thinkingLevel: (r.thinking_level as ThinkingLevelName | null) ?? null,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
-    client: (r.client as "web" | "cli" | null) ?? null,
+    client: (r.client as "web" | "cli" | "org" | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
     // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
@@ -141,6 +144,24 @@ export class SessionsRepo {
         row.createdAt,
         row.createdAt,
       );
+  }
+
+  /**
+   * Stamp `client = "org"` on the rows an organization's files name, leaving the ones
+   * already stamped alone. The reconcile pass calls it with every session the desk ledger
+   * and the tickets' `Sessions` headers claim, so a row opened before the marker existed
+   * carries the organization's provenance from the next pass on — and keeps it when the
+   * organization is deleted or company mode is switched off, which is exactly when the
+   * organization caches can no longer answer for it. Chunked because the id list is
+   * unbounded while SQLite's parameter count is not.
+   */
+  markOrgClient(sessionIds: readonly string[]): void {
+    const stmt = (n: number): string =>
+      `UPDATE sessions SET client = 'org' WHERE session_id IN (${Array.from({ length: n }, () => "?").join(", ")}) AND client IS NOT 'org'`;
+    for (let i = 0; i < sessionIds.length; i += 400) {
+      const chunk = sessionIds.slice(i, i + 400);
+      this.db.prepare(stmt(chunk.length)).run(...chunk);
+    }
   }
 
   /** Flip the has_trace cache once a Trace record exists (discovery hydration); idempotent. */

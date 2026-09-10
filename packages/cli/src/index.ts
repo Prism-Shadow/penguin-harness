@@ -19,6 +19,7 @@ import { registerAgentCommand } from "./commands/agent.js";
 import { registerProjectCommand } from "./commands/project.js";
 import { registerCostCommand } from "./commands/cost.js";
 import { registerScheduleCommand } from "./commands/schedule.js";
+import { registerOrgCommand } from "./commands/org.js";
 import { registerServeCommands } from "./commands/serve.js";
 import { registerUpdateCommand } from "./commands/update.js";
 import { registerVersionCommand } from "./commands/version.js";
@@ -58,6 +59,7 @@ export async function cli(argv: string[]): Promise<number> {
   registerProjectCommand(program, t);
   registerCostCommand(program, t);
   registerScheduleCommand(program, t);
+  registerOrgCommand(program, t);
   registerServeCommands(program, t);
   registerUpdateCommand(program, t);
   registerVersionCommand(program, t);

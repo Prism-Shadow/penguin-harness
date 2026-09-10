@@ -171,6 +171,73 @@ export class UsageService {
     }));
   }
 
+  /**
+   * Period cost per session, for company mode's attribution by the sessions an organization
+   * owns: sums by paired reference priced at the current rates (each half at the tier its own
+   * records ran in). `unpriced` says some usage ran on a model without pricing, so the numbers
+   * are a lower bound.
+   */
+  async costBySession(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<{ bySession: Map<string, number>; unpriced: boolean }> {
+    const bySession = new Map<string, number>();
+    if (sessionIds.length === 0) return { bySession, unpriced: false };
+    const rows = this.usage.groupsByModel(
+      projectId,
+      "session",
+      { sessionIds, fromTs, toTs },
+      this.tiers(),
+    );
+    const rates = new Map<string, TieredRates | undefined>();
+    let unpriced = false;
+    for (const r of rows) {
+      const key = refKey(r.provider, r.modelId);
+      if (!rates.has(key)) {
+        rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+      }
+      const rate = rates.get(key);
+      if (!rate) {
+        unpriced = true;
+        continue;
+      }
+      bySession.set(r.key, (bySession.get(r.key) ?? 0) + costOf(r, rate));
+    }
+    return { bySession, unpriced };
+  }
+
+  /** Daily cost of a set of sessions over a window (the organization finance trend). */
+  async dailyCostForSessions(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<Array<{ date: string; cost: number }>> {
+    if (sessionIds.length === 0) return [];
+    const rows = this.usage.seriesByModel(
+      projectId,
+      "day",
+      { sessionIds, fromTs, toTs },
+      this.tiers(),
+    );
+    const rates = new Map<string, TieredRates | undefined>();
+    const byDate = new Map<string, number>();
+    for (const r of rows) {
+      const key = refKey(r.provider, r.modelId);
+      if (!rates.has(key)) {
+        rates.set(key, await this.lookupPricing(projectId, r.provider, r.modelId));
+      }
+      const rate = rates.get(key);
+      if (!rate) continue;
+      byDate.set(r.key, (byDate.get(r.key) ?? 0) + costOf(r, rate));
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, cost]) => ({ date, cost }));
+  }
+
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
     const today = formatLocalDate(this.now());
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).

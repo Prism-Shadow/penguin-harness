@@ -431,6 +431,7 @@ export const PLUGIN_CATEGORIES: PluginCategory[] = [
   { id: "office-productivity", title: "Office Productivity", titleZh: "办公效率" },
   { id: "software-development", title: "Software Development", titleZh: "软件开发" },
   { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },
+  { id: "agent-company", title: "Agent Company", titleZh: "Agent 公司" },
 ];
 
 /**

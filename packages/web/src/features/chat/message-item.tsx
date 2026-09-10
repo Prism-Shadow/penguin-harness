@@ -24,6 +24,8 @@ import { CompactionBanner } from "./compaction-banner";
 import { McpConnectBanner } from "./mcp-connect-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
+import { OrgTriggerBanner } from "./org-trigger-banner";
+import { parseOrgTriggerMessage } from "./org-trigger";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
 import { BackgroundDoneBanner } from "./background-done-banner";
@@ -202,12 +204,18 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // Source block for an organization trigger (a desk or ticket session's work run):
+      // collapsed into a single-line notice like the scheduled banner, the trigger body
+      // rendered as usual. A message carries at most one origin block, so the chain simply
+      // continues on whatever this leaves.
+      const orgTrigger = parseOrgTriggerMessage(item.text);
+      const afterOrgTrigger = orgTrigger ? orgTrigger.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
-      const scheduled = parseScheduledMessage(item.text);
+      const scheduled = parseScheduledMessage(afterOrgTrigger);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
       // (scheduled -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : item.text;
+      const afterScheduled = scheduled ? scheduled.rest : afterOrgTrigger;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration (last in the chain — these lines trail the body rather than
       // prefixing it): for models that don't support images, input images are written to disk
@@ -218,6 +226,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
       return (
         <>
+          {orgTrigger && <OrgTriggerBanner origin={orgTrigger.origin} />}
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
           {text && (

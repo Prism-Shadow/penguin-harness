@@ -22,7 +22,7 @@ plugins/<plugin>/
 | `description` / `description_zh` | One-line description (English required) |
 | `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
 | `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
-| `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
+| `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
@@ -102,10 +102,11 @@ The built-in plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plu
 | | `continual-learning` | When a task ends after more than 30 turns, hands its condensed excerpt to a background subagent that folds the durable findings into the agent's skills (not preinstalled) |
 | Software Development | `software-development` | Software development end to end — two skills: `software-engineering` (investigate, implement and validate with minimal scope) and `web-design` (the Penguin visual language for generated web UIs) |
 | | `use-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
-| AI App Development | `agent-development` | Agent development on PenguinHarness — four skills: `penguin-sdk` (build agent/AI/RAG apps on the SDK), `unified-llm-api` (call model APIs through `@prismshadow/agenthub`), `penguin-config` (manage model keys, defaults and Vault secrets) and `penguin-orchestration` (drive agents, sessions, costs and schedules from a shell) |
+| AI App Development | `agent-development` | Agent development on PenguinHarness — five skills: `penguin-sdk` (build agent/AI/RAG apps on the SDK), `unified-llm-api` (call model APIs through `@prismshadow/agenthub`), `penguin-config` (manage model keys, defaults and Vault secrets), `penguin-orchestration` (drive agents, sessions, costs and schedules from a shell) and `company-setup` (create a [company-mode](/company-mode) organization with the user: one question at a time, a summary to confirm, then `penguin org create` — it never hires or files tickets) |
 | | `model-development` | Model development on your own hardware — three skills: `llamafactory` (fine-tune), `ollama` (run local models) and `vllm` (serve behind an OpenAI-compatible endpoint) |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
 | | `agent-tuning` | The tuning loop as four skills: `agent-initialization` (set an agent up from a requirement), `benchmark-design` (design and calibrate a capability Benchmark), `agent-evaluation` (execute and score one isolated Case) and `agent-optimization` (improve the agent from measured results) |
+| Agent Company | `agent-company` | The employee toolkit of company mode — four skills: `company-employee` (the protocol every desk and ticket session follows: trigger blocks, the ticket board, blocking, channel etiquette, budgets), `company-ceo` (mission to tickets, hiring, workspace partitioning, review, reporting to the board), `company-hr` (calendar coverage, hiring and offboarding, evaluation) and `company-finance` (budgets, the daily audit, alerts and pauses) (not preinstalled: the organization installs it when it creates the CEO and hires employees) |
 
 ## Writing and optimizing Skills
 
