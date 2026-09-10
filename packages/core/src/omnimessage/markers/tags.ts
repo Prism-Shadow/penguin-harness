@@ -23,6 +23,8 @@ export const MARKER_TAGS = {
   handoffFrom: "handoff_from",
   /** Scheduled-task trigger origin block (server scheduler). */
   scheduledTask: "scheduled_task",
+  /** App Center action origin block (server apps route): a restart / stop request for a registered app. */
+  appCenter: "app_center",
   /** Background-task completion report injected as a harness user message (exec_command / run_subagent with run_in_background). */
   backgroundTaskDone: "background_task_done",
   /** `/model` switch origin block, first message of the continued conversation (Web). */
@@ -43,7 +45,7 @@ export const TRANSCRIPT_TAGS = {
 /**
  * Machine-inserted marker blocks that must never leak into a generated Session title: the
  * blocks that **prefix a user message** (a skill invocation, a handoff / scheduled-task /
- * model-switch origin note). Engine-synthesized blocks are never title material, so they are
+ * model-switch / App Center origin note). Engine-synthesized blocks are never title material, so they are
  * deliberately not in this list.
  */
 export const TITLE_NOISE_TAGS: readonly string[] = [
@@ -52,4 +54,5 @@ export const TITLE_NOISE_TAGS: readonly string[] = [
   MARKER_TAGS.scheduledTask,
   MARKER_TAGS.modelSwitchFrom,
   MARKER_TAGS.backgroundTaskDone,
+  MARKER_TAGS.appCenter,
 ];

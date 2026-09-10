@@ -445,7 +445,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       { title: "办公效率", skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"] },
       {
         title: "软件开发",
-        skills: ["web-design", "software-engineering", "remote-claude-code"],
+        skills: ["web-design", "software-engineering", "app-center", "remote-claude-code"],
       },
       {
         title: "AI 应用开发",

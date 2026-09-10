@@ -215,6 +215,31 @@ penguin schedule rm daily-report
 | `--enable` / `--disable` (`update`) | Flip the enabled flag; `update` is read-modify-write against the stored item, so unspecified fields keep their values, and switching target kinds clears the other kind's fields |
 | `--project-id` / `--agent-id` / `--json` / `--server` | As everywhere; `rm` deletes without prompting (the server's owner authorization still applies) |
 
+## penguin app
+
+`penguin app ls` lists the project's registered apps — the [App Center](/web-app#app-center-apps) registry, one TOML file per app under `<project>/apps/` — with id, name, kind, probed status (`running` / `stopped` / `unknown`), URL, the owning session's short id and the registration time; unparsable registry files are listed too, marked `invalid`. `penguin app status <id>` probes one app now and prints `<id>: <status> (<url>)`. `--json` / `--server` as everywhere.
+
+`register` is what the `app-center` skill runs once an app it built is up: the app binds to the session that built it — `--session-id` defaults to `PENGUIN_SESSION_ID`, the calling session inside a harness agent — and the server fills the agent and Workspace from that session unless `--workspace` says otherwise. As with schedules, the file is the truth and the CLI a validated writer: API errors surface verbatim. Registering an explicit `--id` that already exists updates it in place, so a session whose port or commands changed re-runs the same command; `unregister` deletes without prompting.
+
+```bash
+penguin app register --name "Todo App" --id todo --url http://localhost:3000 \
+  --start-command "npm start" --stop-command "fuser -k 3000/tcp" --kind web
+penguin app ls
+penguin app status todo
+penguin app unregister todo
+```
+
+| Option | Description |
+| --- | --- |
+| `--name <s>` | Display name (required); the id is derived from it unless `--id` is given |
+| `--id <slug>` | Explicit id — letters, digits, `_` and `-`; an existing id is updated in place |
+| `--url <url>` / `--health-url <url>` | The local URL the app serves at (the App Center's "open" link and its probe target); `--health-url` probes another address instead |
+| `--start-command <s>` / `--stop-command <s>` | Sent back to the owning session with a restart / stop request; the stop command should target only this app (a pid file, or `fuser -k <port>/tcp` — never a broad `pkill`) |
+| `--kind web\|api\|cli\|other` | What the app is (default `web`); drives the row's glyph only |
+| `--session-id <id>` / `--workspace <path>` | The owning session (default `PENGUIN_SESSION_ID`) and, when the app lives elsewhere, its Workspace (default: the session's) |
+| `--description <s>` | One line under the name |
+| `--project-id` / `--json` / `--server` | As everywhere |
+
 ## Approval modes (--approve)
 
 | Mode | Behavior |

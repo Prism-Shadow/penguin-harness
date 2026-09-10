@@ -9,7 +9,7 @@
  *   `/model` fork must refuse to go at all).
  *
  * The origin **marker blocks** these flows produce and render — `[handoff_from]`,
- * `[scheduled_task]`, `[model_switch_from]` — are defined in core's marker module
+ * `[scheduled_task]`, `[model_switch_from]`, `[app_center]` — are defined in core's marker module
  * (`@prismshadow/penguin-core/markers`) alongside every other message marker, and are
  * re-exported below under this feature's existing names.
  */
@@ -17,12 +17,14 @@ import { buildHandoffMessage, buildModelSwitchMessage } from "@prismshadow/pengu
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 
 export {
+  parseAppCenterMessage,
   parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "@prismshadow/penguin-core/markers";
 export type {
+  AppCenterOrigin,
   BackgroundTaskDone,
   HandoffOrigin,
   ModelSwitchOrigin,

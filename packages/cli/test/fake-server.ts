@@ -2,7 +2,7 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (session
  * create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents, projects,
- * usage, schedules). Connection resolution is pinned via PENGUIN_API_URL (a loopback
+ * usage, schedules, apps). Connection resolution is pinned via PENGUIN_API_URL (a loopback
  * URL, so no token gate) and PENGUIN_HOME points at a scratch directory so nothing of
  * the developer's real data root is read.
  *
@@ -92,6 +92,10 @@ export class FakeServer {
   schedules: Json = { schedules: [], invalidFiles: [] };
   /** Named schedule store behind add/update/rm: name -> the stored item (single-agent tests). */
   readonly scheduleItems = new Map<string, Json>();
+  /** App Center registry behind `penguin app`: id -> the stored item (status probed as "running"). */
+  readonly appItems = new Map<string, Json>();
+  /** Unparsable registry files GET /apps reports alongside the items. */
+  appInvalidFiles: Json[] = [];
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
@@ -195,6 +199,25 @@ export class FakeServer {
       pendingFollowUpCount: 0,
       hasTrace: s.tasks.length > 0,
       archived: s.archived,
+    };
+  }
+
+  /** An AppItem in the server's shape from a registration body (defaults mirror the server's: kind web, agent/workspace from the Session). */
+  private appItem(id: string, body: Json, previous?: Json): Json {
+    const now = "2026-09-02T10:00:00.000Z";
+    const item: Json = { ...body };
+    delete item.id;
+    return {
+      id,
+      ...item,
+      agentId: body.agentId ?? "default_agent",
+      workspace: body.workspace ?? "/ws",
+      kind: body.kind ?? "web",
+      sessionExists: true,
+      registeredAt: previous?.registeredAt ?? now,
+      updatedAt: now,
+      status: "running",
+      checkedAt: now,
     };
   }
 
@@ -340,6 +363,38 @@ export class FakeServer {
       }
       if (method === "DELETE") {
         this.scheduleItems.delete(name);
+        return new Response(null, { status: 204 });
+      }
+    }
+
+    m = /^\/api\/projects\/([^/]+)\/apps$/.exec(apiPath);
+    if (m) {
+      if (method === "POST") {
+        const id =
+          typeof body?.id === "string" ? body.id : String(body?.name ?? "app").toLowerCase();
+        if (this.appItems.has(id)) {
+          return this.error(409, "app_exists", `App already exists: ${id}`);
+        }
+        const item = this.appItem(id, body ?? {});
+        this.appItems.set(id, item);
+        return this.json(item, 201);
+      }
+      return this.json({ apps: [...this.appItems.values()], invalidFiles: this.appInvalidFiles });
+    }
+
+    m = /^\/api\/projects\/([^/]+)\/apps\/([^/]+)$/.exec(apiPath);
+    if (m) {
+      const id = decodeURIComponent(m[2]!);
+      const stored = this.appItems.get(id);
+      if (!stored) return this.error(404, "app_not_found", `App does not exist: ${id}`);
+      if (method === "GET") return this.json(stored);
+      if (method === "PUT") {
+        const next = this.appItem(id, body ?? {}, stored);
+        this.appItems.set(id, next);
+        return this.json(next);
+      }
+      if (method === "DELETE") {
+        this.appItems.delete(id);
         return new Response(null, { status: 204 });
       }
     }

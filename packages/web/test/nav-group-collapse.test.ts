@@ -40,6 +40,7 @@ describe("NAV_GROUP_KEYS", () => {
     // switcher (features/dock), and /traces stays reachable through its deep links only.
     expect([...NAV_GROUP_KEYS]).toEqual([
       "agents",
+      "apps",
       "plugins",
       "models",
       "machines",
@@ -72,10 +73,24 @@ describe("navKeysFor", () => {
   it("hides the admin-only entries from a member, and nothing else", () => {
     // /api/machines is admin-gated server-side (it spawns ssh with the server account's
     // keys), so offering a member the row would only ever produce a 403.
-    expect([...navKeysFor(false)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
+    expect([...navKeysFor(false)]).toEqual([
+      "agents",
+      "apps",
+      "plugins",
+      "models",
+      "usage",
+      "benchmark",
+    ]);
     // An admin sees the manifest minus what is built but not yet offered — `machines` today,
     // which is why neither answer contains it and the two are equal for now.
-    expect([...navKeysFor(true)]).toEqual(["agents", "plugins", "models", "usage", "benchmark"]);
+    expect([...navKeysFor(true)]).toEqual([
+      "agents",
+      "apps",
+      "plugins",
+      "models",
+      "usage",
+      "benchmark",
+    ]);
     expect(NAV_GROUP_KEYS as readonly string[]).toContain("machines");
   });
 });

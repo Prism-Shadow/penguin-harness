@@ -24,6 +24,7 @@
  */
 export const NAV_GROUP_KEYS = [
   "agents",
+  "apps",
   "plugins",
   "models",
   "machines",

@@ -54,8 +54,8 @@ export function buildInputHistory(items: readonly ChatItem[]): string[] {
       // recalling one into the composer would resend a machine message as user input.
       if (item.sender === "harness") continue;
       const parsed = parseUserMessageBody(item.text);
-      // Background completion notices are harness-written, never typed here either.
-      if (!parsed || parsed.scheduled || parsed.backgroundDone) continue;
+      // Background completion notices and App Center requests are machine-written, never typed here either.
+      if (!parsed || parsed.scheduled || parsed.appCenter || parsed.backgroundDone) continue;
       push(parsed.body);
     } else if (item.kind === "user_steering") {
       push(splitAttachments(item.text).text.trim());

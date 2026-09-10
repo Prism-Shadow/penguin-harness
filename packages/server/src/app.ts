@@ -79,6 +79,7 @@ import {
 } from "./runtime/session-manager.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { Scheduler } from "./runtime/scheduler.js";
+import { AppStatusProbe } from "./runtime/app-probe.js";
 import { MessagingBridge } from "./runtime/messaging/bridge.js";
 import { FeishuConnector } from "./runtime/messaging/feishu-connector.js";
 import { createLarkSdk } from "./runtime/messaging/feishu-sdk.js";
@@ -148,6 +149,7 @@ import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
+import { appRoutes } from "./http/routes/apps.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
 import {
@@ -212,6 +214,8 @@ export interface AppDeps {
   /** WeChat scan-to-connect: the in-flight codes and the poll handles that never leave the server. */
   wechatScan: WeChatScanService;
   scheduler: Scheduler;
+  /** App Center status probes (cached per URL; the apps routes read through it). */
+  appProbe: AppStatusProbe;
   channels: ChannelHub;
   manager: SessionManager;
   /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
@@ -274,6 +278,8 @@ export interface BuildDepsOverrides {
   wechatScanTransport?: WeChatScanTransport;
   /** Test double: machines service whose ssh effects are faked (the real one reads ~/.ssh/config and spawns ssh). */
   machines?: MachinesService;
+  /** Test double: the App Center status probe's network (avoids real requests against app URLs). */
+  appProbeFetch?: typeof globalThis.fetch;
   /**
    * Test double: scrypt work factor for password hashes written through this app.
    * Omitted in production, where the KDF runs at full strength.
@@ -1097,6 +1103,10 @@ export function buildAppDeps(
     },
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
+  const appProbe = new AppStatusProbe({
+    ...(overrides.appProbeFetch ? { fetch: overrides.appProbeFetch } : {}),
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+  });
 
   return {
     config,
@@ -1129,6 +1139,7 @@ export function buildAppDeps(
     wechatScan,
     messaging,
     scheduler,
+    appProbe,
     channels,
     manager,
     sessionSources,
@@ -1263,6 +1274,7 @@ export function createApp(
   app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
+  app.route("/api/projects/:projectId/apps", appRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
