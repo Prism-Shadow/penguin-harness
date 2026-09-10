@@ -1645,7 +1645,6 @@ export const en: Strings = {
     authors: "Authors",
     license: "License",
     copySpecifier: "Copy specifier",
-    copied: "Copied",
     installHint:
       "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },

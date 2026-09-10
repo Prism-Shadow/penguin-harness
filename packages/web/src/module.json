@@ -39,7 +39,7 @@
         }
       },
       {
-        "id": "web.pages.plugins",
+        "id": "web.plugins",
         "key": "plugins",
         "path": "/plugins",
         "nav": "main",
