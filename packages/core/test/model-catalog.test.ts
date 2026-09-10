@@ -668,18 +668,27 @@ describe("model-catalog", () => {
     }
     // No other Gemini row carries a launch discount: Google's pricing page marks one on the
     // 3.6 / 3.7 / 3.8 Flash generations and on nothing else in this catalog, so these rows
-    // bill exactly the list price they store.
-    for (const [provider, modelId] of [
-      ["google", "gemini-3.5-flash"],
-      ["google", "gemini-3.5-flash-lite"],
-      ["google", "gemini-3.1-flash-lite"],
-      ["google", "gemini-3.1-pro-preview"],
-      ["google", "gemini-3-flash-preview"],
-      ["openrouter", "google/gemini-3.5-flash"],
-      ["openrouter", "google/gemini-3.5-flash-lite"],
+    // bill exactly the list price they store. The numbers are pinned because none of them is
+    // the Flash list price above and each is a genuine other tier, not a hidden promotion —
+    // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite
+    // $0.30 / $2.50 / $0.03, 3.1 Flash-Lite $0.25 / $1.50 / $0.025, 3.1 Pro Preview ≤200K
+    // $2 / $12 / $0.20, the legacy 3 Flash Preview $0.50 / $3 / $0.05, and OpenRouter's default
+    // endpoints billing the 3.5 pair at exactly that list with `discount: 0`.
+    for (const [provider, modelId, list] of [
+      ["google", "gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["google", "gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
+      ["google", "gemini-3.1-flash-lite", [0.025, 0.25, 1.5]],
+      ["google", "gemini-3.1-pro-preview", [0.2, 2, 12]],
+      ["google", "gemini-3-flash-preview", [0.05, 0.5, 3]],
+      ["openrouter", "google/gemini-3.5-flash", [0.15, 1.5, 9]],
+      ["openrouter", "google/gemini-3.5-flash-lite", [0.03, 0.3, 2.5]],
     ] as const) {
       const row = catalogEntryFor(provider, modelId)!;
       expect(row.discount, modelId).toBeUndefined();
+      expect(
+        [row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output],
+        modelId,
+      ).toEqual(list);
       expect(effectivePricing(row), modelId).toEqual(row.pricing);
     }
     // GLM-5.3 is listed both directly and on OpenRouter; the gateway runs no discount, so

@@ -8,8 +8,9 @@
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
  * the direct qwen3.8-flash: 2026-08-26; the vLLM group: 2026-09-03; the GPT-6 Astra rows
- * (direct + OpenRouter): 2026-09-09; the Gemini 3.x Flash launch discounts (direct +
- * OpenRouter): 2026-09-09 — per each provider's docs).
+ * (direct + OpenRouter): 2026-09-09; the whole Gemini 3.x line-up, direct + OpenRouter — the
+ * 3.6 / 3.7 / 3.8 Flash launch discounts declared, every other row re-read and unchanged:
+ * 2026-09-09 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -692,6 +693,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The 3.5 tier's own list price — $1.50 input / $9.00 output / $0.15 cache hit on Google's
+    // page, with no launch discount — and OpenRouter's default endpoint bills exactly that
+    // (`discount: 0`, read 2026-09-09). The $9 output is the tier, not a promotion to declare.
     modelId: "google/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "openrouter",
@@ -703,7 +707,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Same published-cache-price convention as gemini-3.6-flash above (2026-07-22: $0.03/mtok
-    // cache hit, $0.30 input, $2.50 output).
+    // cache hit, $0.30 input, $2.50 output; re-read 2026-09-09, unchanged and `discount: 0`).
     modelId: "google/gemini-3.5-flash-lite",
     displayName: "Gemini 3.5 Flash-Lite",
     provider: "openrouter",
@@ -1506,6 +1510,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
+    // Google's 3.5 tier list price ($1.50 / $9.00 / $0.15 cache hit), which carries no launch
+    // discount — re-read 2026-09-09. The $9 output is what the tier costs, not a promotion.
     modelId: "gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "google",
