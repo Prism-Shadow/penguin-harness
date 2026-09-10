@@ -52,7 +52,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
+import { CloseIcon, GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -64,7 +64,6 @@ import {
   fileToBase64,
 } from "./snapshot-file";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { CloseIcon } from "../../components/ui/icons";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";

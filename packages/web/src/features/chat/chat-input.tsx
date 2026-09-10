@@ -768,6 +768,7 @@ export function ChatInput({
   onSteer,
   steeringDeliveredCount,
   pendingSteering = [],
+  returnedSteering = [],
   onRecallSteering,
   onQueueFollowUp,
   queuedFollowUps = 0,
@@ -842,6 +843,13 @@ export function ChatInput({
    * reloads (#136). The local post-202 flag only bridges until the first event arrives.
    */
   pendingSteering?: PendingSteeringInfo[];
+  /**
+   * Steering a finished run never delivered — an interrupt while a tool was running is the
+   * ordinary way to produce one. This component takes each back into the draft as soon as it
+   * sees it, through the same recall channel a queued line's button uses, so the typed message
+   * lands in the input box instead of disappearing with the run.
+   */
+  returnedSteering?: PendingSteeringInfo[];
   /**
    * Recall an undelivered steering message (#287): resolves to its original content, which
    * this component restores into the draft (text / images / files), or null when the recall
@@ -1314,6 +1322,29 @@ export function ChatInput({
       setRecallingId(null);
     }
   };
+
+  /**
+   * Steering a finished run never delivered returns to the draft on its own. Interrupting
+   * while a tool is still running is the ordinary way to produce one: core drops its queue as
+   * the run exits, so without this the message — and the text the user had already typed into
+   * it — would simply disappear.
+   *
+   * It goes through the same recall channel the queued lines' button uses, so the merge into
+   * the draft, the attachment restore and the one-at-a-time guard are all the existing ones.
+   * Ids are marked BEFORE the request, not after: a recall that loses the race to another tab
+   * answers 409, and a retry on the next render would spin.
+   */
+  const autoRecalledIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!onRecallSteering || busy || recallingId !== null) return;
+    // Oldest first, matching the order the user typed them.
+    const next = returnedSteering.find((p) => !autoRecalledIds.current.has(p.id));
+    if (!next) return;
+    autoRecalledIds.current.add(next.id);
+    void recallQueued(next.id, onRecallSteering);
+    // recallQueued is re-created every render; depending on it would re-run this on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedSteering, onRecallSteering, busy, recallingId]);
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(

@@ -37,6 +37,22 @@ export class SubagentSessionManager {
   private stateListener: (() => void) | null = null;
   /** Host fallback approval sink, applied to every tracked session (see EnvironmentInterface.setSubagentApprovalFallback). */
   private approvalFallback: ApproveFn | null = null;
+  /** Single registry-membership listener (see onChange); null until the Environment subscribes. */
+  private changeListener: (() => void) | null = null;
+
+  constructor() {
+    this.registry.onChange(() => this.changeListener?.());
+  }
+
+  /**
+   * Attaches the single listener for registry membership changes — a session promoted to
+   * the background (register) or released from it (eviction, idle reap, dispose). Round
+   * start/settle rides the separate run-state listener (setStateListener). Payload-free;
+   * subscribers re-read `listLive()`. A later call replaces the earlier one.
+   */
+  onChange(listener: () => void): void {
+    this.changeListener = listener;
+  }
 
   /** Whether the manager has been disposed (the host Session has ended). */
   get isDisposed(): boolean {
