@@ -30,7 +30,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { FILE_ICON } from "./message-files-card";
+import { FILE_ICON } from "../../components/ui/icons";
 
 /** Indent per nesting level, in px. */
 const INDENT_PX = 14;

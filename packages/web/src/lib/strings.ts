@@ -471,6 +471,8 @@ export const zh = {
      * next compaction; a new conversation starts with it.
      */
     savedTakesEffect: "已保存。新对话立即生效；进行中的对话在下一次压缩后生效。",
+    /** Save feedback when the change touched compaction settings only: the engine re-reads them at every compaction checkpoint, so a running conversation does not have to reach one first. */
+    savedTakesEffectNow: "已保存，立即生效（包括进行中的对话）。",
     /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
     takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
@@ -1740,12 +1742,36 @@ Benchmark：
     contextPartToolRequests: "工具请求",
     contextPartToolResults: "工具结果",
     contextTopTools: "工具用量 Top 5",
-    /** Tooltip of the dashed mark on the context bar; n = the humanized threshold. */
-    contextCompactAt: (n: string): string => `压缩阈值 ${n}`,
+    /** Under the bar: the model window the bar is scaled to. */
+    contextWindowIs: (n: string): string => `最大上下文 ${n}`,
     contextTopToolsHint: "按每个工具的调用与结果所占上下文排序（工具定义计入「工具定义」一项）",
+    contextTopFiles: "文件用量 Top 5",
+    contextTopFilesHint:
+      "按每个文件经 read_file / edit_file / write_file 的调用与结果所占上下文排序（悬停显示完整路径）",
+    /** The ranking switch: the group's accessible name, its two buttons, and the Files view's empty state. */
+    contextRankLabel: "切换排行",
+    contextRankTools: "工具",
+    contextRankFiles: "文件",
+    contextNoFileTraffic: "本轮上下文没有文件读写",
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",
     contextBreakdownFailed: "读取上下文构成失败",
+    /** The dashed cutter on the panel's bar: its accessible name, and its tooltip naming the threshold it stands on. */
+    contextThresholdCutter: "压缩阈值",
+    contextThresholdHover: (n: string): string => `压缩阈值 ${n}（拖动可调整）`,
+    /** Confirmation for a dragged (or arrowed) threshold: dialog name, body (agent name + the threshold being replaced), the editable field and its rejection, the note when the model window will cut the typed value down, and the toast on success. */
+    contextThresholdTitle: "修改压缩阈值",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `把 ${agentName} 的压缩阈值从 ${old} 改为下面的值？立即生效，包括正在进行的对话。`,
+    contextThresholdField: "压缩阈值（token）",
+    contextThresholdInvalid: "必须是大于 0 的整数",
+    contextThresholdCapped: (n: string): string => `超出模型窗口，实际生效的阈值是 ${n}`,
+    contextThresholdSaved: (n: string): string => `压缩阈值已改为 ${n}，立即生效`,
+    /** Composer notice: the model's window is below the Agent's configured compaction threshold; n = window, m = threshold. */
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
+    contextWindowUnderThresholdAction: "打开 Agent 设置",
+    contextWindowUnderThresholdDismiss: "忽略",
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -1802,8 +1828,13 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    /** The bare mode word — the Trace view's round badge, the failed row's title, and the stem of the two state titles below — so a `discard` is never announced as compaction: it clears the context rather than compacting it. */
     compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
+    /** The row's title doubles as its status, the work-group header's idiom (`workRunning` / `workDone`): 压缩中 / 清空中 while the step runs, 压缩完毕 / 清空完毕 once it settles. With mode and state both in the title nothing is left for a detail line on either side — a `summarize` shows its summary in its own expandable body — so only `compactionFailed` keeps the detail slot, carrying the one thing a title cannot. */
+    compactionRunning: (mode: string): string => (mode === "discard" ? "清空中" : "压缩中"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
+    /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
+    compactionResult: "压缩结果",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -2370,7 +2401,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
