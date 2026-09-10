@@ -59,7 +59,6 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
-      "sandbox",
       "users",
     ]);
   });
@@ -83,7 +82,6 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
-      "sandbox",
     ]);
   });
 
@@ -98,7 +96,6 @@ describe("visibleSettingsSections", () => {
       "proxy",
       "uploads",
       "company",
-      "sandbox",
     ]);
   });
 });
