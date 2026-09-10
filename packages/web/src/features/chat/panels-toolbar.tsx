@@ -14,14 +14,11 @@ import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
-import { confirmClose } from "../dock/close-guard";
 import {
-  dockTabs,
   dockVersion,
   isDockVisible,
   panelDock,
   subscribeDock,
-  tabKey,
   toggleDock,
   type DockPosition,
 } from "../dock/dock-state";
@@ -53,18 +50,6 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
     { position: "right", label: S.dock.rightDock, icon: PANEL_RIGHT_ICON },
   ];
 
-  // Hiding a dock unmounts its panel bodies once it has collapsed, so a tab holding unsaved
-  // work (the Files panel's editor) gets to ask first; opening never needs to.
-  const toggle = (position: DockPosition): void => {
-    if (!isDockVisible(position)) {
-      toggleDock(position);
-      return;
-    }
-    void confirmClose(dockTabs(position).map(tabKey)).then((ok) => {
-      if (ok) toggleDock(position);
-    });
-  };
-
   return (
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
       {toggles.map(({ position, label, icon }) => (
@@ -72,7 +57,9 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
           key={position}
           type="button"
           aria-expanded={isDockVisible(position)}
-          onClick={() => toggle(position)}
+          // Hiding a dock keeps every body mounted (dock-panel.tsx renders it at zero
+          // size), so a tab holding unsaved work has nothing to lose and nothing to ask.
+          onClick={() => toggleDock(position)}
           title={label}
           aria-label={label}
           data-testid={`dock-toggle-${position}`}

@@ -35,6 +35,13 @@ export function isNarrowLayout(panelWidth: number): boolean {
 /** Narrowest the tree pane may be dragged: below this a nested name is all ellipsis. */
 export const TREE_MIN_WIDTH = 160;
 
+/**
+ * The divider between the tree and the preview, in px — `w-1.5` in the panel. It rides with
+ * the tree pane in the sliding container that shows and hides them together, which is why
+ * that container's width has to know it.
+ */
+export const TREE_DIVIDER_PX = 6;
+
 /** Room the preview keeps whatever the tree is dragged to. */
 export const PREVIEW_MIN_WIDTH = 240;
 

@@ -1,10 +1,13 @@
 /**
  * Veto hooks for closing dock tabs. A panel whose body holds unsaved work (the Files
- * panel's text editor) registers a guard under its tab key; every path that would unmount
- * that body — the tab's own ×, the dock's hide ×, the toolbar's dock toggle — asks the
- * guards first and proceeds only when each one resolves true. A guard typically opens the
- * panel's own confirm dialog and resolves with the user's answer. A tab with no guard
+ * panel's text editor) registers a guard under its tab key; the tab's own × asks the
+ * guards first and removes it only when each one resolves true. A guard typically opens
+ * the panel's own confirm dialog and resolves with the user's answer. A tab with no guard
  * closes at once.
+ *
+ * That × is the only path here, because it is the only one that unmounts a body: hiding a
+ * dock (its × or the toolbar's toggle) leaves every body mounted at zero size, so it takes
+ * nothing away and asks nothing.
  */
 export type CloseGuard = () => Promise<boolean>;
 

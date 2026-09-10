@@ -8,14 +8,17 @@
  * session/stream state); terminal tabs' bodies are the pooled xterm views
  * (terminal-view-pool.tsx), adopted by DOM handoff so tab churn never reconnects a shell.
  * Every tab's body stays mounted while its tab is in the strip — switching tabs hides and
- * shows, so a panel keeps its scroll and drill-down state — except terminal views, which
- * the pool keeps only for shown terminals (an off-screen shell reattaches on return).
+ * shows, and so does hiding the whole dock (which renders at zero size rather than
+ * unmounting), so a panel keeps its scroll, its drill-down and its unsaved text — except
+ * terminal views, which the pool keeps only for shown terminals (an off-screen shell
+ * reattaches on return).
  *
  * The header carries the strip, a "+" menu (panels, a fresh shell, and any live shell no
  * conversation holds), a detach button while a terminal is shown, a move-to-other-edge
- * button, and the dock's × (hide — tabs stay; each tab's own always-visible × is what
- * removes). Tabs drag sideways to reorder; dragging a tab out of the strip brings up the
- * edge overlay (dock-drag.tsx) and dropping on the other edge moves that tab there.
+ * button, and the dock's × (hide — tabs and everything their bodies hold stay; each tab's
+ * own always-visible × is what removes). Tabs drag sideways to reorder; dragging a tab out
+ * of the strip brings up the edge overlay (dock-drag.tsx) and dropping on the other edge
+ * moves that tab there.
  * Dragging the header itself moves the whole dock the same way. The boundary with the
  * chat content resizes the dock — the right dock through the shared side-panel width,
  * the bottom dock through its height ratio.
@@ -186,7 +189,10 @@ function DockTabButton(props: {
 /**
  * A terminal tab's body: adopts the shown terminal's pooled container. Only while shown —
  * the pool keeps views for shown terminals alone, so adopting an inactive tab's container
- * would hold an empty node.
+ * would hold an empty node. A hidden dock is not shown either: the pool disposes the view
+ * with the dock and builds a FRESH container on the way back, which the effect re-adopts
+ * because `active` fell to false meanwhile (the shell keeps running server-side and its
+ * screen is restored on reattach; xterm refits once the container has real size again).
  */
 function TerminalBody({ id, active }: { id: string; active: boolean }) {
   const chrome = useTerminalChrome();
@@ -326,7 +332,8 @@ export function DockPanel({
 
   // A terminal tab's × ends the shell itself (server-side) — an easy mis-click next to
   // the tab, so it confirms first. A panel tab closes directly unless its body registered
-  // a close guard (the Files panel's editor holding unsaved text), which asks first.
+  // a close guard (the Files panel's editor holding unsaved text), which asks first: the
+  // tab's × is the one gesture here that really unmounts a body.
   const [confirmKill, setConfirmKill] = useState<{ id: string; label: string } | null>(null);
   const closeTab = useCallback((tab: DockTab, label: string) => {
     if (tab.kind === "terminal") {
@@ -338,13 +345,9 @@ export function DockPanel({
       if (ok) removeTab(key);
     });
   }, []);
-  // Hiding unmounts every body in the dock once it has collapsed: the guarded tabs get
-  // their say first.
-  const hide = useCallback(() => {
-    void confirmClose(tabs.map(tabKey)).then((ok) => {
-      if (ok) hideView(view);
-    });
-  }, [tabs, view]);
+  // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
+  // so there is nothing to ask about, however much unsaved work a tab is holding.
+  const hide = useCallback(() => hideView(view), [view]);
   const killConfirmed = useCallback(() => {
     if (!confirmKill) return;
     void killTerminal(confirmKill.id);
@@ -639,6 +642,28 @@ export function DockPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A flip the store marks instant (a scope switch, a cross-dock move) must apply without
+  // sliding. Leaving the tree is no longer what makes that instant — the node outlives a
+  // collapse now — so the transition class is left off for the commit that carries the flip
+  // and restored two frames later, once the new size has been painted.
+  const [snap, setSnap] = useState(false);
+  const lastOpen = useRef(open);
+  if (lastOpen.current !== open) {
+    lastOpen.current = open;
+    if (!animateEntrance) setSnap(true);
+  }
+  useEffect(() => {
+    if (!snap) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setSnap(false));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [snap]);
+
   const overlayActive = headerDrag.active || tabDrag.active;
   const overlayCandidate = headerDrag.active ? headerDrag.candidate : tabDrag.candidate;
 
@@ -763,10 +788,13 @@ export function DockPanel({
           const active = key === activeKey;
           return (
             <div key={key} className={active ? "flex h-full min-h-0 flex-col" : "hidden"}>
+              {/* A hidden dock's shown tab is no more on screen than a covered one: the
+                  bodies gate their polling and their reload-on-return on this, and a
+                  collapsed dock should cost nothing while it is away. */}
               {tab.kind === "panel" ? (
-                renderPanel(tab.panel, active)
+                renderPanel(tab.panel, active && open)
               ) : (
-                <TerminalBody id={tab.terminalId} active={active} />
+                <TerminalBody id={tab.terminalId} active={active && open} />
               )}
             </div>
           );
@@ -796,6 +824,9 @@ export function DockPanel({
         ref={rootRef}
         data-testid="dock"
         data-position="bottom"
+        // A closed dock stays in the tree at zero size, so what is on screen is data-open,
+        // not the node's presence (dock-drag.tsx and the e2e specs select on it).
+        data-open={open}
         // Collapsed to 0 while closing/entering; the border belongs to the open state
         // only — with border-box sizing a collapsed dock would still paint its 1px,
         // leaving a hairline where nothing is.
@@ -803,7 +834,7 @@ export function DockPanel({
         inert={!open}
         className={`relative flex w-full shrink-0 flex-col overflow-hidden bg-white dark:bg-gray-950 ${
           open ? "border-t border-gray-200 dark:border-gray-800" : ""
-        } ${resizing ? "" : "transition-[height] duration-200"}`}
+        } ${resizing || snap ? "" : "transition-[height] duration-200"}`}
       >
         {/* The handle straddles the boundary as an overlay, costing no height. Only while
             open — a collapsing dock must not keep a grabbable edge behind. */}
@@ -857,12 +888,14 @@ export function DockPanel({
         ref={rootRef}
         data-testid="dock"
         data-position="right"
+        // What is on screen is data-open, not the node's presence (see the bottom branch).
+        data-open={open}
         // The border belongs to the open state only (see the bottom branch's note).
         style={{ width: open && entered ? sideWidth : 0 }}
         inert={!open}
         className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-white dark:bg-gray-950 ${
           open ? "border-l border-gray-200 dark:border-gray-800" : ""
-        } ${resizing ? "" : "transition-[width] duration-200"}`}
+        } ${resizing || snap ? "" : "transition-[width] duration-200"}`}
       >
         {/* Fixed-width content inside the clipping window: while the outer element
             animates through intermediate widths, the content must not reflow frame by

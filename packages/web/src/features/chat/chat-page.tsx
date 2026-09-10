@@ -117,6 +117,7 @@ import { panelLabel } from "../dock/panel-meta";
 import { setDockCwd } from "../dock/dock-terminal";
 import {
   adoptDockScope,
+  closedDockView,
   dockViews,
   dockVersion,
   isTabShown,
@@ -1538,11 +1539,19 @@ export function ChatPage() {
   // view arrives as a bottom view). They render on the draft page too — the arrangement is
   // the user's workbench, and a terminal opened while drafting must be visible — with the
   // session-bound panels showing a placeholder until the first send creates the Session.
-  // useDockMount keeps a closing dock mounted through its collapse transition and skips
-  // the animation for instant changes (scope switches, cross-dock moves).
+  // useDockMount keeps a closing dock mounted through its collapse transition and then
+  // holds it at zero size on closedDockView, so hiding a dock costs none of what its panels
+  // hold; it skips the animation for instant changes (scope switches, cross-dock moves).
+  // Narrow: the merged view is a bottom view, and the closed one goes to the same mount.
   const views = dockViews();
-  const rightMount = useDockMount(views.find((view) => view.position === "right") ?? null);
-  const bottomMount = useDockMount(views.find((view) => view.position === "bottom") ?? null);
+  const rightMount = useDockMount(
+    views.find((view) => view.position === "right") ?? null,
+    closedDockView("right"),
+  );
+  const bottomMount = useDockMount(
+    views.find((view) => view.position === "bottom") ?? null,
+    closedDockView("bottom"),
+  );
   const terminalSupported = terminalApiSupported();
 
   /**

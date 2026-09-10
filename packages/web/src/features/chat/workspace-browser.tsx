@@ -51,6 +51,7 @@ import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
   CRUMB_ELLIPSIS,
   TEXT_PREVIEW_LIMIT,
+  TREE_DIVIDER_PX,
   TREE_MIN_WIDTH,
   WORKSPACE_UPLOAD_LIMIT_MB,
   ancestorDirs,
@@ -96,6 +97,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
+import { DOCK_TRANSITION_MS } from "../dock/use-dock-mount";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { CodeBlock } from "./code-block";
@@ -172,9 +174,11 @@ let previewSeq = 0;
 
 /**
  * Unsaved editor drafts by Session and path, kept for the app's lifetime and written through
- * on every keystroke. The dock unmounts a panel's body on paths no confirm dialog can
- * intercept — a tab dragged to the other edge, a Session switched from the sidebar — so the
- * draft outlives the component: opening the same file again reopens the editor on it.
+ * on every keystroke. Hiding the panel or its dock keeps this component mounted, draft and
+ * all; what the map is for are the paths no confirm dialog can intercept, where the body
+ * really is unmounted — a tab dragged to the other edge, a Session switched from the
+ * sidebar. The draft outlives the component: opening the same file again reopens the
+ * editor on it.
  */
 const unsavedDrafts = new Map<string, string>();
 const draftKey = (sessionId: string, path: string): string => `${sessionId}\n${path}`;
@@ -328,9 +332,10 @@ export function WorkspaceBrowser({
    *  down to that path and previews it. Triggers again whenever the object reference changes,
    *  even if path is the same as last time (clicking the same file again must still re-locate it). */
   openRequest?: { path: string } | null;
-  /** Whether the panel is visible: when collapsed in the docked state, the component stays
-   *  mounted (width 0), during which the tree can go stale as the Agent writes files; a refresh
-   *  is issued right at the moment it transitions from hidden to visible. */
+  /** Whether the panel is on screen — false for a covered tab and for a hidden dock, both of
+   *  which keep the component mounted (at width 0) with everything it holds. The tree can go
+   *  stale as the Agent writes files while it is away, so a refresh is issued right at the
+   *  moment it transitions from hidden to visible. */
   active?: boolean;
   /**
    * Bumped by the parent every time a Task settles on this session: the turn that just ended
@@ -396,6 +401,13 @@ export function WorkspaceBrowser({
   });
   // ----------------------------------------------------------------------------- chrome
   const [treeVisible, setTreeVisible] = useState(() => readTreeVisible());
+  /**
+   * True for the length of the show/hide transition and only then. The pane's width is also
+   * the panel's own size talking — dragging the divider, or the dock's edge, moves it too —
+   * and a transition left permanently on would make those drags lag a fifth of a second
+   * behind the pointer. The toggle arms it; the timer below disarms it.
+   */
+  const [treeSliding, setTreeSliding] = useState(false);
   /** The dragged tree width, or null while the user has never dragged it (the computed default stands). */
   const [treeWidthPref, setTreeWidthPref] = useState<number | null>(() => readTreeWidth());
   const [resizingTree, setResizingTree] = useState(false);
@@ -491,6 +503,16 @@ export function WorkspaceBrowser({
   const treeWidth = clampTreeWidth(treeWidthPref ?? defaultTreeWidth(width), width);
   const treeWidthRef = useRef(treeWidth);
   treeWidthRef.current = treeWidth;
+
+  // The show/hide transition's window: the toggle arms it, this disarms it once the slide
+  // has played (toggling again mid-slide restarts the timer). DOCK_TRANSITION_MS is the
+  // dock's own expand/collapse duration — the pane moves with the same motion — and the
+  // duration-200 class on the sliding container has to match it.
+  useEffect(() => {
+    if (!treeSliding) return;
+    const timer = window.setTimeout(() => setTreeSliding(false), DOCK_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [treeSliding, treeVisible]);
 
   // --------------------------------------------------------------------------- loading
 
@@ -819,8 +841,9 @@ export function WorkspaceBrowser({
   }, [openRequest, openFile]);
 
   // Unsaved changes: the browser's leave-page prompt (reload, tab close — the only text the
-  // browser shows is its own), and the dock's close guard for the tab's ×, the dock's hide
-  // × and the toolbar's dock toggle, which unmount this body once the dock has collapsed.
+  // browser shows is its own), and the dock's close guard for the tab's ×, the one gesture
+  // that unmounts this body. Hiding the panel's dock only puts the surface away, draft and
+  // all, so it asks nothing.
   const dirty = isDirty(editor);
   useEffect(() => {
     if (!dirty) return;
@@ -884,6 +907,7 @@ export function WorkspaceBrowser({
 
   const setTree = (visible: boolean): void => {
     setTreeVisible(visible);
+    setTreeSliding(true);
     writeTreeVisible(visible);
   };
 
@@ -1679,8 +1703,26 @@ export function WorkspaceBrowser({
       </div>
 
       <div className="relative flex min-h-0 flex-1">
-        {showTree && tree}
-        {!narrow && showTree && treeDivider}
+        {/* Narrow: one column, tree or preview. */}
+        {narrow && showTree && tree}
+        {/* Wide: the tree and its divider stay mounted and slide in and out of the panel's
+            left edge, on the same 200ms width transition the dock itself expands and
+            collapses with. Both keep their own width inside the clipping window, so the tree
+            does not reflow as it moves; the preview beside it takes the room it leaves.
+            inert while away — a pane at zero width is not somewhere to tab into. */}
+        {!narrow && (
+          <div
+            aria-hidden={!treeVisible}
+            inert={!treeVisible}
+            style={{ width: treeVisible ? treeWidth + TREE_DIVIDER_PX : 0 }}
+            className={`flex min-h-0 shrink-0 overflow-hidden ${
+              treeSliding ? "transition-[width] duration-200" : ""
+            }`}
+          >
+            {tree}
+            {treeDivider}
+          </div>
+        )}
         {showPreview && previewPane}
         {/* Drop feedback: a dashed frame over the panel and a label naming the directory the
             files will land in. Pure feedback — pointer-events-none keeps the hit test on the

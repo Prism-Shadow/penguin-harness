@@ -25,11 +25,12 @@ drag-and-drop upload from the desktop.
   path too long for the toolbar collapses its leading segments into a `…` so Refresh and
   Upload stay on the row; the root segment reads `.`, and there is no Details button — the
   Workspace's absolute path stays in the Session details card. A toolbar toggle hides or shows the tree — shown by default,
-  remembered under one browser-local key (`penguin.files.treeVisible`, parsed tolerantly) —
-  and the divider between the two panes sets its width by drag or arrow key, remembered under
-  `penguin.files.treeWidth`. Below 480px of panel width the panel falls back to one column:
-  the tree until a file is chosen, then the preview with a Back button; the divider has
-  nothing to divide there. A message file card's click still lands on its file, now by
+  remembered under one browser-local key (`penguin.files.treeVisible`, parsed tolerantly), and
+  sliding out of and back into the panel's left edge over 200ms, the motion the docks
+  themselves expand and collapse with — and the divider between the two panes sets its width
+  by drag or arrow key, remembered under `penguin.files.treeWidth`. Below 480px of panel
+  width the panel falls back to one column: the tree until a file is chosen, then the
+  preview with a Back button; the divider has nothing to divide there. A message file card's click still lands on its file, now by
   opening the tree down to it.
 - Preview: the same rendering as before (Markdown / HTML rendered with a source toggle, text
   highlighted, PDF embedded); images now zoom on click, and a file whose extension says
@@ -41,9 +42,11 @@ drag-and-drop upload from the desktop.
   **Save** (Ctrl+S / Cmd+S) confirms, then writes through the existing
   `PUT /api/sessions/:id/files/content` endpoint and refreshes the row's size and time. A
   truncated preview stays read-only, and a save over the 14MB write limit is refused before
-  it is sent. Unsaved changes ask before a file switch, before the panel's tab or dock closes
-  (a close-guard registry the dock consults on its tab ×, its hide × and the toolbar toggle),
-  and before the page unloads; a draft survives a Session switch and reopens with the file.
+  it is sent. Unsaved changes ask before a file switch, before the tab's × removes the
+  panel (the close-guard registry the dock consults there), and before the page unloads.
+  Collapsing or hiding a dock asks nothing, because it takes nothing away: the panel stays
+  mounted at zero size with its preview, its tree and its draft, and comes back untouched. A
+  draft survives a Session switch and reopens with the file.
 - Write precondition: `GET /api/sessions/:id/files/content` now returns the file's version in
   an `ETag` (`W/"<size>-<mtime>"`), and the write takes it back as `ifVersion` in the request
   body. The server compares it on the open write handle immediately before truncating and
