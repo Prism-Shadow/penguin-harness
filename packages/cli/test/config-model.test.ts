@@ -233,6 +233,77 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });
 
+  it("a new entry naming a catalog row inherits that row's pinned client_type and base_url; --client-type still wins", async () => {
+    // deepseek-flash is a direct-vendor preset that pins the deepseek-v4 client and the
+    // vendor endpoint, because AgentHub routes DeepSeek on a substring the bare id lacks.
+    // Removing it first is the case that matters: re-adding it by hand into a Project that
+    // no longer holds the row must not write an entry AgentHub would refuse to route.
+    await runModel([
+      "remove",
+      "--model-id",
+      "deepseek-flash",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    await runModel([
+      "add",
+      "--model-id",
+      "deepseek-flash",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    // The same id under a group that does not sell it has no catalog row, so the group rule
+    // still decides: a gateway gets openai-chat and its own endpoint, not DeepSeek's.
+    await runModel([
+      "add",
+      "--model-id",
+      "deepseek-flash",
+      "--provider",
+      "openrouter",
+      "--root",
+      tmpRoot,
+    ]);
+    // An explicit --client-type outranks the inherited pin, and so does --base-url.
+    await runModel([
+      "remove",
+      "--model-id",
+      "MiniMax-M3",
+      "--provider",
+      "minimax",
+      "--root",
+      tmpRoot,
+    ]);
+    await runModel([
+      "add",
+      "--model-id",
+      "MiniMax-M3",
+      "--provider",
+      "minimax",
+      "--client-type",
+      "openai-chat",
+      "--base-url",
+      "https://proxy.example/v1",
+      "--root",
+      tmpRoot,
+    ]);
+
+    const parsed = parseToml(
+      await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+    ) as { models: Array<Record<string, unknown>> };
+    const by = (p: string, id: string) =>
+      parsed.models.find((m) => m.provider === p && m.model_id === id)!;
+    expect(by("deepseek", "deepseek-flash").client_type).toBe("deepseek-v4");
+    expect(by("deepseek", "deepseek-flash").base_url).toBe("https://api.deepseek.com");
+    expect(by("openrouter", "deepseek-flash").client_type).toBe("openai-chat");
+    expect(by("openrouter", "deepseek-flash").base_url).toBe("https://openrouter.ai/api/v1");
+    expect(by("minimax", "MiniMax-M3").client_type).toBe("openai-chat");
+    expect(by("minimax", "MiniMax-M3").base_url).toBe("https://proxy.example/v1");
+  });
+
   it("--max-tokens round-trips to the entry's max_tokens; 0/negative/non-number are rejected before anything is written", async () => {
     const add = await runModel([
       "add",
