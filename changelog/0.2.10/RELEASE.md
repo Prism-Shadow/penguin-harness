@@ -106,6 +106,8 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 
 - **The docs gained a Security Model page** organized by user scenarios in order, ending on leak response: a leaked data-root backup is a credential-rotation incident for model keys, not a forged-session incident.
 
+- **Plugin versions read `v2026.09.10.1`.** The dated version in a plugin's manifest is spelled with a leading `v` and dots throughout; a copy installed under the old `2026-09-10.1` spelling is read as the same version, so nothing is reported as needing an update over the rename.
+
 - **Under the hood**: the CI runtime artifact now carries the Web App; the server verifies its web dist; skill-archive caps are enforced from the zip central directory; terminal tests kill shells between runs; the default system prompt searches from `CWD` down; and AgentHub moved to 0.4.11, enabling readable large screenshots on GPT-5.6, the vLLM adapter, and `gpt-6-astra` routing.
 
 ## Requirements

@@ -21,12 +21,12 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | 单行描述（英文必填） |
 | `short_description` / `short_description_zh` | 卡片短标签（可选；缺省显示完整描述） |
-| `version` | `YYYY-MM-DD.N`——日期加当日序号 |
+| `version` | `vYYYY.MM.DD.N`——日期加当日序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development` 之一；缺失或未知归入「其他」 |
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各[钩子点](/agent-loop#stop-hook)的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径相对 `hooks/`，超时以秒计 |
 
-插件名即目录名（`^[A-Za-z0-9_-]+$`）；围绕他人产品构建的插件带 `use-` 前缀（如 `use-firecrawl`），名字说明用途而不冒用产品名。版本先比日期、再比序号，因此 `2026-08-29.10` 排在 `2026-08-29.9` 之后；清单里的版本就是插件携带的一切内容的版本。没有别的版本方案。
+插件名即目录名（`^[A-Za-z0-9_-]+$`）；围绕他人产品构建的插件带 `use-` 前缀（如 `use-firecrawl`），名字说明用途而不冒用产品名。版本先比日期、再比序号，因此 `v2026.08.29.10` 排在 `v2026.08.29.9` 之后；清单里的版本就是插件携带的一切内容的版本，与该包的 npm 版本（跟随发行版本）是两回事。没有别的版本方案。
 
 每个插件都是独立的 npm 包——`@penguinharness/<name>`，仓库内位于 `plugins/<name>/`。loader 在 `@prismshadow/penguin-core` 里：从宿主包的依赖清单读出插件名，再逐包经 Node 解析（desktop 应用把同样的包声明为依赖，随安装包一并打包）。运行时库内容的事实源仍是插件文件本身，每次调用直接读取。
 
@@ -52,7 +52,7 @@ description: One-line English description injected into the system prompt.
 具体的步骤、边界与验收标准……
 ```
 
-**已安装**的副本是自描述的：库在读取时把插件的 `short_description`、`short_description_zh` 与 `version` 盖章进各 Skill 的 frontmatter 重新生成（如同已装钩子包的 `hooks.json` 由清单生成），写进 `agent_state/skills/` 的就是这份内容。更新检查读已装 frontmatter 的 `version`，UI 读它的短标签。解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是 `YYYY-MM-DD.N` 时读作空——比库里任何版本都旧，于是库内副本算作可更新。
+**已安装**的副本是自描述的：库在读取时把插件的 `short_description`、`short_description_zh` 与 `version` 盖章进各 Skill 的 frontmatter 重新生成（如同已装钩子包的 `hooks.json` 由清单生成），写进 `agent_state/skills/` 的就是这份内容。更新检查读已装 frontmatter 的 `version`，UI 读它的短标签。解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 既不是 `vYYYY.MM.DD.N`、也不是旧副本里的旧写法 `YYYY-MM-DD.N` 时读作空——比库里任何版本都旧，于是库内副本算作可更新。
 
 ## 渐进式加载
 
@@ -71,7 +71,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
   "name": "goal",
   "description": "Goal mode: …",
   "description_zh": "目标模式：…",
-  "version": "2026-09-01.1",
+  "version": "v2026.09.01.1",
   "stop": [{ "command": "stop.mjs", "timeout": 60 }],
   "pre_tool_use": [],
   "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]

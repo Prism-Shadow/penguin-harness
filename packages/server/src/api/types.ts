@@ -825,7 +825,7 @@ export interface VaultUpdateRequest {
 export interface PluginUpdateRef {
   /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version (`YYYY-MM-DD.N`), i.e. what installing again would bring, not what is on disk. */
+  /** The LIBRARY's version (`vYYYY.MM.DD.N`), i.e. what installing again would bring, not what is on disk. */
   version: string;
 }
 
@@ -3181,7 +3181,7 @@ export interface SkillMetadataItem {
    * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
-  /** Version (`YYYY-MM-DD.N`, frontmatter version); an empty string when the frontmatter carries none or a malformed one. */
+  /** Version (`vYYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
 
@@ -3191,7 +3191,7 @@ export interface HookItem {
   name: string;
   description: string;
   descriptionZh?: string;
-  /** Version (`YYYY-MM-DD.N`); an empty string when the manifest carries none. */
+  /** Version (`vYYYY.MM.DD.N`; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the manifest carries none. */
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
@@ -3206,7 +3206,7 @@ export interface PluginItem {
   descriptionZh?: string;
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY-MM-DD.N`. */
+  /** `vYYYY.MM.DD.N`. */
   version: string;
   /** The plugin's skills (metadata only). */
   skills: SkillMetadataItem[];

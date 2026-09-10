@@ -25,7 +25,7 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const skillMd = (name: string, description = `${name} does a thing`) =>
-  `---\nname: ${name}\ndescription: ${description}\nversion: 2026-08-23.3\n---\n\nBody of ${name}.\n`;
+  `---\nname: ${name}\ndescription: ${description}\nversion: v2026.08.23.3\n---\n\nBody of ${name}.\n`;
 
 describe("directory skills api", () => {
   let t: TestApp;
@@ -90,7 +90,7 @@ describe("directory skills api", () => {
     ]);
     // Metadata comes from the frontmatter, and content never crosses the wire.
     expect(res.skills[0]!.description).toBe("alpha does a thing");
-    expect(res.skills[0]!.version).toBe("2026-08-23.3");
+    expect(res.skills[0]!.version).toBe("v2026.08.23.3");
     expect(res.skills[0]).not.toHaveProperty("content");
   });
 

@@ -113,7 +113,7 @@ export function kernelUpdateTodo(
  * Library plugins some Agent in this Project has fallen behind on. The list rides along on the
  * Project's Agent list, so this costs no request of its own — the same trick `kernelOutdated`
  * plays for the kernel trail — and it is the SERVER's verdict: the web never compares versions
- * itself (they are `YYYY-MM-DD.N` strings, and only the library knows what it carries).
+ * itself (they are `vYYYY.MM.DD.N` strings, and only the library knows what it carries).
  *
  * Counted by distinct plugin, not per Agent: the trail ends on the plugin library page, which
  * lists the library once, so "3 plugins can be updated" is what the user will see there even if

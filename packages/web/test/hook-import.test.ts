@@ -18,7 +18,7 @@ import { en } from "../src/lib/strings-en";
 const CONTRACT = [
   "hooks.json",
   "agent_state/hooks/<name>/",
-  "YYYY-MM-DD.N",
+  "vYYYY.MM.DD.N",
   "stop",
   "pre_tool_use",
   "user_prompt",

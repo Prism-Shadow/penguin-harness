@@ -76,7 +76,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: "2026-07-01.1",
+      version: "v2026.07.01.1",
     },
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];
@@ -119,7 +119,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
         description: "Create agents from requirements",
         shortDescription: "Create agents",
         shortDescriptionZh: "创建 Agent",
-        version: "2026-07-01.1",
+        version: "v2026.07.01.1",
       },
     ];
     expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("创建 Agent");
@@ -145,7 +145,7 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
     {
       name: "agent-initialization",
       description: "Create agents from requirements",
-      version: "2026-07-01.1",
+      version: "v2026.07.01.1",
     },
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: "" },
   ];

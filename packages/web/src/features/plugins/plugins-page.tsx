@@ -79,7 +79,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
 /**
- * What one Agent has installed, by name → the installed copy's version (`YYYY-MM-DD.N`, or ""
+ * What one Agent has installed, by name → the installed copy's version (`vYYYY.MM.DD.N`, or ""
  * when the files carry none): its skills and its hook packages, the two lists a plugin is
  * spread over.
  */
@@ -153,7 +153,7 @@ export function installedPluginVersion(
  * Agents the server says are behind the library on plugin `name` (the update reminder's data
  * source): read off `AgentSummary.pluginUpdates`, the same field the plugins gate counts, so
  * the card, the notice and the nav dot cannot disagree — and so the web never compares
- * `YYYY-MM-DD.N` strings itself. Not-installed Agents are never listed there.
+ * version strings itself. Not-installed Agents are never listed there.
  */
 export function outdatedAgentIds(
   agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "pluginUpdates">>,
@@ -651,11 +651,13 @@ function PluginCard({
   // when missing (per UI language); title carries the full description for hover reading.
   const description = localizedShortText(locale, plugin);
   const fullDescription = localizedText(locale, plugin.description, plugin.descriptionZh);
-  // Metadata line: version (`YYYY-MM-DD.N`, omitted when the manifest carries none) · how
-  // long ago that version's date is · usage count — plain readable phrases, no badges.
-  const versionDate = plugin.version ? plugin.version.split(".")[0]! : null;
+  // Metadata line: version (`vYYYY.MM.DD.N`, omitted when the manifest carries none — and
+  // printed as it stands, the `v` being part of it) · how long ago that version's date is ·
+  // usage count — plain readable phrases, no badges.
+  const versionMatch = /^v(\d{4})\.(\d{2})\.(\d{2})\./.exec(plugin.version);
+  const versionDate = versionMatch ? versionMatch.slice(1, 4).join("-") : null;
   const meta = [
-    plugin.version ? `v${plugin.version}` : null,
+    plugin.version || null,
     versionDate ? formatRelativeDate(versionDate, locale) : null,
     S.plugins.usedByAgents(installedCount),
   ]
@@ -695,7 +697,7 @@ function PluginCard({
             </p>
           </div>
         </div>
-        {/* Metadata line under the header (e.g. `v2026-08-29.1 · updated 3 days ago · used by
+        {/* Metadata line under the header (e.g. `v2026.08.29.1 · updated 3 days ago · used by
             2 agents`); what the plugin contains lives in the detail Modal this card opens. */}
         <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
           {meta}

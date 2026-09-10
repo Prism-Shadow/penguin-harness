@@ -229,7 +229,7 @@ export function SkillsTab({
     reader.readAsDataURL(file);
   };
 
-  /** Metadata: the installed copy's version (`YYYY-MM-DD.N`; empty when the frontmatter carries none), shown bare like the library card. */
+  /** Metadata: the installed copy's version (`vYYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy installed before that spelling; empty when the frontmatter carries none), shown bare like the library card. */
   const metaLine = (skill: SkillMetadataItem): string => skill.version;
 
   if (!projectId) return null;

@@ -21,12 +21,12 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | One-line description (English required) |
 | `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
-| `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
+| `version` | `vYYYY.MM.DD.N` — the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
-The plugin name is its directory name (`^[A-Za-z0-9_-]+$`); a plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product. Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
+The plugin name is its directory name (`^[A-Za-z0-9_-]+$`); a plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product. Versions are compared by date, then by sequence number, so `v2026.08.29.10` follows `v2026.08.29.9`; the manifest's version is the version of everything the plugin ships, and is distinct from the package's npm version (which follows the release). There is no other version scheme.
 
 Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name>/` in the repo. The loader lives in `@prismshadow/penguin-core`: it reads the plugin names off the host package's dependency list and resolves each package through Node (the desktop app declares the same packages as dependencies, which its installer packs). At runtime the plugin files are the source of truth for library content, read on every call.
 
@@ -52,7 +52,7 @@ description: One-line English description injected into the system prompt.
 Concrete steps, boundaries and acceptance criteria...
 ```
 
-The **installed** copy is self-describing: at load time the library regenerates each skill's frontmatter with the plugin's `short_description`, `short_description_zh` and `version` stamped in (the way an installed hook package's `hooks.json` is generated from the manifest), and that is what gets written into `agent_state/skills/`. Update checks read the installed frontmatter's `version`; the UI reads its short descriptions. Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized, and a `version` that is not `YYYY-MM-DD.N` reads as empty — older than any library version, so the library's copy counts as an update.
+The **installed** copy is self-describing: at load time the library regenerates each skill's frontmatter with the plugin's `short_description`, `short_description_zh` and `version` stamped in (the way an installed hook package's `hooks.json` is generated from the manifest), and that is what gets written into `agent_state/skills/`. Update checks read the installed frontmatter's `version`; the UI reads its short descriptions. Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized, and a `version` that is neither `vYYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` an older installed copy carries reads as empty — older than any library version, so the library's copy counts as an update.
 
 ## Progressive loading
 
@@ -71,7 +71,7 @@ A hook package is the plugin's `hooks/` directory installed as `agent_state/hook
   "name": "goal",
   "description": "Goal mode: …",
   "description_zh": "目标模式：…",
-  "version": "2026-09-01.1",
+  "version": "v2026.09.01.1",
   "stop": [{ "command": "stop.mjs", "timeout": 60 }],
   "pre_tool_use": [],
   "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]

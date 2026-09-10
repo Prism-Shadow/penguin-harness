@@ -46,15 +46,15 @@ describe("pluginUpdateTodo", () => {
 
   it("counts distinct plugins, not Agents: the trail ends on a list that shows each once", () => {
     const todo = pluginUpdateTodo([
-      agent({ name: "web-design", version: "2026-08-03.1" }),
+      agent({ name: "web-design", version: "v2026.08.03.1" }),
       agent(
-        { name: "web-design", version: "2026-08-03.1" },
-        { name: "vllm", version: "2026-08-02.1" },
+        { name: "web-design", version: "v2026.08.03.1" },
+        { name: "vllm", version: "v2026.08.02.1" },
       ),
     ]);
     expect(todo).toEqual({
-      signature: "vllm@2026-08-02.1,web-design@2026-08-03.1",
-      items: ["vllm@2026-08-02.1", "web-design@2026-08-03.1"],
+      signature: "vllm@v2026.08.02.1,web-design@v2026.08.03.1",
+      items: ["vllm@v2026.08.02.1", "web-design@v2026.08.03.1"],
       count: 2,
       match: "set",
     });
@@ -62,31 +62,31 @@ describe("pluginUpdateTodo", () => {
 
   it("reports no added/upgradable split: an uninstalled plugin is not waiting for anyone", () => {
     expect(
-      pluginUpdateTodo([agent({ name: "a", version: "2026-08-02.1" })])!.breakdown,
+      pluginUpdateTodo([agent({ name: "a", version: "v2026.08.02.1" })])!.breakdown,
     ).toBeUndefined();
   });
 
   it("is order-independent, so two loads of the same state dismiss alike", () => {
     const a = pluginUpdateTodo([
-      agent({ name: "b", version: "2026-08-01.1" }, { name: "a", version: "2026-08-02.1" }),
+      agent({ name: "b", version: "v2026.08.01.1" }, { name: "a", version: "v2026.08.02.1" }),
     ]);
     const b = pluginUpdateTodo([
-      agent({ name: "a", version: "2026-08-02.1" }),
-      agent({ name: "b", version: "2026-08-01.1" }),
+      agent({ name: "a", version: "v2026.08.02.1" }),
+      agent({ name: "b", version: "v2026.08.01.1" }),
     ]);
     expect(a).toEqual(b);
   });
 
   it("lists a plugin once however many Agents are behind on it — they all read one library", () => {
     // The version is the library's, so every occurrence of a name carries the same one; the
-    // gate takes it as it comes and never orders `YYYY-MM-DD.N` strings itself.
+    // gate takes it as it comes and never orders `vYYYY.MM.DD.N` strings itself.
     const todo = pluginUpdateTodo([
-      agent({ name: "vllm", version: "2026-08-03.1" }),
-      agent({ name: "vllm", version: "2026-08-03.1" }),
+      agent({ name: "vllm", version: "v2026.08.03.1" }),
+      agent({ name: "vllm", version: "v2026.08.03.1" }),
     ]);
     expect(todo).toEqual({
-      signature: "vllm@2026-08-03.1",
-      items: ["vllm@2026-08-03.1"],
+      signature: "vllm@v2026.08.03.1",
+      items: ["vllm@v2026.08.03.1"],
       count: 1,
       match: "set",
     });
